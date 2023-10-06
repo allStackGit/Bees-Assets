@@ -1,0 +1,24 @@
+[
+  {
+    "levelId": 1,
+    "name": "First Encounter",
+    "title": "UFOs spotted near Pluto!",
+    "message": "Ground based radio telescopes on Pluto have been tracking objects in the Kuiper belt that are headed their way. The technicians are increasingly confident that these could be extraterrestrial ships, not mere asteroids.
+
+Your squadron has been tasked with investigating these UFOs and finding out their true nature.",
+    "officer": {
+      "name": "Zeke Morgan",
+      "rank": "Technical Sergeant"
+    }
+  },
+  {
+    "levelId": 2,
+    "name": "The Station",
+    "title": "Bees grouping near Pluto Space Complex",
+    "message": "Station in orbit around Pluto. A few squads of small ships and a warp gate are there. A few squads of Bees appear quickly, aiming to attack and destroy the station and squads there. The player has the option to call for more reinforcements and destroy the attacking Bees if the Warp Gate lasts long enough for reinforcements to arrive, or to fight it out as is.",
+    "officer": {
+      "name": "Josiah Morgan",
+      "rank": "Master Sergeant"
+    }
+  }
+]
