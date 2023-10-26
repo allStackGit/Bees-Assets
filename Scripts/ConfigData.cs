@@ -36,7 +36,7 @@ namespace Assets.Scripts
 
 
         // 2 = standard testing, 3 = standard beta, 4 = bennett beta, 5 = ml agents rl testing, 6 = fast paced version, 7 = new NN training version
-        public const int Version = 7; // [alert] should be increased when released
+        public const int Version = 6; // [alert] should be increased when released
         public const string BaseFolder = "SaveData";
         public const string PortraitFolder = "Sprites/People";
 

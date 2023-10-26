@@ -49,7 +49,7 @@ namespace Assets.Scripts.Level
                     List<int> humanIndexes = new List<int> { 2, 50, 36 };
                     List<int> beeIndexes = new List<int> { 8, 11, 13, 15, 17, 21, 25, 46, 57, 71 };
 
-                    int squadNumber = 1;
+                    int squadNumber = 6;
                     for (int i = 0; i < squadNumber; i++)
                     {
                         int chosenIndex = humanIndexes[Random.Range(0, humanIndexes.Count)];
