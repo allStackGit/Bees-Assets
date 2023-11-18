@@ -107,7 +107,7 @@ namespace Assets.Scripts.Server
         }
         private void Message(byte[] bytes)
         {
-            //Debugger.Log("Got message from server");
+            //Debugger.Log($"Got message from server for {_scene}");
             // getting the message as a string
             string message = System.Text.Encoding.UTF8.GetString(bytes);
             //Debugger.Log($"Server message: {message} Thread: {Thread.CurrentThread.ManagedThreadId}");

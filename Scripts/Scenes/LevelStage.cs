@@ -160,7 +160,7 @@ namespace Assets.Scripts.Scenes
             HalfX = MapX / 2;
             HalfY = MapY / 2;
 
-            if (!IsTraining)
+            if (HasPlayer)
             {
                 //Debugger.Log($"MapRenderer.size.x: {MapRenderer.size.x}, Camera aspect: {Camera.aspect}");
                 MiniMapCamera.orthographicSize = (MapRenderer.size.x / (Camera.aspect * 2));
@@ -182,7 +182,7 @@ namespace Assets.Scripts.Scenes
         protected override void FinalizeSceneWithUserData()
         {
             //Debugger.Log($"Finalize scene");
-            Physics.autoSimulation = false;
+            Physics.autoSimulation = false; // What does this do and is it necessary?
             if (!ConfigData.Configuration.DoesUserHaveController && !DoesUserHaveController)
             {
                 Invoke(nameof(TimeOut), TimeoutTime);
@@ -445,7 +445,7 @@ namespace Assets.Scripts.Scenes
             }
             LevelConstructor.SetShips();
 
-            if (!IsTraining)
+            if (HasPlayer)
             {
                 Vector2 localizedPosition = DefaultCameraPosition - (Vector2)transform.position;
                 Camera.transform.position = new Vector3(localizedPosition.x, localizedPosition.y, -10);

@@ -1,6 +1,7 @@
 ﻿
 
 
+using Assets.Scripts.Scenes;
 using Assets.Scripts.Server;
 
 namespace Assets.Scripts.Settings
@@ -16,11 +17,13 @@ namespace Assets.Scripts.Settings
         public bool IsLoaded;
         public int UserId = 0;
         private SettingsRequest _request = null;
+        private Scene _scene;
 
-        public ServerSettings(string name, int userId)
+        public ServerSettings(string name, int userId, Scene scene)
         {
             Name = name;
             UserId = userId;
+            _scene = scene;
             Fetch();
         }
         protected virtual void ProcessData(string contents)
@@ -31,7 +34,7 @@ namespace Assets.Scripts.Settings
         {
             if (_request != null)
             {
-                SettingsRequest standingRequest = (SettingsRequest)ConfigData.Socket.GetStandingRequest(_request.Hash);
+                SettingsRequest standingRequest = (SettingsRequest)_scene.Socket.GetStandingRequest(_request.Hash);
                 if (standingRequest.Status == 1)
                 {
                     //Debugger.Log($"The standing request has completed, setting the contents: {standingRequest.Response.Contents}");
@@ -46,7 +49,7 @@ namespace Assets.Scripts.Settings
             //Debugger.Log("Fetching data for Server Settings");
             _request = new SettingsRequest(new GetUserSettingsData(ConfigData.GetUserId(), Name, ConfigData.Version),
                 this, ConfigData.StandardMaxTimeOnQueue);
-            ConfigData.Socket.SendRequest(_request);
+            _scene.Socket.SendRequest(_request);
         }
     }
 }

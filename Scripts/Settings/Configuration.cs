@@ -1,4 +1,5 @@
 ﻿
+using Assets.Scripts.Scenes;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
@@ -75,7 +76,7 @@ namespace Assets.Scripts.Settings
         public bool MirrorLocalStorageToServer => UseLocalStorage && MirrorStorage;
         public bool MirrorServerStorageToLocal => UseLocalStorage && MirrorStorage;
 
-        public Configuration(int userId) : base("configuration", userId)
+        public Configuration(int userId, Scene scene) : base("configuration", userId, scene)
         {
         }
         protected override void ProcessData(string contents)

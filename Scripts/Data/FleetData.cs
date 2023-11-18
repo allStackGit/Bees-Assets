@@ -2,7 +2,7 @@
 using Newtonsoft.Json;
 using System.Collections.Generic;
 using System.Linq;
-
+using Assets.Scripts.Scenes;
 
 namespace Assets.Scripts.Data
 {
@@ -13,7 +13,7 @@ namespace Assets.Scripts.Data
         private List<FleetShip> _shipList = new List<FleetShip>();
 
 
-        public FleetData(bool shouldFileExist, Dictionary<string, int> startingShips) : base(shouldFileExist)
+        public FleetData(bool shouldFileExist, Dictionary<string, int> startingShips, Scene scene) : base(scene)
         {
             defaultJsonData = MakeDefaultList(startingShips);
 

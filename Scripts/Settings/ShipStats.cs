@@ -1,3 +1,4 @@
+using Assets.Scripts.Scenes;
 using Assets.Scripts.Settings;
 
 using Newtonsoft.Json;
@@ -15,7 +16,7 @@ namespace Assets.Scripts.Settings
     {
         public Dictionary<string, ShipStatBlock> ShipStatsList = new Dictionary<string, ShipStatBlock>();
 
-        public ShipStats(int userId) : base("ship-stats", userId)
+        public ShipStats(int userId, Scene scene) : base("ship-stats", userId, scene)
         {
         }
         protected override void ProcessData(string contents)

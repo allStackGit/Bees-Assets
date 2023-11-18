@@ -1,4 +1,5 @@
 ﻿using Assets.Scripts.Data;
+using Assets.Scripts.Scenes;
 using Assets.Scripts.Server;
 using Assets.Scripts.Settings;
 using System;
@@ -116,7 +117,7 @@ namespace Assets.Scripts
         public static int SquadMakerSide;
 
 
-        public static Socket Socket = Test ? new Socket(TestPort, TestServerHostname) : new Socket(DevelopmentPort, DevelopmentServerHostname);
+        //public static Socket Socket = Test ? new Socket(TestPort, TestServerHostname) : new Socket(DevelopmentPort, DevelopmentServerHostname);
         public static readonly List<int> InitialVisibleShips = Enumerable.Range(0, 2900).ToList(); // // [alert] [server] Starting ships should be pulled from server
         public static bool FirstTimePlaying = true; // [alert] should be linked to whether a user has actually played before   
         public static float CloseEnoughCoordinateVariance = 1.5f; // world units
@@ -235,7 +236,7 @@ namespace Assets.Scripts
                 return Colors.GetValueOrDefault("error");
             }
         }
-        public static void SetupUserData()
+        public static void SetupUserData(Scene scene)
         {
             if (AreAllSettingsLoaded && !IsAllUserDataLoaded && !IsLoadingUserData)
             {
@@ -248,21 +249,21 @@ namespace Assets.Scripts
                 StartingSettings.BeeStartingShips.ToList().ForEach((s) => allStartingShips.Add(s.Key, s.Value));
 
 
-                SetupUserProgressData(!FirstTimePlaying);
-                SetupFleetData(!FirstTimePlaying, allStartingShips);
-                SetupSavedSquadsData(!FirstTimePlaying);
+                SetupUserProgressData(!FirstTimePlaying, scene);
+                SetupFleetData(!FirstTimePlaying, allStartingShips, scene);
+                SetupSavedSquadsData(!FirstTimePlaying, scene);
                 //Debugger.Log($"Current Level after loading user data: {ConfigData.GetLevel()}");
             }
 
         }
-        public static void LoadSettings()
+        public static void LoadSettings(Scene scene)
         {
             if (!AreAllSettingsLoaded)
             {
                 Debugger.Log("Trying to load settings");
-                ShipInfo = new ShipStats(GetUserId());
-                Configuration = new Configuration(GetUserId());
-                StartingSettings = new StartingSettings(GetUserId());
+                ShipInfo = new ShipStats(GetUserId(), scene);
+                Configuration = new Configuration(GetUserId(), scene);
+                StartingSettings = new StartingSettings(GetUserId(), scene);
             }
 
         }
@@ -360,25 +361,25 @@ namespace Assets.Scripts
                 _userId = id;
             }
         }
-        public static void SetupUserProgressData(bool shouldFileExist)
+        public static void SetupUserProgressData(bool shouldFileExist, Scene scene)
         {
-            _userProgressData = new UserProgressData(shouldFileExist);
+            _userProgressData = new UserProgressData(shouldFileExist, scene);
         }
         public static UserProgressData GetUserProgressData()
         {
             return _userProgressData;
         }
-        public static void SetupFleetData(bool shouldFileExist, Dictionary<string, int> startingShips)
+        public static void SetupFleetData(bool shouldFileExist, Dictionary<string, int> startingShips, Scene scene)
         {
-            _fleetData = new FleetData(shouldFileExist, startingShips);
+            _fleetData = new FleetData(shouldFileExist, startingShips, scene);
         }
         public static FleetData GetFleetData()
         {
             return _fleetData;
         }
-        public static void SetupSavedSquadsData(bool shouldFileExist)
+        public static void SetupSavedSquadsData(bool shouldFileExist, Scene scene)
         {
-            _savedSquadsData = new SavedSquadsData(shouldFileExist);
+            _savedSquadsData = new SavedSquadsData(shouldFileExist, scene);
         }
         public static SavedSquadsData GetSavedSquadsData()
         {

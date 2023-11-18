@@ -20,7 +20,7 @@ namespace UIComponents
         private int _level = ConfigData.GetLevel();
         void Awake()
         {
-            ConfigData.SetupUserData();
+            //ConfigData.SetupUserData();
             LoadAndSetText();
         }
         public void LoadAndSetText()

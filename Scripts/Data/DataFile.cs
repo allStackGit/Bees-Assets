@@ -2,6 +2,7 @@
 using Newtonsoft.Json;
 using System.IO;
 using Assets.Scripts.Server;
+using Assets.Scripts.Scenes;
 
 namespace Assets.Scripts.Data
 {
@@ -18,12 +19,14 @@ namespace Assets.Scripts.Data
         private const string _waitingMessage = "{\"status\": \"waiting\"}";
         private DataFileRequest _request = null;
         private bool _isDataLoaded = false;
+        private Scene _scene;
 
-        public DataFile(string name)
+        public DataFile(string name, Scene scene)
         {
             this.Name = name;
             this.Path = ConfigData.GetBasePath();
             this.FullPath = $"{Path}{Name}{Extension}";
+            this._scene = scene;
             //Debugger.Log($"Full file path is {FullPath}");
         }
         private void MakeFileIfNecessary()
@@ -54,7 +57,7 @@ namespace Assets.Scripts.Data
             else
             {
                 _request = new DataFileRequest(new GetUserData(ConfigData.GetUserId(), Name), this, ConfigData.StandardMaxTimeOnQueue);
-                ConfigData.Socket.SendRequest(_request);
+                _scene.Socket.SendRequest(_request);
                 contents = _waitingMessage;
             }
             
@@ -75,7 +78,7 @@ namespace Assets.Scripts.Data
         {
             if (_request != null)
             {
-                DataFileRequest standingRequest = (DataFileRequest)ConfigData.Socket.GetStandingRequest(_request.Hash);
+                DataFileRequest standingRequest = (DataFileRequest)_scene.Socket.GetStandingRequest(_request.Hash);
                 if (standingRequest.Status == 1)
                 {
                     //Debugger.Log($"The standing request has completed, setting the contents: {standingRequest.Response.Contents}");
@@ -140,7 +143,7 @@ namespace Assets.Scripts.Data
         }
         public void WriteServerData(string data)
         {
-            ConfigData.Socket.SendRequest(new StoreUserDataRequest(new StoreUserData(ConfigData.GetUserId(), Name, data),
+            _scene.Socket.SendRequest(new StoreUserDataRequest(new StoreUserData(ConfigData.GetUserId(), Name, data),
                 ConfigData.StandardMaxTimeOnQueue));
         }
         public void WriteLocalData(string data)

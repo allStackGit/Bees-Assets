@@ -3,7 +3,7 @@ using Newtonsoft.Json;
 using System.Collections.Generic;
 using UnityEngine;
 using System.Linq;
-
+using Assets.Scripts.Scenes;
 
 namespace Assets.Scripts.Data
 
@@ -15,7 +15,7 @@ namespace Assets.Scripts.Data
 
 
 
-        public SavedSquadsData(bool shouldFileExist) : base(shouldFileExist)
+        public SavedSquadsData(bool shouldFileExist, Scene scene) : base(scene)
         {
             // [alert] this should be equal to the JSON data for whatever starting squads there will be, currently two squads, one of three scouts and one
             // of three gunships

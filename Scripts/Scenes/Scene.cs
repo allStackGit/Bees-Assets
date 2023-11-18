@@ -32,7 +32,7 @@ namespace Assets.Scripts.Scenes
         protected void Start()
         {
             //Debugger.Log($"Starting {Name} scene");
-            Socket = ConfigData.Socket;
+            Socket = ConfigData.Test ? new Socket(ConfigData.TestPort, ConfigData.TestServerHostname) : new Socket(ConfigData.DevelopmentPort, ConfigData.DevelopmentServerHostname);
             Socket.SetScene(this);
             InvokeRepeating(nameof(LoadSettingsWhenOpen), .1f, .1f);
             if (NetworkDisconnection == null)
@@ -47,7 +47,7 @@ namespace Assets.Scripts.Scenes
         {
             if (Socket.IsOpen)
             {
-                ConfigData.LoadSettings();
+                ConfigData.LoadSettings(this);
                 CancelInvoke(nameof(LoadSettingsWhenOpen));
             }
         }
@@ -115,7 +115,7 @@ namespace Assets.Scripts.Scenes
                     }
                     else
                     {
-                        ConfigData.SetupUserData();
+                        ConfigData.SetupUserData(this);
                         ConfigData.CheckDataFiles();
                         ConfigData.SquadMakerSide = ConfigData.Configuration.SquadMakerFirstSide;
                     }

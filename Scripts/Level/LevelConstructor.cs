@@ -74,7 +74,7 @@ namespace Assets.Scripts.Level
                     }
                 } else if (Level.UseFullyRandomSquads) {
 
-                    int squadNumber = 1; // Random.Range(1, 3);
+                    int squadNumber = Random.Range(1, 4);
 
                     for (int side = 1; side < 3; side++)
                     {

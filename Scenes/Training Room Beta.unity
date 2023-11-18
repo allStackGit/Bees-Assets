@@ -3311,7 +3311,7 @@ MonoBehaviour:
   MaxX: 0
   MaxY: 0
   Selector: {fileID: 0}
-  DefaultZoom: 300
+  DefaultZoom: 500
   MaxZoom: 300
   MinZoom: 25
   ZoomSpeed: 2
@@ -6166,7 +6166,7 @@ MonoBehaviour:
   MaxX: 0
   MaxY: 0
   Selector: {fileID: 0}
-  DefaultZoom: 300
+  DefaultZoom: 500
   MaxZoom: 300
   MinZoom: 25
   ZoomSpeed: 2
@@ -6408,7 +6408,7 @@ MonoBehaviour:
   MaxX: 0
   MaxY: 0
   Selector: {fileID: 0}
-  DefaultZoom: 300
+  DefaultZoom: 500
   MaxZoom: 300
   MinZoom: 25
   ZoomSpeed: 2
@@ -7712,7 +7712,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 2944892714679254333, guid: e154edb1d8fb554428cdc7380556de19, type: 3}
       propertyPath: orthographic size
-      value: 300
+      value: 500
       objectReference: {fileID: 0}
     - target: {fileID: 2944892714679254333, guid: e154edb1d8fb554428cdc7380556de19, type: 3}
       propertyPath: m_CullingMask.m_Bits

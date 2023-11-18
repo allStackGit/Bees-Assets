@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿using Assets.Scripts.Scenes;
+using UnityEngine;
 
 namespace Assets.Scripts.Data
 {
@@ -8,7 +9,7 @@ namespace Assets.Scripts.Data
         public int CurrentLevel = -1; // a level of -1 indicates that the level data hasn't been loaded yet
         public int SavedSquadId = -1; //[alert] [reminder]  this starts at 1 because there are two starting squads 0, and 1. The next Id should be 2.
 
-        public UserProgressData(bool shouldFileExist): base(shouldFileExist)
+        public UserProgressData(bool shouldFileExist, Scene scene): base(scene)
         {
             defaultJsonData = "{\"CurrentLevel\": 1, \"SavedSquadId\": -1}";
             
