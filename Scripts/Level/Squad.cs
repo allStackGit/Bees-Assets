@@ -174,7 +174,7 @@ namespace Assets.Scripts.Level
             { // user side
                 OpponentId = 0;
 
-                if (Level.HasPlayer && !Level.IsTraining)
+                if (Level.HasPlayer && !Level.IsTrainingNueralNetwork)
                 {
                     SquadBox = LevelStage.Instantiate(Level.SquadBox, new Vector3(0, 0, 0), Quaternion.identity);
                     SquadBox.transform.parent = Level.Map.transform;
@@ -331,7 +331,7 @@ namespace Assets.Scripts.Level
         {
             //Debugger.Log($"Squad #{squadNumber} is moving and the squad box will have width {GetWidth()}, height {GetHeight()}, and center point {GetCenterPoint()}");
             //Debugger.Log($"Right most point {GetRightMostPoint()}, Left most point {GetLeftMostPoint()}, Top most point {GetTopMostPoint()}, Bottom most point {GetBottomMostPoint()}");
-            if (IsSelected && !Level.IsTraining)
+            if (IsSelected && !Level.IsTrainingNueralNetwork)
             {
                 SquadBox.SetActive(true);
                 SquadBox.transform.localPosition = GetCenterPoint();

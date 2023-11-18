@@ -78,7 +78,7 @@ namespace Assets.Scripts.Entities.Projectiles
         private bool OutOfBounds()
         {
             Vector2 position = GetPosition();
-            if (Level.IsTraining)
+            if (Level.IsTrainingNueralNetwork)
             {
                 return DistanceToPoint(StartingPosition) >= Range; // [alert] [rl-training] this should only be on to account for higher timescales with RL training
 

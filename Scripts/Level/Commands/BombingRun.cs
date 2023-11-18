@@ -95,8 +95,9 @@ namespace Assets.Scripts.Level.Commands
                 //Debugger.Log("Bombing timer");
                 Squad.Status = $"In the middle of bombing run against {Enemy.Name}";
                 List<Ship> ships = Squad.GetShips();
-                foreach (Ship ship in ships)
+                for (int i = 0; i < ships.Count; i++)
                 {
+                    Ship ship = ships[i];
                     if (ship.HasTargetShips && !ship.TargetShips.All((ship) => ship.IsDead))
                     {
                         ship.TargetCoordinates = ship.TargetShips.First().GetPosition();

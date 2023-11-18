@@ -29,7 +29,7 @@ namespace Assets.Scripts.Level
             ConfigData.Ships = new Ships(ConfigData.GetFleetData(), ConfigData.GetSavedSquadsData());
 
 
-            if (Level.IsTraining || Level.UseSemiRandomSquads || Level.UseFullyRandomSquads)
+            if (Level.IsTrainingNueralNetwork || Level.UseSemiRandomSquads || Level.UseFullyRandomSquads)
             {
                 ConfigData.SquadsChosenForLevel.Clear();
             }
@@ -166,11 +166,11 @@ namespace Assets.Scripts.Level
 
             // Setup entities on the level
             SetupShipsAndSquads();
-            if (state.GetSquadsBySide(ConfigData.Configuration.UserSide).Count > 0 && state.GetSquadsBySide(ConfigData.Configuration.AISide).Count > 0 && !Level.IsTraining)
+            if (state.GetSquadsBySide(ConfigData.Configuration.UserSide).Count > 0 && state.GetSquadsBySide(ConfigData.Configuration.AISide).Count > 0 && !Level.IsTrainingNueralNetwork)
             {
                 state.SelectSquad(state.GetSquadByNumber(ConfigData.Configuration.UserSide, 1));
             }
-            else if (!Level.IsTraining)
+            else if (!Level.IsTrainingNueralNetwork)
             {
                 Debugger.Log($"User squads: {state.GetSquadsBySide(ConfigData.Configuration.UserSide).Count}, AI squads: {state.GetSquadsBySide(ConfigData.Configuration.AISide).Count}");
                 Level.Menus.NoAliveShipsAlert.SetActive(true);
@@ -352,7 +352,7 @@ namespace Assets.Scripts.Level
 
                 }
             });
-            if (Level.IsTraining)
+            if (Level.IsTrainingNueralNetwork)
             {
                 //return; // [alert] [rl-training] only do this for rl learning
             }

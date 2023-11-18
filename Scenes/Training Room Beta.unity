@@ -3269,7 +3269,8 @@ MonoBehaviour:
   __AverageRequestTime: 0
   ActivateHiveMind: 1
   ActivateBrains: 0
-  IsTraining: 0
+  IsTrainingNueralNetwork: 0
+  IsTrainingHiveMind: 1
   UseSemiRandomSquads: 0
   UseFullyRandomSquads: 1
   ReplaceDeadShips: 0
@@ -6124,7 +6125,8 @@ MonoBehaviour:
   __AverageRequestTime: 0
   ActivateHiveMind: 1
   ActivateBrains: 0
-  IsTraining: 0
+  IsTrainingNueralNetwork: 0
+  IsTrainingHiveMind: 1
   UseSemiRandomSquads: 0
   UseFullyRandomSquads: 1
   ReplaceDeadShips: 0
@@ -6366,7 +6368,8 @@ MonoBehaviour:
   __AverageRequestTime: 0
   ActivateHiveMind: 1
   ActivateBrains: 0
-  IsTraining: 0
+  IsTrainingNueralNetwork: 0
+  IsTrainingHiveMind: 1
   UseSemiRandomSquads: 0
   UseFullyRandomSquads: 1
   ReplaceDeadShips: 0

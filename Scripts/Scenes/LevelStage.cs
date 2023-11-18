@@ -25,7 +25,8 @@ namespace Assets.Scripts.Scenes
         // If hivemind is activate, get commands from the server
         // If brains are activated, get actions from the nueral network
         // If IsTraining, train the neural network
-        public bool ActivateHiveMind, ActivateBrains, IsTraining, UseSemiRandomSquads, UseFullyRandomSquads, ReplaceDeadShips, DoesUserHaveController;
+        // Training Hivemind then there is no player, levels are reset every time, and the camera position doesn't matter
+        public bool ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, UseSemiRandomSquads, UseFullyRandomSquads, ReplaceDeadShips, DoesUserHaveController;
         public int OverrideTimeScale, TimeoutTime;
         public Camera MiniMapCamera;
 
@@ -95,7 +96,7 @@ namespace Assets.Scripts.Scenes
                 AgentGroup = new SimpleMultiAgentGroup();
                 HumanAgentGroup = new SimpleMultiAgentGroup();
 
-                if (IsTraining)
+                if (IsTrainingNueralNetwork)
                 {
                     Academy.Instance.OnEnvironmentReset += () =>
                     {
@@ -116,7 +117,7 @@ namespace Assets.Scripts.Scenes
             _state.Setup(this);
 
             //ConfigData.SetupSceneManagement(SceneManagement.GetComponent<SceneManagement>());
-            if (!IsTraining)
+            if (!IsTrainingNueralNetwork)
             {
                 Camera.orthographicSize = DefaultZoom;
 
@@ -230,13 +231,13 @@ namespace Assets.Scripts.Scenes
                     LevelOver();
                 }
 
-                if ((state.IsPaused || NetworkDisconnection.IsOpen || !IsLevelSetupOnServer) && !IsTraining)
+                if ((state.IsPaused || NetworkDisconnection.IsOpen || !IsLevelSetupOnServer) && !IsTrainingNueralNetwork)
                 {
                     Time.timeScale = 0;
                 }
                 else
                 {
-                    if (!IsTraining)
+                    if (!IsTrainingNueralNetwork)
                     {
                         Time.timeScale = TimeScale;
                         state.Ticks++;
@@ -252,7 +253,7 @@ namespace Assets.Scripts.Scenes
         }
         private void FixedUpdate()
         {
-            if (IsTraining)
+            if (IsTrainingNueralNetwork)
             {
                 Seconds += Time.deltaTime;
             }
@@ -260,7 +261,7 @@ namespace Assets.Scripts.Scenes
 
         void LevelOver() // [stats-method] [note]
         {
-            if (!IsTraining)
+            if (!IsTrainingNueralNetwork)
             {
                 Pause();
                 //Debugger.Log("LEVEL OVER!");
@@ -325,7 +326,7 @@ namespace Assets.Scripts.Scenes
             }
             
 
-            if (IsTraining)
+            if (IsTrainingNueralNetwork)
             {
                 
                 ResetLevel(false);
@@ -439,7 +440,7 @@ namespace Assets.Scripts.Scenes
             }
             CancelInvoke(nameof(TimeOut));
             //Debugger.Log("Cleared timeout");
-            if (!ConfigData.Configuration.DoesUserHaveController && !DoesUserHaveController)
+            if (!HasPlayer)
             {
                 Invoke(nameof(TimeOut), TimeoutTime);
             }

@@ -25,12 +25,16 @@ namespace Assets.Scripts.Entities.Ships
             {
                 died = true;
                 //Debugger.Log("Fireship exploding");
-                Explosion = Instantiate(ShipExplosion, GetPosition(), Quaternion.identity);
-                Explosion.transform.parent = Level.Map.transform;
-                RocketExplosion explosion = (RocketExplosion)Explosion.GetComponent(typeof(RocketExplosion));
-                GameState state = Level.GetState();
-                explosion.Setup(Level, Side, state.AddEntity(), Bomb, this, null, GetPosition(), 0, 0, Bomb.Power);
-                state.AddExplosion(explosion);
+                if (killer != null)
+                {
+                    Explosion = Instantiate(ShipExplosion, GetPosition(), Quaternion.identity);
+                    Explosion.transform.parent = Level.Map.transform;
+                    RocketExplosion explosion = (RocketExplosion)Explosion.GetComponent(typeof(RocketExplosion));
+                    GameState state = Level.GetState();
+                    explosion.Setup(Level, Side, state.AddEntity(), Bomb, this, null, GetPosition(), 0, 0, Bomb.Power);
+                    state.AddExplosion(explosion);
+                }
+
 
                 int oldTsv = Tsv;
                 Health -= Bomb.Power;
@@ -62,7 +66,7 @@ namespace Assets.Scripts.Entities.Ships
                     {
                         FleetShip.IsDead = true;
                     }
-                    Squad.SavedSquad.Stats.ShipsLost++;
+                    Squad.SavedSquad.Stats.ShipsLost++; 
                 }
 
 

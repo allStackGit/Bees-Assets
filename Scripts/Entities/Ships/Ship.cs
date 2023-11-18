@@ -289,7 +289,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             if (!Level.IsPaused)
             {
                 Move();
-                if (!Level.IsTraining)
+                if (!Level.IsTrainingNueralNetwork)
                 {
                     if (Side == ConfigData.Configuration.HumanSide && Level.HasPlayer && !Level.HasFoundAllBees && Level.Audio != null)
                     {
@@ -676,7 +676,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 target.FleetShip.DamageReceived += -1 * tsvChange;
                 target.Squad.SavedSquad.Stats.DamageReceived += -1 * tsvChange;
 
-                if (target.Level.IsTraining)
+                if (target.Level.IsTrainingNueralNetwork)
                 {
                     int[] initialTsv = target.Level.GetState().InitialTsv;
                     //Debugger.Log($"Initial TSV: {initialTsv[0]}, {initialTsv[1]}");
@@ -728,7 +728,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             {
                 //Debugger.Log($"Killing ship {Name}");
                 died = true;
-                if (!Level.IsTraining)
+                if (!Level.IsTrainingNueralNetwork)
                 {
                     GameObject explosion = LevelStage.Instantiate(ShipExplosion, Vector2.zero, Quaternion.identity);
                     explosion.transform.localScale *= RelativeSizeScale();
