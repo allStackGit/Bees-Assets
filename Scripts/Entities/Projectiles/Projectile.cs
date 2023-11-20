@@ -83,7 +83,12 @@ namespace Assets.Scripts.Entities.Projectiles
                 return DistanceToPoint(StartingPosition) >= Range; // [alert] [rl-training] this should only be on to account for higher timescales with RL training
 
             }
-            return DistanceToPoint(StartingPosition) >= Range || position.x >= Level.MaxX || position.x <= Level.MinX || position.y >= Level.MaxY || position.y <= Level.MinY;
+            bool outOfBounds = DistanceToPoint(StartingPosition) >= Range || position.x >= Level.MaxX || position.x <= Level.MinX || position.y >= Level.MaxY || position.y <= Level.MinY;
+            if (outOfBounds)
+            {
+                Debugger.Log($"Projectile ({name}) at position ({GetPosition()}) is out of bounds with a distance to starting point ({StartingPosition}) of ({DistanceToPoint(StartingPosition)})");
+            }
+            return outOfBounds;
         }
 
         protected void RemoveDamageSentEntry()
@@ -104,7 +109,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
             if (OutOfBounds())
             {
-                //Debugger.Log($"Projectile when out of bounds! Range:  {Range}");
+                //Debugger.Log($"Projectile ({name}) went out of bounds! Range:  {Range}");
                 RemoveDamageSentEntry();
                 Kill();
             }

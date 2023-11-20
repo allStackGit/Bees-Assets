@@ -52,7 +52,7 @@ namespace Assets.Scripts.Data
             int shipCount = 8;
             if ((new List<string> { "Queen", "Fire Ship", "Carrier", "Flagship" }).Contains(squadType))
             {
-                shipCount = UnityEngine.Random.Range(1, 3);
+                shipCount = UnityEngine.Random.Range(1, 2);
             }
             else if ((new List<string> { "Bumblebee", "Barge" }).Contains(squadType))
             {

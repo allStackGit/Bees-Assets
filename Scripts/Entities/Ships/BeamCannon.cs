@@ -63,6 +63,12 @@ namespace Assets.Scripts.Entities.Ships
 
                 }
                 float angle = AngleToPoint(targetPoint);
+
+                Vector2 mapTransformPoint = Ship.Level.Map.transform.InverseTransformPoint(Piece.transform.position);
+                Vector2 shipOffset = Ship.GetPosition() + (Vector2) transform.position;
+
+                //Debugger.Log($"Potential spawn point for laser beam, mapTransformPoint: {mapTransformPoint}, shipOffset: {shipOffset}");
+
                 Level.AddProjectile(ProjectilePrefab, this, GetPosition(), angle);
                 Ship.FleetShip.ShotsFired++;
 

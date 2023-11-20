@@ -94,7 +94,19 @@ namespace Assets.Scripts.Entities.Projectiles
 
                         //+ GetChangeInShooterPosition();
                     }
+                    else
+                    {
+                        //Debugger.Log($"Killing {gameObject.name} at position ({transform.localPosition}) because distance ({distance}) > range ({Range})");
+                    }
                 }
+                else
+                {
+                    //Debugger.Log($"Killing {gameObject.name} at position ({transform.localPosition}) because the shooter is dead");
+                }
+            }
+            else
+            {
+                //Debugger.Log($"Killing {gameObject.name} at position ({transform.localPosition}) because the target is dead");
             }
             RemoveDamageSentEntry();
             Kill();
