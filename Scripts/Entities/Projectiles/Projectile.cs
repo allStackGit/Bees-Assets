@@ -61,16 +61,11 @@ namespace Assets.Scripts.Entities.Projectiles
             Kill();
         }
         
-        protected override void Update()
+        protected void FixedUpdate()
         {
-            if (!Level.IsPaused)
+            if (!Level.IsPaused && Range > 0)
             {
-                base.Update();
-                if (Range > 0)
-                {
-                    Move();
-                }
-               
+                Move();
             }
             
         }
@@ -84,10 +79,10 @@ namespace Assets.Scripts.Entities.Projectiles
 
             }
             bool outOfBounds = DistanceToPoint(StartingPosition) >= Range || position.x >= Level.MaxX || position.x <= Level.MinX || position.y >= Level.MaxY || position.y <= Level.MinY;
-            if (outOfBounds)
-            {
-                Debugger.Log($"Projectile ({name}) at position ({GetPosition()}) is out of bounds with a distance to starting point ({StartingPosition}) of ({DistanceToPoint(StartingPosition)})");
-            }
+            //if (outOfBounds)
+            //{
+            //    Debugger.Log($"Projectile ({name}) #{Id} at position ({position}) is out of bounds with a distance to starting point ({StartingPosition}) of ({DistanceToPoint(StartingPosition)})");
+            //}
             return outOfBounds;
         }
 
@@ -106,10 +101,10 @@ namespace Assets.Scripts.Entities.Projectiles
 
         private void Move()
         {
-
+            //Debugger.Log($"Moving position for #{Id}: {GetPosition()}");
             if (OutOfBounds())
             {
-                //Debugger.Log($"Projectile ({name}) went out of bounds! Range:  {Range}");
+                //Debugger.Log($"Projectile ({name}) #{Id} went out of bounds! Range:  {Range}");
                 RemoveDamageSentEntry();
                 Kill();
             }

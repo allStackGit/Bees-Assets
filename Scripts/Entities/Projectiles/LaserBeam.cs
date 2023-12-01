@@ -34,7 +34,7 @@ namespace Assets.Scripts.Entities.Projectiles
         }
         public override void Kill()
         {
-            //Debugger.Log($"killed projectile {name}");
+            //Debugger.Log($"killed projectile {name} #{Id}");
             BeamCannon weapon = (BeamCannon)Weapon;
             weapon.IsFiringLaserBeam = false;
             weapon.LaserBeamTarget = null;
@@ -48,8 +48,9 @@ namespace Assets.Scripts.Entities.Projectiles
             _lastShooterPosition = position;
             return change;
         }
-        private void FixedUpdate()
+        void FixedUpdate()
         {
+            base.FixedUpdate();
             ExtendBeam();
         }
 
@@ -81,14 +82,24 @@ namespace Assets.Scripts.Entities.Projectiles
 
                         Vector2 localCannonPoint = Weapon.GetLocalPosition() + LaserBeamOffset;
                         Vector2 rotatedLocalPosition = localRotation * localCannonPoint;
-                        Vector2 rotatedCannonPosition = (Vector2)Shooter.transform.TransformPoint(rotatedLocalPosition);
+                        //Vector2 rotatedCannonPosition = (Vector2)Shooter.transform.TransformPoint(rotatedLocalPosition);
+                        //Vector2 rotatedMapPosition = (Vector2)Level.Map.transform.TransformPoint(rotatedLocalPosition);
+                        Vector2 offsetRotatedCannonPosition = (Vector2)Shooter.transform.TransformPoint(rotatedLocalPosition) - (Vector2) Level.transform.position;
                         Angle = worldAngle * Mathf.Deg2Rad * -1;
 
                         //Debugger.Log($"Cruiser world rotation: {Shooter.transform.eulerAngles.z}");
                         //Debugger.Log($"Cannon local rotation: {Weapon.GetLocalRotation()}, world rotation: {Weapon.GetRotation()}");
                         //Debugger.Log($"Beam world rotation: {worldAngle}");
 
-                        transform.localPosition = rotatedCannonPosition;
+                        //Debugger.Log($"localCannonPoint #{Id}: {localCannonPoint}");
+                        //Debugger.Log($"rotatedLocalPosition #{Id}: {rotatedLocalPosition}");
+                        //Debugger.Log($"rotatedMapPosition #{Id}: {rotatedMapPosition}");
+
+                        //Debugger.Log($"offsetRotatedCannonPosition #{Id}: {offsetRotatedCannonPosition}");
+
+                        //Debugger.Log($"Extending Laser Beam #{Id} to rotated cannon position: {offsetRotatedCannonPosition}");
+
+                        transform.localPosition = offsetRotatedCannonPosition;
                         Body.velocity = Shooter.Velocity;
                         return;
 

@@ -3275,7 +3275,7 @@ MonoBehaviour:
   UseFullyRandomSquads: 1
   ReplaceDeadShips: 0
   DoesUserHaveController: 0
-  OverrideTimeScale: 0
+  OverrideTimeScale: 2
   TimeoutTime: 600
   MiniMapCamera: {fileID: 1653464701}
   BargePrefab: {fileID: 2518675752222090675, guid: 8f5aab114dd8d064ca0729e8b3401ec7, type: 3}
@@ -3312,7 +3312,7 @@ MonoBehaviour:
   MaxX: 0
   MaxY: 0
   Selector: {fileID: 0}
-  DefaultZoom: 500
+  DefaultZoom: 275
   MaxZoom: 300
   MinZoom: 25
   ZoomSpeed: 2
@@ -5041,7 +5041,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5790540700919467309, guid: 3fafbd32112ea274ca305ce0b38a6a94, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents:
     - {fileID: -280954788474031511, guid: 3fafbd32112ea274ca305ce0b38a6a94, type: 3}
@@ -6062,7 +6062,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5790540700919467309, guid: 3fafbd32112ea274ca305ce0b38a6a94, type: 3}
       propertyPath: m_IsActive
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents:
     - {fileID: -280954788474031511, guid: 3fafbd32112ea274ca305ce0b38a6a94, type: 3}
@@ -6131,7 +6131,7 @@ MonoBehaviour:
   UseFullyRandomSquads: 1
   ReplaceDeadShips: 0
   DoesUserHaveController: 0
-  OverrideTimeScale: 0
+  OverrideTimeScale: 2
   TimeoutTime: 600
   MiniMapCamera: {fileID: 1653464701}
   BargePrefab: {fileID: 2518675752222090675, guid: 8f5aab114dd8d064ca0729e8b3401ec7, type: 3}
@@ -6168,7 +6168,7 @@ MonoBehaviour:
   MaxX: 0
   MaxY: 0
   Selector: {fileID: 0}
-  DefaultZoom: 500
+  DefaultZoom: 275
   MaxZoom: 300
   MinZoom: 25
   ZoomSpeed: 2
@@ -7715,7 +7715,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 2944892714679254333, guid: e154edb1d8fb554428cdc7380556de19, type: 3}
       propertyPath: orthographic size
-      value: 500
+      value: 275
       objectReference: {fileID: 0}
     - target: {fileID: 2944892714679254333, guid: e154edb1d8fb554428cdc7380556de19, type: 3}
       propertyPath: m_CullingMask.m_Bits

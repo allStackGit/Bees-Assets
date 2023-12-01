@@ -12,7 +12,7 @@ namespace Assets.Scripts.Entities.Projectiles
         public override void Kill()
         {
             base.Kill();
-            Debugger.Log("Fire ship explosion kill called");
+            //Debugger.Log("Fire ship explosion kill called");
             Destroy(Shooter.gameObject);
         }
     }

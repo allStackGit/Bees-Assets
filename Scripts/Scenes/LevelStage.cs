@@ -549,7 +549,7 @@ namespace Assets.Scripts.Scenes
         // The SplitterShot class adds it's own projectile [note] [projectile-method]
         public void AddProjectile(GameObject instance, Weapon weapon, Vector2 startingPosition, float angle)
         {
-             //Debugger.Log($"Adding ship {instance.name}");
+             //Debugger.Log($"Adding projectile {instance.name} at startingPosition: {startingPosition}");
             instance = Instantiate(instance, new Vector2(0, 0), Quaternion.identity);
             instance.transform.parent = Map.transform;
             Projectile projectile = (Projectile) instance.GetComponent(typeof(Projectile));
@@ -562,7 +562,9 @@ namespace Assets.Scripts.Scenes
                 //Debugger.Log("This is a dual cannon, splitting the power");
                 power /= 2;
             }
+            //Debugger.Log($"Position before setup for {projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
             projectile.Setup(this, shooter.Side, state.AddEntity(), weapon, shooter, target, startingPosition, angle, shooter.Range, power);
+            //Debugger.Log($"Position after setup for #{projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
             state.AddProjectile(projectile);
         }
         public GameState GetState()
