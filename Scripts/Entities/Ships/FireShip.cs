@@ -25,7 +25,7 @@ namespace Assets.Scripts.Entities.Ships
             {
                 died = true;
                 //Debugger.Log("Fireship exploding");
-                if (killer != null)
+                if (!endKill)
                 {
                     Explosion = Instantiate(ShipExplosion, GetPosition(), Quaternion.identity);
                     Explosion.transform.parent = Level.Map.transform;

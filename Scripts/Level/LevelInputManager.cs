@@ -116,7 +116,7 @@ namespace Assets.Scripts.Level
                             //Debugger.Log("Selecting an already selected squad");
                             Vector2 position = squad.GetPosition();
                             Level.Camera.orthographicSize = Level.DefaultZoom;
-                            Level.Camera.transform.localPosition = new Vector3(position.x, position.y, -10);
+                            Level.Camera.transform.position = new Vector3(position.x, position.y, -10) + Level.transform.position;
                             MaintainScrollBoundary();
                         }
                         else
@@ -125,7 +125,7 @@ namespace Assets.Scripts.Level
                             if (squad != null)
                             {
                                 Vector2 position = squad.GetPosition();
-                                Level.Camera.transform.localPosition = new Vector3(position.x, position.y, -10);
+                                Level.Camera.transform.position = new Vector3(position.x, position.y, -10) + Level.transform.position;
                                 Level.Camera.orthographicSize = Level.MaxZoom;
                                 MaintainScrollBoundary();
                             }

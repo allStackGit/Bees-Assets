@@ -39,10 +39,11 @@ namespace Assets.Scripts.Entities.Ships
 
         protected override void SetTargetShip(Ship targetShip)
         {
-            //Debugger.Log($"Setting target ship to {targetShip.Name}");
             ShipDamageStatus shipDamageStatus = Squad.GetShipDamageStatus(targetShip);
             shipDamageStatus.totalDamageSentToShip += Power;
             TargetShip = targetShip;
+            //Debugger.Log($"Setting target ship to {TargetShip.Name} and sending {Power} / {shipDamageStatus.totalDamageSentToShip} damage ");
+
         }
     }
 }

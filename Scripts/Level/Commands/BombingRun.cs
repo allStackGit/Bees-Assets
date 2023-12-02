@@ -52,7 +52,7 @@ namespace Assets.Scripts.Level.Commands
                 // loop through all the ships in the bombing squad
                 Squad.Status = $"Starting bombing run against {Enemy.Name}";
                 PrepareDamageToSendEntries();
-                List<Ship> chosenTargets = new List<Ship>();
+                //List<Ship> chosenTargets = new List<Ship>();
                 List<Ship> ships = Squad.GetShips();
                 foreach (Ship ship in ships)
                 {
@@ -73,9 +73,9 @@ namespace Assets.Scripts.Level.Commands
 
                     // loop through all the ships in the target squad
                     Bomb bomb = (Bomb)ship.Weapons.First();
-                    if (!bomb.DetermineTargetShip(bomb.MakeTargetingQueue(), true))
+                    while (!bomb.DetermineTargetShip(bomb.MakeTargetingQueue(), true))
                     {
-                        bomb.DetermineTargetShip(bomb.MakeTargetingQueue(), false);
+                        Squad.DamageSentToEnemyShipsBySquad.Clear();
                     }
                     //Debugger.Log($"Target ship: {bomb.TargetShip}");
                 }

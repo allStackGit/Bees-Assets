@@ -24,10 +24,10 @@ namespace Assets.Scripts.Scenes
 
         // If hivemind is activate, get commands from the server
         // If brains are activated, get actions from the nueral network
-        // If IsTraining, train the neural network
-        // Training Hivemind then there is no player, levels are reset every time, and the camera position doesn't matter
+        // If IsTrainingNueralNetwork, train the neural network. IsTrainingHiveMind, train the hive mind
+        // Training Hivemind or Nueral Network then there is no player, levels are reset every time, and the camera position doesn't matter
         public bool ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, UseSemiRandomSquads, UseFullyRandomSquads, ReplaceDeadShips, DoesUserHaveController;
-        public int OverrideTimeScale, TimeoutTime;
+        public int OverrideTimeScale, TimeoutTime, SquadCount;
         public Camera MiniMapCamera;
 
         public GameObject BargePrefab, BeehivePrefab, BumblebeePrefab, CarpenterBeePrefab, CarrierPrefab, CruiserPrefab, DreadnoughtPrefab, DronePrefab,
@@ -170,7 +170,7 @@ namespace Assets.Scripts.Scenes
                 Vector2 cameraWorldUnitsSize = Utilities.ScreenPixelsToWorldUnits(new Vector2(MiniMapCamera.pixelWidth, MiniMapCamera.pixelHeight), Camera);
                 Transform colliderContainer = Camera.transform.GetChild(0);
                 colliderContainer.localScale = cameraWorldUnitsSize;
-                Vector2 localizedPosition = DefaultCameraPosition - (Vector2)transform.position;
+                Vector2 localizedPosition = DefaultCameraPosition + (Vector2)transform.position;
                 Camera.transform.position = new Vector3(localizedPosition.x, localizedPosition.y, -10);
 
                 InputManager.MaintainScrollBoundary();
@@ -448,7 +448,7 @@ namespace Assets.Scripts.Scenes
 
             if (HasPlayer)
             {
-                Vector2 localizedPosition = DefaultCameraPosition - (Vector2)transform.position;
+                Vector2 localizedPosition = DefaultCameraPosition + (Vector2)transform.position;
                 Camera.transform.position = new Vector3(localizedPosition.x, localizedPosition.y, -10);
                 InputManager.MaintainScrollBoundary();
 
@@ -592,11 +592,6 @@ namespace Assets.Scripts.Scenes
                 }
             }
             Invoke(nameof(GetHiveMindCommands), .25f);
-        }
-
-        private void OnDestroy()
-        {
-            //Debugger.Log("Destroying Level scene");
         }
     }
 }

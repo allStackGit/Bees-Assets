@@ -3277,6 +3277,7 @@ MonoBehaviour:
   DoesUserHaveController: 0
   OverrideTimeScale: 2
   TimeoutTime: 600
+  SquadCount: 0
   MiniMapCamera: {fileID: 1653464701}
   BargePrefab: {fileID: 2518675752222090675, guid: 8f5aab114dd8d064ca0729e8b3401ec7, type: 3}
   BeehivePrefab: {fileID: 2518675752222090675, guid: b6da442ecc4c92640b8ef7235b627700, type: 3}
@@ -4366,7 +4367,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 1917256456456610199, guid: 8f7d76eeb7e124348a1a4e884ddafec8, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 2661054541886678236, guid: 8f7d76eeb7e124348a1a4e884ddafec8, type: 3}
       propertyPath: m_LocalScale.x
@@ -4922,7 +4923,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &1469096567
 Transform:
   m_ObjectHideFlags: 0
@@ -5041,7 +5042,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5790540700919467309, guid: 3fafbd32112ea274ca305ce0b38a6a94, type: 3}
       propertyPath: m_IsActive
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents:
     - {fileID: -280954788474031511, guid: 3fafbd32112ea274ca305ce0b38a6a94, type: 3}
@@ -6133,6 +6134,7 @@ MonoBehaviour:
   DoesUserHaveController: 0
   OverrideTimeScale: 2
   TimeoutTime: 600
+  SquadCount: 0
   MiniMapCamera: {fileID: 1653464701}
   BargePrefab: {fileID: 2518675752222090675, guid: 8f5aab114dd8d064ca0729e8b3401ec7, type: 3}
   BeehivePrefab: {fileID: 2518675752222090675, guid: b6da442ecc4c92640b8ef7235b627700, type: 3}
@@ -6305,7 +6307,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5790540700919467309, guid: 3fafbd32112ea274ca305ce0b38a6a94, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents:
     - {fileID: -280954788474031511, guid: 3fafbd32112ea274ca305ce0b38a6a94, type: 3}
@@ -6373,9 +6375,10 @@ MonoBehaviour:
   UseSemiRandomSquads: 0
   UseFullyRandomSquads: 1
   ReplaceDeadShips: 0
-  DoesUserHaveController: 0
-  OverrideTimeScale: 0
+  DoesUserHaveController: 1
+  OverrideTimeScale: 1
   TimeoutTime: 600
+  SquadCount: 1
   MiniMapCamera: {fileID: 1653464701}
   BargePrefab: {fileID: 2518675752222090675, guid: 8f5aab114dd8d064ca0729e8b3401ec7, type: 3}
   BeehivePrefab: {fileID: 2518675752222090675, guid: b6da442ecc4c92640b8ef7235b627700, type: 3}
@@ -6411,7 +6414,7 @@ MonoBehaviour:
   MaxX: 0
   MaxY: 0
   Selector: {fileID: 0}
-  DefaultZoom: 500
+  DefaultZoom: 75
   MaxZoom: 300
   MinZoom: 25
   ZoomSpeed: 2
@@ -6421,7 +6424,7 @@ MonoBehaviour:
   UserStartingPosition: {x: 0, y: -75}
   AIStartingPosition: {x: 0, y: 75}
   MouseScrollDistanceFromEdge: {x: 10, y: 10}
-  DefaultCameraPosition: {x: 0, y: -200}
+  DefaultCameraPosition: {x: 0, y: -75}
   Audio: {fileID: 0}
   HasBeeTypes: []
   FoundBeeTypes: []
@@ -7731,7 +7734,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 2944892714679254466, guid: e154edb1d8fb554428cdc7380556de19, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 0
+      value: 550
       objectReference: {fileID: 0}
     - target: {fileID: 2944892714679254466, guid: e154edb1d8fb554428cdc7380556de19, type: 3}
       propertyPath: m_LocalPosition.y
