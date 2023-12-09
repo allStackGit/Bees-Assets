@@ -159,12 +159,14 @@ namespace Assets.Scripts.Entities.Ships
             _healthBarFiller = HealthBar.transform.GetChild(0);
             _healthBarFillerSprite = HealthBar.transform.GetChild(0).GetComponent<SpriteRenderer>();
 
-            Vector2 sizeFactor = (ConfigData.ShipSizes.GetValueOrDefault(ShipType) / ConfigData.Tiny) * 2.22f;
+            //Vector2 sizeFactor = (ConfigData.ShipSizes.GetValueOrDefault(ShipType) / ConfigData.Tiny) * 2.22f;
+
+
             //HealthBar.transform.localScale = new Vector2(sizeFactor.x, HealthBar.transform.localScale.y);
             //HealthBar.transform.position = new Vector2(sizeFactor.x * -.5f, (sizeFactor.y * -.75f)-.75f);
 
 
-            MiniMapIcon.transform.localScale = sizeFactor * 1.5f;
+            //MiniMapIcon.transform.localScale = sizeFactor * 1.5f;
             if (squad.Color != ConfigData.UnsetColor)
             {
                 Utilities.SetUIColor(MiniMapIcon, squad.Color);
@@ -594,21 +596,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 }
             }
         }
-        public void UpdateHealthBar()
-        {
-            float healthPercent = (float)Math.Round((double)((double)Health/MaxHealth), 2);
-            //Debugger.Log($"{Name} health: {healthPercent}%");
-            _healthBarFiller.localScale = new Vector2(healthPercent, _healthBarFiller.localScale.y);
-            //_healthBarFiller.sizeDelta = new Vector2(healthPercent, _healthBarFiller.sizeDelta.y);
-
-            if (healthPercent > .25f && healthPercent <= .50f)
-            {
-                _healthBarFillerSprite.color = ConfigData.GetUIColor("medium");
-            }else if (healthPercent <= .25f)
-            {
-                _healthBarFillerSprite.color = ConfigData.GetUIColor("bad");
-            }
-        }
         public static void LogDamage(int power, Ship shooter, Ship target) // [damage-method] [note]
         {
             int targetOldTSV = target.Tsv;
@@ -884,7 +871,41 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             }
             return Math.Round((squadTotalHealthPercent / ships.Count) * 100);
         }
- 
+
+
+        // UI Methods
+        public void ShowWeaponRanges()
+        {
+            Weapons.ForEach((weapon) =>
+            {
+                weapon.ShowRange();
+            });
+        }
+        public void HideWeaponRanges()
+        {
+            Weapons.ForEach((weapon) =>
+            {
+                weapon.HideRange();
+            });
+        }
+        public void UpdateHealthBar()
+        {
+            float healthPercent = (float)Math.Round((double)((double)Health / MaxHealth), 2);
+            //Debugger.Log($"{Name} health: {healthPercent}%");
+            _healthBarFiller.localScale = new Vector2(healthPercent, _healthBarFiller.localScale.y);
+            //_healthBarFiller.sizeDelta = new Vector2(healthPercent, _healthBarFiller.sizeDelta.y);
+
+            if (healthPercent > .25f && healthPercent <= .50f)
+            {
+                _healthBarFillerSprite.color = ConfigData.GetUIColor("medium");
+            }
+            else if (healthPercent <= .25f)
+            {
+                _healthBarFillerSprite.color = ConfigData.GetUIColor("bad");
+            }
+        }
+
+
 
 
 

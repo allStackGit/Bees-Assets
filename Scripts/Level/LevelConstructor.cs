@@ -118,11 +118,11 @@ namespace Assets.Scripts.Level
 
                         //ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 39),  // human squad // 2 gunships #39
                         //ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 36),  // human squad // 1 scout #36
-                        ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 41),  // human squad // 1 gunship #41
+                        //ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 41),  // human squad // 1 gunship #41
                         //ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 43),  // human squad // 3 gunships #43
                         //ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 45),  // human squad // 2 dreadnoughts #45
                         //ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 47),  // human squad // 1 frigate #47
-                        //ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 49),  // human squad // 1 barge #49
+                        ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 49),  // human squad // 1 barge #49
                         //ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 50),  // human squad // 1 cruiser #50
                         //ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 51),  // human squad // 1 flagship #51
                         //ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 52),  // human squad // 1 carrier #52
@@ -132,13 +132,13 @@ namespace Assets.Scripts.Level
 
 
 
-                        //ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 40), // bee squad // 4 hornets #40
+                        ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 40), // bee squad // 4 hornets #40
                         //ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 37), // bee squad // 1 hornet #37
                         //ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 42), // bee squad // 1 wasp #42
                         //ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 44), // bee squad // 2 wasps #44
                         //ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 46), // bee squad // 2 leafcutters #46
                         //ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 48), // bee squad // 1 leafcutters #48
-                        ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 54), // bee squad // 1 bumblebee #54
+                        //ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 54), // bee squad // 1 bumblebee #54
                         //ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 55), // bee squad // 1 queen #55
                         //ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 56), // bee squad // 1 honeybee #56
                         //ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 57), // bee squad // 4 yellow jackets #57

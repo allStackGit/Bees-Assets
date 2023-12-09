@@ -21,6 +21,7 @@ namespace Assets.Scripts.Level
         private bool _scrollNegative = false;
         private bool _leftShift = false;
         private bool _leftControl = false;
+        private bool _rKey = false;
         private bool _mouseAtTopEdge = false;
         private bool _mouseAtBottomEdge = false;
         private bool _mouseAtLeftEdge = false;  
@@ -67,6 +68,7 @@ namespace Assets.Scripts.Level
             _scrollNegative = false;
             _leftShift = false;
             _leftControl = false;
+            _rKey = false;
             _mouseAtLeftEdge = false;
             _mouseAtRightEdge = false;
             _mouseAtBottomEdge = false;
@@ -87,6 +89,10 @@ namespace Assets.Scripts.Level
             {
                 _leftControl = true;
             }
+            else if (Input.GetKey(KeyCode.R))
+            {
+                _rKey = true;
+            }
             else
             {
                 KeyCode[] keycodes = ConfigData.SquadKeys;
@@ -94,7 +100,7 @@ namespace Assets.Scripts.Level
                 {
                     if (Input.GetKeyDown(keycodes[i]))
                     {
-                        Debugger.Log("Pressed key");
+                        //Debugger.Log("Pressed key");
                         int squadNumber = int.Parse(keycodes[i].ToString().Substring(5));
 
                         if (squadNumber == 0)
@@ -216,6 +222,10 @@ namespace Assets.Scripts.Level
         {
             return Input.GetKey(KeyCode.Escape);
         }
+        private bool HasShowRangesInput()
+        {
+            return Input.GetKey(KeyCode.R);
+        }
         private bool HasDragMoveSquadsInput()
         {
             if (EventSystem.IsPointerOverGameObject())
@@ -277,6 +287,28 @@ namespace Assets.Scripts.Level
             {
                 Level.Menus.OpenMenu();
             }
+            else
+            {
+                if (HasShowRangesInput())
+                {
+                    Level.GetState().GetSelectedSquads().ForEach(s => {
+                        if (!s.IsShowingRanges)
+                        {
+                            s.ShowSquadRanges();
+                        }
+                    });
+                }
+                else
+                {
+                    Level.GetState().GetSelectedSquads().ForEach(s => {
+                        if (s.IsShowingRanges)
+                        {
+                            s.HideSquadRanges();
+                        }
+                    });
+                }
+            }
+            
             if (!Level.IsPaused)
             {
                 //Debugger.Log($"EVS: {EventSystem.IsPointerOverGameObject()}");

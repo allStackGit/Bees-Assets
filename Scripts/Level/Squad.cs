@@ -30,7 +30,7 @@ namespace Assets.Scripts.Level
         public Color SquadBoxColor;
         public SavedSquad SavedSquad;
         public GameObject SquadBox;
-        public bool HasMovedBox, IsMatchingSpeed, CeaseFire, IsRetreating, HasAddedShips = false;
+        public bool HasMovedBox, IsMatchingSpeed, CeaseFire, IsRetreating, HasAddedShips, IsShowingRanges = false;
         public float CurrentSpeed;
 
         private bool _died;
@@ -326,30 +326,6 @@ namespace Assets.Scripts.Level
         public bool ShouldChase()
         {
             return _shouldChase;
-        }
-        public void MoveSquadBox()
-        {
-            //Debugger.Log($"Squad #{squadNumber} is moving and the squad box will have width {GetWidth()}, height {GetHeight()}, and center point {GetCenterPoint()}");
-            //Debugger.Log($"Right most point {GetRightMostPoint()}, Left most point {GetLeftMostPoint()}, Top most point {GetTopMostPoint()}, Bottom most point {GetBottomMostPoint()}");
-            if (IsSelected && !Level.IsTrainingNueralNetwork)
-            {
-                SquadBox.SetActive(true);
-                SquadBox.transform.localPosition = GetCenterPoint();
-                SquadBox.transform.localScale = new Vector3(GetWidth() + 1, GetHeight() + 1, 0);
-                if (HasColor)
-                {
-                    Utilities.SetUIColor(SquadBox, SquadBoxColor);
-
-                }
-                HasMovedBox = true;
-            }
-        }
-        public void DeactivateSquadBox()
-        {
-            if (SquadBox != null)
-            {
-                SquadBox.SetActive(false);
-            }
         }
 
 
@@ -932,6 +908,43 @@ namespace Assets.Scripts.Level
             angle -= Mathf.PI * .5f;
             Vector2 position = GetPosition();
             return new Vector2((position.x + (Mathf.Cos(angle) * distance)), (position.y + (Mathf.Sin(angle) * distance)));
+        }
+
+
+        // UI Methods
+        public void MoveSquadBox()
+        {
+            //Debugger.Log($"Squad #{squadNumber} is moving and the squad box will have width {GetWidth()}, height {GetHeight()}, and center point {GetCenterPoint()}");
+            //Debugger.Log($"Right most point {GetRightMostPoint()}, Left most point {GetLeftMostPoint()}, Top most point {GetTopMostPoint()}, Bottom most point {GetBottomMostPoint()}");
+            if (IsSelected && !Level.IsTrainingNueralNetwork)
+            {
+                SquadBox.SetActive(true);
+                SquadBox.transform.localPosition = GetCenterPoint();
+                SquadBox.transform.localScale = new Vector3(GetWidth() + 1, GetHeight() + 1, 0);
+                if (HasColor)
+                {
+                    Utilities.SetUIColor(SquadBox, SquadBoxColor);
+
+                }
+                HasMovedBox = true;
+            }
+        }
+        public void DeactivateSquadBox()
+        {
+            if (SquadBox != null)
+            {
+                SquadBox.SetActive(false);
+            }
+        }
+        public void ShowSquadRanges()
+        {
+            GetShips().ForEach((ship) => ship.ShowWeaponRanges());
+            IsShowingRanges = true;
+        }
+        public void HideSquadRanges()
+        {
+            GetShips().ForEach((ship) => ship.HideWeaponRanges());
+            IsShowingRanges = false;
         }
 
     }

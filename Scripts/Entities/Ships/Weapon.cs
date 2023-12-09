@@ -14,7 +14,7 @@ namespace Assets.Scripts.Entities.Ships
         public Ship Ship, TargetShip;
         public int Range, Power;
         public float RateOfFire, ProjectileValue, SpecialFirepower;
-        public GameObject Piece, ProjectilePrefab;
+        public GameObject Piece, ProjectilePrefab, RangeCircle;
         public List<Ship> CachedTargetingQueue = new List<Ship>();
         public string CachedShootingStrategy;
         public bool IsUsingCachedTargetingQueue;
@@ -41,6 +41,13 @@ namespace Assets.Scripts.Entities.Ships
             //Piece.transform.localScale = Ship.RelativeSizeScale();
             Piece = piece;
             ProjectilePrefab = projectilePrefab;
+
+            Transform HasRangeCircle = Piece.transform.Find("Range Circle");
+            if (HasRangeCircle != null)
+            {
+                RangeCircle = HasRangeCircle.gameObject;
+                RangeCircle.transform.localScale = new Vector3(Range*2, Range*2, 0);
+            }
             //Piece.transform.parent = ship.transform;
             //Piece.transform.localPosition = (Vector2)piece.transform.position;
 
@@ -363,6 +370,17 @@ namespace Assets.Scripts.Entities.Ships
         private void OnDestroy()
         {
             CancelInvoke();
+        }
+
+        // UI Methods
+        public void ShowRange()
+        {
+            RangeCircle.SetActive(true);
+        }
+
+        public void HideRange()
+        {
+            RangeCircle.SetActive(false);
         }
     }
 }

@@ -6371,9 +6371,9 @@ MonoBehaviour:
   ActivateHiveMind: 1
   ActivateBrains: 0
   IsTrainingNueralNetwork: 0
-  IsTrainingHiveMind: 1
+  IsTrainingHiveMind: 0
   UseSemiRandomSquads: 0
-  UseFullyRandomSquads: 1
+  UseFullyRandomSquads: 0
   ReplaceDeadShips: 0
   DoesUserHaveController: 1
   OverrideTimeScale: 1
