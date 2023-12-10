@@ -145,7 +145,7 @@ namespace Assets.Scripts.Level
 
             if (Input.GetMouseButtonDown(LeftClick)) // left mouse button down
             {
-                Debugger.Log("Pressed Lefft mouse button");
+                //Debugger.Log("Pressed Left mouse button");
                 if (EventSystem.IsPointerOverGameObject())
                 {
                     CheckForMiniMapNavigation(LeftClick);

@@ -17,7 +17,7 @@ namespace Assets.Scripts.Entities.Ships
         public GameObject Piece, ProjectilePrefab, RangeCircle;
         public List<Ship> CachedTargetingQueue = new List<Ship>();
         public string CachedShootingStrategy;
-        public bool IsUsingCachedTargetingQueue;
+        public bool IsUsingCachedTargetingQueue, HasRangeCircle;
         public float Firepower => Utilities.CalculateFirepower(Power, Range, RateOfFire, ProjectileValue, SpecialFirepower);
         public bool CeaseFire => Ship.Squad.CeaseFire;
         public bool HasTargetShip => TargetShip != null;
@@ -42,11 +42,12 @@ namespace Assets.Scripts.Entities.Ships
             Piece = piece;
             ProjectilePrefab = projectilePrefab;
 
-            Transform HasRangeCircle = Piece.transform.Find("Range Circle");
-            if (HasRangeCircle != null)
+            Transform rangeCircle = Piece.transform.Find("Range Circle");
+            if (rangeCircle != null)
             {
-                RangeCircle = HasRangeCircle.gameObject;
+                RangeCircle = rangeCircle.gameObject;
                 RangeCircle.transform.localScale = new Vector3(Range*2, Range*2, 0);
+                HasRangeCircle = true;
             }
             //Piece.transform.parent = ship.transform;
             //Piece.transform.localPosition = (Vector2)piece.transform.position;
@@ -375,12 +376,18 @@ namespace Assets.Scripts.Entities.Ships
         // UI Methods
         public void ShowRange()
         {
-            RangeCircle.SetActive(true);
+            if (HasRangeCircle)
+            {
+                RangeCircle.SetActive(true);
+            }
         }
 
         public void HideRange()
         {
-            RangeCircle.SetActive(false);
+            if (HasRangeCircle)
+            {
+                RangeCircle.SetActive(false);
+            }
         }
     }
 }
