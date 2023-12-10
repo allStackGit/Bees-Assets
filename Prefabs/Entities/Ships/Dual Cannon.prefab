@@ -103,6 +103,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 644274878677795884}
     m_Modifications:
+    - target: {fileID: 301538961799670568, guid: 562230a51d2eca44e85658480eb67c56, type: 3}
+      propertyPath: m_SortingOrder
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 1334121294634142703, guid: 562230a51d2eca44e85658480eb67c56, type: 3}
       propertyPath: m_Name
       value: Left Cannon
@@ -242,6 +246,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 644274878677795884}
     m_Modifications:
+    - target: {fileID: 301538961799670568, guid: 562230a51d2eca44e85658480eb67c56, type: 3}
+      propertyPath: m_SortingOrder
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 1334121294634142703, guid: 562230a51d2eca44e85658480eb67c56, type: 3}
       propertyPath: m_Name
       value: Right Cannon
