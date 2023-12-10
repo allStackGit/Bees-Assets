@@ -42,16 +42,20 @@ namespace Assets.Scripts.Entities.Ships
             Piece = piece;
             ProjectilePrefab = projectilePrefab;
 
+            SetupRangeCircle();
+            //Piece.transform.parent = ship.transform;
+            //Piece.transform.localPosition = (Vector2)piece.transform.position;
+
+        }
+        public virtual void SetupRangeCircle()
+        {
             Transform rangeCircle = Piece.transform.Find("Range Circle");
             if (rangeCircle != null)
             {
                 RangeCircle = rangeCircle.gameObject;
-                RangeCircle.transform.localScale = new Vector3(Range*2, Range*2, 0);
+                RangeCircle.transform.localScale = new Vector3(Range * 2, Range * 2, 0);
                 HasRangeCircle = true;
             }
-            //Piece.transform.parent = ship.transform;
-            //Piece.transform.localPosition = (Vector2)piece.transform.position;
-
         }
 
 
@@ -374,7 +378,7 @@ namespace Assets.Scripts.Entities.Ships
         }
 
         // UI Methods
-        public void ShowRange()
+        public virtual void ShowRange()
         {
             if (HasRangeCircle)
             {
@@ -382,7 +386,7 @@ namespace Assets.Scripts.Entities.Ships
             }
         }
 
-        public void HideRange()
+        public virtual void HideRange()
         {
             if (HasRangeCircle)
             {

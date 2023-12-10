@@ -10,6 +10,7 @@ namespace Assets.Scripts.Entities.Ships
 
         public Vector2 LeftCannonOffset = new Vector2(-1.1f, .5f);
         public Vector2 RightCannonOffset = new Vector2(1.1f, .5f);
+        public GameObject RangeCircleLeft; // For the second cannon in the dual cannon, the first one being the right one
         protected override void SendProjectile() // [projectile-method] [note]
         {
 
@@ -45,6 +46,39 @@ namespace Assets.Scripts.Entities.Ships
             // Set the damage status
             ShipDamageStatus shipDamageStatus = Squad.GetShipDamageStatus(TargetShip);
             shipDamageStatus.totalDamageSentToShip += Power * 2;
+        }
+
+        public override void SetupRangeCircle()
+        {
+            Transform rangeCircleRight = Piece.transform.Find("Right Cannon/Range Circle Right");
+            Transform rangeCircleLeft = Piece.transform.Find("Left Cannon/Range Circle Left");
+            if (rangeCircleRight != null && rangeCircleLeft != null)
+            {
+                RangeCircle = rangeCircleRight.gameObject;
+                RangeCircle.transform.localScale = new Vector3(Range * 2, Range * 2, 0);
+                RangeCircleLeft = rangeCircleLeft.gameObject;
+                RangeCircleLeft.transform.localScale = new Vector3(Range * 2, Range * 2, 0);
+                HasRangeCircle = true;
+            }
+        }
+
+        // UI Methods
+        public override void ShowRange()
+        {
+            if (HasRangeCircle)
+            {
+                RangeCircle.SetActive(true);
+                RangeCircleLeft.SetActive(true);
+            }
+        }
+
+        public override void HideRange()
+        {
+            if (HasRangeCircle)
+            {
+                RangeCircle.SetActive(false);
+                RangeCircleLeft.SetActive(false);
+            }
         }
 
     }

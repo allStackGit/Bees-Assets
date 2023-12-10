@@ -43,7 +43,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 2278113703702266310, guid: 41e876fc9b1d4d54abbd68c4ed0ffc4d, type: 3}
       propertyPath: m_Name
-      value: Range Circle
+      value: Range Circle Left
       objectReference: {fileID: 0}
     - target: {fileID: 6193643229448959117, guid: 41e876fc9b1d4d54abbd68c4ed0ffc4d, type: 3}
       propertyPath: m_LocalPosition.x
@@ -164,7 +164,8 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
-    m_RemovedGameObjects: []
+    m_RemovedGameObjects:
+    - {fileID: 564613726026672290, guid: 562230a51d2eca44e85658480eb67c56, type: 3}
     m_AddedGameObjects:
     - targetCorrespondingSourceObject: {fileID: 6336891931982589551, guid: 562230a51d2eca44e85658480eb67c56, type: 3}
       insertIndex: -1
@@ -186,7 +187,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 2278113703702266310, guid: 41e876fc9b1d4d54abbd68c4ed0ffc4d, type: 3}
       propertyPath: m_Name
-      value: Range Circle
+      value: Range Circle Right
       objectReference: {fileID: 0}
     - target: {fileID: 6193643229448959117, guid: 41e876fc9b1d4d54abbd68c4ed0ffc4d, type: 3}
       propertyPath: m_LocalPosition.x
@@ -307,7 +308,8 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
-    m_RemovedGameObjects: []
+    m_RemovedGameObjects:
+    - {fileID: 564613726026672290, guid: 562230a51d2eca44e85658480eb67c56, type: 3}
     m_AddedGameObjects:
     - targetCorrespondingSourceObject: {fileID: 6336891931982589551, guid: 562230a51d2eca44e85658480eb67c56, type: 3}
       insertIndex: -1
