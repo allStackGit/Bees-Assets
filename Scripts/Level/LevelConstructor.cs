@@ -124,7 +124,7 @@ namespace Assets.Scripts.Level
                         //ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 47),  // human squad // 1 frigate #47
                         ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 49),  // human squad // 1 barge #49
                         ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 50),  // human squad // 1 cruiser #50
-                        //ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 51),  // human squad // 1 flagship #51
+                        ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 51),  // human squad // 1 flagship #51
                         ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 52),  // human squad // 1 carrier #52
                         ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 53),  // human squad // 1 fire ship #53
                         //ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 58),  // human squad // 1 dreadnought #58
