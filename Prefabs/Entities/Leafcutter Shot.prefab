@@ -210,4 +210,4 @@ MonoBehaviour:
   Explosion: {fileID: 0}
   ShipsToIgnore: []
   SplitCount: 4
-  SplitLaserPrefab: {fileID: 3911271517188601395, guid: c01848f98f8d1354fac774eae90abdad, type: 3}
+  SplitLaserPrefab: {fileID: 2378685256343899705, guid: 3b1a5274038082f4fb1be503df70d6de, type: 3}

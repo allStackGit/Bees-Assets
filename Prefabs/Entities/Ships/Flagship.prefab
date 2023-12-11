@@ -130,8 +130,8 @@ MonoBehaviour:
   FireAtFrontOfShip: 1
   Weapons: []
   ProjectilePrefabs:
-  - {fileID: 3911271517188601395, guid: 3da77696d01a3ea46b81fbca2a24e25d, type: 3}
-  - {fileID: 3911271517188601395, guid: 3da77696d01a3ea46b81fbca2a24e25d, type: 3}
+  - {fileID: 6428638681076635372, guid: c5d2fa5f5d52d0d4b855fdc29fca6e90, type: 3}
+  - {fileID: 6428638681076635372, guid: c5d2fa5f5d52d0d4b855fdc29fca6e90, type: 3}
   WeaponPrefabs:
   - {fileID: 4421775102767231854}
   - {fileID: 3914790674983604935}

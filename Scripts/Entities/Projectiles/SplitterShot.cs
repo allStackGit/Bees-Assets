@@ -16,7 +16,7 @@ namespace Assets.Scripts.Entities.Projectiles
             //Debugger.Log($"Split shot hit {target.name}");
             if (HasExplosion)
             {
-                Explosion =  Instantiate(ExplosionPrefab, GetPosition(), Quaternion.identity);
+                Explosion =  Instantiate(ExplosionPrefab, GetPosition() + (Vector2) Level.transform.position, Quaternion.identity);
                 Explosion.transform.parent = Level.Map.transform;
             }
             Split(target);
