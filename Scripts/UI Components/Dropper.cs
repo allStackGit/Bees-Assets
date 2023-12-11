@@ -78,8 +78,10 @@ namespace Assets.Scripts.UIComponents
             string name = $"{fleetShip.Name} #{fleetShip.Id}";
 
             GameObject dragIcon = GameObject.Instantiate(dragIconPrefab);
+            UnityEngine.UI.Image image = dragIcon.GetComponent<UnityEngine.UI.Image>();
             dragIcon.transform.SetParent(dragIconPrefab.transform.parent, false);
-            dragIcon.transform.localScale = size;
+            image.SetNativeSize();
+            dragIcon.transform.localScale = new Vector3(.1f, .1f, 0);
 
 
             DragIcon newDragIcon = new DragIcon(_scene, dragIcon, fleetShip, name, _dragIconCount++);
@@ -93,8 +95,8 @@ namespace Assets.Scripts.UIComponents
                 _isAutoPlacing = isAutoPlacing;
                 _isDragging = true;
                 _isValidDropLocation = false;
-                Vector2 shipSize = ConfigData.ShipSizes.GetValueOrDefault(_currentDragIcon.GetFleetShip().Type);
-                Vector2 size = new Vector2(ConfigData.DragIconSize.y * (shipSize.x / shipSize.y), ConfigData.DragIconSize.y);
+                Vector2 size = _currentDragIcon.GetIcon().GetComponent<RectTransform>().sizeDelta;
+                //Debugger.Log($"sizeDelta for current drag icon: {size}");
 
 
                 // Get the drag icon and position it
@@ -105,7 +107,8 @@ namespace Assets.Scripts.UIComponents
                 // Set scene components
                 _scene.DragStatusBox.GetComponent<UnityEngine.UI.Image>().color = ConfigData.GetUIColor("bad");
                 _scene.DragStatusBox.transform.position = _currentDragIcon.Position;
-                _scene.DragStatusBox.transform.localScale = new Vector2(size.x + 11, size.y + 12);
+                _scene.DragStatusBox.GetComponent<RectTransform>().sizeDelta = new Vector2(size.x + 100, size.y + 100);
+                _scene.DragStatusBox.transform.localScale = new Vector3(.1f, .1f, 0);
                 _scene.DragStatusBox.SetActive(true);
                 _scene.DropBox.SetActive(true);
                 _scene.UpdateShipCounter(_currentDragIcon.GetFleetShip());

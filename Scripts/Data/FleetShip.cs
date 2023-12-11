@@ -83,10 +83,6 @@ namespace Assets.Scripts.Data
         {
             return !IsDead && IsVisibleToUser;
         }
-        public Vector2 GetSize()
-        {
-            return ConfigData.ShipSizes.GetValueOrDefault(Type);
-        }
         public float GetFirepower()
         {
             float sum = 0;

@@ -1120,7 +1120,8 @@ namespace Assets.Scripts.Scenes
 
                 UnityEngine.UI.Image image = ShipInfoBoxIcon.GetComponent<UnityEngine.UI.Image>();
                 image.sprite = _spriteTypes.GetValueOrDefault(ship);
-                image.transform.localScale = ConfigData.ShipSizes.GetValueOrDefault(ship)/2;
+                image.SetNativeSize();
+                image.transform.localScale = new Vector3(.1f, .1f, 0);
 
                 ShipInfoBox.SetActive(true);
                 _showShipInfo = true;
