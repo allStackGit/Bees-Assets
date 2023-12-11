@@ -77,7 +77,7 @@ MonoBehaviour:
   FireAtFrontOfShip: 1
   Weapons: []
   ProjectilePrefabs:
-  - {fileID: 3911271517188601395, guid: c01848f98f8d1354fac774eae90abdad, type: 3}
+  - {fileID: 2378685256343899705, guid: 3b1a5274038082f4fb1be503df70d6de, type: 3}
   WeaponPrefabs:
   - {fileID: 5211952818013552787}
   Brain: {fileID: 0}
