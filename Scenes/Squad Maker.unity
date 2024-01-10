@@ -4493,7 +4493,7 @@ PrefabInstance:
     - target: {fileID: 1109014343575341394, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_Sprite
       value: 
-      objectReference: {fileID: 21300000, guid: 32a126fcc052e4f4ba4437a54cccc530, type: 3}
+      objectReference: {fileID: 21300000, guid: 5f294e6388148584099184fe629f6a35, type: 3}
     - target: {fileID: 2470922290977067781, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_Padding.m_Left
       value: 5
@@ -5828,7 +5828,7 @@ PrefabInstance:
     - target: {fileID: 1109014343575341394, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_Sprite
       value: 
-      objectReference: {fileID: 21300000, guid: 98a7996dce48e4e458fafc0e7a3d5f94, type: 3}
+      objectReference: {fileID: 21300000, guid: 17fa141b5d31d844586a21634ca349a5, type: 3}
     - target: {fileID: 2470922290977067781, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_Padding.m_Left
       value: 5
@@ -6754,7 +6754,7 @@ PrefabInstance:
     - target: {fileID: 1109014343575341394, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_Sprite
       value: 
-      objectReference: {fileID: 21300000, guid: 6fa64241b9a6f9c4f941a8f38449fa2c, type: 3}
+      objectReference: {fileID: 21300000, guid: 3ca3542d051f91c44afa6fe676fe2c67, type: 3}
     - target: {fileID: 2470922290977067781, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_Padding.m_Left
       value: 5
@@ -13178,7 +13178,7 @@ PrefabInstance:
     - target: {fileID: 1109014343575341394, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_Sprite
       value: 
-      objectReference: {fileID: 21300000, guid: 9d1da2457f17a044aaafc79785166d43, type: 3}
+      objectReference: {fileID: 21300000, guid: 9c7747c0ffc435e418024d989475bd92, type: 3}
     - target: {fileID: 2470922290977067781, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_Padding.m_Left
       value: 5
@@ -16079,16 +16079,16 @@ MonoBehaviour:
   StartButton: {fileID: 1602109856}
   OpposingForceLabel: {fileID: 1626510411}
   OpposingForcePresetDropdown: {fileID: 1615551064}
-  BargeSprite: {fileID: 21300000, guid: 6fa64241b9a6f9c4f941a8f38449fa2c, type: 3}
+  BargeSprite: {fileID: 21300000, guid: 3ca3542d051f91c44afa6fe676fe2c67, type: 3}
   CarrierSprite: {fileID: 21300000, guid: d345c41298bdcde4c81806f290b71b13, type: 3}
   CruiserSprite: {fileID: 21300000, guid: e7fb5631d08227448bd1191172718349, type: 3}
-  DreadnoughtSprite: {fileID: 21300000, guid: 9d1da2457f17a044aaafc79785166d43, type: 3}
+  DreadnoughtSprite: {fileID: 21300000, guid: 9c7747c0ffc435e418024d989475bd92, type: 3}
   DroneSprite: {fileID: 21300000, guid: 2b78f9fd4ca958844b8fb256917a56e7, type: 3}
   FactorySprite: {fileID: 21300000, guid: d4e246a598aabb94f8f7d79e62a0e90e, type: 3}
   FireShipSprite: {fileID: 21300000, guid: c2d50367ba7668e428d971aed684feb2, type: 3}
   FlagshipSprite: {fileID: 21300000, guid: 4ffefbee413778f40943ae6240ca6071, type: 3}
-  FrigateSprite: {fileID: 21300000, guid: 98a7996dce48e4e458fafc0e7a3d5f94, type: 3}
-  GunshipSprite: {fileID: 21300000, guid: 32a126fcc052e4f4ba4437a54cccc530, type: 3}
+  FrigateSprite: {fileID: 21300000, guid: 17fa141b5d31d844586a21634ca349a5, type: 3}
+  GunshipSprite: {fileID: 21300000, guid: 5f294e6388148584099184fe629f6a35, type: 3}
   ScoutSprite: {fileID: 21300000, guid: 775173d4a1edb6c4ea54dfa4ae144930, type: 3}
   StrikerSprite: {fileID: 21300000, guid: 20f97832794fb0a429d20009ebc2aedf, type: 3}
   WarpGateSprite: {fileID: 21300000, guid: 0aa980f13ad03b241a711695b2681ced, type: 3}
@@ -21596,6 +21596,10 @@ PrefabInstance:
       propertyPath: m_IsActive
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 465038031189441394, guid: ba8e735e9f2a5b542916479f7ec91750, type: 3}
+      propertyPath: m_Sprite
+      value: 
+      objectReference: {fileID: 21300000, guid: 17fa141b5d31d844586a21634ca349a5, type: 3}
     - target: {fileID: 2053107092426468120, guid: ba8e735e9f2a5b542916479f7ec91750, type: 3}
       propertyPath: m_IsActive
       value: 0
@@ -21603,7 +21607,7 @@ PrefabInstance:
     - target: {fileID: 2053107092426468122, guid: ba8e735e9f2a5b542916479f7ec91750, type: 3}
       propertyPath: m_Sprite
       value: 
-      objectReference: {fileID: 21300000, guid: 6fa64241b9a6f9c4f941a8f38449fa2c, type: 3}
+      objectReference: {fileID: 21300000, guid: 3ca3542d051f91c44afa6fe676fe2c67, type: 3}
     - target: {fileID: 2318813119856053053, guid: ba8e735e9f2a5b542916479f7ec91750, type: 3}
       propertyPath: m_Delegates.Array.data[0].callback.m_PersistentCalls.m_Calls.Array.data[0].m_Mode
       value: 2
@@ -22159,7 +22163,7 @@ PrefabInstance:
     - target: {fileID: 3662786072548789169, guid: ba8e735e9f2a5b542916479f7ec91750, type: 3}
       propertyPath: m_Sprite
       value: 
-      objectReference: {fileID: 21300000, guid: 32a126fcc052e4f4ba4437a54cccc530, type: 3}
+      objectReference: {fileID: 21300000, guid: 5f294e6388148584099184fe629f6a35, type: 3}
     - target: {fileID: 3662786072548789170, guid: ba8e735e9f2a5b542916479f7ec91750, type: 3}
       propertyPath: m_AnchoredPosition.x
       value: 482
@@ -22695,7 +22699,7 @@ PrefabInstance:
     - target: {fileID: 7269674809215209770, guid: ba8e735e9f2a5b542916479f7ec91750, type: 3}
       propertyPath: m_Sprite
       value: 
-      objectReference: {fileID: 21300000, guid: 9d1da2457f17a044aaafc79785166d43, type: 3}
+      objectReference: {fileID: 21300000, guid: 9c7747c0ffc435e418024d989475bd92, type: 3}
     - target: {fileID: 7685301112397416070, guid: ba8e735e9f2a5b542916479f7ec91750, type: 3}
       propertyPath: m_Delegates.Array.data[0].callback.m_PersistentCalls.m_Calls.Array.data[0].m_Mode
       value: 2

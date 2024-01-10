@@ -662,44 +662,34 @@ namespace Assets.Scripts.Scenes
             ChosenSquadPrefab.SetActive(true);
             GameObject squadLabel = Instantiate(ChosenSquadPrefab);
             squadLabel.name = $"Chosen Squad - {chosenSquad.Name} #{chosenSquad.Id}";
-
-            GameObject nameLabel = GameObject.Find($"{squadLabel.name}/Squad Name");
-            GameObject squadIcon = GameObject.Find($"{squadLabel.name}/Squad Icon");
-
-            TMP_Text nameLabelText = nameLabel.GetComponent<TMP_Text>();
             string shipType = chosenSquad.GetMostValuableShip().GetFleetShip().Type;
 
 
-            // change the icon  size
-            //Vector2 shipSize = ConfigData.ShipSizes.GetValueOrDefault(shipType);
-            //float xToYRatio = (shipSize.x / shipSize.y);
-            //float changeInSize = (ConfigData.DragIconSize.y * xToYRatio) - (ConfigData.DragIconSize.x);
-            //Vector2 newSize = new Vector2(Mathf.Round(ConfigData.DragIconSize.x + changeInSize), Mathf.Round(ConfigData.DragIconSize.y));
+            GameObject nameLabel = squadLabel.transform.Find("Squad Name").gameObject;
+            GameObject squadIcon = Instantiate(GetShipIconContainer(shipType));
+            squadIcon.transform.SetParent(squadLabel.transform);
+            squadIcon.transform.SetAsFirstSibling();
+            squadIcon.name = "Icon Container";
 
-            //// adjust the icon rect
-            //squadIcon.GetComponent<RectTransform>().sizeDelta = newSize;
-            //// adjust the squad name rect
-            //RectTransform nameLabelRectTransform = nameLabel.GetComponent<RectTransform>();
-            //nameLabelRectTransform.sizeDelta = new Vector2(ConfigData.OriginalSavedSquadLabelSize.x - changeInSize, ConfigData.OriginalSavedSquadLabelSize.y);
-
-
-            // fill in the squad name and icon
-
+            // fill in the squad name 
+            TMP_Text nameLabelText = nameLabel.GetComponent<TMP_Text>();
             nameLabelText.text = chosenSquad.Name;
-            UnityEngine.UI.Image squadIconImage = squadIcon.GetComponent<UnityEngine.UI.Image>();
-            squadIconImage.sprite = _spriteTypes.GetValueOrDefault(shipType);
-            //squadIconImage.SetNativeSize();
-            //squadIconImage.transform.localScale = new Vector3(.1f, .1f, 0);
+
 
             // change the color of the icon
             if (chosenSquad.Color != ConfigData.UnsetColor)
             {
+                //Debugger.Log($"Setting changable pixels for {savedSquad.Name}");
+                UnityEngine.UI.Image squadIconImage = squadIcon.GetComponent<UnityEngine.UI.Image>();
+
                 int[] changeablePixels = Utilities.SetChangablePixelsForImage(ConfigData.ChangeableShipColors.GetValueOrDefault(shipType), squadIconImage.sprite);
+                //Debugger.PrintList(changeablePixels.ToList());
                 squadIconImage.sprite = Utilities.SetImageColor(chosenSquad.Color, squadIconImage.sprite, changeablePixels);
             }
 
             // assign it to the squad list
             squadLabel.transform.SetParent(ChosenSquadList.transform);
+
 
             squadLabel.transform.localScale = new Vector3(1, 1, 1);
             squadLabel.transform.localPosition = new Vector3(squadLabel.transform.position.x, squadLabel.transform.position.y, 1);
@@ -707,8 +697,8 @@ namespace Assets.Scripts.Scenes
         }
         private void UpdateSavedSquadInList(GameObject instance, SavedSquad savedSquad)
         {
-            GameObject nameLabel = GameObject.Find($"{instance.name}/Squad Name");
-            GameObject squadIcon = GameObject.Find($"{instance.name}/Squad Icon");
+            GameObject nameLabel = instance.transform.Find("Squad Name").gameObject;
+            GameObject squadIcon = instance.transform.Find("Icon Container/Ship Icon").gameObject;
 
             TMP_Text nameLabelText = nameLabel.GetComponent<TMP_Text>();
             string shipType = savedSquad.GetMostValuableShip().GetFleetShip().Type;
