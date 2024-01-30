@@ -234,9 +234,9 @@ namespace Assets.Scripts
                     }
                     else
                     {
-                        if (pixels[i].a > .99 && pixels[i].g > .01)
+                        if (pixels[i].a > .99 && pixels[i].g > .01 && i % 10000 == 0)
                         {
-                            //Debugger.Log($"Color is too far apart: {pixels[i]} at {i}");
+                            //Debugger.Log($"Color is too far apart: {pixels[i]} != {colors[c]} at {i}");
                         }
                     }
                 }

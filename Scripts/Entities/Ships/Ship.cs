@@ -280,11 +280,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         }
         public Vector2 RelativeSizeScale()
         {
-            if (ShipType != "Gunship" && ShipType != "Hornet") // [alert] this is needed because the gunship is square. There should be a better solution
-            {
-                return ConfigData.ShipSizes.GetValueOrDefault(ShipType) / ConfigData.Tiny;
-            }
-            return Vector2.one;
+            return ConfigData.ShipSizes.GetValueOrDefault(ShipType);
         }
         protected void FixedUpdate()
         {

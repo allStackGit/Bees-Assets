@@ -73,15 +73,15 @@ namespace Assets.Scripts.UIComponents
         public void MakeDragIcon(FleetShip fleetShip)
         {
             GameObject dragIconPrefab = _scene.GetDragIconPrefab(fleetShip.Type);
-            Vector2 shipSize = ConfigData.ShipSizes.GetValueOrDefault(fleetShip.Type);
-            Vector2 size = new Vector2(ConfigData.DragIconSize.y * (shipSize.x / shipSize.y), ConfigData.DragIconSize.y);
+            //Vector2 shipSize = ConfigData.ShipSizes.GetValueOrDefault(fleetShip.Type);
+            //Vector2 size = new Vector2(ConfigData.DragIconSize.y * (shipSize.x / shipSize.y), ConfigData.DragIconSize.y);
             string name = $"{fleetShip.Name} #{fleetShip.Id}";
 
             GameObject dragIcon = GameObject.Instantiate(dragIconPrefab);
             UnityEngine.UI.Image image = dragIcon.GetComponent<UnityEngine.UI.Image>();
             dragIcon.transform.SetParent(dragIconPrefab.transform.parent, false);
             image.SetNativeSize();
-            dragIcon.transform.localScale = new Vector3(.1f, .1f, 0);
+            dragIcon.transform.localScale = new Vector3(.20f, .20f, 0) / ConfigData.GetShipSizeFactor(fleetShip.Type);
 
 
             DragIcon newDragIcon = new DragIcon(_scene, dragIcon, fleetShip, name, _dragIconCount++);
@@ -107,8 +107,11 @@ namespace Assets.Scripts.UIComponents
                 // Set scene components
                 _scene.DragStatusBox.GetComponent<UnityEngine.UI.Image>().color = ConfigData.GetUIColor("bad");
                 _scene.DragStatusBox.transform.position = _currentDragIcon.Position;
-                _scene.DragStatusBox.GetComponent<RectTransform>().sizeDelta = new Vector2(size.x + 100, size.y + 100);
-                _scene.DragStatusBox.transform.localScale = new Vector3(.1f, .1f, 0);
+                _scene.DragStatusBox.GetComponent<RectTransform>().sizeDelta = ConfigData.ShipOffset;
+                _scene.DragStatusBox.transform.localScale = new Vector2(10, 10);
+
+                //_scene.DragStatusBox.GetComponent<RectTransform>().sizeDelta = size;
+                //_scene.DragStatusBox.transform.localScale = new Vector3(.30f, .30f, 0) / ConfigData.GetShipSizeFactor(_currentDragIcon.GetFleetShip().Type);
                 _scene.DragStatusBox.SetActive(true);
                 _scene.DropBox.SetActive(true);
                 _scene.UpdateShipCounter(_currentDragIcon.GetFleetShip());
@@ -122,7 +125,7 @@ namespace Assets.Scripts.UIComponents
             _isAutoPlacing = true;
             _currentDragIcon.SetPosition(position);
             _scene.DragStatusBox.transform.position = _currentDragIcon.Position;
-            SetIsValidDropLocation(CheckValidDropLocation(position, false, ship));
+            SetIsValidDropLocation(CheckValidDropLocation(position, false, ship, _currentDragIcon.GetFleetShip().Type));
             return IsValidDropLocation;
         }
         public void AutoPlaceShip(string shipType)
@@ -158,7 +161,7 @@ namespace Assets.Scripts.UIComponents
                     deadShipBox.transform.position = position;
                 }
 
-                if (CheckValidDropLocation(position, true, null))
+                if (CheckValidDropLocation(position, true, null, _currentDragIcon.GetFleetShip().Type))
                 {
                     Utilities.SetGoodColor(_scene.DragStatusBox);
                     SetIsValidDropLocation(true);
@@ -275,7 +278,7 @@ namespace Assets.Scripts.UIComponents
                 //Vector2 screenPoint = Camera.WorldToScreenPoint(ConfigData.ShipOffset);
                 //Vector2 change = new Vector2(Mathf.Abs(BaseWorldPoint.x - screenPoint.x), Mathf.Abs(BaseWorldPoint.y - screenPoint.y));
 
-                Vector2 change = Utilities.WorldUnitsToScreenPixels(ConfigData.ShipOffset, _scene.Camera) * 1.05f;
+                Vector2 change = Utilities.WorldUnitsToScreenPixels(ConfigData.GetShipOffset(dragIcon.GetFleetShip().Type), _scene.Camera) * 1.05f;
 
                 //Debugger.Log($"Ship offset world units for auto placing: {ConfigData.ShipOffset}, screen pixels {change}");
 
@@ -285,7 +288,7 @@ namespace Assets.Scripts.UIComponents
                 float yIncrement = change.y;
 
 
-                Vector2 position = new Vector2(_scene.DropBox.transform.position.x, _scene.DropBox.transform.position.y + (6f * yIncrement));
+                Vector2 position = new Vector2(_scene.DropBox.transform.position.x, _scene.DropBox.transform.position.y + 290);
                 float movement;
                 float movementDown = level * yIncrement;
                 int steps = ships;
@@ -517,18 +520,19 @@ namespace Assets.Scripts.UIComponents
 
 
         // Check dragging location validity
-        private bool CheckValidDropLocation(Vector2 position, bool shouldSnapPosition, SquadShip ship)
+        private bool CheckValidDropLocation(Vector2 position, bool shouldSnapPosition, SquadShip ship, string shipType)
         {
 
             if (HasHitDropBox(position))             // check if it's in the squad composition box
             {
+                //Debugger.Log("Has hit drop box");
                 if (HasCurrentSquad && CurrentSquad.HasShips)
                 {
                     //Vector2 screenPoint = _scene.Camera.WorldToScreenPoint(ConfigData.ShipOffset);
                     //Vector2 tooClose = new Vector2(Mathf.Abs(_scene.BaseWorldPoint.x - screenPoint.x)-.1f, Mathf.Abs(_scene.BaseWorldPoint.y - screenPoint.y)-.1f);
 
                     //Vector2 screenPixels = Utilities.WorldUnitsToScreenPixels(ConfigData.GetShipOffsetInWorldUnits(_scene.Camera), _scene.Camera) * _scene.ScreenScaleFactor;
-                    Vector2 tooClose = Utilities.WorldUnitsToScreenPixels(ConfigData.ShipOffset, _scene.Camera);
+                    Vector2 tooClose = Utilities.WorldUnitsToScreenPixels(ConfigData.GetShipOffset(shipType), _scene.Camera);
 
                     //Debugger.Log($"Ship offset world units: {ConfigData.ShipOffset}, screen pixels {screenPixels}, tooClose {tooClose}");
                     //Debugger.Log($"Offset Vector: {ConfigData.ShipOffset}, Offset change: {tooClose}, Offset VectorToScreen: {screenPoint}, Base World Point:{_scene.BaseWorldPoint}");
@@ -567,7 +571,8 @@ namespace Assets.Scripts.UIComponents
             PointerEventData eventData = new PointerEventData(EventSystem.current);
             position = new Vector2(position.x, position.y);
             eventData.position = position;
-            //Debugger.Log($"Raycasting from {position}, trying to hit {_scene.DropZone.transform.position}, autoplacing: {_isAutoPlacing}");
+            _scene.DropZone.transform.position = (Vector2)_scene.DropZone.transform.position;
+            //Debugger.Log($"Raycasting from {position}, trying to hit {_scene.DropZone.name} at {_scene.DropZone.transform.position}, autoplacing: {_isAutoPlacing}");
 
 
             List<RaycastResult> results = new List<RaycastResult>();
@@ -588,11 +593,16 @@ namespace Assets.Scripts.UIComponents
 
                 foreach (RaycastResult hit in results)
                 {
-                    //Debugger.Log($"This raycast hit {hit.gameObject.name}, Hit #3 is {thirdHit.gameObject.name}");
+                    //Debugger.Log($"This raycast hit {hit.gameObject.name}, Hit #3 is {thirdHit.gameObject.name}"); 
                     if (hit.gameObject == _scene.DropZone && 
-                        ((hit.Equals(thirdHit) || 
-                        (hasFourHits && hit.Equals(fourthHit) && _currentDragIcon.HasDeadShipBox)) || 
-                        (_isAutoPlacing)))
+                        (
+                            (
+                                hit.Equals(thirdHit) || 
+                                (hasFourHits && hit.Equals(fourthHit) && _currentDragIcon.HasDeadShipBox)
+                            ) || 
+                            _isAutoPlacing
+                        )
+                    )
                     {
                         return true;
                     }
@@ -639,11 +649,15 @@ namespace Assets.Scripts.UIComponents
         }
         private bool TooCloseToX(Vector2 position, SquadShip ship, float tooClose)
         {
-            return Mathf.Abs(ship.GetOffsetInScreenPixels(_scene.Camera).x - position.x) < tooClose;
+            float placedShipTooClose = Utilities.WorldUnitsToScreenPixels(ConfigData.GetShipOffset(ship.ShipType), _scene.Camera).x;
+            float absolutePosition = Mathf.Abs(ship.GetOffsetInScreenPixels(_scene.Camera).x - position.x);
+            return absolutePosition < tooClose || absolutePosition < placedShipTooClose;
         }
         private bool TooCloseToY(Vector2 position, SquadShip ship, float tooClose)
         {
-            return Mathf.Abs(ship.GetOffsetInScreenPixels(_scene.Camera).y - position.y) < tooClose;
+            float placedShipTooClose = Utilities.WorldUnitsToScreenPixels(ConfigData.GetShipOffset(ship.ShipType), _scene.Camera).y;
+            float absolutePosition = Mathf.Abs(ship.GetOffsetInScreenPixels(_scene.Camera).y - position.y);
+            return absolutePosition < tooClose || absolutePosition < placedShipTooClose;
         }
 
 
@@ -688,7 +702,7 @@ namespace Assets.Scripts.UIComponents
                 //Debugger.Log($"Snapped the drag ship to the Y axis of {ship.ShipType}, now trying to snap the SYMMETRIC X, currentPosition: {position}");
                 newPosition = SnapSymmetricAxis(newPosition, ship, 'x');
                 //Debugger.Log($"Snapped the drag ship to the SYMMETRIC X axis of {ship.ShipType}, currentPosition: {newPosition}");
-                if (!CheckValidDropLocation(newPosition, false, null) || Mathf.Abs(newPosition.x - position.x) >= tooClose.x)
+                if (!CheckValidDropLocation(newPosition, false, null, ship.ShipType) || Mathf.Abs(newPosition.x - position.x) >= tooClose.x)
                 {
                     return position;
                 }
@@ -983,7 +997,7 @@ namespace Assets.Scripts.UIComponents
                 //Debugger.Log($"Snapped the drag ship to the X axis of {ship.ShipType}, now trying to snap the SYMMETRIC Y, currentPosition: {position}");
                 newPosition = SnapSymmetricAxis(newPosition, ship, 'y');
                 //Debugger.Log($"Snapped the drag ship to the SYMMETRIC Y axis of {ship.ShipType}, currentPosition: {newPosition}");
-                if (!CheckValidDropLocation(newPosition, false, null) || Mathf.Abs(newPosition.y - position.y) >= tooClose.y)
+                if (!CheckValidDropLocation(newPosition, false, null, ship.ShipType) || Mathf.Abs(newPosition.y - position.y) >= tooClose.y)
                 {
                     return position;
                 }
@@ -1002,10 +1016,6 @@ namespace Assets.Scripts.UIComponents
         {
             return Mathf.Abs(ship.GetOffsetInScreenPixels(_scene.Camera).x - position.x) <= tooClose;
         }
-
-
-
-
 
     }
 }

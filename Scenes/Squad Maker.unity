@@ -10730,7 +10730,8 @@ PrefabInstance:
       value: UnityEngine.GameObject, UnityEngine
       objectReference: {fileID: 0}
     m_RemovedComponents: []
-    m_RemovedGameObjects: []
+    m_RemovedGameObjects:
+    - {fileID: 7614260189682382183, guid: 10bafbd884a0b0f48bf142fc0a9f0fa7, type: 3}
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 10bafbd884a0b0f48bf142fc0a9f0fa7, type: 3}
@@ -12140,7 +12141,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 0.7735849, g: 0.11311854, b: 0.11311854, a: 0}
+  m_Color: {r: 0.7735849, g: 0.11311854, b: 0.11311854, a: 0.8862745}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -13775,6 +13776,10 @@ PrefabInstance:
     - target: {fileID: 3228483336485201827, guid: 10bafbd884a0b0f48bf142fc0a9f0fa7, type: 3}
       propertyPath: m_AnchorMin.y
       value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3228483336485201827, guid: 10bafbd884a0b0f48bf142fc0a9f0fa7, type: 3}
+      propertyPath: m_SizeDelta.x
+      value: 210
       objectReference: {fileID: 0}
     - target: {fileID: 3228483336485201827, guid: 10bafbd884a0b0f48bf142fc0a9f0fa7, type: 3}
       propertyPath: m_AnchoredPosition.x
@@ -21424,6 +21429,18 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 0}
     - target: {fileID: 704420577880474054, guid: d48c7ab2e6834684d95271597b5aac26, type: 3}
+      propertyPath: m_SelectionColor.b
+      value: 0.31764707
+      objectReference: {fileID: 0}
+    - target: {fileID: 704420577880474054, guid: d48c7ab2e6834684d95271597b5aac26, type: 3}
+      propertyPath: m_SelectionColor.g
+      value: 0.31764707
+      objectReference: {fileID: 0}
+    - target: {fileID: 704420577880474054, guid: d48c7ab2e6834684d95271597b5aac26, type: 3}
+      propertyPath: m_SelectionColor.r
+      value: 0.31764707
+      objectReference: {fileID: 0}
+    - target: {fileID: 704420577880474054, guid: d48c7ab2e6834684d95271597b5aac26, type: 3}
       propertyPath: m_Colors.m_SelectedColor.b
       value: 1
       objectReference: {fileID: 0}
@@ -23573,7 +23590,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6815031841479219169, guid: 8fb99eed5d15d8047b6749d235743079, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 6815031841479219169, guid: 8fb99eed5d15d8047b6749d235743079, type: 3}
       propertyPath: m_TagString

@@ -49,58 +49,83 @@ namespace Assets.Scripts
         // data loaded booleans
         public static bool IsUserProgressDataLoaded = false;
         public static bool IsFleetDataLoaded = false; 
-        public static bool IsSavedSquadsDataLoaded = false; 
+        public static bool IsSavedSquadsDataLoaded = false;
 
 
-        // currently, a gunship is 160x160 pixels, at 48 pixels per unit and 3.333 units. 
-        // so 160x160 is equal to 72 x 72 and the base size is 2.22 world units
-        public static Vector2 Tiny = new Vector2(32, 48); // this is the base size
-        public static Vector2 Small = Tiny * 1.5f; // 48 x 72 
-        public static Vector2 Medium = Tiny * 2f; // 64 x 96
-        public static Vector2 Large = Tiny * 3f; // 96 x 144
-        public static Vector2 Huge = Tiny * 4f; // 128 x 192
-        public static Vector2 PlusUltra = Tiny * 6f; // 192 x 288
+
+        public static float Tiny = 1; // this is the base size
+        public static float Small = Tiny * 1.5f; 
+        public static float Medium = Tiny * 2f;
+        public static float Large = Tiny * 3f;
+        public static float Huge = Tiny * 4f;
+        public static float PlusUltra = Tiny * 8f; 
+
+        public static Vector2 BaseShipSize = new Vector2(160, 160); // This is the base size for ship sizes because it's the smallest ship size, the same size as the drone, striker, honeybee, and hornet
 
         public static Vector2 TwoThirdsToSquare = new Vector2(1.5f, 1);
         public static readonly Dictionary<string, Vector2> ShipSizes = new Dictionary<string, Vector2>() {
-            { "Barge",          Huge },
-            { "Carrier",        Large },
-            { "Cruiser",        Medium * TwoThirdsToSquare },
-            { "Dreadnought",    Medium  * TwoThirdsToSquare},
-            { "Drone",          Tiny * TwoThirdsToSquare  },
-            { "Factory",        Huge },
-            { "Fire Ship",      Huge },
-            { "Flagship",       Huge },
-            { "Frigate",        Small * TwoThirdsToSquare },
-            { "Gunship",        Small * TwoThirdsToSquare }, 
-            { "Scout",          Tiny  * TwoThirdsToSquare},
-            { "Striker",        Tiny * TwoThirdsToSquare },
-            { "Warp Gate",      Huge },
+            { "Barge",          new Vector2(760, 360)},
+            { "Carrier",        new Vector2(460, 560)},
+            { "Cruiser",        new Vector2(320, 360)},
+            { "Dreadnought",    new Vector2(320, 420)},
+            { "Drone",          new Vector2(160, 160)},
+            { "Factory",        Vector2.zero },
+            { "Fire Ship",      new Vector2(760, 360)},
+            { "Flagship",       new Vector2(640, 760)},
+            { "Frigate",        new Vector2(240, 240)},
+            { "Gunship",        new Vector2(240, 240)}, 
+            { "Scout",          new Vector2(200, 160)},
+            { "Striker",        new Vector2(160, 160)},
+            { "Warp Gate",      Vector2.zero },
 
-            { "Beehive",        PlusUltra },
-            { "Bumblebee",      Large * TwoThirdsToSquare  },
-            { "Carpenter Bee",  Huge },
-            { "Honeybee",       Tiny * TwoThirdsToSquare},
-            { "Hornet",         Small * TwoThirdsToSquare }, // [alert] should be tiny
-            { "Leafcutter",     Medium  * TwoThirdsToSquare},
-            { "Queen",          PlusUltra },
-            { "Wasp",           Small  * TwoThirdsToSquare},
-            { "Yellow Jacket",  Tiny * TwoThirdsToSquare},
+            { "Beehive",        Vector2.zero },
+            { "Bumblebee",      new Vector2(680, 480)},
+            { "Carpenter Bee",  Vector2.zero },
+            { "Honeybee",       new Vector2(160, 160)},
+            { "Hornet",         new Vector2(160, 160)},
+            { "Leafcutter",     new Vector2(320, 320)},
+            { "Queen",          new Vector2(1600, 1280)},
+            { "Wasp",           new Vector2(240, 240)},
+            { "Yellow Jacket",  new Vector2(160, 160)},
+        };
+        public static readonly Dictionary<string, float> ShipSizeFactor = new Dictionary<string, float>() {
+            { "Barge",          Huge},
+            { "Carrier",        Large},
+            { "Cruiser",        Medium},
+            { "Dreadnought",    Medium},
+            { "Drone",          Tiny},
+            { "Factory",        0 },
+            { "Fire Ship",      Huge},
+            { "Flagship",       Huge},
+            { "Frigate",        Small},
+            { "Gunship",        Small},
+            { "Scout",          Tiny},
+            { "Warp Gate",      0 },
+
+            { "Beehive",        0 },
+            { "Bumblebee",      Large},
+            { "Carpenter Bee",  0 },
+            { "Honeybee",       Tiny},
+            { "Hornet",         Tiny},
+            { "Leafcutter",     Medium},
+            { "Queen",          PlusUltra},
+            { "Wasp",           Small},
+            { "Yellow Jacket",  Tiny},
         };
         public static readonly Dictionary<string, Color[]> ChangeableShipColors = new Dictionary<string, Color[]>() {
-            { "Barge", new Color[] {new Color(0.1333333f, 0.6941177f, 0.2980392f, 1) } },
-            { "Carrier", new Color[] {new Color(0.1333333f, 0.6941177f, 0.2980392f, 1) } },
-            { "Cruiser", new Color[] {new Color(1, 1, 1, 1) } },
-            { "Dreadnought", new Color[] {new Color(0, 0, 0, 1) } },
-            { "Drone", new Color[] {new Color(0.1333333f, 0.6941177f, 0.2980392f, 1) } },
-            { "Factory", new Color[] {new Color(0.1333333f, 0.6941177f, 0.2980392f, 1) } },
-            { "Fire Ship", new Color[] {new Color(0.1333333f, 0.6941177f, 0.2980392f, 1) } },
-            { "Flagship", new Color[] {new Color(0.1333333f, 0.6941177f, 0.2980392f, 1) } },
-            { "Frigate", new Color[] {new Color(0.1333333f, 0.6941177f, 0.2980392f, 1) } },
-            { "Gunship", new Color[] {new Color(.196f, .596f, .4f, 1), new Color(.161f, .514f, .337f, 1) } },
-            { "Scout", new Color[] {new Color(0.247f, 0.282f, 0.800f, 1.000f) } },
-            { "Striker", new Color[] {new Color(0.1333333f, 0.6941177f, 0.2980392f, 1) } },
-            { "Warp Gate", new Color[] {new Color(0.1333333f, 0.6941177f, 0.2980392f, 1) } },
+            { "Barge", new Color[] {new Color(0.235f, 0.753f, 0.498f, 1), new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.196f, 0.6f, 0.4f, 1) } },
+            { "Carrier", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
+            { "Cruiser", new Color[] {new Color(0.184f, 0.569f, 0.380f, 1), new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.196f, 0.6f, 0.4f, 1) } },
+            { "Dreadnought", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1)  } },
+            { "Drone", new Color[] {new Color(.729f, .729f, .729f, 1) } },
+            { "Factory", new Color[] {UnsetColor } },
+            { "Fire Ship", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.235f, 0.753f, 0.498f, 1) } },
+            { "Flagship", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
+            { "Frigate", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
+            { "Gunship", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
+            { "Scout", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
+            { "Striker", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
+            { "Warp Gate", new Color[] {UnsetColor } },
 
             // Set the bees to the unset color because none of their colors will change ... Unless the player is the bees?
             { "Beehive",        new Color[] {UnsetColor } },
@@ -138,7 +163,7 @@ namespace Assets.Scripts
          */
         public static Vector2 DragIconSize = new Vector2(48, 64); // the size of the drag icons (in locally scaled units) for all ships regardless of the size of the ship
         public static float WorldUnitScaleFactor = 2.5f;
-        public static Vector2 ShipOffset = new Vector2(10, 10); // the minimum offset between ships in the squad maker in UI world units.
+        public static Vector2 ShipOffset = new Vector2(15, 15); // the minimum offset between ships in the squad maker in UI world units.
         public static Vector2 SnapDistance = new Vector2(5, 5); // the distance from the axis before trying to snap the ship into place
 
 
@@ -278,6 +303,17 @@ namespace Assets.Scripts
                 Debugger.Exception("Tried to get ship info before it was loaded");
             }
             return null;
+        }
+
+        public static Vector2 GetShipOffset(string shipType)
+        {
+            //return ShipOffset * (ShipSizes.GetValueOrDefault(shipType) / BaseShipSize);
+            return ShipOffset;
+        }
+
+        public static float GetShipSizeFactor(string shipType)
+        {
+            return ShipSizeFactor.GetValueOrDefault(shipType);
         }
         public static void CheckDataFiles()
         {
