@@ -612,7 +612,7 @@ namespace Assets.Scripts.Scenes
                     return QueenShipIcon;
                 case "Wasp":
                     return WaspShipIcon;
-                case "Yelllow Jacket":
+                case "Yellow Jacket":
                     return YellowJacketShipIcon;
             }
             return null;
@@ -1432,7 +1432,7 @@ namespace Assets.Scripts.Scenes
             });
             ConfigData.SquadsChosenForLevel.AddRange(newlySavedOpposingSquads);
             //ConfigData.SquadsChosenForLevel.ForEach((s) => Debugger.Log(s.ToString()));
-            _nextScene = "Training Room Test II";
+            _nextScene = "Hive Mind Training";
             Invoke(nameof(LoadScene), .5f);
             //SceneManager.LoadSceneAsync("Training Room One Screen", LoadSceneMode.Single); // [alert] this should go to the actual level based on the level number
             //SceneManager.LoadSceneAsync("RL Tiny Box", LoadSceneMode.Single); // [alert] [rl-training]

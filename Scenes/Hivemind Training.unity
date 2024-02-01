@@ -6368,7 +6368,7 @@ MonoBehaviour:
   updates: 0
   __PastServerRequests: []
   __AverageRequestTime: 0
-  ActivateHiveMind: 1
+  ActivateHiveMind: 0
   ActivateBrains: 0
   IsTrainingNueralNetwork: 0
   IsTrainingHiveMind: 0
@@ -6421,10 +6421,10 @@ MonoBehaviour:
   ScrollSpeed: 25
   IsTestFiring: 0
   UseMouseScrolling: 0
-  UserStartingPosition: {x: 0, y: -75}
+  UserStartingPosition: {x: 0, y: -225}
   AIStartingPosition: {x: 0, y: 75}
   MouseScrollDistanceFromEdge: {x: 10, y: 10}
-  DefaultCameraPosition: {x: 0, y: -75}
+  DefaultCameraPosition: {x: 0, y: -225}
   Audio: {fileID: 0}
   HasBeeTypes: []
   FoundBeeTypes: []
