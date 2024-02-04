@@ -114,7 +114,8 @@ namespace Assets.Scripts.Level
                 else
                 {
                     preloadSquads = new List<SavedSquad> {
-                         ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 31),  // human squad // 1 of each ship, red #31
+                         //ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 31),  // human squad // 1 of each ship, red #31
+                         ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 41),  // human squad // 1 of each ship except for a carrier, green #41
 
 
                          ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 34),  // bee squad // 1 Hornet #34

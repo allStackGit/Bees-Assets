@@ -6421,10 +6421,10 @@ MonoBehaviour:
   ScrollSpeed: 25
   IsTestFiring: 0
   UseMouseScrolling: 0
-  UserStartingPosition: {x: 0, y: -225}
+  UserStartingPosition: {x: 0, y: -200}
   AIStartingPosition: {x: 0, y: 75}
   MouseScrollDistanceFromEdge: {x: 10, y: 10}
-  DefaultCameraPosition: {x: 0, y: -225}
+  DefaultCameraPosition: {x: 0, y: -200}
   Audio: {fileID: 0}
   HasBeeTypes: []
   FoundBeeTypes: []

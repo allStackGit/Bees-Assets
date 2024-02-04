@@ -188,13 +188,21 @@ namespace Assets.Scripts.Level
          */
         public void SetStartingPosition(Vector2 position)
         {
-            Vector2 largestShipSize = ConfigData.ShipSizes.GetValueOrDefault(
-                GetShips().OrderByDescending((s) => ConfigData.ShipSizes.GetValueOrDefault(s.ShipType).y).ToList().First().ShipType
-                );
+            //float largestShipSize = ConfigData.ShipSizeFactor.GetValueOrDefault(
+            //    GetShips().OrderByDescending((s) => ConfigData.ShipSizeFactor.GetValueOrDefault(s.ShipType)).ToList().First().ShipType
+            //    );
             GetShips().ForEach((ship) =>
             {
-                Vector2 sizeFactor = (largestShipSize / ConfigData.DragIconSize) * ConfigData.WorldUnitScaleFactor;
-                Vector2 adjustment = (ship.OffsetFromCenter / 4) * sizeFactor;
+                // The size factor (1-16)
+                //Vector2 sizeFactor = (largestShipSize / ConfigData.DragIconSize) * ConfigData.WorldUnitScaleFactor;
+
+
+                // trying to place ships on the map according to where they were in the squad maker
+                // Option 1: Convert the squadmaker coordinates directly to map coordinates
+
+                Debugger.Log($"Ship: {ship.Name} Position: {position}, Offset from Center: {ship.OffsetFromCenter}");
+
+                Vector2 adjustment = ship.OffsetFromCenter;
                 
                 float x = Mathf.Clamp((position.x + adjustment.x), Level.MinX, Level.MaxX);
                 float y = Mathf.Clamp((position.y + adjustment.y), Level.MinY, Level.MaxY);

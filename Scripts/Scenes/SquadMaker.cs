@@ -698,14 +698,25 @@ namespace Assets.Scripts.Scenes
         private void UpdateSavedSquadInList(GameObject instance, SavedSquad savedSquad)
         {
             GameObject nameLabel = instance.transform.Find("Squad Name").gameObject;
-            GameObject squadIcon = instance.transform.Find("Icon Container/Ship Icon").gameObject;
+            GameObject iconContainer = instance.transform.Find("Icon Container").gameObject;
+            Transform squadLabel = iconContainer.transform.parent;
 
             TMP_Text nameLabelText = nameLabel.GetComponent<TMP_Text>();
             string shipType = savedSquad.GetMostValuableShip().GetFleetShip().Type;
 
+            //Destroy old icon container
+            Destroy(iconContainer);
+
+
+            // Make new icon container
+            GameObject squadIconContainer = Instantiate(GetShipIconContainer(shipType));
+            squadIconContainer.transform.SetParent(squadLabel);
+            squadIconContainer.transform.SetAsFirstSibling();
+            squadIconContainer.name = "Icon Container";
+            squadIconContainer.transform.localScale = new Vector3(1, 1, 1);
 
             // fill in the squad name and icon
-            UnityEngine.UI.Image squadIconImage = squadIcon.GetComponent<UnityEngine.UI.Image>();
+            UnityEngine.UI.Image squadIconImage = iconContainer.transform.GetChild(0).GetComponent<UnityEngine.UI.Image>();
 
             nameLabelText.text = savedSquad.Name;
             nameLabel.transform.parent.name = $"Saved Squad - {savedSquad.Name} #{savedSquad.Id}";
@@ -719,6 +730,7 @@ namespace Assets.Scripts.Scenes
                 int[] changeablePixels = Utilities.SetChangablePixelsForImage(ConfigData.ChangeableShipColors.GetValueOrDefault(shipType), squadIconImage.sprite);
                 squadIconImage.sprite = Utilities.SetImageColor(savedSquad.Color, squadIconImage.sprite, changeablePixels);
             }
+
         }
         private void RemoveSavedSquadFromList(SavedSquad savedSquad)
         {
@@ -1432,7 +1444,7 @@ namespace Assets.Scripts.Scenes
             });
             ConfigData.SquadsChosenForLevel.AddRange(newlySavedOpposingSquads);
             //ConfigData.SquadsChosenForLevel.ForEach((s) => Debugger.Log(s.ToString()));
-            _nextScene = "Hive Mind Training";
+            _nextScene = "Hivemind Training";
             Invoke(nameof(LoadScene), .5f);
             //SceneManager.LoadSceneAsync("Training Room One Screen", LoadSceneMode.Single); // [alert] this should go to the actual level based on the level number
             //SceneManager.LoadSceneAsync("RL Tiny Box", LoadSceneMode.Single); // [alert] [rl-training]
