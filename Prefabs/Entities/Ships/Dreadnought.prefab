@@ -132,6 +132,7 @@ MonoBehaviour:
   - {fileID: 6428638681076635372, guid: c5d2fa5f5d52d0d4b855fdc29fca6e90, type: 3}
   WeaponPrefabs:
   - {fileID: 7126564882376213843}
+  ColoredPrefabs: []
   Brain: {fileID: 0}
   HasBrain: 0
   __PastCommands: []

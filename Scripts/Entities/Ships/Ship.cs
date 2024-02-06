@@ -31,7 +31,7 @@ namespace Assets.Scripts.Entities.Ships
         public string ShipType;
         public bool FireAtFrontOfShip;
         public List<Weapon> Weapons;
-        public List<GameObject> ProjectilePrefabs, WeaponPrefabs;
+        public List<GameObject> ProjectilePrefabs, WeaponPrefabs, ColoredPrefabs;
         public Brain Brain = null;
         public bool HasBrain = false;
 
@@ -331,9 +331,15 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             if (Squad.Color != ConfigData.UnsetColor)
             {
                 //Debugger.Log("Setting sprite for ship");
-                Sprite shipIcon = gameObject.GetComponent<SpriteRenderer>().sprite;
-                int[] changeablePixels = Utilities.SetChangablePixelsForImage(ConfigData.ChangeableShipColors.GetValueOrDefault(ShipType), shipIcon);
-                gameObject.GetComponent<SpriteRenderer>().sprite = Utilities.SetImageColor(Squad.Color, shipIcon, changeablePixels);
+                ColoredPrefabs.Add(gameObject);
+                Color[] colors = ConfigData.ChangeableShipColors.GetValueOrDefault(ShipType);
+                ColoredPrefabs.ForEach((prefab) =>
+                {
+                    Sprite shipIcon = prefab.GetComponent<SpriteRenderer>().sprite;
+                    int[] changeablePixels = Utilities.SetChangablePixelsForImage(colors, shipIcon);
+                    prefab.GetComponent<SpriteRenderer>().sprite = Utilities.SetImageColor(Squad.Color, shipIcon, changeablePixels);
+                });
+               
             }
         }
 

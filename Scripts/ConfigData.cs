@@ -153,7 +153,7 @@ namespace Assets.Scripts
 
         public static int ScreenWidth = Screen.width;
         public static int ScreenHeight = Screen.height;
-        public static int PixelsPerUnit = 48;
+        public static int PixelsPerUnit = 40;
         public static Vector2 MapEdgePadding = new Vector2(5, 5); // How much padding to put on the edges of the map and stop units from moving there. World Units
         public static Color UnsetColor = Color.clear;
         

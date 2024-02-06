@@ -132,6 +132,8 @@ MonoBehaviour:
   - {fileID: 7501106849564186297, guid: 7e760e89d34f0d24c9681ff13db6a00a, type: 3}
   WeaponPrefabs:
   - {fileID: 2565775401355383323}
+  ColoredPrefabs:
+  - {fileID: 716252764927314901}
   Brain: {fileID: 0}
   HasBrain: 0
   __PastCommands: []
@@ -437,6 +439,11 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 562230a51d2eca44e85658480eb67c56, type: 3}
+--- !u!1 &716252764927314901 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 4100548376408920609, guid: 562230a51d2eca44e85658480eb67c56, type: 3}
+  m_PrefabInstance: {fileID: 3537778845011335668}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &2565775401355383323 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 1334121294634142703, guid: 562230a51d2eca44e85658480eb67c56, type: 3}

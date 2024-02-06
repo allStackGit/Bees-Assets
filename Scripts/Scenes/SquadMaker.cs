@@ -716,7 +716,7 @@ namespace Assets.Scripts.Scenes
             squadIconContainer.transform.localScale = new Vector3(1, 1, 1);
 
             // fill in the squad name and icon
-            UnityEngine.UI.Image squadIconImage = iconContainer.transform.GetChild(0).GetComponent<UnityEngine.UI.Image>();
+            UnityEngine.UI.Image squadIconImage = squadIconContainer.transform.GetChild(0).GetComponent<UnityEngine.UI.Image>();
 
             nameLabelText.text = savedSquad.Name;
             nameLabel.transform.parent.name = $"Saved Squad - {savedSquad.Name} #{savedSquad.Id}";
@@ -974,7 +974,7 @@ namespace Assets.Scripts.Scenes
         }
         public void SaveExistingSquad()
         {
-            Debugger.Log("Squad does exist, replacing old squad");
+            //Debugger.Log("Squad does exist, replacing old squad");
             SavedSquad oldSavedSquad = ConfigData.Ships.GetSavedSquad(_currentSquad.Id);
 
             UpdateSavedSquadInList(GameObject.Find($"Saved Squad - {oldSavedSquad.Name} #{oldSavedSquad.Id}"), _currentSquad);

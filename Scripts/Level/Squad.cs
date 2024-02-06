@@ -200,7 +200,7 @@ namespace Assets.Scripts.Level
                 // trying to place ships on the map according to where they were in the squad maker
                 // Option 1: Convert the squadmaker coordinates directly to map coordinates
 
-                Debugger.Log($"Ship: {ship.Name} Position: {position}, Offset from Center: {ship.OffsetFromCenter}");
+                //Debugger.Log($"Ship: {ship.Name} Position: {position}, Offset from Center: {ship.OffsetFromCenter}");
 
                 Vector2 adjustment = ship.OffsetFromCenter;
                 
