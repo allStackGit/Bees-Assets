@@ -215,6 +215,11 @@ namespace Assets.Scripts
             Vector2 worldPoint = camera.ScreenToWorldPoint(vector);
             return new Vector2(Mathf.Abs(baseWorldPoint.x - worldPoint.x), Mathf.Abs(baseWorldPoint.y - worldPoint.y));
         }
+        public static void WriteJsonFile(string contents)
+        {
+            string path = $"{ConfigData.GetBasePath()}/{Hash()}.json";
+            File.WriteAllText(path, contents);
+        }
         public static int[] SetChangablePixelsForImage(Color[] colors, Sprite sprite)
         {
             Texture2D sourceTexture = sprite.texture;
@@ -234,10 +239,10 @@ namespace Assets.Scripts
                     }
                     else
                     {
-                        if (pixels[i].a > .99 && pixels[i].g > .01 && i % 10000 == 0)
-                        {
-                            //Debugger.Log($"Color is too far apart: {pixels[i]} != {colors[c]} at {i}");
-                        }
+                        //if (pixels[i].a > .99 && pixels[i].g > .01 && i % 10000 == 0)
+                        //{
+                        //    Debugger.Log($"Color is too far apart: {pixels[i]} != {colors[c]} at {i}");
+                        //}
                     }
                 }
             }
@@ -245,11 +250,7 @@ namespace Assets.Scripts
 
             return indexes.ToArray();
         }
-        public static void WriteJsonFile(string contents)
-        {
-            string path = $"{ConfigData.GetBasePath()}/{Hash()}.json";
-            File.WriteAllText(path, contents);
-        }
+
         public static Sprite SetImageColor(Color color, Sprite sprite, int[] changablePixels)
         {
 

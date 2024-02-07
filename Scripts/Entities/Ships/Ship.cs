@@ -278,10 +278,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
 
         }
-        public Vector2 RelativeSizeScale()
-        {
-            return ConfigData.ShipSizes.GetValueOrDefault(ShipType);
-        }
         protected void FixedUpdate()
         {
             if (!Level.IsPaused)
@@ -712,15 +708,15 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             }
         }
         public virtual void Kill(Ship killer, bool endKill = false) // [kill method] [stats-method] [note]
-        {
+        {  
             if (!IsDead)
             {
                 //Debugger.Log($"Killing ship {Name}");
                 died = true;
-                if (!Level.IsTrainingNueralNetwork)
+                if (!Level.IsTrainingNueralNetwork && !endKill)
                 {
                     GameObject explosion = LevelStage.Instantiate(ShipExplosion, Vector2.zero, Quaternion.identity);
-                    explosion.transform.localScale *= RelativeSizeScale();
+                    explosion.transform.localScale *= ConfigData.GetShipSizeFactor(ShipType);
                     explosion.transform.parent = Level.Map.transform;
                     explosion.transform.localPosition = GetPosition();
                 }

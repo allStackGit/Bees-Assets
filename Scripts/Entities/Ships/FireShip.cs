@@ -81,7 +81,7 @@ namespace Assets.Scripts.Entities.Ships
                 {
                     Squad.SetOffsets();
                 }
-                gameObject.SetActive(false);
+                Destroy(gameObject);
             }
             
         }

@@ -934,6 +934,14 @@ namespace Assets.Scripts.Level
                     Utilities.SetUIColor(SquadBox, SquadBoxColor);
 
                 }
+                if (GetShips().Count == 1)
+                {
+                    Ship onlyShip = GetShips().First();
+                    if (onlyShip != null)
+                    {
+                        SquadBox.transform.rotation = onlyShip.transform.rotation;
+                    }
+                }
                 HasMovedBox = true;
             }
         }

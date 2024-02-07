@@ -114,7 +114,16 @@ namespace Assets.Scripts.Level
                 else
                 {
                     preloadSquads = new List<SavedSquad> {
-                         ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 31),  // human squad // 1 of each ship, red #31
+                        ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 22),  // human squad // 1 Barge, #22
+                        ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 23),  // human squad // 1 Carrier, #23
+                        ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 24),  // human squad // 1 Cruiser, #24
+                        ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 25),  // human squad // 1 Dreadnought, #25
+                        ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 26),  // human squad // 1 Fire Ship, #26
+                        ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 27),  // human squad // 1 Flagship, #27
+                        ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 28),  // human squad // 1 Frigate, #28
+                        ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 29),  // human squad // 1 Gunship, #29
+                        ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 30),  // human squad // 1 Scout, #30
+                        ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 31),  // human squad // 1 of each ship, red #31
                          //ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 41),  // human squad // 1 of each ship except for a carrier, green #41
 
 
