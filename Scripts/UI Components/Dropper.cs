@@ -63,7 +63,7 @@ namespace Assets.Scripts.UIComponents
             }
             else
             {
-                Debugger.Log($"Couldn't make new drag icon for {shipType}, {fleetShip}, {!_isDragging}, {CurrentSquad}");
+                //Debugger.Log($"Couldn't make new drag icon for {shipType}, {fleetShip}, {!_isDragging}, {CurrentSquad}");
                 if (HasCurrentSquad && CurrentSquad.HasMaxShips)
                 {
                     Utilities.SetBadColor(_scene.SquadShipCount);

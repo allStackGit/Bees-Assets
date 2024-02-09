@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection.Emit;
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Xml;
 using TMPro;
@@ -200,6 +201,10 @@ namespace Assets.Scripts.Scenes
             {
                 Debugger.Exception($"Side ({Side}) does not match Bee Side ({ConfigData.Configuration.BeeSide}) or Human Side ({ConfigData.Configuration.HumanSide})");
             }
+            if (Side != ConfigData.Configuration.UserSide)
+            {
+                SetupForOpposingSide();
+            }
 
             // Post setup
             //Debugger.Log("Post setup");
@@ -207,6 +212,15 @@ namespace Assets.Scripts.Scenes
             UpdateChosenSquadsSupplyLabel();
             UpdateSquadShipCounter();
 
+        }
+        private void SetupForOpposingSide()
+        {
+
+            // Hide the "Choose Opposing Force" options and extend the squad list size
+            OpposingForceLabel.SetActive(false);
+            OpposingForcePresetDropdown.SetActive(false);
+            RectTransform squadListRect = ChosenSquadList.transform.parent.parent.GetComponent<RectTransform>();
+            squadListRect.sizeDelta = new Vector2(squadListRect.sizeDelta.x, squadListRect.sizeDelta.y + 200);
         }
         private void SetupForBees()
         {
@@ -239,11 +253,9 @@ namespace Assets.Scripts.Scenes
             DroneFleetLabel.transform.parent.gameObject.SetActive(false);
             SquadColorLabel.SetActive(false);
             SquadColorPickerButton.SetActive(false);
-            OpposingForceLabel.SetActive(false);
-            OpposingForcePresetDropdown.SetActive(false);
 
-            RectTransform squadListRect = ChosenSquadList.transform.parent.parent.GetComponent<RectTransform>();
-            squadListRect.sizeDelta = new Vector2(squadListRect.sizeDelta.x, squadListRect.sizeDelta.y + 200);
+
+
         }
         private void SetupForHumans()
         {
