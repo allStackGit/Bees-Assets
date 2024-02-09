@@ -58,7 +58,7 @@ namespace Assets.Scripts
         public static float Medium = Tiny * 2f;
         public static float Large = Tiny * 3f;
         public static float Huge = Tiny * 4f;
-        public static float PlusUltra = Tiny * 10f; 
+        public static float PlusUltra = Tiny * 8f; 
 
         public static Vector2 BaseShipSize = new Vector2(160, 160); // This is the base size for ship sizes because it's the smallest ship size, the same size as the drone, striker, honeybee, and hornet
 

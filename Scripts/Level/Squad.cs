@@ -203,6 +203,15 @@ namespace Assets.Scripts.Level
                 //Debugger.Log($"Ship: {ship.Name} Position: {position}, Offset from Center: {ship.OffsetFromCenter}");
 
                 Vector2 adjustment = ship.OffsetFromCenter;
+
+                if (ship.ShipType == "Queen")
+                {
+                    adjustment *= new Vector2(2.75f, 2); // Need larger spacing between the Queen(s) because it's so large
+                }
+                else if (ship.ShipType == "Bumblebee")
+                {
+                    adjustment *= 1.2f;
+                }
                 
                 float x = Mathf.Clamp((position.x + adjustment.x), Level.MinX, Level.MaxX);
                 float y = Mathf.Clamp((position.y + adjustment.y), Level.MinY, Level.MaxY);
