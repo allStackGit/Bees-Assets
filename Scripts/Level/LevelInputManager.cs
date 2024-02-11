@@ -157,7 +157,10 @@ namespace Assets.Scripts.Level
             }
             else if (Input.GetMouseButtonUp(LeftClick))
             {
-                if (EventSystem.IsPointerOverGameObject()) return;
+                if (EventSystem.IsPointerOverGameObject() && !_isLeftMouseDragging)
+                {
+                    return;
+                }
 
                 _leftMouseButtonUp = true;
                 _leftMouseButtonDown = false;

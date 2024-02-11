@@ -127,8 +127,8 @@ namespace Assets.Scripts.Level
                          //ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 41),  // human squad // 1 of each ship except for a carrier, green #41
 
 
-                        //ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 34),  // bee squad // 1 Hornet #34
-                        ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 45),  // bee squad //Layout squad #45
+                        ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 34),  // bee squad // 1 Hornet #34
+                        //ConfigData.Ships.GetSavedSquads().FirstOrDefault((s) => s.Id == 45),  // bee squad //Layout squad #45
 
                     };
                 }
