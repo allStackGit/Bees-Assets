@@ -17,7 +17,7 @@ namespace Assets.Scripts.Scenes
         public GameObject DialoguePrefab;
         public EventSystem EventSystem;
         public Socket Socket;
-        public bool FinalizedScene, WatchServerRequests = false;
+        public bool FinalizedScene, WatchServerRequests, HasIndependentSocket = false;
         //public List<Dialogue> Dialogues = new List<Dialogue>();
         public Dialogue NetworkDisconnection;
         public float TimeScale = 1;
@@ -32,7 +32,16 @@ namespace Assets.Scripts.Scenes
         protected void Start()
         {
             //Debugger.Log($"Starting {Name} scene");
-            Socket = ConfigData.Test ? new Socket(ConfigData.TestPort, ConfigData.TestServerHostname) : new Socket(ConfigData.DevelopmentPort, ConfigData.DevelopmentServerHostname);
+            if (HasIndependentSocket || ConfigData.MainSocket == null)
+            {
+                Socket = ConfigData.Test ? new Socket(ConfigData.TestPort, ConfigData.TestServerHostname, ConfigData.UseWebSocketSharp) : new Socket(ConfigData.DevelopmentPort, ConfigData.DevelopmentServerHostname, ConfigData.UseWebSocketSharp);
+            }
+            else if (ConfigData.MainSocket != null)
+            {
+                Socket = ConfigData.MainSocket;
+            }
+
+
             Socket.SetScene(this);
             InvokeRepeating(nameof(LoadSettingsWhenOpen), .1f, .1f);
             if (NetworkDisconnection == null)
@@ -41,7 +50,8 @@ namespace Assets.Scripts.Scenes
                 NetworkDisconnection = new Dialogue(DialoguePrefab, "Server disconnected!", "The game needs to be connected to the server in order to function properly.",
                                             new List<string>() { "Retry", "Exit Game" }, new List<UnityAction>() { RetryConnection, Exit });
             }
-            
+
+
         }
         public void LoadSettingsWhenOpen()
         {
@@ -81,7 +91,7 @@ namespace Assets.Scripts.Scenes
         // Update is called once per frame
         protected void Update()
         {
-            //UpdateTestVariables();
+            UpdateTestVariables();
             updates++;
             if (updates%10 == 0)
             {

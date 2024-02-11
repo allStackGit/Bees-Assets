@@ -1,5 +1,6 @@
 ﻿
 using NativeWebSocket;
+using WebSocketSharp;
 using UnityEngine;
 using Newtonsoft.Json;
 using Assets.Scripts;
@@ -23,34 +24,34 @@ namespace Assets.Scripts.Server
         private string _hostname = ConfigData.ProductionServerHostname;
         private int _port = ConfigData.ProductionPort;
         private string _websocketURL;
-        private WebSocket _websocket = null;
+        private NativeWebSocket.WebSocket _nativeWebSocket = null;
+        private WebSocketSharp.WebSocket _webSocketSharpSocket = null; 
         //private bool _loadNextLevel;
         private Scene _scene;
+        private bool _useWebSocketSharp = false;
 
         public bool IsOpen;
+        public bool IsSecured;
         public bool HasClosed;
         public bool KeepClosed;
+        public string Protocol = "ws";
         public HashSet<ServerRequest> StandingRequests = new HashSet<ServerRequest>();
         public HashSet<long> HandledRequests = new HashSet<long>();
+        public Queue<byte[]> MessageQueue = new Queue<byte[]>();
 
 
 
-        public Socket(int port, string hostname)
+        public Socket(int port, string hostname, bool useWebSocketSharp)
         {
-
-            //if (ConfigData.Test)
-            //{
-            //    _port = ConfigData.TestPort;
-            //    _hostname = ConfigData.TestServerHostname;
-            //}else if (ConfigData.Development)
-            //{ 
-            //    _port = ConfigData.DevelopmentPort;
-            //    _hostname = ConfigData.DevelopmentServerHostname;
-            //}
             _hostname = hostname;
             _port = port;
-
-            _websocketURL = $"ws://{_hostname}:{_port}";
+            _useWebSocketSharp = useWebSocketSharp;
+            if (_useWebSocketSharp)
+            {
+                //IsSecured = true;
+                //Protocol = "wss";
+            }
+            _websocketURL = $"{Protocol}://{_hostname}:{_port}";
             Debugger.Log($"Trying to connect to {_websocketURL}");
             MakeSocket();
         }
@@ -61,28 +62,67 @@ namespace Assets.Scripts.Server
         async public void MakeSocket()
         {
             //Debugger.Log("Making socket");
-            _websocket = new WebSocket(_websocketURL, "game");
-
-            _websocket.OnOpen += () =>
+            if (_useWebSocketSharp)
             {
-                Open();
-            };
+                _webSocketSharpSocket = new WebSocketSharp.WebSocket(_websocketURL, "game");
+                if (IsSecured)
+                {
+                    _webSocketSharpSocket.SslConfiguration.EnabledSslProtocols = System.Security.Authentication.SslProtocols.Tls12;
+                }
 
-            _websocket.OnError += (e) => {  Error(e);};
+                //Debugger.Log("Initial State : " + _webSocketSharpSocket.ReadyState);
 
-            _websocket.OnClose += (e) =>
+                _webSocketSharpSocket.OnOpen += (sender, e) =>
+                {
+                    Open();
+                };
+
+                _webSocketSharpSocket.OnError += (sender, e) => {
+                    throw e.Exception;
+                    Error(e.Message); 
+                };
+
+                _webSocketSharpSocket.OnClose += (sender, e) =>
+                {
+                    Close(e.Reason);
+                };
+
+                _webSocketSharpSocket.OnMessage += (sender, e) =>
+                {
+                    MessageQueue.Enqueue(e.RawData);
+                    //Message(e.RawData);
+                };
+
+                _webSocketSharpSocket.Connect();
+
+            }
+            else
             {
-                Close();
-            };
+                _nativeWebSocket = new NativeWebSocket.WebSocket(_websocketURL, "game");
 
-            _websocket.OnMessage += (bytes) =>
-            {
-                Message(bytes);
-            };
-            
+                _nativeWebSocket.OnOpen += () =>
+                {
+                    Open();
+                };
 
-            // waiting for messages
-            await _websocket.Connect();
+                _nativeWebSocket.OnError += (e) => { Error(e); };
+
+                _nativeWebSocket.OnClose += (e) =>
+                {
+                    Close();
+                };
+
+                _nativeWebSocket.OnMessage += (bytes) =>
+                {
+                    MessageQueue.Enqueue(bytes);
+                    //Message(bytes);
+                };
+
+
+                // waiting for messages
+                await _nativeWebSocket.Connect();
+            }
+
         }
         private void Open()
         {
@@ -94,9 +134,13 @@ namespace Assets.Scripts.Server
         {
             Debugger.Log("Socket Error! " + e);
         }
-        private void Close()
+        private void Close(string reason = null)
         {
             Debugger.Log("Connection closed!");
+            if (reason != null)
+            {
+                Debugger.Error(reason);
+            }
             IsOpen = false;
             HasClosed = true;
             //_checkQueue.Dispose();
@@ -168,12 +212,26 @@ namespace Assets.Scripts.Server
             //Debugger.Log($"Content: {content}");
             string json = JsonConvert.SerializeObject(content);
             //Debugger.Log($"Message to server: {json}");
-            _websocket.SendText(json);
+            if (_useWebSocketSharp)
+            {
+                _webSocketSharpSocket.Send(json);
+            }
+            else
+            {
+                _nativeWebSocket.SendText(json);
+            }
         }
         public void Update() 
         {
             //Debugger.Log("Updating socket");
-            _websocket.DispatchMessageQueue();
+            if (!_useWebSocketSharp)
+            {
+                _nativeWebSocket.DispatchMessageQueue();
+            }
+            if (MessageQueue.Count > 0)
+            {
+                Message(MessageQueue.Dequeue());
+            }
             CheckStandingRequests();
         }
         public void SendRequest(ServerRequest serverRequest)
@@ -518,4 +576,4 @@ namespace Assets.Scripts.Server
 
     }
 
-}
+} 

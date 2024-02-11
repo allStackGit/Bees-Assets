@@ -3263,6 +3263,7 @@ MonoBehaviour:
   EventSystem: {fileID: 1128415138}
   FinalizedScene: 0
   WatchServerRequests: 0
+  HasIndependentSocket: 1
   TimeScale: 1
   updates: 0
   __PastServerRequests: []
@@ -6120,6 +6121,7 @@ MonoBehaviour:
   EventSystem: {fileID: 1128415138}
   FinalizedScene: 0
   WatchServerRequests: 0
+  HasIndependentSocket: 1
   TimeScale: 1
   updates: 0
   __PastServerRequests: []
@@ -6364,11 +6366,12 @@ MonoBehaviour:
   EventSystem: {fileID: 1128415138}
   FinalizedScene: 0
   WatchServerRequests: 0
+  HasIndependentSocket: 1
   TimeScale: 1
   updates: 0
   __PastServerRequests: []
   __AverageRequestTime: 0
-  ActivateHiveMind: 0
+  ActivateHiveMind: 1
   ActivateBrains: 0
   IsTrainingNueralNetwork: 0
   IsTrainingHiveMind: 0

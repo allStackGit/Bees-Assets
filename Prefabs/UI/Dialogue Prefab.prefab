@@ -31,7 +31,6 @@ RectTransform:
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 37876719136922948}
-  m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
@@ -168,7 +167,6 @@ RectTransform:
   m_Children:
   - {fileID: 8259788624267520552}
   m_Father: {fileID: 2450600087033753429}
-  m_RootOrder: 1
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
@@ -272,7 +270,6 @@ RectTransform:
   m_Children:
   - {fileID: 2450600087033753429}
   m_Father: {fileID: 0}
-  m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
@@ -296,7 +293,9 @@ Canvas:
   m_OverrideSorting: 0
   m_OverridePixelPerfect: 0
   m_SortingBucketNormalizedSize: 0
+  m_VertexColorAlwaysGammaSpace: 0
   m_AdditionalShaderChannelsFlag: 25
+  m_UpdateRectTransformForStandalone: 0
   m_SortingLayerID: 0
   m_SortingOrder: 1
   m_TargetDisplay: 0
@@ -339,7 +338,7 @@ MonoBehaviour:
   m_BlockingObjects: 0
   m_BlockingMask:
     serializedVersion: 2
-    m_Bits: 2147483647
+    m_Bits: 4294967295
 --- !u!1 &6139137053856504983
 GameObject:
   m_ObjectHideFlags: 0
@@ -371,7 +370,6 @@ RectTransform:
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 37876719136922948}
-  m_RootOrder: 1
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
@@ -509,7 +507,6 @@ RectTransform:
   - {fileID: 4149392496827239871}
   - {fileID: 8658408953613383671}
   m_Father: {fileID: 2450600087033753429}
-  m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
@@ -585,6 +582,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 6119691774055730184}
     m_Modifications:
     - target: {fileID: 2322509817334310926, guid: 2c69add7043f0224698172081a967d71, type: 3}
@@ -717,7 +715,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5199550695833720106, guid: 2c69add7043f0224698172081a967d71, type: 3}
       propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_MethodName
-      value: DeleteSquad
+      value: 
       objectReference: {fileID: 0}
     - target: {fileID: 5199550695833720106, guid: 2c69add7043f0224698172081a967d71, type: 3}
       propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_TargetAssemblyTypeName
@@ -732,6 +730,9 @@ PrefabInstance:
       value: Button Prefab
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 2c69add7043f0224698172081a967d71, type: 3}
 --- !u!224 &8259788624267520552 stripped
 RectTransform:
@@ -743,6 +744,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 584015614608422913}
     m_Modifications:
     - target: {fileID: 399218135878620285, guid: e4467ba09234ffe4c8ec251f1b4fa9a6, type: 3}
@@ -783,7 +785,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5197036423517555829, guid: e4467ba09234ffe4c8ec251f1b4fa9a6, type: 3}
       propertyPath: m_Enabled
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 5452326300910293757, guid: e4467ba09234ffe4c8ec251f1b4fa9a6, type: 3}
       propertyPath: m_Name
@@ -879,6 +881,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     m_RemovedComponents:
     - {fileID: 5197036423517555829, guid: e4467ba09234ffe4c8ec251f1b4fa9a6, type: 3}
+    m_RemovedGameObjects: []
+    m_AddedGameObjects:
+    - targetCorrespondingSourceObject: {fileID: 8776210996925803749, guid: e4467ba09234ffe4c8ec251f1b4fa9a6, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 37876719136922948}
+    - targetCorrespondingSourceObject: {fileID: 8776210996925803749, guid: e4467ba09234ffe4c8ec251f1b4fa9a6, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 6119691774055730184}
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: e4467ba09234ffe4c8ec251f1b4fa9a6, type: 3}
 --- !u!224 &2450600087033753429 stripped
 RectTransform:

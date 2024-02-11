@@ -141,12 +141,13 @@ namespace Assets.Scripts
 
         public static int SquadMakerSide;
 
-
-        //public static Socket Socket = Test ? new Socket(TestPort, TestServerHostname) : new Socket(DevelopmentPort, DevelopmentServerHostname);
+        public static bool UseWebSocketSharp = false; // Whether to use the "WebSocketSharp" implementation of WebSockets or use the "NativeWebSocket" implmentation
+        public static Socket MainSocket = Test ? new Socket(TestPort, TestServerHostname, UseWebSocketSharp) : new Socket(DevelopmentPort, DevelopmentServerHostname, UseWebSocketSharp);
         public static readonly List<int> InitialVisibleShips = Enumerable.Range(0, 2900).ToList(); // // [alert] [server] Starting ships should be pulled from server
         public static bool FirstTimePlaying = true; // [alert] should be linked to whether a user has actually played before   
         public static float CloseEnoughCoordinateVariance = 1.5f; // world units
         public static float OffsetFromFront = .25f;
+
 
         public static KeyCode[] SquadKeys = new KeyCode[] { KeyCode.Alpha1, KeyCode.Alpha2, KeyCode.Alpha3, KeyCode.Alpha4, KeyCode.Alpha5, KeyCode.Alpha6, KeyCode.Alpha7, KeyCode.Alpha8, KeyCode.Alpha9, KeyCode.Alpha0 };
 
