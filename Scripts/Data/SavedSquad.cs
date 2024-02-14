@@ -69,7 +69,7 @@ namespace Assets.Scripts.Data
 
             for (int shipIndex = 0; shipIndex < shipCount; shipIndex++)
             {
-                int id = (int)Utilities.Hash() + ConfigData.Ships.GetFleetShips().Count;
+                int id = (int)Utilities.Hash() + ConfigData.AllShips.GetFleetShips().Count;
 
                 FleetShip fleetShip = new FleetShip(id, Side, $"{squadType} - #{id}", squadType, true, false, 0, 0, 0, 0, 0, 0);
                 Vector2 offset = ConfigData.CarrierColumnFormationOffsets[shipIndex];

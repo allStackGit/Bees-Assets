@@ -73,7 +73,7 @@ namespace Assets.Scripts.Scenes
         protected virtual void FinalizeSceneWithUserData()
         {
             //Debugger.Log($"Finalizing {Name} Scene");
-            ConfigData.Ships = new Ships(ConfigData.GetFleetData(), ConfigData.GetSavedSquadsData());
+            ConfigData.AllShips = new Ships(ConfigData.GetFleetData(), ConfigData.GetSavedSquadsData());
 
             //ConfigData.Ships.ReplaceDeadSquadShips();
             FinalizedScene = true;

@@ -28,9 +28,9 @@ namespace Assets.Scripts.Data
         }
         public FleetShip GetFleetShip()
         {
-            if (ConfigData.Ships != null)
+            if (ConfigData.AllShips != null)
             {
-                FleetShip fleetShip = ConfigData.Ships.GetFleetShip(FleetId);
+                FleetShip fleetShip = ConfigData.AllShips.GetFleetShip(FleetId);
                 if (fleetShip != null)
                 {
                     return fleetShip;

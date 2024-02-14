@@ -49,8 +49,8 @@ namespace Assets.Scripts.Data
 
             int usedTsv = 0;
             int remainingTsv = maxTsv - usedTsv;
-            int cheapestShipTsv = ConfigData.Ships.GetAvailableShips().Where((s) => s.Side == Side).OrderBy((s) => s.GetMaxTsv()).First().GetMaxTsv();
-            int mostExpensiveShipTsv = ConfigData.Ships.GetAvailableShips().Where((s) => s.Side == Side).OrderByDescending((s) => s.GetMaxTsv()).First().GetMaxTsv();
+            int cheapestShipTsv = ConfigData.AllShips.GetAvailableShips().Where((s) => s.Side == Side).OrderBy((s) => s.GetMaxTsv()).First().GetMaxTsv();
+            int mostExpensiveShipTsv = ConfigData.AllShips.GetAvailableShips().Where((s) => s.Side == Side).OrderByDescending((s) => s.GetMaxTsv()).First().GetMaxTsv();
             int shipIndex = 0;
 
             //Debugger.Log($"The cheapest ship Tsv is {cheapestShipTsv}, the most expensive is {mostExpensiveShipTsv}");
@@ -58,7 +58,7 @@ namespace Assets.Scripts.Data
             // sort ships
             if (PowerfulShipsFirst)
             {
-                shipTypes = ConfigData.Ships.GetAvailableShips().Where((s) => s.Side == Side).OrderByDescending((s) => s.Firepower).Select((s) => s.Type).ToHashSet();
+                shipTypes = ConfigData.AllShips.GetAvailableShips().Where((s) => s.Side == Side).OrderByDescending((s) => s.Firepower).Select((s) => s.Type).ToHashSet();
             }
             else
             {
@@ -105,7 +105,7 @@ namespace Assets.Scripts.Data
             {
                 loopCount++;
                 string shipType = shipTypes.ElementAt(shipIndex);
-                FleetShip ship = ConfigData.Ships.GetAvailableShipsOfType(shipType).Where((s) => !Squad.HasShip(s)).First();
+                FleetShip ship = ConfigData.AllShips.GetAvailableShipsOfType(shipType).Where((s) => !Squad.HasShip(s)).First();
                 int shipTsv = ship.GetMaxTsv();
                 //Debugger.Log($"Trying to add a number of {shipType} worth {shipTsv} each");
 
@@ -126,7 +126,7 @@ namespace Assets.Scripts.Data
                     remainingTsv = maxTsv - usedTsv;
                     //Debugger.Log($"Adding  {ship.Name} worth {shipTsv}. Used {usedTsv} Tsv and there is {remainingTsv} left.");
 
-                    ship = ConfigData.Ships.GetAvailableShipsOfType(shipType).Where((s) => !Squad.HasShip(s)).First();
+                    ship = ConfigData.AllShips.GetAvailableShipsOfType(shipType).Where((s) => !Squad.HasShip(s)).First();
                     shipTsv = ship.GetMaxTsv();
                 }
                 if (innerLoopCount >= maxLoops)

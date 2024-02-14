@@ -475,7 +475,7 @@ namespace Assets.Scripts.Scenes
                 //$"Kills: {savedSquad.Stats.Kills} \n");
                 if (savedSquad.HasBeenSaved)
                 {
-                    ConfigData.Ships.GetSavedSquad(savedSquad.Id).Stats = savedSquad.Stats;
+                    ConfigData.AllShips.GetSavedSquad(savedSquad.Id).Stats = savedSquad.Stats;
                 }
             });
                 
@@ -485,8 +485,8 @@ namespace Assets.Scripts.Scenes
 
             if (ReplaceDeadShips)
             {
-                ConfigData.Ships.SaveFleetData(); // [alert] turn on or off to have ships record stats and die
-                ConfigData.Ships.SaveSquadData();
+                ConfigData.AllShips.SaveFleetData(); // [alert] turn on or off to have ships record stats and die
+                ConfigData.AllShips.SaveSquadData();
             }
             //Debugger.Log($"Resetting scene");
             Ship[] ships = state.GetShips().ToArray();

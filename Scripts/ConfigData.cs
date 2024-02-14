@@ -159,9 +159,6 @@ namespace Assets.Scripts
         public static Color UnsetColor = Color.clear;
         
 
-        /* At the time of this writing (2023-03-24) ship PPU and world unit sizes have not been standardized. When they are, these values will probably change
-         *  The base ship unit (48, 64) is 2.5 world units wide and 3.333 world units tall. That translates to a sprite that should be 48 Pixels Per (world) Unit.
-         */
         public static Vector2 DragIconSize = new Vector2(48, 64); // the size of the drag icons (in locally scaled units) for all ships regardless of the size of the ship
         public static float WorldUnitScaleFactor = 2.5f;
         public static Vector2 ShipOffset = new Vector2(15, 15); // the minimum offset between ships in the squad maker in UI world units.
@@ -188,6 +185,11 @@ namespace Assets.Scripts
              (ShipOffset * new Vector2(-.5f, -8)),  (ShipOffset * new Vector2(.5f, -8)),
              (ShipOffset * new Vector2(-.5f, -9)),  (ShipOffset * new Vector2(.5f, -9)),
              (ShipOffset * new Vector2(-.5f, -10)),  (ShipOffset * new Vector2(.5f, -10)),
+        };
+
+        public static Vector2[] QueenYellowJacketSpawnFormation = new Vector2[] {
+            (ShipOffset * new Vector2(-1, 0)), (ShipOffset * new Vector2(-.5f, 0)),  (ShipOffset * new Vector2(.5f, 0)), (ShipOffset * new Vector2(1, 0)),
+            (ShipOffset * new Vector2(-1, -1)), (ShipOffset * new Vector2(-.5f, -1)),  (ShipOffset * new Vector2(.5f, -1)), (ShipOffset * new Vector2(1, -1)),
         };
 
         public static Vector2 OriginalSavedSquadLabelSize = new Vector2(240, 64); 
@@ -218,7 +220,7 @@ namespace Assets.Scripts
 
         //Carrying variables - Changing variables that need to be carried between scenes
 
-        public static Ships Ships = null; 
+        public static Ships AllShips = null; 
         public static List<SavedSquad> SquadsChosenForLevel = new List<SavedSquad>();
         public static bool IsLoadingUserData = false;
         public static bool AreAllSettingsLoaded => (ShipInfo != null && ShipInfo.IsLoaded) && (Configuration != null && Configuration.IsLoaded)
@@ -332,9 +334,9 @@ namespace Assets.Scripts
             //    Debugger.Log($"Saving User Progress: {Socket.IsOpen}");
             GetUserProgressData().Save();
             //Debugger.Log($"Saving Ships: {Socket.IsOpen}");
-            Ships.SaveFleetData();
+            AllShips.SaveFleetData();
             //Debugger.Log($"Saving Squads: {Socket.IsOpen}");
-            Ships.SaveSquadData();
+            AllShips.SaveSquadData();
         }
         public static string GetBasePath()
         {
