@@ -8,6 +8,7 @@ using System.Collections;
 using System.Collections.Generic;
 using Unity.VisualScripting;
 using UnityEngine;
+using UnityEngine.Assertions;
 
 namespace Assets.Scripts.Entities.Ships
 {
@@ -18,16 +19,24 @@ namespace Assets.Scripts.Entities.Ships
         public Vector2 SpawnPoint;
         public int SpawnFrequency;
         public int TimeBetweenMinions;
+        public int MinionSquadsCount = 0;
         public Squad CurrentMinionSquad;
         public List<Squad> MinionSquads = new List<Squad>();
 
+        private int _maxMinionsPerSquad = 16;
+
         private void Start()
         {
+            if (MinionCount > _maxMinionsPerSquad)
+            {
+                Debugger.Exception($"Queen Property [MinionCount] (MinionCount) cannot be greater than [_maxMinionsPerSquad] ({_maxMinionsPerSquad})");
+            }
             InvokeRepeating(nameof(SpawnMinions), SpawnFrequency, SpawnFrequency);
         }
 
         private void SpawnMinions()
         {
+            MinionSquadsCount++;
             GameState state = Level.GetState();
             // Create Squad
             Squad squad = Level.gameObject.AddComponent<Squad>();
@@ -40,28 +49,31 @@ namespace Assets.Scripts.Entities.Ships
                 (int)Utilities.Hash() + ConfigData.AllShips.GetSavedSquads().Count,
                 Squad.Side,
                 state.GetSquadsBySide(Side).Count + 1,
-                $"{Squad.Name} - {MinionType} Spawn",
+                $"{Squad.Name} - {MinionType} Spawn #{MinionSquadsCount}",
                 Squad.Color
             );
             state.AddSquad(squad);
-
+            CurrentMinionSquad = squad;
+            MinionSquads.Add(squad);
+            squad.SavedSquad = Squad.SavedSquad;
 
             // Spawn the minions
-            Debugger.Log($"Spawning {MinionCount} {MinionType}s at {SpawnPoint}");
-            for (int shipIndex = 0; shipIndex  < MinionCount; shipIndex++)
+            //Debugger.Log($"Spawning {MinionCount} {MinionType}s at {SpawnPoint}");
+            for (int shipIndex = 0; shipIndex < MinionCount; shipIndex++)
             {
-                StartCoroutine(SpawnMinion(shipIndex));
-                this.Invoke(() => SpawnMinion(), shipIndex*TimeBetweenMinions);
+                StartCoroutine(SpawnMinion(shipIndex, squad, GetPosition() + SpawnPoint));
             }
 
         }
 
-        private void SpawnMinion(int shipIndex, Squad squad)
+        private IEnumerator SpawnMinion(int shipIndex, Squad squad, Vector2 squadGatheringPoint)
         {
-            Debugger.Log($"Spawning minion {MinionType}");
+            yield return new WaitForSeconds(shipIndex * TimeBetweenMinions);
+
+            //Debugger.Log($"Spawning minion {MinionType} #{shipIndex}");
 
             int id = (int)Utilities.Hash() + ConfigData.AllShips.GetFleetShips().Count;
-            Vector2 firstPosition = ConfigData.CarrierColumnFormationOffsets[shipIndex];
+            Vector2 offset = ConfigData.QueenYellowJacketSpawnFormation[shipIndex];
 
             Ship ship;
             (GameObject, Ship) tuple = Level.LevelConstructor.InstantiateShip(MinionType);
@@ -75,14 +87,19 @@ namespace Assets.Scripts.Entities.Ships
                     Level.GetState().EntityCount++,
                     new FleetShip(id, Side, $"{ShipType} Minion {MinionType} - #{id}", MinionType, true, false, 0, 0, 0, 0, 0, 0),
                     squad,
-                    SpawnPoint
+                    offset
                 );
+                ship.IsMinionShip = true;
             }
             squad.AddShip(ship);
             ship.SetColor();
 
-            // To-do: Need to be able to spawn minions on top of ship and intervals and then need to be able to send them to their starting position.
-            // Squad needs to start acting as a squad *after* all the minions are assembled
+            Vector2 position = GetPosition();
+            Vector2 rotatedSpawnPosition = Utilities.RotatePointAroundPoint(position, position + SpawnPoint, GetRotation() * Mathf.Deg2Rad);
+            ship.transform.localPosition = rotatedSpawnPosition;
+
+            ship.MoveToPoint(squadGatheringPoint + offset + new Vector2(0, -10));
+
         }
     }
 

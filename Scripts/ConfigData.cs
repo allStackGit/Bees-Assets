@@ -187,9 +187,11 @@ namespace Assets.Scripts
              (ShipOffset * new Vector2(-.5f, -10)),  (ShipOffset * new Vector2(.5f, -10)),
         };
 
-        public static Vector2[] QueenYellowJacketSpawnFormation = new Vector2[] {
+        public static Vector2[] QueenYellowJacketSpawnFormation = new Vector2[] { // Supports up to 16 slots
             (ShipOffset * new Vector2(-1, 0)), (ShipOffset * new Vector2(-.5f, 0)),  (ShipOffset * new Vector2(.5f, 0)), (ShipOffset * new Vector2(1, 0)),
             (ShipOffset * new Vector2(-1, -1)), (ShipOffset * new Vector2(-.5f, -1)),  (ShipOffset * new Vector2(.5f, -1)), (ShipOffset * new Vector2(1, -1)),
+            (ShipOffset * new Vector2(-1, -2)), (ShipOffset * new Vector2(-.5f, -2)),  (ShipOffset * new Vector2(.5f, -2)), (ShipOffset * new Vector2(1, -2)),
+            (ShipOffset * new Vector2(-1, -3)), (ShipOffset * new Vector2(-.5f, -3)),  (ShipOffset * new Vector2(.5f, -3)), (ShipOffset * new Vector2(1, -3)),
         };
 
         public static Vector2 OriginalSavedSquadLabelSize = new Vector2(240, 64); 

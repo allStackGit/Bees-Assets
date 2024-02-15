@@ -288,7 +288,7 @@ namespace Assets.Scripts.Level
             {
                 float x = Mathf.Clamp((destination.x + ship.OffsetFromCenter.x), Level.MinX, Level.MaxX);
                 float y = Mathf.Clamp((destination.y + ship.OffsetFromCenter.y), Level.MinY, Level.MaxY);
-                ship.TargetCoordinates = new Vector2(x, y);
+                ship.MoveToPoint(new Vector2(x, y));
             }
                 
 

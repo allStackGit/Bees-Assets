@@ -100,7 +100,7 @@ namespace Assets.Scripts.Level.Commands
                     Ship ship = ships[i];
                     if (ship.HasTargetShips && !ship.TargetShips.All((ship) => ship.IsDead))
                     {
-                        ship.TargetCoordinates = ship.TargetShips.First().GetPosition();
+                        ship.MoveToPoint(ship.TargetShips.First().GetPosition());
 
                         if (ship.ShipType == "Fire Ship" && ship.DistanceToPoint(ship.TargetCoordinates) < 30)
                         {
@@ -157,7 +157,7 @@ namespace Assets.Scripts.Level.Commands
 
                                 float x = Mathf.Clamp((destination.x + ship.OffsetFromCenter.x), Level.MinX, Level.MaxX);
                                 float y = Mathf.Clamp((destination.y + ship.OffsetFromCenter.y), Level.MinY, Level.MaxY);
-                                ship.TargetCoordinates = new Vector2(x, y);
+                                ship.MoveToPoint(new Vector2(x, y));
                             }
                         }
                     }
@@ -198,7 +198,7 @@ namespace Assets.Scripts.Level.Commands
                     else
                     {
                         //Debugger.Log($"{striker.Id} is still {distance} away from {targetPoint}");
-                        ship.TargetCoordinates = targetPoint;
+                        ship.MoveToPoint(targetPoint);
                     }
                 }
             }

@@ -22,18 +22,17 @@ namespace Assets.Scripts.Entities.Ships
         public int Health,  OriginalHealth, OriginalTsv, Sight, AdditionalTsv;
         public float ProjectileValue, Speed, SpecialFirePower;
         public GameObject ShipExplosion, HealthBar, MiniMapIcon;
-        public bool InCombat;
         public Vector2 TargetCoordinates, OffsetFromCenter; // the coordinates of where the ship should go, and it's offset from the center of the squad
         public Squad Squad;
         public float DefaultAngle;
         public long LastKilled;
         public FleetShip FleetShip = null;
         public string ShipType;
-        public bool FireAtFrontOfShip;
+        public bool FireAtFrontOfShip, InCombat;
+        public bool HasBrain, IsMinionShip;
         public List<Weapon> Weapons;
         public List<GameObject> ProjectilePrefabs, WeaponPrefabs, ColoredPrefabs;
         public Brain Brain = null;
-        public bool HasBrain = false;
 
 
 
@@ -341,6 +340,13 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
 
         // movement methods
+        public void MoveToPoint(Vector2 destination)
+        {
+            float x = Mathf.Clamp(destination.x, Level.MinX, Level.MaxX);
+            float y = Mathf.Clamp(destination.y, Level.MinY, Level.MaxY);
+
+            TargetCoordinates = new Vector2(x, y);
+        }
         private void Move()
         {
             if (HasBrain && !Squad.IsUserControlled)
@@ -748,7 +754,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 }
                 else
                 {
-                    if (!IsCarrierShip && Squad.SavedSquad.HasBeenSaved)
+                    if (!IsCarrierShip && !IsMinionShip && Squad.SavedSquad.HasBeenSaved)
                     {
                         FleetShip.IsDead = true;
                     }
