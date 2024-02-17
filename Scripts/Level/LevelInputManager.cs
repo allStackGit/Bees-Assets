@@ -122,7 +122,7 @@ namespace Assets.Scripts.Level
                             //Debugger.Log("Selecting an already selected squad");
                             Vector2 position = squad.GetPosition();
                             Level.Camera.orthographicSize = Level.DefaultZoom;
-                            Level.Camera.transform.position = new Vector3(position.x, position.y, -10) + Level.transform.position;
+                            Level.Camera.transform.position = new Vector3(position.x, position.y, -10) + Level.Get3DPosition();
                             MaintainScrollBoundary();
                         }
                         else
@@ -131,7 +131,7 @@ namespace Assets.Scripts.Level
                             if (squad != null)
                             {
                                 Vector2 position = squad.GetPosition();
-                                Level.Camera.transform.position = new Vector3(position.x, position.y, -10) + Level.transform.position;
+                                Level.Camera.transform.position = new Vector3(position.x, position.y, -10) + Level.Get3DPosition();
                                 Level.Camera.orthographicSize = Level.MaxZoom;
                                 MaintainScrollBoundary();
                             }
@@ -448,7 +448,7 @@ namespace Assets.Scripts.Level
             GameState state = Level.GetState();
             List<Ship> ships = state.GetShips(ConfigData.Configuration.UserSide);
             Squad potentialSquad = null;
-            Vector2 levelPosition = _mousePosition - (Vector2)Level.transform.position;
+            Vector2 levelPosition = _mousePosition - Level.GetPosition();
 
             foreach (Ship ship in ships)
             {
@@ -472,7 +472,7 @@ namespace Assets.Scripts.Level
             GameState state = Level.GetState();
             List<Ship> ships = state.GetShips(ConfigData.Configuration.AISide);
             Squad potentialSquad = null;
-            Vector2 levelPosition = _mousePosition - (Vector2)Level.transform.position;
+            Vector2 levelPosition = _mousePosition - Level.GetPosition();
 
             foreach (Ship ship in ships)
             {
@@ -497,7 +497,7 @@ namespace Assets.Scripts.Level
             List<Squad> squads = Level.GetState().GetSelectedSquads();
             squads.ForEach((squad) =>
             {
-                Vector2 localized = targetPosition - (Vector2) Level.transform.position;
+                Vector2 localized = targetPosition - Level.GetPosition();
                 //Debugger.Log($"Squad: {squad.Name} World point target position: {targetPosition}, localized: {localized}");
 
                 //float x = Mathf.Clamp(targetPosition.x, Level.MinX, Level.MaxX);
@@ -518,8 +518,8 @@ namespace Assets.Scripts.Level
                 GameState state = Level.GetState();
                 state.GetSelectedSquads().ForEach((squad) =>
                 {
-                    Vector2 startingPosition = _mouseDownPosition - (Vector2)Level.transform.position;
-                    Vector2 endingPosition = _mousePosition - (Vector2)Level.transform.position;
+                    Vector2 startingPosition = _mouseDownPosition - Level.GetPosition();
+                    Vector2 endingPosition = _mousePosition - Level.GetPosition();
                     squad.UserPatrol(startingPosition, endingPosition);
                 });
                 _selectingPatrolArea = false;
@@ -567,7 +567,7 @@ namespace Assets.Scripts.Level
                         Vector2 miniMapPoint = hit.gameObject.transform.InverseTransformPoint(hit.screenPosition);
                         Vector2 viewPortPoint = miniMapPoint + new Vector2(.5f, .5f);
                         Vector2 viewPortWorldPoint = Level.MiniMapCamera.ViewportToWorldPoint(viewPortPoint);
-                        Vector2 localized = viewPortWorldPoint - (Vector2)Level.transform.position;
+                        Vector2 localized = viewPortWorldPoint - Level.GetPosition();
 
                         //Debugger.Log($"Hit: Screen position: {hit.screenPosition}, Mini Map position: {miniMapPoint}, View port position: {viewPortPoint}, Viewport World Point: {viewPortWorldPoint}," +
                         //    $"Localized: {localized} ");

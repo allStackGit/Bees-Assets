@@ -26,7 +26,7 @@ namespace Assets.Scripts.Entities.Ships
             //LoadedIndicator.transform.position = GetPosition();
             //LoadedIndicator.transform.localPosition = IndicatorOffset;
             _indicatorSprite = LoadedIndicator.GetComponent<SpriteRenderer>();
-            InvokeRepeating(nameof(CheckCarrierReload), .25f, .25f);
+            InvokeRepeating(nameof(CheckCarrierReload), 1, 1);
         }
         protected override void OnTriggerEnter2D(Collider2D collider) // projectile collision
         {
@@ -117,17 +117,11 @@ namespace Assets.Scripts.Entities.Ships
             CarriedBomb.SetActive(false);
 
             // drop bomb animation
-            Vector2 randomPoint = Utilities.RandomCoordinate(Level, Vector2.zero, new Vector2(ContactedShip.GetHalfWidth() - ConfigData.OffsetFromFront, ContactedShip.GetHalfHeight() - ConfigData.OffsetFromFront), Vector2.zero);
-
-            //Debugger.Log($"Ship rotation: {rotation}, Half Width: {ContactedShip.GetHalfWidth()}, position: {targetPosition} " +
-            //     $"Unrotated Location 1: {randomPoint} " +
-            //    $"Rotated Location 1: {rotatedBombLocation} ");
+            Vector2 bombPosition = ContactedShip.GetRandomPointOnShip();
 
             GameObject instance = Instantiate(BombSprite, Vector2.zero, Quaternion.identity);
+            instance.transform.localPosition = bombPosition;
             instance.transform.parent = ContactedShip.transform;
-            instance.transform.localPosition = randomPoint;
-
-
 
             StrikerBomb bomb = (StrikerBomb)instance.GetComponent(typeof(StrikerBomb));
             bomb.Setup(Bomb.Power, this, ContactedShip);

@@ -593,5 +593,15 @@ namespace Assets.Scripts.Scenes
             }
             Invoke(nameof(GetHiveMindCommands), .25f);
         }
+
+        public Vector2 GetPosition()
+        {
+            return transform.localPosition;
+        }
+
+        public Vector3 Get3DPosition()
+        {
+            return transform.localPosition;
+        }
     }
 }

@@ -119,7 +119,6 @@ MonoBehaviour:
   ShipExplosion: {fileID: 1876865744220396715, guid: 1f58b7947f208d944b8669f2e51a9a52, type: 3}
   HealthBar: {fileID: 2012085364837327660}
   MiniMapIcon: {fileID: 8505656998013639901}
-  InCombat: 0
   TargetCoordinates: {x: 0, y: 0}
   OffsetFromCenter: {x: 0, y: 0}
   Squad: {fileID: 0}
@@ -127,13 +126,16 @@ MonoBehaviour:
   LastKilled: 0
   ShipType: 
   FireAtFrontOfShip: 1
+  InCombat: 0
+  HasBrain: 0
+  IsMinionShip: 0
   Weapons: []
   ProjectilePrefabs:
   - {fileID: 1332487207424970191, guid: e256732f4a582284b967f76f71403ead, type: 3}
   WeaponPrefabs:
   - {fileID: 3407154034279406528}
+  ColoredPrefabs: []
   Brain: {fileID: 0}
-  HasBrain: 0
   __PastCommands: []
   __Strategy: 
   __Squad: 

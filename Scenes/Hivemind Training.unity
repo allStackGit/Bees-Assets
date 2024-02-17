@@ -6371,7 +6371,7 @@ MonoBehaviour:
   updates: 0
   __PastServerRequests: []
   __AverageRequestTime: 0
-  ActivateHiveMind: 0
+  ActivateHiveMind: 1
   ActivateBrains: 0
   IsTrainingNueralNetwork: 0
   IsTrainingHiveMind: 0

@@ -14,6 +14,7 @@ using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Level.Commands;
 using Assets.Scripts.Server;
 using Unity.MLAgents;
+using UnityEngine.UIElements;
 
 namespace Assets.Scripts.Entities.Ships
 {
@@ -856,6 +857,19 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         public bool CanSeeShip(Ship ship)
         {
             return DistanceTo(ship) < Sight;
+        }
+        public Vector2 GetRandomPointOnShip()
+        {
+            Collider2D collider = GetComponent<Collider2D>();
+
+            Vector2 randomPointBounds = new Vector2(GetHalfWidth() - ConfigData.OffsetFromFront, GetHalfHeight() - ConfigData.OffsetFromFront);
+            Vector2 randomPoint = Vector2.zero;
+            int loops;
+            for (loops = 0; loops < 250 && !collider.OverlapPoint(randomPoint); loops++)
+            {
+                randomPoint = Utilities.RandomCoordinate(Level, Vector2.zero, randomPointBounds, Vector2.zero) + GetPosition() + Level.GetPosition();
+            }
+            return randomPoint;
         }
 
 

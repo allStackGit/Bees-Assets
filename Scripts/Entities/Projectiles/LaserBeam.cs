@@ -84,7 +84,7 @@ namespace Assets.Scripts.Entities.Projectiles
                         Vector2 rotatedLocalPosition = localRotation * localCannonPoint;
                         //Vector2 rotatedCannonPosition = (Vector2)Shooter.transform.TransformPoint(rotatedLocalPosition);
                         //Vector2 rotatedMapPosition = (Vector2)Level.Map.transform.TransformPoint(rotatedLocalPosition);
-                        Vector2 offsetRotatedCannonPosition = (Vector2)Shooter.transform.TransformPoint(rotatedLocalPosition) - (Vector2) Level.transform.position;
+                        Vector2 offsetRotatedCannonPosition = (Vector2)Shooter.transform.TransformPoint(rotatedLocalPosition) - Level.GetPosition();
                         Angle = worldAngle * Mathf.Deg2Rad * -1;
 
                         //Debugger.Log($"Cruiser world rotation: {Shooter.transform.eulerAngles.z}");
