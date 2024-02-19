@@ -3,6 +3,7 @@ using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Level;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Entities.Projectiles
@@ -27,7 +28,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
         public override void ContactTarget(Ship target)
         {
-            //Debugger.Log($"Rocket hit {target.name} and exploded");
+            //Debugger.Log($"Rocket hit {target.Name} and exploded");
             CancelInvoke(nameof(IncreaseSpeed));
             AddExplosion();
             Kill();
@@ -43,6 +44,18 @@ namespace Assets.Scripts.Entities.Projectiles
             state.AddExplosion(explosion);
         }
 
+        protected override void ShipCollision(Ship ship)
+        {
+            //Debugger.Log("Basic rocket collision");
+            if (ship != null)
+            {
+                // if hit enemy projectile or fire ship explosion. the ships to ignore is for leafcutter split shots
+                if ((!IsFriendly(ship) || (Shooter.ShipType == "Fire Ship" && !Equals(Shooter))) && !ShipsToIgnore.Contains(ship))
+                {
+                    ContactTarget(ship); // don't do damage because the explosion is what does damage
+                }
+            }
+        }
     }
 
     

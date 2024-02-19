@@ -21,7 +21,7 @@ namespace Assets.Scripts.Scenes
         //public List<Dialogue> Dialogues = new List<Dialogue>();
         public Dialogue NetworkDisconnection;
         public float TimeScale = 1;
-        public long updates = 0;
+        public long Updates = 0;
 
 
 
@@ -92,8 +92,8 @@ namespace Assets.Scripts.Scenes
         protected void Update()
         {
             //UpdateTestVariables();
-            updates++;
-            if (updates%10 == 0)
+            Updates++;
+            if (Updates%10 == 0)
             {
                 Socket.Update();
             }
@@ -110,7 +110,7 @@ namespace Assets.Scripts.Scenes
             {
                 // [alert] [debug]
                 
-                if (WatchServerRequests && updates%250 == 0)
+                if (WatchServerRequests && Updates%250 == 0)
                 {
                     UpdateTestVariables();
                 }

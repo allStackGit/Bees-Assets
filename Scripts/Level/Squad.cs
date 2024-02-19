@@ -72,6 +72,13 @@ namespace Assets.Scripts.Level
         public bool InCombat => GetShips().Any((s) => s.InCombat);
 
 
+        public List<Ship> __Ships;
+
+        private void UpdateTestProperties()
+        {
+            __Ships = GetShips();
+        }
+
         // Setup methods
         public void Setup(LevelStage level, SavedSquad savedSquad, string shootingStrategy, bool ceaseFire, bool isMatchingSpeed, 
             int id, int side, int squadNumber, string name, Color color)
@@ -243,6 +250,7 @@ namespace Assets.Scripts.Level
                 HasMovedBox = false;
                 CheckChase();
             }
+            //UpdateTestProperties();
         }
         public void SetOffsets()
         {
@@ -637,6 +645,13 @@ namespace Assets.Scripts.Level
             }
 
 
+        }
+        public void ClearTargets()
+        {
+            GetShips().ForEach(ship =>
+            {
+                ship.ClearTargets();
+            });
         }
         public void SetShootingStrategy(string strategy)
         {

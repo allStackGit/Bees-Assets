@@ -83,6 +83,7 @@ namespace Assets.Scripts.Entities.Ships
         public List<Ship> __SquadShips;
         public bool __HasReachedDestination;
         public bool __SquadHasReachedDestination;
+        public string __Enemy;
 
 
 
@@ -97,6 +98,7 @@ namespace Assets.Scripts.Entities.Ships
         private void UpdateTestProperties()
         {
             __Strategy = Squad.HasCommand && Squad.Command.HasStrategy ? Squad.Command.Strategy.Name : "-";
+            __Enemy =  Squad.HasEnemy ? Squad.Command.Enemy.Name : "-";
             __TargetShips = TargetShips;
             __Squad = Squad.Name;
             __SquadStatus = Squad.Status;
@@ -442,7 +444,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             if ((distance < GetHeight() && !Squad.HasEnemy) || (distance < ConfigData.CloseEnoughCoordinateVariance))
             {
                 //Debugger.Log($"Ship {Id} is close enough {DistanceToPoint(TargetCoordinates)} to the target coordinates {TargetCoordinates} and will now stop moving.");
-                StopMoving($"Ship #{Id} is close enough ({DistanceToPoint(TargetCoordinates)}) to the target coordinates {TargetCoordinates}");
+                StopMoving($"Ship #{Id} is close enough ({distance}) to the target coordinates {TargetCoordinates}");
             }
 
             //if any of the target ship(s) if your weapons are not dead and are within range and you're not within range of any enemy ships
@@ -524,6 +526,13 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
        
 
         // Combat methods
+        public void ClearTargets()
+        {
+            Weapons.ForEach((weapon) =>
+            {
+                weapon.ClearTargets();
+            });
+        }
         private void CombatTimer()
         {
             if (!Level.IsPaused)
@@ -556,10 +565,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         protected virtual void OnTriggerEnter2D(Collider2D collider) // projectile collision
         {
             GameObject collidingThing = collider.gameObject;
-            if (collidingThing.CompareTag("Projectile"))
-            {
-                ProjectileCollision(collidingThing);
-            }else if (collidingThing.name == ("Selection Box"))
+            if (collidingThing.name == ("Selection Box"))
             {
                 //Debugger.Log("Hit selection box");
                 if (IsUserControlled)

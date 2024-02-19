@@ -9,6 +9,7 @@ using Assets.Scripts.Server;
 using Assets.Scripts.UIComponents;
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Linq;
 using Unity.MLAgents;
 using UnityEngine;
@@ -594,14 +595,23 @@ namespace Assets.Scripts.Scenes
             Invoke(nameof(GetHiveMindCommands), .25f);
         }
 
+
+
         public Vector2 GetPosition()
         {
             return transform.localPosition;
         }
-
         public Vector3 Get3DPosition()
         {
             return transform.localPosition;
+        }
+        public Vector2 ForceBounds(Vector2 point)
+        {
+            return ForceBounds(point.x, point.y);
+        }
+        public Vector2 ForceBounds(float x, float y)
+        {
+            return new Vector2(Mathf.Clamp(x, MinX, MaxX), Mathf.Clamp(y, MinY, MaxY));
         }
     }
 }

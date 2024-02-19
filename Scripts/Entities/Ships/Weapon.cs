@@ -207,6 +207,11 @@ namespace Assets.Scripts.Entities.Ships
             IsUsingCachedTargetingQueue = false;
             return queue;
         }
+        public void ClearTargets()
+        {
+            TargetShip = null;
+            CachedTargetingQueue.Clear();
+        }
         public List<Ship> MakeTargetingQueue()
         {
             //Debugger.Log($"Making targeting queue. The squad is using {Squad.GetShootingStrategy()}");

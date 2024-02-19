@@ -147,6 +147,7 @@ namespace Assets.Scripts
         public static bool FirstTimePlaying = true; // [alert] should be linked to whether a user has actually played before   
         public static float CloseEnoughCoordinateVariance = 1.5f; // world units
         public static float OffsetFromFront = .25f;
+        public const float FireShipExplosionSize = 32;
 
 
         public static KeyCode[] SquadKeys = new KeyCode[] { KeyCode.Alpha1, KeyCode.Alpha2, KeyCode.Alpha3, KeyCode.Alpha4, KeyCode.Alpha5, KeyCode.Alpha6, KeyCode.Alpha7, KeyCode.Alpha8, KeyCode.Alpha9, KeyCode.Alpha0 };

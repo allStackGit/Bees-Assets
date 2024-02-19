@@ -37,6 +37,19 @@ namespace Assets.Scripts.Entities.Ships
         private void SpawnMinions()
         {
             MinionSquadsCount++;
+            Squad squad = CreateMinionSquad();
+
+            // Spawn the minions
+            //Debugger.Log($"Spawning {MinionCount} {MinionType}s at {SpawnPoint}");
+            for (int shipIndex = 0; shipIndex < MinionCount; shipIndex++)
+            {
+                StartCoroutine(SpawnMinion(shipIndex, squad, GetPosition() + SpawnPoint));
+            }
+
+        }
+
+        private Squad CreateMinionSquad()
+        {
             GameState state = Level.GetState();
             // Create Squad
             Squad squad = Level.gameObject.AddComponent<Squad>();
@@ -56,22 +69,17 @@ namespace Assets.Scripts.Entities.Ships
             CurrentMinionSquad = squad;
             MinionSquads.Add(squad);
             squad.SavedSquad = Squad.SavedSquad;
-
-            // Spawn the minions
-            //Debugger.Log($"Spawning {MinionCount} {MinionType}s at {SpawnPoint}");
-            for (int shipIndex = 0; shipIndex < MinionCount; shipIndex++)
-            {
-                StartCoroutine(SpawnMinion(shipIndex, squad, GetPosition() + SpawnPoint));
-            }
-
+            return squad;
         }
-
         private IEnumerator SpawnMinion(int shipIndex, Squad squad, Vector2 squadGatheringPoint)
         {
             yield return new WaitForSeconds(shipIndex * TimeBetweenMinions);
 
             //Debugger.Log($"Spawning minion {MinionType} #{shipIndex}");
-
+            if (squad == null || squad.IsDead)
+            {
+                squad = CreateMinionSquad();
+            }
             int id = (int)Utilities.Hash() + ConfigData.AllShips.GetFleetShips().Count;
             Vector2 offset = ConfigData.QueenYellowJacketSpawnFormation[shipIndex];
 

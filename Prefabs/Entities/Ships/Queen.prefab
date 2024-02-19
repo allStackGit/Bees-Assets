@@ -165,6 +165,7 @@ MonoBehaviour:
   __SquadShips: []
   __HasReachedDestination: 0
   __SquadHasReachedDestination: 0
+  __Enemy: 
   Direction: 0
   ShouldDetonate: 0
   RLShootingStrategy: 
@@ -174,7 +175,7 @@ MonoBehaviour:
   MinionType: Yellow Jacket
   MinionCount: 8
   SpawnPoint: {x: 0, y: -12}
-  SpawnFrequency: 30
+  SpawnFrequency: 20
   TimeBetweenMinions: 3
   MinionSquadsCount: 0
   CurrentMinionSquad: {fileID: 0}

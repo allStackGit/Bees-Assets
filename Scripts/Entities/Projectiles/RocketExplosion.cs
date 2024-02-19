@@ -2,6 +2,7 @@
 using Assets.Scripts.Entities.Ships;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Entities.Projectiles
@@ -16,7 +17,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
         public override void ContactTarget(Ship target)
         {
-            //Debugger.Log($"Explosion hit {target.name}");
+            //Debugger.Log($"Explosion hit {target.Name}");
             _shipsHit.Add(target);
         }
 
@@ -30,6 +31,39 @@ namespace Assets.Scripts.Entities.Projectiles
             //Debugger.Log("Killed off the rocket explosion");
             Level.GetState().RemoveExplosion(this);
             Destroy(gameObject);
+        }
+
+        protected override void FixedUpdate()
+        {
+            if (!Level.IsPaused)
+            {
+                if (CollidingQueue.Count > 0)
+                {
+                    //Debugger.Log("Pulled collision off of rocket explosion queue");
+                    for (int i = 0; i < CollidingQueue.Count; i++)
+                    {
+                        ShipCollision(CollidingQueue.Dequeue());
+                    }
+                }
+            }
+        }
+
+        protected override void ShipCollision(Ship ship)
+        {
+            //Debugger.Log($"Rocket explosion collided with {ship.Name}");
+            if (ship != null)
+            {
+                // if hit enemy projectile or fire ship explosion
+                if ((!IsFriendly(ship) || (Shooter.ShipType == "Fire Ship" && !Equals(Shooter))))
+                {
+                    if (!HasHitShip(ship)) // if it's an explosion it should do damage but not if it's already contacted the ship
+                    {
+                        ContactTarget(ship);
+                        Ship.LogDamage(Power, Shooter, ship);
+                    }
+
+                }
+            }
         }
 
     }

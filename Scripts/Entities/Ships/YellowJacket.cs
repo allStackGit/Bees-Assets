@@ -10,7 +10,7 @@ namespace Assets.Scripts.Entities.Ships
     public class YellowJacket : Ship
     {
 
-        public bool CompletedRun;
+        public bool HasCompletedRun;
         public Ship ContactedShip, TouchingShip;
 
         public Weapon Bomb => Weapons.First();
@@ -18,11 +18,7 @@ namespace Assets.Scripts.Entities.Ships
         protected override void OnTriggerEnter2D(Collider2D collider) // projectile collision
         {
             GameObject collidingThing = collider.gameObject;
-            if (collidingThing.CompareTag("Projectile"))
-            {
-                ProjectileCollision(collidingThing);
-            }
-            else if (collidingThing.name == ("Selection Box"))
+            if (collidingThing.name == ("Selection Box"))
             {
                 if (IsUserControlled)
                 {
@@ -78,7 +74,7 @@ namespace Assets.Scripts.Entities.Ships
         private void Detonate()
         {
             //Debugger.Log($"Yellow Jacket #{Id} is detonating against {ContactedShip.Name}");
-            CompletedRun = true;
+            HasCompletedRun = true;
 
             // do damage and stats
             LogDetonationDamage(Bomb.Power, this, ContactedShip);

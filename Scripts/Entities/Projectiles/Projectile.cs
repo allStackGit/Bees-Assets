@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Level;
@@ -21,7 +22,9 @@ namespace Assets.Scripts.Entities.Projectiles
         public GameObject ExplosionPrefab;
         public GameObject Explosion;
         public List<Ship> ShipsToIgnore = new List<Ship>();
+        public Queue<Ship> CollidingQueue = new Queue<Ship>();
 
+        public string Name => $"{name} - #{Id}";
 
         public bool HasExplosion => ExplosionPrefab != null;
         
@@ -43,7 +46,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
         public virtual void Kill()
         {
-            //Debugger.Log($"killed projectile {name}");
+            //Debugger.Log($"killed projectile {Name}");
             Level.GetState().RemoveProjectile(this);
 
             Destroy(gameObject);
@@ -61,10 +64,15 @@ namespace Assets.Scripts.Entities.Projectiles
             Kill();
         }
         
-        protected void FixedUpdate()
+        protected virtual void FixedUpdate()
         {
             if (!Level.IsPaused && Range > 0)
             {
+                if (CollidingQueue.Count > 0)
+                {
+                    //Debugger.Log("Pulled collision off of queue");
+                    ShipCollision(CollidingQueue.Dequeue());
+                }
                 Move();
             }
             
@@ -99,7 +107,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
         }
 
-        private void Move()
+        protected void Move()
         {
             //Debugger.Log($"Moving position for #{Id}: {GetPosition()}");
             if (OutOfBounds())
@@ -117,6 +125,37 @@ namespace Assets.Scripts.Entities.Projectiles
 
                 Body.velocity = new Vector3(x, y);
             }
+        }
+
+        protected virtual void OnTriggerEnter2D(Collider2D collider) // projectile collision
+        {
+            GameObject collidingThing = collider.gameObject;
+            //Debugger.Log($"Projectile #{Id} collided with {collidingThing.name} at {Level.Updates} updates");
+            if (collidingThing.CompareTag("Ship"))
+            {
+                Ship ship = (Ship)collidingThing.GetComponent(typeof(Ship));
+                if (ship != null)
+                {
+                    //Debugger.Log($"Projectile #{Id} collided with {ship.Name} at {Level.Updates} updates. Adding to queue");
+                    CollidingQueue.Enqueue(ship);
+                }
+                    
+            }
+        }
+
+        protected virtual void ShipCollision(Ship ship)
+        {
+            //Debugger.Log("Basic ship collision");
+            if (ship != null)
+            {
+                // if hit enemy projectile or fire ship explosion. the ships to ignore is for leafcutter split shots
+                if ((!IsFriendly(ship) || (Shooter.ShipType == "Fire Ship" && !Equals(Shooter))) && !ShipsToIgnore.Contains(ship))
+                {
+                    ContactTarget(ship);
+                    Ship.LogDamage(Power, Shooter, ship);
+                }
+            }
+
         }
     }
     
