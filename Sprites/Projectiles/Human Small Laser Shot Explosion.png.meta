@@ -1,5 +1,5 @@
 fileFormatVersion: 2
-guid: f707e79d5c60bff4a9c47ec2fbf1bbc5
+guid: 2fc3ab1188734794aaf2d9e568a17232
 TextureImporter:
   internalIDToNameTable: []
   externalObjects: {}
@@ -20,11 +20,12 @@ TextureImporter:
     externalNormalMap: 0
     heightScale: 0.25
     normalMapFilter: 0
+    flipGreenChannel: 0
   isReadable: 0
   streamingMipmaps: 0
   streamingMipmapsPriority: 0
   vTOnly: 0
-  ignoreMasterTextureLimit: 0
+  ignoreMipmapLimit: 0
   grayScaleToAlpha: 0
   generateCubemap: 6
   cubemapConvolution: 0
@@ -47,7 +48,7 @@ TextureImporter:
   spriteMeshType: 1
   alignment: 0
   spritePivot: {x: 0.5, y: 0.5}
-  spritePixelsToUnits: 16
+  spritePixelsToUnits: 40
   spriteBorder: {x: 0, y: 0, z: 0, w: 0}
   spriteGenerateFallbackPhysicsShape: 1
   alphaUsage: 1
@@ -63,6 +64,7 @@ TextureImporter:
   textureFormatSet: 0
   ignorePngGamma: 0
   applyGammaDecoding: 0
+  swizzle: 50462976
   cookieLightType: 0
   platformSettings:
   - serializedVersion: 3
@@ -75,6 +77,7 @@ TextureImporter:
     crunchedCompression: 0
     allowsAlphaSplitting: 0
     overridden: 0
+    ignorePlatformSupport: 0
     androidETC2FallbackOverride: 0
     forceMaximumCompressionQuality_BC6H_BC7: 0
   - serializedVersion: 3
@@ -87,6 +90,7 @@ TextureImporter:
     crunchedCompression: 0
     allowsAlphaSplitting: 0
     overridden: 0
+    ignorePlatformSupport: 0
     androidETC2FallbackOverride: 0
     forceMaximumCompressionQuality_BC6H_BC7: 0
   - serializedVersion: 3
@@ -99,31 +103,20 @@ TextureImporter:
     crunchedCompression: 0
     allowsAlphaSplitting: 0
     overridden: 0
-    androidETC2FallbackOverride: 0
-    forceMaximumCompressionQuality_BC6H_BC7: 0
-  - serializedVersion: 3
-    buildTarget: WebGL
-    maxTextureSize: 2048
-    resizeAlgorithm: 0
-    textureFormat: -1
-    textureCompression: 0
-    compressionQuality: 50
-    crunchedCompression: 0
-    allowsAlphaSplitting: 0
-    overridden: 0
+    ignorePlatformSupport: 0
     androidETC2FallbackOverride: 0
     forceMaximumCompressionQuality_BC6H_BC7: 0
   spriteSheet:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: small_bullet_explode_0
+      name: small_blue_bullet_explode_0
       rect:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 8
-        height: 8
+        width: 40
+        height: 40
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -131,104 +124,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 7033295d8d97aea4bb0079046d98cb14
-      internalID: 1928658618
+      spriteID: 5b11a0ca9cc46a04abd90f6079550e96
+      internalID: 1395835053
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_explode_1
-      rect:
-        serializedVersion: 2
-        x: 8
-        y: 0
-        width: 8
-        height: 8
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: f7d79e772f8f78845b15554690c9bf4f
-      internalID: -123358767
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: small_bullet_explode_2
-      rect:
-        serializedVersion: 2
-        x: 16
-        y: 0
-        width: 8
-        height: 8
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 6dcdd445d1f95824792ec484a94de1c9
-      internalID: -1960792918
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: small_bullet_explode_3
-      rect:
-        serializedVersion: 2
-        x: 24
-        y: 0
-        width: 8
-        height: 8
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 5fdb9cbe47230324a95b91b037706e71
-      internalID: -184823828
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: small_bullet_explode_4
-      rect:
-        serializedVersion: 2
-        x: 32
-        y: 0
-        width: 8
-        height: 8
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: d122b14b75169224dba12d70a80501d3
-      internalID: -488685723
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: small_bullet_explode_5
+      name: small_blue_bullet_explode_1
       rect:
         serializedVersion: 2
         x: 40
         y: 0
-        width: 8
-        height: 8
+        width: 40
+        height: 40
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -236,104 +145,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: eb69aa666344c714b8d56744a4253304
-      internalID: -1268039723
+      spriteID: d23dcaacc758a6a4382e9bc05847df0f
+      internalID: -759540721
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_explode_6
-      rect:
-        serializedVersion: 2
-        x: 48
-        y: 0
-        width: 8
-        height: 8
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: f5a9a90c14ed80d4b96223b9240b900b
-      internalID: 1215761279
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: small_bullet_explode_7
-      rect:
-        serializedVersion: 2
-        x: 56
-        y: 0
-        width: 8
-        height: 8
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 38e13c03bf510924ea1d077a16211b91
-      internalID: -1174465541
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: small_bullet_explode_8
-      rect:
-        serializedVersion: 2
-        x: 64
-        y: 0
-        width: 8
-        height: 8
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 9bc520761f253814aad4e892d8e85183
-      internalID: -2147266213
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: small_bullet_explode_9
-      rect:
-        serializedVersion: 2
-        x: 72
-        y: 0
-        width: 8
-        height: 8
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: c8229595ec289a141b53038cb8d2cf6d
-      internalID: 1230534996
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: small_bullet_explode_10
+      name: small_blue_bullet_explode_2
       rect:
         serializedVersion: 2
         x: 80
         y: 0
-        width: 8
-        height: 8
+        width: 40
+        height: 40
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -341,20 +166,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: caf5359fcd72441419b1a8b38ceee7e9
-      internalID: -2128115979
+      spriteID: 64534baf8033d014f93209f6d0aac844
+      internalID: -41557616
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_explode_11
+      name: small_blue_bullet_explode_3
       rect:
         serializedVersion: 2
-        x: 88
+        x: 120
         y: 0
-        width: 8
-        height: 8
+        width: 40
+        height: 40
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -362,20 +187,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: dd327f0043f52e745bd8f234373f1827
-      internalID: 1892901663
+      spriteID: b83c1e06d29073e41b345a8d16e43ba6
+      internalID: -845424914
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_explode_12
+      name: small_blue_bullet_explode_4
       rect:
         serializedVersion: 2
-        x: 96
+        x: 160
         y: 0
-        width: 8
-        height: 8
+        width: 40
+        height: 40
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -383,20 +208,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: ab58d441c82c9814c9fd312b54647a01
-      internalID: 948029047
+      spriteID: 843604b662f7cb843bf0d2ea02e3a1bf
+      internalID: -1582585247
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_explode_13
+      name: small_blue_bullet_explode_5
       rect:
         serializedVersion: 2
-        x: 104
+        x: 200
         y: 0
-        width: 8
-        height: 8
+        width: 40
+        height: 40
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -404,8 +229,176 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 8aa2754b6dd0eb74aa01b6f5db0d09c0
-      internalID: -1115068479
+      spriteID: f9e6dcc51834c214f84777e55417040f
+      internalID: 419074020
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: small_blue_bullet_explode_6
+      rect:
+        serializedVersion: 2
+        x: 240
+        y: 0
+        width: 40
+        height: 40
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 75359a0314683314ba0b1cf559cebe8b
+      internalID: 292595552
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: small_blue_bullet_explode_7
+      rect:
+        serializedVersion: 2
+        x: 280
+        y: 0
+        width: 40
+        height: 40
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: fac3334c26ac37346b28b6adb14f977c
+      internalID: -730942620
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: small_blue_bullet_explode_8
+      rect:
+        serializedVersion: 2
+        x: 320
+        y: 0
+        width: 40
+        height: 40
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 3917f0427e40aea4eb5eb137f3cd6f6f
+      internalID: 1891582889
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: small_blue_bullet_explode_9
+      rect:
+        serializedVersion: 2
+        x: 360
+        y: 0
+        width: 40
+        height: 40
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 72926164fa30ee643915fd7e8aa1cdb3
+      internalID: 1623938883
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: small_blue_bullet_explode_10
+      rect:
+        serializedVersion: 2
+        x: 400
+        y: 0
+        width: 40
+        height: 40
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 1a2c7bd5a1826e44693b2c0bda1bd102
+      internalID: -104704876
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: small_blue_bullet_explode_11
+      rect:
+        serializedVersion: 2
+        x: 440
+        y: 0
+        width: 40
+        height: 40
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: f9fb3cd4ad7e4014ba6079796079f157
+      internalID: 985560320
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: small_blue_bullet_explode_12
+      rect:
+        serializedVersion: 2
+        x: 480
+        y: 0
+        width: 40
+        height: 40
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 12b3821104e528d4194957ea518d9442
+      internalID: -1779748691
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: small_blue_bullet_explode_13
+      rect:
+        serializedVersion: 2
+        x: 520
+        y: 0
+        width: 40
+        height: 40
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 928bb16768690ab4d90f3ff5b08403ae
+      internalID: -1100827415
       vertices: []
       indices: 
       edges: []
@@ -421,23 +414,22 @@ TextureImporter:
     weights: []
     secondaryTextures: []
     nameFileIdTable:
-      small_bullet_explode_0: 1928658618
-      small_bullet_explode_11: 1892901663
-      small_bullet_explode_1: -123358767
-      small_bullet_explode_6: 1215761279
-      small_bullet_explode_4: -488685723
-      small_bullet_explode_2: -1960792918
-      small_bullet_explode_10: -2128115979
-      small_bullet_explode_7: -1174465541
-      small_bullet_explode_3: -184823828
-      small_bullet_explode_9: 1230534996
-      small_bullet_explode_8: -2147266213
-      small_bullet_explode_13: -1115068479
-      small_bullet_explode_12: 948029047
-      small_bullet_explode_5: -1268039723
-  spritePackingTag: 
+      small_blue_bullet_explode_0: 1395835053
+      small_blue_bullet_explode_1: -759540721
+      small_blue_bullet_explode_10: -104704876
+      small_blue_bullet_explode_11: 985560320
+      small_blue_bullet_explode_12: -1779748691
+      small_blue_bullet_explode_13: -1100827415
+      small_blue_bullet_explode_2: -41557616
+      small_blue_bullet_explode_3: -845424914
+      small_blue_bullet_explode_4: -1582585247
+      small_blue_bullet_explode_5: 419074020
+      small_blue_bullet_explode_6: 292595552
+      small_blue_bullet_explode_7: -730942620
+      small_blue_bullet_explode_8: 1891582889
+      small_blue_bullet_explode_9: 1623938883
+  mipmapLimitGroupName: 
   pSDRemoveMatte: 0
-  pSDShowRemoveMatteOption: 0
   userData: 
   assetBundleName: 
   assetBundleVariant: 

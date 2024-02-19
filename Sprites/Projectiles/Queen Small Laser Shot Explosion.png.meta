@@ -1,5 +1,5 @@
 fileFormatVersion: 2
-guid: 0956c356c5818c94c9a4a2534eec322e
+guid: 99005df48b17311408c181755cbe5bb0
 TextureImporter:
   internalIDToNameTable: []
   externalObjects: {}
@@ -20,11 +20,12 @@ TextureImporter:
     externalNormalMap: 0
     heightScale: 0.25
     normalMapFilter: 0
+    flipGreenChannel: 0
   isReadable: 0
   streamingMipmaps: 0
   streamingMipmapsPriority: 0
   vTOnly: 0
-  ignoreMasterTextureLimit: 0
+  ignoreMipmapLimit: 0
   grayScaleToAlpha: 0
   generateCubemap: 6
   cubemapConvolution: 0
@@ -44,7 +45,7 @@ TextureImporter:
   compressionQuality: 50
   spriteMode: 2
   spriteExtrude: 1
-  spriteMeshType: 0
+  spriteMeshType: 1
   alignment: 0
   spritePivot: {x: 0.5, y: 0.5}
   spritePixelsToUnits: 40
@@ -63,6 +64,7 @@ TextureImporter:
   textureFormatSet: 0
   ignorePngGamma: 0
   applyGammaDecoding: 0
+  swizzle: 50462976
   cookieLightType: 0
   platformSettings:
   - serializedVersion: 3
@@ -75,6 +77,7 @@ TextureImporter:
     crunchedCompression: 0
     allowsAlphaSplitting: 0
     overridden: 0
+    ignorePlatformSupport: 0
     androidETC2FallbackOverride: 0
     forceMaximumCompressionQuality_BC6H_BC7: 0
   - serializedVersion: 3
@@ -87,6 +90,7 @@ TextureImporter:
     crunchedCompression: 0
     allowsAlphaSplitting: 0
     overridden: 0
+    ignorePlatformSupport: 0
     androidETC2FallbackOverride: 0
     forceMaximumCompressionQuality_BC6H_BC7: 0
   - serializedVersion: 3
@@ -99,31 +103,20 @@ TextureImporter:
     crunchedCompression: 0
     allowsAlphaSplitting: 0
     overridden: 0
-    androidETC2FallbackOverride: 0
-    forceMaximumCompressionQuality_BC6H_BC7: 0
-  - serializedVersion: 3
-    buildTarget: WebGL
-    maxTextureSize: 2048
-    resizeAlgorithm: 0
-    textureFormat: -1
-    textureCompression: 1
-    compressionQuality: 50
-    crunchedCompression: 0
-    allowsAlphaSplitting: 0
-    overridden: 0
+    ignorePlatformSupport: 0
     androidETC2FallbackOverride: 0
     forceMaximumCompressionQuality_BC6H_BC7: 0
   spriteSheet:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: beam2_0
+      name: small_bullet_purple_explode_0
       rect:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 80
-        height: 80
+        width: 40
+        height: 40
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -131,20 +124,41 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 5e9e3da39a0ead34da9f333110672f8f
-      internalID: -1306037248
+      spriteID: 1b1450c45b24baa4a89b8f9be92fcb31
+      internalID: 393800612
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: beam2_1
+      name: small_bullet_purple_explode_1
+      rect:
+        serializedVersion: 2
+        x: 40
+        y: 0
+        width: 40
+        height: 40
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 331ba74600b6437468ecc00d0f4d9730
+      internalID: 1326186809
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: small_bullet_purple_explode_2
       rect:
         serializedVersion: 2
         x: 80
         y: 0
-        width: 80
-        height: 80
+        width: 40
+        height: 40
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -152,20 +166,41 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: d63080eb6682e0047ac0e9669d23a5de
-      internalID: 408143469
+      spriteID: ab259034de710f84d8a074e8e4eadaaa
+      internalID: 384246216
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: beam2_2
+      name: small_bullet_purple_explode_3
+      rect:
+        serializedVersion: 2
+        x: 120
+        y: 0
+        width: 40
+        height: 40
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 457592ead0cdb6b46af2cf147675773d
+      internalID: -34707568
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: small_bullet_purple_explode_4
       rect:
         serializedVersion: 2
         x: 160
         y: 0
-        width: 80
-        height: 80
+        width: 40
+        height: 40
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -173,20 +208,41 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 854dc91d5bc9aec4f8c3a42bd04bb470
-      internalID: 1181347619
+      spriteID: 094c6676ce16c20468a8ba6767853f5f
+      internalID: -803974412
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: beam2_3
+      name: small_bullet_purple_explode_5
+      rect:
+        serializedVersion: 2
+        x: 200
+        y: 0
+        width: 40
+        height: 40
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: ca161e2e90cd8d845bf9194a55dbc581
+      internalID: 328549217
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: small_bullet_purple_explode_6
       rect:
         serializedVersion: 2
         x: 240
         y: 0
-        width: 80
-        height: 80
+        width: 40
+        height: 40
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -194,20 +250,41 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: e24e5b01085eac94787d031417efe3b7
-      internalID: -169343372
+      spriteID: cfef94c7747558f4994b52fd07d35eff
+      internalID: 965976430
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: beam2_4
+      name: small_bullet_purple_explode_7
+      rect:
+        serializedVersion: 2
+        x: 280
+        y: 0
+        width: 40
+        height: 40
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: f14767f43ac84424b9671ad3a2afd7a4
+      internalID: 546025925
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: small_bullet_purple_explode_8
       rect:
         serializedVersion: 2
         x: 320
         y: 0
-        width: 80
-        height: 80
+        width: 40
+        height: 40
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -215,20 +292,41 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: f84612e34c9bc0f47beec9e5faeec30c
-      internalID: -1673609773
+      spriteID: 3f0801516bf9b68419b162cda923476c
+      internalID: -364742058
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: beam2_5
+      name: small_bullet_purple_explode_9
+      rect:
+        serializedVersion: 2
+        x: 360
+        y: 0
+        width: 40
+        height: 40
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: e7c736719572d564686a216f1f5ce900
+      internalID: 1415876800
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: small_bullet_purple_explode_10
       rect:
         serializedVersion: 2
         x: 400
         y: 0
-        width: 80
-        height: 80
+        width: 40
+        height: 40
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -236,20 +334,41 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: d998499e3025d5c4c80fda6e7d49be65
-      internalID: -1758401167
+      spriteID: 46219b85799647546b8a225655f91c92
+      internalID: 1674026120
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: beam2_6
+      name: small_bullet_purple_explode_11
+      rect:
+        serializedVersion: 2
+        x: 440
+        y: 0
+        width: 40
+        height: 40
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 0b5cc893e68d1ac46bf43e44bed65374
+      internalID: -215032805
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: small_bullet_purple_explode_12
       rect:
         serializedVersion: 2
         x: 480
         y: 0
-        width: 80
-        height: 80
+        width: 40
+        height: 40
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -257,20 +376,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: be06a5e573f0cdb45b3d50621a196a8a
-      internalID: 1434409032
+      spriteID: fb0a8f6cf165070418c86744fcbbc912
+      internalID: 1558841558
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: beam2_7
+      name: small_bullet_purple_explode_13
       rect:
         serializedVersion: 2
-        x: 560
+        x: 520
         y: 0
-        width: 80
-        height: 80
+        width: 40
+        height: 40
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -278,176 +397,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: e30311fe42bb7554c924abbf34af2041
-      internalID: -1405729395
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: beam2_8
-      rect:
-        serializedVersion: 2
-        x: 640
-        y: 0
-        width: 80
-        height: 80
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 26984c0e99e461d49bedaacbc711d12d
-      internalID: -1793050534
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: beam2_9
-      rect:
-        serializedVersion: 2
-        x: 720
-        y: 0
-        width: 80
-        height: 80
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 9481ca8e30e142944bf35c5fdb57f5c2
-      internalID: -1326167745
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: beam2_10
-      rect:
-        serializedVersion: 2
-        x: 800
-        y: 0
-        width: 80
-        height: 80
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: f69e5d8fb8b9f5c4dabba17c52f042e5
-      internalID: 1506430276
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: beam2_11
-      rect:
-        serializedVersion: 2
-        x: 880
-        y: 0
-        width: 80
-        height: 80
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: c8ca86ac7c85b234aaf4d1b0aea368eb
-      internalID: 854758363
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: beam2_12
-      rect:
-        serializedVersion: 2
-        x: 960
-        y: 0
-        width: 80
-        height: 80
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 674bec7fd7000564698a766e2c3ea0f5
-      internalID: 1010327743
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: beam2_13
-      rect:
-        serializedVersion: 2
-        x: 1040
-        y: 0
-        width: 80
-        height: 80
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 41fb4f7e6612e48469a93dd208bb28de
-      internalID: 1468346620
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: beam2_14
-      rect:
-        serializedVersion: 2
-        x: 1120
-        y: 0
-        width: 80
-        height: 80
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 3afac05a8f7f8e94881ca67c1d454ed5
-      internalID: -842254418
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: beam2_15
-      rect:
-        serializedVersion: 2
-        x: 1200
-        y: 0
-        width: 80
-        height: 80
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 31fe6363cd02f8a4d8f5a08f1e9f9e09
-      internalID: 1014776027
+      spriteID: 2560b07892c21c84198354f82e25470e
+      internalID: 1106795100
       vertices: []
       indices: 
       edges: []
@@ -463,25 +414,22 @@ TextureImporter:
     weights: []
     secondaryTextures: []
     nameFileIdTable:
-      beam2_7: -1405729395
-      beam2_12: 1010327743
-      beam2_13: 1468346620
-      beam2_2: 1181347619
-      beam2_3: -169343372
-      beam2_4: -1673609773
-      beam2_5: -1758401167
-      beam2_10: 1506430276
-      beam2_14: -842254418
-      beam2_1: 408143469
-      beam2_11: 854758363
-      beam2_8: -1793050534
-      beam2_0: -1306037248
-      beam2_9: -1326167745
-      beam2_6: 1434409032
-      beam2_15: 1014776027
-  spritePackingTag: 
+      small_bullet_purple_explode_0: 393800612
+      small_bullet_purple_explode_1: 1326186809
+      small_bullet_purple_explode_10: 1674026120
+      small_bullet_purple_explode_11: -215032805
+      small_bullet_purple_explode_12: 1558841558
+      small_bullet_purple_explode_13: 1106795100
+      small_bullet_purple_explode_2: 384246216
+      small_bullet_purple_explode_3: -34707568
+      small_bullet_purple_explode_4: -803974412
+      small_bullet_purple_explode_5: 328549217
+      small_bullet_purple_explode_6: 965976430
+      small_bullet_purple_explode_7: 546025925
+      small_bullet_purple_explode_8: -364742058
+      small_bullet_purple_explode_9: 1415876800
+  mipmapLimitGroupName: 
   pSDRemoveMatte: 0
-  pSDShowRemoveMatteOption: 0
   userData: 
   assetBundleName: 
   assetBundleVariant: 

@@ -134,7 +134,7 @@ MonoBehaviour:
   Weapon: {fileID: 0}
   StartingPosition: {x: 0, y: 0}
   Angle: 0
-  ExplosionPrefab: {fileID: 0}
+  ExplosionPrefab: {fileID: 3345242948093166458, guid: a51cc23e10b7b7a4fa653e3920fa7f16, type: 3}
   Explosion: {fileID: 0}
   ShipsToIgnore: []
 --- !u!61 &-6802296060538784428

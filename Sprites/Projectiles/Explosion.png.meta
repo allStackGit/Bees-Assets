@@ -1,5 +1,5 @@
 fileFormatVersion: 2
-guid: 4796ae417ed93de4aac0627eb7235284
+guid: 9cb815d47a1f4cf4193e60d0e24b772f
 TextureImporter:
   internalIDToNameTable: []
   externalObjects: {}
@@ -20,11 +20,12 @@ TextureImporter:
     externalNormalMap: 0
     heightScale: 0.25
     normalMapFilter: 0
+    flipGreenChannel: 0
   isReadable: 0
   streamingMipmaps: 0
   streamingMipmapsPriority: 0
   vTOnly: 0
-  ignoreMasterTextureLimit: 0
+  ignoreMipmapLimit: 0
   grayScaleToAlpha: 0
   generateCubemap: 6
   cubemapConvolution: 0
@@ -63,6 +64,7 @@ TextureImporter:
   textureFormatSet: 0
   ignorePngGamma: 0
   applyGammaDecoding: 0
+  swizzle: 50462976
   cookieLightType: 0
   platformSettings:
   - serializedVersion: 3
@@ -75,6 +77,7 @@ TextureImporter:
     crunchedCompression: 0
     allowsAlphaSplitting: 0
     overridden: 0
+    ignorePlatformSupport: 0
     androidETC2FallbackOverride: 0
     forceMaximumCompressionQuality_BC6H_BC7: 0
   - serializedVersion: 3
@@ -87,6 +90,7 @@ TextureImporter:
     crunchedCompression: 0
     allowsAlphaSplitting: 0
     overridden: 0
+    ignorePlatformSupport: 0
     androidETC2FallbackOverride: 0
     forceMaximumCompressionQuality_BC6H_BC7: 0
   - serializedVersion: 3
@@ -99,31 +103,20 @@ TextureImporter:
     crunchedCompression: 0
     allowsAlphaSplitting: 0
     overridden: 0
-    androidETC2FallbackOverride: 0
-    forceMaximumCompressionQuality_BC6H_BC7: 0
-  - serializedVersion: 3
-    buildTarget: WebGL
-    maxTextureSize: 2048
-    resizeAlgorithm: 0
-    textureFormat: -1
-    textureCompression: 1
-    compressionQuality: 50
-    crunchedCompression: 0
-    allowsAlphaSplitting: 0
-    overridden: 0
+    ignorePlatformSupport: 0
     androidETC2FallbackOverride: 0
     forceMaximumCompressionQuality_BC6H_BC7: 0
   spriteSheet:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: frigate_explosion_0
+      name: explosion_0
       rect:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 200
-        height: 200
+        width: 160
+        height: 160
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -131,20 +124,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 26c9035e4a3bf3443a30ba3d9e423f6a
-      internalID: 823497288
+      spriteID: c0fd0f0611a809647896f6ab97ac6feb
+      internalID: -1113784017
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: frigate_explosion_1
+      name: explosion_1
       rect:
         serializedVersion: 2
-        x: 200
+        x: 160
         y: 0
-        width: 200
-        height: 200
+        width: 160
+        height: 160
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -152,20 +145,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 7092ff5858830024a91dd070f9cf6576
-      internalID: -1144636621
+      spriteID: 6466878c5e5d1bf4eb7063dcc0862ffc
+      internalID: 366676113
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: frigate_explosion_2
+      name: explosion_2
       rect:
         serializedVersion: 2
-        x: 400
+        x: 320
         y: 0
-        width: 200
-        height: 200
+        width: 160
+        height: 160
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -173,20 +166,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 2a5d38ca383470341b180538549fd8ff
-      internalID: -747824383
+      spriteID: 2189a2d19369a0b45b91157bfbea8e6d
+      internalID: 1752483877
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: frigate_explosion_3
+      name: explosion_3
       rect:
         serializedVersion: 2
-        x: 600
+        x: 480
         y: 0
-        width: 200
-        height: 200
+        width: 160
+        height: 160
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -194,20 +187,41 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: ca070a25c73691f44b51084d5e2c9c73
-      internalID: -1293455359
+      spriteID: 24d3d073957570c4785470a5bf82a916
+      internalID: -2117808549
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: frigate_explosion_4
+      name: explosion_4
+      rect:
+        serializedVersion: 2
+        x: 640
+        y: 0
+        width: 160
+        height: 160
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 6b53cf8eae29410488fc6c1ff5626c13
+      internalID: 1689758083
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: explosion_5
       rect:
         serializedVersion: 2
         x: 800
         y: 0
-        width: 200
-        height: 200
+        width: 160
+        height: 160
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -215,20 +229,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: d423bd0a38e072647811fa14745d26eb
-      internalID: -1837629978
+      spriteID: 0f8d6b4002475c846bf71f5477bd132b
+      internalID: -491038119
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: frigate_explosion_5
+      name: explosion_6
       rect:
         serializedVersion: 2
-        x: 1000
+        x: 960
         y: 0
-        width: 200
-        height: 200
+        width: 160
+        height: 160
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -236,20 +250,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 5669891ade27bc54ebf7b16b24a194a3
-      internalID: 1543801784
+      spriteID: 655c39428afed8749bcbed949699e87c
+      internalID: -1778035726
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: frigate_explosion_6
+      name: explosion_7
       rect:
         serializedVersion: 2
-        x: 1200
+        x: 1120
         y: 0
-        width: 200
-        height: 200
+        width: 160
+        height: 160
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -257,71 +271,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 0c970ff9fefb9e446a960eaf98a8c2e2
-      internalID: 1603464584
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: frigate_explosion_7
-      rect:
-        serializedVersion: 2
-        x: 1400
-        y: 0
-        width: 200
-        height: 200
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 8d27fe61b4130ba48a6a118fbb2882c4
-      internalID: 334135048
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: frigate_explosion_8
-      rect:
-        serializedVersion: 2
-        x: 1600
-        y: 0
-        width: 200
-        height: 200
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: f6a496ce62935e242ae09ee5fcef8982
-      internalID: -1276273848
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: frigate_explosion_9
-      rect:
-        serializedVersion: 2
-        x: 1800
-        y: 0
-        width: 200
-        height: 200
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: e1ff73fb6a5c3d648b726a2bb04ddd53
-      internalID: 1553451827
+      spriteID: 0078ba278cff117489fadcac880dbe2b
+      internalID: 1811718520
       vertices: []
       indices: 
       edges: []
@@ -337,19 +288,16 @@ TextureImporter:
     weights: []
     secondaryTextures: []
     nameFileIdTable:
-      frigate_explosion_4: -1837629978
-      frigate_explosion_7: 334135048
-      frigate_explosion_0: 823497288
-      frigate_explosion_6: 1603464584
-      frigate_explosion_3: -1293455359
-      frigate_explosion_5: 1543801784
-      frigate_explosion_2: -747824383
-      frigate_explosion_9: 1553451827
-      frigate_explosion_8: -1276273848
-      frigate_explosion_1: -1144636621
-  spritePackingTag: 
+      explosion_0: -1113784017
+      explosion_1: 366676113
+      explosion_2: 1752483877
+      explosion_3: -2117808549
+      explosion_4: 1689758083
+      explosion_5: -491038119
+      explosion_6: -1778035726
+      explosion_7: 1811718520
+  mipmapLimitGroupName: 
   pSDRemoveMatte: 0
-  pSDShowRemoveMatteOption: 0
   userData: 
   assetBundleName: 
   assetBundleVariant: 
