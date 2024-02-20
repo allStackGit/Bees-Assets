@@ -123,7 +123,7 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: beam2_0
+      name: Cruiser Laser Beam_0
       rect:
         serializedVersion: 2
         x: 0
@@ -137,14 +137,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 5e9e3da39a0ead34da9f333110672f8f
-      internalID: -1306037248
+      spriteID: 9b375cbcfaf572345a8e54407f878076
+      internalID: -2028891316
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: beam2_1
+      name: Cruiser Laser Beam_1
       rect:
         serializedVersion: 2
         x: 80
@@ -158,14 +158,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: d63080eb6682e0047ac0e9669d23a5de
-      internalID: 408143469
+      spriteID: 993d81f4d44d0be4aad2d6581ed2bc92
+      internalID: 1381737531
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: beam2_2
+      name: Cruiser Laser Beam_2
       rect:
         serializedVersion: 2
         x: 160
@@ -179,14 +179,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 854dc91d5bc9aec4f8c3a42bd04bb470
-      internalID: 1181347619
+      spriteID: 0c43e5240123b4d449a239d8a72682dd
+      internalID: 655227726
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: beam2_3
+      name: Cruiser Laser Beam_3
       rect:
         serializedVersion: 2
         x: 240
@@ -200,14 +200,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: e24e5b01085eac94787d031417efe3b7
-      internalID: -169343372
+      spriteID: a4ff2e322719c6a4f81261addbc66e97
+      internalID: 205027662
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: beam2_4
+      name: Cruiser Laser Beam_4
       rect:
         serializedVersion: 2
         x: 320
@@ -221,14 +221,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: f84612e34c9bc0f47beec9e5faeec30c
-      internalID: -1673609773
+      spriteID: c6067eb650a5bb242be0b5a089fcd404
+      internalID: -436495821
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: beam2_5
+      name: Cruiser Laser Beam_5
       rect:
         serializedVersion: 2
         x: 400
@@ -242,14 +242,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: d998499e3025d5c4c80fda6e7d49be65
-      internalID: -1758401167
+      spriteID: 5af7b1bfcc42ee34293adb25cfd180a5
+      internalID: 1347817699
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: beam2_6
+      name: Cruiser Laser Beam_6
       rect:
         serializedVersion: 2
         x: 480
@@ -263,14 +263,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: be06a5e573f0cdb45b3d50621a196a8a
-      internalID: 1434409032
+      spriteID: d23dd974a6f96c44cb3dacbb76d78a63
+      internalID: 558642136
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: beam2_7
+      name: Cruiser Laser Beam_7
       rect:
         serializedVersion: 2
         x: 560
@@ -284,14 +284,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: e30311fe42bb7554c924abbf34af2041
-      internalID: -1405729395
+      spriteID: 184c2a881270932409455d6feecfa3a1
+      internalID: -839235246
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: beam2_8
+      name: Cruiser Laser Beam_8
       rect:
         serializedVersion: 2
         x: 640
@@ -305,14 +305,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 26984c0e99e461d49bedaacbc711d12d
-      internalID: -1793050534
+      spriteID: 67690192b3dac0e45bdf65490e1684fa
+      internalID: 4922948
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: beam2_9
+      name: Cruiser Laser Beam_9
       rect:
         serializedVersion: 2
         x: 720
@@ -326,14 +326,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 9481ca8e30e142944bf35c5fdb57f5c2
-      internalID: -1326167745
+      spriteID: 687200c5f9d958444bb721f062552fb5
+      internalID: 710763443
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: beam2_10
+      name: Cruiser Laser Beam_10
       rect:
         serializedVersion: 2
         x: 800
@@ -347,14 +347,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: f69e5d8fb8b9f5c4dabba17c52f042e5
-      internalID: 1506430276
+      spriteID: 95dc78e57a024fb43ad7c97c96d81589
+      internalID: 101612844
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: beam2_11
+      name: Cruiser Laser Beam_11
       rect:
         serializedVersion: 2
         x: 880
@@ -368,14 +368,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: c8ca86ac7c85b234aaf4d1b0aea368eb
-      internalID: 854758363
+      spriteID: e503e26b8ad86bb4f89c254f7ab3d1f0
+      internalID: -286764446
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: beam2_12
+      name: Cruiser Laser Beam_12
       rect:
         serializedVersion: 2
         x: 960
@@ -389,14 +389,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 674bec7fd7000564698a766e2c3ea0f5
-      internalID: 1010327743
+      spriteID: 0a4b226a0544d6b46b29e759eae9ca3a
+      internalID: 1834568416
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: beam2_13
+      name: Cruiser Laser Beam_13
       rect:
         serializedVersion: 2
         x: 1040
@@ -410,14 +410,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 41fb4f7e6612e48469a93dd208bb28de
-      internalID: 1468346620
+      spriteID: 068673b2044c75a40a24b3294b55922f
+      internalID: -1021393612
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: beam2_14
+      name: Cruiser Laser Beam_14
       rect:
         serializedVersion: 2
         x: 1120
@@ -431,14 +431,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 3afac05a8f7f8e94881ca67c1d454ed5
-      internalID: -842254418
+      spriteID: 79b003c6200b5154abe57215959dc5e8
+      internalID: -256396358
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: beam2_15
+      name: Cruiser Laser Beam_15
       rect:
         serializedVersion: 2
         x: 1200
@@ -452,8 +452,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 31fe6363cd02f8a4d8f5a08f1e9f9e09
-      internalID: 1014776027
+      spriteID: 5ef0ce4c78624324981b63deceb89cd9
+      internalID: -1390322217
       vertices: []
       indices: 
       edges: []
@@ -469,22 +469,22 @@ TextureImporter:
     weights: []
     secondaryTextures: []
     nameFileIdTable:
-      beam2_0: -1306037248
-      beam2_1: 408143469
-      beam2_10: 1506430276
-      beam2_11: 854758363
-      beam2_12: 1010327743
-      beam2_13: 1468346620
-      beam2_14: -842254418
-      beam2_15: 1014776027
-      beam2_2: 1181347619
-      beam2_3: -169343372
-      beam2_4: -1673609773
-      beam2_5: -1758401167
-      beam2_6: 1434409032
-      beam2_7: -1405729395
-      beam2_8: -1793050534
-      beam2_9: -1326167745
+      Cruiser Laser Beam_0: -2028891316
+      Cruiser Laser Beam_1: 1381737531
+      Cruiser Laser Beam_10: 101612844
+      Cruiser Laser Beam_11: -286764446
+      Cruiser Laser Beam_12: 1834568416
+      Cruiser Laser Beam_13: -1021393612
+      Cruiser Laser Beam_14: -256396358
+      Cruiser Laser Beam_15: -1390322217
+      Cruiser Laser Beam_2: 655227726
+      Cruiser Laser Beam_3: 205027662
+      Cruiser Laser Beam_4: -436495821
+      Cruiser Laser Beam_5: 1347817699
+      Cruiser Laser Beam_6: 558642136
+      Cruiser Laser Beam_7: -839235246
+      Cruiser Laser Beam_8: 4922948
+      Cruiser Laser Beam_9: 710763443
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

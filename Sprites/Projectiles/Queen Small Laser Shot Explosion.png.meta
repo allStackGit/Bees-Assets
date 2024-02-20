@@ -110,7 +110,7 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: small_bullet_purple_explode_0
+      name: Queen Small Laser Shot Explosion_0
       rect:
         serializedVersion: 2
         x: 0
@@ -124,14 +124,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 1b1450c45b24baa4a89b8f9be92fcb31
-      internalID: 393800612
+      spriteID: fd8c4da66226eab4e92c70a53e2f4ccb
+      internalID: 961552064
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_purple_explode_1
+      name: Queen Small Laser Shot Explosion_1
       rect:
         serializedVersion: 2
         x: 40
@@ -145,14 +145,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 331ba74600b6437468ecc00d0f4d9730
-      internalID: 1326186809
+      spriteID: e5d8eb0e5082fe944b911e1451d88b93
+      internalID: -711698142
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_purple_explode_2
+      name: Queen Small Laser Shot Explosion_2
       rect:
         serializedVersion: 2
         x: 80
@@ -166,14 +166,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: ab259034de710f84d8a074e8e4eadaaa
-      internalID: 384246216
+      spriteID: 28da4c51dfe6ccc46a99639961337077
+      internalID: -146487825
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_purple_explode_3
+      name: Queen Small Laser Shot Explosion_3
       rect:
         serializedVersion: 2
         x: 120
@@ -187,14 +187,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 457592ead0cdb6b46af2cf147675773d
-      internalID: -34707568
+      spriteID: bea2f9efe6b0d6a478cec7c1ef0f81db
+      internalID: 294065532
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_purple_explode_4
+      name: Queen Small Laser Shot Explosion_4
       rect:
         serializedVersion: 2
         x: 160
@@ -208,14 +208,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 094c6676ce16c20468a8ba6767853f5f
-      internalID: -803974412
+      spriteID: f0d301efe676a5b498b88dd434d606db
+      internalID: 1355845379
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_purple_explode_5
+      name: Queen Small Laser Shot Explosion_5
       rect:
         serializedVersion: 2
         x: 200
@@ -229,14 +229,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: ca161e2e90cd8d845bf9194a55dbc581
-      internalID: 328549217
+      spriteID: 59bc1bd2eaf75104ab1eca4d9664a945
+      internalID: 1539089948
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_purple_explode_6
+      name: Queen Small Laser Shot Explosion_6
       rect:
         serializedVersion: 2
         x: 240
@@ -250,14 +250,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: cfef94c7747558f4994b52fd07d35eff
-      internalID: 965976430
+      spriteID: 339fced3457293842af3a4f177c0a2ac
+      internalID: 54236278
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_purple_explode_7
+      name: Queen Small Laser Shot Explosion_7
       rect:
         serializedVersion: 2
         x: 280
@@ -271,14 +271,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: f14767f43ac84424b9671ad3a2afd7a4
-      internalID: 546025925
+      spriteID: a0f0cc9bd34ab4d44a7f941cb1e79631
+      internalID: -755435216
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_purple_explode_8
+      name: Queen Small Laser Shot Explosion_8
       rect:
         serializedVersion: 2
         x: 320
@@ -292,14 +292,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 3f0801516bf9b68419b162cda923476c
-      internalID: -364742058
+      spriteID: ce895b18c48e9e548b949fc47f0ffae8
+      internalID: 1764667231
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_purple_explode_9
+      name: Queen Small Laser Shot Explosion_9
       rect:
         serializedVersion: 2
         x: 360
@@ -313,14 +313,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: e7c736719572d564686a216f1f5ce900
-      internalID: 1415876800
+      spriteID: 6cf95a925e2c83540ba53ae46009830f
+      internalID: -499016747
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_purple_explode_10
+      name: Queen Small Laser Shot Explosion_10
       rect:
         serializedVersion: 2
         x: 400
@@ -334,14 +334,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 46219b85799647546b8a225655f91c92
-      internalID: 1674026120
+      spriteID: 8448dc355343437428fe458ae5809e45
+      internalID: 2122041953
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_purple_explode_11
+      name: Queen Small Laser Shot Explosion_11
       rect:
         serializedVersion: 2
         x: 440
@@ -355,14 +355,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 0b5cc893e68d1ac46bf43e44bed65374
-      internalID: -215032805
+      spriteID: c6a4497f7aca9c24f8781acba6686563
+      internalID: -604812870
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_purple_explode_12
+      name: Queen Small Laser Shot Explosion_12
       rect:
         serializedVersion: 2
         x: 480
@@ -376,14 +376,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: fb0a8f6cf165070418c86744fcbbc912
-      internalID: 1558841558
+      spriteID: ef4d9ccf84bbc724b8f59a588eeda0a9
+      internalID: 2096073425
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_purple_explode_13
+      name: Queen Small Laser Shot Explosion_13
       rect:
         serializedVersion: 2
         x: 520
@@ -397,8 +397,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 2560b07892c21c84198354f82e25470e
-      internalID: 1106795100
+      spriteID: 367197b7754828d4aac339ac8e61a185
+      internalID: -1280349926
       vertices: []
       indices: 
       edges: []
@@ -414,20 +414,20 @@ TextureImporter:
     weights: []
     secondaryTextures: []
     nameFileIdTable:
-      small_bullet_purple_explode_0: 393800612
-      small_bullet_purple_explode_1: 1326186809
-      small_bullet_purple_explode_10: 1674026120
-      small_bullet_purple_explode_11: -215032805
-      small_bullet_purple_explode_12: 1558841558
-      small_bullet_purple_explode_13: 1106795100
-      small_bullet_purple_explode_2: 384246216
-      small_bullet_purple_explode_3: -34707568
-      small_bullet_purple_explode_4: -803974412
-      small_bullet_purple_explode_5: 328549217
-      small_bullet_purple_explode_6: 965976430
-      small_bullet_purple_explode_7: 546025925
-      small_bullet_purple_explode_8: -364742058
-      small_bullet_purple_explode_9: 1415876800
+      Queen Small Laser Shot Explosion_0: 961552064
+      Queen Small Laser Shot Explosion_1: -711698142
+      Queen Small Laser Shot Explosion_10: 2122041953
+      Queen Small Laser Shot Explosion_11: -604812870
+      Queen Small Laser Shot Explosion_12: 2096073425
+      Queen Small Laser Shot Explosion_13: -1280349926
+      Queen Small Laser Shot Explosion_2: -146487825
+      Queen Small Laser Shot Explosion_3: 294065532
+      Queen Small Laser Shot Explosion_4: 1355845379
+      Queen Small Laser Shot Explosion_5: 1539089948
+      Queen Small Laser Shot Explosion_6: 54236278
+      Queen Small Laser Shot Explosion_7: -755435216
+      Queen Small Laser Shot Explosion_8: 1764667231
+      Queen Small Laser Shot Explosion_9: -499016747
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

@@ -110,7 +110,7 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: small_blue_bullet_explode_0
+      name: Human Small Laser Shot Explosion_0
       rect:
         serializedVersion: 2
         x: 0
@@ -124,14 +124,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 5b11a0ca9cc46a04abd90f6079550e96
-      internalID: 1395835053
+      spriteID: 05bdf34426350064f8fdfb4f695c3218
+      internalID: 1712718743
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_blue_bullet_explode_1
+      name: Human Small Laser Shot Explosion_1
       rect:
         serializedVersion: 2
         x: 40
@@ -145,14 +145,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: d23dcaacc758a6a4382e9bc05847df0f
-      internalID: -759540721
+      spriteID: 4aaf54e10171d60499e57427058cb14f
+      internalID: 762096089
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_blue_bullet_explode_2
+      name: Human Small Laser Shot Explosion_2
       rect:
         serializedVersion: 2
         x: 80
@@ -166,14 +166,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 64534baf8033d014f93209f6d0aac844
-      internalID: -41557616
+      spriteID: 3b2cb461c352ffb4a97a4896ed4cb9c8
+      internalID: 554422383
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_blue_bullet_explode_3
+      name: Human Small Laser Shot Explosion_3
       rect:
         serializedVersion: 2
         x: 120
@@ -187,14 +187,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: b83c1e06d29073e41b345a8d16e43ba6
-      internalID: -845424914
+      spriteID: fc5bbdbef971af141ae63ac80c73dad5
+      internalID: -1961560919
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_blue_bullet_explode_4
+      name: Human Small Laser Shot Explosion_4
       rect:
         serializedVersion: 2
         x: 160
@@ -208,14 +208,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 843604b662f7cb843bf0d2ea02e3a1bf
-      internalID: -1582585247
+      spriteID: b13701782a9d3a741bdf83bb97ae9e9b
+      internalID: 586598961
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_blue_bullet_explode_5
+      name: Human Small Laser Shot Explosion_5
       rect:
         serializedVersion: 2
         x: 200
@@ -229,14 +229,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: f9e6dcc51834c214f84777e55417040f
-      internalID: 419074020
+      spriteID: 535a86f82afe8df4389b0fc4e5a019c5
+      internalID: 552205242
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_blue_bullet_explode_6
+      name: Human Small Laser Shot Explosion_6
       rect:
         serializedVersion: 2
         x: 240
@@ -250,14 +250,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 75359a0314683314ba0b1cf559cebe8b
-      internalID: 292595552
+      spriteID: 5e9b04530a62c7b468fe93e89b2d6f28
+      internalID: -1767930314
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_blue_bullet_explode_7
+      name: Human Small Laser Shot Explosion_7
       rect:
         serializedVersion: 2
         x: 280
@@ -271,14 +271,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: fac3334c26ac37346b28b6adb14f977c
-      internalID: -730942620
+      spriteID: 536d27e803a06f24a8fade20a6213d51
+      internalID: -536763215
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_blue_bullet_explode_8
+      name: Human Small Laser Shot Explosion_8
       rect:
         serializedVersion: 2
         x: 320
@@ -292,14 +292,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 3917f0427e40aea4eb5eb137f3cd6f6f
-      internalID: 1891582889
+      spriteID: 7bbc552ef4ea88843b024efd16baee97
+      internalID: -425180742
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_blue_bullet_explode_9
+      name: Human Small Laser Shot Explosion_9
       rect:
         serializedVersion: 2
         x: 360
@@ -313,14 +313,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 72926164fa30ee643915fd7e8aa1cdb3
-      internalID: 1623938883
+      spriteID: dd7710dfb12b2d142af0d819b7875e8f
+      internalID: 300645571
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_blue_bullet_explode_10
+      name: Human Small Laser Shot Explosion_10
       rect:
         serializedVersion: 2
         x: 400
@@ -334,14 +334,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 1a2c7bd5a1826e44693b2c0bda1bd102
-      internalID: -104704876
+      spriteID: 0abaa93b987019240b1b6cc50ec001f0
+      internalID: -733108735
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_blue_bullet_explode_11
+      name: Human Small Laser Shot Explosion_11
       rect:
         serializedVersion: 2
         x: 440
@@ -355,14 +355,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: f9fb3cd4ad7e4014ba6079796079f157
-      internalID: 985560320
+      spriteID: 2f2ed17f4de92f34bad6f10b5dd0415f
+      internalID: -1949142884
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_blue_bullet_explode_12
+      name: Human Small Laser Shot Explosion_12
       rect:
         serializedVersion: 2
         x: 480
@@ -376,14 +376,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 12b3821104e528d4194957ea518d9442
-      internalID: -1779748691
+      spriteID: 55b3f2bc11e48af4a90495e570a33510
+      internalID: 368686741
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_blue_bullet_explode_13
+      name: Human Small Laser Shot Explosion_13
       rect:
         serializedVersion: 2
         x: 520
@@ -397,8 +397,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 928bb16768690ab4d90f3ff5b08403ae
-      internalID: -1100827415
+      spriteID: 5df0213bfb1c3fb429eac6fb3b915fbe
+      internalID: -315766265
       vertices: []
       indices: 
       edges: []
@@ -414,20 +414,20 @@ TextureImporter:
     weights: []
     secondaryTextures: []
     nameFileIdTable:
-      small_blue_bullet_explode_0: 1395835053
-      small_blue_bullet_explode_1: -759540721
-      small_blue_bullet_explode_10: -104704876
-      small_blue_bullet_explode_11: 985560320
-      small_blue_bullet_explode_12: -1779748691
-      small_blue_bullet_explode_13: -1100827415
-      small_blue_bullet_explode_2: -41557616
-      small_blue_bullet_explode_3: -845424914
-      small_blue_bullet_explode_4: -1582585247
-      small_blue_bullet_explode_5: 419074020
-      small_blue_bullet_explode_6: 292595552
-      small_blue_bullet_explode_7: -730942620
-      small_blue_bullet_explode_8: 1891582889
-      small_blue_bullet_explode_9: 1623938883
+      Human Small Laser Shot Explosion_0: 1712718743
+      Human Small Laser Shot Explosion_1: 762096089
+      Human Small Laser Shot Explosion_10: -733108735
+      Human Small Laser Shot Explosion_11: -1949142884
+      Human Small Laser Shot Explosion_12: 368686741
+      Human Small Laser Shot Explosion_13: -315766265
+      Human Small Laser Shot Explosion_2: 554422383
+      Human Small Laser Shot Explosion_3: -1961560919
+      Human Small Laser Shot Explosion_4: 586598961
+      Human Small Laser Shot Explosion_5: 552205242
+      Human Small Laser Shot Explosion_6: -1767930314
+      Human Small Laser Shot Explosion_7: -536763215
+      Human Small Laser Shot Explosion_8: -425180742
+      Human Small Laser Shot Explosion_9: 300645571
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

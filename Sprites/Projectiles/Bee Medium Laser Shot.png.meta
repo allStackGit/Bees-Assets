@@ -1,5 +1,5 @@
 fileFormatVersion: 2
-guid: 4796ae417ed93de4aac0627eb7235284
+guid: 9e94a5fa861d3c84d9442c535aab01e5
 TextureImporter:
   internalIDToNameTable: []
   externalObjects: {}
@@ -48,7 +48,7 @@ TextureImporter:
   spriteMeshType: 1
   alignment: 0
   spritePivot: {x: 0.5, y: 0.5}
-  spritePixelsToUnits: 40
+  spritePixelsToUnits: 80
   spriteBorder: {x: 0, y: 0, z: 0, w: 0}
   spriteGenerateFallbackPhysicsShape: 1
   alphaUsage: 1
@@ -72,7 +72,7 @@ TextureImporter:
     maxTextureSize: 2048
     resizeAlgorithm: 0
     textureFormat: -1
-    textureCompression: 1
+    textureCompression: 0
     compressionQuality: 50
     crunchedCompression: 0
     allowsAlphaSplitting: 0
@@ -123,13 +123,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: Frigate Rocket Explosion_0
+      name: Bee Medium Laser Shot_0
       rect:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 200
-        height: 200
+        width: 80
+        height: 80
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -137,20 +137,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: e6432cbdf8e32824e94eeba93ec9bc8a
-      internalID: -2041476100
+      spriteID: 0a36b347cbc9e2c41bebdf4ebe58b9ec
+      internalID: 1833999314
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: Frigate Rocket Explosion_1
+      name: Bee Medium Laser Shot_1
       rect:
         serializedVersion: 2
-        x: 200
+        x: 80
         y: 0
-        width: 200
-        height: 200
+        width: 80
+        height: 80
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -158,20 +158,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 4282044370830e94b90732599a35fcea
-      internalID: 481453845
+      spriteID: a29e6f462a2db154eba7967c9332da17
+      internalID: -1256488161
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: Frigate Rocket Explosion_2
+      name: Bee Medium Laser Shot_2
       rect:
         serializedVersion: 2
-        x: 400
+        x: 160
         y: 0
-        width: 200
-        height: 200
+        width: 80
+        height: 80
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -179,20 +179,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 01fb648a6ad512544b106366163955b9
-      internalID: -681815901
+      spriteID: 46cfc9eed55b5f1419e9c003c13a5b57
+      internalID: 783457352
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: Frigate Rocket Explosion_3
+      name: Bee Medium Laser Shot_3
       rect:
         serializedVersion: 2
-        x: 600
+        x: 240
         y: 0
-        width: 200
-        height: 200
+        width: 80
+        height: 80
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -200,134 +200,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 032e316d6af213247a135657cc268684
-      internalID: -1350293399
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Frigate Rocket Explosion_4
-      rect:
-        serializedVersion: 2
-        x: 800
-        y: 0
-        width: 200
-        height: 200
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: bcc778dd0b390954091da5c773580083
-      internalID: -1886861136
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Frigate Rocket Explosion_5
-      rect:
-        serializedVersion: 2
-        x: 1000
-        y: 0
-        width: 200
-        height: 200
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 6040a8713463fe240a7f456474b1ff9b
-      internalID: 209617714
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Frigate Rocket Explosion_6
-      rect:
-        serializedVersion: 2
-        x: 1200
-        y: 0
-        width: 200
-        height: 200
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 31d090910ee81fe4081cbc19ecb152ee
-      internalID: 408509409
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Frigate Rocket Explosion_7
-      rect:
-        serializedVersion: 2
-        x: 1400
-        y: 0
-        width: 200
-        height: 200
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 301a6754462058349ac45ccc433e489d
-      internalID: -1615702206
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Frigate Rocket Explosion_8
-      rect:
-        serializedVersion: 2
-        x: 1600
-        y: 0
-        width: 200
-        height: 200
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 309048dfc170b94438a7443319deb14c
-      internalID: -69438243
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Frigate Rocket Explosion_9
-      rect:
-        serializedVersion: 2
-        x: 1800
-        y: 0
-        width: 200
-        height: 200
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 9d7fe15bb44d684439730524bcda8d8c
-      internalID: 827210218
+      spriteID: 914f0667959bdfa40b15e987e99625ad
+      internalID: -1651901902
       vertices: []
       indices: 
       edges: []
@@ -343,16 +217,10 @@ TextureImporter:
     weights: []
     secondaryTextures: []
     nameFileIdTable:
-      Frigate Rocket Explosion_0: -2041476100
-      Frigate Rocket Explosion_1: 481453845
-      Frigate Rocket Explosion_2: -681815901
-      Frigate Rocket Explosion_3: -1350293399
-      Frigate Rocket Explosion_4: -1886861136
-      Frigate Rocket Explosion_5: 209617714
-      Frigate Rocket Explosion_6: 408509409
-      Frigate Rocket Explosion_7: -1615702206
-      Frigate Rocket Explosion_8: -69438243
-      Frigate Rocket Explosion_9: 827210218
+      Bee Medium Laser Shot_0: 1833999314
+      Bee Medium Laser Shot_1: -1256488161
+      Bee Medium Laser Shot_2: 783457352
+      Bee Medium Laser Shot_3: -1651901902
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

@@ -1,5 +1,5 @@
 fileFormatVersion: 2
-guid: 5edeab9d0b71a574490be0201d7ef32a
+guid: 1c85405c61e5d2443a1c0b9b0cc9e2f9
 TextureImporter:
   internalIDToNameTable: []
   externalObjects: {}
@@ -21,7 +21,7 @@ TextureImporter:
     heightScale: 0.25
     normalMapFilter: 0
     flipGreenChannel: 0
-  isReadable: 1
+  isReadable: 0
   streamingMipmaps: 0
   streamingMipmapsPriority: 0
   vTOnly: 0
@@ -48,7 +48,7 @@ TextureImporter:
   spriteMeshType: 1
   alignment: 0
   spritePivot: {x: 0.5, y: 0.5}
-  spritePixelsToUnits: 80
+  spritePixelsToUnits: 40
   spriteBorder: {x: 0, y: 0, z: 0, w: 0}
   spriteGenerateFallbackPhysicsShape: 1
   alphaUsage: 1
@@ -69,7 +69,7 @@ TextureImporter:
   platformSettings:
   - serializedVersion: 3
     buildTarget: DefaultTexturePlatform
-    maxTextureSize: 2048
+    maxTextureSize: 4096
     resizeAlgorithm: 0
     textureFormat: -1
     textureCompression: 0
@@ -123,13 +123,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: Bumblebee Laser Shot_0
+      name: Frigate Rocket In Flight_0
       rect:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 200
-        height: 200
+        width: 80
+        height: 80
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -137,20 +137,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: a99cfcd04c811cb42b6b4101c1678596
-      internalID: -1477229664
+      spriteID: 6b73ed4dac18fb749938a8db1e0e3e07
+      internalID: -778055240
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: Bumblebee Laser Shot_1
+      name: Frigate Rocket In Flight_1
       rect:
         serializedVersion: 2
-        x: 200
+        x: 80
         y: 0
-        width: 200
-        height: 200
+        width: 80
+        height: 80
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -158,8 +158,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 2a034e472a9a7d54683b266824d3e835
-      internalID: 1565287268
+      spriteID: 99c85212e7d03384eb36be15c739b074
+      internalID: 851162161
       vertices: []
       indices: 
       edges: []
@@ -175,8 +175,8 @@ TextureImporter:
     weights: []
     secondaryTextures: []
     nameFileIdTable:
-      Bumblebee Laser Shot_0: -1477229664
-      Bumblebee Laser Shot_1: 1565287268
+      Frigate Rocket In Flight_0: -778055240
+      Frigate Rocket In Flight_1: 851162161
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 
