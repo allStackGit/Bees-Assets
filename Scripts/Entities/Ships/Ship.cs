@@ -11,6 +11,7 @@ using Assets.Scripts.Level;
 using Assets.Scripts.Data;
 using Assets.Scripts.Scenes;
 using Assets.Scripts.Entities.Projectiles;
+using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Level.Commands;
 using Assets.Scripts.Server;
 using Unity.MLAgents;
@@ -574,39 +575,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 }
             }
         }
-        protected void ProjectileCollision(GameObject collidingThing)
-        {
-            Projectile projectile = (Projectile)collidingThing.GetComponent(typeof(Projectile));
-            RocketExplosion explosion = (RocketExplosion)collidingThing.GetComponent(typeof(RocketExplosion));
-            bool isRocket = projectile is Rocket;
-
-            if (projectile != null)
-            {
-                Ship shooter = projectile.Shooter;
-
-                // if hit by enemy projectile or fire ship explosion. the ships to ignore is for leafcutter split shots
-                if ((!IsFriendly(projectile) || (projectile.Shooter.ShipType == "Fire Ship" && !Equals(shooter))) && !projectile.ShipsToIgnore.Contains(this)) 
-                {
-
-                    if (explosion != null)
-                    {
-                        //Debugger.Log($"{ShipType} #{Id} got hit by {projectile.name}");
-                        if (explosion.HasHitShip(this)) // if it's an explosion it should do damage but not if it's already contacted the ship
-                        {
-                            return;
-                        }
-                    }
-
-                    projectile.ContactTarget(this);
-
-                    if (!isRocket) // if it's a rocket don't do damage because the explosion is what does damage
-                    {
-                        LogDamage(projectile.Power, shooter, this);
-                    }
-
-                }
-            }
-        }
         public static void LogDamage(int power, Ship shooter, Ship target) // [damage-method] [note]
         {
             int targetOldTSV = target.Tsv;
@@ -864,16 +832,34 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         {
             return DistanceTo(ship) < Sight;
         }
-        public Vector2 GetRandomPointOnShip()
+        public Vector2 GetRandomPointOnShip(Vector2 nearPosition)
         {
             Collider2D collider = GetComponent<Collider2D>();
+            Vector2 randomPointBounds;
+            Vector2 basePosition = GetPosition() + Level.GetPosition();
+            float halfWidth = GetHalfWidth() - ConfigData.OffsetFromFront;
+            float halfHeight = GetHalfHeight() - ConfigData.OffsetFromFront;
 
-            Vector2 randomPointBounds = new Vector2(GetHalfWidth() - ConfigData.OffsetFromFront, GetHalfHeight() - ConfigData.OffsetFromFront);
+            if (nearPosition != Vector2.zero)
+            {
+                randomPointBounds = new Vector2(10, 10); // Limit the random point to some point near the nearPosiition
+                randomPointBounds = Utilities.ForceBounds(10, 10, halfWidth, halfHeight, -1 * halfWidth, -1 * halfHeight);
+                basePosition = nearPosition + Level.GetPosition();
+            }
+            else
+            {
+                randomPointBounds = new Vector2(halfWidth, halfHeight);
+            }
+             
             Vector2 randomPoint = Vector2.zero;
             int loops;
             for (loops = 0; loops < 250 && !collider.OverlapPoint(randomPoint); loops++)
             {
-                randomPoint = Utilities.RandomCoordinate(Level, Vector2.zero, randomPointBounds, Vector2.zero) + GetPosition() + Level.GetPosition();
+                randomPoint = Utilities.RandomCoordinate(Level, Vector2.zero, randomPointBounds, Vector2.zero) + basePosition;
+            }
+            if (loops >= 250)
+            {
+                Debugger.Log($"Couldn't find a random coordinate that overlapped the collider for {Name}: {randomPoint}");
             }
             return randomPoint;
         }

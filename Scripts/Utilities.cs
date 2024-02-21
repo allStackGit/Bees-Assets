@@ -271,6 +271,11 @@ namespace Assets.Scripts
             return Sprite.Create(changedTexture, new Rect(0, 0, sourceTexture.width, sourceTexture.height), (dimensions / dimensions) / 2, ConfigData.PixelsPerUnit);
         }
 
+        public static Vector2 ForceBounds(float x, float y, float MaxX, float MaxY, float MinX, float MinY)
+        {
+            return new Vector2(Mathf.Clamp(x, MinX, MaxX), Mathf.Clamp(y, MinY, MaxY));
+        }
+
         public static Vector2 RotatePointAroundPoint(Vector2 pivot, Vector2 rotatedPoint, float radians)
         {
 

@@ -1,6 +1,7 @@
 ﻿using Assets.Scripts;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Projectiles;
+using Assets.Scripts.Entities.Ships.Weapons;
 using System.Collections.Generic;
 using System.Linq;
 using Unity.VisualScripting;
@@ -10,7 +11,7 @@ namespace Assets.Scripts.Entities.Ships
 {
     public class Striker : CarrierShip
     {
-        public bool AreBombsReady, HasDroppedBombs, HasCompletedRun, HasReturnedToCarrier;
+        public bool AreBombsReady, HasDroppedBomb, HasCompletedRun, HasReturnedToCarrier;
         public GameObject BombSprite, LoadedIndicator, CarriedBomb;
         //public Vector2 IndicatorOffset;
         private SpriteRenderer _indicatorSprite;
@@ -49,7 +50,7 @@ namespace Assets.Scripts.Entities.Ships
                 {
                     //Debugger.Log("Collided with our target ship!");
                     ContactedShip = TouchingShip;
-                    DropBombs();
+                    DropBomb();
 
                 }
             }
@@ -75,7 +76,7 @@ namespace Assets.Scripts.Entities.Ships
             if (TouchingShip != null && TouchingShip.Side != Side && AreBombsReady)
             {
                 ContactedShip = TouchingShip;
-                DropBombs();
+                DropBomb();
                 return;
             }
             //Debugger.Log($"Failed trying to drop bombs with {Name}: TouchingShip: [{TouchingShip}], BombsReady: {BombsReady}");
@@ -112,15 +113,15 @@ namespace Assets.Scripts.Entities.Ships
 
             }
         }
-        private void DropBombs()
+        private void DropBomb()
         {
             //Debugger.Log($"Striker #{Id} is dropping bombs");
             CarriedBomb.SetActive(false);
-            HasDroppedBombs = true;
+            HasDroppedBomb = true;
             SetBombsReadyStatus(false);
 
             // drop bomb animation
-            Vector2 bombPosition = ContactedShip.GetRandomPointOnShip();
+            Vector2 bombPosition = ContactedShip.GetRandomPointOnShip(GetPosition());
 
             GameObject instance = Instantiate(BombSprite, Vector2.zero, Quaternion.identity);
             instance.transform.localPosition = bombPosition;

@@ -36,7 +36,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
         private void AddExplosion()
         {
-            Explosion =  Instantiate(ExplosionPrefab, new Vector3(0, 0, 0), Quaternion.identity);
+            Explosion = Instantiate(Explosion, new Vector3(0, 0, 0), Quaternion.identity);
             Explosion.transform.parent = Level.Map.transform;
             RocketExplosion explosion = (RocketExplosion) Explosion.GetComponent(typeof(RocketExplosion));
             GameState state = Level.GetState();

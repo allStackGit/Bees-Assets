@@ -3,6 +3,7 @@ using Assets.Scripts.Data;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships;
+using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Level;
 using Assets.Scripts.Level.Commands;
 using Assets.Scripts.Server;
@@ -611,7 +612,7 @@ namespace Assets.Scripts.Scenes
         }
         public Vector2 ForceBounds(float x, float y)
         {
-            return new Vector2(Mathf.Clamp(x, MinX, MaxX), Mathf.Clamp(y, MinY, MaxY));
+            return Utilities.ForceBounds(x, y, MaxX, MaxY, MinX, MinY);
         }
     }
 }

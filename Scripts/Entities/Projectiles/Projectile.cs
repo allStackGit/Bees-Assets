@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
+using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Level;
 using Assets.Scripts.Scenes;
 using Unity.VisualScripting;
@@ -19,14 +20,14 @@ namespace Assets.Scripts.Entities.Projectiles
         public Weapon Weapon;
         public Vector2 StartingPosition;
         public float Angle;
-        public GameObject ExplosionPrefab;
+        public GameObject ExplosionAnimationPrefab;
         public GameObject Explosion;
         public List<Ship> ShipsToIgnore = new List<Ship>();
         public Queue<Ship> CollidingQueue = new Queue<Ship>();
 
         public string Name => $"{name} - #{Id}";
 
-        public bool HasExplosion => ExplosionPrefab != null;
+        public bool HasExplosion => ExplosionAnimationPrefab != null;
         
         public void Setup(LevelStage level, int side, long id, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power)
         {
@@ -57,7 +58,7 @@ namespace Assets.Scripts.Entities.Projectiles
             //Debugger.Log($"Projectile hit {target.name}");
             if (HasExplosion)
             {
-                Explosion =  Instantiate(ExplosionPrefab, Vector2.zero, Quaternion.identity);
+                Explosion = Instantiate(ExplosionAnimationPrefab, Vector2.zero, Quaternion.identity);
                 Explosion.transform.parent = Level.Map.transform;
                 Explosion.transform.localPosition = GetPosition();
             }

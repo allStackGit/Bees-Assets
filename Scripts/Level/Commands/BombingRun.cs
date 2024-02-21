@@ -1,6 +1,7 @@
 ﻿using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
 using System.Collections;
+using Assets.Scripts.Entities.Ships.Weapons;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -46,7 +47,7 @@ namespace Assets.Scripts.Level.Commands
                     {
                         Striker striker = (Striker)ship;
                         striker.HasCompletedRun = false;
-                        striker.HasDroppedBombs = false;
+                        striker.HasDroppedBomb = false;
                         striker.HasReturnedToCarrier = false;
                     }
                     else if (ship.ShipType == "Yellow Jacket")
@@ -101,7 +102,7 @@ namespace Assets.Scripts.Level.Commands
                 if (ship.ShipType == "Striker")
                 {
                     Striker striker = (Striker)ship;
-                    return !striker.HasDroppedBombs; // if it's a striker and it has dropped bombs then it shouldn't pursue;
+                    return !striker.HasDroppedBomb; // if it's a striker and it has dropped bombs then it shouldn't pursue;
                 }
                 else
                 {

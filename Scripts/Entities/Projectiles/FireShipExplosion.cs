@@ -13,7 +13,7 @@ namespace Assets.Scripts.Entities.Projectiles
         {
             base.Kill();
             //Debugger.Log("Fire ship explosion kill called");
-            Destroy(Shooter.gameObject);
+            //Destroy(Shooter.gameObject);
         }
     }
 }

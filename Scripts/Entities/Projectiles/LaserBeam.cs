@@ -3,7 +3,7 @@
 using Assets.Scripts.Entities.Ships;
 using System.Collections;
 using UnityEngine;
-using static UnityEngine.GraphicsBuffer;
+using Assets.Scripts.Entities.Ships.Weapons;
 
 namespace Assets.Scripts.Entities.Projectiles
 {
