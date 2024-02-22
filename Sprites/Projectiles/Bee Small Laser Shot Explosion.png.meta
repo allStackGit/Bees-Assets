@@ -110,7 +110,7 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: small_bullet_explode_0
+      name: Bee Small Laser Shot Explosion_0
       rect:
         serializedVersion: 2
         x: 0
@@ -124,14 +124,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 69f77ab79a80e994f8f125ee9d03ef7a
-      internalID: 1472599597
+      spriteID: 37b6cee27e857b94aa0f0eadcc175995
+      internalID: -2130477730
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_explode_1
+      name: Bee Small Laser Shot Explosion_1
       rect:
         serializedVersion: 2
         x: 40
@@ -145,14 +145,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: fd85fdd5c92ab71469c8d7c5c2dab775
-      internalID: 752612541
+      spriteID: 2646c7c9ae5c9e645b0151f8dedf9764
+      internalID: 132235084
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_explode_2
+      name: Bee Small Laser Shot Explosion_2
       rect:
         serializedVersion: 2
         x: 80
@@ -166,14 +166,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 7b8f19a1d5c979245ae804c4bbdde4e2
-      internalID: -497057340
+      spriteID: ff4a1dda85a996145b7e88019fa6f86a
+      internalID: -1379068245
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_explode_3
+      name: Bee Small Laser Shot Explosion_3
       rect:
         serializedVersion: 2
         x: 120
@@ -187,14 +187,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: c67b2271d2c65a24aa3660f72c6e6154
-      internalID: -83635319
+      spriteID: 76e38e60b71a21441b3ec74a3eae9c96
+      internalID: 292233182
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_explode_4
+      name: Bee Small Laser Shot Explosion_4
       rect:
         serializedVersion: 2
         x: 160
@@ -208,14 +208,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: e470a59cc2271084eba0fb99d50b7783
-      internalID: 1715391457
+      spriteID: 9257072d840f88d49972a699953400f5
+      internalID: 1215163897
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_explode_5
+      name: Bee Small Laser Shot Explosion_5
       rect:
         serializedVersion: 2
         x: 200
@@ -229,14 +229,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 4f9dc7e595799c14f9b8b6ed9f77874b
-      internalID: 1711515063
+      spriteID: 21532dbb974b1964283498314737dbe1
+      internalID: 1900281349
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_explode_6
+      name: Bee Small Laser Shot Explosion_6
       rect:
         serializedVersion: 2
         x: 240
@@ -250,14 +250,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: a2e7658444ab46344a88cd715526c229
-      internalID: 1817611095
+      spriteID: 8e43d082aec30404f84da9820ca5a385
+      internalID: 80075761
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_explode_7
+      name: Bee Small Laser Shot Explosion_7
       rect:
         serializedVersion: 2
         x: 280
@@ -271,14 +271,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: b45b1cd6f919e004787fa12121511f5b
-      internalID: -18737735
+      spriteID: f7337ab050b05ce43a9d8657bf313c6d
+      internalID: 1169033538
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_explode_8
+      name: Bee Small Laser Shot Explosion_8
       rect:
         serializedVersion: 2
         x: 320
@@ -292,14 +292,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 482922befe8b0204d8b348858d6398fb
-      internalID: 574049458
+      spriteID: 2532cc792f0472244b27cf7ab54bd404
+      internalID: 1029488519
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_explode_9
+      name: Bee Small Laser Shot Explosion_9
       rect:
         serializedVersion: 2
         x: 360
@@ -313,14 +313,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 93af2370210d6004680703b0588039fa
-      internalID: 1152487084
+      spriteID: 6ab585dc3d9daa64cbcdcbab6e1e1541
+      internalID: 1514241031
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_explode_10
+      name: Bee Small Laser Shot Explosion_10
       rect:
         serializedVersion: 2
         x: 400
@@ -334,14 +334,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 26de76d534468f7449d7805919e8a5b4
-      internalID: -1814897492
+      spriteID: 76fc74da492bafe4bbfedb479cfadc99
+      internalID: -205767503
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_explode_11
+      name: Bee Small Laser Shot Explosion_11
       rect:
         serializedVersion: 2
         x: 440
@@ -355,14 +355,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 8424d847320b7ec4ca7c00af897aa584
-      internalID: 109875935
+      spriteID: ef792178edf4eeb44869dabaf255ff1c
+      internalID: 568680579
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_explode_12
+      name: Bee Small Laser Shot Explosion_12
       rect:
         serializedVersion: 2
         x: 480
@@ -376,14 +376,14 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 61c2ad5cdd859314faf53c337d9680b3
-      internalID: -381348609
+      spriteID: 296cb01da3ef4a742bd748dbc2d8c30e
+      internalID: 545780502
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: small_bullet_explode_13
+      name: Bee Small Laser Shot Explosion_13
       rect:
         serializedVersion: 2
         x: 520
@@ -397,8 +397,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: ed174e1efec11554995e7c50bc4ef9eb
-      internalID: -700630057
+      spriteID: 7fea8e7adea3f674da02561cd1149b70
+      internalID: -1420050758
       vertices: []
       indices: 
       edges: []
@@ -414,20 +414,20 @@ TextureImporter:
     weights: []
     secondaryTextures: []
     nameFileIdTable:
-      small_bullet_explode_0: 1472599597
-      small_bullet_explode_1: 752612541
-      small_bullet_explode_10: -1814897492
-      small_bullet_explode_11: 109875935
-      small_bullet_explode_12: -381348609
-      small_bullet_explode_13: -700630057
-      small_bullet_explode_2: -497057340
-      small_bullet_explode_3: -83635319
-      small_bullet_explode_4: 1715391457
-      small_bullet_explode_5: 1711515063
-      small_bullet_explode_6: 1817611095
-      small_bullet_explode_7: -18737735
-      small_bullet_explode_8: 574049458
-      small_bullet_explode_9: 1152487084
+      Bee Small Laser Shot Explosion_0: -2130477730
+      Bee Small Laser Shot Explosion_1: 132235084
+      Bee Small Laser Shot Explosion_10: -205767503
+      Bee Small Laser Shot Explosion_11: 568680579
+      Bee Small Laser Shot Explosion_12: 545780502
+      Bee Small Laser Shot Explosion_13: -1420050758
+      Bee Small Laser Shot Explosion_2: -1379068245
+      Bee Small Laser Shot Explosion_3: 292233182
+      Bee Small Laser Shot Explosion_4: 1215163897
+      Bee Small Laser Shot Explosion_5: 1900281349
+      Bee Small Laser Shot Explosion_6: 80075761
+      Bee Small Laser Shot Explosion_7: 1169033538
+      Bee Small Laser Shot Explosion_8: 1029488519
+      Bee Small Laser Shot Explosion_9: 1514241031
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

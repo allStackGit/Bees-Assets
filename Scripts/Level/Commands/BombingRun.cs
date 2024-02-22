@@ -21,7 +21,10 @@ namespace Assets.Scripts.Level.Commands
             if (Squad != null && !Squad.IsDead)
             {
                 Squad.ClearTargets(); // Clear all old targets before starting the bombing run
-                CheckIfStrikersAreDefenseless();
+                if (CheckIfStrikersAreDefenseless())
+                {
+                    return;
+                }
 
                 // check if squad has reached destination and if so, cancel the timer and start over again for the next destination
                 Vector2 destination = GetDestination();
@@ -74,7 +77,7 @@ namespace Assets.Scripts.Level.Commands
             }
             
         }
-        private void CheckIfStrikersAreDefenseless()
+        private bool CheckIfStrikersAreDefenseless()
         {
             if (Squad.IsCarrierSquad)
             {
@@ -90,10 +93,12 @@ namespace Assets.Scripts.Level.Commands
                     Squad.BannedStrats.Add("Left Swipe");
                     Squad.BannedStrats.Add("In and Out");
 
-                    //Debugger.Log("Strikers are defenseless, cancelling bombing run");
+                    Debugger.Log("Strikers are defenseless, cancelling bombing run");
                     SetFinalize("Strikers are defenseless, cancelling bombing run");
+                    return true;
                 }
             }
+            return false;
         }
         private bool ShouldShipPursueTarget(Ship ship)
         {
