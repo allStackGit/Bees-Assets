@@ -152,7 +152,7 @@ BoxCollider2D:
     adaptiveTiling: 0
   m_AutoTiling: 0
   serializedVersion: 2
-  m_Size: {x: 2, y: 2}
+  m_Size: {x: 1, y: 1}
   m_EdgeRadius: 0
 --- !u!50 &2118447634316657558
 Rigidbody2D:
@@ -209,3 +209,5 @@ MonoBehaviour:
   ExplosionAnimationPrefab: {fileID: 3345242948093166458, guid: 6a95d017bd6a082479c47468372db16d, type: 3}
   Explosion: {fileID: 0}
   ShipsToIgnore: []
+  Name: 
+  HasExplosion: 0

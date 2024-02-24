@@ -11,7 +11,7 @@ namespace Assets.Scripts.Level.Commands
     public class BombingRun : Command
     {
         /*
-         Only available to Yellow Jackets and Strikers. Sends all ships straight onto the ships of the squad and back to the carrier if applicable
+         Only available to Yellow Jackets, Fireships, and Strikers. Sends all ships straight onto the ships of the squad and back to the carrier if applicable
          */
         public override void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy)
         {

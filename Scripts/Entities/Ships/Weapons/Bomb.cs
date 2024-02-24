@@ -14,7 +14,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             List<Ship> queue = new List<Ship>();
             if (Ship.Squad.HasEnemy && Ship.Squad.IsAttacking)
             {
-                List<Ship> enemyShips = Ship.Squad.Command.Enemy.GetShips().ToList(); // The ToList() is necessary to prevent alternation to the enemy ships
+                List<Ship> enemyShips = Ship.Squad.Command.Enemy.GetShips().ToList(); // The ToList() is necessary to prevent alteration to the enemy ships
                 if (enemyShips.Count > 0)
                 {
                     //Debugger.Log($"Enemy squad {Ship.Squad.Command.Enemy.Name} has {enemyShips.Count} ships");

@@ -17,10 +17,10 @@ namespace Assets.Scripts.Data
 
         public int Health, MaxHealth, AdditionalTsv, Sight;
         public List<int> Range, Power;
-        public List<float> RateOfFire, ProjectileValue;
+        public List<float> RateOfFire, ProjectileValue, RotationRates;
         public float Speed;
         public List<float> SpecialFirePower = new List<float>();
-        // [alert] [remember] this needs to always match the calculation in the ship class [tsv-calculation] [note]
+       
         public float Firepower => GetFirepower();
 
         public FleetShip(int id, int side, string name, string type, bool isVisibleToUser, bool isDead, int shotsFired, int damageDone, int damageReceived, int kills, int battlesFought, int battlesWon)
@@ -50,6 +50,8 @@ namespace Assets.Scripts.Data
             AdditionalTsv = shipInfo.AdditionalTsv;
             Sight = shipInfo.Sight;
             ProjectileValue = shipInfo.ProjectileValues;
+            RotationRates = shipInfo.RotationRates;
+
             RateOfFire = shipInfo.RatesOfFire;
             Speed = shipInfo.Speed;
 
@@ -93,9 +95,10 @@ namespace Assets.Scripts.Data
                 float rateOfFire = RateOfFire.ElementAt(i);
                 float projectileValue = ProjectileValue.ElementAt(i);
                 float specialFirePower = SpecialFirePower.ElementAt(i);
+                float rotationRate = RotationRates.ElementAt(i);
                 //Debugger.Log($"Firepower calc for {Type}: range: {range}, power: {power*projectileValue}, rateofFire: {rateOfFire}");
                 
-                sum += Utilities.CalculateFirepower(power, range, rateOfFire, projectileValue, specialFirePower);
+                sum += Utilities.CalculateFirepower(power, range, rateOfFire, rotationRate, projectileValue, specialFirePower);
             }
             return sum;
         }

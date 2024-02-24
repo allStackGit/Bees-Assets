@@ -14,7 +14,7 @@ GameObject:
   - component: {fileID: 7501106849564186278}
   - component: {fileID: -3130374268535504429}
   - component: {fileID: -1424633609786847472}
-  m_Layer: 10
+  m_Layer: 18
   m_Name: Laser Beam
   m_TagString: Projectile
   m_Icon: {fileID: 0}
@@ -206,6 +206,8 @@ MonoBehaviour:
   Weapon: {fileID: 0}
   StartingPosition: {x: 0, y: 0}
   Angle: 0
-  ExplosionPrefab: {fileID: 0}
+  ExplosionAnimationPrefab: {fileID: 0}
   Explosion: {fileID: 0}
   ShipsToIgnore: []
+  Name: 
+  HasExplosion: 0

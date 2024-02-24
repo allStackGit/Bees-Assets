@@ -109,6 +109,7 @@ MonoBehaviour:
   Side: 0
   Body: {fileID: 0}
   Health: 0
+  MaxHealth: 0
   OriginalHealth: 0
   OriginalTsv: 0
   Sight: 0
@@ -119,21 +120,24 @@ MonoBehaviour:
   ShipExplosion: {fileID: 1876865744220396715, guid: 1f58b7947f208d944b8669f2e51a9a52, type: 3}
   HealthBar: {fileID: 8943563929590371903}
   MiniMapIcon: {fileID: 251367458246643864}
-  InCombat: 0
   TargetCoordinates: {x: 0, y: 0}
   OffsetFromCenter: {x: 0, y: 0}
   Squad: {fileID: 0}
   DefaultAngle: 0
   LastKilled: 0
   ShipType: 
+  Name: 
   FireAtFrontOfShip: 1
+  InCombat: 0
+  HasBrain: 0
+  IsMinionShip: 0
   Weapons: []
   ProjectilePrefabs:
   - {fileID: 6428638681076635372, guid: c5d2fa5f5d52d0d4b855fdc29fca6e90, type: 3}
   WeaponPrefabs:
   - {fileID: 8842992509850816665}
+  ColoredPrefabs: []
   Brain: {fileID: 0}
-  HasBrain: 0
   __PastCommands: []
   __Strategy: 
   __Squad: 
@@ -151,6 +155,7 @@ MonoBehaviour:
   __SquadShips: []
   __HasReachedDestination: 0
   __SquadHasReachedDestination: 0
+  __Enemy: 
   Direction: 0
   ShouldDetonate: 0
   RLShootingStrategy: 
@@ -531,6 +536,18 @@ PrefabInstance:
       value: 3
       objectReference: {fileID: 0}
     - target: {fileID: 6336891931982589551, guid: 4553e81d8c0d7374ba15e1b2c1cfe898, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6336891931982589551, guid: 4553e81d8c0d7374ba15e1b2c1cfe898, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6336891931982589551, guid: 4553e81d8c0d7374ba15e1b2c1cfe898, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6336891931982589551, guid: 4553e81d8c0d7374ba15e1b2c1cfe898, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0
       objectReference: {fileID: 0}
@@ -569,6 +586,10 @@ PrefabInstance:
     - target: {fileID: 6336891931982589551, guid: 4553e81d8c0d7374ba15e1b2c1cfe898, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6336891931982589551, guid: 4553e81d8c0d7374ba15e1b2c1cfe898, type: 3}
+      propertyPath: m_ConstrainProportionsScale
+      value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []

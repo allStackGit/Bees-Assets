@@ -29,7 +29,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
             for (int shotNumber = 0; shotNumber < SplitCount; shotNumber++)
             {
-                float localAngle = Angle * Mathf.Rad2Deg; //  transform.eulerAngles.z;
+                float localAngle = Angle * Mathf.Rad2Deg; 
                 if (shotNumber == 0)
                 {
                     localAngle += 45;
@@ -55,7 +55,7 @@ namespace Assets.Scripts.Entities.Projectiles
                 shot.transform.parent = Level.Map.transform;
                 LaserShot projectile = (LaserShot)shot.GetComponent(typeof(LaserShot));
                 GameState state = Level.GetState();
-                projectile.Setup(Level, Shooter.Side, state.AddEntity(), Weapon, Shooter, Target, startingPosition, radians, Weapon.Range/4, Weapon.Power);
+                projectile.Setup(Level, Shooter.Side, state.AddEntity(), Weapon, Shooter, Target, startingPosition, radians, Weapon.Range/4, Weapon.Power/2);
                 state.AddProjectile(projectile);
                 projectile.ShipsToIgnore.Add(target);
 

@@ -24,10 +24,8 @@ namespace Assets.Scripts.Entities.Projectiles
         public GameObject Explosion;
         public List<Ship> ShipsToIgnore = new List<Ship>();
         public Queue<Ship> CollidingQueue = new Queue<Ship>();
-
-        public string Name => $"{name} - #{Id}";
-
-        public bool HasExplosion => ExplosionAnimationPrefab != null;
+        public string Name;
+        public bool HasExplosion;
         
         public void Setup(LevelStage level, int side, long id, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power)
         {
@@ -39,10 +37,13 @@ namespace Assets.Scripts.Entities.Projectiles
             this.Side = side;
             this.Power = power;
             this.Angle = angle;
+            Name = $"{Shooter.Name}: {name} - #{Id}";
             StartingPosition = startingPosition;
             transform.localPosition = StartingPosition;
             Level = level;
             Body = GetComponent<Rigidbody2D>();
+            gameObject.name = Name;
+            HasExplosion = ExplosionAnimationPrefab != null;
         }
 
         public virtual void Kill()

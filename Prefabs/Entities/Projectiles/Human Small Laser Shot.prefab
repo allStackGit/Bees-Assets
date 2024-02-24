@@ -14,7 +14,7 @@ GameObject:
   - component: {fileID: -3110394293612863133}
   - component: {fileID: -6802296060538784428}
   - component: {fileID: 8852170017444151567}
-  m_Layer: 10
+  m_Layer: 18
   m_Name: Human Small Laser Shot
   m_TagString: Projectile
   m_Icon: {fileID: 0}

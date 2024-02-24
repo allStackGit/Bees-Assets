@@ -100,6 +100,7 @@ namespace Assets.Scripts
             { "Frigate",        Small},
             { "Gunship",        Small},
             { "Scout",          Tiny},
+            { "Striker",          Tiny},
             { "Warp Gate",      0 },
 
             { "Beehive",        0 },

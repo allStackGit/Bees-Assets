@@ -29,12 +29,13 @@ namespace Assets.Scripts.Settings
                 List<int> power = Utilities.JArrayToList<int>(ship.Power);
                 List<float> ProjectileValue = Utilities.JArrayToList<float>(ship.ProjectileValue);
                 List<float> rateOfFire = Utilities.JArrayToList<float>(ship.RateOfFire);
+                List<float> rotationRates = Utilities.JArrayToList<float>(ship.RotationRates);
                 List<string> types = Utilities.JArrayToList<string>(ship.WeaponTypes);
 
                 ShipStatsList.Add((string)ship.ShipType, new ShipStatBlock((string)ship.ShipType, (string)ship.Description, (int)ship.Health,
                     range, power, (int)ship.Sight, (int)ship.AdditionalTsv, ProjectileValue,
-                    rateOfFire, (float)ship.Speed, types));
-
+                    rateOfFire, rotationRates, (float)ship.Speed, types));
+                 
             });
         }
     }

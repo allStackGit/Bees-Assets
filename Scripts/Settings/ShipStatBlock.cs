@@ -15,11 +15,11 @@ namespace Assets.Scripts.Settings
         public int Health, Sight, AdditionalTsv;
         public float Speed;
         public List<int> Ranges, Powers;
-        public List<float> RatesOfFire, ProjectileValues;
+        public List<float> RatesOfFire, ProjectileValues, RotationRates;
         public List<string> WeaponTypes;
 
         public ShipStatBlock(string type, string description, int health, List<int> ranges, List<int> powers, int sight, int additionalTsv, 
-            List<float> projectileValues, List<float> ratesOfFire, float speed, List<string> weaponTypes)
+            List<float> projectileValues, List<float> ratesOfFire, List<float> rotationRates, float speed, List<string> weaponTypes)
         {
             Type = type;
             Description = description;
@@ -29,13 +29,15 @@ namespace Assets.Scripts.Settings
             Sight = sight;
             AdditionalTsv = additionalTsv;
             ProjectileValues = projectileValues;
+            RotationRates = rotationRates;
             RatesOfFire = ratesOfFire;
             Speed = speed;
             WeaponTypes = weaponTypes;
 
-            if (!(Ranges.Count == Powers.Count && RatesOfFire.Count == ProjectileValues.Count && RatesOfFire.Count == Ranges.Count && Ranges.Count == WeaponTypes.Count))
+            if (!(Ranges.Count == Powers.Count && Powers.Count == ProjectileValues.Count && ProjectileValues.Count == WeaponTypes.Count && 
+                WeaponTypes.Count == RatesOfFire.Count && RatesOfFire.Count == RotationRates.Count))
             {
-                Debugger.Exception($"The ship ({Type}) needs to have the same number of Ranges, Powers, ProjectileValues, WeaponTypes, and RatesOfFire stats");
+                Debugger.Exception($"The ship ({Type}) needs to have the same number of Ranges, Powers, ProjectileValues, WeaponTypes, RatesOfFire, and RotationRates stats");
             }
         }
         public string PrintRange()

@@ -12,7 +12,7 @@ namespace Assets.Scripts.Entities.Projectiles
     // They operate like normal projectiles upon contact except that contact doesn't kill them and since they linger they can only damage a target once
     public class RocketExplosion : Projectile
     {
-
+        private bool _isHarmless; // After a few frames, the explosion is no longer damaging and becomes harmless to whoever hits it
         private List<Ship> _shipsHit = new List<Ship>();
 
         public override void ContactTarget(Ship target)
@@ -31,6 +31,11 @@ namespace Assets.Scripts.Entities.Projectiles
             //Debugger.Log("Killed off the rocket explosion");
             Level.GetState().RemoveExplosion(this);
             Destroy(gameObject);
+        }
+        public void SetHarmless()
+        {
+            _isHarmless = true;
+            Debug.Log($"{Name} is now harmless");
         }
 
         protected override void FixedUpdate()
@@ -56,7 +61,7 @@ namespace Assets.Scripts.Entities.Projectiles
                 // if hit enemy projectile or fire ship explosion
                 if ((!IsFriendly(ship) || (Shooter.ShipType == "Fire Ship" && !Equals(Shooter))))
                 {
-                    if (!HasHitShip(ship)) // if it's an explosion it should do damage but not if it's already contacted the ship
+                    if (!_isHarmless && !HasHitShip(ship)) // if it's an explosion it should do damage but not if it's already contacted the ship
                     {
                         ContactTarget(ship);
                         Ship.LogDamage(Power, Shooter, ship);

@@ -69,6 +69,9 @@ namespace Assets.Scripts.Level
         public bool HasReachedDestination => GetShips().All((s) => s.HasReachedDestination);
         public bool HasColor => Color != ConfigData.UnsetColor;
         public bool HasBrain => GetShips().All((s) => s.HasBrain);
+        /// <summary>
+        /// A squad is in combat if any of its ships are in combat. This is used for Matchup strategies that target squads that are in combat.
+        /// </summary>
         public bool InCombat => GetShips().Any((s) => s.InCombat);
 
 
@@ -228,6 +231,13 @@ namespace Assets.Scripts.Level
                 ship.transform.localPosition = new Vector2(x, y);
             });
 
+        }
+        public void NameSquadShips()
+        {
+            foreach (Ship ship in GetShips())
+            {
+                ship.SetSquadName();
+            }
         }
         protected void Update()
         {
@@ -700,14 +710,10 @@ namespace Assets.Scripts.Level
         }
         public void UserAggressive(Squad enemy)
         {
-            if (IsCarrierSquad)
+            if (HasOnlyBombers)
             {
-                CarrierSquad carrierSquad = (CarrierSquad)this;
-                if (carrierSquad.SquadType == "Striker")
-                {
-                    UserBombingRun(enemy);
-                    return;
-                }
+                UserBombingRun(enemy);
+                return;
             }
             //Debugger.Log($"Creating \"Aggressive\" command for {Name} against {enemy.Name}");
             (Strategy, ShootingStrategy) strategies = MakeUserCommand("Aggressive", enemy); // selectedSquad is the user's squad, and Squad is this ship's squad

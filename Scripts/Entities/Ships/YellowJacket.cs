@@ -83,7 +83,7 @@ namespace Assets.Scripts.Entities.Ships
             if (ContactedShip.Health <= 0)
             {
                 ContactedShip.Kill(this); // kill the target ship if needed, yellow jacket gets credit
-                Kill(targetShipSquad); // kill the yellow jacket and give credit to the target ship squad
+                SuicideKill(targetShipSquad); // kill the yellow jacket and give credit to the target ship squad
             }
             else
             {
@@ -93,13 +93,13 @@ namespace Assets.Scripts.Entities.Ships
            
         }
 
-        public void Kill(Squad squad) // [kill-method] [note]
+        public void SuicideKill(Squad squad) // [kill-method] [note]
         {
             if (!IsDead)
             {
                 died = true;
-                GameObject explosion = Instantiate(ShipExplosion, GetPosition(), Quaternion.identity);
-                explosion.transform.parent = Level.Map.transform;
+                DropExplosionAnimation();
+
                 Level.GetState().RemoveShip(this);
                 Squad.RemoveShip(this);
 

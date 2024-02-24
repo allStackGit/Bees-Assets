@@ -6371,7 +6371,7 @@ MonoBehaviour:
   Updates: 0
   __PastServerRequests: []
   __AverageRequestTime: 0
-  ActivateHiveMind: 0
+  ActivateHiveMind: 1
   ActivateBrains: 0
   IsTrainingNueralNetwork: 0
   IsTrainingHiveMind: 0
@@ -7725,7 +7725,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 2944892714679254333, guid: e154edb1d8fb554428cdc7380556de19, type: 3}
       propertyPath: m_CullingMask.m_Bits
-      value: 65279
+      value: 327401
       objectReference: {fileID: 0}
     - target: {fileID: 2944892714679254334, guid: e154edb1d8fb554428cdc7380556de19, type: 3}
       propertyPath: m_Name

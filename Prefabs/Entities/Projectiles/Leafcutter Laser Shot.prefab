@@ -152,7 +152,7 @@ BoxCollider2D:
     adaptiveTiling: 0
   m_AutoTiling: 1
   serializedVersion: 2
-  m_Size: {x: 0.5, y: 0.5}
+  m_Size: {x: 1, y: 1}
   m_EdgeRadius: 0
 --- !u!50 &3427265209652246652
 Rigidbody2D:
@@ -206,8 +206,10 @@ MonoBehaviour:
   Weapon: {fileID: 0}
   StartingPosition: {x: 0, y: 0}
   Angle: 0
-  ExplosionPrefab: {fileID: 3612702878992157786, guid: 8296e38041b692043b998926766361bc, type: 3}
+  ExplosionAnimationPrefab: {fileID: 0}
   Explosion: {fileID: 0}
   ShipsToIgnore: []
+  Name: 
+  HasExplosion: 0
   SplitCount: 4
   SplitLaserPrefab: {fileID: 2378685256343899705, guid: 3b1a5274038082f4fb1be503df70d6de, type: 3}

@@ -14,7 +14,7 @@ GameObject:
   - component: {fileID: -4927107212366897339}
   - component: {fileID: 6775785947513820997}
   - component: {fileID: 676764122444431878}
-  m_Layer: 10
+  m_Layer: 18
   m_Name: Frigate Rocket Explosion
   m_TagString: Projectile
   m_Icon: {fileID: 0}
@@ -169,7 +169,7 @@ MonoBehaviour:
   Weapon: {fileID: 0}
   StartingPosition: {x: 0, y: 0}
   Angle: 0
-  ExplosionPrefab: {fileID: 0}
+  ExplosionAnimationPrefab: {fileID: 0}
   Explosion: {fileID: 0}
   ShipsToIgnore: []
 --- !u!114 &676764122444431878

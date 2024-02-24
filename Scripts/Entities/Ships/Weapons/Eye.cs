@@ -12,9 +12,9 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public SpriteRenderer Pupil;
 
         public override void Setup(Ship ship, int range, int power, float rateOfFire, float projectileValue, GameObject piece,
-            GameObject projectilePrefab, bool fireAtFrontOfShip)
+            GameObject projectilePrefab, bool fireAtFrontOfShip, float rotationRate)
         {
-            base.Setup(ship, range, power, rateOfFire, projectileValue, piece, projectilePrefab, fireAtFrontOfShip);
+            base.Setup(ship, range, power, rateOfFire, projectileValue, piece, projectilePrefab, fireAtFrontOfShip, rotationRate);
             Pupil = Piece.gameObject.transform.GetChild(0).GetComponent<SpriteRenderer>();
         }
         protected override void SendProjectile() // [projectile-method] [note]

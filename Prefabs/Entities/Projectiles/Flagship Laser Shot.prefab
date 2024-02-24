@@ -13,7 +13,7 @@ GameObject:
   - component: {fileID: 8245500864331014551}
   - component: {fileID: 3521588021444551020}
   - component: {fileID: 4957464698650094020}
-  m_Layer: 10
+  m_Layer: 18
   m_Name: Flagship Laser Shot
   m_TagString: Projectile
   m_Icon: {fileID: 0}
@@ -130,7 +130,7 @@ BoxCollider2D:
     adaptiveTiling: 0
   m_AutoTiling: 1
   serializedVersion: 2
-  m_Size: {x: 0.5, y: 0.5}
+  m_Size: {x: 1, y: 1}
   m_EdgeRadius: 0
 --- !u!50 &3521588021444551020
 Rigidbody2D:
@@ -187,3 +187,5 @@ MonoBehaviour:
   ExplosionAnimationPrefab: {fileID: 3345242948093166458, guid: a51cc23e10b7b7a4fa653e3920fa7f16, type: 3}
   Explosion: {fileID: 0}
   ShipsToIgnore: []
+  Name: 
+  HasExplosion: 0

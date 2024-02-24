@@ -295,8 +295,13 @@ namespace Assets.Scripts
             return rotatedVector;
         }
 
-        // Rotates the game object on this ship the quickest way towards a point and returns true once it reaches that point
-        // returns false once it is done rotating
+        /// <summary>
+        /// Rotates the game object on this ship the quickest way towards a rotation and returns true once it reaches that rotation. Returns false once it is done rotating
+        /// </summary>
+        /// <param name="entity"></param>
+        /// <param name="rotation"></param>
+        /// <param name="rotationSpeed"></param>
+        /// <returns></returns>
         public static bool TimedRotation(GameObject entity, float rotation, float rotationSpeed)
         {
             float difference = Mathf.DeltaAngle(entity.transform.eulerAngles.z, rotation);
@@ -315,6 +320,30 @@ namespace Assets.Scripts
             else
             {
                 entity.transform.eulerAngles = new Vector3(0, 0, rotation);
+                return true;
+            }
+        }
+        /// <summary>
+        /// Checks to see if a game object is rotated towards a rotation or not
+        /// </summary>
+        /// <param name="entity"></param>
+        /// <param name="rotation"></param>
+        /// <returns></returns>
+        public static bool IsAimedAt(GameObject entity, float rotation)
+        {
+            float difference = Mathf.DeltaAngle(entity.transform.eulerAngles.z, rotation);
+            float closeEnough = 3;
+            //Debugger.Log($"Difference in angles {difference}, {(difference > closeEnough ? "counter-clockwise" : "clockwise")}");
+            if (difference > closeEnough)
+            {
+                return false;
+            }
+            else if (difference < (0 - closeEnough))
+            {
+                return false;
+            }
+            else
+            {
                 return true;
             }
         }
@@ -410,10 +439,10 @@ namespace Assets.Scripts
             int fullHealthTsv = (int)Math.Round((firepower > 0 ? firepower : 1) * (speedValue > 1 ? speedValue : 1) * (health / 200), 0) + sight;
             return isDead ? 0 : (((health > 0 ? 1 : 0) * fullHealthTsv) + ((health > 0 ? 1 : 0) * (health + additionalTsv)));
         }
-        public static float CalculateFirepower(int power, int range, float rateOfFire, float ProjectileValue, float specialFirepower)
+        public static float CalculateFirepower(int power, int range, float rateOfFire, float rotationRate, float ProjectileValue, float specialFirepower)
         {
             //Debugger.Log($"Power: {(power * ProjectileValue)}, DPS: {((power * ProjectileValue) / rateOfFire)}, Range: {Mathf.Pow((range / 20), 2)}");
-            return rateOfFire > 0 ? (((power*ProjectileValue) / rateOfFire) * Mathf.Pow((range / 20), 2)) : specialFirepower;
+            return rateOfFire > 0 ? ((((power*ProjectileValue) / rateOfFire) * Mathf.Clamp(rotationRate/128, .5f, 1.25f)) * Mathf.Pow((range / 20), 2)) : specialFirepower;
         }
 
 

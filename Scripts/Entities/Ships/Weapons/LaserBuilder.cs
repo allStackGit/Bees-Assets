@@ -12,35 +12,38 @@ namespace Assets.Scripts.Entities.Ships
         private bool _readyForFiring;
         public SpriteRenderer Pupil;
         public LaserBuilderControl LaserBuilderControl;
+        public GameObject LaserBuilderAnimation;
 
         public override void Setup(Ship ship, int range, int power, float rateOfFire, float projectileValue, GameObject piece,
-            GameObject projectilePrefab, bool fireAtFrontOfShip)
+            GameObject projectilePrefab, bool fireAtFrontOfShip, float rotationRate)
         {
-            base.Setup(ship, range, power, rateOfFire, projectileValue, piece, projectilePrefab, fireAtFrontOfShip);
-            LaserBuilderControl = Piece.GetComponent<LaserBuilderControl>();
+            base.Setup(ship, range, power, rateOfFire, projectileValue, piece, projectilePrefab, fireAtFrontOfShip, rotationRate);
+            LaserBuilderAnimation = Piece.transform.Find("Laser Animation").gameObject;
+            LaserBuilderControl = LaserBuilderAnimation.GetComponent<LaserBuilderControl>();
             LaserBuilderControl.Setup(this);
         }
         protected override void SendProjectile() // [projectile-method] [note] this doesn't actually send the projectile because we need to wait for the animation to finish
         {
             _readyForFiring = true;
-            //Debugger.Log("Send projectile called");
+            //Debug.Log($"{Name} send projectile called");
 
         }
         public void ActuallyShoot() // [projectile-method] [note] this actually sends the projectile once the animation is finished
         {
             if (_readyForFiring && HasTargetShip)
             {
-                //Debugger.Log("Animation finished, sending projectile");
+                //Debug.Log($"{Name} animation finished, sending projectile, deactivating animation");
                 base.SendProjectile();
-                Piece.SetActive(false);
+                LaserBuilderAnimation.SetActive(false);
             }
 
         }
         protected override void SetTargetShip(Ship ship)
         {
-            //Debugger.Log("Setting laser builder targeting");
+            //Debug.Log($"Setting {Name} target, activating animation");
             base.SetTargetShip(ship);
-            Piece.SetActive(true);
+            LaserBuilderAnimation.SetActive(true);
+
 
 
         }
@@ -48,10 +51,10 @@ namespace Assets.Scripts.Entities.Ships
         {
             //Debugger.Log("Leafcutter aiming");
             base.Aim();
-            // resets the eye color if there is no target
             if (!HasTargetShip)
             {
-                Piece.SetActive(false);
+                //Debug.Log($"{Name} has no TargetShip, deactivating animation");
+                LaserBuilderAnimation.SetActive(false);
             }
         }
     }

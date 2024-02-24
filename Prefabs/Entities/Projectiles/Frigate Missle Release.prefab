@@ -14,7 +14,7 @@ GameObject:
   - component: {fileID: -433847355909050064}
   - component: {fileID: -7301245187212021690}
   - component: {fileID: -997384404529185541}
-  m_Layer: 10
+  m_Layer: 18
   m_Name: Frigate Missle Release
   m_TagString: Projectile
   m_Icon: {fileID: 0}

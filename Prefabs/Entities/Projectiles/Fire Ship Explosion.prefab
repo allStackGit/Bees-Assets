@@ -13,7 +13,7 @@ GameObject:
   - component: {fileID: 6861675588789407317}
   - component: {fileID: -1155758467170267426}
   - component: {fileID: -5476002401891830467}
-  m_Layer: 10
+  m_Layer: 15
   m_Name: Fire Ship Explosion
   m_TagString: Projectile
   m_Icon: {fileID: 0}
@@ -142,7 +142,7 @@ CircleCollider2D:
   m_UsedByComposite: 0
   m_Offset: {x: 0, y: 0}
   serializedVersion: 2
-  m_Radius: 1.9
+  m_Radius: 2
 --- !u!114 &-5476002401891830467
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -168,6 +168,8 @@ MonoBehaviour:
   Weapon: {fileID: 0}
   StartingPosition: {x: 0, y: 0}
   Angle: 0
-  ExplosionPrefab: {fileID: 0}
+  ExplosionAnimationPrefab: {fileID: 0}
   Explosion: {fileID: 0}
   ShipsToIgnore: []
+  Name: 
+  HasExplosion: 0

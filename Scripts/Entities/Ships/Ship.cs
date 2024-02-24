@@ -21,7 +21,7 @@ namespace Assets.Scripts.Entities.Ships
 {
     public class Ship : Entity
     {
-        public int Health,  OriginalHealth, OriginalTsv, Sight, AdditionalTsv;
+        public int Health, MaxHealth, OriginalHealth, OriginalTsv, Sight, AdditionalTsv;
         public float ProjectileValue, Speed, SpecialFirePower;
         public GameObject ShipExplosion, HealthBar, MiniMapIcon;
         public Vector2 TargetCoordinates, OffsetFromCenter; // the coordinates of where the ship should go, and it's offset from the center of the squad
@@ -29,7 +29,7 @@ namespace Assets.Scripts.Entities.Ships
         public float DefaultAngle;
         public long LastKilled;
         public FleetShip FleetShip = null;
-        public string ShipType;
+        public string ShipType, Name;
         public bool FireAtFrontOfShip, InCombat;
         public bool HasBrain, IsMinionShip;
         public List<Weapon> Weapons;
@@ -45,7 +45,6 @@ namespace Assets.Scripts.Entities.Ships
         public List<Turret> Turrets => Weapons.Where((w) => w is Turret).ToList().ConvertAll<Turret>((w) => (Turret)w);
         public float DamagePerSecond => Turrets.Sum(t => t.DamagePerSecond);
         public int Range => HasWeapons ? Weapons.Max((w) => w.Range) : 0;
-        public int MaxHealth => FleetShip.MaxHealth;
         public int Tsv => Utilities.CalculateTsv(this);
         public string ShipTypeLetter => Utilities.ConvertShipNameToType(ShipType);
         public double Seconds => GetLifeTime();
@@ -59,7 +58,6 @@ namespace Assets.Scripts.Entities.Ships
         public Vector2 Velocity => Body.velocity;
         public bool IsMoving => Body.velocity != Vector2.zero;
         public bool IsCarrierShip => ShipType == "Striker" || ShipType == "Drone";
-        public string Name => $"{ShipType} - #{Id}";
         public string ShootingStrategy => HasBrain ? RLShootingStrategy : Squad.GetShootingStrategy();
         public List<Ship> TargetShips => HasWeapons ? Weapons.Select((w) => w.TargetShip).Where((s) => s != null).ToList() : new List<Ship>();
         public bool HasCommand => Squad.HasCommand;
@@ -142,6 +140,7 @@ namespace Assets.Scripts.Entities.Ships
             OffsetFromCenter = offsetFromCenter;
             Body = GetComponent<Rigidbody2D>();
             Transform brain = transform.Find("Brain");
+            MaxHealth = FleetShip.MaxHealth;
             if (brain != null && Level.ActivateBrains)
             {
                 //Debugger.Log($"Found a brain for {Name}, {brain}");
@@ -158,7 +157,8 @@ namespace Assets.Scripts.Entities.Ships
             Health = shipStats.Health;
             OriginalHealth = Health;
 
-
+            Name = $"{ShipType} - #{Id}";
+            gameObject.name = Name;
             _healthBarFiller = HealthBar.transform.GetChild(0);
             _healthBarFillerSprite = HealthBar.transform.GetChild(0).GetComponent<SpriteRenderer>();
 
@@ -242,16 +242,16 @@ namespace Assets.Scripts.Entities.Ships
                     if (weapon is Eye)
                     {
                         ((Eye)weapon).Setup(this, shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
-shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFrontOfShip);
+shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFrontOfShip, shipStats.RotationRates[i]);
                     }else if (weapon is LaserBuilder)
                     {
                         ((LaserBuilder)weapon).Setup(this, shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
-shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFrontOfShip);
+shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFrontOfShip, shipStats.RotationRates[i]);
                     }
                     else
                     {
                         ((Turret)weapon).Setup(this, shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
-shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFrontOfShip);
+shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFrontOfShip, shipStats.RotationRates[i]);
                     }
 
                 }
@@ -340,6 +340,12 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 });
                
             }
+        }
+        public void SetSquadName()
+        {
+            // Set the name of the ships with the Squad name
+            Name = $"{Squad.Name}: {Name}";
+            gameObject.name = Name;
         }
 
 
@@ -543,27 +549,34 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 _combatTimer = false;
             }
         }
+        /// <summary>
+        /// Sets the combat timer. A ship is in combat if it has fired before the combat timer has expired. The timer is currently set to 5 seconds.
+        /// In Combat is used for Hivemind Matchup Strategies.
+        /// </summary>
         public void SetCombatTimer()
         {
             // if the combat timer already exists, clear it
-
-            if (_combatTimer)
+            if (IsUserControlled && Level.ActivateHiveMind) // The combat timer and In Combat are only used for Hivemind Strategies so it only makes sense to use this when those are in use
             {
-                CancelInvoke(nameof(CombatTimer));
+                if (_combatTimer)
+                {
+                    CancelInvoke(nameof(CombatTimer));
+                }
+
+                // set the ship as in combat because it is firing
+                InCombat = true;
+
+                /* set a timer to check every 5 seconds and if the game is not paused, the ship will be out of combat
+                But if the ship fires again within those 5 seconds the above code will clear the timer
+                 */
+                _combatTimer = true;
+                float maxRateOfFire = HasWeapons ? Weapons.Max((w) => w.RateOfFire) : 2;
+                float repeatRate = Mathf.Clamp(5f, maxRateOfFire + 1, maxRateOfFire + 2);
+                InvokeRepeating(nameof(CombatTimer), repeatRate, repeatRate);
             }
 
-            // set the ship as in combat because it is firing
-            InCombat = true;
-
-            /* set a timer to check every 2 seconds and if the game is not paused, the ship will be out of combat
-            But if the ship fires again within those two seconds the above code will clear the timer
-             */
-            _combatTimer = true;
-            float maxRateOfFire = HasWeapons ? Weapons.Max((w) => w.RateOfFire) : 2;
-            float repeatRate = Mathf.Clamp(2f, maxRateOfFire + 1, maxRateOfFire + 2);
-            InvokeRepeating(nameof(CombatTimer), repeatRate, repeatRate);
         }
-        protected virtual void OnTriggerEnter2D(Collider2D collider) // projectile collision
+        protected virtual void OnTriggerEnter2D(Collider2D collider)
         {
             GameObject collidingThing = collider.gameObject;
             if (collidingThing.name == ("Selection Box"))
@@ -692,14 +705,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         {  
             if (!IsDead)
             {
-                //Debugger.Log($"Killing ship {Name}");
+                //Debugger.Log($"Killing ship {Name} with size Factor {ConfigData.GetShipSizeFactor(ShipType)}");
                 died = true;
-                if (!Level.IsTrainingNueralNetwork && !endKill)
+                if (!endKill)
                 {
-                    GameObject explosion = LevelStage.Instantiate(ShipExplosion, Vector2.zero, Quaternion.identity);
-                    explosion.transform.localScale *= ConfigData.GetShipSizeFactor(ShipType);
-                    explosion.transform.parent = Level.Map.transform;
-                    explosion.transform.localPosition = GetPosition();
+                    DropExplosionAnimation();
                 }
 
                 GameState state = Level.GetState();
@@ -901,7 +911,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         public void UpdateHealthBar()
         {
             float healthPercent = (float)Math.Round((double)((double)Health / MaxHealth), 2);
-            //Debugger.Log($"{Name} health: {healthPercent}%");
+            //Debugger.Log($"{Name} health: {healthPercent}% MaxHealth: {MaxHealth}");
             _healthBarFiller.localScale = new Vector2(healthPercent, _healthBarFiller.localScale.y);
             //_healthBarFiller.sizeDelta = new Vector2(healthPercent, _healthBarFiller.sizeDelta.y);
 
@@ -912,6 +922,16 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             else if (healthPercent <= .25f)
             {
                 _healthBarFillerSprite.color = ConfigData.GetUIColor("bad");
+            }
+        }
+        protected void DropExplosionAnimation()
+        {
+            if (!Level.IsTrainingNueralNetwork)
+            {
+                GameObject explosion = LevelStage.Instantiate(ShipExplosion, Vector2.zero, Quaternion.identity);
+                explosion.transform.localScale *= ConfigData.GetShipSizeFactor(ShipType);
+                explosion.transform.parent = Level.Map.transform;
+                explosion.transform.localPosition = GetPosition();
             }
         }
 

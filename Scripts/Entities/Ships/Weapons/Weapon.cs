@@ -12,15 +12,21 @@ namespace Assets.Scripts.Entities.Ships.Weapons
     {
 
         public Ship Ship, TargetShip;
-        public int Range, Power;
-        public float RateOfFire, ProjectileValue, SpecialFirepower;
+        public int Range, Power; 
+        public float RateOfFire, ProjectileValue, RotationRate, SpecialFirepower;
         public GameObject Piece, ProjectilePrefab, RangeCircle;
         public List<Ship> CachedTargetingQueue = new List<Ship>();
-        public string CachedShootingStrategy;
-        public bool IsUsingCachedTargetingQueue, HasRangeCircle;
-        public float Firepower => Utilities.CalculateFirepower(Power, Range, RateOfFire, ProjectileValue, SpecialFirepower);
+        public List<Ship> ShipsWithinRange = new List<Ship>();
+        public string CachedShootingStrategy, Name;
+        public bool IsUsingCachedTargetingQueue, HasRangeCircle, HasRangeCollider;
+        public float Firepower => Utilities.CalculateFirepower(Power, Range, RateOfFire, RotationRate, ProjectileValue, SpecialFirepower);
         public bool CeaseFire => Ship.Squad.CeaseFire;
         public bool HasTargetShip => TargetShip != null;
+        public bool HasShipsWithinRange => ShipsWithinRange.Count > 0;
+        /// <summary>
+        /// Whether a weapon *should* fire at a target. It may still not be *able* to fire at a target, if for instance it's a turret and not aimed at the target.
+        /// </summary>
+        public bool ShouldFire => TargetShip != null && !CeaseFire;
         public LevelStage Level => Ship.Level;
         public Squad Squad => Ship.Squad;
         public int Side => Ship.Side;
@@ -41,20 +47,29 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             //Piece.transform.localScale = Ship.RelativeSizeScale();
             Piece = piece;
             ProjectilePrefab = projectilePrefab;
+            Name = $"{ship.Name}: {Piece.name}";
 
-            SetupRangeCircle();
+            SetupRangeCircleAndCollider();
             //Piece.transform.parent = ship.transform;
             //Piece.transform.localPosition = (Vector2)piece.transform.position;
 
         }
-        public virtual void SetupRangeCircle()
+        public virtual void SetupRangeCircleAndCollider()
         {
             Transform rangeCircle = Piece.transform.Find("Range Circle");
-            if (rangeCircle != null)
+            Transform rangeColliderTransform = Piece.transform.Find("Range Collider");
+            if (rangeCircle != null && rangeColliderTransform != null)
             {
                 RangeCircle = rangeCircle.gameObject;
                 RangeCircle.transform.localScale = new Vector3(Range * 2, Range * 2, 0);
                 HasRangeCircle = true;
+
+                RangeCollider rangeCollider = rangeColliderTransform.GetComponent<RangeCollider>();
+                if (rangeCollider != null )
+                {
+                    rangeCollider.Setup(this, Range, rangeColliderTransform);
+                }
+
             }
         }
 
@@ -65,6 +80,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             //Debugger.Log("Setting target ship");
             TargetShip = targetShip;
         }
+        /// <summary>Goes through the list of ships in the targeting queue and sets the weapon to attack whichever ship is first valid</summary>
         public bool DetermineTargetShip(List<Ship> ships, bool useShipStatus)
         {
             //Debugger.Log($"Determining Target ship with {FleetShip.Name}!");
@@ -89,12 +105,14 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                             {
                                 SetTargetShip(potentialTargetShip);
                                 foundTarget = true;
+                                return foundTarget;
                             }
                         }
                         else
                         {
                             SetTargetShip(potentialTargetShip);
                             foundTarget = true;
+                            return foundTarget;
                         }
 
                     }
@@ -110,8 +128,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     {
                         //Debugger.Log($"{Ship.Name} is not find a target for {Piece.name} because the potential target ship is null");
                         __NotShootingReason = $"{Ship.Name} is not find a target for {Piece.name} because the potential target ship is null";
-                        // Empty the cached queue because it has bad results
-                        CachedTargetingQueue.Clear();
+                        // Empty the cached queue of bad results
+                        CachedTargetingQueue.Remove(potentialTargetShip);
                     }
                 }
             }
@@ -128,10 +146,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             return IsShipWithinRange(potentialTargetShip);
         }
-        /// <summary>
-        /// Called every 1/3 Rate of Fire. Sends the targeting queue to DetermineTargetShip
-        /// Every time this method is called, a target ship should be selected if there is one available
-        /// </summary>
+        /// <summary> Called every 1/3 Rate of Fire. Sends the targeting queue to DetermineTargetShip. 
+        /// Every time this method is called, a target ship should be selected if there is one available </summary>
         protected void Targeting()
         {
             //Debugger.Log($"Targeting! with {Ship.FleetShip.Name}");
@@ -180,25 +196,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         }
         protected virtual List<Ship> GetPotentialEnemyTargetShips()
         {
-            List<Ship> queue;
-            if (Ship.Squad.HasEnemy && Ship.Squad.IsAttacking)
-            {
-                List<Ship> enemyShips = GetEnemyShipsWithinRange();
-                if (enemyShips.Count > 0)
-                {
-                    //Debugger.Log($"{Ship.Name} is targeting {enemyShips.Count} enemy ships");
-                    queue = enemyShips;
-                }
-                else
-                {
-                    queue = GetAllEnemyShipsWithinRange();
-                    //Debugger.Log($"{Ship.Name} is not targeting specific enemy ships");
-                }
-            }
-            else
-            {
-                queue = GetAllEnemyShipsWithinRange();
-            }
+            List<Ship> queue = GetEnemyShipsWithinRange();
             if (CachedShootingStrategy == Ship.ShootingStrategy && queue.Count == CachedTargetingQueue.Count)
             {
                 IsUsingCachedTargetingQueue = true;
@@ -212,6 +210,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             TargetShip = null;
             CachedTargetingQueue.Clear();
         }
+        /// <summary>Sorts the potential target ships according to the shooting strategy. Uses a cached queue </summary>
         public List<Ship> MakeTargetingQueue()
         {
             //Debugger.Log($"Making targeting queue. The squad is using {Squad.GetShootingStrategy()}");
@@ -294,39 +293,28 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             //Debugger.Log("Sending basic projectile");
             ShipDamageStatus shipDamageStatus = Squad.GetShipDamageStatus(TargetShip);
             shipDamageStatus.totalDamageSentToShip += Power;
-            //Vector2 targetPoint = TargetShip.GetPosition();
-            //if (FireAtFrontOfShip)
-            //{
-            //    Vector2 frontOfShip = targetPoint + new Vector2(0, TargetShip.GetHalfHeight() - 1);
-            //    targetPoint = Utilities.RotatePointAroundPoint(targetPoint, frontOfShip, TargetShip.GetRotation() * Mathf.Deg2Rad);
-
-            //}
-            //float angle = AngleToPoint(targetPoint);
-
-            //Level.AddProjectile(ProjectilePrefab, this, GetPosition(), angle);
-            //Ship.FleetShip.ShotsFired++;
 
         }
+        /// <summary>
+        /// Grabs all ships in the enemy squad. If there is no enemy squad, grabs all enemy ships within range
+        /// </summary>
         public List<Ship> GetEnemyShipsWithinRange() 
         {
             if (Ship.Squad.HasEnemy && Ship.Squad.IsAttacking)
             {
-                return Ship.Squad.Command.Enemy.GetShips().Where((s) => IsShipWithinRange(s)).ToList();
+                return ShipsWithinRange.Where((s) => s.Squad == Ship.Squad.Command.Enemy).ToList();
+                //return Ship.Squad.Command.Enemy.GetShips().Where((s) => IsShipWithinRange(s)).ToList();
             }
             else
             {
-                return new List<Ship>();
+                return ShipsWithinRange.ToList();
             }
-        }
-        public List<Ship> GetAllEnemyShipsWithinRange()
-        {
-            return Level.GetState().GetAllEnemyShips(Side).Where((s) => IsShipWithinRange(s)).ToList();
         }
 
         // distance and position methods
         public bool IsShipWithinRange(Ship ship)
         {
-            return IsPointWithinRange(ship.GetPosition());
+            return ShipsWithinRange.Contains(ship);
         }
         public virtual bool IsPointWithinRange(Vector2 point)
         {

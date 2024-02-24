@@ -10,7 +10,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         public Vector2 LeftCannonOffset = new Vector2(-1.1f, .5f);
         public Vector2 RightCannonOffset = new Vector2(1.1f, .5f);
-        public GameObject RangeCircleLeft; // For the second cannon in the dual cannon, the first one being the right one
+        //public GameObject RangeCircleLeft; // For the second cannon in the dual cannon, the first one being the right one
+        //public CircleCollider2D RangeColliderLeft; // Likewise for the range collider
         protected override void SendProjectile() // [projectile-method] [note]
         {
 
@@ -48,19 +49,30 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             shipDamageStatus.totalDamageSentToShip += Power * 2;
         }
 
-        public override void SetupRangeCircle()
-        {
-            Transform rangeCircleRight = Piece.transform.Find("Right Cannon/Range Circle Right");
-            Transform rangeCircleLeft = Piece.transform.Find("Left Cannon/Range Circle Left");
-            if (rangeCircleRight != null && rangeCircleLeft != null)
-            {
-                RangeCircle = rangeCircleRight.gameObject;
-                RangeCircle.transform.localScale = new Vector3(Range * 2, Range * 2, 0);
-                RangeCircleLeft = rangeCircleLeft.gameObject;
-                RangeCircleLeft.transform.localScale = new Vector3(Range * 2, Range * 2, 0);
-                HasRangeCircle = true;
-            }
-        }
+        //public override void SetupRangeCircleAndCollider()
+        //{ 
+        //    Transform rangeCircleRight = Piece.transform.Find("Right Cannon/Range Circle Right");
+        //    Transform rangeCircleLeft = Piece.transform.Find("Left Cannon/Range Circle Left");
+        //    Transform rangeColliderRight = Piece.transform.Find("Right Cannon/Range Collider");
+        //    Transform rangeColliderLeft = Piece.transform.Find("Left Cannon/Range Collider");
+        //    if (rangeCircleRight != null && rangeCircleLeft != null)
+        //    {
+        //        RangeCircle = rangeCircleRight.gameObject;
+        //        RangeCircle.transform.localScale = new Vector3(Range * 2, Range * 2, 0);
+        //        RangeCircleLeft = rangeCircleLeft.gameObject;
+        //        RangeCircleLeft.transform.localScale = new Vector3(Range * 2, Range * 2, 0);
+        //        HasRangeCircle = true;
+
+        //        RangeCollider = rangeColliderRight.GetComponent<CircleCollider2D>();
+        //        RangeColliderLeft = rangeColliderLeft.GetComponent<CircleCollider2D>();
+        //        if (RangeCollider != null && RangeColliderLeft != null)
+        //        {
+        //            HasRangeCollider = true;
+        //            RangeCollider.radius = Range;
+        //            RangeColliderLeft.radius = Range;
+        //        }
+        //    }
+        //}
 
         // UI Methods
         public override void ShowRange()
@@ -68,7 +80,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             if (HasRangeCircle)
             {
                 RangeCircle.SetActive(true);
-                RangeCircleLeft.SetActive(true);
+                //RangeCircleLeft.SetActive(true);
             }
         }
 
@@ -77,7 +89,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             if (HasRangeCircle)
             {
                 RangeCircle.SetActive(false);
-                RangeCircleLeft.SetActive(false);
+                //RangeCircleLeft.SetActive(false);
             }
         }
 

@@ -12,7 +12,7 @@ GameObject:
   - component: {fileID: 3345242948093166456}
   - component: {fileID: 3345242948093166459}
   - component: {fileID: 1063714668980658523}
-  m_Layer: 10
+  m_Layer: 0
   m_Name: Queen Small Laser Shot Explosion
   m_TagString: Projectile
   m_Icon: {fileID: 0}

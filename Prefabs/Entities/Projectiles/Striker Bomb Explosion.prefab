@@ -12,7 +12,7 @@ GameObject:
   - component: {fileID: 6950940271862830520}
   - component: {fileID: 6861675588789407317}
   - component: {fileID: 3781481413380275437}
-  m_Layer: 10
+  m_Layer: 0
   m_Name: Striker Bomb Explosion
   m_TagString: Projectile
   m_Icon: {fileID: 0}
