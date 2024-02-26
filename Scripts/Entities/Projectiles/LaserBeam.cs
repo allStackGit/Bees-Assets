@@ -30,7 +30,7 @@ namespace Assets.Scripts.Entities.Projectiles
         }
         public override void ContactTarget(Ship target)
         {
-            Debug.Log($"{Name} hit {target.Name}");
+            //Debug.Log($"{Name} hit {target.Name}");
             int halfHealth = target.Health / 2;
             _powerLoss = Mathf.Clamp(halfHealth, 0, Power);
             if (Power <= halfHealth)
@@ -45,7 +45,7 @@ namespace Assets.Scripts.Entities.Projectiles
         public void DegradeBeam()
         {
             Power -= _powerLoss;
-            Debug.Log($"{Name} lost {_powerLoss} power and now has {Power} power.");
+            //Debug.Log($"{Name} lost {_powerLoss} power and now has {Power} power.");
             _powerLoss = 0;
 
         }

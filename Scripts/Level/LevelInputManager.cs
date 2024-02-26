@@ -16,20 +16,22 @@ namespace Assets.Scripts.Level
         private bool _rightMouseButtonDown;
         private bool _leftMouseButtonDown;
         private bool _rightMouseButtonUp;
-        private bool _leftMouseButtonUp = false;
-        private bool _scrollPositive = false;
-        private bool _scrollNegative = false;
-        private bool _leftShift = false;
-        private bool _leftControl = false;
-        private bool _rKey = false;
-        private bool _mouseAtTopEdge = false;
-        private bool _mouseAtBottomEdge = false;
-        private bool _mouseAtLeftEdge = false;  
-        private bool _mouseAtRightEdge = false;
+        private bool _leftMouseButtonUp;
+        private bool _scrollPositive;
+        private bool _scrollNegative;
+        private bool _leftShift;
+        private bool _leftControl;
+        private bool _rKey;
+        private bool _mouseAtTopEdge;
+        private bool _mouseAtBottomEdge;
+        private bool _mouseAtLeftEdge;  
+        private bool _mouseAtRightEdge;
         private bool _escapeKey;
-        private bool _isLeftMouseDragging = false;
-        private bool _selectingPatrolArea = false;
-        private bool _selectingGuardTarget = false;
+        private bool _isLeftMouseDragging;
+        private bool _selectingPatrolArea;
+        private bool _selectingGuardTarget;
+        private bool _isRightMouseDownPrior;
+        private bool _isRightMouseDragging;
         //private bool _isDragMovingSquads;
         private Vector2 _mousePosition;
         private Vector2 _mouseDownPosition;
@@ -40,6 +42,7 @@ namespace Assets.Scripts.Level
         public LevelStage Level;
         public const int RightClick = 1;
         public const int LeftClick = 0;
+        public List<Timer> Timers = new List<Timer>();
         public EventSystem EventSystem => Level.EventSystem;
 
 
@@ -52,12 +55,18 @@ namespace Assets.Scripts.Level
             Selector = selector;
         }
 
-
         public void Update()
         {
             CheckInputs();
             CheckActions();
             ResetInputs();
+            for (int i = 0; i < Timers.Count; i++)
+            {
+                if (Timers[i].Update())
+                {
+                    Timers.RemoveAt(i);
+                }
+            }
             //Debugger.Log($"width: {Screen.width}, height: {Screen.height}, mousePosition: {_mousePosition}");
         }
         private void ResetInputs()
@@ -174,12 +183,17 @@ namespace Assets.Scripts.Level
                 }
                 _rightMouseButtonUp = false;
                 _rightMouseButtonDown = true;
+                _isRightMouseDownPrior = true;
+                Timers.Add(new Timer(.25f, SetRightMouseDownLongEnoughForDragging));
             }
             else if (Input.GetMouseButtonUp(RightClick)) // right mouse button up
             {
                 if (EventSystem.IsPointerOverGameObject()) return;
                 _rightMouseButtonUp = true;
                 _rightMouseButtonDown = false;
+                _isRightMouseDownPrior = false;
+                _isRightMouseDragging = false;
+                //Debug.Log("Drag move mouse down prior is being set to false because right mouse button went up");
             }
 
             if (Input.GetAxis("Mouse ScrollWheel") > 0)
@@ -221,6 +235,13 @@ namespace Assets.Scripts.Level
         }
 
 
+        private void SetRightMouseDownLongEnoughForDragging()
+        {
+            if (_isRightMouseDownPrior)
+            {
+                _isRightMouseDragging = true;
+            }
+        }
         private bool HasOpenMenuInput()
         {
             return Input.GetKey(KeyCode.Escape);
@@ -234,8 +255,11 @@ namespace Assets.Scripts.Level
             if (EventSystem.IsPointerOverGameObject())
             {
                 return false;
+            }else if (_isRightMouseDragging)
+            {
+                return Input.GetMouseButton(RightClick);
             }
-            return Input.GetMouseButton(RightClick);
+            return false;
         }
         private bool HasMoveSquadsInput()
         {
@@ -249,8 +273,10 @@ namespace Assets.Scripts.Level
         {
             if (Input.GetMouseButtonUp(RightClick))
             {
+                //Debug.Log("There was a right click for guard ship");
                 if (_clickedShip != null)
                 {
+                    //Debug.Log("Clicked ship is not null");
                     if (_clickedShip.IsUserControlled)
                     {
                         
@@ -314,7 +340,7 @@ namespace Assets.Scripts.Level
             
             if (!Level.IsPaused)
             {
-                //Debugger.Log($"EVS: {EventSystem.IsPointerOverGameObject()}");
+                //Debug.Log($"EVS: {EventSystem.IsPointerOverGameObject()}");
                 CheckClickCollision();
                 if (HasDragMoveSquadsInput())
                 {
@@ -323,6 +349,7 @@ namespace Assets.Scripts.Level
                 }
                 else if (HasSelectingGuardShipInput())
                 {
+                    //Debug.Log("Has input for selecting guard ship");
                     CheckForSelectingGuard(_clickedShip);
                 }
                 else if (HasAttackingShipInput())
@@ -426,6 +453,7 @@ namespace Assets.Scripts.Level
         }
         public void SetSelectGuardTargetActive()
         {
+            //Debug.Log("Selecting guard target is active");
             _selectingGuardTarget = true;
         }
 
@@ -434,7 +462,7 @@ namespace Assets.Scripts.Level
         {
             if ( _selectingGuardTarget) // if we're set to select a guard target
             {
-                Debugger.Log($"Selecting {ship.name} for guarding");
+                //Debugger.Log($"Selecting {ship.name} for guarding");
                 Level.GetState().GetSelectedSquads().ForEach((squad) =>
                 {
                     squad.UserGuard(ship.Squad); // make all selected ships guard this squad
@@ -529,22 +557,24 @@ namespace Assets.Scripts.Level
         }
         private Ship CheckClickCollision()
         {
-            Vector3 mousePos = Level.Camera.ScreenToWorldPoint(Input.mousePosition);
-            Vector2 mousePos2D = new Vector2(mousePos.x, mousePos.y);
 
-            RaycastHit2D hit = Physics2D.Raycast(mousePos2D, Vector2.zero);
+            RaycastHit2D[] hits = Physics2D.RaycastAll(Level.Camera.ScreenToWorldPoint(Input.mousePosition), Vector2.zero);
+            for (int i = 0; i < hits.Length; i++)
+            {
+                RaycastHit2D hit = hits[i];
+                if (hit.collider != null && hit.collider.CompareTag("Ship"))
+                {
+                    //Debug.Log(hit.collider.gameObject.name);
+                    Ship ship = (Ship)hit.collider.gameObject.GetComponent(typeof(Ship));
+                    _clickedShip = ship;
+                    return ship;
+                }
+                else
+                {
+                    //Debug.Log($"Did not hit any ship {hit}");
+                }
+            }
 
-            if (hit.collider != null && hit.collider.CompareTag("Ship"))
-            {
-                //Debugger.Log(hit.collider.gameObject.name);
-                Ship ship = (Ship)hit.collider.gameObject.GetComponent(typeof(Ship));
-                _clickedShip = ship;
-                return ship;
-            }
-            else
-            {
-                //Debugger.Log($"Did not hit any ship {hit}");
-            }
             return null;
         }
         private void CheckForMiniMapNavigation(int mouseButton)

@@ -9,8 +9,8 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 4672471954231197361}
-  - component: {fileID: 6969673988516882713}
   - component: {fileID: 4672471954231197360}
+  - component: {fileID: 6969673988516882713}
   - component: {fileID: 1059979342247218996}
   - component: {fileID: 2156792526638712585}
   m_Layer: 12
@@ -39,73 +39,6 @@ Transform:
   - {fileID: 5622476372722720813}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &6969673988516882713
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 4672471954231197362}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c01381ac9ee53f1489c28b8a1aed56c7, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  Id: 0
-  Age: 0
-  Level: {fileID: 0}
-  Side: 0
-  Body: {fileID: 0}
-  Health: 0
-  OriginalHealth: 0
-  OriginalTsv: 0
-  Sight: 0
-  AdditionalTsv: 0
-  ProjectileValue: 0
-  Speed: 0
-  SpecialFirePower: 0
-  ShipExplosion: {fileID: 1876865744220396715, guid: 1f58b7947f208d944b8669f2e51a9a52, type: 3}
-  HealthBar: {fileID: 3179993197624593158}
-  MiniMapIcon: {fileID: 4971123995003810503}
-  InCombat: 0
-  TargetCoordinates: {x: 0, y: 0}
-  OffsetFromCenter: {x: 0, y: 0}
-  Squad: {fileID: 0}
-  DefaultAngle: 0
-  LastKilled: 0
-  ShipType: 
-  FireAtFrontOfShip: 1
-  Weapons: []
-  ProjectilePrefabs:
-  - {fileID: 6428638681076635372, guid: c5d2fa5f5d52d0d4b855fdc29fca6e90, type: 3}
-  WeaponPrefabs:
-  - {fileID: 3874336947086670903}
-  ColoredPrefabs: []
-  Brain: {fileID: 0}
-  HasBrain: 0
-  __PastCommands: []
-  __Strategy: 
-  __Squad: 
-  __SquadStatus: 
-  __CommandStatus: 
-  __LastStopReason: 
-  __CommandDestination: {x: 0, y: 0}
-  __Velocity: {x: 0, y: 0}
-  __TargetCoordinates: {x: 0, y: 0}
-  __Firepower: 0
-  __DamagePerSecond: 0
-  __Tsv: 0
-  __CommandTsv: 0
-  __TargetShips: []
-  __SquadShips: []
-  __HasReachedDestination: 0
-  __SquadHasReachedDestination: 0
-  Direction: 0
-  ShouldDetonate: 0
-  RLShootingStrategy: 
-  RLSide: 0
-  RLHealth: 0
-  RLShipType: 0
 --- !u!212 &4672471954231197360
 SpriteRenderer:
   m_ObjectHideFlags: 0
@@ -144,8 +77,8 @@ SpriteRenderer:
   m_AutoUVMaxDistance: 0.5
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
-  m_SortingLayerID: 1055962891
-  m_SortingLayer: 4
+  m_SortingLayerID: -1672541693
+  m_SortingLayer: 13
   m_SortingOrder: 1
   m_Sprite: {fileID: 21300000, guid: 8ef5bc21746b9bc4f9254b84f7ab4ece, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -158,6 +91,77 @@ SpriteRenderer:
   m_WasSpriteAssigned: 1
   m_MaskInteraction: 0
   m_SpriteSortPoint: 0
+--- !u!114 &6969673988516882713
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4672471954231197362}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c01381ac9ee53f1489c28b8a1aed56c7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Id: 0
+  Age: 0
+  Level: {fileID: 0}
+  Side: 0
+  Body: {fileID: 0}
+  Health: 0
+  MaxHealth: 0
+  OriginalHealth: 0
+  OriginalTsv: 0
+  Sight: 0
+  AdditionalTsv: 0
+  ProjectileValue: 0
+  Speed: 0
+  SpecialFirePower: 0
+  ShipExplosion: {fileID: 1876865744220396715, guid: 1f58b7947f208d944b8669f2e51a9a52, type: 3}
+  HealthBar: {fileID: 3179993197624593158}
+  MiniMapIcon: {fileID: 4971123995003810503}
+  TargetCoordinates: {x: 0, y: 0}
+  OffsetFromCenter: {x: 0, y: 0}
+  Squad: {fileID: 0}
+  DefaultAngle: 0
+  LastKilled: 0
+  ShipType: 
+  Name: 
+  FireAtFrontOfShip: 1
+  InCombat: 0
+  HasBrain: 0
+  IsMinionShip: 0
+  Weapons: []
+  ProjectilePrefabs:
+  - {fileID: 6428638681076635372, guid: c5d2fa5f5d52d0d4b855fdc29fca6e90, type: 3}
+  WeaponPrefabs:
+  - {fileID: 3874336947086670903}
+  ColoredPrefabs: []
+  Brain: {fileID: 0}
+  __PastCommands: []
+  __Strategy: 
+  __Squad: 
+  __SquadStatus: 
+  __CommandStatus: 
+  __LastStopReason: 
+  __CommandDestination: {x: 0, y: 0}
+  __Velocity: {x: 0, y: 0}
+  __TargetCoordinates: {x: 0, y: 0}
+  __Firepower: 0
+  __DamagePerSecond: 0
+  __Tsv: 0
+  __CommandTsv: 0
+  __TargetShips: []
+  __SquadShips: []
+  __HasReachedDestination: 0
+  __SquadHasReachedDestination: 0
+  __Enemy: 
+  Direction: 0
+  ShouldDetonate: 0
+  RLShootingStrategy: 
+  RLSide: 0
+  RLHealth: 0
+  RLShipType: 0
 --- !u!60 &1059979342247218996
 PolygonCollider2D:
   m_ObjectHideFlags: 0
@@ -362,9 +366,25 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 1995127158016144050, guid: e40a922419a474542ab3b28d66298ab6, type: 3}
+      propertyPath: m_SortingLayer
+      value: 13
+      objectReference: {fileID: 0}
+    - target: {fileID: 1995127158016144050, guid: e40a922419a474542ab3b28d66298ab6, type: 3}
+      propertyPath: m_SortingLayerID
+      value: -1672541693
+      objectReference: {fileID: 0}
     - target: {fileID: 8301128086320306230, guid: e40a922419a474542ab3b28d66298ab6, type: 3}
       propertyPath: m_Name
       value: Dual Cannon
+      objectReference: {fileID: 0}
+    - target: {fileID: 8966059605661026080, guid: e40a922419a474542ab3b28d66298ab6, type: 3}
+      propertyPath: m_SortingLayer
+      value: 13
+      objectReference: {fileID: 0}
+    - target: {fileID: 8966059605661026080, guid: e40a922419a474542ab3b28d66298ab6, type: 3}
+      propertyPath: m_SortingLayerID
+      value: -1672541693
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -476,6 +496,14 @@ PrefabInstance:
       propertyPath: m_Layer
       value: 12
       objectReference: {fileID: 0}
+    - target: {fileID: 4949212615178794145, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
+      propertyPath: m_SortingLayer
+      value: 13
+      objectReference: {fileID: 0}
+    - target: {fileID: 4949212615178794145, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
+      propertyPath: m_SortingLayerID
+      value: -1672541693
+      objectReference: {fileID: 0}
     - target: {fileID: 5341925016214729742, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_RootOrder
       value: 0
@@ -531,6 +559,14 @@ PrefabInstance:
     - target: {fileID: 6047554868817048550, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_Layer
       value: 12
+      objectReference: {fileID: 0}
+    - target: {fileID: 6507568151281305453, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
+      propertyPath: m_SortingLayer
+      value: 13
+      objectReference: {fileID: 0}
+    - target: {fileID: 6507568151281305453, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
+      propertyPath: m_SortingLayerID
+      value: -1672541693
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []

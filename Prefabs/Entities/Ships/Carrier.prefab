@@ -76,9 +76,9 @@ SpriteRenderer:
   m_AutoUVMaxDistance: 0.5
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
-  m_SortingLayerID: 1055962891
-  m_SortingLayer: 4
-  m_SortingOrder: 1
+  m_SortingLayerID: 1463588649
+  m_SortingLayer: 9
+  m_SortingOrder: 0
   m_Sprite: {fileID: 21300000, guid: d345c41298bdcde4c81806f290b71b13, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
@@ -108,6 +108,7 @@ MonoBehaviour:
   Side: 0
   Body: {fileID: 0}
   Health: 0
+  MaxHealth: 0
   OriginalHealth: 0
   OriginalTsv: 0
   Sight: 0
@@ -118,19 +119,22 @@ MonoBehaviour:
   ShipExplosion: {fileID: 1876865744220396715, guid: 1f58b7947f208d944b8669f2e51a9a52, type: 3}
   HealthBar: {fileID: 1896996869933779826}
   MiniMapIcon: {fileID: 2878619077555458750}
-  InCombat: 0
   TargetCoordinates: {x: 0, y: 0}
   OffsetFromCenter: {x: 0, y: 0}
   Squad: {fileID: 0}
   DefaultAngle: 0
   LastKilled: 0
   ShipType: 
+  Name: 
   FireAtFrontOfShip: 0
+  InCombat: 0
+  HasBrain: 0
+  IsMinionShip: 0
   Weapons: []
   ProjectilePrefabs: []
   WeaponPrefabs: []
+  ColoredPrefabs: []
   Brain: {fileID: 0}
-  HasBrain: 0
   __PastCommands: []
   __Strategy: 
   __Squad: 
@@ -148,6 +152,7 @@ MonoBehaviour:
   __SquadShips: []
   __HasReachedDestination: 0
   __SquadHasReachedDestination: 0
+  __Enemy: 
   Direction: 0
   ShouldDetonate: 0
   RLShootingStrategy: 
@@ -354,6 +359,14 @@ PrefabInstance:
       propertyPath: m_Layer
       value: 12
       objectReference: {fileID: 0}
+    - target: {fileID: 4949212615178794145, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
+      propertyPath: m_SortingLayer
+      value: 9
+      objectReference: {fileID: 0}
+    - target: {fileID: 4949212615178794145, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
+      propertyPath: m_SortingLayerID
+      value: 1463588649
+      objectReference: {fileID: 0}
     - target: {fileID: 5341925016214729742, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_RootOrder
       value: 0
@@ -409,6 +422,18 @@ PrefabInstance:
     - target: {fileID: 6047554868817048550, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_Layer
       value: 12
+      objectReference: {fileID: 0}
+    - target: {fileID: 6507568151281305453, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
+      propertyPath: m_SortingLayer
+      value: 9
+      objectReference: {fileID: 0}
+    - target: {fileID: 6507568151281305453, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
+      propertyPath: m_SortingOrder
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 6507568151281305453, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
+      propertyPath: m_SortingLayerID
+      value: 1463588649
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []

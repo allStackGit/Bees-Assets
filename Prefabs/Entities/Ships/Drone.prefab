@@ -77,9 +77,9 @@ SpriteRenderer:
   m_AutoUVMaxDistance: 0.5
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
-  m_SortingLayerID: 1055962891
-  m_SortingLayer: 4
-  m_SortingOrder: 1
+  m_SortingLayerID: 1725515015
+  m_SortingLayer: 19
+  m_SortingOrder: 0
   m_Sprite: {fileID: 21300000, guid: 2b78f9fd4ca958844b8fb256917a56e7, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
@@ -349,6 +349,14 @@ PrefabInstance:
       propertyPath: m_Layer
       value: 12
       objectReference: {fileID: 0}
+    - target: {fileID: 4949212615178794145, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
+      propertyPath: m_SortingLayer
+      value: 19
+      objectReference: {fileID: 0}
+    - target: {fileID: 4949212615178794145, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
+      propertyPath: m_SortingLayerID
+      value: 1725515015
+      objectReference: {fileID: 0}
     - target: {fileID: 5341925016214729742, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_RootOrder
       value: 0
@@ -404,6 +412,14 @@ PrefabInstance:
     - target: {fileID: 6047554868817048550, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_Layer
       value: 12
+      objectReference: {fileID: 0}
+    - target: {fileID: 6507568151281305453, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
+      propertyPath: m_SortingLayer
+      value: 19
+      objectReference: {fileID: 0}
+    - target: {fileID: 6507568151281305453, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
+      propertyPath: m_SortingLayerID
+      value: 1725515015
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -519,6 +535,18 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 2518675752222090672}
     m_Modifications:
+    - target: {fileID: 246620123972439215, guid: 4553e81d8c0d7374ba15e1b2c1cfe898, type: 3}
+      propertyPath: m_SortingLayer
+      value: 19
+      objectReference: {fileID: 0}
+    - target: {fileID: 246620123972439215, guid: 4553e81d8c0d7374ba15e1b2c1cfe898, type: 3}
+      propertyPath: m_SortingOrder
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 246620123972439215, guid: 4553e81d8c0d7374ba15e1b2c1cfe898, type: 3}
+      propertyPath: m_SortingLayerID
+      value: 1725515015
+      objectReference: {fileID: 0}
     - target: {fileID: 1334121294634142703, guid: 4553e81d8c0d7374ba15e1b2c1cfe898, type: 3}
       propertyPath: m_Name
       value: Drone Cannon
