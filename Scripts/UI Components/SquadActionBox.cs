@@ -26,14 +26,17 @@ namespace Assets.Scripts.UIComponents
         private LevelStage Level = null;
         private string _blankShipType = "———————";
         private bool _autoSetDropdownValue = false;
+        private int Side;
+
 
         private bool HasSquadMaker => _squadMaker != null;
         private bool HasLevel => Level != null;    
 
-        public void Setup(SquadMaker squadMaker, EventSystem eventSystem)
+        public void Setup(SquadMaker squadMaker, EventSystem eventSystem, int side)
         {
             this._squadMaker = squadMaker;
             _eventSystem = eventSystem;
+            Side = side;
             Destroy(PatrolButton);
             Destroy(GuardButton);
             Destroy(ChaseButton);
@@ -42,10 +45,11 @@ namespace Assets.Scripts.UIComponents
             ActualSetup();
             
         }
-        public void Setup(LevelStage level, EventSystem eventSystem)
+        public void Setup(LevelStage level, EventSystem eventSystem, int side)
         {
             this.Level = level;
             _eventSystem = eventSystem;
+            Side = side;
             ActualSetup();
 
         }
@@ -100,27 +104,38 @@ namespace Assets.Scripts.UIComponents
             TMP_Dropdown dropdown = TypeSelector.GetComponentInChildren<TMP_Dropdown>();
             dropdown.options.Clear();
             dropdown.options.Add(new TMP_Dropdown.OptionData(_blankShipType));
-            BeeShipTypes().ToList().ForEach(bee =>
+            ShipTypes().ToList().ForEach(ship =>
             {
                 //Debugger.Log("Setting drop down option");
-                if (bee != "Queen")
+                if (ship == "Queen")
                 {
-                    dropdown.options.Add(new TMP_Dropdown.OptionData($"{bee}s"));
+                    dropdown.options.Add(new TMP_Dropdown.OptionData($"{ship}"));
+                }else if (ship == "Factory")
+                {
+                    dropdown.options.Add(new TMP_Dropdown.OptionData($"Factories"));
                 }
                 else
                 {
-                    dropdown.options.Add(new TMP_Dropdown.OptionData($"{bee}"));
+                    dropdown.options.Add(new TMP_Dropdown.OptionData($"{ship}s"));
                 }
             });
         }
-        private List<string> BeeShipTypes()
+        private List<string> ShipTypes()
         {
             if (HasSquadMaker)
             {
+                if (Side == ConfigData.Configuration.BeeSide)
+                {
+                    return ConfigData.Configuration.VisibleHumanShipTypes.ToList();
+                }
                 return ConfigData.Configuration.VisibleBeeShipTypes.ToList();
             }
             else if (HasLevel)
             {
+                if (Side == ConfigData.Configuration.BeeSide)
+                {
+                    return Level.GetState().GetHumanShipTypes().ToList();
+                }
                 return Level.GetState().GetBeeShipTypes().ToList();
             }
             return new List<string>();
@@ -388,19 +403,24 @@ namespace Assets.Scripts.UIComponents
                 TMP_Text title = ActionTitle.GetComponentInChildren<TMP_Text>();
                 TMP_Text explanation = ActionExplanation.GetComponentInChildren<TMP_Text>();
                 title.text = button;
-                
+
+                string side = "Bees";
+                if (Side == ConfigData.Configuration.BeeSide)
+                {
+                    side = "Human ships";
+                }
                 string beginningActionText = "The selected squadron(s) will";
-                string beginningStrategyText = "When there are multiple Bees within range, the ships of the selected squadron(s) will prioritize shooting at the";
+                string beginningStrategyText = $"When there are multiple {side} within range, the ships of the selected squadron(s) will prioritize shooting at the";
 
                 if (HasSquadMaker)
                 {
                     beginningActionText = "This squadron will";
-                    beginningStrategyText = "When there are multiple Bees within range, the ships of this squadron will prioritize shooting at the";
+                    beginningStrategyText = $"When there are multiple {side} within range, the ships of this squadron will prioritize shooting at the";
                 }
                 switch (button)
                 {
                     case "Patrol":
-                        explanation.text = $"{beginningActionText} patrol around the border that you select (by selecting an area), engaging any Bees they encounter.";
+                        explanation.text = $"{beginningActionText} patrol around the border that you select (by selecting an area), engaging any {side} they encounter.";
                         break;
 
                     case "Guard":
@@ -408,11 +428,11 @@ namespace Assets.Scripts.UIComponents
                         break;
 
                     case "Chase":
-                        explanation.text = $"{beginningActionText} chase down and engage the first Bees they see.";
+                        explanation.text = $"{beginningActionText} chase down and engage the first {side} they see.";
                         break;
 
                     case "Hold":
-                        explanation.text = $"{beginningActionText} hold their position and fire upon any Bees that gets within range.";
+                        explanation.text = $"{beginningActionText} hold their position and fire upon any {side} that gets within range.";
                         break;
 
                     case "Detonate":
@@ -424,7 +444,7 @@ namespace Assets.Scripts.UIComponents
                         break;
 
                     case "Attack on Sight":
-                        explanation.text = $"{beginningActionText} fire upon any Bees that gets within range. This is standard behavior.";
+                        explanation.text = $"{beginningActionText} fire upon any {side} that gets within range. This is standard behavior.";
                         break;
 
                     case "Cease Fire":
@@ -434,72 +454,85 @@ namespace Assets.Scripts.UIComponents
 
 
                     case "First Seen":
-                        explanation.text = $"{beginningStrategyText} Bees they see first.";
+                        explanation.text = $"{beginningStrategyText} {side} they see first.";
                         break;
                     case "Random":
-                        explanation.text = $"The ships of the selected squadron(s) will shoot randomly at any Bees they see.";
+                        explanation.text = $"The ships of the selected squadron(s) will shoot randomly at any {side} they see.";
                         if (HasSquadMaker)
                         {
-                            explanation.text = $"The ships of this squadron will shoot randomly at any Bees they see.";
+                            explanation.text = $"The ships of this squadron will shoot randomly at any {side} they see.";
                         }
                         break;
 
                     case "Revenge":
-                        explanation.text = $"{beginningStrategyText} Bees that have most recently killed our own ships.";
+                        explanation.text = $"{beginningStrategyText} {side} that have most recently killed our own ships.";
                         break;
 
                     case "Most Dangerous":
-                        explanation.text = $"{beginningStrategyText} Bees that have dealt the most damage.";
+                        explanation.text = $"{beginningStrategyText} {side} that have dealt the most damage.";
                         break;
 
                     case "Most Health":
-                        explanation.text = $"{beginningStrategyText} Bees that have the most health.";
+                        explanation.text = $"{beginningStrategyText} {side} that have the most health.";
                         break;
 
                     case "Least Health":
-                        explanation.text = $"{beginningStrategyText} Bees that have the least health.";
+                        explanation.text = $"{beginningStrategyText} {side} that have the least health.";
                         break;
 
                     case "Most Powerful":
-                        explanation.text = $"{beginningStrategyText} Bees that have the most fire power.";
+                        explanation.text = $"{beginningStrategyText} {side} that have the most fire power.";
                         break;
 
                     case "Least Powerful":
-                        explanation.text = $"{beginningStrategyText} Bees that have the least fire power.";
+                        explanation.text = $"{beginningStrategyText} {side} that have the least fire power.";
                         break;
 
                     case "Closest":
-                        explanation.text = $"{beginningStrategyText} Bees that are closest to them.";
+                        explanation.text = $"{beginningStrategyText} {side} that are closest to them.";
                         break;
 
                     case "Furthest":
-                        explanation.text = $"{beginningStrategyText} Bees that are furthest from them.";
+                        explanation.text = $"{beginningStrategyText} {side} that are furthest from them.";
                         break;
 
                     case "Most Range":
-                        explanation.text = $"{beginningStrategyText} Bees that have the longest range.";
+                        explanation.text = $"{beginningStrategyText} {side} that have the longest range.";
                         break;
 
                     case "Least Range":
-                        explanation.text = $"{beginningStrategyText} Bees that have the shortest range.";
+                        explanation.text = $"{beginningStrategyText} {side} that have the shortest range.";
                         break;
 
                     case "Fastest":
-                        explanation.text = $"{beginningStrategyText} fastest Bees.";
+                        explanation.text = $"{beginningStrategyText} fastest {side}.";
                         break;
 
                     case "Slowest":
-                        explanation.text = $"{beginningStrategyText} slowest Bees.";
+                        explanation.text = $"{beginningStrategyText} slowest {side}.";
                         break;
 
                     case "Most Valuable":
-                        explanation.text = $"{beginningStrategyText} Bees that have the most estimated strategic value.";
+                        explanation.text = $"{beginningStrategyText} {side} that have the most estimated strategic value.";
                         break;
 
                     case "Least Valuable":
-                        explanation.text = $"{beginningStrategyText} Bees that have the least estimated strategic value.";
+                        explanation.text = $"{beginningStrategyText} {side} that have the least estimated strategic value.";
                         break;
 
+                    case "Barges":
+                    case "Carriers":
+                    case "Cruisers":
+                    case "Dreadnoughts":
+                    case "Drones":
+                    case "Factories":
+                    case "Fire Ships":
+                    case "Flagships":
+                    case "Frigates":
+                    case "Gunships":
+                    case "Scouts":
+                    case "Strikers":
+                    case "Warp Gates":
                     case "Beehives":
                     case "Bumblebees":
                     case "Carpenter Bees":
@@ -649,7 +682,7 @@ namespace Assets.Scripts.UIComponents
             if (HasSquad())
             {
                 
-                BeeShipTypes().ToList().ForEach((bee) =>
+                ShipTypes().ToList().ForEach((bee) =>
                 {
                     if (strategy.Contains(bee))
                     {

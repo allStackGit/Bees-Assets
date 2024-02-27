@@ -247,6 +247,9 @@ namespace Assets.Scripts.Scenes
             _spriteTypes.Add("Wasp", WaspSprite);
             _spriteTypes.Add("Yellow Jacket", YellowJacketSprite);
 
+            ActionBox = SquadActionBox.GetComponent<SquadActionBox>();
+            ActionBox.Setup(this, EventSystem, ConfigData.Configuration.BeeSide);
+
             _shipTypes = ConfigData.StartingSettings.BeeShipTypes;
 
             StrikerFleetLabel.transform.parent.gameObject.SetActive(false);
@@ -291,7 +294,7 @@ namespace Assets.Scripts.Scenes
             _spriteTypes.Add("Warp Gate", WarpGateSprite);
 
             ActionBox = SquadActionBox.GetComponent<SquadActionBox>();
-            ActionBox.Setup(this, EventSystem);
+            ActionBox.Setup(this, EventSystem, ConfigData.Configuration.HumanSide);
 
             _shipTypes = ConfigData.StartingSettings.HumanShipTypes;
             //Debugger.Log("End of human setup");

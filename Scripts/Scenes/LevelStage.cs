@@ -139,7 +139,7 @@ namespace Assets.Scripts.Scenes
                 // Setup Squad Action Box
                 if (HasPlayer)
                 {
-                    Menus.ActionBox.Setup(this, EventSystem);
+                    Menus.ActionBox.Setup(this, EventSystem, ConfigData.Configuration.UserSide);
                 }
                 if (Audio != null)
                 {

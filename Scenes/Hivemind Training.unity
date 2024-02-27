@@ -6380,8 +6380,8 @@ MonoBehaviour:
   ReplaceDeadShips: 0
   DoesUserHaveController: 1
   OverrideTimeScale: 1
-  TimeoutTime: 600
-  SquadCount: 1
+  TimeoutTime: 900
+  SquadCount: 8
   MiniMapCamera: {fileID: 1653464701}
   BargePrefab: {fileID: 2518675752222090675, guid: 8f5aab114dd8d064ca0729e8b3401ec7, type: 3}
   BeehivePrefab: {fileID: 2518675752222090675, guid: b6da442ecc4c92640b8ef7235b627700, type: 3}

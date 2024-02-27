@@ -49,7 +49,7 @@ namespace Assets.Scripts.Data
 
         public void SetupRandomShips(string squadType)
         {
-            int shipCount = 8;
+            int shipCount = 10;
             if ((new List<string> { "Queen", "Fire Ship", "Carrier", "Flagship" }).Contains(squadType))
             {
                 shipCount = UnityEngine.Random.Range(1, 2);
