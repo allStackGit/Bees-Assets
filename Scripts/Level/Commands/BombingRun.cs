@@ -61,9 +61,15 @@ namespace Assets.Scripts.Level.Commands
 
                     // loop through all the ships in the target squad
                     Bomb bomb = (Bomb)ship.Weapons.First();
-                    while (!bomb.DetermineTargetShip(bomb.MakeTargetingQueue(), true))
+                    int loops = 0;
+                    while (!bomb.DetermineTargetShip(bomb.MakeTargetingQueue(), true) && loops < 10)
                     {
                         Squad.DamageSentToEnemyShipsBySquad.Clear();
+                        loops++;
+                    }
+                    if (loops == 10)
+                    {
+                        Debug.Log($"Looped 10 times while trying to dtermine a target ship for {bomb.Name}");
                     }
                     //Debugger.Log($"Target ship: {bomb.TargetShip}");
                     //Debugger.Log("--------------------");

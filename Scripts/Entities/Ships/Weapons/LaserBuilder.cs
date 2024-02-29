@@ -51,7 +51,7 @@ namespace Assets.Scripts.Entities.Ships
         {
             //Debugger.Log("Leafcutter aiming");
             base.Aim();
-            if (!HasTargetShip)
+            if (!HasTargetShip || CeaseFire)
             {
                 //Debug.Log($"{Name} has no TargetShip, deactivating animation");
                 LaserBuilderAnimation.SetActive(false);

@@ -88,7 +88,7 @@ namespace Assets.Scripts.Level
         private void CheckInputs() {
 
             Vector2 mouse = Input.mousePosition;
-            _mousePosition = Level.Camera.ScreenToWorldPoint(Input.mousePosition);
+            _mousePosition = Level.Camera.ScreenToWorldPoint(mouse);
 
             if (Input.GetKey(KeyCode.LeftShift))
             {
@@ -224,8 +224,9 @@ namespace Assets.Scripts.Level
             if (Input.GetMouseButton(LeftClick))
             {
                 if (EventSystem.IsPointerOverGameObject()) return;
-                if (Input.GetAxis("Mouse X") != 0 || Input.GetAxis("Mouse Y") != 0)
+                if (Mathf.Abs(Input.GetAxis("Mouse X")) > .5f || Mathf.Abs(Input.GetAxis("Mouse Y")) > .5f)
                 {
+                    //Debug.Log($"Mouse Axis: {Input.GetAxis("Mouse X")}, {Input.GetAxis("Mouse Y")}");
                     _isLeftMouseDragging = true; 
                 }
 
@@ -342,6 +343,7 @@ namespace Assets.Scripts.Level
             {
                 //Debug.Log($"EVS: {EventSystem.IsPointerOverGameObject()}");
                 CheckClickCollision();
+                //Debug.Log($"Frame: {Level.Updates}, clicked ship: {_clickedShip}");
                 if (HasDragMoveSquadsInput())
                 {
                     //Debugger.Log("Has drag input");
@@ -363,9 +365,10 @@ namespace Assets.Scripts.Level
                 }
                 else if (_leftMouseButtonUp)
                 {
-                    //Debugger.Log($"Left mouse button up: is left mouse dragging? {_isLeftMouseDragging}");
+                    //Debug.Log($"Left mouse button up: clicked ship? {_clickedShip}");
                     if (_isLeftMouseDragging && !_selectingPatrolArea)
                     {
+                        //Debug.Log("_leftMouseDragging");
                         Selector.SelectShipsInBox();
                     }
                     else if (!LeftClickAction())
@@ -472,7 +475,7 @@ namespace Assets.Scripts.Level
         }
         private bool CheckForSelectingSquad()
         {
-            //Debugger.Log("Didn't click on a ship, looking for nearby ships");
+            //Debug.Log("Didn't click on a ship, looking for nearby ships");
             GameState state = Level.GetState();
             List<Ship> ships = state.GetShips(ConfigData.Configuration.UserSide);
             Squad potentialSquad = null;
@@ -490,7 +493,7 @@ namespace Assets.Scripts.Level
             if (potentialSquad != null)
             {
                 state.SelectSquad(potentialSquad);
-                //Debugger.Log($"Mouse was close enough to ${potentialSquad.squadNumber}");
+                //Debug.Log($"Mouse was close enough to ${potentialSquad.Name}");
                 return true;
             }
             return false;
@@ -555,27 +558,26 @@ namespace Assets.Scripts.Level
             }
             return false;
         }
-        private Ship CheckClickCollision()
+        private void CheckClickCollision()
         {
-
-            RaycastHit2D[] hits = Physics2D.RaycastAll(Level.Camera.ScreenToWorldPoint(Input.mousePosition), Vector2.zero);
-            for (int i = 0; i < hits.Length; i++)
+            if (_leftMouseButtonUp || _rightMouseButtonUp)
             {
-                RaycastHit2D hit = hits[i];
-                if (hit.collider != null && hit.collider.CompareTag("Ship"))
+                RaycastHit2D[] hits = Physics2D.RaycastAll(Level.Camera.ScreenToWorldPoint(Input.mousePosition), Vector2.zero);
+                for (int i = 0; i < hits.Length; i++)
                 {
-                    //Debug.Log(hit.collider.gameObject.name);
-                    Ship ship = (Ship)hit.collider.gameObject.GetComponent(typeof(Ship));
-                    _clickedShip = ship;
-                    return ship;
-                }
-                else
-                {
-                    //Debug.Log($"Did not hit any ship {hit}");
+                    RaycastHit2D hit = hits[i];
+                    if (hit.collider != null && hit.collider.CompareTag("Ship"))
+                    {
+                        //Debug.Log($"hit: {hit.collider.gameObject.name}");
+                        Ship ship = hit.collider.gameObject.GetComponent<Ship>();
+                        _clickedShip = ship;
+                    }
+                    else
+                    {
+                        //Debug.Log($"Did not hit any ship {hit}");
+                    }
                 }
             }
-
-            return null;
         }
         private void CheckForMiniMapNavigation(int mouseButton)
         {
@@ -625,11 +627,13 @@ namespace Assets.Scripts.Level
         {
             if (_clickedShip != null)
             {
+                //Debug.Log($"_clickedShip is not null, running click action");
                 _clickedShip.Clicked(LeftClick);
                 return true;
             }
             else
             {
+                //Debug.Log("_clicked ship is null");
                 if (!CheckForSelectingSquad())
                 {
                     if (!CheckForSelectingPatrolArea()) {

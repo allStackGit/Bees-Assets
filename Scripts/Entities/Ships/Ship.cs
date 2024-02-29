@@ -24,14 +24,14 @@ namespace Assets.Scripts.Entities.Ships
         public int Health, MaxHealth, OriginalHealth, OriginalTsv, Sight, AdditionalTsv;
         public float ProjectileValue, Speed, SpecialFirePower;
         public GameObject ShipExplosion, HealthBar, MiniMapIcon;
-        public Vector2 TargetCoordinates, OffsetFromCenter; // the coordinates of where the ship should go, and it's offset from the center of the squad
+        public Vector2 TargetCoordinates, OffsetFromCenter, Velocity; // the coordinates of where the ship should go, and it's offset from the center of the squad
         public Squad Squad;
         public float DefaultAngle;
         public long LastKilled;
         public FleetShip FleetShip = null;
         public string ShipType, Name;
         public bool FireAtFrontOfShip, InCombat;
-        public bool HasBrain, IsMinionShip, IsDead;
+        public bool HasBrain, IsMinionShip, IsDead, HasTargetCoordinates;
         public List<Weapon> Weapons;
         public List<GameObject> ProjectilePrefabs, WeaponPrefabs, ColoredPrefabs;
         public Brain Brain = null;
@@ -53,8 +53,7 @@ namespace Assets.Scripts.Entities.Ships
         public bool HasTargetShips => TargetShips.Count > 0;
         public bool IsUserControlled => Side == ConfigData.Configuration.UserSide && Level.HasPlayer;
         public bool IsHiveMindControlled => Side == ConfigData.Configuration.AISide || (Side == ConfigData.Configuration.UserSide && !Level.HasPlayer);
-        public bool HasReachedDestination => TargetCoordinates == Vector2.zero && Body.velocity == Vector2.zero;
-        public Vector2 Velocity => Body.velocity;
+        public bool HasReachedDestination => !HasTargetCoordinates;
         public bool IsMoving => Body.velocity != Vector2.zero;
         public bool IsCarrierShip => ShipType == "Striker" || ShipType == "Drone";
         public string ShootingStrategy => HasBrain ? RLShootingStrategy : Squad.GetShootingStrategy();
@@ -351,10 +350,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         // movement methods
         public void MoveToPoint(Vector2 destination)
         {
-            float x = Mathf.Clamp(destination.x, Level.MinX, Level.MaxX);
-            float y = Mathf.Clamp(destination.y, Level.MinY, Level.MaxY);
-
-            TargetCoordinates = new Vector2(x, y);
+            TargetCoordinates = Level.ForceBounds(destination);
+            HasTargetCoordinates = true;
         }
         private void Move()
         {
@@ -364,7 +361,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             }
             else
             {
-                if (TargetCoordinates != Vector2.zero)
+                if (HasTargetCoordinates)
                 {
 
                     MoveToTargetCoordinates();
@@ -398,7 +395,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 Body.velocity = Vector2.zero;
                 return;
             }
-            if (TargetCoordinates == Vector2.zero || DistanceToPoint(TargetCoordinates) > GetHeight())
+            if (!HasTargetCoordinates || DistanceToPoint(TargetCoordinates) > GetHeight())
             {
                 Utilities.TimedRotation(gameObject, Direction, RotationSpeed);
             }
@@ -420,61 +417,64 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         private void MoveToTargetCoordinates()
         {
 
+            float distance = DistanceToPoint(TargetCoordinates);
+            float maxSpeed = (float)_currentSpeed;
 
 
-            // Set the velocity of the ship
-            float maxSpeed = (float)GetCurrentSpeed();
-            float rotation = GetDegreesTowardsPoint(TargetCoordinates);
-
-            Utilities.TimedRotation(gameObject, rotation, RotationSpeed);
-            float degrees = transform.eulerAngles.z - 180;
-            float angle = degrees * Mathf.Deg2Rad;
-
-            Vector2 velocity = new Vector2((maxSpeed * Mathf.Sin(angle)), (-1 * maxSpeed * Mathf.Cos(angle)));
-
-
-
-            if (Squad.IsRetreating)
+            if (distance > maxSpeed/4)
             {
-                velocity *= 1.5f;
-            }
+                // Set the velocity of the ship
+                float rotation = GetDegreesTowardsPoint(TargetCoordinates);
 
-            Body.velocity = velocity;
+                Utilities.TimedRotation(gameObject, rotation, RotationSpeed);
+                float degrees = transform.eulerAngles.z - 180;
+                float angle = degrees * Mathf.Deg2Rad;
+
+                Vector2 velocity = new Vector2((maxSpeed * Mathf.Sin(angle)), (-1 * maxSpeed * Mathf.Cos(angle)));
+
+
+                if (Squad.IsRetreating)
+                {
+                    velocity *= 1.5f;
+                }
+
+                Body.velocity = velocity;
+                Velocity = velocity;
+            }
+            
 
             // stop if you're close enough to your destination
 
-            // [note] if GetHeight() is used then the ships don't endlessly circle but the larger ships stop noticably before their destination and it's hard to move them precisely
-            // If CloseEnoughCoordinateVariance is used, the ships move close to the destination but they tend to endlessly circle if they are moved to a nearby destination inside of their
-            // turning radius
-            float distance = DistanceToPoint(TargetCoordinates);
-            if ((distance < GetHeight() && !Squad.HasEnemy) || (distance < ConfigData.CloseEnoughCoordinateVariance))
+            if (IsCloseEnoughToTargetCoordinates(distance))
             {
-                //Debugger.Log($"Ship {Id} is close enough {DistanceToPoint(TargetCoordinates)} to the target coordinates {TargetCoordinates} and will now stop moving.");
-                StopMoving($"Ship #{Id} is close enough ({distance}) to the target coordinates {TargetCoordinates}");
+                //Debug.Log($"Ship {Name} is close enough ({distance}) to the target coordinates {TargetCoordinates} and will now stop moving.");
+                StopMoving($"Ship {Name} is close enough ({distance}) to the target coordinates {TargetCoordinates}");
             }
 
-            //if any of the target ship(s) if your weapons are not dead and are within range and you're not within range of any enemy ships
+            //if any of the target ship(s) if your weapons are not dead and are within range
             else if (Squad.IsAttacking && HasTargetShips && !(Squad.HasCommand && (Squad.Command.Type == "Circle" || Squad.Command.Type == "Right Swipe" ||  Squad.Command.Type == "Left Swipe") ||
-                Squad.Command.Type == "In and Out") && TargetShips.Any((ship) => !ship.IsDead && IsShipWithinRange(ship) && DistanceTo(ship)-Range < -5))
+                Squad.Command.Type == "In and Out") && TargetShips.Any((ship) => !ship.IsDead && IsShipWithinRange(ship)))
             {
                 //Debugger.Log("We are outside of range of the target ship and we can still hit it but we are close to being within its range");
                 string reason = "We are outside of range of the target ship and we can still hit it but we are close to being within its range";
-                if (Squad.IsAttacking && Squad.Command.Enemy.IsMoving)
-                {
-                    //StopGaining(reason);
-                }
-                else
+                if (!(Squad.IsAttacking && Squad.Command.Enemy.IsMoving))
                 {
                     StopMoving(reason);
                 }
-
             }
-            //else if(DistanceToClosestShip() < LengthOfLongestSide())
-            //{
-            //    StopMoving("Too close to another ship");
-            //}
 
-
+        }
+        /// <summary>
+        /// Checks if a ship is close enough to its target coordinates
+        // [note] if GetHeight() is used then the ships don't endlessly circle but the larger ships stop noticably before their destination and it's hard to move them precisely
+        // If CloseEnoughCoordinateVariance is used, the ships move close to the destination but they tend to endlessly circle if they are moved to a nearby destination inside of their
+        // turning radius
+        /// </summary>
+        /// <param name="distance"></param>
+        /// <returns></returns>
+        private bool IsCloseEnoughToTargetCoordinates(float distance)
+        {
+            return (distance < Mathf.Clamp(GetHeight(), 0, 5) && !Squad.HasEnemy) || (distance < ConfigData.CloseEnoughCoordinateVariance && !(Squad.HasCommand && Squad.Command.Type == "Bombing Run"));
         }
         private void StopMoving(string reason)
         {
@@ -482,6 +482,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             __LastStopReason = $"Stopped at {GetPosition()} on the way to {TargetCoordinates} because of {reason} at {Age} ticks.";
             TargetCoordinates = Vector2.zero;
             Body.velocity = Vector2.zero;
+            HasTargetCoordinates = false;
             //transform.position = TargetCoordinates;
             //SetToDefaultAngle();
         }
@@ -519,10 +520,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             {
                 state.SelectSquad(Squad);
             }
-        }
-        public double GetCurrentSpeed()
-        {
-            return _currentSpeed;
         }
         public void SetCurrentSpeed(float speed)
         {

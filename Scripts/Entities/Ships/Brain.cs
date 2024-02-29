@@ -172,7 +172,7 @@ namespace Assets.Scripts.Entities.Ships
             var discreteActions = actionsOut.DiscreteActions;
 
             //Debugger.Log($"Running heuristic for Agent #{Id}, belonging to {Ship}");
-            if (Ship != null && Ship.TargetCoordinates != Vector2.zero)
+            if (Ship != null && Ship.HasTargetCoordinates)
             {
                 float rotation = Ship.GetDegreesTowardsPoint(Ship.TargetCoordinates);
                 int action = Mathf.RoundToInt(rotation/20);

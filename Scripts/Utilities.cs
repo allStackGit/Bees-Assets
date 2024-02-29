@@ -110,7 +110,7 @@ namespace Assets.Scripts
             //Debugger.Log($"maxDistance: {maxDistance}, minDistance: {minDistance}");
             Vector2 newLocation = Vector2.zero;
             int loops = 0;
-            while((newLocation == Vector2.zero || !VectorInBounds(level, newLocation)) && loops < 35){
+            while ((newLocation == Vector2.zero || !VectorInBounds(level, newLocation)) && loops < 35){
                 newLocation = new Vector2(position.x + (RandomFloat(maxDistance.x) + minDistance.x) * RandomSign(), position.y + (RandomFloat(maxDistance.y) + minDistance.y) * RandomSign());
                 loops++;
             }

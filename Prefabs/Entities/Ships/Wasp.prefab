@@ -30,8 +30,8 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
+  m_LocalScale: {x: 1, y: 1, z: 0}
+  m_ConstrainProportionsScale: 1
   m_Children:
   - {fileID: 6013362119046130762}
   - {fileID: 3208452114492370886}
@@ -122,6 +122,7 @@ MonoBehaviour:
   MiniMapIcon: {fileID: 8019605457764252939}
   TargetCoordinates: {x: 0, y: 0}
   OffsetFromCenter: {x: 0, y: 0}
+  Velocity: {x: 0, y: 0}
   Squad: {fileID: 0}
   DefaultAngle: 0
   LastKilled: 0
@@ -131,6 +132,8 @@ MonoBehaviour:
   InCombat: 0
   HasBrain: 0
   IsMinionShip: 0
+  IsDead: 0
+  HasTargetCoordinates: 0
   Weapons: []
   ProjectilePrefabs:
   - {fileID: 2670737595383420918, guid: cbdd4db6593349049b7d89684f0bd405, type: 3}

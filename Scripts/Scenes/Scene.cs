@@ -17,11 +17,12 @@ namespace Assets.Scripts.Scenes
         public GameObject DialoguePrefab;
         public EventSystem EventSystem;
         public Socket Socket;
-        public bool FinalizedScene, WatchServerRequests, HasIndependentSocket = false;
+        public bool FinalizedScene, WatchServerRequests, HasIndependentSocket, RecordNetwork;
         //public List<Dialogue> Dialogues = new List<Dialogue>();
         public Dialogue NetworkDisconnection;
         public float TimeScale = 1;
         public long Updates = 0;
+
 
 
 
@@ -80,7 +81,7 @@ namespace Assets.Scripts.Scenes
         }
         protected void UpdateTestVariables()
         {
-            if (ConfigData.__PastServerRequests.Count > 0)
+            if (RecordNetwork && ConfigData.__PastServerRequests.Count > 0)
             {
                 __PastServerRequests = ConfigData.__PastServerRequests.Select((r) => $"Request #{r.Hash} ({r.Type}) on queue for {r.TimeOnQueue}ms with {r.Resends} resends.").ToList();
                 __AverageRequestTime = ConfigData.__PastServerRequests.Select((r) => r.TimeOnQueue).Sum() / ConfigData.__PastServerRequests.Count;

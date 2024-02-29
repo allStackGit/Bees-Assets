@@ -35,7 +35,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 //Debugger.Log($"Got target! {ship.name}");
                 _readyToChangeColor = true;
             }
-            else
+            else if(!CeaseFire)
             {
                 //Debugger.Log("Setting color red!");
                 Pupil.color = ConfigData.GetUIColor("eye-aiming");

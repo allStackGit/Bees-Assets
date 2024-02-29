@@ -3264,6 +3264,7 @@ MonoBehaviour:
   FinalizedScene: 0
   WatchServerRequests: 0
   HasIndependentSocket: 1
+  RecordNetwork: 0
   TimeScale: 1
   Updates: 0
   __PastServerRequests: []
@@ -6066,6 +6067,7 @@ MonoBehaviour:
   FinalizedScene: 0
   WatchServerRequests: 0
   HasIndependentSocket: 1
+  RecordNetwork: 0
   TimeScale: 1
   Updates: 0
   __PastServerRequests: []
@@ -6258,6 +6260,7 @@ MonoBehaviour:
   FinalizedScene: 0
   WatchServerRequests: 0
   HasIndependentSocket: 1
+  RecordNetwork: 0
   TimeScale: 1
   Updates: 0
   __PastServerRequests: []
@@ -6268,8 +6271,8 @@ MonoBehaviour:
   IsTrainingNueralNetwork: 0
   IsTrainingHiveMind: 0
   UseSemiRandomSquads: 0
-  UseFullyRandomSquads: 0
-  UseFullyRandomEnemySquads: 1
+  UseFullyRandomSquads: 1
+  UseFullyRandomEnemySquads: 0
   RecordStats: 1
   DoesUserHaveController: 0
   OverrideTimeScale: 1
@@ -6317,10 +6320,10 @@ MonoBehaviour:
   ScrollSpeed: 25
   IsTestFiring: 0
   UseMouseScrolling: 0
-  UserStartingPosition: {x: 0, y: -45}
-  AIStartingPosition: {x: 0, y: 0}
+  UserStartingPosition: {x: 0, y: -155}
+  AIStartingPosition: {x: 0, y: 155}
   MouseScrollDistanceFromEdge: {x: 10, y: 10}
-  DefaultCameraPosition: {x: 0, y: -45}
+  DefaultCameraPosition: {x: 0, y: -155}
   Audio: {fileID: 0}
   HasBeeTypes: []
   FoundBeeTypes: []
