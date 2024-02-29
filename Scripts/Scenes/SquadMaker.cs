@@ -119,6 +119,7 @@ namespace Assets.Scripts.Scenes
 
 
             _fleetList = ConfigData.AllShips.GetAvailableShips();
+            ConfigData.AllShips.ReplaceDeadSquadShips();
             SetupFleetList();
             SetupSavedSquadsList();
 
@@ -452,7 +453,7 @@ namespace Assets.Scripts.Scenes
         {
             if (_currentSquad != null)
             {
-                if (_currentSquad.HasBeenSaved)
+                if (_currentSquad.HasBeenSavedToStorage)
                 {
                     DeleteSquadConfirmation.Show();
                 }

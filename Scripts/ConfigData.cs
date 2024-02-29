@@ -142,7 +142,7 @@ namespace Assets.Scripts
 
         public static int SquadMakerSide;
 
-        public static bool UseWebSocketSharp = false; // Whether to use the "WebSocketSharp" implementation of WebSockets or use the "NativeWebSocket" implmentation
+        public static bool UseWebSocketSharp = true; // Whether to use the "WebSocketSharp" implementation of WebSockets or use the "NativeWebSocket" implmentation
         public static Socket MainSocket = Test ? new Socket(TestPort, TestServerHostname, UseWebSocketSharp) : new Socket(DevelopmentPort, DevelopmentServerHostname, UseWebSocketSharp);
         public static readonly List<int> InitialVisibleShips = Enumerable.Range(0, 2900).ToList(); // // [alert] [server] Starting ships should be pulled from server
         public static bool FirstTimePlaying = true; // [alert] should be linked to whether a user has actually played before   
@@ -232,7 +232,7 @@ namespace Assets.Scripts
         public static bool IsAllUserDataLoaded => IsUserProgressDataLoaded && IsFleetDataLoaded && IsSavedSquadsDataLoaded;  
 
 
-        // DEBUG VARIABLEs
+        // DEBUG VARIABLES
         public static HashSet<ServerRequest> __PastServerRequests = new HashSet<ServerRequest>();
 
         // private variables

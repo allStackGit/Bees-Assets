@@ -46,11 +46,6 @@ namespace Assets.Scripts.Server
             _hostname = hostname;
             _port = port;
             _useWebSocketSharp = useWebSocketSharp;
-            if (_useWebSocketSharp)
-            {
-                //IsSecured = true;
-                //Protocol = "wss";
-            }
             _websocketURL = $"{Protocol}://{_hostname}:{_port}";
             Debugger.Log($"Trying to connect to {_websocketURL}");
             MakeSocket();
@@ -78,7 +73,6 @@ namespace Assets.Scripts.Server
                 };
 
                 _webSocketSharpSocket.OnError += (sender, e) => {
-                    throw e.Exception;
                     Error(e.Message); 
                 };
 
@@ -90,7 +84,6 @@ namespace Assets.Scripts.Server
                 _webSocketSharpSocket.OnMessage += (sender, e) =>
                 {
                     MessageQueue.Enqueue(e.RawData);
-                    //Message(e.RawData);
                 };
 
                 _webSocketSharpSocket.Connect();
@@ -115,7 +108,6 @@ namespace Assets.Scripts.Server
                 _nativeWebSocket.OnMessage += (bytes) =>
                 {
                     MessageQueue.Enqueue(bytes);
-                    //Message(bytes);
                 };
 
 

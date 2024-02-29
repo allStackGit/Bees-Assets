@@ -91,7 +91,7 @@ namespace Assets.Scripts.Scenes
         // Update is called once per frame
         protected void Update()
         {
-            //UpdateTestVariables();
+            UpdateTestVariables();
             Updates++;
             if (Updates%10 == 0)
             {

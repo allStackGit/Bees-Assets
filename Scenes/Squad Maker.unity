@@ -1930,7 +1930,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5749248882632121077, guid: 247934df76f0d8a4f8a1af315276df20, type: 3}
       propertyPath: m_SizeDelta.x
-      value: 350
+      value: 425
       objectReference: {fileID: 0}
     - target: {fileID: 5749248882632121077, guid: 247934df76f0d8a4f8a1af315276df20, type: 3}
       propertyPath: m_SizeDelta.y
@@ -2831,7 +2831,7 @@ RectTransform:
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
   m_AnchoredPosition: {x: 175, y: -350}
-  m_SizeDelta: {x: 350, y: 580}
+  m_SizeDelta: {x: 425, y: 580}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &244570743
 MonoBehaviour:
@@ -10760,7 +10760,7 @@ PrefabInstance:
     - target: {fileID: 1109014343575341394, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_Sprite
       value: 
-      objectReference: {fileID: 21300000, guid: 20f97832794fb0a429d20009ebc2aedf, type: 3}
+      objectReference: {fileID: 21300000, guid: c3fa40eabf47f094ca8d36375f056bd7, type: 3}
     - target: {fileID: 2470922290977067781, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_Padding.m_Left
       value: 5
@@ -12518,7 +12518,7 @@ RectTransform:
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 425, y: 275}
+  m_SizeDelta: {x: 500, y: 275}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1262737389
 MonoBehaviour:
@@ -15979,8 +15979,9 @@ MonoBehaviour:
   EventSystem: {fileID: 155230033}
   FinalizedScene: 0
   WatchServerRequests: 0
+  HasIndependentSocket: 0
   TimeScale: 1
-  updates: 0
+  Updates: 0
   __PastServerRequests: []
   __AverageRequestTime: 0
   Side: 1
@@ -16088,14 +16089,14 @@ MonoBehaviour:
   CarrierSprite: {fileID: 21300000, guid: d345c41298bdcde4c81806f290b71b13, type: 3}
   CruiserSprite: {fileID: 21300000, guid: e7fb5631d08227448bd1191172718349, type: 3}
   DreadnoughtSprite: {fileID: 21300000, guid: 9c7747c0ffc435e418024d989475bd92, type: 3}
-  DroneSprite: {fileID: 21300000, guid: 2b78f9fd4ca958844b8fb256917a56e7, type: 3}
+  DroneSprite: {fileID: 21300000, guid: 3a8e6cfd758ae60488a53d1e909e0abe, type: 3}
   FactorySprite: {fileID: 21300000, guid: d4e246a598aabb94f8f7d79e62a0e90e, type: 3}
   FireShipSprite: {fileID: 21300000, guid: c2d50367ba7668e428d971aed684feb2, type: 3}
   FlagshipSprite: {fileID: 21300000, guid: 4ffefbee413778f40943ae6240ca6071, type: 3}
   FrigateSprite: {fileID: 21300000, guid: 17fa141b5d31d844586a21634ca349a5, type: 3}
   GunshipSprite: {fileID: 21300000, guid: 5f294e6388148584099184fe629f6a35, type: 3}
   ScoutSprite: {fileID: 21300000, guid: 775173d4a1edb6c4ea54dfa4ae144930, type: 3}
-  StrikerSprite: {fileID: 21300000, guid: 20f97832794fb0a429d20009ebc2aedf, type: 3}
+  StrikerSprite: {fileID: 21300000, guid: c3fa40eabf47f094ca8d36375f056bd7, type: 3}
   WarpGateSprite: {fileID: 21300000, guid: 0aa980f13ad03b241a711695b2681ced, type: 3}
   BeehiveSprite: {fileID: 21300000, guid: 34cecbf7c2bb9b34dbc92c8933717d8e, type: 3}
   BumblebeeSprite: {fileID: 21300000, guid: 8895656659003e54098b941c66c97d98, type: 3}
@@ -22833,6 +22834,10 @@ PrefabInstance:
       propertyPath: m_Delegates.Array.data[4].callback.m_PersistentCalls.m_Calls.Array.data[0].m_Arguments.m_ObjectArgumentAssemblyTypeName
       value: UnityEngine.Object, UnityEngine
       objectReference: {fileID: 0}
+    - target: {fileID: 8098944441317948049, guid: ba8e735e9f2a5b542916479f7ec91750, type: 3}
+      propertyPath: m_Sprite
+      value: 
+      objectReference: {fileID: 21300000, guid: 3a8e6cfd758ae60488a53d1e909e0abe, type: 3}
     - target: {fileID: 8098944441317948051, guid: ba8e735e9f2a5b542916479f7ec91750, type: 3}
       propertyPath: m_IsActive
       value: 0
@@ -23045,6 +23050,10 @@ PrefabInstance:
       propertyPath: m_IsActive
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 8673207330526004746, guid: ba8e735e9f2a5b542916479f7ec91750, type: 3}
+      propertyPath: m_Sprite
+      value: 
+      objectReference: {fileID: 21300000, guid: c3fa40eabf47f094ca8d36375f056bd7, type: 3}
     - target: {fileID: 8713410077613821210, guid: ba8e735e9f2a5b542916479f7ec91750, type: 3}
       propertyPath: m_Size.x
       value: 1

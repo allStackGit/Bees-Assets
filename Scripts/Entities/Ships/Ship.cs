@@ -31,7 +31,7 @@ namespace Assets.Scripts.Entities.Ships
         public FleetShip FleetShip = null;
         public string ShipType, Name;
         public bool FireAtFrontOfShip, InCombat;
-        public bool HasBrain, IsMinionShip;
+        public bool HasBrain, IsMinionShip, IsDead;
         public List<Weapon> Weapons;
         public List<GameObject> ProjectilePrefabs, WeaponPrefabs, ColoredPrefabs;
         public Brain Brain = null;
@@ -50,7 +50,6 @@ namespace Assets.Scripts.Entities.Ships
         public double Seconds => GetLifeTime();
         public float RotationSpeed => Speed * ConfigData.Configuration.RotationMultiplier;
         public bool HasWeapons => Weapons.Count > 0;
-        public bool IsDead => died;
         public bool HasTargetShips => TargetShips.Count > 0;
         public bool IsUserControlled => Side == ConfigData.Configuration.UserSide && Level.HasPlayer;
         public bool IsHiveMindControlled => Side == ConfigData.Configuration.AISide || (Side == ConfigData.Configuration.UserSide && !Level.HasPlayer);
@@ -63,7 +62,7 @@ namespace Assets.Scripts.Entities.Ships
         public bool HasCommand => Squad.HasCommand;
 
 
-        protected bool aimedAtTarget, died;
+        protected bool aimedAtTarget;
 
 
         private bool _combatTimer;
@@ -633,7 +632,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
             
         }
-        protected static void LogHitStats(Ship shooter, Squad shooterSquad, Ship target, Squad targetSquad, int tsvChange, bool isFireShipSelfHit = false) // [stat-method] [note]
+        protected static void LogHitStats(Ship shooter, Squad shooterSquad, Ship target, Squad targetSquad, int tsvChange, bool isFireShipSelfHit = false) // [stats-method] [note]
         {
             if (shooter != null)
             {
@@ -642,13 +641,13 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             }
             else if (shooterSquad != null)
             {
-                //Debugger.Log($"There was {tsvChange} damage done against {target.Name} but the shooter is null. The shooter squad got stats though.");
+                Debug.Log($"There was {tsvChange} damage done against {target.Name} but the shooter is null. The shooter squad got stats though.");
                 shooterSquad.SavedSquad.Stats.DamageDone += -1 * tsvChange;
             }
             else
             {
-                //Debugger.Log($"There was {tsvChange} damage done against {target.Name} but the shooter is null and the shooterSquad is null. " +
-                //    $"Was it a fireship explosion hitting itself? {isFireShipSelfHit}");
+                Debug.Log($"There was {tsvChange} damage done against {target.Name} but the shooter is null and the shooterSquad is null. " +
+                    $"Was it a fireship explosion hitting itself? {isFireShipSelfHit}");
             }
             if (target != null)
             {
@@ -672,19 +671,19 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             }
             else if (targetSquad != null)
             {
-                //Debugger.Log($"There was {tsvChange} damage done by {shooter.Name} but the target is null. The target squad got stats though.");
+                Debug.Log($"There was {tsvChange} damage done by {shooter.Name} but the target is null. The target squad got stats though.");
                 targetSquad.SavedSquad.Stats.DamageReceived += -1 * tsvChange;
             }
             else
             {
-                Debugger.Log($"There was {tsvChange} damage done by {shooter.Name} but the target is null and the targetSquad is null. ");
+                Debug.Log($"There was {tsvChange} damage done by {shooter.Name} but the target is null and the targetSquad is null. ");
             }
 
 
         }
         protected void LogKillStats(Ship killer) // [stats-method] [note]
         {
-            if (!IsCarrierShip)
+            if (Level.ReplaceDeadShips && !IsCarrierShip && !IsMinionShip && Squad.SavedSquad.HasBeenSavedToStorage)
             {
                 FleetShip.IsDead = true;
             }
@@ -706,13 +705,29 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             if (!IsDead)
             {
                 //Debugger.Log($"Killing ship {Name} with size Factor {ConfigData.GetShipSizeFactor(ShipType)}");
-                died = true;
+                IsDead = true;
+                GameState state = Level.GetState();
+
                 if (!endKill)
                 {
                     DropExplosionAnimation();
+
+                    if (killer != null)
+                    {
+                        killer.LastKilled = state.Ticks;
+                        LogKillStats(killer);
+                    }
+                    else
+                    {
+                        if (Level.ReplaceDeadShips && !IsCarrierShip && !IsMinionShip && Squad.SavedSquad.HasBeenSavedToStorage)
+                        {
+                            FleetShip.IsDead = true;
+                        }
+                        Squad.SavedSquad.Stats.ShipsLost++;
+                    }
                 }
 
-                GameState state = Level.GetState();
+
                 state.RemoveShip(this);
                 Squad.RemoveShip(this);
 
@@ -720,8 +735,9 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 // If this is a carrier, get all strikers that belonged to this carrier and mark the last spot the carrier was at
                 if (this is Carrier)
                 {
-                    Carrier nextCarrier = (Carrier) state.GetHumanShips().FirstOrDefault((s) => s is Carrier);
-                    if (nextCarrier != null){
+                    Carrier nextCarrier = (Carrier)state.GetHumanShips().FirstOrDefault((s) => s is Carrier);
+                    if (nextCarrier != null)
+                    {
                         state.GetHumanShips().Where((ship) => ship is Striker && ((Striker)ship).Carrier.Equals(this)).ToList().ForEach((ship) => ((Striker)ship).Carrier = nextCarrier);
                         state.GetHumanShips().Where((ship) => ship is Drone && ((Drone)ship).Carrier.Equals(this)).ToList().ForEach((ship) => ((Drone)ship).Carrier = nextCarrier);
                     }
@@ -729,21 +745,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     {
                         state.GetHumanShips().Where((ship) => ship is Striker && ((Striker)ship).Carrier.Equals(this)).ToList().ForEach((ship) => ((Striker)ship).LastCarrierPosition = GetPosition());
                     }
-                    
-                }
 
-                if (killer != null)
-                {
-                    killer.LastKilled = state.Ticks;
-                    LogKillStats(killer);
-                }
-                else
-                {
-                    if (!IsCarrierShip && !IsMinionShip && Squad.SavedSquad.HasBeenSaved)
-                    {
-                        FleetShip.IsDead = true;
-                    }
-                    Squad.SavedSquad.Stats.ShipsLost++;
                 }
 
                 if (Squad.GetShips().Count <= 0)
@@ -781,11 +783,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         }
         public bool IsShipWithinRange(Ship ship)
         {
-            return Weapons.Any((w) => w.IsPointWithinRange(ship.GetPosition()));
-        }
-        public bool IsSquadPositionWithinRange(Squad squad)
-        {
-            return Weapons.Any((w) =>  w.IsPointWithinRange(squad.GetPosition()));
+            return Weapons.Any((w) => w.IsShipWithinRange(ship));
         }
         public bool IsAnySquadShipWithinRange(Squad squad)
         {

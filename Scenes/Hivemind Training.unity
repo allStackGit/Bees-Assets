@@ -3268,13 +3268,15 @@ MonoBehaviour:
   Updates: 0
   __PastServerRequests: []
   __AverageRequestTime: 0
+  ReplaceDeadShips: 0
   ActivateHiveMind: 1
   ActivateBrains: 0
   IsTrainingNueralNetwork: 0
   IsTrainingHiveMind: 1
   UseSemiRandomSquads: 0
   UseFullyRandomSquads: 1
-  ReplaceDeadShips: 0
+  UseFullyRandomEnemySquads: 0
+  RecordStats: 0
   DoesUserHaveController: 0
   OverrideTimeScale: 2
   TimeoutTime: 600
@@ -3341,58 +3343,6 @@ MonoBehaviour:
   Seconds: 0
   BeeWins: 0
   HumanWins: 0
---- !u!212 &916923568
-SpriteRenderer:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 916923566}
-  m_Enabled: 1
-  m_CastShadows: 0
-  m_ReceiveShadows: 0
-  m_DynamicOccludee: 1
-  m_StaticShadowCaster: 0
-  m_MotionVectors: 1
-  m_LightProbeUsage: 1
-  m_ReflectionProbeUsage: 1
-  m_RayTracingMode: 0
-  m_RayTraceProcedural: 0
-  m_RenderingLayerMask: 1
-  m_RendererPriority: 0
-  m_Materials:
-  - {fileID: 2100000, guid: a97c105638bdf8b4a8650670310a4cd3, type: 2}
-  m_StaticBatchInfo:
-    firstSubMesh: 0
-    subMeshCount: 0
-  m_StaticBatchRoot: {fileID: 0}
-  m_ProbeAnchor: {fileID: 0}
-  m_LightProbeVolumeOverride: {fileID: 0}
-  m_ScaleInLightmap: 1
-  m_ReceiveGI: 1
-  m_PreserveUVs: 0
-  m_IgnoreNormalsForChartDetection: 0
-  m_ImportantGI: 0
-  m_StitchLightmapSeams: 1
-  m_SelectedEditorRenderState: 0
-  m_MinimumChartSize: 4
-  m_AutoUVMaxDistance: 0.5
-  m_AutoUVMaxAngle: 89
-  m_LightmapParameters: {fileID: 0}
-  m_SortingLayerID: 0
-  m_SortingLayer: 0
-  m_SortingOrder: 0
-  m_Sprite: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
-  m_FlipX: 0
-  m_FlipY: 0
-  m_DrawMode: 0
-  m_Size: {x: 1, y: 1}
-  m_AdaptiveModeThreshold: 0.5
-  m_SpriteTileMode: 0
-  m_WasSpriteAssigned: 0
-  m_MaskInteraction: 0
-  m_SpriteSortPoint: 0
 --- !u!4 &916923569 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 5790540700919467307, guid: 3fafbd32112ea274ca305ce0b38a6a94, type: 3}
@@ -5067,9 +5017,6 @@ PrefabInstance:
     m_AddedComponents:
     - targetCorrespondingSourceObject: {fileID: 5790540700919467309, guid: 3fafbd32112ea274ca305ce0b38a6a94, type: 3}
       insertIndex: -1
-      addedObject: {fileID: 916923568}
-    - targetCorrespondingSourceObject: {fileID: 5790540700919467309, guid: 3fafbd32112ea274ca305ce0b38a6a94, type: 3}
-      insertIndex: -1
       addedObject: {fileID: 916923567}
   m_SourcePrefab: {fileID: 100100000, guid: 3fafbd32112ea274ca305ce0b38a6a94, type: 3}
 --- !u!1001 &1489827626
@@ -6088,9 +6035,6 @@ PrefabInstance:
     m_AddedComponents:
     - targetCorrespondingSourceObject: {fileID: 5790540700919467309, guid: 3fafbd32112ea274ca305ce0b38a6a94, type: 3}
       insertIndex: -1
-      addedObject: {fileID: 1770453509}
-    - targetCorrespondingSourceObject: {fileID: 5790540700919467309, guid: 3fafbd32112ea274ca305ce0b38a6a94, type: 3}
-      insertIndex: -1
       addedObject: {fileID: 1770453508}
   m_SourcePrefab: {fileID: 100100000, guid: 3fafbd32112ea274ca305ce0b38a6a94, type: 3}
 --- !u!1 &1770453506 stripped
@@ -6126,13 +6070,15 @@ MonoBehaviour:
   Updates: 0
   __PastServerRequests: []
   __AverageRequestTime: 0
+  ReplaceDeadShips: 0
   ActivateHiveMind: 1
   ActivateBrains: 0
   IsTrainingNueralNetwork: 0
   IsTrainingHiveMind: 1
   UseSemiRandomSquads: 0
   UseFullyRandomSquads: 1
-  ReplaceDeadShips: 0
+  UseFullyRandomEnemySquads: 0
+  RecordStats: 0
   DoesUserHaveController: 0
   OverrideTimeScale: 2
   TimeoutTime: 600
@@ -6199,58 +6145,6 @@ MonoBehaviour:
   Seconds: 0
   BeeWins: 0
   HumanWins: 0
---- !u!212 &1770453509
-SpriteRenderer:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1770453506}
-  m_Enabled: 1
-  m_CastShadows: 0
-  m_ReceiveShadows: 0
-  m_DynamicOccludee: 1
-  m_StaticShadowCaster: 0
-  m_MotionVectors: 1
-  m_LightProbeUsage: 1
-  m_ReflectionProbeUsage: 1
-  m_RayTracingMode: 0
-  m_RayTraceProcedural: 0
-  m_RenderingLayerMask: 1
-  m_RendererPriority: 0
-  m_Materials:
-  - {fileID: 2100000, guid: a97c105638bdf8b4a8650670310a4cd3, type: 2}
-  m_StaticBatchInfo:
-    firstSubMesh: 0
-    subMeshCount: 0
-  m_StaticBatchRoot: {fileID: 0}
-  m_ProbeAnchor: {fileID: 0}
-  m_LightProbeVolumeOverride: {fileID: 0}
-  m_ScaleInLightmap: 1
-  m_ReceiveGI: 1
-  m_PreserveUVs: 0
-  m_IgnoreNormalsForChartDetection: 0
-  m_ImportantGI: 0
-  m_StitchLightmapSeams: 1
-  m_SelectedEditorRenderState: 0
-  m_MinimumChartSize: 4
-  m_AutoUVMaxDistance: 0.5
-  m_AutoUVMaxAngle: 89
-  m_LightmapParameters: {fileID: 0}
-  m_SortingLayerID: 0
-  m_SortingLayer: 0
-  m_SortingOrder: 0
-  m_Sprite: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
-  m_FlipX: 0
-  m_FlipY: 0
-  m_DrawMode: 0
-  m_Size: {x: 1, y: 1}
-  m_AdaptiveModeThreshold: 0.5
-  m_SpriteTileMode: 0
-  m_WasSpriteAssigned: 0
-  m_MaskInteraction: 0
-  m_SpriteSortPoint: 0
 --- !u!1001 &1806296537
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -6333,9 +6227,6 @@ PrefabInstance:
     m_AddedComponents:
     - targetCorrespondingSourceObject: {fileID: 5790540700919467309, guid: 3fafbd32112ea274ca305ce0b38a6a94, type: 3}
       insertIndex: -1
-      addedObject: {fileID: 1806296541}
-    - targetCorrespondingSourceObject: {fileID: 5790540700919467309, guid: 3fafbd32112ea274ca305ce0b38a6a94, type: 3}
-      insertIndex: -1
       addedObject: {fileID: 1806296540}
   m_SourcePrefab: {fileID: 100100000, guid: 3fafbd32112ea274ca305ce0b38a6a94, type: 3}
 --- !u!1 &1806296538 stripped
@@ -6371,14 +6262,16 @@ MonoBehaviour:
   Updates: 0
   __PastServerRequests: []
   __AverageRequestTime: 0
-  ActivateHiveMind: 0
+  ReplaceDeadShips: 0
+  ActivateHiveMind: 1
   ActivateBrains: 0
   IsTrainingNueralNetwork: 0
   IsTrainingHiveMind: 0
   UseSemiRandomSquads: 0
   UseFullyRandomSquads: 0
-  ReplaceDeadShips: 0
-  DoesUserHaveController: 1
+  UseFullyRandomEnemySquads: 1
+  RecordStats: 1
+  DoesUserHaveController: 0
   OverrideTimeScale: 1
   TimeoutTime: 900
   SquadCount: 8
@@ -6424,10 +6317,10 @@ MonoBehaviour:
   ScrollSpeed: 25
   IsTestFiring: 0
   UseMouseScrolling: 0
-  UserStartingPosition: {x: 0, y: -185}
-  AIStartingPosition: {x: 0, y: 75}
+  UserStartingPosition: {x: 0, y: -45}
+  AIStartingPosition: {x: 0, y: 0}
   MouseScrollDistanceFromEdge: {x: 10, y: 10}
-  DefaultCameraPosition: {x: 0, y: -185}
+  DefaultCameraPosition: {x: 0, y: -45}
   Audio: {fileID: 0}
   HasBeeTypes: []
   FoundBeeTypes: []
@@ -6444,58 +6337,6 @@ MonoBehaviour:
   Seconds: 0
   BeeWins: 0
   HumanWins: 0
---- !u!212 &1806296541
-SpriteRenderer:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1806296538}
-  m_Enabled: 1
-  m_CastShadows: 0
-  m_ReceiveShadows: 0
-  m_DynamicOccludee: 1
-  m_StaticShadowCaster: 0
-  m_MotionVectors: 1
-  m_LightProbeUsage: 1
-  m_ReflectionProbeUsage: 1
-  m_RayTracingMode: 0
-  m_RayTraceProcedural: 0
-  m_RenderingLayerMask: 1
-  m_RendererPriority: 0
-  m_Materials:
-  - {fileID: 2100000, guid: a97c105638bdf8b4a8650670310a4cd3, type: 2}
-  m_StaticBatchInfo:
-    firstSubMesh: 0
-    subMeshCount: 0
-  m_StaticBatchRoot: {fileID: 0}
-  m_ProbeAnchor: {fileID: 0}
-  m_LightProbeVolumeOverride: {fileID: 0}
-  m_ScaleInLightmap: 1
-  m_ReceiveGI: 1
-  m_PreserveUVs: 0
-  m_IgnoreNormalsForChartDetection: 0
-  m_ImportantGI: 0
-  m_StitchLightmapSeams: 1
-  m_SelectedEditorRenderState: 0
-  m_MinimumChartSize: 4
-  m_AutoUVMaxDistance: 0.5
-  m_AutoUVMaxAngle: 89
-  m_LightmapParameters: {fileID: 0}
-  m_SortingLayerID: 0
-  m_SortingLayer: 0
-  m_SortingOrder: 0
-  m_Sprite: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
-  m_FlipX: 0
-  m_FlipY: 0
-  m_DrawMode: 0
-  m_Size: {x: 1, y: 1}
-  m_AdaptiveModeThreshold: 0.5
-  m_SpriteTileMode: 0
-  m_WasSpriteAssigned: 0
-  m_MaskInteraction: 0
-  m_SpriteSortPoint: 0
 --- !u!1 &1841752534 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 3982628868011038991, guid: d6f4a4a1aee4fc548beceab902ad4ad0, type: 3}

@@ -6,10 +6,11 @@ using Assets.Scripts.Scenes;
 
 namespace Assets.Scripts.Data
 {
+    /// <summary>
+    /// class that holds and manages storage for user fleet data
+    /// </summary>
     public class FleetData : UserData
     {
-
-        // class that holds and manages storage for user fleet data
         private List<FleetShip> _shipList = new List<FleetShip>();
 
 

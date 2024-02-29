@@ -28,7 +28,11 @@ namespace Assets.Scripts.Scenes
         // If brains are activated, get actions from the nueral network
         // If IsTrainingNueralNetwork, train the neural network. IsTrainingHiveMind, train the hive mind
         // Training Hivemind or Nueral Network then there is no player, levels are reset every time, and the camera position doesn't matter
-        public bool ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, UseSemiRandomSquads, UseFullyRandomSquads, ReplaceDeadShips, DoesUserHaveController;
+        /// <summary>
+        /// Determines whether or not FleetShips get marked as dead when ships die. If this is turned off, stats will still record properly but ships won't die off and be replaced
+        /// </summary>
+        public bool ReplaceDeadShips;
+        public bool ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, UseSemiRandomSquads, UseFullyRandomSquads, UseFullyRandomEnemySquads, RecordStats, DoesUserHaveController;
         public int OverrideTimeScale, TimeoutTime, SquadCount;
         public Camera MiniMapCamera;
 
@@ -196,7 +200,7 @@ namespace Assets.Scripts.Scenes
             base.FinalizeSceneWithUserData();
             IsLoaded = true;
             Setup();
-            LevelConstructor.SetShips();
+            LevelConstructor.SetupShips();
             _state.OriginalSquadCounts[ConfigData.Configuration.HumanSide - 1] = _state.GetSquadsBySide(ConfigData.Configuration.HumanSide).Count;
             _state.OriginalSquadCounts[ConfigData.Configuration.BeeSide - 1] = _state.GetSquadsBySide(ConfigData.Configuration.BeeSide).Count;
             if (ActivateHiveMind)
@@ -274,7 +278,7 @@ namespace Assets.Scripts.Scenes
                 {
                     WinningSide = ConfigData.Configuration.HumanSide;
                     HumanWins++;
-                    Debugger.Log($"Humans won! H:{HumanWins} B:{BeeWins}");
+                    Debug.Log($"Humans won! H:{HumanWins} B:{BeeWins}");
 
 
                 }
@@ -282,15 +286,15 @@ namespace Assets.Scripts.Scenes
                 {
                     WinningSide = ConfigData.Configuration.BeeSide;
                     BeeWins++;
-                    Debugger.Log($"Bees won! H:{HumanWins} B:{BeeWins}");
+                    Debug.Log($"Bees won! H:{HumanWins} B:{BeeWins}");
                 }
                 else if (state.IsSideKilled(ConfigData.Configuration.HumanSide) && state.IsSideKilled(ConfigData.Configuration.BeeSide))
                 {
-                    Debugger.Log("Both sides are dead!");
+                    Debug.Log("Both sides are dead!");
                 }
                 else
                 {
-                    Debugger.Log("Neither side is dead!");
+                    Debug.Log("Neither side is dead!");
                 }
 
                 if (Menus != null)
@@ -298,10 +302,20 @@ namespace Assets.Scripts.Scenes
                     Menus.UpdateScore(HumanWins, BeeWins);
                 }
 
-                //Debugger.Log($"Setting stats for Saved Squads");
-                ConfigData.SquadsChosenForLevel.ForEach((savedSquad) =>
+                //Debug.Log($"Setting stats for Saved Squads");
+                for (int i = 0; i < ConfigData.SquadsChosenForLevel.Count; i++)
                 {
-                    //Debugger.Log($"Logging stats for sqauds battles fought for {savedSquad.Name}");
+                    SavedSquad savedSquad = ConfigData.SquadsChosenForLevel[i];
+                    if (savedSquad.HasBeenSavedToStorage)
+                    {
+                        savedSquad = ConfigData.AllShips.GetSavedSquad(savedSquad.Id);
+                    }
+                    else
+                    {
+                        continue;
+                    }
+
+                    //Debug.Log($"Logging stats for sqauds battles fought for {savedSquad.Name}");
                     savedSquad.Stats.BattlesFought++;
 
                     if (savedSquad.Side == WinningSide)
@@ -319,8 +333,7 @@ namespace Assets.Scripts.Scenes
                             fleetShip.BattlesWon++;
                         }
                     });
-
-                });
+                }
 
 
 
@@ -446,7 +459,7 @@ namespace Assets.Scripts.Scenes
             {
                 Invoke(nameof(TimeOut), TimeoutTime);
             }
-            LevelConstructor.SetShips();
+            LevelConstructor.SetupShips();
 
             if (HasPlayer)
             {
@@ -465,29 +478,46 @@ namespace Assets.Scripts.Scenes
         }
         private void SaveAndEnd()
         {
-            //Debugger.Log($"Savind and ending");
-            ConfigData.SquadsChosenForLevel.ForEach((savedSquad) =>
+            //Debug.Log($"Saving and ending");
+            for (int i = 0; i < ConfigData.SquadsChosenForLevel.Count; i++)
             {
-                //Debugger.Log($"Saving stats for {savedSquad.Name}: \n" +
-                //$"Battles Fought: {savedSquad.Stats.BattlesFought} \n" +
-                //$"Battles Won: {savedSquad.Stats.BattlesWon} \n" +
-                //$"Ships Lost: {savedSquad.Stats.ShipsLost} \n" +
-                //$"Damage Done: {savedSquad.Stats.DamageDone} \n" +
-                //$"Damage Received: {savedSquad.Stats.DamageReceived} \n" +
-                //$"Kills: {savedSquad.Stats.Kills} \n");
-                if (savedSquad.HasBeenSaved)
+                SavedSquad savedSquad = ConfigData.SquadsChosenForLevel[i];
+                if (savedSquad.HasBeenSavedToStorage)
                 {
-                    ConfigData.AllShips.GetSavedSquad(savedSquad.Id).Stats = savedSquad.Stats;
+                    savedSquad = ConfigData.AllShips.GetSavedSquad(savedSquad.Id);
                 }
-            });
+                else
+                {
+                    continue;
+                }
+                //Debug.Log($"Saving stats for {savedSquad.Name}: " +
+                //$"Battles Fought: {savedSquad.Stats.BattlesFought} " +
+                //$"Battles Won: {savedSquad.Stats.BattlesWon} " +
+                //$"Ships Lost: {savedSquad.Stats.ShipsLost} " +
+                //$"Damage Done: {savedSquad.Stats.DamageDone} " +
+                //$"Damage Received: {savedSquad.Stats.DamageReceived} " +
+                //$"Kills: {savedSquad.Stats.Kills} ");
+
+                //savedSquad.GetShips().ForEach((squadShip) =>
+                //{
+                //    FleetShip fleetShip = squadShip.GetFleetShip();
+                //    Debug.Log($"Saving stats for {fleetShip.Name}: " +
+                //    $"Battles Fought: {fleetShip.BattlesFought} " +
+                //    $"Battles Won: {fleetShip.BattlesWon} " +
+                //    $"Damage Done: {fleetShip.DamageDone} " +
+                //    $"Damage Received: {fleetShip.DamageReceived} " +
+                //    $"Shots Fired: {fleetShip.ShotsFired} " +
+                //    $"Kills: {fleetShip.Kills} ");
+                //});
+            }
                 
             GameState state = GetState();
             state.LogState();
             state.StoreCommands();
 
-            if (ReplaceDeadShips)
+            if (RecordStats)
             {
-                ConfigData.AllShips.SaveFleetData(); // [alert] turn on or off to have ships record stats and die
+                ConfigData.AllShips.SaveFleetData();
                 ConfigData.AllShips.SaveSquadData();
             }
             //Debugger.Log($"Resetting scene");

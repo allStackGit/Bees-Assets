@@ -20,58 +20,56 @@ namespace Assets.Scripts.Entities.Ships
         }
         public Weapon Bomb => Weapons.First();
 
-        public override void Kill(Ship killer, bool endKill = false) // [kill-method] [damage-method] [note]
+        public override void Kill(Ship killer, bool endKill = false) // [kill-method] [damage-method] [note] [stats-method]
         {
             if (!IsDead)
             {
-                died = true;
+                IsDead = true;
+                GameState state = Level.GetState();
                 //Debugger.Log("Fireship exploding");
                 if (!endKill)
                 {
                     Explosion = Instantiate(ShipExplosion, GetPosition(), Quaternion.identity);
                     Explosion.transform.parent = Level.Map.transform;
                     RocketExplosion explosion = (RocketExplosion)Explosion.GetComponent(typeof(RocketExplosion));
-                    GameState state = Level.GetState();
                     explosion.Setup(Level, Side, state.AddEntity(), Bomb, this, null, GetPosition(), 0, 0, Bomb.Power);
                     state.AddExplosion(explosion);
-                }
 
 
-                int oldTsv = Tsv;
-                Health -= Bomb.Power;
+                    int oldTsv = Tsv;
+                    Health -= Bomb.Power;
 
-                if (Health < 0)
-                {
-                    Health = 0;
-                }
-
-                int tsvChange = Tsv - oldTsv; // this is a negative number since being hit by a projectile should induce a loss of TSV
-                LogHitStats(null, null, this, this.Squad, tsvChange, true);
-
-                if (Squad.Command != null)
-                {
-                    Squad.Command.Tsv += tsvChange; // subtract the TSV from the squad
-                }
-
-                Level.GetState().RemoveShip(this);
-                Squad.RemoveShip(this);
-
-                if (killer != null)
-                {
-                    killer.LastKilled = Level.GetState().Ticks;
-                    LogKillStats(killer);
-                }
-                else
-                {
-                    if (!IsCarrierShip)
+                    if (Health < 0)
                     {
-                        FleetShip.IsDead = true;
+                        Health = 0;
                     }
-                    Squad.SavedSquad.Stats.ShipsLost++; 
+
+                    int tsvChange = Tsv - oldTsv; // this is a negative number since being hit by a projectile should induce a loss of TSV
+                    LogHitStats(null, null, this, this.Squad, tsvChange, true);
+
+                    if (Squad.Command != null)
+                    {
+                        Squad.Command.Tsv += tsvChange; // subtract the TSV from the squad
+                    }
+
+                    if (killer != null)
+                    {
+                        killer.LastKilled = state.Ticks;
+                        LogKillStats(killer);
+                    }
+                    else
+                    {
+                        if (Level.ReplaceDeadShips && Squad.SavedSquad.HasBeenSavedToStorage)
+                        {
+                            FleetShip.IsDead = true;
+                        }
+                        Squad.SavedSquad.Stats.ShipsLost++;
+                    }
                 }
 
 
-                //FleetShip.BattlesFought++;
+                state.RemoveShip(this);
+                Squad.RemoveShip(this);
 
                 if (Squad.GetShips().Count <= 0)
                 {

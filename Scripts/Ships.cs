@@ -273,7 +273,7 @@ namespace Assets.Scripts
             });
             if (replaced)
             {
-                Debugger.Log("Replaced dead ships");
+                Debug.Log("Replaced dead ships");
                 SaveSquadData();
             }
 
@@ -308,6 +308,7 @@ namespace Assets.Scripts
         }
         public void SaveFleetData()
         {
+            //Debug.Log($"Saving the fleet data");
             _fleetData.Save();
         }
 

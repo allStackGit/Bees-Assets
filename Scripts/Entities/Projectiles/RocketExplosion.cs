@@ -35,7 +35,7 @@ namespace Assets.Scripts.Entities.Projectiles
         public void SetHarmless()
         {
             _isHarmless = true;
-            Debug.Log($"{Name} is now harmless");
+            //Debug.Log($"{Name} is now harmless");
         }
 
         protected override void FixedUpdate()

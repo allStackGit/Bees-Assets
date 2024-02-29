@@ -93,17 +93,20 @@ namespace Assets.Scripts.Entities.Ships
            
         }
 
-        public void SuicideKill(Squad squad) // [kill-method] [note]
+        public void SuicideKill(Squad squad) // [kill-method] [stats-method] [note]
         {
             if (!IsDead)
             {
-                died = true;
+                IsDead = true;
                 DropExplosionAnimation();
 
                 Level.GetState().RemoveShip(this);
                 Squad.RemoveShip(this);
 
-                FleetShip.IsDead = true;
+                if (Level.ReplaceDeadShips && Squad.SavedSquad.HasBeenSavedToStorage)
+                {
+                    FleetShip.IsDead = true;
+                }
                 Squad.SavedSquad.Stats.ShipsLost++;
 
                 squad.SavedSquad.Stats.Kills++;

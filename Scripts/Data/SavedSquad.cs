@@ -11,15 +11,19 @@ namespace Assets.Scripts.Data
 {
     public class SavedSquad : ICloneable
     {
-        public int Id, Side;
+        /// <summary>
+        /// Unique identifier for the squad. A negative Id indicates a randomly generated squad
+        /// </summary>
+        public int Id;
+        public int Side;
         public string Name;
         public Color Color;
         public Vector2 StartingPosition;
-        public bool CeaseFire, IsMatchingSpeed = false;
+        public bool CeaseFire, IsMatchingSpeed, HasBeenSavedToStorage;
         public string ChosenShootingStrategy = ConfigData.StartingSettings.DefaultShootingStrategy;
         public SquadStatBlock Stats;
         private List<SquadShip> _ships = new List<SquadShip>();
-        private bool _hasChanged = false;
+        private bool _hasChanged;
 
         public bool HasMaxShips => GetShips().Count == ConfigData.Configuration.MaxSquadSize;
         public bool IsEmptySquad => GetShips().Count == 0 && Name == "" && !CeaseFire && !IsMatchingSpeed;
@@ -27,7 +31,6 @@ namespace Assets.Scripts.Data
         public bool HasDeadShips => GetDeadShips().Any();
         public bool HasAliveShips => GetDeadShips().Count < GetShips().Count;
         public bool HasShips => GetShips().Any();
-        public bool HasBeenSaved => Id > 0; // By Jesus
 
         public SavedSquad(int id, int side, string name, Vector2 startingPosition, bool ceaseFire, bool isMatchingSpeed, 
             string chosenShootingStrategy, Color color, SquadStatBlock stats = null)
@@ -44,6 +47,10 @@ namespace Assets.Scripts.Data
             if (stats == null)
             {
                 Stats = new SquadStatBlock(Utilities.GenerateCommanderName(), 0, 0, 0, 0, 0, 0);
+            }
+            if (Id > 0)
+            {
+                HasBeenSavedToStorage = true;
             }
         }
 
