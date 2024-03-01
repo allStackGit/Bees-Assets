@@ -384,7 +384,7 @@ namespace Assets.Scripts.Server
             if (standingRequest != null)
             {
                 standingRequest.Status = 1;
-                if (squad != null && !squad.IsDead)
+                if (squad != null)
                 {
                     //squad.Command = squad.gameObject.AddComponent<Command>();
                     //squad.Command.Setup(squad, true);
@@ -394,7 +394,9 @@ namespace Assets.Scripts.Server
                     Squad targetSquad = squad.MatchupStrategy.SortSquads();
                     //Debugger.Log($"matchup strategy after sorted");
                     //Debugger.LogSquads(level.GetState().GetSquads());
-                    if (targetSquad != null)
+                    LevelStage level = (LevelStage)_scene;
+                    GameState state = level.GetState();
+                    if (targetSquad != null && !state.GameOver)
                     {
                         squad.MakeMatchup(targetSquad);
                         //Debugger.Log($"matchup strategy after matchup made");
@@ -403,8 +405,7 @@ namespace Assets.Scripts.Server
                     else
                     {
                         //Debugger.Log("Exception");
-                        LevelStage level = (LevelStage)_scene;
-                        GameState state = level.GetState();
+
                         if (!state.GameOver)
                         {
                             Debugger.Exception($"The squad sorter did not return a valid squad");
@@ -433,9 +434,11 @@ namespace Assets.Scripts.Server
             {
                 standingRequest.Status = 1;
                 Squad squad = standingRequest.Squad;
+                LevelStage level = (LevelStage)_scene;
+                GameState state = level.GetState();
                 //Debugger.Log($"strategic command response");
                 //Debugger.Log(squad.damageSentToEnemyShipsBySquad);
-                if (squad != null && !squad.IsDead)
+                if (squad != null && !state.GameOver)
                 {
                     //Debugger.Log("squad is not null");
                     Command command = null;

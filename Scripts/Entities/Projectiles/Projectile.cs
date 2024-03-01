@@ -24,6 +24,7 @@ namespace Assets.Scripts.Entities.Projectiles
         public GameObject Explosion;
         public List<Ship> ShipsToIgnore = new List<Ship>();
         public Queue<Ship> CollidingQueue = new Queue<Ship>();
+        public Queue<Obstacle> CollidingObstacleQueue = new Queue<Obstacle>();
         public string Name;
         public bool HasExplosion;
         
@@ -57,6 +58,10 @@ namespace Assets.Scripts.Entities.Projectiles
         public virtual void ContactTarget(Ship target)
         {
             //Debugger.Log($"Projectile hit {target.name}");
+            KillSequence();
+        }
+        public virtual void KillSequence()
+        {
             if (HasExplosion)
             {
                 Explosion = Instantiate(ExplosionAnimationPrefab, Vector2.zero, Quaternion.identity);
@@ -64,6 +69,24 @@ namespace Assets.Scripts.Entities.Projectiles
                 Explosion.transform.localPosition = GetPosition();
             }
             Kill();
+        }
+
+        public virtual void ContactObstacle(Obstacle obstacle)
+        {
+            if (obstacle != null)
+            {
+                DamageObstacle(obstacle);
+                KillSequence();
+            }
+        }
+
+        public void DamageObstacle(Obstacle obstacle)
+        {
+            obstacle.Health -= Power;
+            if (obstacle.Health <= 0)
+            {
+                obstacle.Kill();
+            }
         }
         
         protected virtual void FixedUpdate()
@@ -74,6 +97,10 @@ namespace Assets.Scripts.Entities.Projectiles
                 {
                     //Debugger.Log("Pulled collision off of queue");
                     ShipCollision(CollidingQueue.Dequeue());
+                }
+                if (CollidingObstacleQueue.Count > 0)
+                {
+                    ContactObstacle(CollidingObstacleQueue.Dequeue());
                 }
                 Move();
             }
@@ -88,7 +115,7 @@ namespace Assets.Scripts.Entities.Projectiles
                 return DistanceToPoint(StartingPosition) >= Range; // [alert] [rl-training] this should only be on to account for higher timescales with RL training
 
             }
-            bool outOfBounds = DistanceToPoint(StartingPosition) >= Range || position.x >= Level.MaxX || position.x <= Level.MinX || position.y >= Level.MaxY || position.y <= Level.MinY;
+            bool outOfBounds = DistanceToPoint(StartingPosition) >= Range || position.x > Level.MaxX || position.x < Level.MinX || position.y > Level.MaxY || position.y < Level.MinY;
             //if (outOfBounds)
             //{
             //    Debugger.Log($"Projectile ({name}) #{Id} at position ({position}) is out of bounds with a distance to starting point ({StartingPosition}) of ({DistanceToPoint(StartingPosition)})");
@@ -135,13 +162,14 @@ namespace Assets.Scripts.Entities.Projectiles
             //Debugger.Log($"Projectile #{Id} collided with {collidingThing.name} at {Level.Updates} updates");
             if (collidingThing.CompareTag("Ship"))
             {
-                Ship ship = (Ship)collidingThing.GetComponent(typeof(Ship));
-                if (ship != null)
-                {
-                    //Debugger.Log($"Projectile #{Id} collided with {ship.Name} at {Level.Updates} updates. Adding to queue");
-                    CollidingQueue.Enqueue(ship);
-                }
-                    
+                Ship ship = collidingThing.GetComponent<Ship>();
+                CollidingQueue.Enqueue(ship);
+
+            }
+            else if (collidingThing.CompareTag("Obstacle"))
+            {
+                Obstacle obstacle = collidingThing.GetComponent<Obstacle>();
+                CollidingObstacleQueue.Enqueue(obstacle);
             }
         }
 

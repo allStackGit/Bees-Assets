@@ -179,7 +179,7 @@ MonoBehaviour:
   RLShipType: 0
   MinionType: Yellow Jacket
   MinionCount: 8
-  SpawnPoint: {x: 0, y: -12}
+  SpawnPoint: {x: 0, y: -48}
   SpawnFrequency: 120
   TimeBetweenMinions: 5
   MinionSquadsCount: 0

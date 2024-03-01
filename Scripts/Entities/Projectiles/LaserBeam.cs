@@ -123,7 +123,7 @@ namespace Assets.Scripts.Entities.Projectiles
                     //Debugger.Log($"Extending Laser Beam #{Id} to rotated cannon position: {offsetRotatedCannonPosition}");
 
                     transform.localPosition = offsetRotatedCannonPosition;
-                    Body.velocity = Shooter.Velocity;
+                    Body.velocity = Shooter.Body.velocity;
                     return;
 
                     //+ GetChangeInShooterPosition();

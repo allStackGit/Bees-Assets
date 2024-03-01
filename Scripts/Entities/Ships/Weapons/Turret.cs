@@ -46,6 +46,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// </summary>
         private void TargetingSequence()
         {
+            if (Level.IsTestFiring) // fire a projectile at the mouse if we're testing that
+            {
+                Level.AddProjectile(this.ProjectilePrefab, this, GetPosition(), AngleToPoint(Level.InputManager.GetMousePosition()));
+            }
             __NotShootingReason = $"Reset Reason.";
             TargetingPasses++;
             if (TargetingPasses == PassesPerFire)

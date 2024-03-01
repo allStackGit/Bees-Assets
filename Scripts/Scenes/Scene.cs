@@ -17,7 +17,7 @@ namespace Assets.Scripts.Scenes
         public GameObject DialoguePrefab;
         public EventSystem EventSystem;
         public Socket Socket;
-        public bool FinalizedScene, WatchServerRequests, HasIndependentSocket, RecordNetwork;
+        public bool FinalizedScene, WatchServerRequests, HasIndependentSocket;
         //public List<Dialogue> Dialogues = new List<Dialogue>();
         public Dialogue NetworkDisconnection;
         public float TimeScale = 1;
@@ -81,7 +81,7 @@ namespace Assets.Scripts.Scenes
         }
         protected void UpdateTestVariables()
         {
-            if (RecordNetwork && ConfigData.__PastServerRequests.Count > 0)
+            if (ConfigData.__PastServerRequests.Count > 0)
             {
                 __PastServerRequests = ConfigData.__PastServerRequests.Select((r) => $"Request #{r.Hash} ({r.Type}) on queue for {r.TimeOnQueue}ms with {r.Resends} resends.").ToList();
                 __AverageRequestTime = ConfigData.__PastServerRequests.Select((r) => r.TimeOnQueue).Sum() / ConfigData.__PastServerRequests.Count;
@@ -92,7 +92,6 @@ namespace Assets.Scripts.Scenes
         // Update is called once per frame
         protected void Update()
         {
-            UpdateTestVariables();
             Updates++;
             if (Updates%10 == 0)
             {

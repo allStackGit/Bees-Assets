@@ -4,6 +4,7 @@ using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Level;
 using System.Collections;
 using UnityEngine;
+using static UnityEngine.GraphicsBuffer;
 
 namespace Assets.Scripts.Entities.Projectiles
 {
@@ -14,14 +15,21 @@ namespace Assets.Scripts.Entities.Projectiles
         public override void ContactTarget(Ship target)
         {
             //Debugger.Log($"Split shot hit {target.name}");
+            KillSequence(target);
+        }
+
+        public void KillSequence(Ship target = null)
+        {
             if (HasExplosion)
             {
-                Explosion =  Instantiate(ExplosionAnimationPrefab, GetPosition() + Level.GetPosition(), Quaternion.identity);
+                Explosion = Instantiate(ExplosionAnimationPrefab, GetPosition() + Level.GetPosition(), Quaternion.identity);
                 Explosion.transform.parent = Level.Map.transform;
             }
             Split(target);
             Kill();
         }
+
+
 
         public void Split(Ship target) // [projectile-method] [note]
         {

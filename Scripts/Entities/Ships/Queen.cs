@@ -36,7 +36,6 @@ namespace Assets.Scripts.Entities.Ships
 
         private void SpawnMinions()
         {
-            MinionSquadsCount++;
             Squad squad = CreateMinionSquad();
 
             // Spawn the minions
@@ -69,6 +68,7 @@ namespace Assets.Scripts.Entities.Ships
             CurrentMinionSquad = squad;
             MinionSquads.Add(squad);
             squad.SavedSquad = Squad.SavedSquad;
+            MinionSquadsCount++;
             return squad;
         }
         private IEnumerator SpawnMinion(int shipIndex, Squad squad, Vector2 squadGatheringPoint)

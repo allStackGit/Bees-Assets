@@ -24,7 +24,7 @@ namespace Assets.Scripts.Entities.Ships
         public int Health, MaxHealth, OriginalHealth, OriginalTsv, Sight, AdditionalTsv;
         public float ProjectileValue, Speed, SpecialFirePower;
         public GameObject ShipExplosion, HealthBar, MiniMapIcon;
-        public Vector2 TargetCoordinates, OffsetFromCenter, Velocity; // the coordinates of where the ship should go, and it's offset from the center of the squad
+        public Vector2 TargetCoordinates, OffsetFromCenter; // the coordinates of where the ship should go, and it's offset from the center of the squad
         public Squad Squad;
         public float DefaultAngle;
         public long LastKilled;
@@ -439,7 +439,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 }
 
                 Body.velocity = velocity;
-                Velocity = velocity;
             }
             
 
@@ -476,7 +475,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         {
             return (distance < Mathf.Clamp(GetHeight(), 0, 5) && !Squad.HasEnemy) || (distance < ConfigData.CloseEnoughCoordinateVariance && !(Squad.HasCommand && Squad.Command.Type == "Bombing Run"));
         }
-        private void StopMoving(string reason)
+        public void StopMoving(string reason)
         {
            
             __LastStopReason = $"Stopped at {GetPosition()} on the way to {TargetCoordinates} because of {reason} at {Age} ticks.";
@@ -525,6 +524,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         {
             speed = Mathf.Clamp(speed, 1, Speed);
             _currentSpeed = speed;
+        }
+        private void HitObstacle(Obstacle obstacle)
+        {
+            Debug.Log($"{Name} trigger collided with {obstacle.Name} at {GetPosition()}");
+            StopMoving($"Collided with obstacle {obstacle.Name}");
         }
        
 
@@ -582,6 +586,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 {
                     Level.Selector.SelectShip(this);
                 }
+            }else if (collidingThing.CompareTag("Obstacle"))
+            {
+                Obstacle obstacle = collidingThing.GetComponent<Obstacle>();
+                HitObstacle(obstacle);
             }
         }
         public static void LogDamage(int power, Ship shooter, Ship target) // [damage-method] [note]

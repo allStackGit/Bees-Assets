@@ -29,9 +29,23 @@ namespace Assets.Scripts.Entities.Projectiles
         public override void ContactTarget(Ship target)
         {
             //Debugger.Log($"Rocket hit {target.Name} and exploded");
+            KillSequence();
+        }
+
+        public override void KillSequence()
+        {
             CancelInvoke(nameof(IncreaseSpeed));
             AddExplosion();
             Kill();
+        }
+
+        public override void ContactObstacle(Obstacle obstacle)
+        {
+            if (obstacle != null)
+            {
+                DamageObstacle(obstacle);
+                KillSequence();
+            }
         }
 
         private void AddExplosion()

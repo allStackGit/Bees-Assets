@@ -152,10 +152,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             //Debugger.Log($"Targeting! with {Ship.FleetShip.Name}");
 
-            //if (Level.IsTestFiring) // fire a projectile at the mouse if we're testing that
-            //{
-            //    Level.AddProjectile(this.ProjectilePrefab, this, GetPosition(), AngleToPoint(Level.InputManager.GetMousePosition()));
-            //}
             TargetShip = null;
             if (!Level.IsPaused && !CeaseFire)
             {

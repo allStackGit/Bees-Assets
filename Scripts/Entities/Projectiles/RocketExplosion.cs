@@ -14,11 +14,27 @@ namespace Assets.Scripts.Entities.Projectiles
     {
         private bool _isHarmless; // After a few frames, the explosion is no longer damaging and becomes harmless to whoever hits it
         private List<Ship> _shipsHit = new List<Ship>();
+        private List<Obstacle> _obstaclesHit = new List<Obstacle>();
 
         public override void ContactTarget(Ship target)
         {
             //Debugger.Log($"Explosion hit {target.Name}");
             _shipsHit.Add(target);
+        }
+
+        public override void ContactObstacle(Obstacle obstacle)
+        {
+           if (obstacle != null)
+            {
+                if (!HasHitObstacle(obstacle)){
+                    DamageObstacle(obstacle);
+                }
+            }
+        }
+
+        public bool HasHitObstacle(Obstacle obstacle)
+        {
+            return _obstaclesHit.Contains(obstacle);
         }
 
         public bool HasHitShip(Ship ship)
