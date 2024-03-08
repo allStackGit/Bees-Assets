@@ -24,7 +24,7 @@ namespace Assets.Scripts
         public void OpenColorPicker()
         {
             ColorPicker.GetComponent<ColorPicker>().Toggle();
-            //Debugger.Log("Opening/closing color picker");
+            //Debug.Log("Opening/closing color picker");
 
         }
 

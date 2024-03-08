@@ -73,7 +73,18 @@ namespace Assets.Scripts
         private static readonly Random _rnd = new Random();
         public static long Hash()
         {
-            return RandomInt(1000000000); // 1bil
+            return RandomInt(1000000000); // 10bil
+        }
+        public static long UniqueHash()
+        {
+            long hash = RandomLong(1000000000) * RandomLong(1000); // 1tril
+            while (ConfigData.UsedHashes.Contains(hash))
+            {
+                Debug.Log($"A duplicate hash was found! {hash}");
+                hash = RandomLong(1000000000) * RandomLong(1000);
+            }
+            ConfigData.UsedHashes.Add(hash);
+            return hash;
         }
 
         public static bool AreVectorsEqual(Vector2 a, Vector2 b)
@@ -91,6 +102,10 @@ namespace Assets.Scripts
         {
             return _rnd.Next(max);
         }
+        public static long RandomLong(int max)
+        {
+            return (long) _rnd.Next(max);
+        }
         /// <summary>
         /// Returns a float between 0 (inclusive) and max (exclusive)
         /// </summary>
@@ -101,13 +116,13 @@ namespace Assets.Scripts
         public static int RandomSign()
         {
             int r = RandomInt(2);
-            //Debugger.Log($"Random int: {r}");
+            //Debug.Log($"Random int: {r}");
             return r > 0 ? 1 : -1;
         }
         // not strictly speaking the maximum and minimum distance, but the max change in x or y
         public static Vector2 RandomCoordinate(LevelStage level, Vector2 position, Vector2 maxDistance, Vector2 minDistance)
         {
-            //Debugger.Log($"maxDistance: {maxDistance}, minDistance: {minDistance}");
+            //Debug.Log($"maxDistance: {maxDistance}, minDistance: {minDistance}");
             Vector2 newLocation = Vector2.zero;
             int loops = 0;
             while ((newLocation == Vector2.zero || !VectorInBounds(level, newLocation)) && loops < 35){
@@ -116,7 +131,7 @@ namespace Assets.Scripts
             }
             if (loops == 35)
             {
-                Debugger.Log($"Couldn't find a random coordinate that was in bounds: {newLocation}");
+                Debug.Log($"Couldn't find a random coordinate that was in bounds: {newLocation}, {minDistance}, {maxDistance}");
             }
             return newLocation;
 
@@ -226,7 +241,7 @@ namespace Assets.Scripts
             Color[] pixels = sourceTexture.GetPixels();
             List<int> indexes = new List<int>();
 
-            //Debugger.Log($"Pixels: {pixels}, {pixels.Length}, {pixels[0]}, color: {colors.Length}, {colors[0]}");
+            //Debug.Log($"Pixels: {pixels}, {pixels.Length}, {pixels[0]}, color: {colors.Length}, {colors[0]}");
 
             for (int c = 0; c < colors.Length; c++)
             {
@@ -234,14 +249,14 @@ namespace Assets.Scripts
                 {
                     if (Vector4.Distance(pixels[i], colors[c]) < .001f)
                     {
-                        //Debugger.Log($"Found matching color {colors[c]} at {i}");
+                        //Debug.Log($"Found matching color {colors[c]} at {i}");
                         indexes.Add(i);
                     }
                     else
                     {
                         //if (pixels[i].a > .99 && pixels[i].g > .01 && i % 10000 == 0)
                         //{
-                        //    Debugger.Log($"Color is too far apart: {pixels[i]} != {colors[c]} at {i}");
+                        //    Debug.Log($"Color is too far apart: {pixels[i]} != {colors[c]} at {i}");
                         //}
                     }
                 }
@@ -267,7 +282,7 @@ namespace Assets.Scripts
 
             changedTexture.SetPixels(pixels);
             changedTexture.Apply(true);
-            //Debugger.Log($"width: {dimensions.x}, height: {dimensions.y}");
+            //Debug.Log($"width: {dimensions.x}, height: {dimensions.y}");
             return Sprite.Create(changedTexture, new Rect(0, 0, sourceTexture.width, sourceTexture.height), (dimensions / dimensions) / 2, ConfigData.PixelsPerUnit);
         }
 
@@ -306,7 +321,7 @@ namespace Assets.Scripts
         {
             float difference = Mathf.DeltaAngle(entity.transform.eulerAngles.z, rotation);
             float closeEnough = 3;
-            //Debugger.Log($"Difference in angles {difference}, {(difference > closeEnough ? "counter-clockwise" : "clockwise")}");
+            //Debug.Log($"Difference in angles {difference}, {(difference > closeEnough ? "counter-clockwise" : "clockwise")}");
             if (difference > closeEnough)
             {
                 entity.transform.Rotate(new Vector3(0, 0, 1 * Time.fixedDeltaTime * rotationSpeed * 1));
@@ -333,7 +348,7 @@ namespace Assets.Scripts
         {
             float difference = Mathf.DeltaAngle(entity.transform.eulerAngles.z, rotation);
             float closeEnough = 3;
-            //Debugger.Log($"Difference in angles {difference}, {(difference > closeEnough ? "counter-clockwise" : "clockwise")}");
+            //Debug.Log($"Difference in angles {difference}, {(difference > closeEnough ? "counter-clockwise" : "clockwise")}");
             if (difference > closeEnough)
             {
                 return false;
@@ -419,29 +434,29 @@ namespace Assets.Scripts
         }
         public static int CalculateTsv(Ship ship)
         {
-            return CalculateTsv(ship.Speed, ship.Firepower, ship.Health, ship.Sight, ship.AdditionalTsv, ship.IsDead);
+            return CalculateTsv(ship.Speed, ship.Firepower, ship.Health, ship.Sight, ship.AdditionalTsv);
         }
         public static int CalculateMaxTsv(Ship ship)
         {
-            return CalculateTsv(ship.Speed, ship.Firepower, ship.MaxHealth, ship.Sight, ship.AdditionalTsv, false);
+            return CalculateTsv(ship.Speed, ship.Firepower, ship.MaxHealth, ship.Sight, ship.AdditionalTsv);
         }
         public static int CalculateTsv(FleetShip ship)
         {
-            return CalculateTsv(ship.Speed, ship.Firepower, ship.Health, ship.Sight, ship.AdditionalTsv, ship.IsDead);
+            return CalculateTsv(ship.Speed, ship.Firepower, ship.Health, ship.Sight, ship.AdditionalTsv);
         }
         public static int CalculateMaxTsv(FleetShip ship)
         {
-            return CalculateTsv(ship.Speed, ship.Firepower, ship.MaxHealth, ship.Sight, ship.AdditionalTsv, false);
+            return CalculateTsv(ship.Speed, ship.Firepower, ship.MaxHealth, ship.Sight, ship.AdditionalTsv);
         }
-        public static int CalculateTsv(float speed, float firepower, int health, int sight, int additionalTsv, bool isDead)
+        public static int CalculateTsv(float speed, float firepower, int health, int sight, int additionalTsv)
         {
             double speedValue = speed / 3;
             int fullHealthTsv = (int)Math.Round((firepower > 0 ? firepower : 1) * (speedValue > 1 ? speedValue : 1) * (health / 200), 0) + sight;
-            return isDead ? 0 : (((health > 0 ? 1 : 0) * fullHealthTsv) + ((health > 0 ? 1 : 0) * (health + additionalTsv)));
+            return ((health > 0 ? 1 : 0) * fullHealthTsv) + ((health > 0 ? 1 : 0) * (health + additionalTsv));
         }
         public static float CalculateFirepower(int power, int range, float rateOfFire, float rotationRate, float ProjectileValue, float specialFirepower)
         {
-            //Debugger.Log($"Power: {(power * ProjectileValue)}, DPS: {((power * ProjectileValue) / rateOfFire)}, Range: {Mathf.Pow((range / 20), 2)}");
+            //Debug.Log($"Power: {(power * ProjectileValue)}, DPS: {((power * ProjectileValue) / rateOfFire)}, Range: {Mathf.Pow((range / 20), 2)}");
             return rateOfFire > 0 ? ((((power*ProjectileValue) / rateOfFire) * Mathf.Clamp(rotationRate/128, .5f, 1.25f)) * Mathf.Pow((range / 20), 2)) : specialFirepower;
         }
 

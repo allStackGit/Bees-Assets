@@ -33,7 +33,7 @@ namespace Assets.Scripts.Level
         public void DrawSelectionBox(Vector2 startPosition, Vector2 endPosition)
         {
 
-            //Debugger.Log($"Making a selection between {_mouseDownPosition} and {_mousePosition}");
+            //Debug.Log($"Making a selection between {_mouseDownPosition} and {_mousePosition}");
 
             // calculate width and height of box
             float width = Math.Abs(startPosition.x - endPosition.x);
@@ -65,7 +65,7 @@ namespace Assets.Scripts.Level
             box.transform.position = new Vector3(midX, midY, 0);
             box.transform.localScale = new Vector3(width, height, 0);
 
-            //Debugger.Log($"Activated box at {SelectionBox.transform.position} with size {SelectionBox.transform.localScale}");
+            //Debug.Log($"Activated box at {SelectionBox.transform.position} with size {SelectionBox.transform.localScale}");
         }
         public void Deactivate()
         {
@@ -79,7 +79,7 @@ namespace Assets.Scripts.Level
                 if (!squads.Contains(ship.Squad))
                 {
                     squads.Add(ship.Squad);
-                    //Debugger.Log($"Selecting #{ship.Squad.SquadNumber} squad");
+                    //Debug.Log($"Selecting #{ship.Squad.SquadNumber} squad");
                 }
             });
             if (squads.Count == 0)

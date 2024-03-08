@@ -14,7 +14,7 @@ namespace Assets.Scripts.Entities.Projectiles
         public GameObject SplitLaserPrefab;
         public override void ContactTarget(Ship target)
         {
-            //Debugger.Log($"Split shot hit {target.name}");
+            //Debug.Log($"Split shot hit {target.name}");
             KillSequence(target);
         }
 
@@ -33,7 +33,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
         public void Split(Ship target) // [projectile-method] [note]
         {
-            //Debugger.Log($"Splitting into {SplitCount} more shots");
+            //Debug.Log($"Splitting into {SplitCount} more shots");
 
             for (int shotNumber = 0; shotNumber < SplitCount; shotNumber++)
             {
@@ -54,7 +54,7 @@ namespace Assets.Scripts.Entities.Projectiles
                     localAngle -= 90;
                 }
                 float radians = localAngle * Mathf.Deg2Rad;
-                //Debugger.Log($"Split shot #{shotNumber} is at localAngle: {localAngle}, coming from eulerAngle: {transform.localEulerAngles.z}, and now at world" +
+                //Debug.Log($"Split shot #{shotNumber} is at localAngle: {localAngle}, coming from eulerAngle: {transform.localEulerAngles.z}, and now at world" +
                 //    $"angle: {worldAngle} (rad) : {radians}");
 
 

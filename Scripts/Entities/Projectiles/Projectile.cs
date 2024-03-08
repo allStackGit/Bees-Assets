@@ -49,7 +49,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
         public virtual void Kill()
         {
-            //Debugger.Log($"killed projectile {Name}");
+            //Debug.Log($"killed projectile {Name}");
             Level.GetState().RemoveProjectile(this);
 
             Destroy(gameObject);
@@ -57,7 +57,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
         public virtual void ContactTarget(Ship target)
         {
-            //Debugger.Log($"Projectile hit {target.name}");
+            //Debug.Log($"Projectile hit {target.name}");
             KillSequence();
         }
         public virtual void KillSequence()
@@ -95,7 +95,7 @@ namespace Assets.Scripts.Entities.Projectiles
             {
                 if (CollidingQueue.Count > 0)
                 {
-                    //Debugger.Log("Pulled collision off of queue");
+                    //Debug.Log("Pulled collision off of queue");
                     ShipCollision(CollidingQueue.Dequeue());
                 }
                 if (CollidingObstacleQueue.Count > 0)
@@ -118,7 +118,7 @@ namespace Assets.Scripts.Entities.Projectiles
             bool outOfBounds = DistanceToPoint(StartingPosition) >= Range || position.x > Level.MaxX || position.x < Level.MinX || position.y > Level.MaxY || position.y < Level.MinY;
             //if (outOfBounds)
             //{
-            //    Debugger.Log($"Projectile ({name}) #{Id} at position ({position}) is out of bounds with a distance to starting point ({StartingPosition}) of ({DistanceToPoint(StartingPosition)})");
+            //    Debug.Log($"Projectile ({name}) #{Id} at position ({position}) is out of bounds with a distance to starting point ({StartingPosition}) of ({DistanceToPoint(StartingPosition)})");
             //}
             return outOfBounds;
         }
@@ -138,10 +138,10 @@ namespace Assets.Scripts.Entities.Projectiles
 
         protected void Move()
         {
-            //Debugger.Log($"Moving position for #{Id}: {GetPosition()}");
+            //Debug.Log($"Moving position for #{Id}: {GetPosition()}");
             if (OutOfBounds())
             {
-                //Debugger.Log($"Projectile ({name}) #{Id} went out of bounds! Range:  {Range}");
+                //Debug.Log($"Projectile ({name}) #{Id} went out of bounds! Range:  {Range}");
                 RemoveDamageSentEntry();
                 Kill();
             }
@@ -159,7 +159,7 @@ namespace Assets.Scripts.Entities.Projectiles
         protected virtual void OnTriggerEnter2D(Collider2D collider) // projectile collision
         {
             GameObject collidingThing = collider.gameObject;
-            //Debugger.Log($"Projectile #{Id} collided with {collidingThing.name} at {Level.Updates} updates");
+            //Debug.Log($"Projectile #{Id} collided with {collidingThing.name} at {Level.Updates} updates");
             if (collidingThing.CompareTag("Ship"))
             {
                 Ship ship = collidingThing.GetComponent<Ship>();
@@ -175,7 +175,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
         protected virtual void ShipCollision(Ship ship)
         {
-            //Debugger.Log("Basic ship collision");
+            //Debug.Log("Basic ship collision");
             if (ship != null)
             {
                 // if hit enemy projectile or fire ship explosion. the ships to ignore is for leafcutter split shots

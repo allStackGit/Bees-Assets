@@ -21,9 +21,9 @@ namespace Assets.Scripts.Data
             dynamic json = SetupFile(shouldFileExist, ConfigData.FleetDataFilename, (json) =>
             {
                 ConfigData.IsFleetDataLoaded = true;
-                //Debugger.Log("Updated config file");
+                //Debug.Log("Updated config file");
                 LoadShipsFromJson(Utilities.JArrayToList<dynamic>((JArray)JsonConvert.DeserializeObject(file.GetContents())));
-                //Debugger.Log($"Loaded ships {GetShips().Find((s => s.Id == Utilities.RandomInt(GetShips().Count-1))).Name}");
+                //Debug.Log($"Loaded ships {GetShips().Find((s => s.Id == Utilities.RandomInt(GetShips().Count-1))).Name}");
             });
 
         }
@@ -53,8 +53,8 @@ namespace Assets.Scripts.Data
                 }
             });
             string json = ToJson();
-            //Debugger.Log($"JSON for starting ships {GetShips().Count}, {GetShips().First().Name}");
-            //Debugger.Log(json);
+            //Debug.Log($"JSON for starting ships {GetShips().Count}, {GetShips().First().Name}");
+            //Debug.Log(json);
             ClearFleet();
             return json;
         }

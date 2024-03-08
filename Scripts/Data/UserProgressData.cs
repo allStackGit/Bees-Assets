@@ -16,8 +16,8 @@ namespace Assets.Scripts.Data
             dynamic json = SetupFile(shouldFileExist, ConfigData.UserProgressFilename, (json) =>
             {
                 ConfigData.IsUserProgressDataLoaded = true;
-                //Debugger.Log("Updated config file");
-                //Debugger.Log($"JSON from DataFile: {json}");
+                //Debug.Log("Updated config file");
+                //Debug.Log($"JSON from DataFile: {json}");
                 CurrentLevel = json.CurrentLevel;
                 SavedSquadId = json.SavedSquadId;
             });

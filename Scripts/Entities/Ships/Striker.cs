@@ -32,7 +32,7 @@ namespace Assets.Scripts.Entities.Ships
             GameObject collidingThing = collider.gameObject;
             if (collidingThing.name == ("Selection Box"))
             {
-                //Debugger.Log("Striker hit selection box");
+                //Debug.Log("Striker hit selection box");
                 if (IsUserControlled)
                 {
                     Level.Selector.SelectShip(this);
@@ -41,14 +41,14 @@ namespace Assets.Scripts.Entities.Ships
             else if (collidingThing.CompareTag("Ship"))
             {
                 TouchingShip = collidingThing.GetComponent<Ship>();
-                //Debugger.Log($"Striker collided with a ship!" +
+                //Debug.Log($"Striker collided with a ship!" +
                 //    $"{TouchingShip}, " +
                 //    $"{Squad}, " +
                 //    $"{TargetShips.First()}");
 
                 if (TouchingShip != null && TouchingShip.Side != Side && Squad.HasCommand && HasTargetShips && TargetShips.Contains(TouchingShip) && AreBombsReady)
                 {
-                    //Debugger.Log("Collided with our target ship!");
+                    //Debug.Log("Collided with our target ship!");
                     ContactedShip = TouchingShip;
                     DropBomb();
 
@@ -72,14 +72,14 @@ namespace Assets.Scripts.Entities.Ships
         }
         public void TryToDropBombs()
         {
-            //Debugger.Log($"Trying to drop bombs with {Name}");
+            //Debug.Log($"Trying to drop bombs with {Name}");
             if (TouchingShip != null && TouchingShip.Side != Side && AreBombsReady)
             {
                 ContactedShip = TouchingShip;
                 DropBomb();
                 return;
             }
-            //Debugger.Log($"Failed trying to drop bombs with {Name}: TouchingShip: [{TouchingShip}], BombsReady: {BombsReady}");
+            //Debug.Log($"Failed trying to drop bombs with {Name}: TouchingShip: [{TouchingShip}], BombsReady: {BombsReady}");
 
         }
         private void CheckCarrierReload()
@@ -115,7 +115,7 @@ namespace Assets.Scripts.Entities.Ships
         }
         private void DropBomb()
         {
-            //Debugger.Log($"Striker #{Id} is dropping bombs");
+            //Debug.Log($"Striker #{Id} is dropping bombs");
             CarriedBomb.SetActive(false);
             HasDroppedBomb = true;
             SetBombsReadyStatus(false);
@@ -144,7 +144,7 @@ namespace Assets.Scripts.Entities.Ships
             if (!HasReturnedToCarrier && (!AreBombsReady || HasCompletedRun))
             {
                 // send any bomber that is't loaded to its carrier
-                //Debugger.Log($"Sending {striker.Id} back to its carrier");
+                //Debug.Log($"Sending {striker.Id} back to its carrier");
                 if (HasCarrier)
                 {
                     Vector2 destination = Carrier.GetPosition();
@@ -163,7 +163,7 @@ namespace Assets.Scripts.Entities.Ships
                     }
                     else
                     {
-                        //Debugger.Log($"{striker.Id} is still {distance} away from {targetPoint}");
+                        //Debug.Log($"{striker.Id} is still {distance} away from {targetPoint}");
                         MoveToPoint(targetPoint);
                     }
                 }

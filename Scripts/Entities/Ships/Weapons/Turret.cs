@@ -32,7 +32,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             if (RateOfFire > 0)
             {
-                //Debugger.Log($"Aiming rate: {TargetingRate} for {FleetShip.Name}");
+                //Debug.Log($"Aiming rate: {TargetingRate} for {FleetShip.Name}");
                 InvokeRepeating(nameof(TargetingSequence), TargetingRate, TargetingRate);
                 //Invoke(nameof(Fire), RateOfFire);
             }
@@ -70,7 +70,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             if (ShouldFire)
             {
-                //Debugger.Log($"Aiming {Piece.name}");
+                //Debug.Log($"Aiming {Piece.name}");
                 Vector2 targetPoint = GetTargetPoint(TargetShip);
                 AimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(targetPoint), RotationRate);
 
@@ -92,7 +92,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         protected override void SendProjectile() // [projectile-method] [note]
         {
             base.SendProjectile();
-            //Debugger.Log("Sending turret projectile");
+            //Debug.Log("Sending turret projectile");
             Vector2 targetPoint = GetTargetPoint(TargetShip);
             float angle = AngleToPoint(targetPoint);
 
@@ -210,7 +210,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 }
                 else if (CeaseFire)
                 {
-                    //Debugger.Log($"{Ship.Name} is not firing {Piece.name} because CeaseFire is on");
+                    //Debug.Log($"{Ship.Name} is not firing {Piece.name} because CeaseFire is on");
                     __NotShootingReason = $"{Ship.Name} is not firing {Name} because CeaseFire is on";
                 }
                 //Invoke(nameof(Fire), RateOfFire);

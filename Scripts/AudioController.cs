@@ -153,7 +153,7 @@ namespace Assets.Scripts
                     timeLeft = IntroLength - source.time;
                 });
 
-                //Debugger.Log($"Setting the loops to play after being paused. They were delayed by {IntroLength}s initially but they are now delayed by {timeLeft}s.");
+                //Debug.Log($"Setting the loops to play after being paused. They were delayed by {IntroLength}s initially but they are now delayed by {timeLeft}s.");
                 // play loops
                 Loops.ToList().ForEach((source) =>
                 {

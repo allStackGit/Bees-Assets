@@ -28,7 +28,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
         public override void ContactTarget(Ship target)
         {
-            //Debugger.Log($"Rocket hit {target.Name} and exploded");
+            //Debug.Log($"Rocket hit {target.Name} and exploded");
             KillSequence();
         }
 
@@ -60,7 +60,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
         protected override void ShipCollision(Ship ship)
         {
-            //Debugger.Log("Basic rocket collision");
+            //Debug.Log("Basic rocket collision");
             if (ship != null)
             {
                 // if hit enemy projectile or fire ship explosion. the ships to ignore is for leafcutter split shots

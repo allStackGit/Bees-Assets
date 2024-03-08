@@ -18,7 +18,7 @@ namespace Assets.Scripts.Data
         protected dynamic SetupFile(bool shouldFileExist, string filename, Action<dynamic> onceDataIsLoaded)
         {
             _onceDataIsLoaded = onceDataIsLoaded;
-            //Debugger.Log("Called setup file");
+            //Debug.Log("Called setup file");
             file = new DataFile(filename, _scene);
             dynamic json = null;
             // check if the file should already exist (which it should if this isn't the user's first time) and if it does in fact exist
@@ -29,18 +29,18 @@ namespace Assets.Scripts.Data
                     // throw error back to user if it does not, not because we can't make it but because it's missing
                     Debugger.Exception(new Exception("The user save data file is missing"));
                 }
-                //Debugger.Log("DataFile doesn't exist");
+                //Debug.Log("DataFile doesn't exist");
             }
             else
             {
-                //Debugger.Log("Datafile exists, reading from it");
+                //Debug.Log("Datafile exists, reading from it");
                 json = file.LoadJsonObject();
 
-                //Debugger.Log($"got json variable in UserData. Did not await {json}");
+                //Debug.Log($"got json variable in UserData. Did not await {json}");
             }
             if (json == null || file.GetContents() == "")
             {
-                //Debugger.Log("Datafile doesn't exist or is blank, writing default data"); 
+                //Debug.Log("Datafile doesn't exist or is blank, writing default data"); 
                 json = file.WriteData(defaultJsonData);
             }
             
@@ -56,7 +56,7 @@ namespace Assets.Scripts.Data
         }
         public void WaitForData()
         {
-            //Debugger.Log("UserData is waiting for data");
+            //Debug.Log("UserData is waiting for data");
             if (IsDataLoaded())
             {
                 if (_onceDataIsLoaded != null)

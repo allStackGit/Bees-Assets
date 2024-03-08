@@ -13,7 +13,7 @@ namespace Assets.Scripts.Level.Commands
         {
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
 
-            if (Squad != null && !Squad.IsDead)
+            if (!Squad.IsDead)
             {
                 PrepareDamageToSendEntries("closest");
                 Vector2 position = Squad.GetPosition();
@@ -21,32 +21,19 @@ namespace Assets.Scripts.Level.Commands
                 SetAndMove(randomCoordinates);
                 InvokeRepeating(nameof(Timer), .1f, .1f);
             }
-            else
-            {
-                SetFinalize("The squad is dead");
-            }
 
 
         }
         private void Timer()
         {
-            if(Squad != null && !Squad.IsDead)
-            {
-                if (Squad.HasReachedDestination)
-                {
-                    CancelInvoke(nameof(Timer));
-                    SetFinalize("Reached the random destination on the map");
-                }
-                Vector2 destination = GetDestination();
-                SetAndMove(destination);
-                Squad.Status = $"Moving to random destination: {destination}";
-                
-            }
-            else
+            if (Squad.HasReachedDestination)
             {
                 CancelInvoke(nameof(Timer));
-                SetFinalize("The squad is dead");
+                SetFinalize("Reached the random destination on the map");
             }
+            Vector2 destination = GetDestination();
+            SetAndMove(destination);
+            Squad.Status = $"Moving to random destination: {destination}";
 
         }
     }

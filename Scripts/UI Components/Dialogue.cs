@@ -18,7 +18,7 @@ namespace Assets.Scripts.UI_Components
 
         public Dialogue(GameObject prefab, string title, string explanation, List<string> buttonLabels, List<UnityAction> buttonActions)
         {
-            //Debugger.Log("Making dialogue");
+            //Debug.Log("Making dialogue");
             _dialogue = GameObject.Instantiate(prefab);
             _titleBox = _dialogue.transform.Find($"Main Panel/Text/Title").gameObject;
             _explanationBox = _dialogue.transform.Find($"Main Panel/Text/Explanation").gameObject;
@@ -54,7 +54,7 @@ namespace Assets.Scripts.UI_Components
         }
         private void MakeButton(string label, UnityAction action)
         {
-            //Debugger.Log($"Making button {label}");
+            //Debug.Log($"Making button {label}");
             GameObject buttonObject = GameObject.Instantiate(_buttonPrefab);
             buttonObject.transform.SetParent(_buttonsContainer.transform, false);
             buttonObject.transform.localScale = Vector3.one;

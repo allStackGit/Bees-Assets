@@ -35,8 +35,17 @@ namespace Assets.Scripts.Server
         public bool HasClosed;
         public bool KeepClosed;
         public string Protocol = "ws";
+        /// <summary>
+        /// A hashset of all requests that are still pending
+        /// </summary>
         public HashSet<ServerRequest> StandingRequests = new HashSet<ServerRequest>();
+        /// <summary>
+        /// A hashset of all request IDs that have been handled. Resets every level
+        /// </summary>
         public HashSet<long> HandledRequests = new HashSet<long>();
+        /// <summary>
+        /// A queue of all messages received from the server
+        /// </summary>
         public Queue<byte[]> MessageQueue = new Queue<byte[]>();
 
 
@@ -47,7 +56,7 @@ namespace Assets.Scripts.Server
             _port = port;
             _useWebSocketSharp = useWebSocketSharp;
             _websocketURL = $"{Protocol}://{_hostname}:{_port}";
-            Debugger.Log($"Trying to connect to {_websocketURL}");
+            Debug.Log($"Trying to connect to {_websocketURL}");
             MakeSocket();
         }
         public void SetScene(Scene scene)
@@ -56,7 +65,7 @@ namespace Assets.Scripts.Server
         }
         async public void MakeSocket()
         {
-            //Debugger.Log("Making socket");
+            //Debug.Log("Making socket");
             if (_useWebSocketSharp)
             {
                 _webSocketSharpSocket = new WebSocketSharp.WebSocket(_websocketURL, "game");
@@ -65,7 +74,7 @@ namespace Assets.Scripts.Server
                     _webSocketSharpSocket.SslConfiguration.EnabledSslProtocols = System.Security.Authentication.SslProtocols.Tls12;
                 }
 
-                //Debugger.Log("Initial State : " + _webSocketSharpSocket.ReadyState);
+                //Debug.Log("Initial State : " + _webSocketSharpSocket.ReadyState);
 
                 _webSocketSharpSocket.OnOpen += (sender, e) =>
                 {
@@ -118,20 +127,24 @@ namespace Assets.Scripts.Server
         }
         private void Open()
         {
-            Debugger.Log("Connection open!");
+            Debug.Log("Connection open!");
             IsOpen = true;
             HasClosed = false;
         }
         private void Error(string e)
         {
-            Debugger.Log("Socket Error! " + e);
+            Debug.Log("Socket Error! " + e);
         }
         private void Close(string reason = null)
         {
-            Debugger.Log("Connection closed!");
+            Debug.Log("Connection closed!");
             if (reason != null)
             {
-                Debugger.Error(reason);
+                Debug.Log($"Network Error:{reason}");
+                StandingRequests.ToList().ForEach((sr) =>
+                {
+                    sr.Status = -1;
+                });
             }
             IsOpen = false;
             HasClosed = true;
@@ -143,12 +156,12 @@ namespace Assets.Scripts.Server
         }
         private void Message(byte[] bytes)
         {
-            //Debugger.Log($"Got message from server for {_scene}");
+            //Debug.Log($"Got message from server for {_scene}");
             // getting the message as a string
             string message = System.Text.Encoding.UTF8.GetString(bytes);
-            //Debugger.Log($"Server message: {message} Thread: {Thread.CurrentThread.ManagedThreadId}");
+            //Debug.Log($"Server message: {message} Thread: {Thread.CurrentThread.ManagedThreadId}");
             ServerResponse response = JsonUtility.FromJson<ServerResponse>(message);
-            //Debugger.Log(response);
+            //Debug.Log(response);
             string type = response.Type;
             
             if (!HandledRequests.Contains(response.Hash))
@@ -156,7 +169,7 @@ namespace Assets.Scripts.Server
                 switch (type)
                 {
                     case "get-matchup-strategy":
-                        //Debugger.Log("Handling matchup response!");
+                        //Debug.Log("Handling matchup response!");
                         HandleMatchupResponse(message);
                         return;
                     case "get-strategy":
@@ -171,7 +184,7 @@ namespace Assets.Scripts.Server
                     case "setup-level":
                         LevelStage level = (LevelStage)_scene;
                         level.IsLevelSetupOnServer = true;
-                        //Debugger.Log("setup on server");
+                        //Debug.Log("setup on server");
                         HandleBasicResponse(response);
                         return;
                     case "store-user-data":
@@ -190,10 +203,12 @@ namespace Assets.Scripts.Server
             }
             else
             {
-                Debugger.Log($"Got a response for #{response.Hash} which has already been handled");
+                Debug.Log($"Got a response for #{response.Hash} Status: {response.Status} which has already been handled");
                 ServerRequest sr = GetStandingRequest(response.Hash);
-                sr.Status = 1;
-
+                if (sr != null)
+                {
+                    sr.Status = 1;
+                }
             }
            
         }
@@ -201,9 +216,9 @@ namespace Assets.Scripts.Server
 
         public void Send(dynamic content)
         {
-            //Debugger.Log($"Content: {content}");
+            //Debug.Log($"Content: {content}");
             string json = JsonConvert.SerializeObject(content);
-            //Debugger.Log($"Message to server: {json}");
+            //Debug.Log($"Message to server: {json}");
             if (_useWebSocketSharp)
             {
                 _webSocketSharpSocket.Send(json);
@@ -215,7 +230,7 @@ namespace Assets.Scripts.Server
         }
         public void Update() 
         {
-            //Debugger.Log("Updating socket");
+            //Debug.Log("Updating socket");
             if (!_useWebSocketSharp)
             {
                 _nativeWebSocket.DispatchMessageQueue();
@@ -251,7 +266,7 @@ namespace Assets.Scripts.Server
                     Send(((DataFileRequest)serverRequest).Request);
                     return;
                 case "get-settings":
-                    //Debugger.Log("Sending settings request");
+                    //Debug.Log("Sending settings request");
                     Send(((SettingsRequest)serverRequest).Request);
                     return;
                 default:
@@ -262,38 +277,39 @@ namespace Assets.Scripts.Server
         }
         private void CheckStandingRequests()
         {
-            //Debugger.Log("1. Checking on standing requests");
+            //Debug.Log("1. Checking on standing requests");
             List<ServerRequest> resends = new List<ServerRequest>();
             foreach (ServerRequest request in StandingRequests)
             {
                 request.TimeOnQueue = (int)((Time.unscaledTime - request.StartTime) * 1000);
-                //Debugger.Log($"Time on Queue for #{request.Hash} - {request.Type} is {request.TimeOnQueue}ms");
+                //Debug.Log($"Time on Queue for #{request.Hash} - {request.Type} is {request.TimeOnQueue}ms");
                 if (request.Type == "get-user-data")
                 {
                     DataFileRequest dataFileRequest = (DataFileRequest)request;
                     dataFileRequest.DataFile.WaitForResponse();
+                    continue;
                 }
                 else if (request.Type == "get-settings")
                 {
                     SettingsRequest settingsRequest = (SettingsRequest)request;
                     settingsRequest.Settings.WaitForResponse();
+                    continue;
                 }
 
                 if (request.TimeOnQueue > request.MaxTimeOnQueue && request.Status == 0)
                 {
-                    Debugger.Log($"Request #{request.Hash} - {request.Type} timed out after {request.TimeOnQueue}/{request.MaxTimeOnQueue}ms  and is being resent. ");
-                    request.MaxTimeOnQueue += (int)(ConfigData.StandardMaxTimeOnQueue);
-                    request.Resends++;
-                    request.Status = -1;
-                    resends.Add(request);
+                    Debug.Log($"Request #{request.Hash} - {request.Type} timed out after {request.TimeOnQueue}/{request.MaxTimeOnQueue}ms  and is NOT being resent. ");
+                    //request.MaxTimeOnQueue += (int)(ConfigData.StandardMaxTimeOnQueue);
+                    //request.Resends++;
+                    //request.Status = -1;
+                    //resends.Add(request);
                 }
             }
             
-            //Debugger.Log($"2. Loop ended, Resends: {resends.Count}");
-            List<long> newlyHandledRequests = StandingRequests.Where((r) => r.Status == 1).Select((r) => r.Hash).ToList();
-            HandledRequests.AddRange(newlyHandledRequests);
+            //Debug.Log($"2. Loop ended, Resends: {resends.Count}");
+            HandledRequests.AddRange(StandingRequests.Where((r) => r.Status == 1).Select((r) => r.Hash));
             StandingRequests = StandingRequests.Where((request) => request.Status == 0).ToHashSet(null);
-            //Debugger.Log($"3. Modified standing requests, Resends: {resends.Count}");
+            //Debug.Log($"3. Modified standing requests, Resends: {resends.Count}");
 
             resends.ForEach((request) =>
             {
@@ -304,13 +320,21 @@ namespace Assets.Scripts.Server
         }
         public ServerRequest GetStandingRequest(long hash)
         {
-            return StandingRequests.First(r => r.Hash == hash);
+            //ServerRequest serverRequest = StandingRequests.FirstOrDefault(r => r.Hash == hash);
+            //if (serverRequest == null)
+            //{
+            //    Debug.Log($"There are {StandingRequests.Count} standing requests");
+            //    Debug.Log(StandingRequests.Select((r) => $"Request #{r.Hash} ({r.Type}) on queue for {r.TimeOnQueue}ms with {r.Resends} resends.").Aggregate("", (a, b) => $"{a}\n\n{b}"));
+            //    Debug.Log($"Could not find a standing request that matched [{hash}]");
+            //}
+            //return serverRequest;
+            return StandingRequests.FirstOrDefault(r => r.Hash == hash);
         }
 
 
         private void HandleUserDataResponse(string message)
         {
-            //Debugger.Log("Got user data from server");
+            //Debug.Log("Got user data from server");
             UserDataResponse userDataResponse = JsonUtility.FromJson<UserDataResponse>(message);
             DataFileRequest standingRequest = (DataFileRequest)GetStandingRequest(userDataResponse.Hash);
             if (standingRequest != null)
@@ -319,11 +343,11 @@ namespace Assets.Scripts.Server
                 {
                     standingRequest.Status = 1;
                     standingRequest.Response = userDataResponse;
-                    //Debugger.Log($"Set the response {userDataResponse.Filename}, {userDataResponse.Contents}");
+                    //Debug.Log($"Set the response {userDataResponse.Filename}, {userDataResponse.Contents}");
                 }
                 else
                 {
-                    //Debugger.Log("The server data file was null, writing the defaults to the server");
+                    //Debug.Log("The server data file was null, writing the defaults to the server");
                     string dataFilename = standingRequest.Request.DataFile;
                     switch (dataFilename)
                     {
@@ -342,7 +366,7 @@ namespace Assets.Scripts.Server
 
                 }
                 
-                //Debugger.Log("Set the response");
+                //Debug.Log("Set the response");
             }
             else
             {
@@ -352,7 +376,7 @@ namespace Assets.Scripts.Server
         }
         private void HandleSettingsResponse(string message)
         {
-            //Debugger.Log("Got user data from server");
+            //Debug.Log("Got user data from server");
             UserDataResponse userDataResponse = JsonUtility.FromJson<UserDataResponse>(message);
             SettingsRequest standingRequest = (SettingsRequest)GetStandingRequest(userDataResponse.Hash);
             if (standingRequest != null)
@@ -361,7 +385,7 @@ namespace Assets.Scripts.Server
                 {
                     standingRequest.Status = 1;
                     standingRequest.Response = userDataResponse;
-                    //Debugger.Log($"Set the response {userDataResponse.Filename}, {userDataResponse.Contents}");
+                    //Debug.Log($"Set the response {userDataResponse.Filename}, {userDataResponse.Contents}");
                 }
                 else
                 {
@@ -380,11 +404,11 @@ namespace Assets.Scripts.Server
         {
             MatchupStrategyResponse matchupResponse = JsonUtility.FromJson<MatchupStrategyResponse>(message);
             MatchupStrategyRequest standingRequest = (MatchupStrategyRequest)GetStandingRequest(matchupResponse.Hash);
-            Squad squad = standingRequest.Squad;
             if (standingRequest != null)
             {
                 standingRequest.Status = 1;
-                if (squad != null)
+                Squad squad = standingRequest.Squad;
+                if (squad != null && !squad.IsDead)
                 {
                     //squad.Command = squad.gameObject.AddComponent<Command>();
                     //squad.Command.Setup(squad, true);
@@ -392,36 +416,37 @@ namespace Assets.Scripts.Server
 
                     //squad.Command.MatchupStrategy = squad.MatchupStrategy;
                     Squad targetSquad = squad.MatchupStrategy.SortSquads();
-                    //Debugger.Log($"matchup strategy after sorted");
+                    //Debug.Log($"matchup strategy after sorted");
                     //Debugger.LogSquads(level.GetState().GetSquads());
                     LevelStage level = (LevelStage)_scene;
                     GameState state = level.GetState();
-                    if (targetSquad != null && !state.GameOver)
+                    if (targetSquad != null && !targetSquad.IsDead && !state.GameOver)
                     {
+                        //Debug.Log($"Making matchup for {squad.Name} with {squad.GetShips().Count} ships");
                         squad.MakeMatchup(targetSquad);
-                        //Debugger.Log($"matchup strategy after matchup made");
+                        //Debug.Log($"matchup strategy after matchup made");
                         //Debugger.LogSquads(level.GetState().GetSquads());
                     }
                     else
                     {
-                        //Debugger.Log("Exception");
+                        //Debug.Log("Exception");
 
                         if (!state.GameOver)
                         {
-                            Debugger.Exception($"The squad sorter did not return a valid squad");
+                            Debugger.Exception($"The squad sorter did not return a valid squad. Side: {squad.Side} Enemy Squads: {state.GetEnemySquads(squad.Side)}");
                         }
 
                     }
                 }
                 else
                 {
-                    //Debugger.Log("Exception");
-                    //Debugger.Log($"matchup strategy #{matchupResponse.StrategyId} was received for squad #{matchupResponse.SquadHash} but that squad no longer exists.");
+                    //Debug.Log("Exception");
+                    //Debug.Log($"matchup strategy #{matchupResponse.StrategyId} was received for squad #{matchupResponse.SquadHash} but that squad no longer exists.");
                 }
             }
             else
             {
-                Debugger.Exception($"Couldn't find a matching request for {matchupResponse.Hash}");
+                Debug.Log($"Couldn't find a matching request for {matchupResponse.Hash}");
             }
             
         }  
@@ -436,11 +461,11 @@ namespace Assets.Scripts.Server
                 Squad squad = standingRequest.Squad;
                 LevelStage level = (LevelStage)_scene;
                 GameState state = level.GetState();
-                //Debugger.Log($"strategic command response");
-                //Debugger.Log(squad.damageSentToEnemyShipsBySquad);
+                //Debug.Log($"strategic command response");
+                //Debug.Log(squad.damageSentToEnemyShipsBySquad);
                 if (squad != null && !state.GameOver)
                 {
-                    //Debugger.Log("squad is not null");
+                    //Debug.Log("squad is not null");
                     Command command = null;
                     switch (commandResponse.Name)
                     {
@@ -522,7 +547,7 @@ namespace Assets.Scripts.Server
                     
                     if (commandResponse.Name == "Patrol")
                     {
-                        //Debugger.Log("Got a patrol");
+                        //Debug.Log("Got a patrol");
                         ((Patrol)command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true, Vector2.zero, Vector2.zero);
                     }
                     else if (commandResponse.Name == "Guard")
@@ -545,12 +570,12 @@ namespace Assets.Scripts.Server
                 }
                 else
                 {
-                    //Debugger.Log($"Strategic command #{commandResponse.StrategyId} was received for squad #{commandResponse.SquadHash} but that squad no longer exists.");
+                    //Debug.Log($"Strategic command #{commandResponse.StrategyId} was received for squad #{commandResponse.SquadHash} but that squad no longer exists.");
                 }
             }
             else
             {
-                Debugger.Log($"Couldn't find a matching request for {commandResponse.Hash}");
+                Debug.Log($"Couldn't find a matching request for {commandResponse.Hash}");
             }
 
         }
@@ -564,7 +589,7 @@ namespace Assets.Scripts.Server
             }
             else
             {
-                Debugger.Log($"Couldn't find a matching request for {response.Hash}");
+                Debug.Log($"Couldn't find a matching request for {response.Hash}");
             }
 
         }

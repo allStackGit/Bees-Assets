@@ -38,11 +38,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             if (collidingThing != null)
             {
                 Ship ship = collidingThing.GetComponent<Ship>();
-                if (ship != null)
-                {
-                    Weapon.ShipsWithinRange.Remove(ship);
-                    //Debug.Log($"{Weapon.Name} has detected {ship.Name} leaving range");
-                }
+                Weapon.ShipsWithinRange.Remove(ship);
             }
         }
     }

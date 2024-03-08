@@ -108,8 +108,8 @@ namespace Assets.Scripts.Scenes
         {
             Name = "Squad Maker";
             base.Start();
-            //Debugger.Log("Starting squad maker");
-            //Debugger.Log($"GameObject: {gameObject}, TimeScale: {Time.timeScale}");
+            //Debug.Log("Starting squad maker");
+            //Debug.Log($"GameObject: {gameObject}, TimeScale: {Time.timeScale}");
             InvokeRepeating(nameof(UpdateDimensions), 1, 1f);
         }
         protected override void FinalizeSceneWithUserData()
@@ -128,18 +128,18 @@ namespace Assets.Scripts.Scenes
             {
                 if (squad.HasDeadShips)
                 {
-                    //Debugger.Log($"{squad.Name} still has dead ships");
-                    //Debugger.Log(GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}"));
-                    //Debugger.Log(GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>());
-                    //Debugger.Log(GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>().color);
+                    //Debug.Log($"{squad.Name} still has dead ships");
+                    //Debug.Log(GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}"));
+                    //Debug.Log(GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>());
+                    //Debug.Log(GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>().color);
                     GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>().color = ConfigData.GetUIColor("bad"); ;
                 }
             });
-            //Debugger.Log("Finalized the page");
+            //Debug.Log("Finalized the page");
         }
         private void Setup()
         {
-            //Debugger.Log($"Squad Maker Setup called");
+            //Debug.Log($"Squad Maker Setup called");
             // Universal pre setup
             _dropper = new Dropper(this);
             Side = ConfigData.SquadMakerSide;
@@ -208,7 +208,7 @@ namespace Assets.Scripts.Scenes
             }
 
             // Post setup
-            //Debugger.Log("Post setup");
+            //Debug.Log("Post setup");
             UpdateSquadMakerSupplyLabel();
             UpdateChosenSquadsSupplyLabel();
             UpdateSquadShipCounter();
@@ -225,7 +225,7 @@ namespace Assets.Scripts.Scenes
         }
         private void SetupForBees()
         {
-            //Debugger.Log($"Setting up for Bees!");
+            //Debug.Log($"Setting up for Bees!");
             ActionBox = null;
 
             _dragIconTypes.Add("Beehive", BeehiveDragIcon);
@@ -263,7 +263,7 @@ namespace Assets.Scripts.Scenes
         }
         private void SetupForHumans()
         {
-            //Debugger.Log("Setting up for Humans!");
+            //Debug.Log("Setting up for Humans!");
             _colorPicker = ColorPicker.GetComponent<ColorPicker>();
 
             _dragIconTypes.Add("Barge", BargeDragIcon);
@@ -298,18 +298,18 @@ namespace Assets.Scripts.Scenes
             ActionBox.Setup(this, EventSystem, ConfigData.Configuration.HumanSide);
 
             _shipTypes = ConfigData.StartingSettings.HumanShipTypes;
-            //Debugger.Log("End of human setup");
+            //Debug.Log("End of human setup");
         }
         private void UpdateDimensions()
         {
-            //Debugger.Log("Updating dimensions");
+            //Debug.Log("Updating dimensions");
             if (Screen.width != ConfigData.ScreenWidth || Screen.height != ConfigData.ScreenHeight)
             {
                 ConfigData.ScreenWidth = Screen.width;
                 ConfigData.ScreenHeight = Screen.height;
-                //Debugger.Log("Updated the base world point");
+                //Debug.Log("Updated the base world point");
                 ScreenScaleFactor = new Vector2(ConfigData.ScreenWidth / ReferenceScreenSize.x, ConfigData.ScreenHeight / ReferenceScreenSize.y);
-                Debugger.Log($"The screen scale factor is {ScreenScaleFactor} and one world unit is {Utilities.WorldUnitsToScreenPixels(Vector2.one, Camera)} pixels in size");
+                Debug.Log($"The screen scale factor is {ScreenScaleFactor} and one world unit is {Utilities.WorldUnitsToScreenPixels(Vector2.one, Camera)} pixels in size");
                 if (HasColorPicker)
                 {
                     _colorPicker.SetScreenScaleFactor();
@@ -332,12 +332,12 @@ namespace Assets.Scripts.Scenes
         }
         private void SetupFleetList()
         {
-            //Debugger.Log($"Setting up the fleet list, {ConfigData.StartingSettings.HumanShipTypes.Count}");
+            //Debug.Log($"Setting up the fleet list, {ConfigData.StartingSettings.HumanShipTypes.Count}");
 
             // loop through all ship types
             _shipTypes.ForEach(type =>
             {
-                //Debugger.Log($"Getting fleet ships for {type}");
+                //Debug.Log($"Getting fleet ships for {type}");
                 GameObject shipLabel = null;
                 switch (type)
                 {
@@ -410,9 +410,9 @@ namespace Assets.Scripts.Scenes
                         shipLabel = YellowJacketFleetLabel;
                         break;
                 }
-                //Debugger.Log($"About to access the parent, {shipLabel}");
-                //Debugger.Log($"About to access the parent, {shipLabel.transform}");
-                //Debugger.Log($"About to access the parent, {shipLabel.transform.parent}");
+                //Debug.Log($"About to access the parent, {shipLabel}");
+                //Debug.Log($"About to access the parent, {shipLabel.transform}");
+                //Debug.Log($"About to access the parent, {shipLabel.transform.parent}");
 
                 Transform parent = shipLabel.transform.parent;
                 List<FleetShip> availableShips = ConfigData.AllShips.GetAvailableShipsOfType(type);
@@ -421,7 +421,7 @@ namespace Assets.Scripts.Scenes
                 // if ship type has any visible ships
                 if (visibleShips.Any())
                 {
-                    //Debugger.Log($"Setting the ship count for {type}");
+                    //Debug.Log($"Setting the ship count for {type}");
                     // get the count of the ship type and update the label
                     TMP_Text labelText = shipLabel.GetComponentInChildren<TMP_Text>();
                     labelText.text = $"({availableShips.Count})";
@@ -433,14 +433,14 @@ namespace Assets.Scripts.Scenes
                 }
                 else // if not, set the label to inactive
                 {
-                    //Debugger.Log($"There were no visible ships for {type}");
+                    //Debug.Log($"There were no visible ships for {type}");
                     parent.gameObject.SetActive(false);
                 }
             });
         }
         private void SetupSavedSquadsList()
         {
-            //Debugger.Log("Setting up the list of saved squads");
+            //Debug.Log("Setting up the list of saved squads");
             ConfigData.AllShips.GetSavedSquads().Where((s) => s.Side == Side).ToList().ForEach((savedSquad) =>
             {
                 AddSavedSquadToList(savedSquad);
@@ -481,14 +481,14 @@ namespace Assets.Scripts.Scenes
         {
             if (_singleClick) // already has clicked
             {
-                //Debugger.Log("Already clicked once, marking double click, choosing squad");
+                //Debug.Log("Already clicked once, marking double click, choosing squad");
                 _doubleClick = true;
                 ConfirmChooseSquad(label);
             }
             else // first click
             {
-                //Debugger.Log("First click");
-                //Debugger.Log(TimeScale);
+                //Debug.Log("First click");
+                //Debug.Log(TimeScale);
                 _singleClick = true;
                 int id = int.Parse(label.name.Substring(label.name.LastIndexOf("#") + 1));
                 SavedSquad squad = ConfigData.AllShips.GetSavedSquads().Where((s) => s.Id == id).First();
@@ -501,10 +501,10 @@ namespace Assets.Scripts.Scenes
         {
             if (!_doubleClick) // has not double clicked and opened the confirm choose squad label
             {
-                //Debugger.Log("No double click, loading squad");
+                //Debug.Log("No double click, loading squad");
                 ConfirmLoadSquad();
             }
-            //Debugger.Log("Resetting click");
+            //Debug.Log("Resetting click");
             _singleClick = false;
             _doubleClick = false;
 
@@ -551,7 +551,7 @@ namespace Assets.Scripts.Scenes
         }
         public void ConfirmStartLevel()
         {
-            //Debugger.Log("Starting level!");
+            //Debug.Log("Starting level!");
             int capacity = ConfigData.StartingSettings.SupplyCapacity[Side - 1];
             if (SupplyUsedInChosenSquads() > capacity)
             {
@@ -656,7 +656,7 @@ namespace Assets.Scripts.Scenes
             // change the color of the icon
             if (savedSquad.Color != ConfigData.UnsetColor)
             {
-                //Debugger.Log($"Setting changable pixels for {savedSquad.Name}");
+                //Debug.Log($"Setting changable pixels for {savedSquad.Name}");
                 UnityEngine.UI.Image squadIconImage = squadIconContainer.transform.GetChild(0).GetComponent<UnityEngine.UI.Image>();
 
                 int[] changeablePixels = Utilities.SetChangablePixelsForImage(ConfigData.ChangeableShipColors.GetValueOrDefault(shipType), squadIconImage.sprite);
@@ -695,7 +695,7 @@ namespace Assets.Scripts.Scenes
             // change the color of the icon
             if (chosenSquad.Color != ConfigData.UnsetColor)
             {
-                //Debugger.Log($"Setting changable pixels for {savedSquad.Name}");
+                //Debug.Log($"Setting changable pixels for {savedSquad.Name}");
                 UnityEngine.UI.Image squadIconImage = squadIconContainer.transform.GetChild(0).GetComponent<UnityEngine.UI.Image>();
 
                 int[] changeablePixels = Utilities.SetChangablePixelsForImage(ConfigData.ChangeableShipColors.GetValueOrDefault(shipType), squadIconImage.sprite);
@@ -765,7 +765,7 @@ namespace Assets.Scripts.Scenes
         private void UpdateChosenSquadsSupplyLabel()
         {
             int supply = SupplyUsedInChosenSquads();
-            //Debugger.Log($"Supply capacity {ConfigData.StartingSettings.SupplyCapacity.Count}, {Side}");
+            //Debug.Log($"Supply capacity {ConfigData.StartingSettings.SupplyCapacity.Count}, {Side}");
             int capacity = ConfigData.StartingSettings.SupplyCapacity[Side - 1];
             GameObject container = ChosenSquadsSupplyCapacityLabel.transform.parent.gameObject;
             TMP_Text text = ChosenSquadsSupplyCapacityLabel.GetComponentInChildren<TMP_Text>();
@@ -830,7 +830,7 @@ namespace Assets.Scripts.Scenes
         private string ValidateInputString(string str)
         {
             return Regex.Replace(str, @"[^a-zA-Z0-9\-\s!@#%&*_+=:]", "");
-            //Debugger.Log($"Unvalidated string: {name}, replaced string {valid}");
+            //Debug.Log($"Unvalidated string: {name}, replaced string {valid}");
         }
 
 
@@ -910,9 +910,9 @@ namespace Assets.Scripts.Scenes
             if (HasCurrentSquad)
             {
                 _currentSquad.OrientSquad();
-                //Debugger.Log($"Saving {_currentUnsavedSquad.Name}");
+                //Debug.Log($"Saving {_currentUnsavedSquad.Name}");
 
-                //Debugger.Log($"Squad starting position: {_currentUnsavedSquad.StartingPosition}");
+                //Debug.Log($"Squad starting position: {_currentUnsavedSquad.StartingPosition}");
 
                 if (ConfigData.AllShips.DoesSquadExist(_currentSquad.Id))
                 {
@@ -923,21 +923,21 @@ namespace Assets.Scripts.Scenes
                     SaveNewSquad();
                 }
 
-                //Debugger.Log($"Added _currentUnsavedSquad to SavedSquad list");
-                //Debugger.Log($"_currentUnsavedSquad: {_currentUnsavedSquad.GetShips().Count}, SavedSquad entry: {_savedSquadsData.GetSquads().Last().GetShips().Count}");
+                //Debug.Log($"Added _currentUnsavedSquad to SavedSquad list");
+                //Debug.Log($"_currentUnsavedSquad: {_currentUnsavedSquad.GetShips().Count}, SavedSquad entry: {_savedSquadsData.GetSquads().Last().GetShips().Count}");
 
 
-                //Debugger.Log($"Made _currentUnsavedSquad null");
-                //Debugger.Log($"_currentUnsavedSquad: {_currentUnsavedSquad}");
-                //Debugger.Log($"SavedSquad entry: {_savedSquadsData.GetSquads().Last().GetShips().Count}");
+                //Debug.Log($"Made _currentUnsavedSquad null");
+                //Debug.Log($"_currentUnsavedSquad: {_currentUnsavedSquad}");
+                //Debug.Log($"SavedSquad entry: {_savedSquadsData.GetSquads().Last().GetShips().Count}");
 
-                //Debugger.Log($"JSON : {_currentUnsavedSquad.ToJson()}");
+                //Debug.Log($"JSON : {_currentUnsavedSquad.ToJson()}");
                 //ConfigData.WriteJsonFile(_currentUnsavedSquad.ToJson());
             }
         }
         public void ClearChanges()
         {
-            //Debugger.Log("Clearing changes");
+            //Debug.Log("Clearing changes");
             int squadId = _currentSquad.Id;
             SavedSquad savedSquad = ConfigData.AllShips.GetSavedSquad(squadId);
             if (savedSquad != null)
@@ -976,7 +976,7 @@ namespace Assets.Scripts.Scenes
         }
         public void SaveNewSquad()
         {
-            Debugger.Log("New squad, does not exist yet");
+            Debug.Log("New squad, does not exist yet");
             _currentSquad.Id = ConfigData.GetUserProgressData().GetNextSavedSquadId();
             if (_currentSquad.Name == "")
             {
@@ -990,7 +990,7 @@ namespace Assets.Scripts.Scenes
         }
         public void SaveExistingSquad()
         {
-            //Debugger.Log("Squad does exist, replacing old squad");
+            //Debug.Log("Squad does exist, replacing old squad");
             SavedSquad oldSavedSquad = ConfigData.AllShips.GetSavedSquad(_currentSquad.Id);
 
             UpdateSavedSquadInList(GameObject.Find($"Saved Squad - {oldSavedSquad.Name} #{oldSavedSquad.Id}"), _currentSquad);
@@ -1009,7 +1009,7 @@ namespace Assets.Scripts.Scenes
             }
             //SavedSquad squad = _squadToLoad;
             SquadStatBlock stats = _squadToLoad.Stats;
-            //Debugger.Log($"Loading squad {squad.Name}");
+            //Debug.Log($"Loading squad {squad.Name}");
 
             // set the name text, color and current squad
             _nameText = _squadToLoad.Name;
@@ -1023,7 +1023,7 @@ namespace Assets.Scripts.Scenes
             _currentSquad.GetShips().ForEach((ship) =>
             {
                 ship.SetOffset(_currentSquad.StartingPosition + ship.Offset);
-                //Debugger.Log($"Set offset for {ship.GetFleetShip().Name}: {ship.Offset}");
+                //Debug.Log($"Set offset for {ship.GetFleetShip().Name}: {ship.Offset}");
 
             });
             Dropper dropper = GetDropper();
@@ -1034,7 +1034,7 @@ namespace Assets.Scripts.Scenes
                 //Vector2 placementPosition = Camera.WorldToScreenPoint(ship.Offset);
 
                 //ship.SetOffset(offsetPosition);
-                //Debugger.Log($"Starting Position for {ship.GetFleetShip().Name}: {_currentUnsavedSquad.StartingPosition}, Offset position: {ship.Offset}"); 
+                //Debug.Log($"Starting Position for {ship.GetFleetShip().Name}: {_currentUnsavedSquad.StartingPosition}, Offset position: {ship.Offset}"); 
                 dropper.MakeDragIcon(ship.GetFleetShip());
                 dropper.SetupActiveDragging(placementPosition, true);
                 DragIcon dragIcon = dropper.GetCurrentDragIcon();
@@ -1148,7 +1148,7 @@ namespace Assets.Scripts.Scenes
         }
         public void FleetDragging()
         {
-            //Debugger.Log($"Dragging {_currentDragIcon.Icon.name}");
+            //Debug.Log($"Dragging {_currentDragIcon.Icon.name}");
             GetDropper().DraggingNewIcon();
         }
         public void FleetDragEnd()
@@ -1208,7 +1208,7 @@ namespace Assets.Scripts.Scenes
                     int id = int.Parse(label.name.Substring(label.name.LastIndexOf("#")+1));
                     SavedSquad squad = ConfigData.AllShips.GetSavedSquads().Where((s) => s.Id == id).First();
                     SquadStatBlock stats = squad.Stats;
-                    //Debugger.Log($"Squad ID: {id}");
+                    //Debug.Log($"Squad ID: {id}");
 
                     TMP_Text titleText = SquadInfoBoxTitle.GetComponent<TMP_Text>();
                     TMP_Text detaislText = SquadInfoBoxDetails.GetComponent<TMP_Text>();
@@ -1237,7 +1237,7 @@ namespace Assets.Scripts.Scenes
                 }
                 else
                 {
-                    Debugger.Log($"No selected object: {label}");  
+                    Debug.Log($"No selected object: {label}");  
                 }
                 
             }
@@ -1265,7 +1265,7 @@ namespace Assets.Scripts.Scenes
                 {
                     int id = int.Parse(label.name.Substring(label.name.LastIndexOf("#") + 1));
                     FleetShip ship = ConfigData.AllShips.GetFleetShip(id);
-                    //Debugger.Log($"Squad ID: {id}");
+                    //Debug.Log($"Squad ID: {id}");
 
                     TMP_Text titleText = ShipStatsBoxTitle.GetComponent<TMP_Text>();
                     TMP_Text detaislText = ShipStatsBoxDetails.GetComponent<TMP_Text>();
@@ -1288,12 +1288,12 @@ namespace Assets.Scripts.Scenes
                     //Vector2 change = ShipStatsBoxOffset;
 
 
-                    //Debugger.Log($"mouse: {mouse}, change: {change}");
+                    //Debug.Log($"mouse: {mouse}, change: {change}");
                     ShipStatsBox.transform.position = new Vector2(mouse.x + change.x, mouse.y + change.y);
                 }
                 else
                 {
-                    Debugger.Log($"No selected object: {label}");
+                    Debug.Log($"No selected object: {label}");
                 }
                 _showShipStatsBox = true;
             }
@@ -1324,7 +1324,7 @@ namespace Assets.Scripts.Scenes
                 //Vector2 change = TooltipOffset;
 
 
-                //Debugger.Log($"mouse: {mouse}, change: {change}");
+                //Debug.Log($"mouse: {mouse}, change: {change}");
                 Tooltip.transform.position = new Vector2(mouse.x + change.x, mouse.y + change.y);
                 _showTooltip = true;
             }
@@ -1356,7 +1356,7 @@ namespace Assets.Scripts.Scenes
         }
         public void OpenColorPicker()
         {
-            //Debugger.Log("Opening/Closing color picker");
+            //Debug.Log("Opening/Closing color picker");
             _colorPicker.Toggle();
         }
         public void CloseColorPicker()
@@ -1368,7 +1368,7 @@ namespace Assets.Scripts.Scenes
         }
         public void PickColor(BaseEventData data)
         {
-            //Debugger.Log("Trying to pick color");
+            //Debug.Log("Trying to pick color");
             SetSquadColor(_colorPicker.GetColor(data));
         }
         public void SetColor(string color)
@@ -1394,7 +1394,7 @@ namespace Assets.Scripts.Scenes
         {
             if (_startingLevel)
             {
-                Debugger.Log("Already starting the level!");
+                Debug.Log("Already starting the level!");
                 return;
             }
             _startingLevel = true;
@@ -1405,7 +1405,7 @@ namespace Assets.Scripts.Scenes
         }
         private void ProcessStartingLevel()
         {
-            //Debugger.Log("On to the level!");
+            //Debug.Log("On to the level!");
 
             // add the sqauds
             _chosenSquads.ForEach((chosenSquad) =>
@@ -1413,7 +1413,7 @@ namespace Assets.Scripts.Scenes
                 ConfigData.SquadsChosenForLevel.Add((SavedSquad)chosenSquad.Clone());
             });
 
-            //Debugger.Log($"SMS: {ConfigData.SquadMakerSide}, SMFS: {ConfigData.Configuration.SquadMakerFirstSide}, SMSS: {ConfigData.Configuration.SquadMakerSecondSide}");
+            //Debug.Log($"SMS: {ConfigData.SquadMakerSide}, SMFS: {ConfigData.Configuration.SquadMakerFirstSide}, SMSS: {ConfigData.Configuration.SquadMakerSecondSide}");
             // go to next side if you need to
             List<SavedSquad> newlySavedOpposingSquads = new List<SavedSquad>();
             if (Side == ConfigData.Configuration.SquadMakerFirstSide)
@@ -1453,13 +1453,13 @@ namespace Assets.Scripts.Scenes
             }
             newlySavedOpposingSquads.ForEach((squad) =>
             {
-                Debugger.Log($"Made squad worth {squad.GetMaxTsv()} tsv.");
+                Debug.Log($"Made squad worth {squad.GetMaxTsv()} tsv.");
                 string ships = "";
                 squad.GetShips().ForEach((s) => ships += $"{s.ShipType}, ");
-                Debugger.Log(ships);
+                Debug.Log(ships);
             });
             ConfigData.SquadsChosenForLevel.AddRange(newlySavedOpposingSquads);
-            //ConfigData.SquadsChosenForLevel.ForEach((s) => Debugger.Log(s.ToString()));
+            //ConfigData.SquadsChosenForLevel.ForEach((s) => Debug.Log(s.ToString()));
             _nextScene = "Hivemind Training";
             Invoke(nameof(LoadScene), .5f);
             //SceneManager.LoadSceneAsync("Training Room One Screen", LoadSceneMode.Single); // [alert] this should go to the actual level based on the level number
@@ -1467,7 +1467,7 @@ namespace Assets.Scripts.Scenes
         }
         private void LoadScene()
         {
-            Debugger.Log("Loading scene!");
+            Debug.Log("Loading scene!");
             SceneManager.LoadSceneAsync(_nextScene, LoadSceneMode.Single);
         }
         public void ChangeOpposingForceDropdown(int option)
@@ -1486,7 +1486,7 @@ namespace Assets.Scripts.Scenes
                 StartButton.SetActive(true);
             }
 
-            //Debugger.Log($"User chose {dropdown.options[option].text}, {_chosenOpposingForceOption}");
+            //Debug.Log($"User chose {dropdown.options[option].text}, {_chosenOpposingForceOption}");
         }
 
 
@@ -1495,7 +1495,7 @@ namespace Assets.Scripts.Scenes
 
         private void OnDestroy()
         {
-            //Debugger.Log("Destroying squad maker scene");
+            //Debug.Log("Destroying squad maker scene");
         }
     }
 }

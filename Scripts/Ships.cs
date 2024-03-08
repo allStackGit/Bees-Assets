@@ -110,7 +110,7 @@ namespace Assets.Scripts
                             shipAbove = rankings.ElementAt(ranking - 2);
                             shipAboveValue = shipAbove.BattlesFought > 0 ? (double)shipAbove.BattlesWon / (double) shipAbove.BattlesFought : 0;
                             shipValue = shipValue = ship.BattlesFought > 0 ? (double)ship.BattlesWon / (double) ship.BattlesFought : 0;
-                            //Debugger.Log($"Ranking for {ship.Name}: {ranking}, {shipValue}, {shipAbove.Name}: {shipAboveValue}");
+                            //Debug.Log($"Ranking for {ship.Name}: {ranking}, {shipValue}, {shipAbove.Name}: {shipAboveValue}");
                             moved = true;
                             ranking--;
                         }
@@ -203,14 +203,14 @@ namespace Assets.Scripts
                         double squadAboveValue = squadAbove.Stats.BattlesFought > 0 ? (double) squadAbove.Stats.BattlesWon / squadAbove.Stats.BattlesFought : 0;
                         double squadValue = squad.Stats.BattlesFought > 0 ? (double) squad.Stats.BattlesWon / squad.Stats.BattlesFought : 0;
                         bool moved = false;
-                        //Debugger.Log($"Ranking for {squad.Name}: {ranking}, {squadValue}, {squadAbove.Name}: {squadAboveValue}");
-                        //Debugger.Log("____________");
+                        //Debug.Log($"Ranking for {squad.Name}: {ranking}, {squadValue}, {squadAbove.Name}: {squadAboveValue}");
+                        //Debug.Log("____________");
                         while (ranking > 1 && squadValue == squadAboveValue)
                         {
                             squadAbove = rankings.ElementAt(ranking - 2);
                             squadAboveValue = squadAbove.Stats.BattlesFought > 0 ? (double) squadAbove.Stats.BattlesWon / squadAbove.Stats.BattlesFought : 0;
                             squadValue = squad.Stats.BattlesFought > 0 ? (double) squad.Stats.BattlesWon / squad.Stats.BattlesFought : 0;
-                            //Debugger.Log($"Ranking for {squad.Name}: {ranking}, {squadValue}, {squadAbove.Name}: {squadAboveValue}");
+                            //Debug.Log($"Ranking for {squad.Name}: {ranking}, {squadValue}, {squadAbove.Name}: {squadAboveValue}");
                             moved = true;
                             ranking--;
 

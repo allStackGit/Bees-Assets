@@ -36,8 +36,8 @@ namespace Assets.Scripts.UIComponents
             ExitConfirmationDialogue = new Dialogue(Level.DialoguePrefab, ConfigData.Configuration.AreYouSureExit, ConfigData.Configuration.LevelProgressLost,
                 new List<string>() { ConfigData.Configuration.Yes, ConfigData.Configuration.No }, new List<UnityAction>() { ExitToMainMenu });
             ExitConfirmationDialogue.SetTextBoxHeight(200);
-            //Debugger.Log($"ActionBox:{ActionBox}");
-            //Debugger.Log($"EventSystem:{EventSystem}");
+            //Debug.Log($"ActionBox:{ActionBox}");
+            //Debug.Log($"EventSystem:{EventSystem}");
         }
         public void OpenMenu()
         {
@@ -46,13 +46,13 @@ namespace Assets.Scripts.UIComponents
         }
         public void ConfirmExitGame()
         {
-            Debugger.Log("Asking for confirmation");
+            Debug.Log("Asking for confirmation");
             DeselectButton();
             ExitConfirmationDialogue.Show();
         }
         public void Exit()
         {
-            Debugger.Log("Exiting game");
+            Debug.Log("Exiting game");
             Application.Quit();
         }
         public void HoverOverMiniMapButton()
@@ -65,14 +65,14 @@ namespace Assets.Scripts.UIComponents
         }
         public void ToggleMiniMapDisplay()
         {
-            Debugger.Log("Toggling mini map!");
+            Debug.Log("Toggling mini map!");
             Level.MiniMapContainer.SetActive(!Level.MiniMapContainer.activeSelf);
             MiniMapCloseButton.SetActive(!MiniMapCloseButton.activeSelf);
             MiniMapOpenButton.SetActive(!MiniMapOpenButton.activeSelf);
         }
         public void CloseDialogue()
         {
-            Debugger.Log("Deciding not to exit");
+            Debug.Log("Deciding not to exit");
             DeselectButton();
             LevelEndedDialogue.SetActive(false);
             MenuContainer.SetActive(false);
@@ -98,7 +98,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void ExitToMainMenu()
         {
-            Debugger.Log("Exiting to main menu");
+            Debug.Log("Exiting to main menu");
             Level.UnPause();
             DeselectButton();
             CloseDialogue();
@@ -121,13 +121,13 @@ namespace Assets.Scripts.UIComponents
         }
         public void BacktoGame()
         {
-            Debugger.Log("Back to game");
+            Debug.Log("Back to game");
             CloseDialogue();
         }
         public void GoToSettings()
         {
             DeselectButton();
-            Debugger.Log("Settings!");
+            Debug.Log("Settings!");
         }
         public void DeselectButton()
         {

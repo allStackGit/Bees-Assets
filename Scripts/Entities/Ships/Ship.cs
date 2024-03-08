@@ -31,7 +31,7 @@ namespace Assets.Scripts.Entities.Ships
         public FleetShip FleetShip = null;
         public string ShipType, Name;
         public bool FireAtFrontOfShip, InCombat;
-        public bool HasBrain, IsMinionShip, IsDead, HasTargetCoordinates;
+        public bool HasBrain, IsMinionShip, HasTargetCoordinates;
         public List<Weapon> Weapons;
         public List<GameObject> ProjectilePrefabs, WeaponPrefabs, ColoredPrefabs;
         public Brain Brain = null;
@@ -71,6 +71,7 @@ namespace Assets.Scripts.Entities.Ships
         private Vector2 _size;
 
 
+        // Test variables
         public List<string> __PastCommands = new List<string>();
         public string __Strategy, __Squad, __SquadStatus, __CommandStatus, __LastStopReason;
         public Vector2 __CommandDestination, __Velocity, __TargetCoordinates;
@@ -127,7 +128,7 @@ namespace Assets.Scripts.Entities.Ships
         // setup methods
         public virtual void Setup(LevelStage level, long id, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
         {
-            //Debugger.Log($"Setting up ship IsCarrierShip: {IsCarrierShip}");
+            //Debug.Log($"Setting up ship IsCarrierShip: {IsCarrierShip}");
 
             Id = id;
             Squad = squad;
@@ -141,7 +142,7 @@ namespace Assets.Scripts.Entities.Ships
             MaxHealth = FleetShip.MaxHealth;
             if (brain != null && Level.ActivateBrains)
             {
-                //Debugger.Log($"Found a brain for {Name}, {brain}");
+                //Debug.Log($"Found a brain for {Name}, {brain}");
                 Brain = brain.GetComponent<Brain>();
                 Brain.Setup(this);
                 HasBrain = true;
@@ -236,7 +237,7 @@ namespace Assets.Scripts.Entities.Ships
 
                 if (weapon is Turret)
                 {
-                    //Debugger.Log($"it's a turret!");
+                    //Debug.Log($"it's a turret!");
                     if (weapon is Eye)
                     {
                         ((Eye)weapon).Setup(this, shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
@@ -255,7 +256,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 }
                 else
                 {
-                    //Debugger.Log($"{weapon.GetType()} -- {typeof(Turret)}");
+                    //Debug.Log($"{weapon.GetType()} -- {typeof(Turret)}");
                     weapon.Setup(this, shipStats.Ranges[i], shipStats.Powers[i], SpecialFirePower, shipStats.RatesOfFire[i],
                     shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i]);
                 }
@@ -327,7 +328,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             // set the color
             if (Squad.Color != ConfigData.UnsetColor)
             {
-                //Debugger.Log("Setting sprite for ship");
+                //Debug.Log("Setting sprite for ship");
                 ColoredPrefabs.Add(gameObject);
                 Color[] colors = ConfigData.ChangeableShipColors.GetValueOrDefault(ShipType);
                 ColoredPrefabs.ForEach((prefab) =>
@@ -452,9 +453,9 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
             //if any of the target ship(s) if your weapons are not dead and are within range
             else if (Squad.IsAttacking && HasTargetShips && !(Squad.HasCommand && (Squad.Command.Type == "Circle" || Squad.Command.Type == "Right Swipe" ||  Squad.Command.Type == "Left Swipe") ||
-                Squad.Command.Type == "In and Out") && TargetShips.Any((ship) => !ship.IsDead && IsShipWithinRange(ship)))
+                Squad.Command.Type == "In and Out") && TargetShips.Any((ship) => ship != null && IsShipWithinRange(ship)))
             {
-                //Debugger.Log("We are outside of range of the target ship and we can still hit it but we are close to being within its range");
+                //Debug.Log("We are outside of range of the target ship and we can still hit it but we are close to being within its range");
                 string reason = "We are outside of range of the target ship and we can still hit it but we are close to being within its range";
                 if (!(Squad.IsAttacking && Squad.Command.Enemy.IsMoving))
                 {
@@ -485,6 +486,15 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             //transform.position = TargetCoordinates;
             //SetToDefaultAngle();
         }
+        public void StopMoving()
+        {
+
+            TargetCoordinates = Vector2.zero;
+            Body.velocity = Vector2.zero;
+            HasTargetCoordinates = false;
+            //transform.position = TargetCoordinates;
+            //SetToDefaultAngle();
+        }
         public void SetToDefaultAngle()
         {
             if (Side == ConfigData.Configuration.AISide)
@@ -507,7 +517,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             GameState state = Level.GetState();
             if (!IsUserControlled && mouseButton == LevelInputManager.RightClick) // when this ship has been right clicked on and this ship *is not* user controlled
             {
-                //Debugger.Log($"Targeted squad #{Squad.SquadNumber}");
+                //Debug.Log($"Targeted squad #{Squad.SquadNumber}");
                 state.GetSelectedSquads().ForEach((selectedSquad) =>
                 {
                     //selectedSquad.UserTargetSquad(squad);
@@ -527,10 +537,14 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         }
         private void HitObstacle(Obstacle obstacle)
         {
-            Debug.Log($"{Name} trigger collided with {obstacle.Name} at {GetPosition()}");
+            Vector2 incomingVelocity = Body.velocity;
+            Debug.Log($"{Name} collided with {obstacle.Name} at {GetPosition()} with velocity: {incomingVelocity}");
             StopMoving($"Collided with obstacle {obstacle.Name}");
+            Body.velocity = -incomingVelocity;
+            Invoke(nameof(StopMoving), .1f);
+
         }
-       
+
 
         // Combat methods
         public void ClearTargets()
@@ -581,7 +595,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             GameObject collidingThing = collider.gameObject;
             if (collidingThing.name == ("Selection Box"))
             {
-                //Debugger.Log("Hit selection box");
+                //Debug.Log("Hit selection box");
                 if (IsUserControlled)
                 {
                     Level.Selector.SelectShip(this);
@@ -592,6 +606,33 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 HitObstacle(obstacle);
             }
         }
+
+        protected virtual void OnCollisionEnter2D(Collision2D collision)
+        {
+            GameObject collidingThing = collision.gameObject;
+            if (collidingThing.name == ("Selection Box"))
+            {
+                //Debug.Log("Hit selection box");
+                if (IsUserControlled)
+                {
+                    Level.Selector.SelectShip(this);
+                }
+            }
+            else if (collidingThing.CompareTag("Obstacle"))
+            {
+                Obstacle obstacle = collidingThing.GetComponent<Obstacle>();
+                HitObstacle(obstacle);
+            }
+        }
+        //protected void OnCollisionStay2D(Collision2D collision)
+        //{
+        //    GameObject collidingThing = collision.gameObject;
+        //    if (collidingThing.CompareTag("Obstacle"))
+        //    {
+        //        Obstacle obstacle = collidingThing.GetComponent<Obstacle>();
+        //        HitObstacle(obstacle);
+        //    }
+        //}
         public static void LogDamage(int power, Ship shooter, Ship target) // [damage-method] [note]
         {
             int targetOldTSV = target.Tsv;
@@ -646,13 +687,13 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             }
             else if (shooterSquad != null)
             {
-                Debug.Log($"There was {tsvChange} damage done against {target.Name} but the shooter is null. The shooter squad got stats though.");
+                //Debug.Log($"There was {tsvChange} damage done against {target.Name} but the shooter is null. The shooter squad got stats though.");
                 shooterSquad.SavedSquad.Stats.DamageDone += -1 * tsvChange;
             }
             else
             {
-                Debug.Log($"There was {tsvChange} damage done against {target.Name} but the shooter is null and the shooterSquad is null. " +
-                    $"Was it a fireship explosion hitting itself? {isFireShipSelfHit}");
+                //Debug.Log($"There was {tsvChange} damage done against {target.Name} but the shooter is null and the shooterSquad is null. " +
+                //    $"Was it a fireship explosion hitting itself? {isFireShipSelfHit}");
             }
             if (target != null)
             {
@@ -662,9 +703,9 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 if (target.Level.IsTrainingNueralNetwork)
                 {
                     int[] initialTsv = target.Level.GetState().InitialTsv;
-                    //Debugger.Log($"Initial TSV: {initialTsv[0]}, {initialTsv[1]}");
+                    //Debug.Log($"Initial TSV: {initialTsv[0]}, {initialTsv[1]}");
                     float percentageTsvDestroyed = (float)Math.Round(((-1.0f * tsvChange) / initialTsv[target.Side - 1]), 3);
-                    //Debugger.Log($"{shooter.Name} destroyed {percentageTsvDestroyed}  {tsvChange} / {initialTsv[target.Side - 1]} of the total initial tsv of the enemy");
+                    //Debug.Log($"{shooter.Name} destroyed {percentageTsvDestroyed}  {tsvChange} / {initialTsv[target.Side - 1]} of the total initial tsv of the enemy");
                     target.Brain.AddReward(-percentageTsvDestroyed);
 
                     if (shooter != null)
@@ -676,12 +717,12 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             }
             else if (targetSquad != null)
             {
-                Debug.Log($"There was {tsvChange} damage done by {shooter.Name} but the target is null. The target squad got stats though.");
+                Debugger.Exception($"There was {tsvChange} damage done by {shooter.Name} but the target is null. The target squad got stats though.");
                 targetSquad.SavedSquad.Stats.DamageReceived += -1 * tsvChange;
             }
             else
             {
-                Debug.Log($"There was {tsvChange} damage done by {shooter.Name} but the target is null and the targetSquad is null. ");
+                Debugger.Exception($"There was {tsvChange} damage done by {shooter.Name} but the target is null and the targetSquad is null. ");
             }
 
 
@@ -706,63 +747,59 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             }
         }
         public virtual void Kill(Ship killer, bool endKill = false) // [kill method] [stats-method] [note]
-        {  
-            if (!IsDead)
+        {
+            //Debug.Log($"Killing ship {Name} with size Factor {ConfigData.GetShipSizeFactor(ShipType)}");
+            GameState state = Level.GetState();
+
+            if (!endKill)
             {
-                //Debugger.Log($"Killing ship {Name} with size Factor {ConfigData.GetShipSizeFactor(ShipType)}");
-                IsDead = true;
-                GameState state = Level.GetState();
+                DropExplosionAnimation();
 
-                if (!endKill)
+                if (killer != null)
                 {
-                    DropExplosionAnimation();
-
-                    if (killer != null)
-                    {
-                        killer.LastKilled = state.Ticks;
-                        LogKillStats(killer);
-                    }
-                    else
-                    {
-                        if (Level.ReplaceDeadShips && !IsCarrierShip && !IsMinionShip && Squad.SavedSquad.HasBeenSavedToStorage)
-                        {
-                            FleetShip.IsDead = true;
-                        }
-                        Squad.SavedSquad.Stats.ShipsLost++;
-                    }
-                }
-
-
-                state.RemoveShip(this);
-                Squad.RemoveShip(this);
-
-
-                // If this is a carrier, get all strikers that belonged to this carrier and mark the last spot the carrier was at
-                if (this is Carrier)
-                {
-                    Carrier nextCarrier = (Carrier)state.GetHumanShips().FirstOrDefault((s) => s is Carrier);
-                    if (nextCarrier != null)
-                    {
-                        state.GetHumanShips().Where((ship) => ship is Striker && ((Striker)ship).Carrier.Equals(this)).ToList().ForEach((ship) => ((Striker)ship).Carrier = nextCarrier);
-                        state.GetHumanShips().Where((ship) => ship is Drone && ((Drone)ship).Carrier.Equals(this)).ToList().ForEach((ship) => ((Drone)ship).Carrier = nextCarrier);
-                    }
-                    else
-                    {
-                        state.GetHumanShips().Where((ship) => ship is Striker && ((Striker)ship).Carrier.Equals(this)).ToList().ForEach((ship) => ((Striker)ship).LastCarrierPosition = GetPosition());
-                    }
-
-                }
-
-                if (Squad.GetShips().Count <= 0)
-                {
-                    Squad.Kill(endKill);
+                    killer.LastKilled = state.Ticks;
+                    LogKillStats(killer);
                 }
                 else
                 {
-                    Squad.SetOffsets();
+                    if (Level.ReplaceDeadShips && !IsCarrierShip && !IsMinionShip && Squad.SavedSquad.HasBeenSavedToStorage)
+                    {
+                        FleetShip.IsDead = true;
+                    }
+                    Squad.SavedSquad.Stats.ShipsLost++;
                 }
-                Destroy(gameObject);
             }
+
+
+            state.RemoveShip(this);
+            Squad.RemoveShip(this);
+
+
+            // If this is a carrier, get all strikers that belonged to this carrier and mark the last spot the carrier was at
+            if (this is Carrier)
+            {
+                Carrier nextCarrier = (Carrier)state.GetHumanShips().FirstOrDefault((s) => s is Carrier);
+                if (nextCarrier != null)
+                {
+                    state.GetHumanShips().Where((ship) => ship is Striker && ((Striker)ship).Carrier.Equals(this)).ToList().ForEach((ship) => ((Striker)ship).Carrier = nextCarrier);
+                    state.GetHumanShips().Where((ship) => ship is Drone && ((Drone)ship).Carrier.Equals(this)).ToList().ForEach((ship) => ((Drone)ship).Carrier = nextCarrier);
+                }
+                else
+                {
+                    state.GetHumanShips().Where((ship) => ship is Striker && ((Striker)ship).Carrier.Equals(this)).ToList().ForEach((ship) => ((Striker)ship).LastCarrierPosition = GetPosition());
+                }
+
+            }
+
+            if (Squad.GetShips().Count == 0)
+            {
+                Squad.Kill(endKill);
+            }
+            else
+            {
+                Squad.SetOffsets();
+            }
+            Destroy(gameObject);
 
         }
 
@@ -800,7 +837,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         }
         public float GetWidth()
         {
-            //Debugger.Log($"{FleetShip.Name} has a sprite width of {gameObject.GetComponent<SpriteRenderer>().bounds.size.x}");
+            //Debug.Log($"{FleetShip.Name} has a sprite width of {gameObject.GetComponent<SpriteRenderer>().bounds.size.x}");
             return _size.x;
         }
         public float GetHalfWidth()
@@ -809,7 +846,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         }
         public float GetHeight()
         {
-            //Debugger.Log($"{FleetShip.Name} has a sprite height of {gameObject.GetComponent<SpriteRenderer>().bounds.size.y}");
+            //Debug.Log($"{FleetShip.Name} has a sprite height of {gameObject.GetComponent<SpriteRenderer>().bounds.size.y}");
             return _size.y;
         }
         public float GetHalfHeight()
@@ -872,7 +909,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             }
             if (loops >= 250)
             {
-                Debugger.Log($"Couldn't find a random coordinate that overlapped the collider for {Name}: {randomPoint}");
+                //Debug.Log($"Couldn't find a random coordinate that overlapped the collider for {Name}: {randomPoint}");
             }
             return randomPoint;
         }
@@ -914,7 +951,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         public void UpdateHealthBar()
         {
             float healthPercent = (float)Math.Round((double)((double)Health / MaxHealth), 2);
-            //Debugger.Log($"{Name} health: {healthPercent}% MaxHealth: {MaxHealth}");
+            //Debug.Log($"{Name} health: {healthPercent}% MaxHealth: {MaxHealth}");
             _healthBarFiller.localScale = new Vector2(healthPercent, _healthBarFiller.localScale.y);
             //_healthBarFiller.sizeDelta = new Vector2(healthPercent, _healthBarFiller.sizeDelta.y);
 

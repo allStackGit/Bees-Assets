@@ -49,7 +49,7 @@ namespace Assets.Scripts.Entities.Ships
         }
         protected override void Aim()
         {
-            //Debugger.Log("Leafcutter aiming");
+            //Debug.Log("Leafcutter aiming");
             base.Aim();
             if (!HasTargetShip || CeaseFire)
             {

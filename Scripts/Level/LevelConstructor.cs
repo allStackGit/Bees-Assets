@@ -47,7 +47,7 @@ namespace Assets.Scripts.Level
             // play as Bees
             //ConfigData.SwapSides();
 
-            //Debugger.Log($"There are {ConfigData.SquadsChosenForLevel.Count} squads loaded for this level");
+            //Debug.Log($"There are {ConfigData.SquadsChosenForLevel.Count} squads loaded for this level");
 
             // Setup entities on the level
             SetupShipsAndSquads();
@@ -163,7 +163,7 @@ namespace Assets.Scripts.Level
             GameState state = Level.GetState();
             ConfigData.SquadsChosenForLevel.OrderByDescending((s) => s.Side).ToList().ForEach((savedSquad) =>
             {
-                //Debugger.Log($"The squad is {savedSquad.Name}");
+                //Debug.Log($"The squad is {savedSquad.Name}");
                 Squad squad = savedSquad.ToSquad(Level);
 
                 // [note][testing] turn this off to do training without ships dying
@@ -172,7 +172,7 @@ namespace Assets.Scripts.Level
                 ships = savedSquad.GetShips().Where((s) => !s.GetFleetShip().IsDead).ToList();
                 if (ships.Count > 0)  
                 {
-                    //Debugger.Log($"There are {ships.Count} ships in {squad.Name}");
+                    //Debug.Log($"There are {ships.Count} ships in {squad.Name}");
                     state.AddSquad(squad);
                     squad.SquadNumber = state.GetSquadsBySide(squad.Side).Count;
 
@@ -181,7 +181,7 @@ namespace Assets.Scripts.Level
                     // .Where((s) => !s.GetFleetShip().IsDead).ToList() [alert] use this to remove dead ships
                     ships.ForEach((squadShip) =>
                     {
-                        //Debugger.Log($"This ship is {squadShip.ShipType}");
+                        //Debug.Log($"This ship is {squadShip.ShipType}");
                         // log bees in the level
                         if (squad.Side == ConfigData.Configuration.BeeSide)
                         {
@@ -218,7 +218,7 @@ namespace Assets.Scripts.Level
 
                             if (ship.ShipType == "Carrier")
                             {
-                                //Debugger.Log("Spawned a carrier");
+                                //Debug.Log("Spawned a carrier");
 
                                 // spawn drones
                                 CarrierSquad droneSquad = Level.gameObject.AddComponent<CarrierSquad>();
@@ -276,7 +276,7 @@ namespace Assets.Scripts.Level
                     }
                     // set initial tsv
                     state.InitialTsv[squad.Side - 1] += squad.Tsv;
-                    //Debugger.Log($"Increase side TSV by {squad.Tsv} / {state.InitialTsv[squad.Side - 1]}");
+                    //Debug.Log($"Increase side TSV by {squad.Tsv} / {state.InitialTsv[squad.Side - 1]}");
                 }
 
             });
@@ -298,7 +298,7 @@ namespace Assets.Scripts.Level
                 }
             }); 
 
-            //Debugger.Log($"Initial TSV is Humans: {Level.GetState().InitialTsv[ConfigData.Configuration.HumanSide-1]}, " +
+            //Debug.Log($"Initial TSV is Humans: {Level.GetState().InitialTsv[ConfigData.Configuration.HumanSide-1]}, " +
             //    $"Bees: {Level.GetState().InitialTsv[ConfigData.Configuration.BeeSide-1]}");
             //Debugger.PrintList(HasBeeTypes);
         }
@@ -339,7 +339,7 @@ namespace Assets.Scripts.Level
                     return;
 
                 }
-                //Debugger.Log("----------------------------------------------------------------------------------------------------------------------------\n");
+                //Debug.Log("----------------------------------------------------------------------------------------------------------------------------\n");
                 Vector2 position = squad.StartingPosition;
                 halfWidth = squad.GetWidth() / 2;
                 halfHeight = squad.GetHeight() / 2;
@@ -355,11 +355,11 @@ namespace Assets.Scripts.Level
                     previousLeftSquad = squad;
                     previousRightSquad = squad;
 
-                    //Debugger.Log($"Positioned first squad: {squad.Name}");
+                    //Debug.Log($"Positioned first squad: {squad.Name}");
                 }
                 else
                 {
-                //    Debugger.Log($"{squad.Name} is potentially located at {position} before changing the y level. It's left side is at {leastWidth} and it's right side is at {greatestWidth}. It's " +
+                //    Debug.Log($"{squad.Name} is potentially located at {position} before changing the y level. It's left side is at {leastWidth} and it's right side is at {greatestWidth}. It's " +
                 //$"{squad.GetWidth()} wide and {squad.GetHeight()} tall");
                     position.y = firstLevelSquad.GetPosition().y; // set the squad on the same y level as the last squad
 
@@ -370,7 +370,7 @@ namespace Assets.Scripts.Level
                         rightWidth += previousRightSquad.GetWidth() / 2;
                         position.x += rightWidth;
                         previousRightSquad = squad;
-                        //Debugger.Log($"Moving {squad.Name} {rightWidth} points to the right. {halfWidth} points contributed from its own half width.");
+                        //Debug.Log($"Moving {squad.Name} {rightWidth} points to the right. {halfWidth} points contributed from its own half width.");
                     }
                     else
                     {
@@ -378,7 +378,7 @@ namespace Assets.Scripts.Level
                         leftWidth += previousLeftSquad.GetWidth() / 2;
                         position.x += -1 * leftWidth;
                         previousLeftSquad = squad;
-                        //Debugger.Log($"Moving {squad.Name} {leftWidth} points to the left. {halfWidth} points contributed from its own half width.");
+                        //Debug.Log($"Moving {squad.Name} {leftWidth} points to the left. {halfWidth} points contributed from its own half width.");
 
                     }
 
@@ -388,7 +388,7 @@ namespace Assets.Scripts.Level
                 greatestWidth = position.x + halfWidth + 0;
                 leastWidth = position.x - (halfWidth + 0);
 
-                //Debugger.Log($"{squad.Name} is potentially located at {position}. It's left side is at {leastWidth} and it's right side is at {greatestWidth}. It's " +
+                //Debug.Log($"{squad.Name} is potentially located at {position}. It's left side is at {leastWidth} and it's right side is at {greatestWidth}. It's " +
                 //$"{squad.GetWidth()} wide and {squad.GetHeight()} tall");
 
                 if (greatestWidth > Level.MaxX || leastWidth < Level.MinX)
@@ -396,11 +396,11 @@ namespace Assets.Scripts.Level
                     // Debug Log how much the squad is out of bounds horizontally
                     if (greatestWidth > Level.MaxX)
                     {
-                        //Debugger.Log($"{squad.Name} is over the margin of MaxX by {Mathf.Abs(greatestWidth - MaxX)}");
+                        //Debug.Log($"{squad.Name} is over the margin of MaxX by {Mathf.Abs(greatestWidth - MaxX)}");
                     }
                     else
                     {
-                        //Debugger.Log($"{squad.Name} is over the margin of MinX by {Mathf.Abs(leastWidth - MinX)}");
+                        //Debug.Log($"{squad.Name} is over the margin of MinX by {Mathf.Abs(leastWidth - MinX)}");
                     }
 
 
@@ -421,17 +421,17 @@ namespace Assets.Scripts.Level
                     greatestWidth = position.x + halfWidth + 0;
                     leastWidth = position.x - (halfWidth + 0);
 
-                    //Debugger.Log(
+                    //Debug.Log(
                     //$"Because {squad.Name} is over the margin it is being relocated to {position}. It's left side is at {leastWidth} and it's right side is at {greatestWidth}.\n " +
                     //$"It's topSide is at {(position.y + halfHeight)} and it's bottom side is at {(position.y - halfHeight)}. it has a half height of {halfHeight} and a halfWidth of {halfWidth}. \n" +
                     //$" It has been moved up from the original position by {bottomHeight}"
                     //);
 
                     firstLevelSquad = squad; // set this squad as the first level squad of this level
-                    //Debugger.Log($"Positioned first squad on this level: {squad.Name}");
+                    //Debug.Log($"Positioned first squad on this level: {squad.Name}");
                 }
 
-                //Debugger.Log($"The previous squad {previousSquad.Name} was centered on {previousSquad.GetPosition()} and has a half width of {previousSquad.GetWidth() / 2}. " +
+                //Debug.Log($"The previous squad {previousSquad.Name} was centered on {previousSquad.GetPosition()} and has a half width of {previousSquad.GetWidth() / 2}. " +
                 //   $"The current squad {squad.Name} will be centered on {position} and have a half width of {halfWidth}. ");
 
 

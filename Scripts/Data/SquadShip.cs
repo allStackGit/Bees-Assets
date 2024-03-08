@@ -62,7 +62,7 @@ namespace Assets.Scripts.Data
         }
         public Vector2 GetOffsetInScreenPixels(Camera camera)
         {
-            //Debugger.Log($"Getting the offset for {GetFleetShip().Name}. In world units, the offset is {Offset}. In Screen units the offset is {camera.WorldToScreenPoint(Offset)}");
+            //Debug.Log($"Getting the offset for {GetFleetShip().Name}. In world units, the offset is {Offset}. In Screen units the offset is {camera.WorldToScreenPoint(Offset)}");
             return camera.WorldToScreenPoint(Offset);
             //return Utilities.WorldUnitsToScreenPixels(Offset, camera);
         }

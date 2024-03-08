@@ -17,7 +17,7 @@ namespace Assets.Scripts.Level.Commands
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
 
             
-            if (Squad != null && !Squad.IsDead)
+            if (Squad != null)
             {
                 //_parameters.setTimer = false;
                 _closestFriendlySquad = Squad.GetClosestValidFriendlySquad();
@@ -40,11 +40,11 @@ namespace Assets.Scripts.Level.Commands
         }
         private void Timer()
         {
-            if (Squad != null && !Squad.IsDead)
+            if (Squad != null)
             {
                 if (_closestFriendlySquad != null && !_closestFriendlySquad.IsDead)
                 {
-                    //Debugger.Log($"_closestFriendlySquad: {_closestFriendlySquad.Name} IsDead: {_closestFriendlySquad.IsDead}");
+                    //Debug.Log($"_closestFriendlySquad: {_closestFriendlySquad.Name} IsDead: {_closestFriendlySquad.IsDead}");
                     Vector2 position = _closestFriendlySquad.GetPosition();
                     if (Squad.HasReachedDestination)
                     {

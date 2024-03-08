@@ -70,7 +70,6 @@ MonoBehaviour:
   MiniMapIcon: {fileID: 8969261252052207092}
   TargetCoordinates: {x: 0, y: 0}
   OffsetFromCenter: {x: 0, y: 0}
-  Velocity: {x: 0, y: 0}
   Squad: {fileID: 0}
   DefaultAngle: 0
   LastKilled: 0
@@ -80,7 +79,6 @@ MonoBehaviour:
   InCombat: 0
   HasBrain: 0
   IsMinionShip: 0
-  IsDead: 0
   HasTargetCoordinates: 0
   Weapons: []
   ProjectilePrefabs:

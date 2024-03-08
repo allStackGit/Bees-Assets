@@ -17,26 +17,26 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 List<Ship> enemyShips = Ship.Squad.Command.Enemy.GetShips().ToList(); // The ToList() is necessary to prevent alteration to the enemy ships
                 if (enemyShips.Count > 0)
                 {
-                    //Debugger.Log($"Enemy squad {Ship.Squad.Command.Enemy.Name} has {enemyShips.Count} ships");
+                    //Debug.Log($"Enemy squad {Ship.Squad.Command.Enemy.Name} has {enemyShips.Count} ships");
                     queue = enemyShips;
                 }
                 else
                 {
-                    //Debugger.Log($"Enemy squad {Ship.Squad.Command.Enemy.Name} has NO ({enemyShips.Count}) ships");
+                    //Debug.Log($"Enemy squad {Ship.Squad.Command.Enemy.Name} has NO ({enemyShips.Count}) ships");
                     queue = Level.GetState().GetAllEnemyShips(Side);
                 }
             }
             else
             {
-                //Debugger.Log($"Either the Squad has no enemy: {Ship.Squad.HasEnemy} or the squad is not attacking: {Ship.Squad.IsAttacking}");
+                //Debug.Log($"Either the Squad has no enemy: {Ship.Squad.HasEnemy} or the squad is not attacking: {Ship.Squad.IsAttacking}");
             }
-            if (CachedShootingStrategy == Ship.ShootingStrategy && queue.Count == CachedTargetingQueue.Count)
+            if (CachedShootingStrategy == Ship.ShootingStrategy && queue.Count == CachedTargetingQueue.Count && !CachedTargetingQueue.Contains(null))
             {
-                //Debugger.Log("Using cached queue");
+                //Debug.Log("Using cached queue");
                 IsUsingCachedTargetingQueue = true;
                 return CachedTargetingQueue;
             }
-            //Debugger.Log("Not using cached queue");
+            //Debug.Log("Not using cached queue");
             IsUsingCachedTargetingQueue = false;
             return queue;
         }
@@ -51,7 +51,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             ShipDamageStatus shipDamageStatus = Squad.GetShipDamageStatus(targetShip);
             shipDamageStatus.totalDamageSentToShip += Power;
             TargetShip = targetShip;
-            //Debugger.Log($"Setting target ship to {TargetShip.Name} and sending {Power} / {shipDamageStatus.totalDamageSentToShip} damage ");
+            //Debug.Log($"Setting target ship to {TargetShip.Name} and sending {Power} / {shipDamageStatus.totalDamageSentToShip} damage ");
 
         }
     }

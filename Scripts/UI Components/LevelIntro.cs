@@ -42,7 +42,7 @@ namespace UIComponents
             LevelIntroMessage intro = _messages.Find((i) => i.LevelId == _level);
 
             // update game objects
-            Debugger.Log($"Loading info for level #{_level}, {intro.Name}");
+            Debug.Log($"Loading info for level #{_level}, {intro.Name}");
             TMP_Text messageTitle = MessageTitle.GetComponentInChildren<TMP_Text>();
             TMP_Text message = Message.GetComponentInChildren<TMP_Text>();
             TMP_Text portraitTitle = PortraitTitle.GetComponentInChildren<TMP_Text>();

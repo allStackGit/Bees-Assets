@@ -234,6 +234,8 @@ namespace Assets.Scripts
 
         // DEBUG VARIABLES
         public static HashSet<ServerRequest> __PastServerRequests = new HashSet<ServerRequest>();
+        public static HashSet<long> UsedHashes = new HashSet<long>();
+
 
         // private variables
         private static int _userId = 2; // [alert] should be set to actual userId and linked to Steam or other account Id
@@ -273,9 +275,9 @@ namespace Assets.Scripts
             if (AreAllSettingsLoaded && !IsAllUserDataLoaded && !IsLoadingUserData)
             {
                 IsLoadingUserData = true;
-                //Debugger.Log("Setting up user data");
+                //Debug.Log("Setting up user data");
 
-                //Debugger.Log($"Current Level before loading user data: {ConfigData.GetLevel()}");
+                //Debug.Log($"Current Level before loading user data: {ConfigData.GetLevel()}");
                 Dictionary<string, int> allStartingShips = new Dictionary<string, int>();
                 StartingSettings.HumanStartingShips.ToList().ForEach((s) => allStartingShips.Add(s.Key, s.Value));
                 StartingSettings.BeeStartingShips.ToList().ForEach((s) => allStartingShips.Add(s.Key, s.Value));
@@ -284,7 +286,7 @@ namespace Assets.Scripts
                 SetupUserProgressData(!FirstTimePlaying, scene);
                 SetupFleetData(!FirstTimePlaying, allStartingShips, scene);
                 SetupSavedSquadsData(!FirstTimePlaying, scene);
-                //Debugger.Log($"Current Level after loading user data: {ConfigData.GetLevel()}");
+                //Debug.Log($"Current Level after loading user data: {ConfigData.GetLevel()}");
             }
 
         }
@@ -292,7 +294,7 @@ namespace Assets.Scripts
         {
             if (!AreAllSettingsLoaded)
             {
-                Debugger.Log("Trying to load settings");
+                Debug.Log("Trying to load settings");
                 ShipInfo = new ShipStats(GetUserId(), scene);
                 Configuration = new Configuration(GetUserId(), scene);
                 StartingSettings = new StartingSettings(GetUserId(), scene);
@@ -326,7 +328,7 @@ namespace Assets.Scripts
         {
             if (!IsAllUserDataLoaded)
             {
-                //Debugger.Log("Checking Data files");
+                //Debug.Log("Checking Data files");
                 GetUserProgressData().WaitForData();
                 GetFleetData().WaitForData();
                 GetSavedSquadsData().WaitForData();
@@ -334,12 +336,12 @@ namespace Assets.Scripts
         }
         public static void SaveAll()
         {
-            //    Debugger.Log($"Saving all: {Socket.IsOpen}");
-            //    Debugger.Log($"Saving User Progress: {Socket.IsOpen}");
+            //    Debug.Log($"Saving all: {Socket.IsOpen}");
+            //    Debug.Log($"Saving User Progress: {Socket.IsOpen}");
             GetUserProgressData().Save();
-            //Debugger.Log($"Saving Ships: {Socket.IsOpen}");
+            //Debug.Log($"Saving Ships: {Socket.IsOpen}");
             AllShips.SaveFleetData();
-            //Debugger.Log($"Saving Squads: {Socket.IsOpen}");
+            //Debug.Log($"Saving Squads: {Socket.IsOpen}");
             AllShips.SaveSquadData();
         }
         public static string GetBasePath()
@@ -377,7 +379,7 @@ namespace Assets.Scripts
                 GetUserProgressData().SetCurrentLevel(level);
             }else if (level == -1)
             {
-                Debugger.Log("The level was set to -1, indicating that the user's progress data has not loaded yet");
+                Debug.Log("The level was set to -1, indicating that the user's progress data has not loaded yet");
             }
             else
             {

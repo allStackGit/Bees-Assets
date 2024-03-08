@@ -14,11 +14,11 @@ namespace Assets.Scripts.Scenes
         {
             Name = "Main Menu";
             base.Start();
-            //Debugger.Log($"Started {Name} scene");
+            //Debug.Log($"Started {Name} scene");
         }
         public void ContinueGame()
         {
-            Debugger.Log($"Continuing Game! User is on level #{ConfigData.GetLevel()}");
+            Debug.Log($"Continuing Game! User is on level #{ConfigData.GetLevel()}");
             //SceneManager.LoadSceneAsync("Level Intro"); 
             //SceneManager.LoadSceneAsync("Squad Maker");
             DeselectButton();
@@ -34,13 +34,13 @@ namespace Assets.Scripts.Scenes
         public void GoToSettings()
         {
             DeselectButton();
-            Debugger.Log("Settings!");
+            Debug.Log("Settings!");
         }
 
         public void GoToTrainingRoom()
         {
             DeselectButton();
-            Debugger.Log("Training Room!");
+            Debug.Log("Training Room!");
             ConfigData.SquadMakerSide = ConfigData.Configuration.SquadMakerFirstSide;
             SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
         }
@@ -52,13 +52,13 @@ namespace Assets.Scripts.Scenes
             ConfigData.SetLevel(1);
             SceneManager.LoadSceneAsync("Level Intro", LoadSceneMode.Single);
             DeselectButton();
-            Debugger.Log("New Game!"); 
+            Debug.Log("New Game!"); 
         }
 
         public void ExitGame()
         {
             //ConfigData.SaveAll();
-            Debugger.Log("Exiting Game!");
+            Debug.Log("Exiting Game!");
             Application.Quit();
         }
 
@@ -69,8 +69,8 @@ namespace Assets.Scripts.Scenes
 
         private void OnDestroy()
         {
-            Debugger.Log("Destroying main menu scene");
-            //Debugger.Log("Killing the connection");
+            Debug.Log("Destroying main menu scene");
+            //Debug.Log("Killing the connection");
             //ConfigData.GetSocket().CloseConnection();   
         }
     }

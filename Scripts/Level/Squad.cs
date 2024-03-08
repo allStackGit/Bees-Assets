@@ -30,10 +30,13 @@ namespace Assets.Scripts.Level
         public Color SquadBoxColor;
         public SavedSquad SavedSquad;
         public GameObject SquadBox;
-        public bool HasMovedBox, IsMatchingSpeed, CeaseFire, IsRetreating, HasAddedShips, IsShowingRanges = false;
+        public bool HasMovedBox, IsMatchingSpeed, CeaseFire, IsRetreating, HasAddedShips, IsShowingRanges;
+        /// <summary>
+        /// A squad can be dead for one frame before it is destroyed. It's important to check for the death of a squad on anything run by a timer outside of the squad object
+        /// </summary>
+        public bool IsDead;
         public float CurrentSpeed;
 
-        private bool _died;
         private List<Ship> _ships = new List<Ship>();
         private bool _shouldChase = false;
         private string _chosenShootingStrategy; // there is a shooting strategy attached to the squad because users attach shooting strategies to the squad whereas the AI attaches them to the command
@@ -48,7 +51,6 @@ namespace Assets.Scripts.Level
         public int Tsv => GetShips().Sum(s => s.Tsv);
         public float SlowestSpeed => GetShips().Min(s => s.Speed);
         public bool IsMoving => GetShips().Any(ship => ship.IsMoving);
-        public bool IsDead => _died;
         public bool HasCommand => Command != null;
         public bool HasEnemy => HasCommand && Command.HasEnemy;
         public bool IsAttacking => HasCommand && Command.IsAttacking;
@@ -57,6 +59,7 @@ namespace Assets.Scripts.Level
         public bool AttackOnSight => !CeaseFire;
         public bool Holding => !ShouldChase();
         public bool IsCarrierSquad => this is CarrierSquad;
+        public bool IsShootingSquad => GetShips().Any((s) => s.Turrets.Any());
         public bool HasOnlyYellowJackets => GetShips().All((s) => s.ShipType == "Yellow Jacket");
         public bool HasOnlyStrikers => GetShips().All((s) => s.ShipType == "Striker");
         public bool HasOnlyBombers => GetShips().All((s) => s.ShipType == "Striker" || s.ShipType == "Yellow Jacket" || s.ShipType == "Fire Ship");
@@ -104,12 +107,12 @@ namespace Assets.Scripts.Level
             }
             else
             {
-                //Debugger.Log($"Squad: {Name}, Side: {Side}, HiveMindControlled: {IsHiveMindControlled}, Has Brain: {HasBrain}");
+                //Debug.Log($"Squad: {Name}, Side: {Side}, HiveMindControlled: {IsHiveMindControlled}, Has Brain: {HasBrain}");
             }
 
             if (HasColor)
             {
-                //Debugger.Log($"SDC: {ConfigData.GetUIColor("squadbox-default-color").a}");
+                //Debug.Log($"SDC: {ConfigData.GetUIColor("squadbox-default-color").a}");
                 SquadBoxColor = new Color(Color.r, Color.g, Color.b, ConfigData.GetUIColor("squadbox-default-color").a);
             }
             else
@@ -147,7 +150,7 @@ namespace Assets.Scripts.Level
                 Vector2 offset = ConfigData.CarrierColumnFormationOffsets[shipIndex];
 
 
-                //Debugger.Log($"Offset: {offset}");
+                //Debug.Log($"Offset: {offset}");
                 Ship ship;
                 (GameObject, Ship) tuple = Level.LevelConstructor.InstantiateShip(squadType);
                 ship = tuple.Item2;
@@ -210,7 +213,7 @@ namespace Assets.Scripts.Level
                 // trying to place ships on the map according to where they were in the squad maker
                 // Option 1: Convert the squadmaker coordinates directly to map coordinates
 
-                //Debugger.Log($"Ship: {ship.Name} Position: {position}, Offset from Center: {ship.OffsetFromCenter}");
+                //Debug.Log($"Ship: {ship.Name} Position: {position}, Offset from Center: {ship.OffsetFromCenter}");
 
                 Vector2 adjustment = ship.OffsetFromCenter;
 
@@ -226,8 +229,8 @@ namespace Assets.Scripts.Level
                 float x = Mathf.Clamp((position.x + adjustment.x), Level.MinX, Level.MaxX);
                 float y = Mathf.Clamp((position.y + adjustment.y), Level.MinY, Level.MaxY);
 
-                //Debugger.Log($"Sizefactor for {ship.Name}: {sizeFactor}");
-                //Debugger.Log($"Local starting position for {ship.Name}: {new Vector2(x, y)}");
+                //Debug.Log($"Sizefactor for {ship.Name}: {sizeFactor}");
+                //Debug.Log($"Local starting position for {ship.Name}: {new Vector2(x, y)}");
                 ship.transform.localPosition = new Vector2(x, y);
             });
 
@@ -379,59 +382,54 @@ namespace Assets.Scripts.Level
         }
         public void Kill(bool endKill = false)
         {
-            _died = true;
-            //Debugger.Log($"Killing squad {Name}");
-            if (!endKill)
+            //Debug.Log($"Killing squad {Name}");
+            if (!IsDead)
             {
-                if (HasCommand)
+                IsDead = true;
+
+                if (!endKill)
                 {
-                    Command.SetFinalize("This squad got killed");
+                    if (HasCommand)
+                    {
+                        Command.SquadKilled();
+                    }
+
+                    if (IsUserControlled)
+                    {
+                        DeactivateSquadBox();
+                    }
+
+                    GameState state = Level.GetState();
+
+                    if (state.IsSideKilled(Side))
+                    {
+
+                        state.GameOver = true;
+
+                        state.GetAllSquads().ForEach((squad) =>
+                        {
+                            if (squad.HasCommand)
+                            {
+                                squad.Command.SetFinalize("Level ended");
+                            }
+                        });
+                    }
+                    else
+                    {
+                        if (state.GetSelectedSquads().Count == 0)
+                        {
+                            state.SelectSquad(state.GetSquadsBySide(Side).First());
+                        }
+                    }
                 }
 
                 if (IsUserControlled)
                 {
-                    DeactivateSquadBox();
+                    Destroy(SquadBox);
                 }
-
-                GameState state = Level.GetState();
-
-                if (state.IsSideKilled(Side))
-                {
-
-                    state.GameOver = true;
-
-                    state.GetAllSquads().ForEach((squad) =>
-                    {
-                        if (squad.HasCommand)
-                        {
-                            squad.Command.SetFinalize("Level ended");
-                        }
-                    });
-                }
-                else
-                {
-                    if (state.GetSelectedSquads().Count == 0)
-                    {
-                        state.SelectSquad(state.GetSquadsBySide(Side).First());
-                    }
-                }
+                Destroy(this);
             }
-
-            //if (HasCommand)
-            //{
-            //    //Debugger.Log($"Destroying command {Command.OutcomeId}");
-            //    Destroy(gameObject.GetComponents<Command>().First((c) => c.OutcomeId == Command.OutcomeId));
-            //}
-
-            // destroys all commands connected to dead squads, including this one
-            gameObject.GetComponents<Command>().Where((c) => c.Squad == null || c.Squad.IsDead).ToList().ForEach((c) => {
-                Destroy(c);
-            });
-            if (IsUserControlled)
-            {
-                Destroy(SquadBox);
-            }
-            Destroy(this);
+            
 
         }
         public Squad GetClosestEnemySquad()
@@ -565,94 +563,84 @@ namespace Assets.Scripts.Level
 
             
             Array.Sort(letters);
-            //Debugger.Log(new string(letters));
+            //Debug.Log(new string(letters));
             return new string(letters);
         }
         public void MakeMatchup(Squad enemy)
         {
-            //Debugger.Log("Making matchup");
-            if (enemy != null)
+            List<Ship> enemies = GetPotentialEnemies(enemy);
+            List<Ship> allies = GetPotentialAllies(enemy);
+
+            /*
+            Determines whether or not the squad is at the "walls"
+             */
+
+            int atTheWalls = 0;
+            int distance = 15;
+            Vector2 position = GetPosition();
+            if (position.x < (Level.MapRenderer.bounds.min.x + distance) || position.x > (Level.MapRenderer.bounds.max.x - distance)) // check if it's at the sides
             {
-                //Debugger.Log("Enemy is not null");
-                List<Ship> enemies = GetPotentialEnemies(enemy);
-                List<Ship> allies = GetPotentialAllies(enemy);
-
-                /*
-                Determines whether or not the squad is at the "walls"
-                 */
-
-                int atTheWalls = 0;
-                int distance = 15;
-                Vector2 position = GetPosition();
-                if (position.x < (Level.MapRenderer.bounds.min.x + distance) || position.x > (Level.MapRenderer.bounds.max.x - distance)) // check if it's at the sides
+                atTheWalls = 1;
+                if (position.y < (Level.MapRenderer.bounds.min.y + distance) || position.y > (Level.MapRenderer.bounds.max.y - distance))
                 {
-                    atTheWalls = 1;
-                    if (position.y < (Level.MapRenderer.bounds.min.y + distance) || position.y > (Level.MapRenderer.bounds.max.y - distance))
-                    {
-                        atTheWalls = 2;
-                    }
+                    atTheWalls = 2;
                 }
-                else if (position.y < (Level.MapRenderer.bounds.min.y + distance) || position.y > (Level.MapRenderer.bounds.max.y - distance))
-                {
-                    atTheWalls = 1;
-                }
+            }
+            else if (position.y < (Level.MapRenderer.bounds.min.y + distance) || position.y > (Level.MapRenderer.bounds.max.y - distance))
+            {
+                atTheWalls = 1;
+            }
 
-                /*
-                This is the calculation for the enemy's current average percentage of health for each ship and then the same for the allies, and then compares the allies to the enemies
-                 */
+            /*
+            This is the calculation for the enemy's current average percentage of health for each ship and then the same for the allies, and then compares the allies to the enemies
+             */
 
-                int comparativeHealth = (int)Math.Round((Ship.GetAverageHealthPercent(allies) / Ship.GetAverageHealthPercent(enemies)) * 100);   
+            int comparativeHealth = (int)Math.Round((Ship.GetAverageHealthPercent(allies) / Ship.GetAverageHealthPercent(enemies)) * 100);
 
-                /*
-                 comparativeHealth
-                 < 50 0
-                 50 - 85 1
-                 85 - 115 2
-                 115 - 165 3
-                 165+ 4
-                 */
+            /*
+             comparativeHealth
+             < 50 0
+             50 - 85 1
+             85 - 115 2
+             115 - 165 3
+             165+ 4
+             */
 
-                if (comparativeHealth < 50)
-                {
-                    comparativeHealth = 0;
-                }
-                else if (comparativeHealth < 85)
-                {
-                    comparativeHealth = 1;
-                }
-                else if (comparativeHealth < 115)
-                {
-                    comparativeHealth = 2;
-                }
-                else if (comparativeHealth < 165)
-                {
-                    comparativeHealth = 3;
-                }
-                else
-                {
-                    comparativeHealth = 4;
-                }
-                StringBuilder sb = new StringBuilder();
-                sb.Append(AddToMatchup(allies));
-                sb.Append("|");
-                sb.Append(AddToMatchup(enemies));
-                sb.Append("|");
-                sb.Append((enemy.IsAnySquadShipWithinRangeOfAnyOfOurSquadShips(this) ? 1 : 0));
-                sb.Append("|");
-                sb.Append(comparativeHealth);
-                sb.Append("|");
-                sb.Append(atTheWalls);
-
-                string matchup = sb.ToString();
-
-                Level.Socket.SendRequest(new CommandRequest(new GetStrategy(matchup, OpponentId, BannedStrats.ToArray()),
-                    this, enemy, matchup, ConfigData.StandardMaxTimeOnQueue));
-
+            if (comparativeHealth < 50)
+            {
+                comparativeHealth = 0;
+            }
+            else if (comparativeHealth < 85)
+            {
+                comparativeHealth = 1;
+            }
+            else if (comparativeHealth < 115)
+            {
+                comparativeHealth = 2;
+            }
+            else if (comparativeHealth < 165)
+            {
+                comparativeHealth = 3;
             }
             else
             {
-                Debugger.Exception($"The enemy is null so a matchup can't be made with this strategy");
+                comparativeHealth = 4;
             }
+            StringBuilder sb = new StringBuilder();
+            sb.Append(AddToMatchup(allies));
+            sb.Append("|");
+            sb.Append(AddToMatchup(enemies));
+            sb.Append("|");
+            sb.Append((enemy.IsAnySquadShipWithinRangeOfAnyOfOurSquadShips(this) ? 1 : 0));
+            sb.Append("|");
+            sb.Append(comparativeHealth);
+            sb.Append("|");
+            sb.Append(atTheWalls);
+
+            string matchup = sb.ToString();
+
+            Level.Socket.SendRequest(new CommandRequest(new GetStrategy(matchup, OpponentId, BannedStrats.ToArray()),
+                this, enemy, matchup, ConfigData.StandardMaxTimeOnQueue));
 
 
         }
@@ -699,7 +687,7 @@ namespace Assets.Scripts.Level
         }
         public void UserPatrol(Vector2 topLeft, Vector2 bottomRight)
         {
-            //Debugger.Log($"Selecting patrol area for {Name}");
+            //Debug.Log($"Selecting patrol area for {Name}");
             (Strategy, ShootingStrategy) strategies = MakeUserCommand("Patrol", null);
 
             ((Patrol)Command).Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), true, topLeft, bottomRight);
@@ -715,19 +703,19 @@ namespace Assets.Scripts.Level
                 UserBombingRun(enemy);
                 return;
             }
-            //Debugger.Log($"Creating \"Aggressive\" command for {Name} against {enemy.Name}");
+            //Debug.Log($"Creating \"Aggressive\" command for {Name} against {enemy.Name}");
             (Strategy, ShootingStrategy) strategies = MakeUserCommand("Aggressive", enemy); // selectedSquad is the user's squad, and Squad is this ship's squad
             Command.Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), false);
         }
         public void UserBombingRun(Squad enemy)
         {
-            //Debugger.Log($"Creating \"Bombing Run\" command for {Name} against {enemy.Name}");
+            //Debug.Log($"Creating \"Bombing Run\" command for {Name} against {enemy.Name}");
             (Strategy, ShootingStrategy) strategies = MakeUserCommand("Bombing Run", enemy); // selectedSquad is the user's squad, and Squad is this ship's squad
             ((BombingRun)Command).Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), false);
         }
         public (Strategy, ShootingStrategy) MakeUserCommand(string command, Squad enemy)
         {
-            //Debugger.Log($"{Name} now has command against {enemy.Name}");
+            //Debug.Log($"{Name} now has command against {enemy.Name}");
             FinalizeUserCommand();
 
             MatchupStrategy = null;
@@ -763,7 +751,7 @@ namespace Assets.Scripts.Level
         {
             if (HasCommand)
             {
-                //Debugger.Log($"Finalizing command for {Name}");
+                //Debug.Log($"Finalizing command for {Name}");
 
                 if (Command.Type == "Guard")
                 {
@@ -801,7 +789,7 @@ namespace Assets.Scripts.Level
         }
         public void AddShip(Ship ship)
         {
-            //Debugger.Log($"Adding {ship.Name} to Squad {Name}");
+            //Debug.Log($"Adding {ship.Name} to Squad {Name}");
             _ships.Add(ship);
             if (IsDefenseless)
             {
@@ -835,7 +823,7 @@ namespace Assets.Scripts.Level
         }
         public new string ToString()
         {
-            return $"Squad Number #{SquadNumber} on side #{Side} {Name} with {_ships.Count} ships and IsDead? {IsDead}";
+            return $"Squad Number #{SquadNumber} on side #{Side} {Name} with {_ships.Count} ships";
         }
 
 
@@ -888,19 +876,11 @@ namespace Assets.Scripts.Level
         }
         public Vector2 GetLeftMostPoint()
         {
-            if (IsDead)
-            {
-                Debugger.Exception(new Exception("Tried to get the LeftMostPoint of a dead squad."));
-            }
             Ship ship = GetShips().OrderBy((ship) => ship.GetLeftMostPoint().x).ToList().First();
             return new Vector2(ship.GetLeftMostPoint().x, ship.GetY());
         }
         public Vector2 GetRightMostPoint()
         {
-            if (IsDead)
-            {
-                Debugger.Exception(new Exception("Tried to get the RightMostPoint of a dead squad."));
-            }
             Ship ship = GetShips().OrderByDescending((ship) => ship.GetRightMostPoint().x).ToList().First();
             return new Vector2(ship.GetRightMostPoint().x, ship.GetY());
         }
@@ -936,7 +916,7 @@ namespace Assets.Scripts.Level
 
             return new Vector2(midX, midY);
         }
-        public float AngleToPoint(Vector3 point)
+        public float AngleToPoint(Vector2 point)
         {
             return Utilities.AngleBetweenPoints(GetPosition(), point);
         }
@@ -952,8 +932,8 @@ namespace Assets.Scripts.Level
         // UI Methods
         public void MoveSquadBox()
         {
-            //Debugger.Log($"Squad #{squadNumber} is moving and the squad box will have width {GetWidth()}, height {GetHeight()}, and center point {GetCenterPoint()}");
-            //Debugger.Log($"Right most point {GetRightMostPoint()}, Left most point {GetLeftMostPoint()}, Top most point {GetTopMostPoint()}, Bottom most point {GetBottomMostPoint()}");
+            //Debug.Log($"Squad #{squadNumber} is moving and the squad box will have width {GetWidth()}, height {GetHeight()}, and center point {GetCenterPoint()}");
+            //Debug.Log($"Right most point {GetRightMostPoint()}, Left most point {GetLeftMostPoint()}, Top most point {GetTopMostPoint()}, Bottom most point {GetBottomMostPoint()}");
             if (IsSelected && !Level.IsTrainingNueralNetwork)
             {
                 SquadBox.SetActive(true);

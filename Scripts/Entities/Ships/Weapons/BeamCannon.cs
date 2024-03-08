@@ -18,7 +18,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
             if (TargetShip != null && !CeaseFire)
             {
-                //Debugger.Log($"Aiming {Piece.name} at {TargetShip.Name}");
+                //Debug.Log($"Aiming {Piece.name} at {TargetShip.Name}");
                 Vector2 targetPoint = TargetShip.GetPosition();
                 if (FireAtFrontOfShip)
                 {
@@ -33,7 +33,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 if (!IsFiringLaserBeam)
                 {
-                    //Debugger.Log($"TargetShip is null, rotating back");
+                    //Debug.Log($"TargetShip is null, rotating back");
                     AimedAtTarget = false;
                     Utilities.TimedRotation(Piece, Ship.GetRotation(), RotationRate);
                 }
@@ -45,7 +45,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             if (!IsFiringLaserBeam)
             {
-                //Debugger.Log($"Setting target ship to {targetShip.Name}");
+                //Debug.Log($"Setting target ship to {targetShip.Name}");
                 TargetShip = targetShip;
             }
         }
@@ -53,7 +53,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             if (!IsFiringLaserBeam)
             {
-                //Debugger.Log("Sending beam cannon projectile");
+                //Debug.Log("Sending beam cannon projectile");
 
                 Vector2 targetPoint = TargetShip.GetPosition();
                 if (FireAtFrontOfShip)
@@ -67,7 +67,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 //Vector2 mapTransformPoint = Ship.Level.Map.transform.InverseTransformPoint(Piece.transform.position);
                 //Vector2 shipOffset = Ship.GetPosition() + (Vector2) transform.position;
 
-                //Debugger.Log($"Potential spawn point for laser beam, mapTransformPoint: {mapTransformPoint}, shipOffset: {shipOffset}");
+                //Debug.Log($"Potential spawn point for laser beam, mapTransformPoint: {mapTransformPoint}, shipOffset: {shipOffset}");
 
                 Level.AddProjectile(ProjectilePrefab, this, GetPosition(), angle);
                 Ship.FleetShip.ShotsFired++;

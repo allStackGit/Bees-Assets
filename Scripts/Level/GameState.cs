@@ -171,7 +171,7 @@ namespace Assets.Scripts.Level
         }
         public Ship GetShipById(long id)
         {
-            return _ships.Where(ship => ship.Id == id).ToList().First();
+            return _ships.FirstOrDefault(ship => ship.Id == id);
         }
         public bool IsShipExtinct(string shipType)
         {
@@ -180,11 +180,11 @@ namespace Assets.Scripts.Level
 
         public List<Squad> GetSelectedSquads()
         {
-            return _selectedSquads.Where((squad) => !squad.IsDead).ToList();
+            return _selectedSquads.Where((squad) => squad != null).ToList();
         }
         public void AddSelectedSquad(Squad squad)
         {
-            if (squad != null && !squad.IsDead && squad.IsUserControlled)
+            if (squad != null && squad.IsUserControlled)
             {
                 _selectedSquads.Add(squad);
                 squad.MoveSquadBox();
@@ -213,7 +213,7 @@ namespace Assets.Scripts.Level
         }
         public void SelectSquad(Squad squad)
         {
-            //Debugger.Log($"Selecting squad {squad.Name}");
+            //Debug.Log($"Selecting squad {squad.Name}");
             if (squad != null)
             {
                 ClearSelectedSquads();
@@ -231,26 +231,28 @@ namespace Assets.Scripts.Level
         }
         public List<Squad> GetAllSquads()
         {
-            return _squads.Where(squad => !squad.IsDead).ToList();
+            return _squads.Where(squad => squad != null && !squad.IsDead).ToList();
         }
         public List<Squad> GetSquadsBySide(int side)
         {
             return GetAllSquads().Where(squad => squad.Side == side).ToList();
         }
+        /// <summary>
+        /// Get all squads where the side does not match the side given
+        /// </summary>
+        /// <param name="side"></param>
+        /// <returns></returns>
         public List<Squad> GetEnemySquads(int side)
         {
             return GetAllSquads().Where(squad => squad.Side != side).ToList();
         }
         public void AddToSquadsAwaitingHiveMindCommands(Squad squad)
         {
-            if (squad != null && !squad.IsDead && !squad.IsUserControlled)
-            {
-                _squadsAwaitingCommands.Add(squad);
-            }
+            _squadsAwaitingCommands.Add(squad);
         }
         public List<Squad> GetSquadsAwaitingHiveMindCommands()
         {
-            return _squadsAwaitingCommands.Where((squad) => !squad.IsDead).ToList();
+            return _squadsAwaitingCommands;
         }
         public void RemoveFromSquadsAwaitingHivemindCommands(Squad squad)
         {

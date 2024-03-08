@@ -13,7 +13,7 @@ namespace Assets.Scripts.Scenes
         {
             Name = "Loading Screen";
             base.Start();
-            //Debugger.Log($"Started {Name} scene");
+            //Debug.Log($"Started {Name} scene");
         }
         // Update is called once per frame
         new void Update()

@@ -18,7 +18,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
         public override void ContactTarget(Ship target)
         {
-            //Debugger.Log($"Explosion hit {target.Name}");
+            //Debug.Log($"Explosion hit {target.Name}");
             _shipsHit.Add(target);
         }
 
@@ -44,7 +44,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
         public new virtual void Kill()
         {
-            //Debugger.Log("Killed off the rocket explosion");
+            //Debug.Log("Killed off the rocket explosion");
             Level.GetState().RemoveExplosion(this);
             Destroy(gameObject);
         }
@@ -60,7 +60,7 @@ namespace Assets.Scripts.Entities.Projectiles
             {
                 if (CollidingQueue.Count > 0)
                 {
-                    //Debugger.Log("Pulled collision off of rocket explosion queue");
+                    //Debug.Log("Pulled collision off of rocket explosion queue");
                     for (int i = 0; i < CollidingQueue.Count; i++)
                     {
                         ShipCollision(CollidingQueue.Dequeue());
@@ -71,7 +71,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
         protected override void ShipCollision(Ship ship)
         {
-            //Debugger.Log($"Rocket explosion collided with {ship.Name}");
+            //Debug.Log($"Rocket explosion collided with {ship.Name}");
             if (ship != null)
             {
                 // if hit enemy projectile or fire ship explosion

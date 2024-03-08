@@ -15,7 +15,7 @@ namespace Assets.Scripts.Level.Commands
         public override void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy)
         {
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
-            if (Squad != null && !Squad.IsDead)
+            if (Squad != null)
             {
                 IsAttacking = true;
                 PrepareDamageToSendEntries();
@@ -28,53 +28,45 @@ namespace Assets.Scripts.Level.Commands
         }
         private void Timer()
         {
-            if (Squad != null && !Squad.IsDead)
+            if (Enemy != null && !Enemy.IsDead && !Squad.IsDead)
             {
-                if (Enemy != null && !Enemy.IsDead)
+                Squad.Status = $"Moving to circle enemy squad #{Enemy.SquadNumber}";
+                if (!_gotToEnemy && !Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(Enemy))
                 {
-                    Squad.Status = $"Moving to circle enemy squad #{Enemy.SquadNumber}";
-                    if (!_gotToEnemy && !Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(Enemy))
-                    {
-                        //Debugger.Log($"{Squad.Name} is trying to get to a good circling position against {Enemy.Name}");
-                        Squad.Status = $"Trying to get to a good circling position against {Enemy.Name}";
-                        SetAndMove(Enemy.GetPosition());
-                    }
-                    else
-                    {
-                        if (!_hasSetIdealDistance)
-                        {
-                            _idealDistance = Enemy.DistanceTo(Squad.GetPosition()) * .97f;
-                            _angle = Enemy.AngleToPoint(Squad.GetPosition()) - (Mathf.PI * .5f);
-                            _hasSetIdealDistance = true;
-                        }
-
-                        _gotToEnemy = true;
-                        float angle = Enemy.AngleToPoint(Squad.GetPosition());
-
-                        _angle = angle + (.06f * Mathf.PI);
-                        //Debugger.Log($"{Squad.Name} is circling enemy squad # {Enemy.Name} at {_idealDistance} away");
-                        Squad.Status = $"Circling enemy squad # {Enemy.Name} at {_idealDistance} away";
-                        NewCircleSpot();
-                    }
+                    //Debug.Log($"{Squad.Name} is trying to get to a good circling position against {Enemy.Name}");
+                    Squad.Status = $"Trying to get to a good circling position against {Enemy.Name}";
+                    SetAndMove(Enemy.GetPosition());
                 }
                 else
                 {
-                    //Debugger.Log("The enemy is dead or does not exist.");
-                    CancelInvoke(nameof(Timer));
-                    SetFinalize("The enemy squad is gone or dead");
+                    if (!_hasSetIdealDistance)
+                    {
+                        _idealDistance = Enemy.DistanceTo(Squad.GetPosition()) * .97f;
+                        _angle = Enemy.AngleToPoint(Squad.GetPosition()) - (Mathf.PI * .5f);
+                        _hasSetIdealDistance = true;
+                    }
+
+                    _gotToEnemy = true;
+                    float angle = Enemy.AngleToPoint(Squad.GetPosition());
+
+                    _angle = angle + (.06f * Mathf.PI);
+                    //Debug.Log($"{Squad.Name} is circling enemy squad # {Enemy.Name} at {_idealDistance} away");
+                    Squad.Status = $"Circling enemy squad # {Enemy.Name} at {_idealDistance} away";
+                    NewCircleSpot();
                 }
             }
             else
             {
+                //Debug.Log("The enemy is dead or does not exist.");
                 CancelInvoke(nameof(Timer));
-                SetFinalize("The squad is dead");
+                SetFinalize("The enemy squad is gone or dead");
             }
-            
+
         }
         private void NewCircleSpot()
         {
             Vector2 destination = Enemy.CirclePoint(_angle, _idealDistance);
-            //Debugger.Log($"Current Position: {Squad.GetPosition()}, Next Destination: {destination}");
+            //Debug.Log($"Current Position: {Squad.GetPosition()}, Next Destination: {destination}");
             SetAndMove(destination);
         }
     }

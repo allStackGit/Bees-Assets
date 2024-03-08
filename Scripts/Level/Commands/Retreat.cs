@@ -17,9 +17,9 @@ namespace Assets.Scripts.Level.Commands
 
 
             
-            if (Squad != null && !Squad.IsDead)
+            if (Squad != null)
             {
-                if (Enemy != null && !Enemy.IsDead)
+                if (Enemy != null)
                 {
                     double distance = Squad.DistanceTo(Enemy.GetPosition());
                     double idealDistance = Enemy.Range * 1.5;
@@ -51,7 +51,7 @@ namespace Assets.Scripts.Level.Commands
         }
         private void Timer()
         {
-            if (Squad != null && !Squad.IsDead)
+            if (Squad != null)
             {
                 if (Squad.HasReachedDestination)
                 {

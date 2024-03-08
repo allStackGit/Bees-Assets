@@ -27,14 +27,14 @@ namespace Assets.Scripts.Entities.Ships
             else if (collidingThing.CompareTag("Ship"))
             {
                 TouchingShip = collidingThing.GetComponent<Ship>();
-                //Debugger.Log($"Striker collided with a ship!" +
+                //Debug.Log($"Striker collided with a ship!" +
                 //    $"{ship}, " +
                 //    $"{Squad}, " +
                 //    $"{TargetShip}");
 
                 if (TouchingShip != null && TouchingShip.Side != Side && Squad.HasCommand && HasTargetShips && TargetShips.Contains(TouchingShip))
                 {
-                    //Debugger.Log("Collided with our target ship!");
+                    //Debug.Log("Collided with our target ship!");
                     ContactedShip = TouchingShip;
                     Detonate();
 
@@ -60,19 +60,19 @@ namespace Assets.Scripts.Entities.Ships
         }
         public void TryToDetonate()
         {
-            //Debugger.Log($"Trying to detonate with {Name}");
+            //Debug.Log($"Trying to detonate with {Name}");
             if (TouchingShip != null && TouchingShip.Side != Side)
             {
                 ContactedShip = TouchingShip;
                 Detonate();
                 return;
             }
-            //Debugger.Log($"Failed trying to detonate with {Name}: TouchingShip: [{TouchingShip}]");
+            //Debug.Log($"Failed trying to detonate with {Name}: TouchingShip: [{TouchingShip}]");
 
         }
         private void Detonate()
         {
-            //Debugger.Log($"Yellow Jacket #{Id} is detonating against {ContactedShip.Name}");
+            //Debug.Log($"Yellow Jacket #{Id} is detonating against {ContactedShip.Name}");
             HasCompletedRun = true;
 
             // do damage and stats
@@ -95,34 +95,30 @@ namespace Assets.Scripts.Entities.Ships
 
         public void SuicideKill(Squad squad) // [kill-method] [stats-method] [note]
         {
-            if (!IsDead)
+            DropExplosionAnimation();
+
+            Level.GetState().RemoveShip(this);
+            Squad.RemoveShip(this);
+
+            if (Level.ReplaceDeadShips && Squad.SavedSquad.HasBeenSavedToStorage)
             {
-                IsDead = true;
-                DropExplosionAnimation();
-
-                Level.GetState().RemoveShip(this);
-                Squad.RemoveShip(this);
-
-                if (Level.ReplaceDeadShips && Squad.SavedSquad.HasBeenSavedToStorage)
-                {
-                    FleetShip.IsDead = true;
-                }
-                Squad.SavedSquad.Stats.ShipsLost++;
-
-                squad.SavedSquad.Stats.Kills++;
-                //FleetShip.BattlesFought++;
-
-                if (Squad.GetShips().Count <= 0)
-                {
-                    //Squad.SavedSquad.Stats.BattlesFought++;
-                    Squad.Kill();
-                }
-                else
-                {
-                    Squad.SetOffsets();
-                }
-                Destroy(gameObject);
+                FleetShip.IsDead = true;
             }
+            Squad.SavedSquad.Stats.ShipsLost++;
+
+            squad.SavedSquad.Stats.Kills++;
+            //FleetShip.BattlesFought++;
+
+            if (Squad.GetShips().Count == 0)
+            {
+                //Squad.SavedSquad.Stats.BattlesFought++;
+                Squad.Kill();
+            }
+            else
+            {
+                Squad.SetOffsets();
+            }
+            Destroy(gameObject);
 
         }
 
@@ -137,7 +133,7 @@ namespace Assets.Scripts.Entities.Ships
             }
 
             int targetTSVChange = target.Tsv - targetOldTSV; // this is a negative number since being hit by a projectile should induce a loss of TSV
-            //Debugger.Log($"Yellow Jacket #{Id} Detonation: {targetTSVChange} tsv inflicted on {target.Name}");
+            //Debug.Log($"Yellow Jacket #{Id} Detonation: {targetTSVChange} tsv inflicted on {target.Name}");
             LogHitStats(shooter, shooter.Squad, target, target.Squad, targetTSVChange);
 
             // each hit, add the negative TSV to the target's command and subtract the negative TSV from the shooter's command

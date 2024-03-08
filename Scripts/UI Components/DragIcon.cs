@@ -55,7 +55,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void SetChangablePixels(Color[] colors)
         {
-            //Debugger.Log($"Setting changable pixels for {_icon.name}");
+            //Debug.Log($"Setting changable pixels for {_icon.name}");
             UnityEngine.UI.Image image = _icon.GetComponent<UnityEngine.UI.Image>();
             _changeablePixels = Utilities.SetChangablePixelsForImage(colors, image.sprite);
         }

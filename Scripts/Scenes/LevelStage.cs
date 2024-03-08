@@ -73,13 +73,13 @@ namespace Assets.Scripts.Scenes
 
         new void Start()
         {
-            //Debugger.Log($"Start level scene");
+            //Debug.Log($"Start level scene");
             Name = "Level";
             base.Start();
         }
         private void Setup()
         {
-            //Debugger.Log($"Setup scene");
+            //Debug.Log($"Setup scene");
             if (OverrideTimeScale == 0)
             {
                 TimeScale = ConfigData.Configuration.TimeScale;
@@ -106,7 +106,7 @@ namespace Assets.Scripts.Scenes
                 {
                     Academy.Instance.OnEnvironmentReset += () =>
                     {
-                        //Debugger.Log($"Reset environment, {Academy.Instance.StepCount}");
+                        //Debug.Log($"Reset environment, {Academy.Instance.StepCount}");
                     };
 
                 }
@@ -169,7 +169,7 @@ namespace Assets.Scripts.Scenes
 
             if (HasPlayer)
             {
-                //Debugger.Log($"MapRenderer.size.x: {MapRenderer.size.x}, Camera aspect: {Camera.aspect}");
+                //Debug.Log($"MapRenderer.size.x: {MapRenderer.size.x}, Camera aspect: {Camera.aspect}");
                 MiniMapCamera.orthographicSize = (MapRenderer.size.x / (Camera.aspect * 2));
                 MaxZoom = (int)MiniMapCamera.orthographicSize;
 
@@ -188,7 +188,7 @@ namespace Assets.Scripts.Scenes
         }
         protected override void FinalizeSceneWithUserData()
         {
-            //Debugger.Log($"Finalize scene");
+            //Debug.Log($"Finalize scene");
             Physics.autoSimulation = false; // What does this do and is it necessary?
             if (!ConfigData.Configuration.DoesUserHaveController && !DoesUserHaveController)
             {
@@ -270,7 +270,7 @@ namespace Assets.Scripts.Scenes
             if (!IsTrainingNueralNetwork)
             {
                 Pause();
-                //Debugger.Log("LEVEL OVER!");
+                //Debug.Log("LEVEL OVER!");
                 GameState state = GetState();
                 state.LevelEnded = true;
 
@@ -348,7 +348,8 @@ namespace Assets.Scripts.Scenes
             }
             else
             {
-                Invoke(nameof(SaveAndEnd), 1f);
+                SaveAndEnd();
+                //Invoke(nameof(SaveAndEnd), 1f);
             }
 
 
@@ -359,7 +360,7 @@ namespace Assets.Scripts.Scenes
 
             Academy.Instance.StatsRecorder.Add("Episode Time", Seconds);
 
-            //Debugger.Log($"Reset level ({Seconds}), Unclamped Bee reward: {BeeCumaltiveReward}, Unclamped Human reward: {HumanCumulativeReward}");
+            //Debug.Log($"Reset level ({Seconds}), Unclamped Bee reward: {BeeCumaltiveReward}, Unclamped Human reward: {HumanCumulativeReward}");
             GameState state = GetState();
             Ship[] ships = state.GetShips().ToArray();
 
@@ -399,29 +400,29 @@ namespace Assets.Scripts.Scenes
                 if (state.IsSideKilled(ConfigData.Configuration.HumanSide) && !state.IsSideKilled(ConfigData.Configuration.BeeSide))
                 {
                     //WinningSide = ConfigData.Configuration.BeeSide;
-                    //Debugger.Log($"Bees won! They had {remainingBeeTsv} / {state.InitialTsv[ConfigData.Configuration.BeeSide - 1]} remaining TSV or {remainingBeeTSVPercentage} x of the original.");
+                    //Debug.Log($"Bees won! They had {remainingBeeTsv} / {state.InitialTsv[ConfigData.Configuration.BeeSide - 1]} remaining TSV or {remainingBeeTSVPercentage} x of the original.");
 
                     AgentGroup.SetGroupReward(remainingBeeTSVPercentage);
                     HumanAgentGroup.SetGroupReward(-remainingBeeTSVPercentage);
                     //BeeCumaltiveReward += 1f;
                     //HumanCumulativeReward = -1f;
-                    //Debugger.Log($"Bees won! Lost {LostBeeShips} bees, reward: {BeeCumaltiveReward}, {HumanCumulativeReward}");
+                    //Debug.Log($"Bees won! Lost {LostBeeShips} bees, reward: {BeeCumaltiveReward}, {HumanCumulativeReward}");
 
                 }
                 else if (state.IsSideKilled(ConfigData.Configuration.BeeSide) && !state.IsSideKilled(ConfigData.Configuration.HumanSide))
                 {
-                    //Debugger.Log($"Humans won! They had {remainingHumanTsv} / {state.InitialTsv[ConfigData.Configuration.HumanSide - 1]} remaining TSV or {remainingHumanTSVPercentage} x of the original.");
+                    //Debug.Log($"Humans won! They had {remainingHumanTsv} / {state.InitialTsv[ConfigData.Configuration.HumanSide - 1]} remaining TSV or {remainingHumanTSVPercentage} x of the original.");
 
                     AgentGroup.SetGroupReward(-remainingHumanTSVPercentage);
                     HumanAgentGroup.SetGroupReward(remainingHumanTSVPercentage);
                     //BeeCumaltiveReward = -1f;
                     //HumanCumulativeReward += 1f;
-                    //Debugger.Log($"Humans won! Lost {LostBeeShips} bees, reward: {BeeCumaltiveReward}, {HumanCumulativeReward}");
+                    //Debug.Log($"Humans won! Lost {LostBeeShips} bees, reward: {BeeCumaltiveReward}, {HumanCumulativeReward}");
 
                 }
                 else
                 {
-                    Debugger.Log($"Both sides died! no on won!");
+                    Debug.Log($"Both sides died! no on won!");
                     AgentGroup.SetGroupReward(0);
                     HumanAgentGroup.SetGroupReward(0);
 
@@ -440,12 +441,15 @@ namespace Assets.Scripts.Scenes
 
                 ship.Kill(null, true);
             }
-            //StartNew();
-            Invoke(nameof(StartNew), .1f);
+            StartNew();
+            //Invoke(nameof(StartNew), .1f);
             //WinningSide = 0;
         }
         public void StartNew()
         {
+            GameState state = GetState();
+            state.GameOver = false;
+            state.LevelEnded = false;
             Seconds = 0;
             //Socket.StandingRequests.Clear();
             Socket.HandledRequests.Clear();
@@ -454,7 +458,7 @@ namespace Assets.Scripts.Scenes
                 ConfigData.__PastServerRequests.Clear();
             }
             CancelInvoke(nameof(TimeOut));
-            //Debugger.Log("Cleared timeout");
+            //Debug.Log("Cleared timeout");
             if (!HasPlayer)
             {
                 Invoke(nameof(TimeOut), TimeoutTime);
@@ -473,7 +477,7 @@ namespace Assets.Scripts.Scenes
         }
         private void TimeOut()
         {
-            Debugger.Log("Level timed out!");
+            Debug.Log("Level timed out!");
             SaveAndEnd();
         }
         private void SaveAndEnd()
@@ -520,11 +524,9 @@ namespace Assets.Scripts.Scenes
                 ConfigData.AllShips.SaveFleetData();
                 ConfigData.AllShips.SaveSquadData();
             }
-            //Debugger.Log($"Resetting scene");
+            //Debug.Log($"Resetting scene");
             Ship[] ships = state.GetShips().ToArray();
 
-            state.GameOver = false;
-            state.LevelEnded = false;
             for(int i = 0; i < ships.Length; i++)
             {
                 Ship ship = ships[i];
@@ -539,7 +541,8 @@ namespace Assets.Scripts.Scenes
             }
             //StartNew();
             state.ClearLists();
-            Invoke(nameof(StartNew), .1f);
+            StartNew();
+            //Invoke(nameof(StartNew), .1f);
             //Invoke(nameof(ReloadScene), 1f);
 
             //if (ConfigData.Configuration.DoesUserHaveController)
@@ -558,9 +561,9 @@ namespace Assets.Scripts.Scenes
         }
         public void ReloadScene()
         {
-            //Debugger.Log($"Before scene manager");
+            //Debug.Log($"Before scene manager");
             SceneManager.LoadSceneAsync(SceneManager.GetActiveScene().name, LoadSceneMode.Single);
-            //Debugger.Log($"After scene manager");
+            //Debug.Log($"After scene manager");
         }
         public void Pause()
         {
@@ -581,7 +584,7 @@ namespace Assets.Scripts.Scenes
         // The SplitterShot class adds it's own projectile [note] [projectile-method]
         public void AddProjectile(GameObject instance, Weapon weapon, Vector2 startingPosition, float angle)
         {
-             //Debugger.Log($"Adding projectile {instance.name} at startingPosition: {startingPosition}");
+             //Debug.Log($"Adding projectile {instance.name} at startingPosition: {startingPosition}");
             instance = Instantiate(instance, new Vector2(0, 0), Quaternion.identity);
             instance.transform.parent = Map.transform;
             Projectile projectile = (Projectile) instance.GetComponent(typeof(Projectile));
@@ -591,12 +594,12 @@ namespace Assets.Scripts.Scenes
             int power = weapon.Power;
             if (weapon is DualCannon)
             {
-                //Debugger.Log("This is a dual cannon, splitting the power");
+                //Debug.Log("This is a dual cannon, splitting the power");
                 power /= 2;
             }
-            //Debugger.Log($"Position before setup for {projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
+            //Debug.Log($"Position before setup for {projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
             projectile.Setup(this, shooter.Side, state.AddEntity(), weapon, shooter, target, startingPosition, angle, shooter.Range, power);
-            //Debugger.Log($"Position after setup for #{projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
+            //Debug.Log($"Position after setup for #{projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
             state.AddProjectile(projectile);
         }
         public GameState GetState()
@@ -605,7 +608,7 @@ namespace Assets.Scripts.Scenes
         }
         private void GetHiveMindCommands()
         {
-            //Debugger.Log("Giving command");
+            //Debug.Log("Giving command");
             GameState state = GetState();
             if (!IsPaused && ActivateHiveMind && IsLevelSetupOnServer)
             {
@@ -616,9 +619,9 @@ namespace Assets.Scripts.Scenes
                     state.RemoveFromSquadsAwaitingHivemindCommands(squad);
                     if (squad != null)
                     {
-                        //Debugger.Log("Giving command");
-                        //Debugger.Log($"asking for matchup strat");
-                        //Debugger.Log(squad.damageSentToEnemyShipsBySquad);
+                        //Debug.Log("Giving command");
+                        //Debug.Log($"asking for matchup strat");
+                        //Debug.Log(squad.damageSentToEnemyShipsBySquad);
                         squad.MakeMatchupStrat();
                     }
                 }

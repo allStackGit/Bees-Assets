@@ -42,7 +42,7 @@ namespace Assets.Scripts.Data
         private void GetStats()
         {
             ShipStatBlock shipInfo = ConfigData.GetShipInfo(Type);
-            //Debugger.Log($"Got ship info for {Type}. [{shipInfo}]");
+            //Debug.Log($"Got ship info for {Type}. [{shipInfo}]");
             Health = shipInfo.Health;
             MaxHealth = shipInfo.Health;
             Range = shipInfo.Ranges;
@@ -58,7 +58,7 @@ namespace Assets.Scripts.Data
             if (Type == "Carrier")
             {
                 AdditionalTsv = Utilities.CalculateCarrierAdditionalTsv();
-                //Debugger.Log($"AdditionalTSV for Carrier is {AdditionalTsv}. {drone.GetTsv()} for each drone and {striker.GetTsv()} for each striker");
+                //Debug.Log($"AdditionalTSV for Carrier is {AdditionalTsv}. {drone.GetTsv()} for each drone and {striker.GetTsv()} for each striker");
             }
             else if (Type == "Striker")
             {
@@ -96,7 +96,7 @@ namespace Assets.Scripts.Data
                 float projectileValue = ProjectileValue.ElementAt(i);
                 float specialFirePower = SpecialFirePower.ElementAt(i);
                 float rotationRate = RotationRates.ElementAt(i);
-                //Debugger.Log($"Firepower calc for {Type}: range: {range}, power: {power*projectileValue}, rateofFire: {rateOfFire}");
+                //Debug.Log($"Firepower calc for {Type}: range: {range}, power: {power*projectileValue}, rateofFire: {rateOfFire}");
                 
                 sum += Utilities.CalculateFirepower(power, range, rateOfFire, rotationRate, projectileValue, specialFirePower);
             }
@@ -115,7 +115,7 @@ namespace Assets.Scripts.Data
         }
         public int GetMaxCapacity()
         {
-            //Debugger.Log($"Calculating TSV for {Type}. Firepower: {Firepower}");
+            //Debug.Log($"Calculating TSV for {Type}. Firepower: {Firepower}");
             return GetMaxTsv();
         }
         public bool Equals(FleetShip ship)

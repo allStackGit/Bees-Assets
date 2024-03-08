@@ -13,7 +13,7 @@ namespace Assets.Scripts.Level.Commands
         {
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
 
-            if (Squad != null && !Squad.IsDead)
+            if (Squad != null)
             {
                 PrepareDamageToSendEntries("closest");
                 SetAndMove(destination);
@@ -28,7 +28,7 @@ namespace Assets.Scripts.Level.Commands
         }
         private void Timer()
         {
-            if (Squad != null && !Squad.IsDead)
+            if (Squad != null)
             {
                 if (Squad.HasReachedDestination)
                 {

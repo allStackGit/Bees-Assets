@@ -3,6 +3,7 @@ using Newtonsoft.Json;
 using System.IO;
 using Assets.Scripts.Server;
 using Assets.Scripts.Scenes;
+using UnityEngine;
 
 namespace Assets.Scripts.Data
 {
@@ -27,7 +28,7 @@ namespace Assets.Scripts.Data
             this.Path = ConfigData.GetBasePath();
             this.FullPath = $"{Path}{Name}{Extension}";
             this._scene = scene;
-            //Debugger.Log($"Full file path is {FullPath}");
+            //Debug.Log($"Full file path is {FullPath}");
         }
         private void MakeFileIfNecessary()
         {
@@ -81,20 +82,20 @@ namespace Assets.Scripts.Data
                 DataFileRequest standingRequest = (DataFileRequest)_scene.Socket.GetStandingRequest(_request.Hash);
                 if (standingRequest.Status == 1)
                 {
-                    //Debugger.Log($"The standing request has completed, setting the contents: {standingRequest.Response.Contents}");
+                    //Debug.Log($"The standing request has completed, setting the contents: {standingRequest.Response.Contents}");
                     SetContents(standingRequest.Response.Contents);
                     _isDataLoaded = true;
                     return;
                 }
                 else if (standingRequest.Status == -1)
                 {
-                    Debugger.Log($"The standing request has completed but needs to be resent");
+                    Debug.Log($"The standing request has completed but needs to be resent");
                     ReadContents();
                     return;
                 }
                 else
                 {
-                    //Debugger.Log("Still waiting for datafile request to complete");
+                    //Debug.Log("Still waiting for datafile request to complete");
                 }
             }
 

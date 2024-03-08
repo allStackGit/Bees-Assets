@@ -8,12 +8,12 @@ namespace Assets.Scripts.Entities.Ships
         public LaserBuilder LaserBuilder;
         public void Setup(LaserBuilder laserBuilder)
         {
-            //Debugger.Log("Called Laser Builder Control Setup");
+            //Debug.Log("Called Laser Builder Control Setup");
             LaserBuilder = laserBuilder;
         }
         public void Fire()
         {
-            //Debugger.Log("Called Laser Builder Control Fire");
+            //Debug.Log("Called Laser Builder Control Fire");
             LaserBuilder.ActuallyShoot();
         }
     }

@@ -37,7 +37,7 @@ namespace Assets.Scripts.Settings
                 SettingsRequest standingRequest = (SettingsRequest)_scene.Socket.GetStandingRequest(_request.Hash);
                 if (standingRequest.Status == 1)
                 {
-                    //Debugger.Log($"The standing request has completed, setting the contents: {standingRequest.Response.Contents}");
+                    //Debug.Log($"The standing request has completed, setting the contents: {standingRequest.Response.Contents}");
                     IsLoaded = true;
                     ProcessData(standingRequest.Response.Contents);
                 }
@@ -46,7 +46,7 @@ namespace Assets.Scripts.Settings
 
         protected virtual void Fetch()
         {
-            //Debugger.Log("Fetching data for Server Settings");
+            //Debug.Log("Fetching data for Server Settings");
             _request = new SettingsRequest(new GetUserSettingsData(ConfigData.GetUserId(), Name, ConfigData.Version),
                 this, ConfigData.StandardMaxTimeOnQueue);
             _scene.Socket.SendRequest(_request);

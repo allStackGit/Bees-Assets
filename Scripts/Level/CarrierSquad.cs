@@ -29,7 +29,7 @@ namespace Assets.Scripts.Level
             // If there are more than 10 drones, a double column might be the best formation, but currently we are using 10 drones and 10 strikers, one column each
             //    IsDroneSquad ? "Double Column" : "Column";
 
-            //Debugger.Log($"Setting up {SquadType} ships in {formation} formation");
+            //Debug.Log($"Setting up {SquadType} ships in {formation} formation");
 
 
             for (int shipIndex = 0; shipIndex < shipCount; shipIndex++)
@@ -45,7 +45,7 @@ namespace Assets.Scripts.Level
                     offset = ConfigData.CarrierColumnFormationOffsets[shipIndex];
                 }
 
-                //Debugger.Log($"Offset: {offset}");
+                //Debug.Log($"Offset: {offset}");
                 CarrierShip ship;
                 (GameObject, CarrierShip) tuple = ((GameObject, CarrierShip))Level.LevelConstructor.InstantiateShip(SquadType);
                 ship = tuple.Item2;

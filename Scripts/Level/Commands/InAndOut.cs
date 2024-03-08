@@ -15,9 +15,9 @@ namespace Assets.Scripts.Level.Commands
         public override void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy)
         {
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
-            if (Squad != null && !Squad.IsDead)
+            if (Squad != null)
             {
-                if (Enemy != null && !Enemy.IsDead)
+                if (Enemy != null)
                 {
                     IsAttacking = true;
 
@@ -41,15 +41,15 @@ namespace Assets.Scripts.Level.Commands
         }
         private void Timer()
         {
-            if (Squad != null && !Squad.IsDead)
+            if (Squad != null)
             {
-                if (Enemy != null && !Enemy.IsDead)
+                if (Enemy != null)
                 {
 
                     if (!_hasReachedDestination && !Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(Enemy))
                     {
                         Squad.Status = $"Targeting enemy squad #{Enemy.SquadNumber} for In and Out";
-                        //Debugger.Log($"Enemy: {Enemy.Name} IsDead: {Enemy.IsDead}");
+                        //Debug.Log($"Enemy: {Enemy.Name} IsDead: {Enemy.IsDead}");
                         SetAndMove(Enemy.GetPosition());
                     }
                     else if (!Squad.HasReachedDestination)

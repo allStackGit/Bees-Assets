@@ -18,7 +18,7 @@ namespace Assets.Scripts.Level.Commands
         public void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy, Squad guardedSquad)
         {
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
-            if (Squad != null && !Squad.IsDead)
+            if (Squad != null)
             {
                 if (IsHiveMindCommand)
                 {
@@ -30,7 +30,7 @@ namespace Assets.Scripts.Level.Commands
                 }
                 if (_guardedSquad != null)
                 {
-                    //Debugger.Log($"{Squad.Name} is guarding {GuardedSquad.Name}!");
+                    //Debug.Log($"{Squad.Name} is guarding {GuardedSquad.Name}!");
                     // add this squad to the list for all other guard squads
                     Level.GetState().GetSquadsBySide(Squad.Side).ForEach((guardingSquad) =>
                     {
@@ -65,9 +65,9 @@ namespace Assets.Scripts.Level.Commands
         }
         private void Timer()
         {
-            if (Squad != null && !Squad.IsDead)
+            // determine initial destination based on other guarding squads
+            if (!Squad.IsDead)
             {
-                // determine initial destination based on other guarding squads
                 if (_guardedSquad != null && !_guardedSquad.IsDead)
                 {
                     Vector2 position = _guardedSquad.GetCenterPoint();
@@ -91,7 +91,7 @@ namespace Assets.Scripts.Level.Commands
                             break;
 
                     }
-                    //Debugger.Log($"There are {OtherGuardSquads.Count} other squads guarding {GuardedSquad.Name}, so {Squad.Name} is going to {position}");
+                    //Debug.Log($"There are {OtherGuardSquads.Count} other squads guarding {GuardedSquad.Name}, so {Squad.Name} is going to {position}");
                     // set the destination
                     SetAndMove(position);
                     if (Vector2.Distance(position, Squad.GetPosition()) < ConfigData.CloseEnoughCoordinateVariance)
@@ -107,11 +107,6 @@ namespace Assets.Scripts.Level.Commands
                     SetFinalize("Guarded squad died");
                 }
             }
-            else
-            {
-                CancelInvoke(nameof(Timer));
-                SetFinalize("Guarding squad died");
-            }
             
         }
         private Squad GetClosestAvailableSquadToGuard()
@@ -122,7 +117,7 @@ namespace Assets.Scripts.Level.Commands
         }
         public List<Squad> GetGuardingSquads()
         {
-            if (_guardedSquad != null && !_guardedSquad.IsDead && OtherGuardSquads.Count > 0)
+            if (_guardedSquad != null && OtherGuardSquads.Count > 0)
             {
                 List<Squad> otherGuardSquads = OtherGuardSquads.Where(
                 (squad) => squad.HasCommand && squad.Command.HasStrategy && !squad.Equals(Squad)
@@ -130,8 +125,8 @@ namespace Assets.Scripts.Level.Commands
 
                 if (otherGuardSquads.Count > 0)
                 {
-                    return otherGuardSquads.Where((squad) => ((Guard)squad.Command)._guardedSquad != null &&
-                    !((Guard)squad.Command)._guardedSquad.IsDead && ((Guard)squad.Command)._guardedSquad.Equals(_guardedSquad)).ToList();
+                    return otherGuardSquads.Where((squad) => ((Guard)squad.Command)._guardedSquad != null
+                    && ((Guard)squad.Command)._guardedSquad.Equals(_guardedSquad)).ToList();
                 }
             }
             return new List<Squad>();
@@ -140,7 +135,7 @@ namespace Assets.Scripts.Level.Commands
 
         private void FinishGuardingCommand()
         {
-            if (Squad != null && !Squad.IsDead)
+            if (Squad != null)
             {
                 Squad.SetSquadSpeed(Squad.MaxSpeed);
                 GetGuardingSquads().ForEach((squad) =>

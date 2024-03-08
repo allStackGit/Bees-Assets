@@ -53,7 +53,7 @@ namespace Assets.Scripts.Data
             int mostExpensiveShipTsv = ConfigData.AllShips.GetAvailableShips().Where((s) => s.Side == Side).OrderByDescending((s) => s.GetMaxTsv()).First().GetMaxTsv();
             int shipIndex = 0;
 
-            //Debugger.Log($"The cheapest ship Tsv is {cheapestShipTsv}, the most expensive is {mostExpensiveShipTsv}");
+            //Debug.Log($"The cheapest ship Tsv is {cheapestShipTsv}, the most expensive is {mostExpensiveShipTsv}");
 
             // sort ships
             if (PowerfulShipsFirst)
@@ -107,7 +107,7 @@ namespace Assets.Scripts.Data
                 string shipType = shipTypes.ElementAt(shipIndex);
                 FleetShip ship = ConfigData.AllShips.GetAvailableShipsOfType(shipType).Where((s) => !Squad.HasShip(s)).First();
                 int shipTsv = ship.GetMaxTsv();
-                //Debugger.Log($"Trying to add a number of {shipType} worth {shipTsv} each");
+                //Debug.Log($"Trying to add a number of {shipType} worth {shipTsv} each");
 
                 // if the ship TSV is less than max, try to fill up with that ship type
                 int innerLoopCount = 0;
@@ -124,20 +124,20 @@ namespace Assets.Scripts.Data
                     AddFleetShipToSquad(ship);
                     usedTsv += shipTsv;
                     remainingTsv = maxTsv - usedTsv;
-                    //Debugger.Log($"Adding  {ship.Name} worth {shipTsv}. Used {usedTsv} Tsv and there is {remainingTsv} left.");
+                    //Debug.Log($"Adding  {ship.Name} worth {shipTsv}. Used {usedTsv} Tsv and there is {remainingTsv} left.");
 
                     ship = ConfigData.AllShips.GetAvailableShipsOfType(shipType).Where((s) => !Squad.HasShip(s)).First();
                     shipTsv = ship.GetMaxTsv();
                 }
                 if (innerLoopCount >= maxLoops)
                 {
-                    Debugger.Log($"Broke out of inner loop because we hit {maxLoops}");
+                    Debug.Log($"Broke out of inner loop because we hit {maxLoops}");
                 }
                 shipIndex++;
             }
             if (loopCount >= maxLoops)
             {
-                Debugger.Log($"Broke out of outer loop because we hit {maxLoops}");
+                Debug.Log($"Broke out of outer loop because we hit {maxLoops}");
             }
 
 
@@ -149,7 +149,7 @@ namespace Assets.Scripts.Data
         {
             Squad = MakeEmptySquad();
             int maxTsv = opposingSquad.GetMaxTsv();
-            //Debugger.Log($"Try to make a squad with {maxTsv} tsv");
+            //Debug.Log($"Try to make a squad with {maxTsv} tsv");
             MakeTSVEquivilentSquad(maxTsv);
 
             if (Squad.GetShips().Count == 0)
@@ -179,7 +179,7 @@ namespace Assets.Scripts.Data
         //    {
         //        if (shipsFilled < shipCount)
         //        {
-        //            //Debugger.Log($"Adding ship #{ship.Id} - {ship.Type} to the squad");
+        //            //Debug.Log($"Adding ship #{ship.Id} - {ship.Type} to the squad");
         //            SquadShip squadShip = new SquadShip(ship.Id, ship.Type, Vector2.zero, Squad);
         //            Squad.AddShipToSquad(squadShip, false);
         //            shipsFilled++;
@@ -196,7 +196,7 @@ namespace Assets.Scripts.Data
         // Position squad in formation
         public void PositionShipsInSquad(string formation)
         {
-            //Debugger.Log($"Formation: {formation}");
+            //Debug.Log($"Formation: {formation}");
             if (formation == "Box")
             {
                 BoxFormation();
@@ -250,7 +250,7 @@ namespace Assets.Scripts.Data
         }
         public void LineFormation()
         {
-            Debugger.Log($"Making a line formation");
+            Debug.Log($"Making a line formation");
             MultiLine(ConfigData.Configuration.MaxSquadWidth, ConfigData.Configuration.MaxSquadHeight);
         }
         public void MultiLine(int maxWidth, int maxLines, bool hollow = false)
@@ -259,7 +259,7 @@ namespace Assets.Scripts.Data
             List<SquadShip> positioned = new List<SquadShip>();
             for (int row = 0; row < maxLines && ships.Count > 0; row++)
             {
-                //Debugger.Log("Calling line maker");
+                //Debug.Log("Calling line maker");
                 LineMaker(maxWidth, row + 1, ships.GetRange(0, Math.Clamp(maxWidth, 0, ships.Count)), hollow)
                     .ForEach((positionedShip) => { positioned.Add(positionedShip); });
                 ships = ships.Where((i) => !positioned.Contains(i)).ToList();
@@ -274,7 +274,7 @@ namespace Assets.Scripts.Data
             level = Math.Clamp(level - 1, 0, ConfigData.Configuration.MaxSquadHeight);
             maxWidth = Math.Clamp(maxWidth, 0, ConfigData.Configuration.MaxSquadWidth);
             List<SquadShip> positioned = new List<SquadShip>();
-            //Debugger.Log($"Making a line");
+            //Debug.Log($"Making a line");
             // loop through all the drag icons out there
             for (int shipsPlaced = 0; shipsPlaced < maxWidth && shipsPlaced < ships.Count; shipsPlaced++)
             {
@@ -286,9 +286,9 @@ namespace Assets.Scripts.Data
 
                 Vector2 change = ConfigData.ShipOffset * 1.05f;
 
-                //Debugger.Log($"Ship offset world units for auto placing: {ConfigData.ShipOffset}, screen pixels {change}");
+                //Debug.Log($"Ship offset world units for auto placing: {ConfigData.ShipOffset}, screen pixels {change}");
 
-                //Debugger.Log($"change: {change}");
+                //Debug.Log($"change: {change}");
 
                 float xIncrement = change.x;
                 float yIncrement = change.y;
@@ -312,7 +312,7 @@ namespace Assets.Scripts.Data
                 int sideCheck = maxWidth;
                 if (!hollow || maxWidth < 3 || shipsPlaced == sideCheck - 2 || shipsPlaced == sideCheck - 1)
                 {
-                    //Debugger.Log($"Placing the ship because it's either not hollow ({hollow}) or the maxWidth is less than 3 ({maxWidth}) or the shipIndex" +
+                    //Debug.Log($"Placing the ship because it's either not hollow ({hollow}) or the maxWidth is less than 3 ({maxWidth}) or the shipIndex" +
                     //    $"is equal to {sideCheck - 2} or {sideCheck - 1} ({ships})");
                     Vector2 movedPosition = new Vector2(position.x + movement, position.y - movementDown);
 
@@ -321,7 +321,7 @@ namespace Assets.Scripts.Data
                 }
                 else
                 {
-                    Debugger.Log($"NOT placing the ship because it's hollow ({hollow}) and the maxWidth is more than or equal to 3 ({maxWidth}) and the shipIndex" +
+                    Debug.Log($"NOT placing the ship because it's hollow ({hollow}) and the maxWidth is more than or equal to 3 ({maxWidth}) and the shipIndex" +
                         $"is Not equal to {sideCheck - 2} or {sideCheck - 1} ({ships})");
                     ships.Add(ship);
                 }
@@ -331,7 +331,7 @@ namespace Assets.Scripts.Data
         }
         public void BoxFormation()
         {
-            Debugger.Log($"Making a box formation");
+            Debug.Log($"Making a box formation");
             List<SquadShip> ships = Squad.GetShips();
             if (ships.Count < 4) // make a line across
             {
@@ -356,7 +356,7 @@ namespace Assets.Scripts.Data
         }
         public void RectangleFormation()
         {
-            Debugger.Log($"Making a rectangle formation");
+            Debug.Log($"Making a rectangle formation");
             List<SquadShip> ships = Squad.GetShips();
             List<SquadShip> validShips = ships;
             List<SquadShip> dropped = new List<SquadShip>();
@@ -370,17 +370,17 @@ namespace Assets.Scripts.Data
 
 
                 // top line
-                //Debugger.Log($"Making a line of length {lineLength} on row 1 with {validDragIcons.Count} icons left ------------------------------------");
+                //Debug.Log($"Making a line of length {lineLength} on row 1 with {validDragIcons.Count} icons left ------------------------------------");
                 LineMaker(lineLength, 1, validShips.GetRange(0, Math.Clamp(lineLength, 0, validShips.Count))).ForEach((di) => { dropped.Add(di); });
                 validShips = validShips.Where((i) => !dropped.Contains(i)).ToList();
 
                 // hollow middle line
-                //Debugger.Log($"Making a hollow line of length {lineLength} on row 2 with {validDragIcons.Count} icons left ------------------------------------");
+                //Debug.Log($"Making a hollow line of length {lineLength} on row 2 with {validDragIcons.Count} icons left ------------------------------------");
                 LineMaker(lineLength, 2, validShips.GetRange(0, Math.Clamp(lineLength, 0, validShips.Count)), true).ForEach((di) => { dropped.Add(di); });
                 validShips = validShips.Where((i) => !dropped.Contains(i)).ToList();
 
                 // bottom line
-                //Debugger.Log($"Making a line of length {lineLength} on row 3 with {validDragIcons.Count} icons left ------------------------------------");
+                //Debug.Log($"Making a line of length {lineLength} on row 3 with {validDragIcons.Count} icons left ------------------------------------");
                 LineMaker(lineLength, 3, validShips.GetRange(0, Math.Clamp(lineLength, 0, validShips.Count))).ForEach((di) => { dropped.Add(di); });
                 validShips = validShips.Where((i) => !dropped.Contains(i)).ToList();
             }
@@ -389,22 +389,22 @@ namespace Assets.Scripts.Data
                 int lineLength = Math.Clamp((ships.Count - 4) / 2, 3, ConfigData.Configuration.MaxSquadWidth);
 
                 // top line
-                //Debugger.Log($"Making a line of length {lineLength} on row 1 with {validDragIcons.Count} icons left ------------------------------------");
+                //Debug.Log($"Making a line of length {lineLength} on row 1 with {validDragIcons.Count} icons left ------------------------------------");
                 LineMaker(lineLength, 1, validShips.GetRange(0, Math.Clamp(lineLength, 0, validShips.Count))).ForEach((di) => { dropped.Add(di); });
                 validShips = validShips.Where((i) => !dropped.Contains(i)).ToList();
 
                 // hollow middle line
-                //Debugger.Log($"Making a hollow line of length {lineLength} on row 2 with {validDragIcons.Count} icons left ------------------------------------");
+                //Debug.Log($"Making a hollow line of length {lineLength} on row 2 with {validDragIcons.Count} icons left ------------------------------------");
                 LineMaker(lineLength, 2, validShips.GetRange(0, Math.Clamp(lineLength, 0, validShips.Count)), true).ForEach((di) => { dropped.Add(di); });
                 validShips = validShips.Where((i) => !dropped.Contains(i)).ToList();
 
                 // second hollow middle line
-                //Debugger.Log($"Making a hollow line of length {lineLength} on row 2 with {validDragIcons.Count} icons left ------------------------------------");
+                //Debug.Log($"Making a hollow line of length {lineLength} on row 2 with {validDragIcons.Count} icons left ------------------------------------");
                 LineMaker(lineLength, 3, validShips.GetRange(0, Math.Clamp(lineLength, 0, validShips.Count)), true).ForEach((di) => { dropped.Add(di); });
                 validShips = validShips.Where((i) => !dropped.Contains(i)).ToList();
 
                 // bottom line
-                //Debugger.Log($"Making a line of length {lineLength} on row 3 with {validDragIcons.Count} icons left ------------------------------------");
+                //Debug.Log($"Making a line of length {lineLength} on row 3 with {validDragIcons.Count} icons left ------------------------------------");
                 while (validShips.Count > lineLength)
                 {
                     lineLength++;
@@ -417,7 +417,7 @@ namespace Assets.Scripts.Data
         }
         public void PyramidFormation(bool hollow)
         {
-            Debugger.Log($"Making a pyramid formation");
+            Debug.Log($"Making a pyramid formation");
             List<SquadShip> ships = Squad.GetShips();
             List<SquadShip> validShips = ships;
             List<SquadShip> dropped = new List<SquadShip>();
@@ -425,7 +425,7 @@ namespace Assets.Scripts.Data
             {
 
                 int lineLength = (row * 2) + 1;
-                //Debugger.Log($"Making a hollow line of length {lineLength} on row {row+1} with {validDragIcons.Count} icons left ------------------------------------");
+                //Debug.Log($"Making a hollow line of length {lineLength} on row {row+1} with {validDragIcons.Count} icons left ------------------------------------");
                 LineMaker(lineLength, row + 1, validShips.GetRange(0, Math.Clamp(lineLength, 0, validShips.Count)), hollow).ForEach((di) => { dropped.Add(di); });
                 validShips = validShips.Where((i) => !dropped.Contains(i)).ToList();
             }

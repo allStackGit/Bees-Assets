@@ -11,7 +11,7 @@ namespace Assets.Scripts.Entities.Ships
     {
 
         public Carrier Carrier;
-        public bool HasCarrier => Carrier != null && !Carrier.IsDead;
+        public bool HasCarrier => Carrier != null && Carrier != null;
 
         public void CarrierShipSetup(FleetShip fleetShip, string shipType, Carrier carrier)
         {

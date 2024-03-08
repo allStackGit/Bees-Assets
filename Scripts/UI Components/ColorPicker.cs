@@ -32,7 +32,7 @@ namespace Assets.Scripts.UIComponents
         // Use this for initialization
         public void SetScreenScaleFactor()
         {
-            //Debugger.Log("Setting base world point");
+            //Debug.Log("Setting base world point");
             _screenScaleFactor = new Vector2(Screen.width / ReferenceScreenSize.x, Screen.height / ReferenceScreenSize.y);
             _hasActiveTexture = false;
             MouseIndicator.SetActive(false);
@@ -45,31 +45,31 @@ namespace Assets.Scripts.UIComponents
         void Start()
         {
             _screenScaleFactor = new Vector2(Screen.width / ReferenceScreenSize.x, Screen.height / ReferenceScreenSize.y);
-            //Debugger.Log($"Screen Scale Factor: {_screenScaleFactor}");
+            //Debug.Log($"Screen Scale Factor: {_screenScaleFactor}");
             //SetBaseWorldPoint();
             _mouse = MouseIndicator.GetComponent<RectTransform>();
         }
         private void Update()
         {
-            //Debugger.Log($"Frame {frameCount++}");
+            //Debug.Log($"Frame {frameCount++}");
         }
         public IEnumerator SetTexture()
         {
-            //Debugger.Log("Coroutined");
+            //Debug.Log("Coroutined");
             //GameObject.Find("Pixels Read").transform.position = ColorSheet.transform.position;
             yield return new WaitForEndOfFrame();
-            //Debugger.Log("Yielded");
+            //Debug.Log("Yielded");
             if (IsActive && !_hasActiveTexture)
             {
                 Vector2 size = Size();
                 int width = (int) (size.x * _screenScaleFactor.x);
                 int height = (int) (size.y * _screenScaleFactor.y);
-                //Debugger.Log($"Width and height: {size}");
+                //Debug.Log($"Width and height: {size}");
 
                 Rect rect = new Rect((ColorSheet.transform.position.x-((width/2)))-RectAdjustment.x, 
                     (ColorSheet.transform.position.y-((height/2)))-RectAdjustment.y, width, height);
 
-                //Debugger.Log($"Set texture, ColorSheet position: {ColorSheet.transform.position}, Rect {rect.size}, {size}");
+                //Debug.Log($"Set texture, ColorSheet position: {ColorSheet.transform.position}, Rect {rect.size}, {size}");
 
 
                 //_colorTexture = new Texture2D((int) (width * _screenScaleFactor.x), (int) (height * _screenScaleFactor.y));
@@ -103,7 +103,7 @@ namespace Assets.Scripts.UIComponents
 
 
             _mouse.position = pointer.position;
-            //Debugger.Log($"RAW position over color chart: {_mouse.localPosition}");
+            //Debug.Log($"RAW position over color chart: {_mouse.localPosition}");
 
             _mouse.localPosition = new Vector2(Math.Clamp(_mouse.localPosition.x, -1 * ((_colorTexture.width / 2) / _screenScaleFactor.x), ((_colorTexture.width / 2) / _screenScaleFactor.x)),
                 Math.Clamp(_mouse.localPosition.y, -1 * ((_colorTexture.height / 2) / _screenScaleFactor.y), (_colorTexture.height / 2) / _screenScaleFactor.y));
@@ -115,18 +115,18 @@ namespace Assets.Scripts.UIComponents
                 (int) (Math.Clamp(_mouse.localPosition.y * _screenScaleFactor.y, -1 * _colorTexture.height / 2, _colorTexture.height / 2))
                 );
 
-            //Debugger.Log($"Clamped image position over color chart: {imagePosition}");
+            //Debug.Log($"Clamped image position over color chart: {imagePosition}");
 
 
             int index = PositionToColorIndex(imagePosition);
 
-            //Debugger.Log($"Index at mouse position {MousePosition.x}, {MousePosition.y} index {index}/{_colors.Length}");
+            //Debug.Log($"Index at mouse position {MousePosition.x}, {MousePosition.y} index {index}/{_colors.Length}");
 
             Color color = _colors[index];
             //Color color = ColorTexture.GetPixel(x, y);
-            //Debugger.Log($"Color at mouse position {imagePosition.x}, {imagePosition.y} index {index}: {color.ToHexString()}");
+            //Debug.Log($"Color at mouse position {imagePosition.x}, {imagePosition.y} index {index}: {color.ToHexString()}");
             Vector2 position = ColorIndexToPosition(index);
-            //Debugger.Log($"Mouse position at color: {color.ToHexString()}, mouse position: {position}");
+            //Debug.Log($"Mouse position at color: {color.ToHexString()}, mouse position: {position}");
 
 
             ColorSquare.GetComponent<UnityEngine.UI.Image>().color = color;
@@ -146,11 +146,11 @@ namespace Assets.Scripts.UIComponents
 
 
             int index = (y * _colorTexture.width) + x;
-            //Debugger.Log($"Original position: {position} gives index: {(position.y * _colorTexture.width) + position.x}");
+            //Debug.Log($"Original position: {position} gives index: {(position.y * _colorTexture.width) + position.x}");
 
-            //Debugger.Log($"Modified position: {x}, {y} gives index: {index}/{_colors.Length} and color {_colors[index].ToHexString()}");
+            //Debug.Log($"Modified position: {x}, {y} gives index: {index}/{_colors.Length} and color {_colors[index].ToHexString()}");
 
-            //Debugger.Log($"Unclamped Index at position {x}, {y} index {index}/{_colors.Length}");
+            //Debug.Log($"Unclamped Index at position {x}, {y} index {index}/{_colors.Length}");
             index = Math.Clamp(index, 0, _colors.Length-1);
             return index;
         }
@@ -161,17 +161,17 @@ namespace Assets.Scripts.UIComponents
             int x = index % _colorTexture.width;
 
             Vector2 position = new Vector2(((x-(_colorTexture.width/2))/_screenScaleFactor.x), ((y-(_colorTexture.height/2))/_screenScaleFactor.y));
-            //Debugger.Log($"Mouse position at color index: {index}, mouse position: {position}");
+            //Debug.Log($"Mouse position at color index: {index}, mouse position: {position}");
             return position;
         }
         private Color SetColor(Color color)
         {
-            //Debugger.Log($"Color received: {color.ToHexString()}");
+            //Debug.Log($"Color received: {color.ToHexString()}");
             int maxColors = (int)Math.Pow(16, 6);
             int storedColors = _colors.Length;
             double ratio = maxColors / storedColors;
 
-            //Debugger.Log($"There are {maxColors} possible colors in the RGB space. There are {storedColors} in the color array. " +
+            //Debug.Log($"There are {maxColors} possible colors in the RGB space. There are {storedColors} in the color array. " +
             //               $"For every {ratio} real colors, there is 1 stored color.");
 
             List<dynamic> distances = new List<object>();
@@ -194,13 +194,13 @@ namespace Assets.Scripts.UIComponents
             ColorSquare.GetComponent<UnityEngine.UI.Image>().color = color;
             _mouse.localPosition = ColorIndexToPosition(index);
 
-            //Debugger.Log($"We found the closest matching color: {closestColor.ToHexString()}, at index: {index} " +
+            //Debug.Log($"We found the closest matching color: {closestColor.ToHexString()}, at index: {index} " +
             //            $"The distance between the two colors is {closest.distance}. Trying to color the square and move the indicator");
             return color;
         }
         public void Toggle()
         {
-            //Debugger.Log($"Called toggle() and the gameObject was active: {IsActive}");
+            //Debug.Log($"Called toggle() and the gameObject was active: {IsActive}");
             gameObject.SetActive(!gameObject.activeSelf);
             //_hasActiveTexture = false;
             if (IsActive)
@@ -216,7 +216,7 @@ namespace Assets.Scripts.UIComponents
             }
             if (hex.Length == 7)
             {
-                //Debugger.Log($"Hex value: {hex}");
+                //Debug.Log($"Hex value: {hex}");
                 Color color;
                 if (UnityEngine.ColorUtility.TryParseHtmlString(hex, out color))
                 {

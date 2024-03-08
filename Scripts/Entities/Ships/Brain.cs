@@ -39,7 +39,7 @@ namespace Assets.Scripts.Entities.Ships
         }
         public override void Initialize()
         {
-            //Debugger.Log($"Initialized Agent #{Id}, belonging to {Ship}");
+            //Debug.Log($"Initialized Agent #{Id}, belonging to {Ship}");
 
         }
 
@@ -68,13 +68,13 @@ namespace Assets.Scripts.Entities.Ships
         /// <param name="vectorAction">The actions to take</param>
         public override void OnActionReceived(ActionBuffers vectorAction)
         {
-            //Debugger.Log($"An action buffer has been received for Agent #{Id}, belonging to {Ship}");
+            //Debug.Log($"An action buffer has been received for Agent #{Id}, belonging to {Ship}");
             if (Ship != null)
             {
                 //Ship.transform.eulerAngles = new Vector3(0, 0, vectorAction.DiscreteActions[0] * 20);
                 Ship.Direction = vectorAction.DiscreteActions[0] * 20;
                 Ship.RLShootingStrategy = ConfigData.Configuration.ShootingStrategies.ElementAt(vectorAction.DiscreteActions[1]);
-                //Debugger.Log($"Chosen shooting strategy for {Ship.Name} is {Ship.ShootingStrategy}.");
+                //Debug.Log($"Chosen shooting strategy for {Ship.Name} is {Ship.ShootingStrategy}.");
                 Ship.ShouldDetonate = vectorAction.DiscreteActions[2] == 1;
 
             }
@@ -87,7 +87,7 @@ namespace Assets.Scripts.Entities.Ships
         /// <param name="sensor">The vector sensor</param>
         public override void CollectObservations(VectorSensor sensor)
         {
-            //Debugger.Log($"Collecting observations for Agent #{Id}, belonging to {Ship}");
+            //Debug.Log($"Collecting observations for Agent #{Id}, belonging to {Ship}");
             if (Ship == null)
             {
                 sensor.AddObservation(BlankObservation);
@@ -101,7 +101,7 @@ namespace Assets.Scripts.Entities.Ships
             Ships = SpottedShips;
 
 
-            //Debugger.Log($"{Ship.Name} has personally seen {spottedShips.Count} ships");
+            //Debug.Log($"{Ship.Name} has personally seen {spottedShips.Count} ships");
 
             // fill up the sensor with ships that have been spotted by allies
             if (SpottedShips.Count < BufferSensor.MaxNumObservables)
@@ -118,7 +118,7 @@ namespace Assets.Scripts.Entities.Ships
                     {
                         Contains = SpottedShips[ss].Id == SpottedShip.Ship.Id;
                     }
-                    if (!Contains && SpottedShip.SpotterId != Ship.Id && !SpottedShip.Ship.IsDead)
+                    if (!Contains && SpottedShip.SpotterId != Ship.Id && SpottedShip.Ship != null)
                     {
                         Filtered.Add(SpottedShip);
                         if (Ships.Count < BufferSensor.MaxNumObservables)
@@ -171,12 +171,12 @@ namespace Assets.Scripts.Entities.Ships
         {
             var discreteActions = actionsOut.DiscreteActions;
 
-            //Debugger.Log($"Running heuristic for Agent #{Id}, belonging to {Ship}");
+            //Debug.Log($"Running heuristic for Agent #{Id}, belonging to {Ship}");
             if (Ship != null && Ship.HasTargetCoordinates)
             {
                 float rotation = Ship.GetDegreesTowardsPoint(Ship.TargetCoordinates);
                 int action = Mathf.RoundToInt(rotation/20);
-                //Debugger.Log($"Rotation: {rotation}, Action: {action}");
+                //Debug.Log($"Rotation: {rotation}, Action: {action}");
                 discreteActions[0] = action;
             }
             else

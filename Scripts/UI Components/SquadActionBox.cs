@@ -106,7 +106,7 @@ namespace Assets.Scripts.UIComponents
             dropdown.options.Add(new TMP_Dropdown.OptionData(_blankShipType));
             ShipTypes().ToList().ForEach(ship =>
             {
-                //Debugger.Log("Setting drop down option");
+                //Debug.Log("Setting drop down option");
                 if (ship == "Queen")
                 {
                     dropdown.options.Add(new TMP_Dropdown.OptionData($"{ship}"));
@@ -150,7 +150,7 @@ namespace Assets.Scripts.UIComponents
             if (shootingStrategy.StartsWith("Type "))
             {
                 string shipName = Utilities.ConvertShipTypeToPluralName(shootingStrategy);
-                //Debugger.Log($"Ship name is {shipName}");
+                //Debug.Log($"Ship name is {shipName}");
                 dropdown.value = dropdown.options.FindIndex(option => option.text == shipName);
             }
             else
@@ -176,7 +176,7 @@ namespace Assets.Scripts.UIComponents
                 if (selectedSquads.Count > 0)
                 {
                     string shootingStrategy = selectedSquads.First().GetShootingStrategy();
-                    //Debugger.Log($"Shooting strategy is {shootingStrategy}");
+                    //Debug.Log($"Shooting strategy is {shootingStrategy}");
                     if (selectedSquads.All(s => s.GetShootingStrategy() == shootingStrategy))
                     {
                         return shootingStrategy;
@@ -231,7 +231,7 @@ namespace Assets.Scripts.UIComponents
                 }
                 else
                 {
-                    //Debugger.Log($"Not patrolling: {Level.GetState().GetSelectedSquads().First().GetCommandStrategy()}");
+                    //Debug.Log($"Not patrolling: {Level.GetState().GetSelectedSquads().First().GetCommandStrategy()}");
                     ResetButton(PatrolButton);
                 }
                 if (IsAction("Guard"))
@@ -261,10 +261,10 @@ namespace Assets.Scripts.UIComponents
             }
 
             string shootingStrategy = GetShootingStrategy();
-            //Debugger.Log($"Squad(s) shooting strategy: {shootingStrategy}");
+            //Debug.Log($"Squad(s) shooting strategy: {shootingStrategy}");
             ConfigData.Configuration.ShootingStrategies.Where(s => !s.StartsWith("Type ")).ToList().ForEach(s =>
             {
-                //Debugger.Log($"{s} Button");
+                //Debug.Log($"{s} Button");
                 GameObject buttonLabel = GameObject.Find($"{s} Button");
                 if (shootingStrategy == s)
                 {
@@ -331,7 +331,7 @@ namespace Assets.Scripts.UIComponents
 
         private void HighlightButton(GameObject buttonLabel)
         {
-            //Debugger.Log($"Highlighting {buttonLabel.name}");
+            //Debug.Log($"Highlighting {buttonLabel.name}");
             Color highlightColor = ConfigData.GetUIColor("action-button-highlight");
             if (buttonLabel.name.StartsWith("Type "))
             {
@@ -370,7 +370,7 @@ namespace Assets.Scripts.UIComponents
         }
         private void ResetButton(GameObject buttonLabel)
         {
-            //Debugger.Log($"Resetting {buttonLabel}");
+            //Debug.Log($"Resetting {buttonLabel}");
             Button button = GetButton(buttonLabel);
             Color normalColor = ConfigData.GetUIColor("action-button-normal");
 
@@ -399,7 +399,7 @@ namespace Assets.Scripts.UIComponents
                     TMP_Dropdown dropdown = TypeSelector.GetComponentInChildren<TMP_Dropdown>();
                     button = dropdown.options[dropdown.value].text;
                 }
-                //Debugger.Log($"Setting text for {button}");
+                //Debug.Log($"Setting text for {button}");
                 TMP_Text title = ActionTitle.GetComponentInChildren<TMP_Text>();
                 TMP_Text explanation = ActionExplanation.GetComponentInChildren<TMP_Text>();
                 title.text = button;
@@ -581,7 +581,7 @@ namespace Assets.Scripts.UIComponents
         {
             if (HasSquad())
             {
-                //Debugger.Log($"Setting the squads to {action}!");
+                //Debug.Log($"Setting the squads to {action}!");
                 if (HasSquadMaker)
                 {
                     SavedSquad currentSquad = _squadMaker.GetCurrentSquad();
@@ -678,7 +678,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void SetShootingStrategy(string strategy)
         {
-            //Debugger.Log("Set shooting strategy");
+            //Debug.Log("Set shooting strategy");
             if (HasSquad())
             {
                 
@@ -700,7 +700,7 @@ namespace Assets.Scripts.UIComponents
                 {
                     Level.GetState().GetSelectedSquads().ForEach((squad) =>
                     {
-                        //Debugger.Log($"Setting the squad to shoot with {strategy}!");
+                        //Debug.Log($"Setting the squad to shoot with {strategy}!");
                         squad.SetShootingStrategy(strategy);
                     });
                 }
@@ -714,7 +714,7 @@ namespace Assets.Scripts.UIComponents
         {
             if (!_autoSetDropdownValue)
             {
-                //Debugger.Log($"Set type strategy {strategy}");
+                //Debug.Log($"Set type strategy {strategy}");
                 TMP_Dropdown dropdown = TypeSelector.GetComponentInChildren<TMP_Dropdown>();
                 string shipName = dropdown.options[strategy].text;
 

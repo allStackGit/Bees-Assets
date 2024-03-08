@@ -28,11 +28,12 @@ namespace Assets.Scripts.Scenes
 
         public List<string> __PastServerRequests;
         public float __AverageRequestTime;
+        public List<long> __UsedHashes;
 
         // Start is called before the first frame update
         protected void Start()
         {
-            //Debugger.Log($"Starting {Name} scene");
+            //Debug.Log($"Starting {Name} scene");
             if (HasIndependentSocket || ConfigData.MainSocket == null)
             {
                 Socket = ConfigData.Test ? new Socket(ConfigData.TestPort, ConfigData.TestServerHostname, ConfigData.UseWebSocketSharp) : new Socket(ConfigData.DevelopmentPort, ConfigData.DevelopmentServerHostname, ConfigData.UseWebSocketSharp);
@@ -47,7 +48,7 @@ namespace Assets.Scripts.Scenes
             InvokeRepeating(nameof(LoadSettingsWhenOpen), .1f, .1f);
             if (NetworkDisconnection == null)
             {
-                Debugger.Log("Setting Network disconnection dialogue");
+                Debug.Log("Setting Network disconnection dialogue");
                 NetworkDisconnection = new Dialogue(DialoguePrefab, "Server disconnected!", "The game needs to be connected to the server in order to function properly.",
                                             new List<string>() { "Retry", "Exit Game" }, new List<UnityAction>() { RetryConnection, Exit });
             }
@@ -64,7 +65,7 @@ namespace Assets.Scripts.Scenes
         }
         public void Exit()
         {
-            Debugger.Log("Exiting game!");
+            Debug.Log("Exiting game!");
             Application.Quit();
         }
         protected virtual void RetryConnection()
@@ -73,7 +74,7 @@ namespace Assets.Scripts.Scenes
         }
         protected virtual void FinalizeSceneWithUserData()
         {
-            //Debugger.Log($"Finalizing {Name} Scene");
+            //Debug.Log($"Finalizing {Name} Scene");
             ConfigData.AllShips = new Ships(ConfigData.GetFleetData(), ConfigData.GetSavedSquadsData());
 
             //ConfigData.Ships.ReplaceDeadSquadShips();
@@ -83,6 +84,7 @@ namespace Assets.Scripts.Scenes
         {
             if (ConfigData.__PastServerRequests.Count > 0)
             {
+                __UsedHashes = ConfigData.UsedHashes.ToList();
                 __PastServerRequests = ConfigData.__PastServerRequests.Select((r) => $"Request #{r.Hash} ({r.Type}) on queue for {r.TimeOnQueue}ms with {r.Resends} resends.").ToList();
                 __AverageRequestTime = ConfigData.__PastServerRequests.Select((r) => r.TimeOnQueue).Sum() / ConfigData.__PastServerRequests.Count;
             }

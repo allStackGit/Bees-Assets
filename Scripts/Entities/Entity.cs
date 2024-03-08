@@ -52,7 +52,7 @@ namespace Assets.Scripts.Entities
         {
             float radians = AngleToPoint(point);
             float degrees = radians * Mathf.Rad2Deg;
-            //Debugger.Log($"Angle towards movement point before adjustment {degrees}");
+            //Debug.Log($"Angle towards movement point before adjustment {degrees}");
             if (degrees > 0) // if the angle is greater than PI, subtract 2 PI to get the equivilent negative angle
             {
                 degrees = Mathf.Abs(degrees - 180);
@@ -62,7 +62,7 @@ namespace Assets.Scripts.Entities
             {
                 degrees = Mathf.Abs(degrees) + 180;
             }
-            //Debugger.Log($"Angle towards movement point after adjustment {degrees}");
+            //Debug.Log($"Angle towards movement point after adjustment {degrees}");
             return degrees;
         }
         public Vector2 CirclePoint(float angle, float distance)

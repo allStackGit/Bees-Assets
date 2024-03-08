@@ -18,12 +18,15 @@ namespace Assets.Scripts.Entities.Projectiles
         private int _powerLoss;
         void Start()
         {
-            if (Weapon != null && Weapon.Ship != null & !Weapon.Ship.IsDead)
+            if (Weapon != null && Weapon.Ship != null)
             {
                 _scale = 1f;
                 _lastShooterPosition = Weapon.GetPosition();
                 _target = Weapon.TargetShip;
-                _lastTargetPoint = _target.GetPosition();
+                if (_target != null )
+                {
+                    _lastTargetPoint = _target.GetPosition();
+                }
                 Angle = 0;
             }
 
@@ -56,7 +59,7 @@ namespace Assets.Scripts.Entities.Projectiles
         }
         public override void Kill()
         {
-            //Debugger.Log($"killed projectile {name} #{Id}");
+            //Debug.Log($"killed projectile {name} #{Id}");
             BeamCannon weapon = (BeamCannon)Weapon;
             weapon.IsFiringLaserBeam = false;
             weapon.LaserBeamTarget = null;
@@ -79,9 +82,9 @@ namespace Assets.Scripts.Entities.Projectiles
         private void ExtendBeam()
         {
 
-            if (Shooter != null && !Shooter.IsDead)
+            if (Shooter != null)
             {
-                //Debugger.Log($"Extending beam towards {_target.Name}");
+                //Debug.Log($"Extending beam towards {_target.Name}");
                 if (_target != null)
                 {
                     _lastTargetPoint = _target.GetPosition();
@@ -110,17 +113,17 @@ namespace Assets.Scripts.Entities.Projectiles
                     Vector2 offsetRotatedCannonPosition = (Vector2)Shooter.transform.TransformPoint(rotatedLocalPosition) - Level.GetPosition();
                     Angle = worldAngle * Mathf.Deg2Rad * -1;
 
-                    //Debugger.Log($"Cruiser world rotation: {Shooter.transform.eulerAngles.z}");
-                    //Debugger.Log($"Cannon local rotation: {Weapon.GetLocalRotation()}, world rotation: {Weapon.GetRotation()}");
-                    //Debugger.Log($"Beam world rotation: {worldAngle}");
+                    //Debug.Log($"Cruiser world rotation: {Shooter.transform.eulerAngles.z}");
+                    //Debug.Log($"Cannon local rotation: {Weapon.GetLocalRotation()}, world rotation: {Weapon.GetRotation()}");
+                    //Debug.Log($"Beam world rotation: {worldAngle}");
 
-                    //Debugger.Log($"localCannonPoint #{Id}: {localCannonPoint}");
-                    //Debugger.Log($"rotatedLocalPosition #{Id}: {rotatedLocalPosition}");
-                    //Debugger.Log($"rotatedMapPosition #{Id}: {rotatedMapPosition}");
+                    //Debug.Log($"localCannonPoint #{Id}: {localCannonPoint}");
+                    //Debug.Log($"rotatedLocalPosition #{Id}: {rotatedLocalPosition}");
+                    //Debug.Log($"rotatedMapPosition #{Id}: {rotatedMapPosition}");
 
-                    //Debugger.Log($"offsetRotatedCannonPosition #{Id}: {offsetRotatedCannonPosition}");
+                    //Debug.Log($"offsetRotatedCannonPosition #{Id}: {offsetRotatedCannonPosition}");
 
-                    //Debugger.Log($"Extending Laser Beam #{Id} to rotated cannon position: {offsetRotatedCannonPosition}");
+                    //Debug.Log($"Extending Laser Beam #{Id} to rotated cannon position: {offsetRotatedCannonPosition}");
 
                     transform.localPosition = offsetRotatedCannonPosition;
                     Body.velocity = Shooter.Body.velocity;
@@ -130,12 +133,12 @@ namespace Assets.Scripts.Entities.Projectiles
                 }
                 else
                 {
-                    //Debugger.Log($"Killing {gameObject.name} at position ({transform.localPosition}) because distance ({distance}) > range ({Range})");
+                    //Debug.Log($"Killing {gameObject.name} at position ({transform.localPosition}) because distance ({distance}) > range ({Range})");
                 }
             }
             else
             {
-                //Debugger.Log($"Killing {gameObject.name} at position ({transform.localPosition}) because the shooter is dead");
+                //Debug.Log($"Killing {gameObject.name} at position ({transform.localPosition}) because the shooter is dead");
             }
             RemoveDamageSentEntry();
             Kill();

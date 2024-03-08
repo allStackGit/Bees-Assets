@@ -63,7 +63,7 @@ namespace Assets.Scripts.UIComponents
             }
             else
             {
-                //Debugger.Log($"Couldn't make new drag icon for {shipType}, {fleetShip}, {!_isDragging}, {CurrentSquad}");
+                //Debug.Log($"Couldn't make new drag icon for {shipType}, {fleetShip}, {!_isDragging}, {CurrentSquad}");
                 if (HasCurrentSquad && CurrentSquad.HasMaxShips)
                 {
                     Utilities.SetBadColor(_scene.SquadShipCount);
@@ -96,7 +96,7 @@ namespace Assets.Scripts.UIComponents
                 _isDragging = true;
                 _isValidDropLocation = false;
                 Vector2 size = _currentDragIcon.GetIcon().GetComponent<RectTransform>().sizeDelta;
-                //Debugger.Log($"sizeDelta for current drag icon: {size}");
+                //Debug.Log($"sizeDelta for current drag icon: {size}");
 
 
                 // Get the drag icon and position it
@@ -147,7 +147,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void DraggingNewIcon()
         {
-            //Debugger.Log($"Dragging {_currentDragIcon.Icon.name}");
+            //Debug.Log($"Dragging {_currentDragIcon.Icon.name}");
             if (_currentDragIcon != null)
             {
                 _isDragging = true;
@@ -176,13 +176,13 @@ namespace Assets.Scripts.UIComponents
         }
         public void EndDragging()
         {
-            //Debugger.Log($"Stopped dragging {_dragIcon.GetFleetShip().Type}");
+            //Debug.Log($"Stopped dragging {_dragIcon.GetFleetShip().Type}");
             if (_currentDragIcon != null)
             {
                 if (IsValidDropLocation)
                 {
-                    //Debugger.Log("Valid drop location, didn't destroy");
-                    //Debugger.Log($"Dropped {_currentDragIcon.FleetShip.Type} -----------------------------");
+                    //Debug.Log("Valid drop location, didn't destroy");
+                    //Debug.Log($"Dropped {_currentDragIcon.FleetShip.Type} -----------------------------");
                     Color squadColor = _scene.GetSquadColor();
                     Vector2 position = _currentDragIcon.Position;
                     FleetShip fleetShip = _currentDragIcon.GetFleetShip();
@@ -217,7 +217,7 @@ namespace Assets.Scripts.UIComponents
                     else
                     {
 
-                        //Debugger.Log($"Ship transform position {_currentDragIcon.transform.position}, ship position in box {positionWithinBox}");
+                        //Debug.Log($"Ship transform position {_currentDragIcon.transform.position}, ship position in box {positionWithinBox}");
                         _scene.SetCurentSquad(new SavedSquad(-1, _scene.Side, _scene.GetSquadName(), worldPointPosition, 
                             false, false, ConfigData.StartingSettings.DefaultShootingStrategy, squadColor));
 
@@ -234,7 +234,7 @@ namespace Assets.Scripts.UIComponents
                 }
                 else
                 {
-                    Debugger.Log("INVALID PLACEMENT. REMOVING DRAG ICON");
+                    Debug.Log("INVALID PLACEMENT. REMOVING DRAG ICON");
                     //_currentDragIcon.Icon.SetActive(false);
                     _currentDragIcon.RemoveDragIcon();
                 }
@@ -268,7 +268,7 @@ namespace Assets.Scripts.UIComponents
             level = Math.Clamp(level - 1, 0, ConfigData.Configuration.MaxSquadHeight);
             maxWidth = Math.Clamp(maxWidth, 0, ConfigData.Configuration.MaxSquadWidth);
             List<DragIcon> dropped = new List<DragIcon>();
-            //Debugger.Log($"Making a line formation");
+            //Debug.Log($"Making a line formation");
             // loop through all the drag icons out there
             for (int ships = 0; ships < maxWidth && ships < dragIcons.Count; ships++)
             {
@@ -280,9 +280,9 @@ namespace Assets.Scripts.UIComponents
 
                 Vector2 change = Utilities.WorldUnitsToScreenPixels(ConfigData.GetShipOffset(dragIcon.GetFleetShip().Type), _scene.Camera) * 1.05f;
 
-                //Debugger.Log($"Ship offset world units for auto placing: {ConfigData.ShipOffset}, screen pixels {change}");
+                //Debug.Log($"Ship offset world units for auto placing: {ConfigData.ShipOffset}, screen pixels {change}");
 
-                //Debugger.Log($"change: {change}");
+                //Debug.Log($"change: {change}");
 
                 float xIncrement = change.x;
                 float yIncrement = change.y;
@@ -306,7 +306,7 @@ namespace Assets.Scripts.UIComponents
                 int sideCheck = maxWidth;
                 if (!hollow || maxWidth < 3 || ships == sideCheck - 2 || ships == sideCheck - 1)
                 {
-                    //Debugger.Log($"Placing the ship because it's either not hollow ({hollow}) or the maxWidth is less than 3 ({maxWidth}) or the shipIndex" +
+                    //Debug.Log($"Placing the ship because it's either not hollow ({hollow}) or the maxWidth is less than 3 ({maxWidth}) or the shipIndex" +
                     //    $"is equal to {sideCheck - 2} or {sideCheck - 1} ({ships})");
                     Vector2 movedPosition = new Vector2(position.x + movement, position.y - movementDown);
 
@@ -315,7 +315,7 @@ namespace Assets.Scripts.UIComponents
                 }
                 else
                 {
-                    //Debugger.Log($"NOT placing the ship because it's hollow ({hollow}) and the maxWidth is more than or equal to 3 ({maxWidth}) and the shipIndex" +
+                    //Debug.Log($"NOT placing the ship because it's hollow ({hollow}) and the maxWidth is more than or equal to 3 ({maxWidth}) and the shipIndex" +
                     //    $"is Not equal to {sideCheck - 2} or {sideCheck - 1} ({ships})");
                     dragIcons.Add(dragIcon);
                 }
@@ -325,7 +325,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void BoxFormation()
         {
-            Debugger.Log($"Making a box formation");
+            Debug.Log($"Making a box formation");
             List<DragIcon> dragIcons = GetDragIcons();
             if (dragIcons.Count < 4) // make a line across
             {
@@ -350,7 +350,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void RectangleFormation()
         {
-            Debugger.Log($"Making a rectangle formation");
+            Debug.Log($"Making a rectangle formation");
             List<DragIcon> dragIcons = GetDragIcons();
             if (dragIcons.Count < 5)
             {
@@ -363,17 +363,17 @@ namespace Assets.Scripts.UIComponents
                 List<DragIcon> dropped = new List<DragIcon>();
 
                 // top line
-                //Debugger.Log($"Making a line of length {lineLength} on row 1 with {validDragIcons.Count} icons left ------------------------------------");
+                //Debug.Log($"Making a line of length {lineLength} on row 1 with {validDragIcons.Count} icons left ------------------------------------");
                 LineMaker(lineLength, 1, validDragIcons.GetRange(0, Math.Clamp(lineLength, 0, validDragIcons.Count))).ForEach((di) => { dropped.Add(di); });
                 validDragIcons = validDragIcons.Where((i) => !dropped.Contains(i)).ToList();
 
                 // hollow middle line
-                //Debugger.Log($"Making a hollow line of length {lineLength} on row 2 with {validDragIcons.Count} icons left ------------------------------------");
+                //Debug.Log($"Making a hollow line of length {lineLength} on row 2 with {validDragIcons.Count} icons left ------------------------------------");
                 LineMaker(lineLength, 2, validDragIcons.GetRange(0, Math.Clamp(lineLength, 0, validDragIcons.Count)), true).ForEach((di) => { dropped.Add(di); });
                 validDragIcons = validDragIcons.Where((i) => !dropped.Contains(i)).ToList();
 
                 // bottom line
-                //Debugger.Log($"Making a line of length {lineLength} on row 3 with {validDragIcons.Count} icons left ------------------------------------");
+                //Debug.Log($"Making a line of length {lineLength} on row 3 with {validDragIcons.Count} icons left ------------------------------------");
                 LineMaker(lineLength, 3, validDragIcons.GetRange(0, Math.Clamp(lineLength, 0, validDragIcons.Count))).ForEach((di) => { dropped.Add(di); });
                 validDragIcons = validDragIcons.Where((i) => !dropped.Contains(i)).ToList();
             }
@@ -384,22 +384,22 @@ namespace Assets.Scripts.UIComponents
                 List<DragIcon> dropped = new List<DragIcon>();
 
                 // top line
-                //Debugger.Log($"Making a line of length {lineLength} on row 1 with {validDragIcons.Count} icons left ------------------------------------");
+                //Debug.Log($"Making a line of length {lineLength} on row 1 with {validDragIcons.Count} icons left ------------------------------------");
                 LineMaker(lineLength, 1, validDragIcons.GetRange(0, Math.Clamp(lineLength, 0, validDragIcons.Count))).ForEach((di) => { dropped.Add(di); });
                 validDragIcons = validDragIcons.Where((i) => !dropped.Contains(i)).ToList();
 
                 // hollow middle line
-                //Debugger.Log($"Making a hollow line of length {lineLength} on row 2 with {validDragIcons.Count} icons left ------------------------------------");
+                //Debug.Log($"Making a hollow line of length {lineLength} on row 2 with {validDragIcons.Count} icons left ------------------------------------");
                 LineMaker(lineLength, 2, validDragIcons.GetRange(0, Math.Clamp(lineLength, 0, validDragIcons.Count)), true).ForEach((di) => { dropped.Add(di); });
                 validDragIcons = validDragIcons.Where((i) => !dropped.Contains(i)).ToList();
 
                 // second hollow middle line
-                //Debugger.Log($"Making a hollow line of length {lineLength} on row 2 with {validDragIcons.Count} icons left ------------------------------------");
+                //Debug.Log($"Making a hollow line of length {lineLength} on row 2 with {validDragIcons.Count} icons left ------------------------------------");
                 LineMaker(lineLength, 3, validDragIcons.GetRange(0, Math.Clamp(lineLength, 0, validDragIcons.Count)), true).ForEach((di) => { dropped.Add(di); });
                 validDragIcons = validDragIcons.Where((i) => !dropped.Contains(i)).ToList();
 
                 // bottom line
-                //Debugger.Log($"Making a line of length {lineLength} on row 3 with {validDragIcons.Count} icons left ------------------------------------");
+                //Debug.Log($"Making a line of length {lineLength} on row 3 with {validDragIcons.Count} icons left ------------------------------------");
                 while (validDragIcons.Count > lineLength)
                 {
                     lineLength++;
@@ -412,7 +412,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void PyramidFormation(bool hollow)
         {
-            //Debugger.Log($"Making a pyramid formation");
+            //Debug.Log($"Making a pyramid formation");
             List<DragIcon> dragIcons = GetDragIcons();
             List<DragIcon> validDragIcons = dragIcons;
             List<DragIcon> dropped = new List<DragIcon>();
@@ -420,7 +420,7 @@ namespace Assets.Scripts.UIComponents
             {
 
                 int lineLength = (row * 2) + 1;
-                //Debugger.Log($"Making a hollow line of length {lineLength} on row {row+1} with {validDragIcons.Count} icons left ------------------------------------");
+                //Debug.Log($"Making a hollow line of length {lineLength} on row {row+1} with {validDragIcons.Count} icons left ------------------------------------");
                 LineMaker(lineLength, row + 1, validDragIcons.GetRange(0, Math.Clamp(lineLength, 0, validDragIcons.Count)), hollow).ForEach((di) => { dropped.Add(di); });
                 validDragIcons = validDragIcons.Where((i) => !dropped.Contains(i)).ToList();
             }
@@ -472,7 +472,7 @@ namespace Assets.Scripts.UIComponents
             {
                 isShipInSquad = ConfigData.AllShips.IsShipInSquad(fleetShip);
                 isShipsSquadThisSquad = dragIconsSquad.Equals(CurrentSquad);
-                //Debugger.Log($"Trying to remove ship from unsaved squad. The squad is {squad.Name} #{squad.Id}, and the " +
+                //Debug.Log($"Trying to remove ship from unsaved squad. The squad is {squad.Name} #{squad.Id}, and the " +
                 //    $"currentUnsavedSquad is {_currentUnsavedSquad.Id}, and are they equal? {isSquadThisSquad}");
             }
 
@@ -525,7 +525,7 @@ namespace Assets.Scripts.UIComponents
 
             if (HasHitDropBox(position))             // check if it's in the squad composition box
             {
-                //Debugger.Log("Has hit drop box");
+                //Debug.Log("Has hit drop box");
                 if (HasCurrentSquad && CurrentSquad.HasShips)
                 {
                     //Vector2 screenPoint = _scene.Camera.WorldToScreenPoint(ConfigData.ShipOffset);
@@ -534,8 +534,8 @@ namespace Assets.Scripts.UIComponents
                     //Vector2 screenPixels = Utilities.WorldUnitsToScreenPixels(ConfigData.GetShipOffsetInWorldUnits(_scene.Camera), _scene.Camera) * _scene.ScreenScaleFactor;
                     Vector2 tooClose = Utilities.WorldUnitsToScreenPixels(ConfigData.GetShipOffset(shipType), _scene.Camera);
 
-                    //Debugger.Log($"Ship offset world units: {ConfigData.ShipOffset}, screen pixels {screenPixels}, tooClose {tooClose}");
-                    //Debugger.Log($"Offset Vector: {ConfigData.ShipOffset}, Offset change: {tooClose}, Offset VectorToScreen: {screenPoint}, Base World Point:{_scene.BaseWorldPoint}");
+                    //Debug.Log($"Ship offset world units: {ConfigData.ShipOffset}, screen pixels {screenPixels}, tooClose {tooClose}");
+                    //Debug.Log($"Offset Vector: {ConfigData.ShipOffset}, Offset change: {tooClose}, Offset VectorToScreen: {screenPoint}, Base World Point:{_scene.BaseWorldPoint}");
                     if (NotTooCloseToSquadShips(position, tooClose, ship))// check if it's too close to other ships
                     {             
 
@@ -550,7 +550,7 @@ namespace Assets.Scripts.UIComponents
                     }
                     else
                     {
-                        //Debugger.Log($"Too close to other ships");
+                        //Debug.Log($"Too close to other ships");
                         return false; // got to the squad box but too close to other ships
                     }
                 }
@@ -561,7 +561,7 @@ namespace Assets.Scripts.UIComponents
             }
             else
             {
-                //Debugger.Log("Didn't hit the squad drop box -----------------------------");
+                //Debug.Log("Didn't hit the squad drop box -----------------------------");
                 return false; // didn't drag over the squad maker box
             }
         }
@@ -572,7 +572,7 @@ namespace Assets.Scripts.UIComponents
             position = new Vector2(position.x, position.y);
             eventData.position = position;
             _scene.DropZone.transform.position = (Vector2)_scene.DropZone.transform.position;
-            //Debugger.Log($"Raycasting from {position}, trying to hit {_scene.DropZone.name} at {_scene.DropZone.transform.position}, autoplacing: {_isAutoPlacing}");
+            //Debug.Log($"Raycasting from {position}, trying to hit {_scene.DropZone.name} at {_scene.DropZone.transform.position}, autoplacing: {_isAutoPlacing}");
 
 
             List<RaycastResult> results = new List<RaycastResult>();
@@ -593,7 +593,7 @@ namespace Assets.Scripts.UIComponents
 
                 foreach (RaycastResult hit in results)
                 {
-                    //Debugger.Log($"This raycast hit {hit.gameObject.name}, Hit #3 is {thirdHit.gameObject.name}"); 
+                    //Debug.Log($"This raycast hit {hit.gameObject.name}, Hit #3 is {thirdHit.gameObject.name}"); 
                     if (hit.gameObject == _scene.DropZone && 
                         (
                             (
@@ -609,7 +609,7 @@ namespace Assets.Scripts.UIComponents
                 }
             }
 
-            //Debugger.Log($"Third hit {thirdHit} ---------------------------------------");
+            //Debug.Log($"Third hit {thirdHit} ---------------------------------------");
             return false;
         }
         private bool NotTooCloseToSquadShips(Vector2 position, Vector2 tooClose, SquadShip ship)
@@ -622,11 +622,11 @@ namespace Assets.Scripts.UIComponents
                 // if any are within too close x and y move the current one away
                 if ((ship == null || !ship.Equals(squadShip)) && TooCloseToShip(position, squadShip, tooClose))
                 {
-                    //Debugger.Log($"current ship {_dragIcon.GetFleetShip().Type} is too close to {ship.ShipType} and needs to move");
-                    //Debugger.Log($"X: {TooCloseToX(position, ship, tooCloseX)}, Y: {TooCloseToY(position, ship, tooCloseY)}");
-                    //Debugger.Log($"LS: {TooCloseToLeftSide(position, ship, tooCloseX)}, RS: {TooCloseToRightSide(position, ship, tooCloseX)}," +
+                    //Debug.Log($"current ship {_dragIcon.GetFleetShip().Type} is too close to {ship.ShipType} and needs to move");
+                    //Debug.Log($"X: {TooCloseToX(position, ship, tooCloseX)}, Y: {TooCloseToY(position, ship, tooCloseY)}");
+                    //Debug.Log($"LS: {TooCloseToLeftSide(position, ship, tooCloseX)}, RS: {TooCloseToRightSide(position, ship, tooCloseX)}," +
                     //    $" TS: {TooCloseToTopSide(position, ship, tooCloseY)}, BS: {TooCloseToBottomSide(position, ship, tooCloseY)}");
-                    //Debugger.Log($"This ship is too close to {squadShip.GetFleetShip().Name} X: {Mathf.Abs(squadShip.GetOffsetInScreenPixels(_scene.Camera).x - position.x)}, " +
+                    //Debug.Log($"This ship is too close to {squadShip.GetFleetShip().Name} X: {Mathf.Abs(squadShip.GetOffsetInScreenPixels(_scene.Camera).x - position.x)}, " +
                     //    $"Y: {Mathf.Abs(squadShip.GetOffsetInScreenPixels(_scene.Camera).y - position.y)}, " +
                     //    $"Tooclose: {tooClose}");
                     isInValidPositionWithOtherShips = false;
@@ -634,9 +634,9 @@ namespace Assets.Scripts.UIComponents
                 }
                 else
                 {
-                    //Debugger.Log($"Ship position: {ship.GetOffsetInScreenPixels(_scene.Camera)}");
-                    //Debugger.Log($"Drag position: {position}");
-                    //Debugger.Log($"NOT too close to ship X: {Mathf.Abs(ship.GetOffsetInScreenPixels(_scene.Camera).x - position.x)}, Y: {Mathf.Abs(ship.GetOffsetInScreenPixels(_scene.Camera).y - position.y)}");
+                    //Debug.Log($"Ship position: {ship.GetOffsetInScreenPixels(_scene.Camera)}");
+                    //Debug.Log($"Drag position: {position}");
+                    //Debug.Log($"NOT too close to ship X: {Mathf.Abs(ship.GetOffsetInScreenPixels(_scene.Camera).x - position.x)}, Y: {Mathf.Abs(ship.GetOffsetInScreenPixels(_scene.Camera).y - position.y)}");
 
                 }
 
@@ -670,17 +670,17 @@ namespace Assets.Scripts.UIComponents
             Vector2 snap = Utilities.WorldUnitsToScreenPixels(ConfigData.SnapDistance, _scene.Camera);
 
             // Loop through all the other positions in this unsaved squad
-            //Debugger.Log("Snap -------------------------------------------------------");
+            //Debug.Log("Snap -------------------------------------------------------");
             CurrentSquad.GetShips().ForEach((ship) =>
             {
                 if (ShouldSnapToXAxis(position, ship, snap.x))   // if any are within too close x or y, but not both, snap the current one to line up
                 {
-                    //Debugger.Log($"Snapping the drag ship to the X axis of {ship.ShipType}, currentPosition: {position}");
+                    //Debug.Log($"Snapping the drag ship to the X axis of {ship.ShipType}, currentPosition: {position}");
                     position = SnapX(position, ship, tooClose);
                 }
                 else if (ShouldSnapToYAxis(position, ship, snap.y))
                 {
-                    //Debugger.Log($"Snapping the drag ship to the Y axis of {ship.ShipType}, currentPosition: {position}");
+                    //Debug.Log($"Snapping the drag ship to the Y axis of {ship.ShipType}, currentPosition: {position}");
                     position = SnapY(position, ship, tooClose);
                 }
 
@@ -699,9 +699,9 @@ namespace Assets.Scripts.UIComponents
             {
                 // try to snap symmetric X
                 position = newPosition;
-                //Debugger.Log($"Snapped the drag ship to the Y axis of {ship.ShipType}, now trying to snap the SYMMETRIC X, currentPosition: {position}");
+                //Debug.Log($"Snapped the drag ship to the Y axis of {ship.ShipType}, now trying to snap the SYMMETRIC X, currentPosition: {position}");
                 newPosition = SnapSymmetricAxis(newPosition, ship, 'x');
-                //Debugger.Log($"Snapped the drag ship to the SYMMETRIC X axis of {ship.ShipType}, currentPosition: {newPosition}");
+                //Debug.Log($"Snapped the drag ship to the SYMMETRIC X axis of {ship.ShipType}, currentPosition: {newPosition}");
                 if (!CheckValidDropLocation(newPosition, false, null, ship.ShipType) || Mathf.Abs(newPosition.x - position.x) >= tooClose.x)
                 {
                     return position;
@@ -747,19 +747,19 @@ namespace Assets.Scripts.UIComponents
                 if (position.x > least.GetOffsetInScreenPixels(_scene.Camera).x && position.x < most.GetOffsetInScreenPixels(_scene.Camera).x)
                 {
                     // get the point between them
-                    //Debugger.Log($"There are {sameLevelShips.Count} ships that share the same Y axis with the drag ship. We are snapping the symmetric X in the middle between ships");
+                    //Debug.Log($"There are {sameLevelShips.Count} ships that share the same Y axis with the drag ship. We are snapping the symmetric X in the middle between ships");
                     float distance = Mathf.Abs(least.GetOffsetInScreenPixels(_scene.Camera).x - most.GetOffsetInScreenPixels(_scene.Camera).x);
                     return new Vector2(least.GetOffsetInScreenPixels(_scene.Camera).x + distance / 2, position.y);
                 }
                 else if (position.x > most.GetOffsetInScreenPixels(_scene.Camera).x) // if your dragging ship is more than them, then you want the distance of the axis most ship from the center
                 {
-                    //Debugger.Log($"There are {sameLevelShips.Count} ships that share the same Y axis with the drag ship. We are snapping the symmetric X on the right side of of right most ship {most.ShipType}");
+                    //Debug.Log($"There are {sameLevelShips.Count} ships that share the same Y axis with the drag ship. We are snapping the symmetric X on the right side of of right most ship {most.ShipType}");
                     float distance = Mathf.Abs(middle.GetOffsetInScreenPixels(_scene.Camera).x - most.GetOffsetInScreenPixels(_scene.Camera).x);
                     return new Vector2(most.GetOffsetInScreenPixels(_scene.Camera).x + distance, position.y);
                 }
                 else // if your dragging ship is less than them
                 {
-                    //Debugger.Log($"There are {sameLevelShips.Count} ships that share the same Y axis with the drag ship. We are snapping the symmetric X on the left side of of left most ship {most.ShipType}");
+                    //Debug.Log($"There are {sameLevelShips.Count} ships that share the same Y axis with the drag ship. We are snapping the symmetric X on the left side of of left most ship {most.ShipType}");
                     float distance = Mathf.Abs(middle.GetOffsetInScreenPixels(_scene.Camera).x - least.GetOffsetInScreenPixels(_scene.Camera).x);
                     return new Vector2(least.GetOffsetInScreenPixels(_scene.Camera).x - distance, position.y);
                 }
@@ -768,19 +768,19 @@ namespace Assets.Scripts.UIComponents
             {
                 if (position.y > least.GetOffsetInScreenPixels(_scene.Camera).y && position.y < most.GetOffsetInScreenPixels(_scene.Camera).y)
                 {
-                    //Debugger.Log($"There are {sameLevelShips.Count} ships that share the same X axis with the drag ship. We are snapping the symmetric Y in the middle between ships");
+                    //Debug.Log($"There are {sameLevelShips.Count} ships that share the same X axis with the drag ship. We are snapping the symmetric Y in the middle between ships");
                     float distance = Mathf.Abs(least.GetOffsetInScreenPixels(_scene.Camera).y - most.GetOffsetInScreenPixels(_scene.Camera).y);
                     return new Vector2(position.x, least.GetOffsetInScreenPixels(_scene.Camera).y + distance / 2);
                 }
                 else if (position.y > most.GetOffsetInScreenPixels(_scene.Camera).y)
                 {
-                    //Debugger.Log($"There are {sameLevelShips.Count} ships that share the same X axis with the drag ship. We are snapping the symmetric Y on the top side of of top most ship {most.ShipType}");
+                    //Debug.Log($"There are {sameLevelShips.Count} ships that share the same X axis with the drag ship. We are snapping the symmetric Y on the top side of of top most ship {most.ShipType}");
                     float distance = Mathf.Abs(middle.GetOffsetInScreenPixels(_scene.Camera).y - most.GetOffsetInScreenPixels(_scene.Camera).y);
                     return new Vector2(position.x, most.GetOffsetInScreenPixels(_scene.Camera).y + distance);
                 }
                 else
                 {
-                    //Debugger.Log($"There are {sameLevelShips.Count} ships that share the same X axis with the drag ship. We are snapping the symmetric Y on the bottom side of of bottom most ship {most.ShipType}");
+                    //Debug.Log($"There are {sameLevelShips.Count} ships that share the same X axis with the drag ship. We are snapping the symmetric Y on the bottom side of of bottom most ship {most.ShipType}");
                     float distance = Mathf.Abs(middle.GetOffsetInScreenPixels(_scene.Camera).y - least.GetOffsetInScreenPixels(_scene.Camera).y);
                     return new Vector2(position.x, least.GetOffsetInScreenPixels(_scene.Camera).y - distance);
                 }
@@ -848,13 +848,13 @@ namespace Assets.Scripts.UIComponents
                 {
                     if (position.x > possibleCenter.GetOffsetInScreenPixels(_scene.Camera).x) // if the dragging ship is right of the center
                     {
-                        //Debugger.Log($"There are {count} ships that share the same Y axis with the drag ship. We are snapping the symmetric X on the right side of center ship {possibleCenter.ShipType}");
+                        //Debug.Log($"There are {count} ships that share the same Y axis with the drag ship. We are snapping the symmetric X on the right side of center ship {possibleCenter.ShipType}");
                         float distance = Mathf.Abs(least.GetOffsetInScreenPixels(_scene.Camera).x - possibleCenter.GetOffsetInScreenPixels(_scene.Camera).x);
                         return new Vector2(possibleCenter.GetOffsetInScreenPixels(_scene.Camera).x + distance, position.y);
                     }
                     else
                     {
-                        //Debugger.Log($"There are {count} ships that share the same Y axis with the drag ship. We are snapping the symmetric X on the left side of center ship {possibleCenter.ShipType}");
+                        //Debug.Log($"There are {count} ships that share the same Y axis with the drag ship. We are snapping the symmetric X on the left side of center ship {possibleCenter.ShipType}");
                         float distance = Mathf.Abs(most.GetOffsetInScreenPixels(_scene.Camera).x - possibleCenter.GetOffsetInScreenPixels(_scene.Camera).x);
                         return new Vector2(possibleCenter.GetOffsetInScreenPixels(_scene.Camera).x - distance, position.y);
                     }
@@ -863,13 +863,13 @@ namespace Assets.Scripts.UIComponents
                 {
                     if (placeBetweenShips)
                     {
-                        //Debugger.Log($"There are {count} ships that share the same Y axis with the drag ship. We are snapping the symmetric X in the middle between ships");
+                        //Debug.Log($"There are {count} ships that share the same Y axis with the drag ship. We are snapping the symmetric X in the middle between ships");
                         float distance = Mathf.Abs(least.GetOffsetInScreenPixels(_scene.Camera).x - most.GetOffsetInScreenPixels(_scene.Camera).x);
                         return new Vector2(least.GetOffsetInScreenPixels(_scene.Camera).x + distance / 2, position.y);
                     }
                     else
                     {
-                        //Debugger.Log($"There are {count} ships that share the same Y axis with the drag ship. We did not find a symmetric point to snap to.");
+                        //Debug.Log($"There are {count} ships that share the same Y axis with the drag ship. We did not find a symmetric point to snap to.");
                         return position;
                     }
                 }
@@ -923,13 +923,13 @@ namespace Assets.Scripts.UIComponents
                 {
                     if (position.y > possibleCenter.GetOffsetInScreenPixels(_scene.Camera).y)
                     {
-                        //Debugger.Log($"There are {count} ships that share the same X axis with the drag ship. We are snapping the symmetric Y on the top side of center ship {possibleCenter.ShipType}");
+                        //Debug.Log($"There are {count} ships that share the same X axis with the drag ship. We are snapping the symmetric Y on the top side of center ship {possibleCenter.ShipType}");
                         float distance = Mathf.Abs(least.GetOffsetInScreenPixels(_scene.Camera).y - possibleCenter.GetOffsetInScreenPixels(_scene.Camera).y);
                         return new Vector2(position.x, possibleCenter.GetOffsetInScreenPixels(_scene.Camera).y + distance);
                     }
                     else
                     {
-                        //Debugger.Log($"There are {count} ships that share the same X axis with the drag ship. We are snapping the symmetric Y on the bottom side of center ship {possibleCenter.ShipType}");
+                        //Debug.Log($"There are {count} ships that share the same X axis with the drag ship. We are snapping the symmetric Y on the bottom side of center ship {possibleCenter.ShipType}");
                         float distance = Mathf.Abs(most.GetOffsetInScreenPixels(_scene.Camera).y - possibleCenter.GetOffsetInScreenPixels(_scene.Camera).y);
                         return new Vector2(position.x, possibleCenter.GetOffsetInScreenPixels(_scene.Camera).y - distance);
                     }
@@ -938,13 +938,13 @@ namespace Assets.Scripts.UIComponents
                 {
                     if (placeBetweenShips)
                     {
-                        //Debugger.Log($"There are {count} ships that share the same X axis with the drag ship. We are snapping the symmetric Y in the middle between ships");
+                        //Debug.Log($"There are {count} ships that share the same X axis with the drag ship. We are snapping the symmetric Y in the middle between ships");
                         float distance = Mathf.Abs(least.GetOffsetInScreenPixels(_scene.Camera).y - most.GetOffsetInScreenPixels(_scene.Camera).y);
                         return new Vector2(position.x, least.GetOffsetInScreenPixels(_scene.Camera).y + distance / 2);
                     }
                     else
                     {
-                        //Debugger.Log($"There are {count} ships that share the same X axis with the drag ship. We did not find a symmetric point to snap to.");
+                        //Debug.Log($"There are {count} ships that share the same X axis with the drag ship. We did not find a symmetric point to snap to.");
                         return position;
                     }
                 }
@@ -978,7 +978,7 @@ namespace Assets.Scripts.UIComponents
             }
             else
             {
-                //Debugger.Log($"There was only one other ship on the same {axis} axis,looking for a symmetric snap based on ship(s) above.");
+                //Debug.Log($"There was only one other ship on the same {axis} axis,looking for a symmetric snap based on ship(s) above.");
                 return position;
             }
 
@@ -994,9 +994,9 @@ namespace Assets.Scripts.UIComponents
             {
                 // try to snap symmetric Y
                 position = newPosition;
-                //Debugger.Log($"Snapped the drag ship to the X axis of {ship.ShipType}, now trying to snap the SYMMETRIC Y, currentPosition: {position}");
+                //Debug.Log($"Snapped the drag ship to the X axis of {ship.ShipType}, now trying to snap the SYMMETRIC Y, currentPosition: {position}");
                 newPosition = SnapSymmetricAxis(newPosition, ship, 'y');
-                //Debugger.Log($"Snapped the drag ship to the SYMMETRIC Y axis of {ship.ShipType}, currentPosition: {newPosition}");
+                //Debug.Log($"Snapped the drag ship to the SYMMETRIC Y axis of {ship.ShipType}, currentPosition: {newPosition}");
                 if (!CheckValidDropLocation(newPosition, false, null, ship.ShipType) || Mathf.Abs(newPosition.y - position.y) >= tooClose.y)
                 {
                     return position;

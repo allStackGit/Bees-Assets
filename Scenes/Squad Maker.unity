@@ -15984,6 +15984,7 @@ MonoBehaviour:
   Updates: 0
   __PastServerRequests: []
   __AverageRequestTime: 0
+  __UsedHashes: 
   Side: 1
   BargeDragIcon: {fileID: 644091232}
   CarrierDragIcon: {fileID: 994602278}
@@ -16087,7 +16088,7 @@ MonoBehaviour:
   OpposingForcePresetDropdown: {fileID: 1615551064}
   BargeSprite: {fileID: 21300000, guid: 3ca3542d051f91c44afa6fe676fe2c67, type: 3}
   CarrierSprite: {fileID: 21300000, guid: d345c41298bdcde4c81806f290b71b13, type: 3}
-  CruiserSprite: {fileID: 21300000, guid: e7fb5631d08227448bd1191172718349, type: 3}
+  CruiserSprite: {fileID: 21300000, guid: 4d8d12e8bab75924aac22692692865d4, type: 3}
   DreadnoughtSprite: {fileID: 21300000, guid: 9c7747c0ffc435e418024d989475bd92, type: 3}
   DroneSprite: {fileID: 21300000, guid: 3a8e6cfd758ae60488a53d1e909e0abe, type: 3}
   FactorySprite: {fileID: 21300000, guid: d4e246a598aabb94f8f7d79e62a0e90e, type: 3}
@@ -17581,7 +17582,7 @@ PrefabInstance:
     - target: {fileID: 1109014343575341394, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_Sprite
       value: 
-      objectReference: {fileID: 21300000, guid: e7fb5631d08227448bd1191172718349, type: 3}
+      objectReference: {fileID: 21300000, guid: 4d8d12e8bab75924aac22692692865d4, type: 3}
     - target: {fileID: 2470922290977067781, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_Padding.m_Left
       value: 5
@@ -22942,6 +22943,10 @@ PrefabInstance:
       propertyPath: m_IsActive
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 8216154378198990003, guid: ba8e735e9f2a5b542916479f7ec91750, type: 3}
+      propertyPath: m_Sprite
+      value: 
+      objectReference: {fileID: 21300000, guid: 4d8d12e8bab75924aac22692692865d4, type: 3}
     - target: {fileID: 8241722512025787508, guid: ba8e735e9f2a5b542916479f7ec91750, type: 3}
       propertyPath: m_Sprite
       value: 

@@ -13,7 +13,7 @@ namespace Assets.Scripts.Level.Commands
         {
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
 
-            if (Squad != null && !Squad.IsDead)
+            if (Squad != null)
             {
                 Vector2 position = Squad.GetPosition();
                 if (IsHiveMindCommand)
@@ -23,7 +23,7 @@ namespace Assets.Scripts.Level.Commands
                     Invoke(nameof(FinishAIPatrol), ConfigData.Configuration.AISquadPatrolTime);
                 }
 
-                //Debugger.Log($"topLeft: {topLeft}, bottomRight: {bottomRight}");
+                //Debug.Log($"topLeft: {topLeft}, bottomRight: {bottomRight}");
 
                 Vector2 topRight = new Vector2(bottomRight.x, topLeft.y);
                 Vector2 bottomLeft = new Vector2(topLeft.x, bottomRight.y);
@@ -43,7 +43,7 @@ namespace Assets.Scripts.Level.Commands
         }
         private void Timer()
         {
-            if (Squad != null && !Squad.IsDead)
+            if (Squad != null)
             {
                 // check if squad has reached destination and if so, cancel the timer and start over again for the next destination
                 Vector2 destination = GetDestination();

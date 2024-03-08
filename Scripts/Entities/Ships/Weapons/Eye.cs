@@ -23,32 +23,32 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             //reset the targeting eye color
             Pupil.color = Color.white;
             _readyToChangeColor = false;
-            //Debugger.Log("Sending projectile, Setting color white!");
+            //Debug.Log("Sending projectile, Setting color white!");
 
         }
         protected override void SetTargetShip(Ship ship)
         {
-            //Debugger.Log("Setting eye targeting");
+            //Debug.Log("Setting eye targeting");
             base.SetTargetShip(ship);
             if (!_readyToChangeColor)
             {
-                //Debugger.Log($"Got target! {ship.name}");
+                //Debug.Log($"Got target! {ship.name}");
                 _readyToChangeColor = true;
             }
             else if(!CeaseFire)
             {
-                //Debugger.Log("Setting color red!");
+                //Debug.Log("Setting color red!");
                 Pupil.color = ConfigData.GetUIColor("eye-aiming");
             }
         }
         protected override void Aim()
         {
-            //Debugger.Log("Hornet aiming");
+            //Debug.Log("Hornet aiming");
             base.Aim();
             // resets the eye color if there is no target
             if (!HasTargetShip)
             {
-                //Debugger.Log("Setting color white!");
+                //Debug.Log("Setting color white!");
                 Pupil.color = Color.white;
             }
         }

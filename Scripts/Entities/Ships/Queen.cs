@@ -36,13 +36,11 @@ namespace Assets.Scripts.Entities.Ships
 
         private void SpawnMinions()
         {
-            Squad squad = CreateMinionSquad();
-
             // Spawn the minions
-            //Debugger.Log($"Spawning {MinionCount} {MinionType}s at {SpawnPoint}");
+            //Debug.Log($"Spawning {MinionCount} {MinionType}s at {SpawnPoint}");
             for (int shipIndex = 0; shipIndex < MinionCount; shipIndex++)
             {
-                StartCoroutine(SpawnMinion(shipIndex, squad, GetPosition() + SpawnPoint));
+                StartCoroutine(SpawnMinion(shipIndex, GetPosition() + SpawnPoint));
             }
 
         }
@@ -71,11 +69,12 @@ namespace Assets.Scripts.Entities.Ships
             MinionSquadsCount++;
             return squad;
         }
-        private IEnumerator SpawnMinion(int shipIndex, Squad squad, Vector2 squadGatheringPoint)
+        private IEnumerator SpawnMinion(int shipIndex, Vector2 squadGatheringPoint)
         {
             yield return new WaitForSeconds(shipIndex * TimeBetweenMinions);
 
-            //Debugger.Log($"Spawning minion {MinionType} #{shipIndex}");
+            //Debug.Log($"Spawning minion {MinionType} #{shipIndex}");
+            Squad squad = CurrentMinionSquad;
             if (squad == null || squad.IsDead)
             {
                 squad = CreateMinionSquad();

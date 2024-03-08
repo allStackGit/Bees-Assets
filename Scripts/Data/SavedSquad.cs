@@ -124,7 +124,7 @@ namespace Assets.Scripts.Data
         }
         public bool HasShip(FleetShip ship)
         {
-            //Debugger.Log($"Fleetship: {ship}");
+            //Debug.Log($"Fleetship: {ship}");
             return GetShip(ship.Id) != null;
         }
         public Vector2 GetLeftMostPoint()
@@ -177,16 +177,16 @@ namespace Assets.Scripts.Data
         // the ships need to orient around the center so that when they are loaded onto a map they have a reference position to the center of the squad
         public void OrientSquad()
         {
-            //Debugger.Log($"Before Orienting squad, center point: {StartingPosition}");
+            //Debug.Log($"Before Orienting squad, center point: {StartingPosition}");
 
             StartingPosition = GetCenterPoint();
-            //Debugger.Log($"After Orienting squad, center point: {StartingPosition}");
+            //Debug.Log($"After Orienting squad, center point: {StartingPosition}");
             GetShips().ForEach((ship) =>
             {
-                //Debugger.Log($"Squad ship offset before orienting around center: {ship.Offset}");
+                //Debug.Log($"Squad ship offset before orienting around center: {ship.Offset}");
                 ship.Offset.x = ship.Offset.x - StartingPosition.x;
                 ship.Offset.y = ship.Offset.y - StartingPosition.y;
-                //Debugger.Log($"Squad ship offset after orienting around center: {ship.Offset}");
+                //Debug.Log($"Squad ship offset after orienting around center: {ship.Offset}");
             });
         }
         public int GetTsv()

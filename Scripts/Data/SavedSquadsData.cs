@@ -21,14 +21,14 @@ namespace Assets.Scripts.Data
             // of three gunships
 
             defaultJsonData = "[]"; // [alert] need to change to actual defaults
-            //Debugger.Log($"defaultJSON: {defaultJsonData}");
+            //Debug.Log($"defaultJSON: {defaultJsonData}");
 
             dynamic json = SetupFile(shouldFileExist, ConfigData.SavedSquadsDataFilename, (json) =>
             {
                 ConfigData.IsSavedSquadsDataLoaded = true;
 
                 LoadSquadsFromJson(Utilities.JArrayToList<dynamic>((JArray)JsonConvert.DeserializeObject(file.GetContents())));
-                //Debugger.Log($"Loaded ships {GetShips().Find((s => s.Id == Utilities.RandomInt(GetShips().Count - 1))).Name}");
+                //Debug.Log($"Loaded ships {GetShips().Find((s => s.Id == Utilities.RandomInt(GetShips().Count - 1))).Name}");
             });
 
         }
@@ -41,7 +41,7 @@ namespace Assets.Scripts.Data
                     (int) squad.Stats.ShipsLost, (int) squad.Stats.DamageDone, (int) squad.Stats.DamageReceived, (int) squad.Stats.Kills);
                 SavedSquad savedSquad = new SavedSquad((int)squad.Id, (int) squad.Side, (string)squad.Name, new Vector2((float) squad.StartingPosition.x, (float) squad.StartingPosition.y),
                     (bool) squad.CeaseFire, (bool) squad.IsMatchingSpeed, (string) squad.ChosenShootingStrategy, color, Stats);
-                //Debugger.Log($"Squad ships, {savedSquad.Name}, {squad.Ships}");
+                //Debug.Log($"Squad ships, {savedSquad.Name}, {squad.Ships}");
                 //Vector2 startingPosition = new Vector2(savedSquad.StartingPosition.x, savedSquad.StartingPosition.y);
                 List<dynamic> ships = squad.Ships.ToObject<List<dynamic>>();
 
@@ -52,12 +52,12 @@ namespace Assets.Scripts.Data
                      savedSquad));
 
                 });
-                //Debugger.Log($"Loaded squad {squad.Name} at {squad.StartingPosition} at before Add Squad call");
+                //Debug.Log($"Loaded squad {squad.Name} at {squad.StartingPosition} at before Add Squad call");
                 //savedSquad.StartingPosition = startingPosition;
                 AddSquad(savedSquad);
 
             });
-            //Debugger.Log("Finished loading the squads from list");
+            //Debug.Log("Finished loading the squads from list");
         }
         public List<SavedSquad> GetSquads()
         {
@@ -89,18 +89,18 @@ namespace Assets.Scripts.Data
         }
         public void AddSquad(SavedSquad squad)
         {
-            //Debugger.Log($"Loaded squad {squad.Name} at {squad.StartingPosition} at start of Add Squad call");
+            //Debug.Log($"Loaded squad {squad.Name} at {squad.StartingPosition} at start of Add Squad call");
 
             if (!HasSquad(squad))
             {
-                //Debugger.Log($"Squad location before cloning: {squad.StartingPosition}");
+                //Debug.Log($"Squad location before cloning: {squad.StartingPosition}");
                 SavedSquad newSquad = (SavedSquad) squad.Clone();
-                //Debugger.Log($"Squad location after cloning: {newSquad.StartingPosition}");
+                //Debug.Log($"Squad location after cloning: {newSquad.StartingPosition}");
                 _savedSquadsList.Add(newSquad);
             }
             else
             {
-                Debugger.Log($"Squad exists: {squad.Id}, {squad.Name}");
+                Debug.Log($"Squad exists: {squad.Id}, {squad.Name}");
             }
             
         }

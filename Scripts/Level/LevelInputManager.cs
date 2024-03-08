@@ -67,7 +67,7 @@ namespace Assets.Scripts.Level
                     Timers.RemoveAt(i);
                 }
             }
-            //Debugger.Log($"width: {Screen.width}, height: {Screen.height}, mousePosition: {_mousePosition}");
+            //Debug.Log($"width: {Screen.width}, height: {Screen.height}, mousePosition: {_mousePosition}");
         }
         private void ResetInputs()
         {
@@ -109,7 +109,7 @@ namespace Assets.Scripts.Level
                 {
                     if (Input.GetKeyDown(keycodes[i]))
                     {
-                        //Debugger.Log("Pressed key");
+                        //Debug.Log("Pressed key");
                         int squadNumber = int.Parse(keycodes[i].ToString().Substring(5));
 
                         if (squadNumber == 0)
@@ -128,7 +128,7 @@ namespace Assets.Scripts.Level
                         Squad squad = state.GetSquadByNumber(ConfigData.Configuration.UserSide, squadNumber);
                         if (state.GetSelectedSquads().Contains(squad))
                         {
-                            //Debugger.Log("Selecting an already selected squad");
+                            //Debug.Log("Selecting an already selected squad");
                             Vector2 position = squad.GetPosition();
                             Level.Camera.orthographicSize = Level.DefaultZoom;
                             Level.Camera.transform.position = new Vector3(position.x, position.y, -10) + Level.Get3DPosition();
@@ -136,7 +136,7 @@ namespace Assets.Scripts.Level
                         }
                         else
                         {
-                            //Debugger.Log("Selecting a new squad");
+                            //Debug.Log("Selecting a new squad");
                             if (squad != null)
                             {
                                 Vector2 position = squad.GetPosition();
@@ -146,7 +146,7 @@ namespace Assets.Scripts.Level
                             }
 
                         }
-                         //Debugger.Log("Pressed " + squadNumber);
+                         //Debug.Log("Pressed " + squadNumber);
                         state.SelectSquad(squad);
                     }
                 }
@@ -154,7 +154,7 @@ namespace Assets.Scripts.Level
 
             if (Input.GetMouseButtonDown(LeftClick)) // left mouse button down
             {
-                //Debugger.Log("Pressed Left mouse button");
+                //Debug.Log("Pressed Left mouse button");
                 if (EventSystem.IsPointerOverGameObject())
                 {
                     CheckForMiniMapNavigation(LeftClick);
@@ -346,7 +346,7 @@ namespace Assets.Scripts.Level
                 //Debug.Log($"Frame: {Level.Updates}, clicked ship: {_clickedShip}");
                 if (HasDragMoveSquadsInput())
                 {
-                    //Debugger.Log("Has drag input");
+                    //Debug.Log("Has drag input");
                     MoveSquads(Level.Camera.ScreenToWorldPoint(Input.mousePosition));
                 }
                 else if (HasSelectingGuardShipInput())
@@ -360,7 +360,7 @@ namespace Assets.Scripts.Level
                 }
                 else if (HasMoveSquadsInput())
                 {
-                    //Debugger.Log("Has move input");
+                    //Debug.Log("Has move input");
                     MoveSquads(Level.Camera.ScreenToWorldPoint(Input.mousePosition));
                 }
                 else if (_leftMouseButtonUp)
@@ -376,7 +376,7 @@ namespace Assets.Scripts.Level
                         Selector.SelectShipsInBox();
                     }
                     _isLeftMouseDragging = false;
-                    //Debugger.Log("Deactivated box");
+                    //Debug.Log("Deactivated box");
                     Selector.Deactivate();
 
                 }
@@ -465,7 +465,7 @@ namespace Assets.Scripts.Level
         {
             if ( _selectingGuardTarget) // if we're set to select a guard target
             {
-                //Debugger.Log($"Selecting {ship.name} for guarding");
+                //Debug.Log($"Selecting {ship.name} for guarding");
                 Level.GetState().GetSelectedSquads().ForEach((squad) =>
                 {
                     squad.UserGuard(ship.Squad); // make all selected ships guard this squad
@@ -509,7 +509,7 @@ namespace Assets.Scripts.Level
             {
                 if (ship.DistanceToPoint(levelPosition) <= 10)
                 {
-                    //Debugger.Log($"Targeting a potential AI squad! {ship.Squad.Name}");
+                    //Debug.Log($"Targeting a potential AI squad! {ship.Squad.Name}");
                     potentialSquad = ship.Squad;
                     _clickedShip = ship;
 
@@ -518,7 +518,7 @@ namespace Assets.Scripts.Level
             if (potentialSquad != null)
             {
                 potentialSquad.GetShips().First().Clicked(RightClick);
-                //Debugger.Log($"Mouse was close enough to ${potentialSquad.Name}");
+                //Debug.Log($"Mouse was close enough to ${potentialSquad.Name}");
                 return true;
             }
             return false;
@@ -529,7 +529,7 @@ namespace Assets.Scripts.Level
             squads.ForEach((squad) =>
             {
                 Vector2 localized = targetPosition - Level.GetPosition();
-                //Debugger.Log($"Squad: {squad.Name} World point target position: {targetPosition}, localized: {localized}");
+                //Debug.Log($"Squad: {squad.Name} World point target position: {targetPosition}, localized: {localized}");
 
                 //float x = Mathf.Clamp(targetPosition.x, Level.MinX, Level.MaxX);
                 //float y = Mathf.Clamp(targetPosition.y, Level.MinY, Level.MaxY);
@@ -543,7 +543,7 @@ namespace Assets.Scripts.Level
         }
         private bool CheckForSelectingPatrolArea()
         {
-            //Debugger.Log($"Checking to select for patrol area: {_selectingPatrolArea}");
+            //Debug.Log($"Checking to select for patrol area: {_selectingPatrolArea}");
             if (_selectingPatrolArea)
             {
                 GameState state = Level.GetState();
@@ -585,7 +585,7 @@ namespace Assets.Scripts.Level
             {
                 PointerEventData eventData = new PointerEventData(EventSystem.current);
                 eventData.position = new Vector2(Input.mousePosition.x, Input.mousePosition.y);
-                //Debugger.Log($"Raycasting from {eventData.position}");
+                //Debug.Log($"Raycasting from {eventData.position}");
 
 
                 List<RaycastResult> results = new List<RaycastResult>();
@@ -593,7 +593,7 @@ namespace Assets.Scripts.Level
 
                 foreach (RaycastResult hit in results)
                 {
-                    //Debugger.Log($"This raycast hit {hit.gameObject.name}");
+                    //Debug.Log($"This raycast hit {hit.gameObject.name}");
                     if (hit.gameObject.name == "Camera Collider")
                     {
                         Vector2 miniMapPoint = hit.gameObject.transform.InverseTransformPoint(hit.screenPosition);
@@ -601,7 +601,7 @@ namespace Assets.Scripts.Level
                         Vector2 viewPortWorldPoint = Level.MiniMapCamera.ViewportToWorldPoint(viewPortPoint);
                         Vector2 localized = viewPortWorldPoint - Level.GetPosition();
 
-                        //Debugger.Log($"Hit: Screen position: {hit.screenPosition}, Mini Map position: {miniMapPoint}, View port position: {viewPortPoint}, Viewport World Point: {viewPortWorldPoint}," +
+                        //Debug.Log($"Hit: Screen position: {hit.screenPosition}, Mini Map position: {miniMapPoint}, View port position: {viewPortPoint}, Viewport World Point: {viewPortWorldPoint}," +
                         //    $"Localized: {localized} ");
 
                         if (mouseButton == RightClick)
@@ -753,7 +753,7 @@ namespace Assets.Scripts.Level
 
             float camY = Mathf.Clamp(position.y, bottomBound, topBound); 
 
-            //Debugger.Log($"mapBoundSize: {mapBounds.size}, mapBoundMax: {mapBounds.max}, camPosition: {position}, camVertExtent: {camVertExtent}, bottomBound: {bottomBound}, topBound: {topBound}, camY: {camY}");
+            //Debug.Log($"mapBoundSize: {mapBounds.size}, mapBoundMax: {mapBounds.max}, camPosition: {position}, camVertExtent: {camVertExtent}, bottomBound: {bottomBound}, topBound: {topBound}, camY: {camY}");
 
             camera.transform.position = new Vector3(position.x, camY, position.z);
 

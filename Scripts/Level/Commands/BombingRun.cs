@@ -16,9 +16,9 @@ namespace Assets.Scripts.Level.Commands
         public override void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy)
         {
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
-            //Debugger.Log("Executing bombing run");
+            //Debug.Log("Executing bombing run");
 
-            if (Squad != null && !Squad.IsDead)
+            if (Squad != null)
             {
                 Squad.ClearTargets(); // Clear all old targets before starting the bombing run
                 if (CheckIfStrikersAreDefenseless())
@@ -45,7 +45,7 @@ namespace Assets.Scripts.Level.Commands
                 List<Ship> ships = Squad.GetShips();
                 foreach (Ship ship in ships)
                 {
-                    //Debugger.Log("Looping through all ships in bombing squad");
+                    //Debug.Log("Looping through all ships in bombing squad");
                     if (ship.ShipType == "Striker")
                     {
                         Striker striker = (Striker)ship;
@@ -67,12 +67,12 @@ namespace Assets.Scripts.Level.Commands
                         Squad.DamageSentToEnemyShipsBySquad.Clear();
                         loops++;
                     }
-                    if (loops == 10)
-                    {
-                        Debug.Log($"Looped 10 times while trying to dtermine a target ship for {bomb.Name}");
-                    }
-                    //Debugger.Log($"Target ship: {bomb.TargetShip}");
-                    //Debugger.Log("--------------------");
+                    //if (loops == 10)
+                    //{
+                    //    Debug.Log($"Looped 10 times while trying to dtermine a target ship for {bomb.Name}");
+                    //}
+                    //Debug.Log($"Target ship: {bomb.TargetShip}");
+                    //Debug.Log("--------------------");
                 }
 
                 InvokeRepeating(nameof(Timer), .01f, .5f);
@@ -90,7 +90,7 @@ namespace Assets.Scripts.Level.Commands
                 if (Squad.GetShips().All((s) =>
                 {
                     Striker striker = ((Striker)s);
-                    return !striker.AreBombsReady && (striker.Carrier == null || striker.Carrier.IsDead);
+                    return !striker.AreBombsReady && striker.Carrier == null;
                 }))
                 {
                     Squad.BannedStrats.Add("Aggressive");
@@ -99,7 +99,7 @@ namespace Assets.Scripts.Level.Commands
                     Squad.BannedStrats.Add("Left Swipe");
                     Squad.BannedStrats.Add("In and Out");
 
-                    Debugger.Log("Strikers are defenseless, cancelling bombing run");
+                    //Debug.Log("Strikers are defenseless, cancelling bombing run");
                     SetFinalize("Strikers are defenseless, cancelling bombing run");
                     return true;
                 }
@@ -108,7 +108,7 @@ namespace Assets.Scripts.Level.Commands
         }
         private bool ShouldShipPursueTarget(Ship ship)
         {
-            if (ship.HasTargetShips && !ship.TargetShips.All((ship) => ship.IsDead)) // if the ship has target ships and they're not all dead
+            if (ship.HasTargetShips && ship.TargetShips.Any((ship) => ship != null)) // if the ship has target ships and they're not all dead
             {
                 if (ship.ShipType == "Striker")
                 {
@@ -146,9 +146,9 @@ namespace Assets.Scripts.Level.Commands
 
         private void Timer()
         {
-            if (Squad != null && !Squad.IsDead)
+            if (Squad != null)
             {
-                //Debugger.Log("Bombing timer");
+                //Debug.Log("Bombing timer");
                 Squad.Status = $"In the middle of bombing run against {Enemy.Name}";
                 List<Ship> ships = Squad.GetShips();
                 for (int i = 0; i < ships.Count; i++)
@@ -186,7 +186,7 @@ namespace Assets.Scripts.Level.Commands
 
                 if (HaveAllShipsFinished(ships))
                 {
-                    //Debugger.Log("Ended bombing run");
+                    //Debug.Log("Ended bombing run");
                     CancelInvoke(nameof(Timer));
                     SetFinalize("Completed bombing run");
 

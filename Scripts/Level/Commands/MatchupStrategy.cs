@@ -21,18 +21,18 @@ namespace Assets.Scripts.Level.Commands
             //this.MatchupString = matchupString; // the string of the matchup e.g. GG|DDDDCC|0|2|0
             //this.MatchupId = matchupId; // the database ID of the matchup that connects to the matchup string in the database
             //this.OutcomeId = outcomeId; // the database ID of the targeting outcome record
-            ////Debugger.Log("Created MatchupStrategy");
+            ////Debug.Log("Created MatchupStrategy");
         }
 
         public Squad SortSquads()
         {
-            //Debugger.Log("Sorting squads");
-            //Debugger.Log($"Squad: {Squad}");
+            //Debug.Log("Sorting squads");
+            //Debug.Log($"Squad: {Squad}");
             List<Squad> queue = Level.GetState().GetEnemySquads(Side);
 
             if (queue.Count == 0)
             {
-                //Debugger.Log($"There were no enemy squads to sort for the targeting queue");
+                //Debug.Log($"There were no enemy squads to sort for the targeting queue");
                 return null;
             }
 

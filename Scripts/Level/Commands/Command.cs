@@ -30,7 +30,7 @@ namespace Assets.Scripts.Level.Commands
 
         public bool HasStrategy => Strategy != null;
         public bool HasShootingStrategy => ShootingStrategy != null;
-        public bool HasSquad => Squad != null && !Squad.IsDead;
+        public bool HasSquad => Squad != null;
         public bool HasEnemy => Enemy != null;
         public string Type => HasStrategy ? Strategy.Name : "Uninitialized";
         public bool IsFinalized, IsStored, IsHiveMindCommand;
@@ -83,7 +83,7 @@ namespace Assets.Scripts.Level.Commands
         }
         public void StandStill()
         {
-            if (!Squad.IsDead)
+            if (Squad!= null)
             {
                 ClearDestinations();
                 SetAndMove(Squad.GetPosition());
@@ -93,10 +93,10 @@ namespace Assets.Scripts.Level.Commands
 
         public virtual void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy)
         {
-            //Debugger.Log($"Executing {strategy.Name}");
-            if (Squad != null && !Squad.IsDead)
+            //Debug.Log($"Executing {strategy.Name}");
+            if (Squad != null)
             {
-                if (noEnemy || !Enemy.IsDead)
+                if (noEnemy || Enemy != null)
                 {
                     Strategy = strategy;
                     ShootingStrategy = shootingStrategy;
@@ -106,11 +106,11 @@ namespace Assets.Scripts.Level.Commands
                     Level.GetState().AddCommand(this);
 
                     Squad.Status = $"Executing Command #{OutcomeId}";
-                    //Debugger.Log("Set status for command");
+                    //Debug.Log("Set status for command");
                 }
                 else
                 {
-                    //Debugger.Log($"Could not find the enemy for command #{commandOutcomeId}");
+                    //Debug.Log($"Could not find the enemy for command #{commandOutcomeId}");
                     SetFinalize("Could not find the enemy squad for command");
                     return;
                 }
@@ -132,13 +132,13 @@ namespace Assets.Scripts.Level.Commands
             if (which == "closest")
             {
                 Squad closestEnemy = Squad.GetClosestEnemySquad();
-                if (closestEnemy != null && !closestEnemy.IsDead)
+                if (closestEnemy != null)
                 {
                     ships = closestEnemy.GetShips();
 
                 }
             }
-            else if (Enemy != null && !Enemy.IsDead)
+            else if (Enemy != null)
             {
                 ships = Enemy.GetShips();
             }
@@ -156,35 +156,37 @@ namespace Assets.Scripts.Level.Commands
         // Finalizes the command and stops the squad so long as the command hasn't already been finalized
         public void SetFinalize(string cause)
         {
-            if (!IsFinalized)
+            if (!Squad.IsDead)
             {
                 StandStill();
                 Finalize(cause);
             }
+
+        }
+        public void SquadKilled()
+        {
+            Finalize("This squad got killed");
         }
         private void Finalize(string cause)
         {
             CancelInvoke(); 
             
             FinalizationCause = cause;
-            //Debugger.Log($"Finalized because of [{FinalizationCause}]");
+            //Debug.Log($"Finalized because of [{FinalizationCause}]");
             IsFinalized = true;
             ClearDestinations();
 
             if (Squad != null)
             {
-                if (!Squad.IsDead)
+                Squad.IsRetreating = false;
+                Squad.Status = "idle";
+                if (Squad.IsChasing())
                 {
-                    Squad.IsRetreating = false;
-                    Squad.Status = "idle";
-                    if (Squad.IsChasing())
-                    {
-                        Squad.SetChase(false);
-                    }
-                    if (Squad.IsSelected && Level.Menus != null)
-                    {
-                        Level.Menus.ActionBox.HighlightSelectedButtons();
-                    }
+                    Squad.SetChase(false);
+                }
+                if (Squad.IsSelected && Level.Menus != null)
+                {
+                    Level.Menus.ActionBox.HighlightSelectedButtons();
                 }
 
                 Squad.Command = null;
@@ -200,7 +202,7 @@ namespace Assets.Scripts.Level.Commands
                         {
                             if (storedCommand.IsStored)
                             {
-                                Debugger.Log($"Trying to finalize a command #${OutcomeId} with cause [{cause}] that has already been stored");
+                                Debug.Log($"Trying to finalize a command #${OutcomeId} with cause [{cause}] that has already been stored");
                                 return;
                             }
                             storedCommand.Tsv = Tsv;
@@ -215,25 +217,25 @@ namespace Assets.Scripts.Level.Commands
                         }
                         else
                         {
-                            Debugger.Log($"Couldn't find a past command with id #{OutcomeId}  with cause [{cause}]");
+                            Debug.Log($"Couldn't find a past command with id #{OutcomeId}  with cause [{cause}]");
                         }
                     }
                 }
             }
             else
             {
-                Debugger.Log($"Tried to finalize command #{OutcomeId} for a null squad");
+                Debug.Log($"Tried to finalize command #{OutcomeId} for a null squad");
             }
             // 
 
             
             this.Level.GetState().LogState();
-            //Debugger.Log($"Trying to destroy ({Squad.gameObject.name}, {name}) {Squad.gameObject.GetComponent<Command>()}");
-            if (Squad != null && !Squad.IsDead)
-            {
-                Destroy(Squad.gameObject.GetComponents<Command>().First((c) => c.OutcomeId == OutcomeId));
-            }
-            //Destroy(gameObject);
+            //Debug.Log($"Trying to destroy ({Squad.gameObject.name}, {name}) {Squad.gameObject.GetComponent<Command>()}");
+            //if (Squad != null)
+            //{
+            //    Destroy(Squad.gameObject.GetComponents<Command>().First((c) => c.OutcomeId == OutcomeId));
+            //}
+            Destroy(this);
         }
 
         public override string ToString()
