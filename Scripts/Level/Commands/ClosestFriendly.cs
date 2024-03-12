@@ -16,31 +16,16 @@ namespace Assets.Scripts.Level.Commands
         {
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
 
-            
-            if (Squad != null)
-            {
-                //_parameters.setTimer = false;
-                _closestFriendlySquad = Squad.GetClosestValidFriendlySquad();
-                if (_closestFriendlySquad != null)
-                {
-                    InvokeRepeating(nameof(Timer), .1f, .1f);
-                }
-                else
-                {
-                    Squad.BannedStrats.Add(Strategy.Name);
-                    SetFinalize("There are no friendly squads to follow");
-                }
-            }
-            else
-            {
-                SetFinalize("The squad is dead");
-            }
+
+            //_parameters.setTimer = false;
+            _closestFriendlySquad = Squad.GetClosestValidFriendlySquad();
+            InvokeRepeating(nameof(Timer), .1f, .1f);
 
 
         }
         private void Timer()
         {
-            if (Squad != null)
+            if (!Squad.IsDead)
             {
                 if (_closestFriendlySquad != null && !_closestFriendlySquad.IsDead)
                 {
@@ -64,11 +49,6 @@ namespace Assets.Scripts.Level.Commands
                     CancelInvoke(nameof(Timer));
                     SetFinalize("The friendly squad to follow is gone or dead");
                 }
-            }
-            else
-            {
-                CancelInvoke(nameof(Timer));
-                SetFinalize("The squad is dead");
             }
             
         }

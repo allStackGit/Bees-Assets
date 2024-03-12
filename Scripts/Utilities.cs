@@ -71,9 +71,9 @@ namespace Assets.Scripts
         };
 
         private static readonly Random _rnd = new Random();
-        public static long Hash()
+        public static int Hash()
         {
-            return RandomInt(1000000000); // 10bil
+            return RandomInt(1000000000); // 1bil
         }
         public static long UniqueHash()
         {
@@ -148,6 +148,11 @@ namespace Assets.Scripts
         public static float AngleBetweenPoints(Vector2 a, Vector2 b)
         {
             return (Mathf.Atan2(a.x - b.x, a.y - b.y));
+        }
+
+        public static Vector2 DirectionBetweenPoints(Vector2 a, Vector2 b)
+        {
+            return (a - b).normalized;
         }
 
         public static float AngleBetweenThreePoints(Vector2 a, Vector2 b, Vector2 c)

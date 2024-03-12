@@ -16,7 +16,7 @@ namespace Assets.Scripts.Settings
     {
         public Dictionary<string, ShipStatBlock> ShipStatsList = new Dictionary<string, ShipStatBlock>();
 
-        public ShipStats(int userId, Scene scene) : base("ship-stats", userId, scene)
+        public ShipStats(int userId) : base("ship-stats", userId)
         {
         }
         protected override void ProcessData(string contents)

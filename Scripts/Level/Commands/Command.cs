@@ -93,34 +93,25 @@ namespace Assets.Scripts.Level.Commands
 
         public virtual void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy)
         {
-            //Debug.Log($"Executing {strategy.Name}");
-            if (Squad != null)
+            if (noEnemy || Enemy != null)
             {
-                if (noEnemy || Enemy != null)
-                {
-                    Strategy = strategy;
-                    ShootingStrategy = shootingStrategy;
+                Strategy = strategy;
+                ShootingStrategy = shootingStrategy;
 
-                    OutcomeId = commandOutcomeId;
-                    Squad.PastCommands.Add(new StoredCommand(this));
-                    Level.GetState().AddCommand(this);
+                OutcomeId = commandOutcomeId;
+                Squad.PastCommands.Add(new StoredCommand(this));
+                Level.GetState().AddCommand(this);
 
-                    Squad.Status = $"Executing Command #{OutcomeId}";
-                    //Debug.Log("Set status for command");
-                }
-                else
-                {
-                    //Debug.Log($"Could not find the enemy for command #{commandOutcomeId}");
-                    SetFinalize("Could not find the enemy squad for command");
-                    return;
-                }
+                Squad.Status = $"Executing Command #{OutcomeId}";
+                //Debug.Log("Set status for command");
             }
             else
             {
-                Debugger.Exception($"Tried to execute command #{OutcomeId} for a dead squad.");
+                //Debug.Log($"Could not find the enemy for command #{commandOutcomeId}");
+                SetFinalize("Could not find the enemy squad for command");
+                return;
             }
-            
-            
+
         }
         /*
          * This method finds the enemies of the command's squad and makes sure there's a ship damage status entry for each enemy ship

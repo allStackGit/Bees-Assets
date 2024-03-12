@@ -9,7 +9,7 @@ namespace Assets.Scripts.Server
         public int StrategyId;
         public long SquadHash, MatchupId, OutcomeId, HistoricalTsv, HistoricalUses, Rng, WeightedTsv;
        
-        public MatchupStrategyResponse(string type, int status, long hash, string name, string matchupString, int strategyId, long squadHash, 
+        public MatchupStrategyResponse(string type, int status, int hash, string name, string matchupString, int strategyId, long squadHash, 
             long matchupId, long outcomeId, long historicalTsv, long historicalUses, long rng, long weightedTsv) : base(type, status, hash)
         {
             this.Name = name;

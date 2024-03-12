@@ -18,70 +18,63 @@ namespace Assets.Scripts.Level.Commands
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
             //Debug.Log("Executing bombing run");
 
-            if (Squad != null)
+            Squad.ClearTargets(); // Clear all old targets before starting the bombing run
+            if (CheckIfStrikersAreDefenseless())
             {
-                Squad.ClearTargets(); // Clear all old targets before starting the bombing run
-                if (CheckIfStrikersAreDefenseless())
-                {
-                    return;
-                }
-
-                // check if squad has reached destination and if so, cancel the timer and start over again for the next destination
-                Vector2 destination = GetDestination();
-                if (Squad.HasReachedDestination)
-                {
-                    RemoveDestination(destination);
-                    AddDestination(destination);
-                }
-                destination = GetDestination();
-                Squad.Move(destination);
-                IsAttacking = true;
-
-
-                // loop through all the ships in the bombing squad
-                Squad.Status = $"Starting bombing run against {Enemy.Name}";
-                PrepareDamageToSendEntries();
-
-                List<Ship> ships = Squad.GetShips();
-                foreach (Ship ship in ships)
-                {
-                    //Debug.Log("Looping through all ships in bombing squad");
-                    if (ship.ShipType == "Striker")
-                    {
-                        Striker striker = (Striker)ship;
-                        striker.HasCompletedRun = false;
-                        striker.HasDroppedBomb = false;
-                        striker.HasReturnedToCarrier = false;
-                    }
-                    else if (ship.ShipType == "Yellow Jacket")
-                    {
-                        YellowJacket yellowJacket = (YellowJacket)ship;
-                        yellowJacket.HasCompletedRun = false;
-                    }
-
-                    // loop through all the ships in the target squad
-                    Bomb bomb = (Bomb)ship.Weapons.First();
-                    int loops = 0;
-                    while (!bomb.DetermineTargetShip(bomb.MakeTargetingQueue(), true) && loops < 10)
-                    {
-                        Squad.DamageSentToEnemyShipsBySquad.Clear();
-                        loops++;
-                    }
-                    //if (loops == 10)
-                    //{
-                    //    Debug.Log($"Looped 10 times while trying to dtermine a target ship for {bomb.Name}");
-                    //}
-                    //Debug.Log($"Target ship: {bomb.TargetShip}");
-                    //Debug.Log("--------------------");
-                }
-
-                InvokeRepeating(nameof(Timer), .01f, .5f);
+                return;
             }
-            else
+
+            // check if squad has reached destination and if so, cancel the timer and start over again for the next destination
+            Vector2 destination = GetDestination();
+            if (Squad.HasReachedDestination)
             {
-                SetFinalize("The squad is dead");
+                RemoveDestination(destination);
+                AddDestination(destination);
             }
-            
+            destination = GetDestination();
+            Squad.Move(destination);
+            IsAttacking = true;
+
+
+            // loop through all the ships in the bombing squad
+            Squad.Status = $"Starting bombing run against {Enemy.Name}";
+            PrepareDamageToSendEntries();
+
+            List<Ship> ships = Squad.GetShips();
+            foreach (Ship ship in ships)
+            {
+                //Debug.Log("Looping through all ships in bombing squad");
+                if (ship.ShipType == "Striker")
+                {
+                    Striker striker = (Striker)ship;
+                    striker.HasCompletedRun = false;
+                    striker.HasDroppedBomb = false;
+                    striker.HasReturnedToCarrier = false;
+                }
+                else if (ship.ShipType == "Yellow Jacket")
+                {
+                    YellowJacket yellowJacket = (YellowJacket)ship;
+                    yellowJacket.HasCompletedRun = false;
+                }
+
+                // loop through all the ships in the target squad
+                Bomb bomb = (Bomb)ship.Weapons.First();
+                int loops = 0;
+                while (!bomb.DetermineTargetShip(bomb.MakeTargetingQueue(), true) && loops < 10)
+                {
+                    Squad.DamageSentToEnemyShipsBySquad.Clear();
+                    loops++;
+                }
+                //if (loops == 10)
+                //{
+                //    Debug.Log($"Looped 10 times while trying to dtermine a target ship for {bomb.Name}");
+                //}
+                //Debug.Log($"Target ship: {bomb.TargetShip}");
+                //Debug.Log("--------------------");
+            }
+
+            InvokeRepeating(nameof(Timer), .01f, .5f);
+
         }
         private bool CheckIfStrikersAreDefenseless()
         {
@@ -146,7 +139,7 @@ namespace Assets.Scripts.Level.Commands
 
         private void Timer()
         {
-            if (Squad != null)
+            if (!Squad.IsDead)
             {
                 //Debug.Log("Bombing timer");
                 Squad.Status = $"In the middle of bombing run against {Enemy.Name}";
@@ -203,11 +196,6 @@ namespace Assets.Scripts.Level.Commands
                         }
                     }
                 }
-            }
-            else
-            {
-                CancelInvoke(nameof(Timer));
-                SetFinalize("The squad is dead");
             }
             
         }

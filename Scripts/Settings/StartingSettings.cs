@@ -17,7 +17,7 @@ namespace Assets.Scripts.Settings
         public List<string> HumanShipTypes => HumanStartingShips.Keys.ToList(); // Barge, Carrier, Cruiser, Dreadnought, Drone, Factory, Fire Ship, Frigate, Gunship, Scout, Striker, Warp Gate
         public List<string> BeeShipTypes => BeeStartingShips.Keys.ToList(); // Beehive, Bumblebee, Carpenter Bee, Honeybee, Hornet, Leafcutter, Queen, Wasp, Yellow Jacket
 
-        public StartingSettings(int userId, Scene scene) : base("starting-settings", userId, scene)
+        public StartingSettings(int userId) : base("starting-settings", userId)
         {
         }
         protected override void ProcessData(string contents)

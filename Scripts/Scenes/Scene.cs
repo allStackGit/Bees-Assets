@@ -16,12 +16,11 @@ namespace Assets.Scripts.Scenes
         public Camera Camera;
         public GameObject DialoguePrefab;
         public EventSystem EventSystem;
-        public Socket Socket;
-        public bool FinalizedScene, WatchServerRequests, HasIndependentSocket;
+        public bool FinalizedScene, WatchServerRequests, IsSocketManager;
         //public List<Dialogue> Dialogues = new List<Dialogue>();
         public Dialogue NetworkDisconnection;
         public float TimeScale = 1;
-        public long Updates = 0;
+        public Timer Timer;
 
 
 
@@ -29,37 +28,38 @@ namespace Assets.Scripts.Scenes
         public List<string> __PastServerRequests;
         public float __AverageRequestTime;
         public List<long> __UsedHashes;
+        public int __Updates = 0;
+
 
         // Start is called before the first frame update
         protected void Start()
         {
             //Debug.Log($"Starting {Name} scene");
-            if (HasIndependentSocket || ConfigData.MainSocket == null)
+            ConfigData.Scenes.Add(this);
+            if (!ConfigData.HasSocketManager())
             {
-                Socket = ConfigData.Test ? new Socket(ConfigData.TestPort, ConfigData.TestServerHostname, ConfigData.UseWebSocketSharp) : new Socket(ConfigData.DevelopmentPort, ConfigData.DevelopmentServerHostname, ConfigData.UseWebSocketSharp);
+                IsSocketManager = true;
             }
-            else if (ConfigData.MainSocket != null)
-            {
-                Socket = ConfigData.MainSocket;
-            }
-
-
-            Socket.SetScene(this);
             InvokeRepeating(nameof(LoadSettingsWhenOpen), .1f, .1f);
+            Timer = new Timer(.1f, ConfigData.Socket.Update);
+            if (WatchServerRequests)
+            {
+                InvokeRepeating(nameof(UpdateTestVariables), 10f, 10f);
+            }
             if (NetworkDisconnection == null)
             {
                 Debug.Log("Setting Network disconnection dialogue");
                 NetworkDisconnection = new Dialogue(DialoguePrefab, "Server disconnected!", "The game needs to be connected to the server in order to function properly.",
-                                            new List<string>() { "Retry", "Exit Game" }, new List<UnityAction>() { RetryConnection, Exit });
+                                            new List<string>() { "Retry", "Exit Game" }, new List<UnityAction>() { ConfigData.RetryConnection, Exit });
             }
 
 
         }
         public void LoadSettingsWhenOpen()
         {
-            if (Socket.IsOpen)
+            if (ConfigData.Socket.IsOpen)
             {
-                ConfigData.LoadSettings(this);
+                ConfigData.LoadSettings();
                 CancelInvoke(nameof(LoadSettingsWhenOpen));
             }
         }
@@ -68,10 +68,7 @@ namespace Assets.Scripts.Scenes
             Debug.Log("Exiting game!");
             Application.Quit();
         }
-        protected virtual void RetryConnection()
-        {
-            Socket.MakeSocket();
-        }
+
         protected virtual void FinalizeSceneWithUserData()
         {
             //Debug.Log($"Finalizing {Name} Scene");
@@ -84,9 +81,10 @@ namespace Assets.Scripts.Scenes
         {
             if (ConfigData.__PastServerRequests.Count > 0)
             {
-                __UsedHashes = ConfigData.UsedHashes.ToList();
-                __PastServerRequests = ConfigData.__PastServerRequests.Select((r) => $"Request #{r.Hash} ({r.Type}) on queue for {r.TimeOnQueue}ms with {r.Resends} resends.").ToList();
-                __AverageRequestTime = ConfigData.__PastServerRequests.Select((r) => r.TimeOnQueue).Sum() / ConfigData.__PastServerRequests.Count;
+                //__UsedHashes = ConfigData.UsedHashes.ToList();
+                //__PastServerRequests = ConfigData.__PastServerRequests.Select((r) => $"Request #{r.Hash} ({r.Type}) on queue for {r.TimeOnQueue}ms with {r.Resends} resends.").ToList();
+                __AverageRequestTime = ConfigData.__PastServerRequests.Sum((r) => r.TimeOnQueue) / ConfigData.__PastServerRequests.Count;
+                //__Updates = Time.frameCount;
             }
 
 
@@ -94,28 +92,21 @@ namespace Assets.Scripts.Scenes
         // Update is called once per frame
         protected void Update()
         {
-            Updates++;
-            if (Updates%10 == 0)
-            {
-                Socket.Update();
-            }
+            Timer.Update();
+            
 
-            if (Socket.HasClosed && !NetworkDisconnection.IsOpen)
+            if (ConfigData.Socket.HasClosed && !NetworkDisconnection.IsOpen)
             {
                 NetworkDisconnection.Show();
             }
-            else if (Socket.IsOpen && NetworkDisconnection.IsOpen)
+            else if (ConfigData.Socket.IsOpen && NetworkDisconnection.IsOpen)
             {
                 NetworkDisconnection.Hide();
             }
             if (!NetworkDisconnection.IsOpen)
             {
                 // [alert] [debug]
-                
-                if (WatchServerRequests && Updates%250 == 0)
-                {
-                    UpdateTestVariables();
-                }
+              
 
                 if (ConfigData.AreAllSettingsLoaded && !ConfigData.IsAllUserDataLoaded)
                 {
@@ -127,7 +118,7 @@ namespace Assets.Scripts.Scenes
                     }
                     else
                     {
-                        ConfigData.SetupUserData(this);
+                        ConfigData.SetupUserData();
                         ConfigData.CheckDataFiles();
                         ConfigData.SquadMakerSide = ConfigData.Configuration.SquadMakerFirstSide;
                     }

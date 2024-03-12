@@ -14,7 +14,7 @@ namespace Assets.Scripts.Data
         private List<FleetShip> _shipList = new List<FleetShip>();
 
 
-        public FleetData(bool shouldFileExist, Dictionary<string, int> startingShips, Scene scene) : base(scene)
+        public FleetData(bool shouldFileExist, Dictionary<string, int> startingShips) : base()
         {
             defaultJsonData = MakeDefaultList(startingShips);
 

@@ -10,16 +10,14 @@ namespace Assets.Scripts.Data
         protected DataFile file = null;
         protected string defaultJsonData = "";
         private Action<dynamic> _onceDataIsLoaded;
-        private Scene _scene;
-        public UserData(Scene scene)
+        public UserData()
         {
-            this._scene = scene;
         }
         protected dynamic SetupFile(bool shouldFileExist, string filename, Action<dynamic> onceDataIsLoaded)
         {
             _onceDataIsLoaded = onceDataIsLoaded;
             //Debug.Log("Called setup file");
-            file = new DataFile(filename, _scene);
+            file = new DataFile(filename);
             dynamic json = null;
             // check if the file should already exist (which it should if this isn't the user's first time) and if it does in fact exist
             if (!file.Exists())

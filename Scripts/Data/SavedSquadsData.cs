@@ -15,7 +15,7 @@ namespace Assets.Scripts.Data
 
 
 
-        public SavedSquadsData(bool shouldFileExist, Scene scene) : base(scene)
+        public SavedSquadsData(bool shouldFileExist) : base()
         {
             // [alert] this should be equal to the JSON data for whatever starting squads there will be, currently two squads, one of three scouts and one
             // of three gunships

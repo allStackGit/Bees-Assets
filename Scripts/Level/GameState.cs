@@ -19,7 +19,7 @@ namespace Assets.Scripts.Level
     {
         private List<Ship> _ships = new List<Ship>();
         private List<Squad> _squads = new List<Squad>();
-        private List<Squad> _squadsAwaitingCommands = new List<Squad>();
+        private Queue<Squad> _squadsAwaitingCommands = new Queue<Squad>();
         //private List<Projectile> _projectiles = new List<Projectile>();
         //private List<RocketExplosion> _explosions = new List<RocketExplosion>();
         //private List<Command> _commands = new List<Command>();
@@ -28,7 +28,6 @@ namespace Assets.Scripts.Level
 
         public long EntityCount;
         public bool IsPaused;
-        public long Ticks = 0;
         public int UserCommands = 0;
         public int AICommands = 0;
         public bool GameOver = false;
@@ -188,7 +187,7 @@ namespace Assets.Scripts.Level
             {
                 _selectedSquads.Add(squad);
                 squad.MoveSquadBox();
-                if (Level.Menus != null && Level.Menus.HasSquadActionBox)
+                if (Level.DoesUserHaveController)
                 {
                     Level.Menus.ActionBox.SetupForSquad();
                 }
@@ -248,15 +247,11 @@ namespace Assets.Scripts.Level
         }
         public void AddToSquadsAwaitingHiveMindCommands(Squad squad)
         {
-            _squadsAwaitingCommands.Add(squad);
+            _squadsAwaitingCommands.Enqueue(squad);
         }
-        public List<Squad> GetSquadsAwaitingHiveMindCommands()
+        public Queue<Squad> GetSquadsAwaitingHiveMindCommands()
         {
             return _squadsAwaitingCommands;
-        }
-        public void RemoveFromSquadsAwaitingHivemindCommands(Squad squad)
-        {
-            _squadsAwaitingCommands.Remove(squad);
         }
         public List<Squad> GetTargetedSquads(int side)
         {
@@ -309,7 +304,7 @@ namespace Assets.Scripts.Level
                     command.IsStored = true;
                 });
 
-                Level.Socket.SendRequest(new StoreCommandsRequest(new StoreCommands(commands, shootingCommands, targetingCommands),
+                ConfigData.Socket.SendRequest(new StoreCommandsRequest(new StoreCommands(commands, shootingCommands, targetingCommands),
                     ConfigData.StandardMaxTimeOnQueue));
                 _pastCommands = _pastCommands.Where(c => !c.IsStored).ToList();
             }

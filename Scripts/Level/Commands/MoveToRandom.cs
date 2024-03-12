@@ -13,14 +13,11 @@ namespace Assets.Scripts.Level.Commands
         {
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
 
-            if (!Squad.IsDead)
-            {
-                PrepareDamageToSendEntries("closest");
-                Vector2 position = Squad.GetPosition();
-                Vector2 randomCoordinates = Utilities.RandomCoordinate(Level, position, Vector2.one * ConfigData.Configuration.AIRandomMovementMaxDistance, Vector2.one * 10);
-                SetAndMove(randomCoordinates);
-                InvokeRepeating(nameof(Timer), .1f, .1f);
-            }
+            PrepareDamageToSendEntries("closest");
+            Vector2 position = Squad.GetPosition();
+            Vector2 randomCoordinates = Utilities.RandomCoordinate(Level, position, Vector2.one * ConfigData.Configuration.AIRandomMovementMaxDistance, Vector2.one * 10);
+            SetAndMove(randomCoordinates);
+            InvokeRepeating(nameof(Timer), .1f, .1f);
 
 
         }

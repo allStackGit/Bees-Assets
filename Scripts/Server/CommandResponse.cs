@@ -9,7 +9,7 @@ namespace Assets.Scripts.Server
         public int StrategyId, ShootingStrategyId;
         public long SquadHash, MatchupId, OutcomeId, ShootingStrategyMatchupId, ShootingStrategyOutcomeId;
        
-        public CommandResponse(string type, int status, long hash, string name, string shootingStrategyName, string matchupString, string shootingStrategyMatchupString, int strategyId, int shootingStrategyId,
+        public CommandResponse(string type, int status, int hash, string name, string shootingStrategyName, string matchupString, string shootingStrategyMatchupString, int strategyId, int shootingStrategyId,
             long matchupId, long shootingStrategyMatchupId, long outcomeId, long shootingStrategyOutcomeId) : base(type, status, hash)
         {
             this.Name = name;

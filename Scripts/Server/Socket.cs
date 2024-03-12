@@ -1,20 +1,12 @@
-﻿
-using NativeWebSocket;
-using WebSocketSharp;
-using UnityEngine;
+﻿using UnityEngine;
 using Newtonsoft.Json;
-using Assets.Scripts;
-using System.Threading.Tasks;
-using System.Threading;
 using System.Collections.Generic;
 using System.Linq;
-using System.Collections;
 using Assets.Scripts.Scenes;
 using Assets.Scripts.Data;
 using Assets.Scripts.Level;
 using Assets.Scripts.Level.Commands;
-using Assets.Scripts.Entities.Ships;
-using System;
+
 using Unity.VisualScripting;
 
 namespace Assets.Scripts.Server
@@ -27,7 +19,6 @@ namespace Assets.Scripts.Server
         private NativeWebSocket.WebSocket _nativeWebSocket = null;
         private WebSocketSharp.WebSocket _webSocketSharpSocket = null; 
         //private bool _loadNextLevel;
-        private Scene _scene;
         private bool _useWebSocketSharp = false;
 
         public bool IsOpen;
@@ -42,7 +33,7 @@ namespace Assets.Scripts.Server
         /// <summary>
         /// A hashset of all request IDs that have been handled. Resets every level
         /// </summary>
-        public HashSet<long> HandledRequests = new HashSet<long>();
+        public HashSet<int> HandledRequests = new HashSet<int>();
         /// <summary>
         /// A queue of all messages received from the server
         /// </summary>
@@ -58,10 +49,6 @@ namespace Assets.Scripts.Server
             _websocketURL = $"{Protocol}://{_hostname}:{_port}";
             Debug.Log($"Trying to connect to {_websocketURL}");
             MakeSocket();
-        }
-        public void SetScene(Scene scene)
-        {
-            _scene = scene;
         }
         async public void MakeSocket()
         {
@@ -141,10 +128,10 @@ namespace Assets.Scripts.Server
             if (reason != null)
             {
                 Debug.Log($"Network Error:{reason}");
-                StandingRequests.ToList().ForEach((sr) =>
-                {
-                    sr.Status = -1;
-                });
+                //StandingRequests.ToList().ForEach((sr) =>
+                //{
+                //    sr.Status = -1;
+                //});
             }
             IsOpen = false;
             HasClosed = true;
@@ -166,6 +153,7 @@ namespace Assets.Scripts.Server
             
             if (!HandledRequests.Contains(response.Hash))
             {
+                HandledRequests.Add(response.Hash);
                 switch (type)
                 {
                     case "get-matchup-strategy":
@@ -182,10 +170,7 @@ namespace Assets.Scripts.Server
                         HandleBasicResponse(response);
                         return;
                     case "setup-level":
-                        LevelStage level = (LevelStage)_scene;
-                        level.IsLevelSetupOnServer = true;
-                        //Debug.Log("setup on server");
-                        HandleBasicResponse(response);
+                        HandleSetupLevelResponse(response);
                         return;
                     case "store-user-data":
                         HandleBasicResponse(response);
@@ -207,7 +192,7 @@ namespace Assets.Scripts.Server
                 ServerRequest sr = GetStandingRequest(response.Hash);
                 if (sr != null)
                 {
-                    sr.Status = 1;
+                    StandingRequests.Remove(sr);
                 }
             }
            
@@ -235,7 +220,7 @@ namespace Assets.Scripts.Server
             {
                 _nativeWebSocket.DispatchMessageQueue();
             }
-            if (MessageQueue.Count > 0)
+            while (MessageQueue.Count > 0)
             {
                 Message(MessageQueue.Dequeue());
             }
@@ -278,10 +263,13 @@ namespace Assets.Scripts.Server
         private void CheckStandingRequests()
         {
             //Debug.Log("1. Checking on standing requests");
-            List<ServerRequest> resends = new List<ServerRequest>();
-            foreach (ServerRequest request in StandingRequests)
+            //List<ServerRequest> resends = new List<ServerRequest>();
+            List<ServerRequest> serverRequests = StandingRequests.ToList();
+            for (int i = 0; i < serverRequests.Count; i++)
             {
-                request.TimeOnQueue = (int)((Time.unscaledTime - request.StartTime) * 1000);
+                ServerRequest request = serverRequests[i];
+
+                //request.TimeOnQueue = Time.unscaledTime - request.StartTime;
                 //Debug.Log($"Time on Queue for #{request.Hash} - {request.Type} is {request.TimeOnQueue}ms");
                 if (request.Type == "get-user-data")
                 {
@@ -296,26 +284,27 @@ namespace Assets.Scripts.Server
                     continue;
                 }
 
-                if (request.TimeOnQueue > request.MaxTimeOnQueue && request.Status == 0)
-                {
-                    Debug.Log($"Request #{request.Hash} - {request.Type} timed out after {request.TimeOnQueue}/{request.MaxTimeOnQueue}ms  and is NOT being resent. ");
-                    //request.MaxTimeOnQueue += (int)(ConfigData.StandardMaxTimeOnQueue);
-                    //request.Resends++;
-                    //request.Status = -1;
-                    //resends.Add(request);
-                }
+                //if (request.TimeOnQueue > request.MaxTimeOnQueue && request.Status == 0)
+                //{
+                //    Debug.Log($"Request #{request.Hash} - {request.Type} timed out after {request.TimeOnQueue}/{request.MaxTimeOnQueue}s  and is NOT being resent. ");
+                //    //request.MaxTimeOnQueue += (int)(ConfigData.StandardMaxTimeOnQueue);
+                //    //request.Resends++;
+                //    //request.Status = -1;
+                //    //resends.Add(request);
+                //}
             }
             
+            
             //Debug.Log($"2. Loop ended, Resends: {resends.Count}");
-            HandledRequests.AddRange(StandingRequests.Where((r) => r.Status == 1).Select((r) => r.Hash));
-            StandingRequests = StandingRequests.Where((request) => request.Status == 0).ToHashSet(null);
+            //HandledRequests.AddRange(StandingRequests.Where((r) => r.Status == 1).Select((r) => r.Hash));
+            //StandingRequests = StandingRequests.Where((request) => request.Status == 0).ToHashSet(null);
             //Debug.Log($"3. Modified standing requests, Resends: {resends.Count}");
 
-            resends.ForEach((request) =>
-            {
-                request.Status = 0;
-                SendRequest(request);
-            });
+            //resends.ForEach((request) =>
+            //{
+            //    request.Status = 0;
+            //    SendRequest(request);
+            //});
 
         }
         public ServerRequest GetStandingRequest(long hash)
@@ -339,10 +328,12 @@ namespace Assets.Scripts.Server
             DataFileRequest standingRequest = (DataFileRequest)GetStandingRequest(userDataResponse.Hash);
             if (standingRequest != null)
             {
+
                 if (userDataResponse.Filename != "" && userDataResponse.Contents != "")
                 {
                     standingRequest.Status = 1;
                     standingRequest.Response = userDataResponse;
+                    standingRequest.TimeOnQueue = Time.unscaledTime - standingRequest.StartTime;
                     //Debug.Log($"Set the response {userDataResponse.Filename}, {userDataResponse.Contents}");
                 }
                 else
@@ -385,6 +376,7 @@ namespace Assets.Scripts.Server
                 {
                     standingRequest.Status = 1;
                     standingRequest.Response = userDataResponse;
+                    standingRequest.TimeOnQueue = Time.unscaledTime - standingRequest.StartTime;
                     //Debug.Log($"Set the response {userDataResponse.Filename}, {userDataResponse.Contents}");
                 }
                 else
@@ -406,7 +398,8 @@ namespace Assets.Scripts.Server
             MatchupStrategyRequest standingRequest = (MatchupStrategyRequest)GetStandingRequest(matchupResponse.Hash);
             if (standingRequest != null)
             {
-                standingRequest.Status = 1;
+                StandingRequests.Remove(standingRequest);
+                standingRequest.TimeOnQueue = Time.unscaledTime - standingRequest.StartTime;
                 Squad squad = standingRequest.Squad;
                 if (squad != null && !squad.IsDead)
                 {
@@ -418,7 +411,8 @@ namespace Assets.Scripts.Server
                     Squad targetSquad = squad.MatchupStrategy.SortSquads();
                     //Debug.Log($"matchup strategy after sorted");
                     //Debugger.LogSquads(level.GetState().GetSquads());
-                    LevelStage level = (LevelStage)_scene;
+                    LevelStage level = standingRequest.Level;
+                    level.HandledRequests.Add(standingRequest.Hash);
                     GameState state = level.GetState();
                     if (targetSquad != null && !targetSquad.IsDead && !state.GameOver)
                     {
@@ -457,13 +451,15 @@ namespace Assets.Scripts.Server
 
             if (standingRequest != null)
             {
-                standingRequest.Status = 1;
+                StandingRequests.Remove(standingRequest);
+                standingRequest.TimeOnQueue = Time.unscaledTime - standingRequest.StartTime;
                 Squad squad = standingRequest.Squad;
-                LevelStage level = (LevelStage)_scene;
+                LevelStage level = standingRequest.Level;
+                level.HandledRequests.Add(standingRequest.Hash);
                 GameState state = level.GetState();
                 //Debug.Log($"strategic command response");
                 //Debug.Log(squad.damageSentToEnemyShipsBySquad);
-                if (squad != null && !state.GameOver)
+                if (squad != null && !state.GameOver && !squad.IsDead)
                 {
                     //Debug.Log("squad is not null");
                     Command command = null;
@@ -579,13 +575,31 @@ namespace Assets.Scripts.Server
             }
 
         }
-        private void HandleBasicResponse(ServerResponse response)
+        private void HandleSetupLevelResponse(ServerResponse response)
         {
-            ServerRequest standingRequest = (ServerRequest)GetStandingRequest(response.Hash);
+            SetupLevelRequest standingRequest = (SetupLevelRequest)GetStandingRequest(response.Hash);
 
             if (standingRequest != null)
             {
-                standingRequest.Status = 1;
+                StandingRequests.Remove(standingRequest);
+                standingRequest.Level.IsLevelSetupOnServer = true;
+                standingRequest.Level.HandledRequests.Add(response.Hash);
+                standingRequest.TimeOnQueue = Time.unscaledTime - standingRequest.StartTime;
+            }
+            else
+            {
+                Debug.Log($"Couldn't find a matching request for {response.Hash}");
+            }
+
+        }
+        private void HandleBasicResponse(ServerResponse response)
+        {
+            ServerRequest standingRequest = GetStandingRequest(response.Hash);
+
+            if (standingRequest != null)
+            {
+                StandingRequests.Remove(standingRequest);
+                standingRequest.TimeOnQueue = Time.unscaledTime - standingRequest.StartTime;
             }
             else
             {

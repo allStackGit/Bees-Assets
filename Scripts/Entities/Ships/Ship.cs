@@ -16,6 +16,7 @@ using Assets.Scripts.Level.Commands;
 using Assets.Scripts.Server;
 using Unity.MLAgents;
 using UnityEngine.UIElements;
+using System.Reflection.Emit;
 
 namespace Assets.Scripts.Entities.Ships
 {
@@ -31,11 +32,15 @@ namespace Assets.Scripts.Entities.Ships
         public FleetShip FleetShip = null;
         public string ShipType, Name;
         public bool FireAtFrontOfShip, InCombat;
+        /// <summary>
+        /// A ship can be killed at some point of the frame and still exist until the end of the frame. Check this to see if a ship is dead but not yet destroyed.
+        /// </summary>
+        public bool IsDead;
         public bool HasBrain, IsMinionShip, HasTargetCoordinates;
         public List<Weapon> Weapons;
         public List<GameObject> ProjectilePrefabs, WeaponPrefabs, ColoredPrefabs;
         public Brain Brain = null;
-
+        public Queue<Vector2> DestinationQueue = new Queue<Vector2>();
 
 
 
@@ -285,7 +290,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             if (!Level.IsPaused)
             {
                 Move();
-                if (!Level.IsTrainingNueralNetwork)
+                if (!Level.IsTrainingNueralNetwork && !Level.IsTrainingHiveMind)
                 {
                     if (Side == ConfigData.Configuration.HumanSide && Level.HasPlayer && !Level.HasFoundAllBees && Level.Audio != null)
                     {
@@ -351,9 +356,44 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         // movement methods
         public void MoveToPoint(Vector2 destination)
         {
-            TargetCoordinates = Level.ForceBounds(destination);
+            DestinationQueue = FindShortestPath(destination);
+            TargetCoordinates = DestinationQueue.Dequeue();
             HasTargetCoordinates = true;
         }
+
+        private Queue<Vector2> FindShortestPath(Vector2 destination)
+        {
+            float start = Time.realtimeSinceStartup;
+            Queue<Vector2> destinationQueue = new Queue<Vector2>();
+            destination = Level.ForceBounds(destination);
+
+            Debug.Log($"Finding shortest path from {GetPosition()} to {destination} for {Name}");
+
+            if (HasObstaclesInTheWay(destination))
+            {
+                Debug.Log("There is an obstacle in the way, using astar to find a path");
+            }
+            else
+            {
+                Debug.Log("There is straight line to the destination");
+                destinationQueue.Enqueue(destination);
+            }
+            float end = (Time.realtimeSinceStartup - start) * 1000;
+            Debug.Log($"FindShortestPath() took {end} ms to complete.");
+
+            return destinationQueue;
+        }
+        /// <summary>
+        /// Raycasts from GetPosition() to destination to check for any obstacles in the path. Returns true if there are obstacles in the way
+        /// </summary>
+        /// <param name="destination"></param>
+        /// <returns></returns>
+        private bool HasObstaclesInTheWay(Vector2 destination)
+        {
+            RaycastHit2D hit = Physics2D.Linecast(GetPosition(),  destination, ConfigData.ObstaclesLayer);
+            return hit.collider != null;
+        }
+
         private void Move()
         {
             if (HasBrain && !Squad.IsUserControlled)
@@ -448,7 +488,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             if (IsCloseEnoughToTargetCoordinates(distance))
             {
                 //Debug.Log($"Ship {Name} is close enough ({distance}) to the target coordinates {TargetCoordinates} and will now stop moving.");
-                StopMoving($"Ship {Name} is close enough ({distance}) to the target coordinates {TargetCoordinates}");
+                EndDestination($"Ship {Name} is close enough ({distance}) to the target coordinates {TargetCoordinates}");
             }
 
             //if any of the target ship(s) if your weapons are not dead and are within range
@@ -456,13 +496,29 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 Squad.Command.Type == "In and Out") && TargetShips.Any((ship) => ship != null && IsShipWithinRange(ship)))
             {
                 //Debug.Log("We are outside of range of the target ship and we can still hit it but we are close to being within its range");
-                string reason = "We are outside of range of the target ship and we can still hit it but we are close to being within its range";
                 if (!(Squad.IsAttacking && Squad.Command.Enemy.IsMoving))
                 {
-                    StopMoving(reason);
+
+                    EndDestination("We are outside of range of the target ship and we can still hit it but we are close to being within its range");
                 }
             }
 
+        }
+
+        /// <summary>
+        /// Either stops the ship or sets it on course to the next destination
+        /// </summary>
+        /// <param name="reason"></param>
+        private void EndDestination(string reason)
+        {
+            if (DestinationQueue.Count > 0)
+            {
+                TargetCoordinates = DestinationQueue.Dequeue();
+            }
+            else
+            {
+                StopMoving(reason);
+            }
         }
         /// <summary>
         /// Checks if a ship is close enough to its target coordinates
@@ -480,15 +536,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         {
            
             __LastStopReason = $"Stopped at {GetPosition()} on the way to {TargetCoordinates} because of {reason} at {Age} ticks.";
-            TargetCoordinates = Vector2.zero;
-            Body.velocity = Vector2.zero;
-            HasTargetCoordinates = false;
-            //transform.position = TargetCoordinates;
-            //SetToDefaultAngle();
-        }
-        public void StopMoving()
-        {
-
             TargetCoordinates = Vector2.zero;
             Body.velocity = Vector2.zero;
             HasTargetCoordinates = false;
@@ -534,15 +581,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         {
             speed = Mathf.Clamp(speed, 1, Speed);
             _currentSpeed = speed;
-        }
-        private void HitObstacle(Obstacle obstacle)
-        {
-            Vector2 incomingVelocity = Body.velocity;
-            Debug.Log($"{Name} collided with {obstacle.Name} at {GetPosition()} with velocity: {incomingVelocity}");
-            StopMoving($"Collided with obstacle {obstacle.Name}");
-            Body.velocity = -incomingVelocity;
-            Invoke(nameof(StopMoving), .1f);
-
         }
 
 
@@ -600,39 +638,13 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 {
                     Level.Selector.SelectShip(this);
                 }
-            }else if (collidingThing.CompareTag("Obstacle"))
-            {
-                Obstacle obstacle = collidingThing.GetComponent<Obstacle>();
-                HitObstacle(obstacle);
             }
+            //else if (collidingThing.CompareTag("Obstacle"))
+            //{
+            //    Obstacle obstacle = collidingThing.GetComponent<Obstacle>();
+            //    HitObstacle(obstacle);
+            //}
         }
-
-        protected virtual void OnCollisionEnter2D(Collision2D collision)
-        {
-            GameObject collidingThing = collision.gameObject;
-            if (collidingThing.name == ("Selection Box"))
-            {
-                //Debug.Log("Hit selection box");
-                if (IsUserControlled)
-                {
-                    Level.Selector.SelectShip(this);
-                }
-            }
-            else if (collidingThing.CompareTag("Obstacle"))
-            {
-                Obstacle obstacle = collidingThing.GetComponent<Obstacle>();
-                HitObstacle(obstacle);
-            }
-        }
-        //protected void OnCollisionStay2D(Collision2D collision)
-        //{
-        //    GameObject collidingThing = collision.gameObject;
-        //    if (collidingThing.CompareTag("Obstacle"))
-        //    {
-        //        Obstacle obstacle = collidingThing.GetComponent<Obstacle>();
-        //        HitObstacle(obstacle);
-        //    }
-        //}
         public static void LogDamage(int power, Ship shooter, Ship target) // [damage-method] [note]
         {
             int targetOldTSV = target.Tsv;
@@ -748,59 +760,62 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         }
         public virtual void Kill(Ship killer, bool endKill = false) // [kill method] [stats-method] [note]
         {
-            //Debug.Log($"Killing ship {Name} with size Factor {ConfigData.GetShipSizeFactor(ShipType)}");
-            GameState state = Level.GetState();
-
-            if (!endKill)
+            if (!IsDead)
             {
-                DropExplosionAnimation();
+                IsDead = true;
+                //Debug.Log($"Killing ship {Name} with size Factor {ConfigData.GetShipSizeFactor(ShipType)}");
+                GameState state = Level.GetState();
 
-                if (killer != null)
+                if (!endKill)
                 {
-                    killer.LastKilled = state.Ticks;
-                    LogKillStats(killer);
-                }
-                else
-                {
-                    if (Level.ReplaceDeadShips && !IsCarrierShip && !IsMinionShip && Squad.SavedSquad.HasBeenSavedToStorage)
+                    DropExplosionAnimation();
+
+                    if (killer != null)
                     {
-                        FleetShip.IsDead = true;
+                        killer.LastKilled = Time.frameCount;
+                        LogKillStats(killer);
                     }
-                    Squad.SavedSquad.Stats.ShipsLost++;
+                    else
+                    {
+                        if (Level.ReplaceDeadShips && !IsCarrierShip && !IsMinionShip && Squad.SavedSquad.HasBeenSavedToStorage)
+                        {
+                            FleetShip.IsDead = true;
+                        }
+                        Squad.SavedSquad.Stats.ShipsLost++;
+                    }
                 }
-            }
 
 
-            state.RemoveShip(this);
-            Squad.RemoveShip(this);
+                state.RemoveShip(this);
+                Squad.RemoveShip(this);
 
 
-            // If this is a carrier, get all strikers that belonged to this carrier and mark the last spot the carrier was at
-            if (this is Carrier)
-            {
-                Carrier nextCarrier = (Carrier)state.GetHumanShips().FirstOrDefault((s) => s is Carrier);
-                if (nextCarrier != null)
+                // If this is a carrier, get all strikers that belonged to this carrier and mark the last spot the carrier was at
+                if (this is Carrier)
                 {
-                    state.GetHumanShips().Where((ship) => ship is Striker && ((Striker)ship).Carrier.Equals(this)).ToList().ForEach((ship) => ((Striker)ship).Carrier = nextCarrier);
-                    state.GetHumanShips().Where((ship) => ship is Drone && ((Drone)ship).Carrier.Equals(this)).ToList().ForEach((ship) => ((Drone)ship).Carrier = nextCarrier);
+                    Carrier nextCarrier = (Carrier)state.GetHumanShips().FirstOrDefault((s) => s is Carrier);
+                    if (nextCarrier != null)
+                    {
+                        state.GetHumanShips().Where((ship) => ship is Striker && ((Striker)ship).Carrier.Equals(this)).ToList().ForEach((ship) => ((Striker)ship).Carrier = nextCarrier);
+                        state.GetHumanShips().Where((ship) => ship is Drone && ((Drone)ship).Carrier.Equals(this)).ToList().ForEach((ship) => ((Drone)ship).Carrier = nextCarrier);
+                    }
+                    else
+                    {
+                        state.GetHumanShips().Where((ship) => ship is Striker && ((Striker)ship).Carrier.Equals(this)).ToList().ForEach((ship) => ((Striker)ship).LastCarrierPosition = GetPosition());
+                    }
+
+                }
+
+                if (Squad.GetShips().Count == 0)
+                {
+                    Squad.Kill(endKill);
                 }
                 else
                 {
-                    state.GetHumanShips().Where((ship) => ship is Striker && ((Striker)ship).Carrier.Equals(this)).ToList().ForEach((ship) => ((Striker)ship).LastCarrierPosition = GetPosition());
+                    Squad.SetOffsets();
                 }
-
+                Destroy(gameObject);
             }
-
-            if (Squad.GetShips().Count == 0)
-            {
-                Squad.Kill(endKill);
-            }
-            else
-            {
-                Squad.SetOffsets();
-            }
-            Destroy(gameObject);
-
         }
 
 
@@ -966,7 +981,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         }
         protected void DropExplosionAnimation()
         {
-            if (!Level.IsTrainingNueralNetwork)
+            if (!Level.IsTrainingNueralNetwork && !Level.IsTrainingHiveMind)
             {
                 GameObject explosion = LevelStage.Instantiate(ShipExplosion, Vector2.zero, Quaternion.identity);
                 explosion.transform.localScale *= ConfigData.GetShipSizeFactor(ShipType);

@@ -18,49 +18,42 @@ namespace Assets.Scripts.Level.Commands
         public void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy, Squad guardedSquad)
         {
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
-            if (Squad != null)
+            if (IsHiveMindCommand)
             {
-                if (IsHiveMindCommand)
-                {
-                    _guardedSquad = GetClosestAvailableSquadToGuard();
-                }
-                else
-                {
-                    _guardedSquad = guardedSquad;
-                }
-                if (_guardedSquad != null)
-                {
-                    //Debug.Log($"{Squad.Name} is guarding {GuardedSquad.Name}!");
-                    // add this squad to the list for all other guard squads
-                    Level.GetState().GetSquadsBySide(Squad.Side).ForEach((guardingSquad) =>
-                    {
-                        // check if it's a guarding squad and guarding the same squad as this squad
-                        if (!guardingSquad.Equals(Squad) && guardingSquad.HasCommand && guardingSquad.Command.HasStrategy &&
-                        guardingSquad.Command.Strategy.Name == "Guard" && ((Guard)guardingSquad.Command)._guardedSquad.Equals(_guardedSquad))
-                        {
-                            ((Guard)guardingSquad.Command).OtherGuardSquads.Add(Squad);
-                            OtherGuardSquads.Add(guardingSquad);
-                        }
-                    });
-                    Squad.Status = $"Guarding {_guardedSquad.Name}";
-                    if (IsHiveMindCommand)
-                    {
-                        Invoke(nameof(FinishGuardingCommand), ConfigData.Configuration.AISquadGuardTime);
-
-                    }
-                    InvokeRepeating(nameof(Timer), .1f, .1f);
-                }
-                else
-                {
-                    Squad.BannedStrats.Add(Strategy.Name);
-                    SetFinalize("There are no squads to guard");
-                }
+                _guardedSquad = GetClosestAvailableSquadToGuard();
             }
             else
             {
-                SetFinalize("The squad is dead");
+                _guardedSquad = guardedSquad;
             }
-           
+            if (_guardedSquad != null)
+            {
+                //Debug.Log($"{Squad.Name} is guarding {GuardedSquad.Name}!");
+                // add this squad to the list for all other guard squads
+                Level.GetState().GetSquadsBySide(Squad.Side).ForEach((guardingSquad) =>
+                {
+                    // check if it's a guarding squad and guarding the same squad as this squad
+                    if (!guardingSquad.Equals(Squad) && guardingSquad.HasCommand && guardingSquad.Command.HasStrategy &&
+                    guardingSquad.Command.Strategy.Name == "Guard" && ((Guard)guardingSquad.Command)._guardedSquad.Equals(_guardedSquad))
+                    {
+                        ((Guard)guardingSquad.Command).OtherGuardSquads.Add(Squad);
+                        OtherGuardSquads.Add(guardingSquad);
+                    }
+                });
+                Squad.Status = $"Guarding {_guardedSquad.Name}";
+                if (IsHiveMindCommand)
+                {
+                    Invoke(nameof(FinishGuardingCommand), ConfigData.Configuration.AISquadGuardTime);
+
+                }
+                InvokeRepeating(nameof(Timer), .1f, .1f);
+            }
+            else
+            {
+                Squad.BannedStrats.Add(Strategy.Name);
+                SetFinalize("There are no squads to guard");
+            }
+
 
         }
         private void Timer()

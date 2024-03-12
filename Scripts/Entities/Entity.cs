@@ -40,9 +40,13 @@ namespace Assets.Scripts.Entities
         {
             return AngleToPoint(entity.GetPosition());
         }
-        public float AngleToPoint(Vector3 point) 
+        public float AngleToPoint(Vector2 point) 
         {
             return Utilities.AngleBetweenPoints(GetPosition(), point);
+        }
+        public Vector2 DirectionToPoint(Vector2 point)
+        {
+            return Utilities.DirectionBetweenPoints(GetPosition(), point);
         }
         public void SetAngleTowardsPoint(Vector2 point)
         {

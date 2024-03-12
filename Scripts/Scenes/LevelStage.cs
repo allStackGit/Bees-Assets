@@ -58,12 +58,13 @@ namespace Assets.Scripts.Scenes
         public bool IsLoaded = false;
         public bool RetriedConnection;
         public bool HasPlayer;
-        public int WinningSide = 0;
+        public int WinningSide;
         public float MapX, MapY, MaxDistance, HalfX, HalfY;
         public SimpleMultiAgentGroup AgentGroup;
         public SimpleMultiAgentGroup HumanAgentGroup;
-        public float Seconds = 0;
-        public int BeeWins, HumanWins;
+        public float Seconds;
+        public int Id = Utilities.Hash();
+        public HashSet<int> HandledRequests = new HashSet<int>();
 
 
         public float CurrentZoom => Camera.orthographicSize;
@@ -123,8 +124,9 @@ namespace Assets.Scripts.Scenes
             _state.Setup(this);
 
             //ConfigData.SetupSceneManagement(SceneManagement.GetComponent<SceneManagement>());
-            if (!IsTrainingNueralNetwork)
+            if (!IsTrainingNueralNetwork && !IsTrainingHiveMind)
             {
+                MiniMapCamera.gameObject.SetActive(true);
                 Camera.orthographicSize = DefaultZoom;
 
                 // Setup  Game menu 
@@ -189,7 +191,6 @@ namespace Assets.Scripts.Scenes
         protected override void FinalizeSceneWithUserData()
         {
             //Debug.Log($"Finalize scene");
-            Physics.autoSimulation = false; // What does this do and is it necessary?
             if (!ConfigData.Configuration.DoesUserHaveController && !DoesUserHaveController)
             {
                 Invoke(nameof(TimeOut), TimeoutTime);
@@ -208,11 +209,6 @@ namespace Assets.Scripts.Scenes
                 Invoke(nameof(GetHiveMindCommands), .25f);
             }
         }
-        protected override void RetryConnection()
-        {
-            base.RetryConnection();
-            RetriedConnection = true;
-        }
 
         new void Update()
         {
@@ -224,7 +220,7 @@ namespace Assets.Scripts.Scenes
             //}
             if (IsLoaded)
             {
-                if (Socket.IsOpen && RetriedConnection)
+                if (ConfigData.Socket.IsOpen && RetriedConnection)
                 {
                     LevelConstructor.RequestServerSetup();
                     RetriedConnection = false;
@@ -246,9 +242,11 @@ namespace Assets.Scripts.Scenes
                     if (!IsTrainingNueralNetwork)
                     {
                         Time.timeScale = TimeScale;
-                        state.Ticks++;
-                        InputManager.Update();
+                        if (!IsTrainingHiveMind)
+                        {
+                            InputManager.Update();
 
+                        }
                     }
 
                     //InputManager.Update();
@@ -261,7 +259,7 @@ namespace Assets.Scripts.Scenes
         {
             if (IsTrainingNueralNetwork)
             {
-                Seconds += Time.deltaTime;
+                Seconds += Time.unscaledDeltaTime;
             }
         }
 
@@ -273,20 +271,20 @@ namespace Assets.Scripts.Scenes
                 //Debug.Log("LEVEL OVER!");
                 GameState state = GetState();
                 state.LevelEnded = true;
+                float fps = Time.frameCount / Time.unscaledTime;
+                float latency = __AverageRequestTime;
+                string winner = "Humans";
 
                 if (state.IsSideKilled(ConfigData.Configuration.BeeSide) && !state.IsSideKilled(ConfigData.Configuration.HumanSide))
                 {
                     WinningSide = ConfigData.Configuration.HumanSide;
-                    HumanWins++;
-                    Debug.Log($"Humans won! H:{HumanWins} B:{BeeWins}");
-
-
+                    ConfigData.__HumanWins++;
                 }
                 else if (state.IsSideKilled(ConfigData.Configuration.HumanSide) && !state.IsSideKilled(ConfigData.Configuration.BeeSide))
                 {
                     WinningSide = ConfigData.Configuration.BeeSide;
-                    BeeWins++;
-                    Debug.Log($"Bees won! H:{HumanWins} B:{BeeWins}");
+                    ConfigData.__BeeWins++;
+                    winner = "Bees";
                 }
                 else if (state.IsSideKilled(ConfigData.Configuration.HumanSide) && state.IsSideKilled(ConfigData.Configuration.BeeSide))
                 {
@@ -297,9 +295,14 @@ namespace Assets.Scripts.Scenes
                     Debug.Log("Neither side is dead!");
                 }
 
+                int totalGames = ConfigData.__HumanWins + ConfigData.__BeeWins;
+                int humanWinPercentage = (int)(((float)ConfigData.__HumanWins / totalGames) * 100);
+                int beeWinPercentage = (int)(((float)ConfigData.__BeeWins / totalGames) * 100);
+                Debug.Log($"{winner} won! H:{ConfigData.__HumanWins} ({humanWinPercentage}%) B:{ConfigData.__BeeWins} ({beeWinPercentage}%) fps: {fps} latency: {(int)(latency*1000)}ms Frames: {Time.frameCount} Seconds: {Time.unscaledTime}");
+
                 if (Menus != null)
                 {
-                    Menus.UpdateScore(HumanWins, BeeWins);
+                    Menus.UpdateScore(ConfigData.__HumanWins, ConfigData.__BeeWins);
                 }
 
                 //Debug.Log($"Setting stats for Saved Squads");
@@ -452,7 +455,8 @@ namespace Assets.Scripts.Scenes
             state.LevelEnded = false;
             Seconds = 0;
             //Socket.StandingRequests.Clear();
-            Socket.HandledRequests.Clear();
+            ConfigData.Socket.HandledRequests.Except(HandledRequests);
+            HandledRequests.Clear();
             if (!WatchServerRequests)
             {
                 ConfigData.__PastServerRequests.Clear();
@@ -609,15 +613,13 @@ namespace Assets.Scripts.Scenes
         private void GetHiveMindCommands()
         {
             //Debug.Log("Giving command");
-            GameState state = GetState();
             if (!IsPaused && ActivateHiveMind && IsLevelSetupOnServer)
             {
-                List<Squad> squads = state.GetSquadsAwaitingHiveMindCommands();  
-                if (squads.Count > 0)
+                Queue<Squad> squads = GetState().GetSquadsAwaitingHiveMindCommands();  
+                while (squads.Count > 0)
                 {
-                    Squad squad = squads.FirstOrDefault();
-                    state.RemoveFromSquadsAwaitingHivemindCommands(squad);
-                    if (squad != null)
+                    Squad squad = squads.Dequeue();
+                    if (squad != null && !squad.IsDead)
                     {
                         //Debug.Log("Giving command");
                         //Debug.Log($"asking for matchup strat");

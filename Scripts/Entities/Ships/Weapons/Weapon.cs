@@ -298,12 +298,12 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             if (Ship.Squad.HasEnemy && Ship.Squad.IsAttacking)
             {
-                return ShipsWithinRange.Where((s) => s.Squad == Ship.Squad.Command.Enemy).ToList();
+                return ShipsWithinRange.Where((s) => !s.IsDead && s.Squad == Ship.Squad.Command.Enemy).ToList();
                 //return Ship.Squad.Command.Enemy.GetShips().Where((s) => IsShipWithinRange(s)).ToList();
             }
             else
             {
-               return ShipsWithinRange.Where((s) => s != null).ToList();
+               return ShipsWithinRange.Where((s) => s != null && !s.IsDead).ToList();
             }
         }
 

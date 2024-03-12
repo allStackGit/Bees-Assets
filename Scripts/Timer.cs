@@ -24,14 +24,15 @@ namespace Assets.Scripts
 
         /// <summary>
         /// Checks how much time has passed and calls the action if necessary. Must be called from outside of the method since it's not directly tied to Update()
-        /// Returns true when the action has completed
+        /// Returns true when the action has completed. Runs in unscaled time.
         /// </summary>
         public bool Update()
         {
-            Elapsed += Time.deltaTime;
+            Elapsed += Time.unscaledDeltaTime;
             if (Elapsed > Length)
             {
                 Action();
+                Elapsed = 0;
                 return true;
             }
             return false;

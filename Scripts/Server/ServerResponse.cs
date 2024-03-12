@@ -6,9 +6,9 @@ namespace Assets.Scripts.Server
     {
         public string Type;
         public int Status;
-        public long Hash;
+        public int Hash;
        
-        public ServerResponse(string type, int status, long hash)
+        public ServerResponse(string type, int status, int hash)
         {
             Type = type;
             Status = status;

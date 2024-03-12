@@ -189,7 +189,7 @@ namespace Assets.Scripts.Level
 
                 if (Level.HasPlayer && !Level.IsTrainingNueralNetwork)
                 {
-                    SquadBox = LevelStage.Instantiate(Level.SquadBox, new Vector3(0, 0, 0), Quaternion.identity);
+                    SquadBox = Instantiate(Level.SquadBox, new Vector3(0, 0, 0), Quaternion.identity);
                     SquadBox.transform.parent = Level.Map.transform;
                     SquadBox.SetActive(false);
                 }
@@ -300,7 +300,7 @@ namespace Assets.Scripts.Level
             //        ship.TargetCoordinates = new Vector2(x, y);
             //    });
             //}
-            if (Level.Menus.HasSquadActionBox && IsSelected)
+            if (Level.DoesUserHaveController && IsSelected)
             {
                 Level.Menus.ActionBox.HighlightSelectedButtons();
             }
@@ -545,8 +545,8 @@ namespace Assets.Scripts.Level
             
             string[] bannedTypes = banned.Select((ship) => $"Type {(Utilities.ConvertShipNameToType(ship))}").ToArray();
 
-            Level.Socket.SendRequest(new MatchupStrategyRequest(new GetMatchupStrategy(AddToMatchup(GetShips()), OpponentId, bannedTypes),
-                this, ConfigData.StandardMaxTimeOnQueue));
+            ConfigData.Socket.SendRequest(new MatchupStrategyRequest(new GetMatchupStrategy(AddToMatchup(GetShips()), OpponentId, bannedTypes),
+                this, Level, ConfigData.StandardMaxTimeOnQueue));
         }
         public static string AddToMatchup(List<Ship> ships)
         {
@@ -639,8 +639,8 @@ namespace Assets.Scripts.Level
 
             string matchup = sb.ToString();
 
-            Level.Socket.SendRequest(new CommandRequest(new GetStrategy(matchup, OpponentId, BannedStrats.ToArray()),
-                this, enemy, matchup, ConfigData.StandardMaxTimeOnQueue));
+            ConfigData.Socket.SendRequest(new CommandRequest(new GetStrategy(matchup, OpponentId, BannedStrats.ToArray()),
+                this, enemy, Level, matchup, ConfigData.StandardMaxTimeOnQueue));
 
 
         }
@@ -680,7 +680,7 @@ namespace Assets.Scripts.Level
             (Strategy, ShootingStrategy) strategies = MakeUserCommand("Guard", null);
 
             ((Guard)Command).Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), true, squad);
-            if (Level.Menus.HasSquadActionBox)
+            if (Level.DoesUserHaveController)
             {
                 Level.Menus.ActionBox.HighlightSelectedButtons();
             }
@@ -691,7 +691,7 @@ namespace Assets.Scripts.Level
             (Strategy, ShootingStrategy) strategies = MakeUserCommand("Patrol", null);
 
             ((Patrol)Command).Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), true, topLeft, bottomRight);
-            if (Level.Menus.HasSquadActionBox)
+            if (Level.DoesUserHaveController)
             {
                 Level.Menus.ActionBox.HighlightSelectedButtons();
             }
@@ -934,7 +934,7 @@ namespace Assets.Scripts.Level
         {
             //Debug.Log($"Squad #{squadNumber} is moving and the squad box will have width {GetWidth()}, height {GetHeight()}, and center point {GetCenterPoint()}");
             //Debug.Log($"Right most point {GetRightMostPoint()}, Left most point {GetLeftMostPoint()}, Top most point {GetTopMostPoint()}, Bottom most point {GetBottomMostPoint()}");
-            if (IsSelected && !Level.IsTrainingNueralNetwork)
+            if (IsSelected && !Level.IsTrainingNueralNetwork && !Level.IsTrainingHiveMind)
             {
                 SquadBox.SetActive(true);
                 SquadBox.transform.localPosition = GetCenterPoint();

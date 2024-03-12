@@ -13,23 +13,19 @@ namespace Assets.Scripts.Level.Commands
         {
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
 
-            if (Squad != null)
+            if (!Squad.IsDead)
             {
                 IsAttacking = true;
                 PrepareDamageToSendEntries();
                 InvokeRepeating(nameof(Timer), .1f, .1f);
             }
-            else
-            {
-                SetFinalize("The squad is dead");
-            }
             
         }
         private void Timer()
         {
-            if (Squad != null)
+            if (!Squad.IsDead)
             {
-                if (Enemy != null)
+                if (Enemy != null && !Enemy.IsDead)
                 {
                     Squad.Status = $"Targeting enemy squad #{Enemy.SquadNumber}";
                     if (!Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(Enemy)) // check if all of their squad ships are within range of all of our squad ships
@@ -47,11 +43,6 @@ namespace Assets.Scripts.Level.Commands
                     CancelInvoke(nameof(Timer));
                     SetFinalize("The enemy squad is gone or dead");
                 }
-            }
-            else
-            {
-                CancelInvoke(nameof(Timer));
-                SetFinalize("The squad is dead");
             }
             
         }

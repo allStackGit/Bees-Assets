@@ -84,7 +84,7 @@ namespace Assets.Scripts.Level
             });
             if (squads.Count == 0)
             {
-                if (Level.Menus != null && Level.Menus.HasSquadActionBox && Level.Menus.SquadActionBoxUI.activeSelf)
+                if (Level.DoesUserHaveController && Level.Menus.SquadActionBoxUI.activeSelf)
                 {
                     Level.Menus.ActionBox.Hide();
                 }

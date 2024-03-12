@@ -17,82 +17,79 @@ namespace Assets.Scripts.Level.Commands
         {
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
 
-            if (Squad != null)
-            {
-                IsAttacking = true;
-                PrepareDamageToSendEntries();
-                InvokeRepeating(nameof(Timer), .1f, .1f);
-            }
-            else
-            {
-                SetFinalize("The squad is dead");
-            }
+            IsAttacking = true;
+            PrepareDamageToSendEntries();
+            InvokeRepeating(nameof(Timer), .1f, .1f);
         }
         private void Timer()
         {
-            if (Enemy != null && !Enemy.IsDead && !Squad.IsDead)
+            if (!Squad.IsDead)
             {
-                Squad.Status = $"Targeting enemy squad {Enemy.Name} #{Enemy.Id} with {Strategy.Name}";
-
-                if (!_gotToEnemy && !Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(Enemy)) // if we haven't reached the enemy yet
+                if (Enemy != null && !Enemy.IsDead)
                 {
-                    //Debug.Log($"Enemy: {Enemy.Name} IsDead: {Enemy.IsDead}");
-                    SetAndMove(Enemy.GetPosition());
-                }
-                else if (_swipeDestination == Vector2.zero) // if we just reached the enemy but haven't set where to swipe off to
-                {
-                    //Debug.Log($"Reached the enemy! We are {Squad.DistanceTo(Enemy.GetPosition())} away from enemy, Reached: {Squad.IsAnySquadShipWithinRangeOfAllOfOurSquadShips(Enemy)}");
-                    _gotToEnemy = true;
-                    //SetFinalize("Reached the enemy");
-                    //return;
-                    Squad.Status = $"Using {Strategy.Name} against enemy squad {Enemy.Name} #{Enemy.Id}";
-                    Vector2 enemyPosition = Enemy.GetPosition();
-                    float angle = Squad.AngleToPoint(enemyPosition);
+                    Squad.Status = $"Targeting enemy squad {Enemy.Name} #{Enemy.Id} with {Strategy.Name}";
 
-                    if (Strategy.Name == "Right Swipe")
+                    if (!_gotToEnemy && !Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(Enemy)) // if we haven't reached the enemy yet
                     {
-                        angle += .25f * Mathf.PI;
+                        //Debug.Log($"Enemy: {Enemy.Name} IsDead: {Enemy.IsDead}");
+                        SetAndMove(Enemy.GetPosition());
+                    }
+                    else if (_swipeDestination == Vector2.zero) // if we just reached the enemy but haven't set where to swipe off to
+                    {
+                        //Debug.Log($"Reached the enemy! We are {Squad.DistanceTo(Enemy.GetPosition())} away from enemy, Reached: {Squad.IsAnySquadShipWithinRangeOfAllOfOurSquadShips(Enemy)}");
+                        _gotToEnemy = true;
+                        //SetFinalize("Reached the enemy");
+                        //return;
+                        Squad.Status = $"Using {Strategy.Name} against enemy squad {Enemy.Name} #{Enemy.Id}";
+                        Vector2 enemyPosition = Enemy.GetPosition();
+                        float angle = Squad.AngleToPoint(enemyPosition);
 
-                        if (angle > Mathf.PI) // if the angle is greater than PI, subtract 2 PI to get the equivilent negative angle
+                        if (Strategy.Name == "Right Swipe")
                         {
-                            angle -= 2 * Mathf.PI;
+                            angle += .25f * Mathf.PI;
+
+                            if (angle > Mathf.PI) // if the angle is greater than PI, subtract 2 PI to get the equivilent negative angle
+                            {
+                                angle -= 2 * Mathf.PI;
+                            }
+
+                        }
+                        else
+                        {
+                            angle -= .25f * Mathf.PI;
+
+                            if (angle < -Mathf.PI) // if the angle is less than negative PI, add 2 PI to get the equivilent negative angle
+                            {
+                                angle += 2 * Mathf.PI;
+                            }
+
                         }
 
-                    }
-                    else
-                    {
-                        angle -= .25f * Mathf.PI;
 
-                        if (angle < -Mathf.PI) // if the angle is less than negative PI, add 2 PI to get the equivilent negative angle
+
+                        float distance = Enemy.Range * 1.5f;
+                        if (distance < Squad.Range - 2)
                         {
-                            angle += 2 * Mathf.PI;
+                            distance = Squad.Range - 2;
                         }
+                        _swipeDestination = Squad.CirclePoint(angle, distance);
 
+
+                        SetAndMove(_swipeDestination);
                     }
-
-
-
-                    float distance = Enemy.Range * 1.5f;
-                    if (distance < Squad.Range - 2)
+                    else if (Squad.HasReachedDestination) // if we've reached the swiping destination
                     {
-                        distance = Squad.Range - 2;
+                        CancelInvoke(nameof(Timer));
+                        SetFinalize("Finished swiping past the enemy");
                     }
-                    _swipeDestination = Squad.CirclePoint(angle, distance);
-
-
-                    SetAndMove(_swipeDestination);
                 }
-                else if (Squad.HasReachedDestination) // if we've reached the swiping destination
+                else
                 {
                     CancelInvoke(nameof(Timer));
-                    SetFinalize("Finished swiping past the enemy");
+                    SetFinalize("The enemy squad is gone or dead");
                 }
             }
-            else
-            {
-                CancelInvoke(nameof(Timer));
-                SetFinalize("The enemy squad is gone or dead");
-            }
+            
         }
 
     }

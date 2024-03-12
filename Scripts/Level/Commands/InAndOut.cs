@@ -15,35 +15,27 @@ namespace Assets.Scripts.Level.Commands
         public override void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy)
         {
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
-            if (Squad != null)
+            if (Enemy != null && !Enemy.IsDead)
             {
-                if (Enemy != null)
-                {
-                    IsAttacking = true;
+                IsAttacking = true;
 
-                    PrepareDamageToSendEntries();
-                    float distance = Squad.DistanceTo(Enemy.GetPosition());
-                    Vector2 position = Squad.GetPosition();
-                    _returnPoint = distance > Enemy.Range && distance < 50 ?
-                        Utilities.RandomCoordinate(Level, position, Vector2.one * 10, Vector2.zero) :
-                        Utilities.RandomCoordinate(Level, Enemy.GetPosition(), Vector2.one * (Enemy.Range + 20), Vector2.one * Enemy.Range);
+                PrepareDamageToSendEntries();
+                float distance = Squad.DistanceTo(Enemy.GetPosition());
+                Vector2 position = Squad.GetPosition();
+                _returnPoint = distance > Enemy.Range && distance < 50 ?
+                    Utilities.RandomCoordinate(Level, position, Vector2.one * 10, Vector2.zero) :
+                    Utilities.RandomCoordinate(Level, Enemy.GetPosition(), Vector2.one * (Enemy.Range + 20), Vector2.one * Enemy.Range);
 
-                    _hasReachedDestination = false;
-                    InvokeRepeating(nameof(Timer), .1f, .1f);
-                }
+                _hasReachedDestination = false;
+                InvokeRepeating(nameof(Timer), .1f, .1f);
             }
-            else
-            {
-                SetFinalize("The squad is dead");
-            }
-            
 
         }
         private void Timer()
         {
-            if (Squad != null)
+            if (!Squad.IsDead)
             {
-                if (Enemy != null)
+                if (Enemy != null && !Enemy.IsDead)
                 {
 
                     if (!_hasReachedDestination && !Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(Enemy))
@@ -71,11 +63,6 @@ namespace Assets.Scripts.Level.Commands
                     CancelInvoke(nameof(Timer));
                     SetFinalize("The enemy squad is gone or dead");
                 }
-            }
-            else
-            {
-                CancelInvoke(nameof(Timer));
-                SetFinalize("The squad is dead");
             }
             
         }

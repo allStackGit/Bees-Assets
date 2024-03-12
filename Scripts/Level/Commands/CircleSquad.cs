@@ -15,52 +15,49 @@ namespace Assets.Scripts.Level.Commands
         public override void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy)
         {
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
-            if (Squad != null)
-            {
-                IsAttacking = true;
-                PrepareDamageToSendEntries();
-                InvokeRepeating(nameof(Timer), .1f, .1f);
-            }
-            else
-            {
-                SetFinalize("The squad is dead");
-            }
+            IsAttacking = true;
+            PrepareDamageToSendEntries();
+            InvokeRepeating(nameof(Timer), .1f, .1f);
         }
         private void Timer()
         {
-            if (Enemy != null && !Enemy.IsDead && !Squad.IsDead)
+            if (!Squad.IsDead)
             {
-                Squad.Status = $"Moving to circle enemy squad #{Enemy.SquadNumber}";
-                if (!_gotToEnemy && !Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(Enemy))
+                if (Enemy != null && !Enemy.IsDead)
                 {
-                    //Debug.Log($"{Squad.Name} is trying to get to a good circling position against {Enemy.Name}");
-                    Squad.Status = $"Trying to get to a good circling position against {Enemy.Name}";
-                    SetAndMove(Enemy.GetPosition());
+                    Squad.Status = $"Moving to circle enemy squad #{Enemy.SquadNumber}";
+                    if (!_gotToEnemy && !Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(Enemy))
+                    {
+                        //Debug.Log($"{Squad.Name} is trying to get to a good circling position against {Enemy.Name}");
+                        Squad.Status = $"Trying to get to a good circling position against {Enemy.Name}";
+                        SetAndMove(Enemy.GetPosition());
+                    }
+                    else
+                    {
+                        if (!_hasSetIdealDistance)
+                        {
+                            _idealDistance = Enemy.DistanceTo(Squad.GetPosition()) * .97f;
+                            _angle = Enemy.AngleToPoint(Squad.GetPosition()) - (Mathf.PI * .5f);
+                            _hasSetIdealDistance = true;
+                        }
+
+                        _gotToEnemy = true;
+                        float angle = Enemy.AngleToPoint(Squad.GetPosition());
+
+                        _angle = angle + (.06f * Mathf.PI);
+                        //Debug.Log($"{Squad.Name} is circling enemy squad # {Enemy.Name} at {_idealDistance} away");
+                        Squad.Status = $"Circling enemy squad # {Enemy.Name} at {_idealDistance} away";
+                        NewCircleSpot();
+                    }
                 }
                 else
                 {
-                    if (!_hasSetIdealDistance)
-                    {
-                        _idealDistance = Enemy.DistanceTo(Squad.GetPosition()) * .97f;
-                        _angle = Enemy.AngleToPoint(Squad.GetPosition()) - (Mathf.PI * .5f);
-                        _hasSetIdealDistance = true;
-                    }
-
-                    _gotToEnemy = true;
-                    float angle = Enemy.AngleToPoint(Squad.GetPosition());
-
-                    _angle = angle + (.06f * Mathf.PI);
-                    //Debug.Log($"{Squad.Name} is circling enemy squad # {Enemy.Name} at {_idealDistance} away");
-                    Squad.Status = $"Circling enemy squad # {Enemy.Name} at {_idealDistance} away";
-                    NewCircleSpot();
+                    //Debug.Log("The enemy is dead or does not exist.");
+                    CancelInvoke(nameof(Timer));
+                    SetFinalize("The enemy squad is gone or dead");
                 }
             }
-            else
-            {
-                //Debug.Log("The enemy is dead or does not exist.");
-                CancelInvoke(nameof(Timer));
-                SetFinalize("The enemy squad is gone or dead");
-            }
+           
 
         }
         private void NewCircleSpot()

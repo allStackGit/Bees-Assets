@@ -19,8 +19,8 @@ namespace Assets.Scripts.Level
         public void RequestServerSetup()
         {
             Level.IsLevelSetupOnServer = false;
-            Level.Socket.SendRequest(new SetupLevelRequest(new SetupLevel(ConfigData.GetLevel(), ConfigData.GetUserId(), ConfigData.Version),
-                ConfigData.StandardMaxTimeOnQueue));
+            ConfigData.Socket.SendRequest(new SetupLevelRequest(new SetupLevel(ConfigData.GetLevel(), ConfigData.GetUserId(), ConfigData.Version),
+                ConfigData.StandardMaxTimeOnQueue, Level));
         }
 
         public void SetupShips()
@@ -51,11 +51,11 @@ namespace Assets.Scripts.Level
 
             // Setup entities on the level
             SetupShipsAndSquads();
-            if (state.GetSquadsBySide(ConfigData.Configuration.UserSide).Count > 0 && state.GetSquadsBySide(ConfigData.Configuration.AISide).Count > 0 && !Level.IsTrainingNueralNetwork)
+            if (state.GetSquadsBySide(ConfigData.Configuration.UserSide).Count > 0 && state.GetSquadsBySide(ConfigData.Configuration.AISide).Count > 0 && !Level.IsTrainingNueralNetwork && !Level.IsTrainingHiveMind)
             {
                 state.SelectSquad(state.GetSquadByNumber(ConfigData.Configuration.UserSide, 1));
             }
-            else if (!Level.IsTrainingNueralNetwork)
+            else if (!Level.IsTrainingNueralNetwork && !Level.IsTrainingHiveMind)
             {
                 Debug.Log($"User squads: {state.GetSquadsBySide(ConfigData.Configuration.UserSide).Count}, AI squads: {state.GetSquadsBySide(ConfigData.Configuration.AISide).Count}");
                 Level.Menus.NoAliveShipsAlert.SetActive(true);
