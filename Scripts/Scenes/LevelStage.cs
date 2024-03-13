@@ -70,8 +70,12 @@ namespace Assets.Scripts.Scenes
         /// A boolean array of all integer coordinates on the map. False = valid space. True = obstacle
         /// </summary>
         public bool[][] PathfindingMap;
-        int PathFindingMapBlockSize = 5;
-        int PathFindingMapWidth, PathFindingMapHeight, PathFindingMapHalfWidth, PathFindingMapHalfHeight;
+        /// <summary>
+        /// How much scaled down the pathfinding map is compared to the real map. Smaller size increases speed but decreases precision. Obstacles must be 
+        /// at least as large on both axis as this number
+        /// </summary>
+        private int PathFindingMapScale = 1;  
+        public int PathFindingMapWidth, PathFindingMapHeight, PathFindingMapHalfWidth, PathFindingMapHalfHeight;
 
 
         public float CurrentZoom => Camera.orthographicSize;
@@ -167,10 +171,10 @@ namespace Assets.Scripts.Scenes
             HalfMapWidth = MapWidth / 2;
             HalfMapHeight = MapHeight / 2;
 
-            PathFindingMapWidth = MapWidth / PathFindingMapBlockSize;
-            PathFindingMapHeight = MapHeight / PathFindingMapBlockSize;
-            PathFindingMapHalfWidth = HalfMapWidth / PathFindingMapBlockSize;
-            PathFindingMapHalfHeight = HalfMapHeight / PathFindingMapBlockSize;
+            PathFindingMapWidth = MapWidth / PathFindingMapScale;
+            PathFindingMapHeight = MapHeight / PathFindingMapScale;
+            PathFindingMapHalfWidth = HalfMapWidth / PathFindingMapScale;
+            PathFindingMapHalfHeight = HalfMapHeight / PathFindingMapScale;
 
             MinX = MapRenderer.localBounds.min.x + ConfigData.MapEdgePadding.x;
             MinY = MapRenderer.localBounds.min.y + ConfigData.MapEdgePadding.y;
@@ -229,7 +233,7 @@ namespace Assets.Scripts.Scenes
         private void FillPathfindingMap()
         {
             float start = Time.realtimeSinceStartup;
-            Debug.Log($"Loading pathfinding map");
+            Debug.Log($"Loading pathfinding map at {PathFindingMapScale}x");
 
             // initialize everything as open space
             PathfindingMap = new bool[PathFindingMapWidth][]; 
@@ -249,32 +253,54 @@ namespace Assets.Scripts.Scenes
             {
 
                 Collider2D collider = obstacle.transform.GetComponent<Collider2D>();
-                Bounds bounds = collider.bounds;
+                Vector2 position = obstacle.transform.position;
+                Vector2Int intPosition = new Vector2Int(Convert.ToInt32(position.x), Convert.ToInt32(position.y));
 
-                int width = (int) bounds.size.x;
-                int height = (int) bounds.size.y;
+                int width = Convert.ToInt32(obstacle.transform.localScale.x);
+                int height = Convert.ToInt32(obstacle.transform.localScale.y);
 
-                int startX = (int) (obstacle.transform.position.x - (width / 2));
-                int startY = (int)(obstacle.transform.position.y + (height / 2));
+                int startX = Convert.ToInt32(position.x - (width / 2));
+                int startY = Convert.ToInt32(position.y + (height / 2));
 
                 bool isPolygon = false;
+                bool isRotated = false;
+                float rotation = obstacle.transform.localEulerAngles.z * Mathf.Deg2Rad;
 
                 if (collider is PolygonCollider2D)
                 {
-                    Debug.Log("This is a polygon collider");
+                    Bounds bounds = collider.bounds;
+
+                    width = (int)bounds.size.x;
+                    height = (int)bounds.size.y;
+                    startX = Convert.ToInt32(position.x - (width / 2));
+                    startY = Convert.ToInt32(position.y + (height / 2));
+                    Debug.Log($"{collider.transform.name} is a polygon collider with a width of {width} and a height of {height} and a rotation of {rotation} that starts at {startX}, {startY}");
                     isPolygon = true;
                 }
-
-                for (int y = startY; y > startY - height; y--) // go across the bounds top to bottom (decreasing)
+                if (rotation != 0 && !isPolygon)
                 {
-                    for (int x = startX; x < startX + width; x++) // go across the bounds, left to right (increasing)
+                    Debug.Log($"{obstacle.gameObject.name} is rotated by {obstacle.transform.localEulerAngles.z} degrees / {rotation} radians");
+                    isRotated = true;
+                }
+                int i = 0;
+                for (int y = startY; y > startY - height; y -= PathFindingMapScale) // go across the bounds top to bottom (decreasing)
+                {
+                    for (int x = startX; x < startX + width; x += PathFindingMapScale) // go across the bounds, left to right (increasing)
                     {
-                        Vector2 point = new Vector2Int(x, y);
+                        i++;
+                        Vector2Int point = new Vector2Int(x, y);
                         if (!isPolygon || collider.OverlapPoint(point))
                         {
-                            Vector2Int converted = ConvertToPathfindingMapCoordinates(point);
 
-                            //Debug.Log($"Converted {x}, {y} on the Map to {convertedX}, {convertedY} on the PathfindingMap");
+                            if (isRotated)
+                            {
+                                Vector2Int rotatedPoint = Utilities.RotateIntPointAroundPoint(intPosition, point, rotation);
+                                //Debug.Log($"#{i} Rotated {point} around {intPosition} to {rotatedPoint}");
+                                point = rotatedPoint;
+                            }
+                            Vector2Int converted = ConvertToPathfindingMapCoordinates(point);
+                            //Debug.Log($"#{i} Converted {point} on the Map to (scaled) {converted} on the PathfindingMap");
+
 
                             PathfindingMap[converted.y][converted.x] = true; // [note] I haven't figured out why we need to pass the Y to the X and the X to the Y but this works
                         }
@@ -295,15 +321,12 @@ namespace Assets.Scripts.Scenes
 
         public Vector2Int ConvertToPathfindingMapCoordinates(Vector2 coords)
         {
-            return new Vector2Int(
-                (int)(PathFindingMapWidth - (PathFindingMapHalfWidth - (coords.x/PathFindingMapBlockSize))), 
-                (int)(PathFindingMapHeight - (PathFindingMapHalfHeight + (coords.y/PathFindingMapBlockSize)))
-                );
+            return new Vector2Int(Convert.ToInt32(MapWidth - (HalfMapWidth - coords.x)), Convert.ToInt32(MapHeight - (HalfMapHeight + coords.y))) / PathFindingMapScale;
         }
 
         public Vector2 ConvertPathfindingMapToLevelCoordinates(Vector2Int coords)
         {
-            return new Vector2(-PathFindingMapHalfHeight + coords.x * PathFindingMapBlockSize, PathFindingMapHalfHeight - (coords.y * PathFindingMapBlockSize));
+            return new Vector2(-PathFindingMapHalfHeight + coords.x, PathFindingMapHalfHeight - coords.y) * PathFindingMapScale;
         }
 
 

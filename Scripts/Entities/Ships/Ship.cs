@@ -390,8 +390,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 Vector2Int convertedDestination = Level.ConvertToPathfindingMapCoordinates(destination);
                 //Debug.Log($"There is an obstacle in the way, using astar to find a path, start: {convertedStart}, end: {convertedDestination}");
                 //Debug.Log(Level.ConvertPathfindingToMapCoordinates(new Vector2Int(0, 0)));
-                List<Vector2Int> result = new Astar(Level.PathfindingMap, convertedStart, convertedDestination, Astar.Type.Diagonal).Result;
-                Debug.Log(result.Count);
+                List<Vector2Int> result = new Astar(Level.PathfindingMap, convertedStart, convertedDestination, Astar.Type.EuclideanFree).Result;
+                //Debug.Log(result.Count);
                 for (int i = 0; i < result.Count; i++)
                 {
                     Vector2 point = Level.ConvertPathfindingMapToLevelCoordinates(result[i]);
@@ -478,26 +478,27 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             float maxSpeed = (float)_currentSpeed;
 
 
-            if (distance > maxSpeed/4)
+            //if (distance > maxSpeed/4)
+            //{
+
+            //}
+
+            // Set the velocity of the ship
+            float rotation = GetDegreesTowardsPoint(TargetCoordinates);
+
+            Utilities.TimedRotation(gameObject, rotation, RotationSpeed);
+            float degrees = transform.eulerAngles.z - 180;
+            float angle = degrees * Mathf.Deg2Rad;
+
+            Vector2 velocity = new Vector2((maxSpeed * Mathf.Sin(angle)), (-1 * maxSpeed * Mathf.Cos(angle)));
+
+
+            if (Squad.IsRetreating)
             {
-                // Set the velocity of the ship
-                float rotation = GetDegreesTowardsPoint(TargetCoordinates);
-
-                Utilities.TimedRotation(gameObject, rotation, RotationSpeed);
-                float degrees = transform.eulerAngles.z - 180;
-                float angle = degrees * Mathf.Deg2Rad;
-
-                Vector2 velocity = new Vector2((maxSpeed * Mathf.Sin(angle)), (-1 * maxSpeed * Mathf.Cos(angle)));
-
-
-                if (Squad.IsRetreating)
-                {
-                    velocity *= 1.5f;
-                }
-
-                Body.velocity = velocity;
+                velocity *= 1.5f;
             }
-            
+
+            Body.velocity = velocity;
 
             // stop if you're close enough to your destination
 
@@ -553,7 +554,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         {
            
             //__LastStopReason = $"Stopped at {GetPosition()} on the way to {TargetCoordinates} because of {reason} at {Age} ticks.";
-            Debug.Log(__LastStopReason);
+            //Debug.Log(__LastStopReason);
             TargetCoordinates = Vector2.zero;
             Body.velocity = Vector2.zero;
             HasTargetCoordinates = false;

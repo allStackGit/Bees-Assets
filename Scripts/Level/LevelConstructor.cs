@@ -126,10 +126,10 @@ namespace Assets.Scripts.Level
                         //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 52),  // human squad // 4 Cruisers #52
 
 
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 32),  // bee squad // 1 Bumblebee #32
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 33),  // bee squad // 1 Honeybee #33
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 34),  // bee squad // 1 Hornet #34
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 35),  // bee squad // 1 Leafcutter #35
+                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 32),  // bee squad // 1 Bumblebee #32
+                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 33),  // bee squad // 1 Honeybee #33
+                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 34),  // bee squad // 1 Hornet #34
+                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 35),  // bee squad // 1 Leafcutter #35
                         //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 36),  // bee squad // 1 Queen #36
                         //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 37),  // bee squad // 1 Wasp #37
                         //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 40),  // bee squad // 1 Yellow Jacket #40

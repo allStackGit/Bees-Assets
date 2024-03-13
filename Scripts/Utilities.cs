@@ -315,6 +315,25 @@ namespace Assets.Scripts
             return rotatedVector;
         }
 
+        public static Vector2Int RotateIntPointAroundPoint(Vector2Int pivot, Vector2Int rotatedPoint, float radians)
+        {
+
+            double cosAngle = Mathf.Cos(radians);
+            double sinAngle = Mathf.Sin(radians);
+
+            // Translate the original vector to be relative to the pivot
+            Vector2Int translatedVector = rotatedPoint - pivot;
+
+            // Rotate the translated vector
+            double rotatedX = translatedVector.x * cosAngle - translatedVector.y * sinAngle;
+            double rotatedY = translatedVector.x * sinAngle + translatedVector.y * cosAngle;
+
+            // Translate the rotated vector back to the original position
+            Vector2Int rotatedVector = new Vector2Int(Convert.ToInt32(rotatedX), Convert.ToInt32(rotatedY)) + pivot;
+
+            return rotatedVector;
+        }
+
         /// <summary>
         /// Rotates the game object on this ship the quickest way towards a rotation and returns true once it reaches that rotation. Returns false once it is done rotating
         /// </summary>
@@ -475,16 +494,16 @@ namespace Assets.Scripts
         }
         public static void Print2DArray(bool[][] array)
         {
-            Debug.Log($"Printing array {array}, {array.Length}");
+            string line = "";
             for (int x = 0; x < array.Length; x++)
             {
-                string line = "";
                 for (int y = 0; y < array[x].Length; y++)
                 {
                     line += $"{(array[x][y] ? "%" : "+")},";
-                } 
-                Debug.Log(line);
+                }
+                line += "\n";
             }
+            Debug.Log(line);
         }
 
 

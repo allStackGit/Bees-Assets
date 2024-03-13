@@ -190,6 +190,21 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
 
         }
+        /// <summary>
+        /// Grabs all ships in the enemy squad within range. If there is no enemy squad, grabs all enemy ships within range
+        /// </summary>
+        public List<Ship> GetEnemyShipsWithinRange()
+        {
+            if (Ship.Squad.HasEnemy && Ship.Squad.IsAttacking)
+            {
+                return ShipsWithinRange.Where((s) => s.Squad == Ship.Squad.Command.Enemy).ToList();
+                //return Ship.Squad.Command.Enemy.GetShips().Where((s) => IsShipWithinRange(s)).ToList();
+            }
+            else
+            {
+                return ShipsWithinRange;
+            }
+        }
         protected virtual List<Ship> GetPotentialEnemyTargetShips()
         {
             List<Ship> queue = GetEnemyShipsWithinRange();
@@ -199,7 +214,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 return CachedTargetingQueue;
             }
             IsUsingCachedTargetingQueue = false;
-            return queue;
+            return queue.Where((s) => s != null && !s.IsDead).ToList();
         }
         public void ClearTargets()
         {
@@ -290,21 +305,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             ShipDamageStatus shipDamageStatus = Squad.GetShipDamageStatus(TargetShip);
             shipDamageStatus.totalDamageSentToShip += Power;
 
-        }
-        /// <summary>
-        /// Grabs all ships in the enemy squad within range. If there is no enemy squad, grabs all enemy ships within range
-        /// </summary>
-        public List<Ship> GetEnemyShipsWithinRange() 
-        {
-            if (Ship.Squad.HasEnemy && Ship.Squad.IsAttacking)
-            {
-                return ShipsWithinRange.Where((s) => !s.IsDead && s.Squad == Ship.Squad.Command.Enemy).ToList();
-                //return Ship.Squad.Command.Enemy.GetShips().Where((s) => IsShipWithinRange(s)).ToList();
-            }
-            else
-            {
-               return ShipsWithinRange.Where((s) => s != null && !s.IsDead).ToList();
-            }
         }
 
         // distance and position methods
