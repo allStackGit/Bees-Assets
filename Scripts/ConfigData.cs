@@ -51,7 +51,7 @@ namespace Assets.Scripts
         public static bool IsFleetDataLoaded = false; 
         public static bool IsSavedSquadsDataLoaded = false;
 
-        public static int ObstaclesLayer = 19;
+        public static int ObstaclesLayer = 1 << 19; // the layer masks need to all be 1 and then bitwise shifted to the left by the layer number
 
         public static float Tiny = 1; // this is the base size, equal to 4 World Units
         public static float Small = Tiny * 1.5f; 
@@ -236,7 +236,7 @@ namespace Assets.Scripts
         // DEBUG VARIABLES
         public static HashSet<ServerRequest> __PastServerRequests = new HashSet<ServerRequest>();
         public static HashSet<long> UsedHashes = new HashSet<long>();
-        public static int __BeeWins, __HumanWins;
+        public static int __BeeWins, __HumanWins, __HivemindCommands;
 
 
         // private variables
@@ -304,7 +304,7 @@ namespace Assets.Scripts
         {
             if (!AreAllSettingsLoaded)
             {
-                Debug.Log("Trying to load settings");
+                //Debug.Log("Trying to load settings");
                 ShipInfo = new ShipStats(GetUserId());
                 Configuration = new Configuration(GetUserId());
                 StartingSettings = new StartingSettings(GetUserId());

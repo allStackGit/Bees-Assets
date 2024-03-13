@@ -32,7 +32,7 @@ namespace Assets.Scripts.Scenes
         /// Determines whether or not FleetShips get marked as dead when ships die. If this is turned off, stats will still record properly but ships won't die off and be replaced
         /// </summary>
         public bool ReplaceDeadShips;
-        public bool ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, UseSemiRandomSquads, UseFullyRandomSquads, UseFullyRandomEnemySquads, RecordStats, DoesUserHaveController;
+        public bool ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, UseSemiRandomSquads, UseFullyRandomSquads, UseFullyRandomEnemySquads, RecordStats, DoesUserHaveController, HasObstacles;
         public int OverrideTimeScale, TimeoutTime, SquadCount;
         public Camera MiniMapCamera;
 
@@ -60,11 +60,18 @@ namespace Assets.Scripts.Scenes
         public bool HasPlayer;
         public int WinningSide;
         public float MapX, MapY, MaxDistance, HalfX, HalfY;
+        public int MapWidth, MapHeight, HalfMapWidth, HalfMapHeight;
         public SimpleMultiAgentGroup AgentGroup;
         public SimpleMultiAgentGroup HumanAgentGroup;
         public float Seconds;
         public int Id = Utilities.Hash();
         public HashSet<int> HandledRequests = new HashSet<int>();
+        /// <summary>
+        /// A boolean array of all integer coordinates on the map. False = valid space. True = obstacle
+        /// </summary>
+        public bool[][] PathfindingMap;
+        int PathFindingMapBlockSize = 5;
+        int PathFindingMapWidth, PathFindingMapHeight, PathFindingMapHalfWidth, PathFindingMapHalfHeight;
 
 
         public float CurrentZoom => Camera.orthographicSize;
@@ -112,10 +119,6 @@ namespace Assets.Scripts.Scenes
 
                 }
             }
-            else
-            {
-                Academy.Instance.Dispose();
-            }
 
 
 
@@ -159,6 +162,16 @@ namespace Assets.Scripts.Scenes
 
             // Setup map bounds
             MapRenderer = Map.GetComponentInChildren<SpriteRenderer>();
+            MapWidth = (int) (Mathf.Abs(MapRenderer.localBounds.min.x) + MapRenderer.localBounds.max.x);
+            MapHeight = (int) (Mathf.Abs(MapRenderer.localBounds.min.y) + MapRenderer.localBounds.max.y);
+            HalfMapWidth = MapWidth / 2;
+            HalfMapHeight = MapHeight / 2;
+
+            PathFindingMapWidth = MapWidth / PathFindingMapBlockSize;
+            PathFindingMapHeight = MapHeight / PathFindingMapBlockSize;
+            PathFindingMapHalfWidth = HalfMapWidth / PathFindingMapBlockSize;
+            PathFindingMapHalfHeight = HalfMapHeight / PathFindingMapBlockSize;
+
             MinX = MapRenderer.localBounds.min.x + ConfigData.MapEdgePadding.x;
             MinY = MapRenderer.localBounds.min.y + ConfigData.MapEdgePadding.y;
             MaxX = MapRenderer.localBounds.max.x - ConfigData.MapEdgePadding.x;
@@ -184,7 +197,10 @@ namespace Assets.Scripts.Scenes
                 InputManager.MaintainScrollBoundary();
             }
 
-
+            if (HasObstacles)
+            {
+                FillPathfindingMap();
+            }
 
             //Invoke(nameof(TimedOut), 60 * 5f);
         }
@@ -209,6 +225,87 @@ namespace Assets.Scripts.Scenes
                 Invoke(nameof(GetHiveMindCommands), .25f);
             }
         }
+
+        private void FillPathfindingMap()
+        {
+            float start = Time.realtimeSinceStartup;
+            Debug.Log($"Loading pathfinding map");
+
+            // initialize everything as open space
+            PathfindingMap = new bool[PathFindingMapWidth][]; 
+
+            for (int x = 0; x < PathfindingMap.Length; x++)
+            {
+                PathfindingMap[x] = new bool[PathFindingMapHeight]; // [alert] only works for rectanglular maps, default of false means walkable
+                //for (int y = 0; y < PathfindingMap[x].Length; y++)
+                //{
+                //    PathfindingMap[x][y] = true;
+                //}
+            }
+
+            GameObject[] obstacles = GameObject.FindGameObjectsWithTag("Obstacle");
+
+            foreach(GameObject obstacle in obstacles)
+            {
+
+                Collider2D collider = obstacle.transform.GetComponent<Collider2D>();
+                Bounds bounds = collider.bounds;
+
+                int width = (int) bounds.size.x;
+                int height = (int) bounds.size.y;
+
+                int startX = (int) (obstacle.transform.position.x - (width / 2));
+                int startY = (int)(obstacle.transform.position.y + (height / 2));
+
+                bool isPolygon = false;
+
+                if (collider is PolygonCollider2D)
+                {
+                    Debug.Log("This is a polygon collider");
+                    isPolygon = true;
+                }
+
+                for (int y = startY; y > startY - height; y--) // go across the bounds top to bottom (decreasing)
+                {
+                    for (int x = startX; x < startX + width; x++) // go across the bounds, left to right (increasing)
+                    {
+                        Vector2 point = new Vector2Int(x, y);
+                        if (!isPolygon || collider.OverlapPoint(point))
+                        {
+                            Vector2Int converted = ConvertToPathfindingMapCoordinates(point);
+
+                            //Debug.Log($"Converted {x}, {y} on the Map to {convertedX}, {convertedY} on the PathfindingMap");
+
+                            PathfindingMap[converted.y][converted.x] = true; // [note] I haven't figured out why we need to pass the Y to the X and the X to the Y but this works
+                        }
+                    }                    
+                }
+
+
+
+
+                //Debug.Log($"{obstacle.name} is located at {obstacle.transform.position} with a bounds of {bounds}, a width of {width} and a height of {height}");
+
+            }
+            //Utilities.Print2DArray(PathfindingMap);
+
+            float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
+            Debug.Log($"FillPathfindingMap() took {end} ms to complete.");
+        }
+
+        public Vector2Int ConvertToPathfindingMapCoordinates(Vector2 coords)
+        {
+            return new Vector2Int(
+                (int)(PathFindingMapWidth - (PathFindingMapHalfWidth - (coords.x/PathFindingMapBlockSize))), 
+                (int)(PathFindingMapHeight - (PathFindingMapHalfHeight + (coords.y/PathFindingMapBlockSize)))
+                );
+        }
+
+        public Vector2 ConvertPathfindingMapToLevelCoordinates(Vector2Int coords)
+        {
+            return new Vector2(-PathFindingMapHalfHeight + coords.x * PathFindingMapBlockSize, PathFindingMapHalfHeight - (coords.y * PathFindingMapBlockSize));
+        }
+
 
         new void Update()
         {
@@ -257,7 +354,7 @@ namespace Assets.Scripts.Scenes
         }
         private void FixedUpdate()
         {
-            if (IsTrainingNueralNetwork)
+            if (IsTrainingNueralNetwork || IsTrainingHiveMind)
             {
                 Seconds += Time.unscaledDeltaTime;
             }
@@ -298,7 +395,7 @@ namespace Assets.Scripts.Scenes
                 int totalGames = ConfigData.__HumanWins + ConfigData.__BeeWins;
                 int humanWinPercentage = (int)(((float)ConfigData.__HumanWins / totalGames) * 100);
                 int beeWinPercentage = (int)(((float)ConfigData.__BeeWins / totalGames) * 100);
-                Debug.Log($"{winner} won! H:{ConfigData.__HumanWins} ({humanWinPercentage}%) B:{ConfigData.__BeeWins} ({beeWinPercentage}%) fps: {fps} latency: {(int)(latency*1000)}ms Frames: {Time.frameCount} Seconds: {Time.unscaledTime}");
+                Debug.Log($"{winner} won! H:{ConfigData.__HumanWins} ({humanWinPercentage}%) B:{ConfigData.__BeeWins} ({beeWinPercentage}%) fps: {fps} latency: {(int)(latency*1000)}ms Frames: {Time.frameCount} Seconds: {Time.unscaledTime} CPS: {ConfigData.__HivemindCommands/ Time.unscaledTime}");
 
                 if (Menus != null)
                 {
@@ -358,6 +455,10 @@ namespace Assets.Scripts.Scenes
 
 
         }
+        /// <summary>
+        /// Used for Nueral Network training. Resets the level.
+        /// </summary>
+        /// <param name="isStepTimeout"></param>
         public void ResetLevel(bool isStepTimeout)
         {
 
@@ -448,6 +549,9 @@ namespace Assets.Scripts.Scenes
             //Invoke(nameof(StartNew), .1f);
             //WinningSide = 0;
         }
+        /// <summary>
+        /// Called by both ResetLevel and SaveAndEnd(). Prepares the LevelStage for a new level
+        /// </summary>
         public void StartNew()
         {
             GameState state = GetState();
@@ -484,40 +588,13 @@ namespace Assets.Scripts.Scenes
             Debug.Log("Level timed out!");
             SaveAndEnd();
         }
+        /// <summary>
+        /// Used for standard play and Hivemind Training. 
+        /// </summary>
         private void SaveAndEnd()
         {
             //Debug.Log($"Saving and ending");
-            for (int i = 0; i < ConfigData.SquadsChosenForLevel.Count; i++)
-            {
-                SavedSquad savedSquad = ConfigData.SquadsChosenForLevel[i];
-                if (savedSquad.HasBeenSavedToStorage)
-                {
-                    savedSquad = ConfigData.AllShips.GetSavedSquad(savedSquad.Id);
-                }
-                else
-                {
-                    continue;
-                }
-                //Debug.Log($"Saving stats for {savedSquad.Name}: " +
-                //$"Battles Fought: {savedSquad.Stats.BattlesFought} " +
-                //$"Battles Won: {savedSquad.Stats.BattlesWon} " +
-                //$"Ships Lost: {savedSquad.Stats.ShipsLost} " +
-                //$"Damage Done: {savedSquad.Stats.DamageDone} " +
-                //$"Damage Received: {savedSquad.Stats.DamageReceived} " +
-                //$"Kills: {savedSquad.Stats.Kills} ");
 
-                //savedSquad.GetShips().ForEach((squadShip) =>
-                //{
-                //    FleetShip fleetShip = squadShip.GetFleetShip();
-                //    Debug.Log($"Saving stats for {fleetShip.Name}: " +
-                //    $"Battles Fought: {fleetShip.BattlesFought} " +
-                //    $"Battles Won: {fleetShip.BattlesWon} " +
-                //    $"Damage Done: {fleetShip.DamageDone} " +
-                //    $"Damage Received: {fleetShip.DamageReceived} " +
-                //    $"Shots Fired: {fleetShip.ShotsFired} " +
-                //    $"Kills: {fleetShip.Kills} ");
-                //});
-            }
                 
             GameState state = GetState();
             state.LogState();
@@ -525,6 +602,38 @@ namespace Assets.Scripts.Scenes
 
             if (RecordStats)
             {
+                for (int i = 0; i < ConfigData.SquadsChosenForLevel.Count; i++)
+                {
+                    SavedSquad savedSquad = ConfigData.SquadsChosenForLevel[i];
+                    if (savedSquad.HasBeenSavedToStorage)
+                    {
+                        savedSquad = ConfigData.AllShips.GetSavedSquad(savedSquad.Id);
+                    }
+                    else
+                    {
+                        continue;
+                    }
+                    //Debug.Log($"Saving stats for {savedSquad.Name}: " +
+                    //$"Battles Fought: {savedSquad.Stats.BattlesFought} " +
+                    //$"Battles Won: {savedSquad.Stats.BattlesWon} " +
+                    //$"Ships Lost: {savedSquad.Stats.ShipsLost} " +
+                    //$"Damage Done: {savedSquad.Stats.DamageDone} " +
+                    //$"Damage Received: {savedSquad.Stats.DamageReceived} " +
+                    //$"Kills: {savedSquad.Stats.Kills} ");
+
+                    //savedSquad.GetShips().ForEach((squadShip) =>
+                    //{
+                    //    FleetShip fleetShip = squadShip.GetFleetShip();
+                    //    Debug.Log($"Saving stats for {fleetShip.Name}: " +
+                    //    $"Battles Fought: {fleetShip.BattlesFought} " +
+                    //    $"Battles Won: {fleetShip.BattlesWon} " +
+                    //    $"Damage Done: {fleetShip.DamageDone} " +
+                    //    $"Damage Received: {fleetShip.DamageReceived} " +
+                    //    $"Shots Fired: {fleetShip.ShotsFired} " +
+                    //    $"Kills: {fleetShip.Kills} ");
+                    //});
+                }
+
                 ConfigData.AllShips.SaveFleetData();
                 ConfigData.AllShips.SaveSquadData();
             }

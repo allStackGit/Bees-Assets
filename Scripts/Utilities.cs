@@ -464,6 +464,28 @@ namespace Assets.Scripts
             //Debug.Log($"Power: {(power * ProjectileValue)}, DPS: {((power * ProjectileValue) / rateOfFire)}, Range: {Mathf.Pow((range / 20), 2)}");
             return rateOfFire > 0 ? ((((power*ProjectileValue) / rateOfFire) * Mathf.Clamp(rotationRate/128, .5f, 1.25f)) * Mathf.Pow((range / 20), 2)) : specialFirepower;
         }
+        /// <summary>
+        /// Raycasts from GetPosition() to destination to check for any obstacles in the path. Returns true if there are obstacles in the way
+        /// </summary>
+        /// <param name="destination"></param>
+        /// <returns></returns>
+        public static bool HasObstaclesInTheWay(Vector2 start, Vector2 end)
+        {
+            return Physics2D.Linecast(start, end, ConfigData.ObstaclesLayer).collider != null;
+        }
+        public static void Print2DArray(bool[][] array)
+        {
+            Debug.Log($"Printing array {array}, {array.Length}");
+            for (int x = 0; x < array.Length; x++)
+            {
+                string line = "";
+                for (int y = 0; y < array[x].Length; y++)
+                {
+                    line += $"{(array[x][y] ? "%" : "+")},";
+                } 
+                Debug.Log(line);
+            }
+        }
 
 
 

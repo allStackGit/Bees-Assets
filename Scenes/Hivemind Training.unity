@@ -878,6 +878,7 @@ MonoBehaviour:
   UseFullyRandomEnemySquads: 0
   RecordStats: 0
   DoesUserHaveController: 0
+  HasObstacles: 0
   OverrideTimeScale: 0
   TimeoutTime: 900
   SquadCount: 8
@@ -940,6 +941,10 @@ MonoBehaviour:
   MaxDistance: 0
   HalfX: 0
   HalfY: 0
+  MapWidth: 0
+  MapHeight: 0
+  HalfMapWidth: 0
+  HalfMapHeight: 0
   Seconds: 0
   Id: 622947681
 --- !u!1001 &186620381
@@ -1680,6 +1685,7 @@ MonoBehaviour:
   UseFullyRandomEnemySquads: 0
   RecordStats: 0
   DoesUserHaveController: 0
+  HasObstacles: 0
   OverrideTimeScale: 0
   TimeoutTime: 900
   SquadCount: 8
@@ -1742,6 +1748,10 @@ MonoBehaviour:
   MaxDistance: 0
   HalfX: 0
   HalfY: 0
+  MapWidth: 0
+  MapHeight: 0
+  HalfMapWidth: 0
+  HalfMapHeight: 0
   Seconds: 0
   Id: 794777470
 --- !u!4 &236735925 stripped
@@ -3798,7 +3808,8 @@ MonoBehaviour:
   UseFullyRandomEnemySquads: 0
   RecordStats: 0
   DoesUserHaveController: 0
-  OverrideTimeScale: 0
+  HasObstacles: 0
+  OverrideTimeScale: 1
   TimeoutTime: 900
   SquadCount: 8
   MiniMapCamera: {fileID: 1653464701}
@@ -3860,6 +3871,10 @@ MonoBehaviour:
   MaxDistance: 0
   HalfX: 0
   HalfY: 0
+  MapWidth: 0
+  MapHeight: 0
+  HalfMapWidth: 0
+  HalfMapHeight: 0
   Seconds: 0
   Id: 480978292
 --- !u!1001 &716609638
@@ -3990,7 +4005,8 @@ MonoBehaviour:
   UseFullyRandomEnemySquads: 0
   RecordStats: 0
   DoesUserHaveController: 0
-  OverrideTimeScale: 0
+  HasObstacles: 0
+  OverrideTimeScale: 1
   TimeoutTime: 900
   SquadCount: 8
   MiniMapCamera: {fileID: 1653464701}
@@ -4052,6 +4068,10 @@ MonoBehaviour:
   MaxDistance: 0
   HalfX: 0
   HalfY: 0
+  MapWidth: 0
+  MapHeight: 0
+  HalfMapWidth: 0
+  HalfMapHeight: 0
   Seconds: 0
   Id: 402140480
 --- !u!1 &722257999
@@ -5053,6 +5073,7 @@ MonoBehaviour:
   UseFullyRandomEnemySquads: 0
   RecordStats: 0
   DoesUserHaveController: 0
+  HasObstacles: 0
   OverrideTimeScale: 0
   TimeoutTime: 900
   SquadCount: 8
@@ -5115,6 +5136,10 @@ MonoBehaviour:
   MaxDistance: 0
   HalfX: 0
   HalfY: 0
+  MapWidth: 0
+  MapHeight: 0
+  HalfMapWidth: 0
+  HalfMapHeight: 0
   Seconds: 0
   Id: 496730102
 --- !u!1 &925163044
@@ -5493,7 +5518,7 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 1
   m_Sprite: {fileID: 7482667652216324306, guid: 311925a002f4447b3a28927169b83ea6, type: 3}
-  m_Color: {r: 0.990566, g: 0.2476415, b: 0.2476415, a: 1}
+  m_Color: {r: 0.990566, g: 0.2476415, b: 0.2476415, a: 0}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
@@ -5835,7 +5860,7 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 1
   m_Sprite: {fileID: 7482667652216324306, guid: 311925a002f4447b3a28927169b83ea6, type: 3}
-  m_Color: {r: 0.990566, g: 0.2476415, b: 0.2476415, a: 1}
+  m_Color: {r: 0.990566, g: 0.2476415, b: 0.2476415, a: 0}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
@@ -6058,6 +6083,7 @@ MonoBehaviour:
   UseFullyRandomEnemySquads: 0
   RecordStats: 0
   DoesUserHaveController: 1
+  HasObstacles: 1
   OverrideTimeScale: 1
   TimeoutTime: 900
   SquadCount: 8
@@ -6103,10 +6129,10 @@ MonoBehaviour:
   ScrollSpeed: 25
   IsTestFiring: 0
   UseMouseScrolling: 0
-  UserStartingPosition: {x: 0, y: -155}
+  UserStartingPosition: {x: -200, y: -155}
   AIStartingPosition: {x: 0, y: 155}
   MouseScrollDistanceFromEdge: {x: 10, y: 10}
-  DefaultCameraPosition: {x: 0, y: -155}
+  DefaultCameraPosition: {x: -200, y: -155}
   Audio: {fileID: 0}
   HasBeeTypes: []
   FoundBeeTypes: []
@@ -6120,6 +6146,10 @@ MonoBehaviour:
   MaxDistance: 0
   HalfX: 0
   HalfY: 0
+  MapWidth: 0
+  MapHeight: 0
+  HalfMapWidth: 0
+  HalfMapHeight: 0
   Seconds: 0
   Id: 905286758
 --- !u!4 &1124640320 stripped
@@ -8732,7 +8762,7 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 1
   m_Sprite: {fileID: 7482667652216324306, guid: 311925a002f4447b3a28927169b83ea6, type: 3}
-  m_Color: {r: 0.990566, g: 0.2476415, b: 0.2476415, a: 1}
+  m_Color: {r: 0.990566, g: 0.2476415, b: 0.2476415, a: 0}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
@@ -8870,6 +8900,7 @@ MonoBehaviour:
   UseFullyRandomEnemySquads: 0
   RecordStats: 0
   DoesUserHaveController: 0
+  HasObstacles: 0
   OverrideTimeScale: 0
   TimeoutTime: 900
   SquadCount: 8
@@ -8932,6 +8963,10 @@ MonoBehaviour:
   MaxDistance: 0
   HalfX: 0
   HalfY: 0
+  MapWidth: 0
+  MapHeight: 0
+  HalfMapWidth: 0
+  HalfMapHeight: 0
   Seconds: 0
   Id: 740936145
 --- !u!1 &1833581343
@@ -9304,7 +9339,8 @@ MonoBehaviour:
   UseFullyRandomEnemySquads: 0
   RecordStats: 0
   DoesUserHaveController: 0
-  OverrideTimeScale: 0
+  HasObstacles: 0
+  OverrideTimeScale: 1
   TimeoutTime: 900
   SquadCount: 8
   MiniMapCamera: {fileID: 1653464701}
@@ -9366,6 +9402,10 @@ MonoBehaviour:
   MaxDistance: 0
   HalfX: 0
   HalfY: 0
+  MapWidth: 0
+  MapHeight: 0
+  HalfMapWidth: 0
+  HalfMapHeight: 0
   Seconds: 0
   Id: 862373811
 --- !u!1 &1915141791
@@ -9442,7 +9482,7 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 1
   m_Sprite: {fileID: 7482667652216324306, guid: 311925a002f4447b3a28927169b83ea6, type: 3}
-  m_Color: {r: 0.990566, g: 0.2476415, b: 0.2476415, a: 1}
+  m_Color: {r: 0.990566, g: 0.2476415, b: 0.2476415, a: 0}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
@@ -10090,6 +10130,7 @@ MonoBehaviour:
   UseFullyRandomEnemySquads: 0
   RecordStats: 0
   DoesUserHaveController: 0
+  HasObstacles: 0
   OverrideTimeScale: 0
   TimeoutTime: 900
   SquadCount: 8
@@ -10152,6 +10193,10 @@ MonoBehaviour:
   MaxDistance: 0
   HalfX: 0
   HalfY: 0
+  MapWidth: 0
+  MapHeight: 0
+  HalfMapWidth: 0
+  HalfMapHeight: 0
   Seconds: 0
   Id: 244585541
 --- !u!1001 &2000405207
@@ -10618,6 +10663,10 @@ PrefabInstance:
       propertyPath: m_SortingLayer
       value: 1
       objectReference: {fileID: 0}
+    - target: {fileID: 1414471931842553196, guid: 7f8e1f3e68d4e9445851f71402a14a19, type: 3}
+      propertyPath: m_IsTrigger
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 4086365004158832523, guid: 7f8e1f3e68d4e9445851f71402a14a19, type: 3}
       propertyPath: Name
       value: Test Obstacle
@@ -10628,7 +10677,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4291408508889458111, guid: 7f8e1f3e68d4e9445851f71402a14a19, type: 3}
       propertyPath: m_LocalScale.x
-      value: 200
+      value: 100
       objectReference: {fileID: 0}
     - target: {fileID: 4291408508889458111, guid: 7f8e1f3e68d4e9445851f71402a14a19, type: 3}
       propertyPath: m_LocalScale.y
@@ -10636,11 +10685,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4291408508889458111, guid: 7f8e1f3e68d4e9445851f71402a14a19, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 0
+      value: -206
       objectReference: {fileID: 0}
     - target: {fileID: 4291408508889458111, guid: 7f8e1f3e68d4e9445851f71402a14a19, type: 3}
       propertyPath: m_LocalPosition.y
-      value: -135
+      value: -128
       objectReference: {fileID: 0}
     - target: {fileID: 4291408508889458111, guid: 7f8e1f3e68d4e9445851f71402a14a19, type: 3}
       propertyPath: m_LocalPosition.z

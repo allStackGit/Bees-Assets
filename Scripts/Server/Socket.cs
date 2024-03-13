@@ -222,7 +222,11 @@ namespace Assets.Scripts.Server
             }
             while (MessageQueue.Count > 0)
             {
-                Message(MessageQueue.Dequeue());
+                byte[] message = MessageQueue.Dequeue();
+                if (message != null)
+                {
+                    Message(message);
+                }
             }
             CheckStandingRequests();
         }

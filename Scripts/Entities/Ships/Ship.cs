@@ -356,42 +356,58 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         // movement methods
         public void MoveToPoint(Vector2 destination)
         {
-            DestinationQueue = FindShortestPath(destination);
-            TargetCoordinates = DestinationQueue.Dequeue();
-            HasTargetCoordinates = true;
-        }
-
-        private Queue<Vector2> FindShortestPath(Vector2 destination)
-        {
-            float start = Time.realtimeSinceStartup;
-            Queue<Vector2> destinationQueue = new Queue<Vector2>();
             destination = Level.ForceBounds(destination);
-
-            Debug.Log($"Finding shortest path from {GetPosition()} to {destination} for {Name}");
-
-            if (HasObstaclesInTheWay(destination))
+            if (Level.HasObstacles)
             {
-                Debug.Log("There is an obstacle in the way, using astar to find a path");
+                FindShortestPath(destination);
+                if (DestinationQueue.Count > 0)
+                {
+                    TargetCoordinates = DestinationQueue.Dequeue();
+                    HasTargetCoordinates = true;
+                    Debug.Log($"We've got a destination queue {DestinationQueue.Count} entries long! Heading to {TargetCoordinates} first");
+                }
             }
             else
             {
-                Debug.Log("There is straight line to the destination");
-                destinationQueue.Enqueue(destination);
+                TargetCoordinates = destination;
+                HasTargetCoordinates = true;
             }
-            float end = (Time.realtimeSinceStartup - start) * 1000;
+        }
+
+        private void FindShortestPath(Vector2 destination)
+        {
+            float start = Time.realtimeSinceStartup;
+            DestinationQueue.Clear();
+            Vector2 startPosition = GetPosition();
+            
+
+            //Debug.Log($"Finding shortest path from {startPosition} to {destination} for {Name}");
+
+            if (Utilities.HasObstaclesInTheWay(startPosition, destination))
+            {
+                //Vector2Int testStart = new Vector2Int(-Level.HalfMapWidth, Level.HalfMapHeight);
+                Vector2Int convertedStart = Level.ConvertToPathfindingMapCoordinates(startPosition);
+                Vector2Int convertedDestination = Level.ConvertToPathfindingMapCoordinates(destination);
+                //Debug.Log($"There is an obstacle in the way, using astar to find a path, start: {convertedStart}, end: {convertedDestination}");
+                //Debug.Log(Level.ConvertPathfindingToMapCoordinates(new Vector2Int(0, 0)));
+                List<Vector2Int> result = new Astar(Level.PathfindingMap, convertedStart, convertedDestination, Astar.Type.Diagonal).Result;
+                Debug.Log(result.Count);
+                for (int i = 0; i < result.Count; i++)
+                {
+                    Vector2 point = Level.ConvertPathfindingMapToLevelCoordinates(result[i]);
+                    //Debug.Log($"Destination #{(i + 1)}: {point}");
+                    DestinationQueue.Enqueue(point);
+                }
+
+            }
+            else
+            {
+                //Debug.Log("There is straight line to the destination");
+                DestinationQueue.Enqueue(destination);
+            }
+            float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
             Debug.Log($"FindShortestPath() took {end} ms to complete.");
 
-            return destinationQueue;
-        }
-        /// <summary>
-        /// Raycasts from GetPosition() to destination to check for any obstacles in the path. Returns true if there are obstacles in the way
-        /// </summary>
-        /// <param name="destination"></param>
-        /// <returns></returns>
-        private bool HasObstaclesInTheWay(Vector2 destination)
-        {
-            RaycastHit2D hit = Physics2D.Linecast(GetPosition(),  destination, ConfigData.ObstaclesLayer);
-            return hit.collider != null;
         }
 
         private void Move()
@@ -514,6 +530,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             if (DestinationQueue.Count > 0)
             {
                 TargetCoordinates = DestinationQueue.Dequeue();
+                //Debug.Log($"There are more target coordinates, not ending movement: {TargetCoordinates}");
             }
             else
             {
@@ -535,7 +552,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         public void StopMoving(string reason)
         {
            
-            __LastStopReason = $"Stopped at {GetPosition()} on the way to {TargetCoordinates} because of {reason} at {Age} ticks.";
+            //__LastStopReason = $"Stopped at {GetPosition()} on the way to {TargetCoordinates} because of {reason} at {Age} ticks.";
+            Debug.Log(__LastStopReason);
             TargetCoordinates = Vector2.zero;
             Body.velocity = Vector2.zero;
             HasTargetCoordinates = false;

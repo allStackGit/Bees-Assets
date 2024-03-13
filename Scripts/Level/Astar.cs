@@ -1,5 +1,5 @@
 ﻿/*
-Unity C# Fork of stylophone's Astar.cs https://gist.github.com/stylophone/3448727
+Unity C# Port of Andrea Giammarchi's JavaScript A* algorithm (http://devpro.it/javascript_id_137.html)
 Usage:
 0 = walkable;
 1 = wall;

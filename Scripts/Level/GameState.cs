@@ -132,6 +132,7 @@ namespace Assets.Scripts.Level
             //_commands.Add(command);
             _pastCommands.Add(new StoredCommand(command));
             AICommands++;
+            ConfigData.__HivemindCommands++;
         }
 
 

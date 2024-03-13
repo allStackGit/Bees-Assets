@@ -14,7 +14,8 @@ namespace Assets.Scripts.Entities
         private void Awake()
         {
             InitialHealth = Health;
-            Debug.Log($"Obstacle has awoken: {Name}: {Health}");
+            gameObject.name = Name;
+            //Debug.Log($"Obstacle has awoken: {Name}: {Health}");
         }
         public void Kill()
         {
