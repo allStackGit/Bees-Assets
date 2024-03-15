@@ -144,16 +144,17 @@ namespace Assets.Scripts.Level.Commands
                 //Debug.Log("Bombing timer");
                 Squad.Status = $"In the middle of bombing run against {Enemy.Name}";
                 List<Ship> ships = Squad.GetShips();
-                for (int i = 0; i < ships.Count; i++)
+                List<FireShip> fireShipsToDetonate = new List<FireShip>();
+                Squad.GetShips().ForEach((ship) =>
                 {
-                    Ship ship = ships[i];
-                    if (ShouldShipPursueTarget(ship)) 
+                    if (ShouldShipPursueTarget(ship))
                     {
 
                         SendShipToTarget(ship);
                         if (ship.ShipType == "Fire Ship" && ship.DistanceToPoint(ship.TargetCoordinates) < (ConfigData.FireShipExplosionSize - 5))
                         {
-                            ((FireShip)ship).Detonate(); // if you're a fire ship and within detonation distance of your target, detonate
+                            // if you're a fire ship and within detonation distance of your target, detonate
+                            fireShipsToDetonate.Add((FireShip)ship);
                         }
                     }
                     else // if you don't have target ships or all of them are dead
@@ -174,7 +175,17 @@ namespace Assets.Scripts.Level.Commands
                         Striker striker = (Striker)ship;
                         striker.ReturnToCarrierIfNecessary();
                     }
-                }
+                });
+
+                fireShipsToDetonate.ForEach((fireShip) =>
+                {
+                    fireShip.Detonate();
+                });
+                //for (int i = 0; i < ships.Count; i++)
+                //{
+                //    Ship ship = ships[i];
+                    
+                //}
                 
 
                 if (HaveAllShipsFinished(ships))

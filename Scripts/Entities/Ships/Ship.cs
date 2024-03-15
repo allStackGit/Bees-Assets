@@ -25,13 +25,13 @@ namespace Assets.Scripts.Entities.Ships
         public int Health, MaxHealth, OriginalHealth, OriginalTsv, Sight, AdditionalTsv;
         public float ProjectileValue, Speed, SpecialFirePower;
         public GameObject ShipExplosion, HealthBar, MiniMapIcon;
-        public Vector2 TargetCoordinates, OffsetFromCenter; // the coordinates of where the ship should go, and it's offset from the center of the squad
+        public Vector2 TargetCoordinates, FinalDestination, OffsetFromCenter; // the coordinates of where the ship should go, and it's offset from the center of the squad
         public Squad Squad;
         public float DefaultAngle;
         public long LastKilled;
         public FleetShip FleetShip = null;
         public string ShipType, Name;
-        public bool FireAtFrontOfShip, InCombat;
+        public bool FireAtFrontOfShip, InCombat, IsFollowingPath;
         /// <summary>
         /// A ship can be killed at some point of the frame and still exist until the end of the frame. Check this to see if a ship is dead but not yet destroyed.
         /// </summary>
@@ -41,6 +41,7 @@ namespace Assets.Scripts.Entities.Ships
         public List<GameObject> ProjectilePrefabs, WeaponPrefabs, ColoredPrefabs;
         public Brain Brain = null;
         public Queue<Vector2> DestinationQueue = new Queue<Vector2>();
+        public List<Obstacle> NearbyObstacles = new List<Obstacle>();
 
 
 
@@ -362,13 +363,17 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 FindShortestPath(destination);
                 if (DestinationQueue.Count > 0)
                 {
+                    FinalDestination = DestinationQueue.Last();
                     TargetCoordinates = DestinationQueue.Dequeue();
+                    IsFollowingPath = true;
                     HasTargetCoordinates = true;
                     Debug.Log($"We've got a destination queue {DestinationQueue.Count} entries long! Heading to {TargetCoordinates} first");
+                    InvokeRepeating(nameof(CheckForDirectPath), 5f, 5f);
                 }
             }
             else
             {
+                IsFollowingPath = false;
                 TargetCoordinates = destination;
                 HasTargetCoordinates = true;
             }
@@ -385,16 +390,20 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
             if (Utilities.HasObstaclesInTheWay(startPosition, destination))
             {
-                //Vector2Int testStart = new Vector2Int(-Level.HalfMapWidth, Level.HalfMapHeight);
-                Vector2Int convertedStart = Level.ConvertToPathfindingMapCoordinates(startPosition);
-                Vector2Int convertedDestination = Level.ConvertToPathfindingMapCoordinates(destination);
+                if (Level.Pathfinder.NeedsToBeUpdated)
+                {
+                    Level.Pathfinder.UpdateMap(NearbyObstacles);
+                }
+
+                Vector2Int convertedStart = Level.Pathfinder.ConvertToMapCoordinates(startPosition);
+                Vector2Int convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
                 //Debug.Log($"There is an obstacle in the way, using astar to find a path, start: {convertedStart}, end: {convertedDestination}");
                 //Debug.Log(Level.ConvertPathfindingToMapCoordinates(new Vector2Int(0, 0)));
-                List<Vector2Int> result = new Astar(Level.PathfindingMap, convertedStart, convertedDestination, Astar.Type.EuclideanFree).Result;
-                //Debug.Log(result.Count);
+
+                List<Vector2Int> result = new Astar(Level.Pathfinder.Map, convertedStart, convertedDestination, Astar.Type.EuclideanFree).Result;
                 for (int i = 0; i < result.Count; i++)
                 {
-                    Vector2 point = Level.ConvertPathfindingMapToLevelCoordinates(result[i]);
+                    Vector2 point = Level.Pathfinder.ConvertToLevelCoordinates(result[i]);
                     //Debug.Log($"Destination #{(i + 1)}: {point}");
                     DestinationQueue.Enqueue(point);
                 }
@@ -409,7 +418,20 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             Debug.Log($"FindShortestPath() took {end} ms to complete.");
 
         }
-
+        /// <summary>
+        /// Periodically called while following a pathfinding path. Checks to see if there are any obstacles in the way and if not, cuts off the destination queue and takes a direct path
+        /// </summary>
+        private void CheckForDirectPath()
+        {
+            if (!Utilities.HasObstaclesInTheWay(GetPosition(), FinalDestination))
+            {
+                Debug.Log($"Found a direct path for {Name} to {FinalDestination}");
+                TargetCoordinates = FinalDestination;
+                IsFollowingPath = false;
+                DestinationQueue.Clear();
+                CancelInvoke(nameof(CheckForDirectPath));
+            }
+        }
         private void Move()
         {
             if (HasBrain && !Squad.IsUserControlled)
@@ -558,6 +580,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             TargetCoordinates = Vector2.zero;
             Body.velocity = Vector2.zero;
             HasTargetCoordinates = false;
+            IsFollowingPath = false;
+            DestinationQueue.Clear();
             //transform.position = TargetCoordinates;
             //SetToDefaultAngle();
         }

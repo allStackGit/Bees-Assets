@@ -1080,6 +1080,8 @@ MonoBehaviour:
   SelectionBox: {fileID: 2108627698}
   SquadBox: {fileID: 4393128050314196725, guid: 606f56cf5efd9f84d9e877d10187ad8b, type: 3}
   MiniMapContainer: {fileID: 1317578646}
+  ObstaclePrefabs: []
+  CollisionAsteroidPrefabs: []
   Menus: {fileID: 0}
   MapRenderer: {fileID: 0}
   MinX: 0
@@ -1117,10 +1119,6 @@ MonoBehaviour:
   HalfMapHeight: 0
   Seconds: 0
   Id: 622947681
-  PathFindingMapWidth: 0
-  PathFindingMapHeight: 0
-  PathFindingMapHalfWidth: 0
-  PathFindingMapHalfHeight: 0
 --- !u!1001 &163668416
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1986,6 +1984,8 @@ MonoBehaviour:
   SelectionBox: {fileID: 2108627698}
   SquadBox: {fileID: 4393128050314196725, guid: 606f56cf5efd9f84d9e877d10187ad8b, type: 3}
   MiniMapContainer: {fileID: 1317578646}
+  ObstaclePrefabs: []
+  CollisionAsteroidPrefabs: []
   Menus: {fileID: 0}
   MapRenderer: {fileID: 0}
   MinX: 0
@@ -2023,10 +2023,6 @@ MonoBehaviour:
   HalfMapHeight: 0
   Seconds: 0
   Id: 794777470
-  PathFindingMapWidth: 0
-  PathFindingMapHeight: 0
-  PathFindingMapHalfWidth: 0
-  PathFindingMapHalfHeight: 0
 --- !u!4 &236735925 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 5790540700919467307, guid: 3fafbd32112ea274ca305ce0b38a6a94, type: 3}
@@ -2461,6 +2457,10 @@ PrefabInstance:
     - target: {fileID: 7879729711353278377, guid: f4481f8ec514aab46a19424ab5e9c0b0, type: 3}
       propertyPath: m_Name
       value: Polygon Obstacle
+      objectReference: {fileID: 0}
+    - target: {fileID: 7879729711353278377, guid: f4481f8ec514aab46a19424ab5e9c0b0, type: 3}
+      propertyPath: m_IsActive
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -4367,6 +4367,8 @@ MonoBehaviour:
   SelectionBox: {fileID: 2108627698}
   SquadBox: {fileID: 4393128050314196725, guid: 606f56cf5efd9f84d9e877d10187ad8b, type: 3}
   MiniMapContainer: {fileID: 1317578646}
+  ObstaclePrefabs: []
+  CollisionAsteroidPrefabs: []
   Menus: {fileID: 0}
   MapRenderer: {fileID: 0}
   MinX: 0
@@ -4404,10 +4406,6 @@ MonoBehaviour:
   HalfMapHeight: 0
   Seconds: 0
   Id: 480978292
-  PathFindingMapWidth: 0
-  PathFindingMapHeight: 0
-  PathFindingMapHalfWidth: 0
-  PathFindingMapHalfHeight: 0
 --- !u!1001 &716609638
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -4568,6 +4566,8 @@ MonoBehaviour:
   SelectionBox: {fileID: 2108627698}
   SquadBox: {fileID: 4393128050314196725, guid: 606f56cf5efd9f84d9e877d10187ad8b, type: 3}
   MiniMapContainer: {fileID: 1317578646}
+  ObstaclePrefabs: []
+  CollisionAsteroidPrefabs: []
   Menus: {fileID: 0}
   MapRenderer: {fileID: 0}
   MinX: 0
@@ -4605,10 +4605,6 @@ MonoBehaviour:
   HalfMapHeight: 0
   Seconds: 0
   Id: 402140480
-  PathFindingMapWidth: 0
-  PathFindingMapHeight: 0
-  PathFindingMapHalfWidth: 0
-  PathFindingMapHalfHeight: 0
 --- !u!1 &722257999
 GameObject:
   m_ObjectHideFlags: 0
@@ -5832,6 +5828,8 @@ MonoBehaviour:
   SelectionBox: {fileID: 2108627698}
   SquadBox: {fileID: 4393128050314196725, guid: 606f56cf5efd9f84d9e877d10187ad8b, type: 3}
   MiniMapContainer: {fileID: 1317578646}
+  ObstaclePrefabs: []
+  CollisionAsteroidPrefabs: []
   Menus: {fileID: 0}
   MapRenderer: {fileID: 0}
   MinX: 0
@@ -5869,10 +5867,6 @@ MonoBehaviour:
   HalfMapHeight: 0
   Seconds: 0
   Id: 496730102
-  PathFindingMapWidth: 0
-  PathFindingMapHeight: 0
-  PathFindingMapHalfWidth: 0
-  PathFindingMapHalfHeight: 0
 --- !u!1 &925163044
 GameObject:
   m_ObjectHideFlags: 0
@@ -6846,6 +6840,12 @@ MonoBehaviour:
   SelectionBox: {fileID: 2108627698}
   SquadBox: {fileID: 4393128050314196725, guid: 606f56cf5efd9f84d9e877d10187ad8b, type: 3}
   MiniMapContainer: {fileID: 1317578646}
+  ObstaclePrefabs:
+  - {fileID: 4057115948159840819, guid: 7af32c7ab23df8e498b7b176ef7c568c, type: 3}
+  - {fileID: 8266918874014940751, guid: f9736ad95b539174cb8ab30ebee39627, type: 3}
+  - {fileID: 2468503118127858094, guid: ca5b03952afd84743b50301f41e9bb12, type: 3}
+  CollisionAsteroidPrefabs:
+  - {fileID: 7879729711353278377, guid: 028d8479ccc194b44824e34bfa029f9c, type: 3}
   Menus: {fileID: 0}
   MapRenderer: {fileID: 0}
   MinX: 0
@@ -6883,10 +6883,6 @@ MonoBehaviour:
   HalfMapHeight: 0
   Seconds: 0
   Id: 905286758
-  PathFindingMapWidth: 0
-  PathFindingMapHeight: 0
-  PathFindingMapHalfWidth: 0
-  PathFindingMapHalfHeight: 0
 --- !u!4 &1124640320 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 5790540700919467307, guid: 3fafbd32112ea274ca305ce0b38a6a94, type: 3}
@@ -9767,6 +9763,8 @@ MonoBehaviour:
   SelectionBox: {fileID: 2108627698}
   SquadBox: {fileID: 4393128050314196725, guid: 606f56cf5efd9f84d9e877d10187ad8b, type: 3}
   MiniMapContainer: {fileID: 1317578646}
+  ObstaclePrefabs: []
+  CollisionAsteroidPrefabs: []
   Menus: {fileID: 0}
   MapRenderer: {fileID: 0}
   MinX: 0
@@ -9804,10 +9802,6 @@ MonoBehaviour:
   HalfMapHeight: 0
   Seconds: 0
   Id: 740936145
-  PathFindingMapWidth: 0
-  PathFindingMapHeight: 0
-  PathFindingMapHalfWidth: 0
-  PathFindingMapHalfHeight: 0
 --- !u!1 &1833581343
 GameObject:
   m_ObjectHideFlags: 0
@@ -10295,6 +10289,8 @@ MonoBehaviour:
   SelectionBox: {fileID: 2108627698}
   SquadBox: {fileID: 4393128050314196725, guid: 606f56cf5efd9f84d9e877d10187ad8b, type: 3}
   MiniMapContainer: {fileID: 1317578646}
+  ObstaclePrefabs: []
+  CollisionAsteroidPrefabs: []
   Menus: {fileID: 0}
   MapRenderer: {fileID: 0}
   MinX: 0
@@ -10332,10 +10328,6 @@ MonoBehaviour:
   HalfMapHeight: 0
   Seconds: 0
   Id: 862373811
-  PathFindingMapWidth: 0
-  PathFindingMapHeight: 0
-  PathFindingMapHalfWidth: 0
-  PathFindingMapHalfHeight: 0
 --- !u!1001 &1901325301
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -11175,6 +11167,8 @@ MonoBehaviour:
   SelectionBox: {fileID: 2108627698}
   SquadBox: {fileID: 4393128050314196725, guid: 606f56cf5efd9f84d9e877d10187ad8b, type: 3}
   MiniMapContainer: {fileID: 1317578646}
+  ObstaclePrefabs: []
+  CollisionAsteroidPrefabs: []
   Menus: {fileID: 0}
   MapRenderer: {fileID: 0}
   MinX: 0
@@ -11212,10 +11206,6 @@ MonoBehaviour:
   HalfMapHeight: 0
   Seconds: 0
   Id: 244585541
-  PathFindingMapWidth: 0
-  PathFindingMapHeight: 0
-  PathFindingMapHalfWidth: 0
-  PathFindingMapHalfHeight: 0
 --- !u!4 &1983015633 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 4291408508889458111, guid: 7f8e1f3e68d4e9445851f71402a14a19, type: 3}

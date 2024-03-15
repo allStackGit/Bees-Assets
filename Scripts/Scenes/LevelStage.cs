@@ -12,6 +12,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
+using System.Security.Cryptography;
 using Unity.MLAgents;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -40,6 +41,8 @@ namespace Assets.Scripts.Scenes
             FactoryPrefab, FireShipPrefab, FlagshipPrefab, FrigatePrefab, GunshipPrefab, HoneybeePrefab, HornetPrefab, LeafcutterPrefab, QueenPrefab,
             ScoutPrefab, StrikerPrefab, WarpGatePrefab, WaspPrefab, YellowJacketPrefab,
             Map, UIManager, SelectionBox, SquadBox, MiniMapContainer;
+        public List<GameObject> ObstaclePrefabs = new List<GameObject>();
+        public List<GameObject> CollisionAsteroidPrefabs = new List<GameObject>();
         public GameMenus Menus;
         public LevelInputManager InputManager;
         public dynamic TestObject = null;
@@ -66,17 +69,8 @@ namespace Assets.Scripts.Scenes
         public float Seconds;
         public int Id = Utilities.Hash();
         public HashSet<int> HandledRequests = new HashSet<int>();
-        /// <summary>
-        /// A boolean array of all integer coordinates on the map. False = valid space. True = obstacle
-        /// </summary>
-        public bool[][] PathfindingMap;
-        /// <summary>
-        /// How much scaled down the pathfinding map is compared to the real map. Smaller size increases speed but decreases precision. Obstacles must be 
-        /// at least as large on both axis as this number
-        /// </summary>
-        private int PathFindingMapScale = 1;  
-        public int PathFindingMapWidth, PathFindingMapHeight, PathFindingMapHalfWidth, PathFindingMapHalfHeight;
-
+        public Pathfinder Pathfinder;
+       
 
         public float CurrentZoom => Camera.orthographicSize;
         public bool HasFoundAllBees => HasBeeTypes.Count == FoundBeeTypes.Count;
@@ -171,10 +165,7 @@ namespace Assets.Scripts.Scenes
             HalfMapWidth = MapWidth / 2;
             HalfMapHeight = MapHeight / 2;
 
-            PathFindingMapWidth = MapWidth / PathFindingMapScale;
-            PathFindingMapHeight = MapHeight / PathFindingMapScale;
-            PathFindingMapHalfWidth = HalfMapWidth / PathFindingMapScale;
-            PathFindingMapHalfHeight = HalfMapHeight / PathFindingMapScale;
+
 
             MinX = MapRenderer.localBounds.min.x + ConfigData.MapEdgePadding.x;
             MinY = MapRenderer.localBounds.min.y + ConfigData.MapEdgePadding.y;
@@ -203,7 +194,8 @@ namespace Assets.Scripts.Scenes
 
             if (HasObstacles)
             {
-                FillPathfindingMap();
+                SpawnObstacles();
+                Pathfinder = new Pathfinder(this);
             }
 
             //Invoke(nameof(TimedOut), 60 * 5f);
@@ -230,106 +222,22 @@ namespace Assets.Scripts.Scenes
             }
         }
 
-        private void FillPathfindingMap()
+        
+
+        private void SpawnObstacles()
         {
-            float start = Time.realtimeSinceStartup;
-            Debug.Log($"Loading pathfinding map at {PathFindingMapScale}x");
-
-            // initialize everything as open space
-            PathfindingMap = new bool[PathFindingMapWidth][]; 
-
-            for (int x = 0; x < PathfindingMap.Length; x++)
+            ObstaclePrefabs.ForEach((obstacle) =>
             {
-                PathfindingMap[x] = new bool[PathFindingMapHeight]; // [alert] only works for rectanglular maps, default of false means walkable
-                //for (int y = 0; y < PathfindingMap[x].Length; y++)
-                //{
-                //    PathfindingMap[x][y] = true;
-                //}
-            }
+                GameObject instance = Instantiate(obstacle);
+                instance.transform.parent = Map.transform;
+            });
 
-            GameObject[] obstacles = GameObject.FindGameObjectsWithTag("Obstacle");
-
-            foreach(GameObject obstacle in obstacles)
+            CollisionAsteroidPrefabs.ForEach((collisionAsteroidPrefab) =>
             {
-
-                Collider2D collider = obstacle.transform.GetComponent<Collider2D>();
-                Vector2 position = obstacle.transform.position;
-                Vector2Int intPosition = new Vector2Int(Convert.ToInt32(position.x), Convert.ToInt32(position.y));
-
-                int width = Convert.ToInt32(obstacle.transform.localScale.x);
-                int height = Convert.ToInt32(obstacle.transform.localScale.y);
-
-                int startX = Convert.ToInt32(position.x - (width / 2));
-                int startY = Convert.ToInt32(position.y + (height / 2));
-
-                bool isPolygon = false;
-                bool isRotated = false;
-                float rotation = obstacle.transform.localEulerAngles.z * Mathf.Deg2Rad;
-
-                if (collider is PolygonCollider2D)
-                {
-                    Bounds bounds = collider.bounds;
-
-                    width = (int)bounds.size.x;
-                    height = (int)bounds.size.y;
-                    startX = Convert.ToInt32(position.x - (width / 2));
-                    startY = Convert.ToInt32(position.y + (height / 2));
-                    Debug.Log($"{collider.transform.name} is a polygon collider with a width of {width} and a height of {height} and a rotation of {rotation} that starts at {startX}, {startY}");
-                    isPolygon = true;
-                }
-                if (rotation != 0 && !isPolygon)
-                {
-                    Debug.Log($"{obstacle.gameObject.name} is rotated by {obstacle.transform.localEulerAngles.z} degrees / {rotation} radians");
-                    isRotated = true;
-                }
-                int i = 0;
-                for (int y = startY; y > startY - height; y -= PathFindingMapScale) // go across the bounds top to bottom (decreasing)
-                {
-                    for (int x = startX; x < startX + width; x += PathFindingMapScale) // go across the bounds, left to right (increasing)
-                    {
-                        i++;
-                        Vector2Int point = new Vector2Int(x, y);
-                        if (!isPolygon || collider.OverlapPoint(point))
-                        {
-
-                            if (isRotated)
-                            {
-                                Vector2Int rotatedPoint = Utilities.RotateIntPointAroundPoint(intPosition, point, rotation);
-                                //Debug.Log($"#{i} Rotated {point} around {intPosition} to {rotatedPoint}");
-                                point = rotatedPoint;
-                            }
-                            Vector2Int converted = ConvertToPathfindingMapCoordinates(point);
-                            //Debug.Log($"#{i} Converted {point} on the Map to (scaled) {converted} on the PathfindingMap");
-
-
-                            PathfindingMap[converted.y][converted.x] = true; // [note] I haven't figured out why we need to pass the Y to the X and the X to the Y but this works
-                        }
-                    }                    
-                }
-
-
-
-
-                //Debug.Log($"{obstacle.name} is located at {obstacle.transform.position} with a bounds of {bounds}, a width of {width} and a height of {height}");
-
-            }
-            //Utilities.Print2DArray(PathfindingMap);
-
-            float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
-            Debug.Log($"FillPathfindingMap() took {end} ms to complete.");
+                GameObject instance = Instantiate(collisionAsteroidPrefab);
+                instance.transform.parent = Map.transform;
+            });
         }
-
-        public Vector2Int ConvertToPathfindingMapCoordinates(Vector2 coords)
-        {
-            return new Vector2Int(Convert.ToInt32(MapWidth - (HalfMapWidth - coords.x)), Convert.ToInt32(MapHeight - (HalfMapHeight + coords.y))) / PathFindingMapScale;
-        }
-
-        public Vector2 ConvertPathfindingMapToLevelCoordinates(Vector2Int coords)
-        {
-            return new Vector2(-PathFindingMapHalfHeight + coords.x, PathFindingMapHalfHeight - coords.y) * PathFindingMapScale;
-        }
-
-
         new void Update()
         {
             //GameObject.Find("Rotated Point").transform.position = Utilities.RotatePointAroundPoint(GameObject.Find("Pivot").transform.position, __OriginalPosition, __RotationTest);
@@ -669,12 +577,11 @@ namespace Assets.Scripts.Scenes
 
                 ship.Kill(null, true);
             }
-            Command[] commands = GetComponents<Command>();
-            for (int i = 0; i <  commands.Length; i++)
+            GetComponents<Command>().ToList().ForEach((command) =>
             {
-                Command command = commands[i];
                 Destroy(command);
-            }
+            });
+            
             //StartNew();
             state.ClearLists();
             StartNew();
