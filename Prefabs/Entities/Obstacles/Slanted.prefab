@@ -148,3 +148,5 @@ MonoBehaviour:
   Id: 0
   Name: Slanted
   IsMobile: 0
+  Level: {fileID: 0}
+  Collider: {fileID: 7767618389719884225}

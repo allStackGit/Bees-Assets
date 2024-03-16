@@ -41,7 +41,7 @@ namespace Assets.Scripts.Entities.Ships
         public List<GameObject> ProjectilePrefabs, WeaponPrefabs, ColoredPrefabs;
         public Brain Brain = null;
         public Queue<Vector2> DestinationQueue = new Queue<Vector2>();
-        public List<Obstacle> NearbyObstacles = new List<Obstacle>();
+        public List<CollisionAsteroid> NearbyAsteroids = new List<CollisionAsteroid>();
 
 
 
@@ -360,16 +360,24 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             destination = Level.ForceBounds(destination);
             if (Level.HasObstacles)
             {
-                FindShortestPath(destination);
-                if (DestinationQueue.Count > 0)
+                if (!Level.Pathfinder.IsObstacleAtPoint(destination))
                 {
-                    FinalDestination = DestinationQueue.Last();
-                    TargetCoordinates = DestinationQueue.Dequeue();
-                    IsFollowingPath = true;
-                    HasTargetCoordinates = true;
-                    Debug.Log($"We've got a destination queue {DestinationQueue.Count} entries long! Heading to {TargetCoordinates} first");
-                    InvokeRepeating(nameof(CheckForDirectPath), 5f, 5f);
+                    FindShortestPath(destination);
+                    if (DestinationQueue.Count > 0)
+                    {
+                        FinalDestination = DestinationQueue.Last();
+                        TargetCoordinates = DestinationQueue.Dequeue();
+                        IsFollowingPath = true;
+                        HasTargetCoordinates = true;
+                        //Debug.Log($"We've got a destination queue {DestinationQueue.Count} entries long! Heading to {TargetCoordinates} first");
+                        InvokeRepeating(nameof(CheckForDirectPath), 5f, 5f);
+                    }
                 }
+                else
+                {
+                    StopMoving("There is an obstacle at the destination");
+                }
+                
             }
             else
             {
@@ -379,6 +387,42 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             }
         }
 
+        /// <summary>
+        /// This is triggered by the asteroid when the ship gets within its proximity collider
+        /// </summary>
+        /// <param name="asteroid"></param>
+        public void FoundNearbyAsteroid(CollisionAsteroid asteroid)
+        {
+            NearbyAsteroids.Add(asteroid);
+            Level.Pathfinder.NeedsToBeUpdated = true;
+            if (IsFollowingPath)
+            {
+                // If we're following a pathfinder path, recalculate the path because we're near an asteroid
+                MoveToPoint(FinalDestination);
+                InvokeRepeating(nameof(NearbyAsteroidDoubleCheck), 1f, 1f);
+            }
+        }
+
+        /// <summary>
+        /// Called on a delay from FoundNearbyAsteroid to check the pathfinding again in hopes of avoiding running into the asteroid's new position shortly after detecting it
+        /// </summary>
+        public void NearbyAsteroidDoubleCheck()
+        {
+            if (IsFollowingPath && NearbyAsteroids.Count > 0)
+            {
+                //Debug.Log($"There are still {NearbyAsteroids.Count} asteroids near {Name}, double checking the pathfinding");
+                Level.Pathfinder.NeedsToBeUpdated = true;
+                MoveToPoint(FinalDestination);
+            }
+            else
+            {
+                CancelInvoke(nameof(NearbyAsteroidDoubleCheck));
+            }
+        }
+        public void LeftNearbyAsteroid(CollisionAsteroid asteroid)
+        {
+            NearbyAsteroids.Remove(asteroid);
+        }
         private void FindShortestPath(Vector2 destination)
         {
             float start = Time.realtimeSinceStartup;
@@ -392,11 +436,15 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             {
                 if (Level.Pathfinder.NeedsToBeUpdated)
                 {
-                    Level.Pathfinder.UpdateMap(NearbyObstacles);
+                    Level.Pathfinder.UpdateMap(NearbyAsteroids);
                 }
 
                 Vector2Int convertedStart = Level.Pathfinder.ConvertToMapCoordinates(startPosition);
                 Vector2Int convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
+
+                // Set the destination point to walkable just in case it was set to unwalkable by a previous asteroid and not updated
+                // We know that it is walkable because to get to this point we had to check for any obstacles there
+                Level.Pathfinder.Map[convertedStart.x][convertedStart.y] = false; 
                 //Debug.Log($"There is an obstacle in the way, using astar to find a path, start: {convertedStart}, end: {convertedDestination}");
                 //Debug.Log(Level.ConvertPathfindingToMapCoordinates(new Vector2Int(0, 0)));
 
@@ -580,8 +628,13 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             TargetCoordinates = Vector2.zero;
             Body.velocity = Vector2.zero;
             HasTargetCoordinates = false;
-            IsFollowingPath = false;
-            DestinationQueue.Clear();
+            if (IsFollowingPath)
+            {
+                IsFollowingPath = false;
+                DestinationQueue.Clear();
+                CancelInvoke(nameof(CheckForDirectPath));
+            }
+
             //transform.position = TargetCoordinates;
             //SetToDefaultAngle();
         }

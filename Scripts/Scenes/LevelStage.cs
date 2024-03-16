@@ -33,7 +33,8 @@ namespace Assets.Scripts.Scenes
         /// Determines whether or not FleetShips get marked as dead when ships die. If this is turned off, stats will still record properly but ships won't die off and be replaced
         /// </summary>
         public bool ReplaceDeadShips;
-        public bool ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, UseSemiRandomSquads, UseFullyRandomSquads, UseFullyRandomEnemySquads, RecordStats, DoesUserHaveController, HasObstacles;
+        public bool ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, UseSemiRandomSquads, UseFullyRandomSquads, UseFullyRandomEnemySquads, RecordStats, 
+            DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids;
         public int OverrideTimeScale, TimeoutTime, SquadCount;
         public Camera MiniMapCamera;
 
@@ -70,6 +71,14 @@ namespace Assets.Scripts.Scenes
         public int Id = Utilities.Hash();
         public HashSet<int> HandledRequests = new HashSet<int>();
         public Pathfinder Pathfinder;
+        /// <summary>
+        /// How frequently asteroids spawn in this level. Sets the upper bound in seconds of the randomly timed spawn
+        /// </summary>
+        public int AsteroidSpawnRate;
+        /// <summary>
+        /// Sets the upper bounds for how fast an asteroid can move
+        /// </summary>
+        public int AsteroidMaxSpeed;
        
 
         public float CurrentZoom => Camera.orthographicSize;
@@ -232,11 +241,21 @@ namespace Assets.Scripts.Scenes
                 instance.transform.parent = Map.transform;
             });
 
-            CollisionAsteroidPrefabs.ForEach((collisionAsteroidPrefab) =>
+            if (ActivateCollisionAsteroids)
             {
-                GameObject instance = Instantiate(collisionAsteroidPrefab);
-                instance.transform.parent = Map.transform;
-            });
+                Invoke(nameof(SpawnAsteroid), AsteroidSpawnRate + Utilities.RandomInt(AsteroidSpawnRate));
+            }
+        }
+        private void SpawnAsteroid()
+        {
+            GameObject instance = Instantiate(CollisionAsteroidPrefabs[Utilities.RandomInt(CollisionAsteroidPrefabs.Count)]);
+            instance.transform.parent = Map.transform;
+            CollisionAsteroid asteroid = instance.GetComponent<CollisionAsteroid>();
+            asteroid.Setup(this, Pathfinder.ObstacleCount++);
+
+            Invoke(nameof(SpawnAsteroid), Utilities.RandomInt(AsteroidSpawnRate));
+            Pathfinder.AddObstacle(asteroid);
+            Pathfinder.NeedsToBeUpdated = true;
         }
         new void Update()
         {

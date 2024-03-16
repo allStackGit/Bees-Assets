@@ -2,6 +2,7 @@
 using Assets.Scripts.Scenes;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Level
@@ -27,6 +28,9 @@ namespace Assets.Scripts.Level
         /// A list of indexes of obstacles that need to be updated next time the map updates
         /// </summary>
         public List<int> ObstaclesToUpdate = new List<int>();
+        /// <summary>
+        /// A list of arrays of obstacle points. Each array of points belongs to an obstacle and each point (a two int array) is an x index and a y index on the Map array
+        /// </summary>
         public List<int[][]> ObstaclePoints = new List<int[][]>();
         public bool NeedsToBeUpdated;
         public bool HasMovingObstacles;
@@ -47,7 +51,7 @@ namespace Assets.Scripts.Level
         private void InitializeMap()
         {
             float start = Time.realtimeSinceStartup;
-            Debug.Log($"Loading pathfinder map at {Scale}x");
+            //Debug.Log($"Loading pathfinder map at {Scale}x");
 
             // initialize everything as open space
             Map = new bool[Width][];
@@ -59,80 +63,25 @@ namespace Assets.Scripts.Level
 
             GameObject[] obstacles = GameObject.FindGameObjectsWithTag("Obstacle");
 
-            foreach (GameObject obstacleObject in obstacles)
+            for (int i = 0; i < obstacles.Length; i++)
             {
+                GameObject obstacleObject = obstacles[i];
                 Obstacle obstacle = obstacleObject.GetComponent<Obstacle>();
                 CollisionAsteroid collisionAsteroid = obstacleObject.GetComponent<CollisionAsteroid>();
 
-                Debug.Log($"Found {obstacleObject.name}: {obstacle}");
+                //Debug.Log($"Found {obstacleObject.name}: {obstacle}");
 
-                if ( collisionAsteroid != null )
-                {
-                    collisionAsteroid.Setup(Level, ObstacleCount++, new Vector2(-200, -200));
-                }
-                else
-                {
-                    obstacle.Setup(Level, ObstacleCount++);
-                }
+                obstacle.Setup(Level, ObstacleCount++);
+
                 AddObstacle(obstacle);
+                
 
-                Collider2D collider = obstacleObject.GetComponent<Collider2D>();
-                Vector2 position = obstacleObject.transform.position;
-                Vector2Int intPosition = new Vector2Int(Convert.ToInt32(position.x), Convert.ToInt32(position.y));
+                ObstaclePoints[obstacle.Id] = GetObstaclePoints(obstacle);
 
-                int width = Convert.ToInt32(obstacleObject.transform.localScale.x);
-                int height = Convert.ToInt32(obstacleObject.transform.localScale.y);
-
-                int startX = Convert.ToInt32(position.x - (width / 2));
-                int startY = Convert.ToInt32(position.y + (height / 2));
-
-                bool isPolygon = false;
-                bool isRotated = false;
-                float rotation = obstacleObject.transform.localEulerAngles.z * Mathf.Deg2Rad;
-
-                if (collider is PolygonCollider2D)
+                foreach (int[] point in ObstaclePoints[obstacle.Id])
                 {
-                    Bounds bounds = collider.bounds;
-
-                    width = (int)bounds.size.x;
-                    height = (int)bounds.size.y;
-                    startX = Convert.ToInt32(position.x - (width / 2));
-                    startY = Convert.ToInt32(position.y + (height / 2));
-                    //Debug.Log($"{collider.transform.name} is a polygon collider with a width of {width} and a height of {height} and a rotation of {rotation} that starts at {startX}, {startY}");
-                    isPolygon = true;
+                    Map[point[0]][point[1]] = true; // set to unwalkable space
                 }
-                if (rotation != 0 && !isPolygon)
-                {
-                    //Debug.Log($"{obstacleObject.gameObject.name} is rotated by {obstacleObject.transform.localEulerAngles.z} degrees / {rotation} radians");
-                    isRotated = true;
-                }
-
-                List<int[]> points = new List<int[]>();
-                for (int y = startY; y > startY - height; y -= Scale) // go across the bounds top to bottom (decreasing)
-                {
-                    for (int x = startX; x < startX + width; x += Scale) // go across the bounds, left to right (increasing)
-                    {
-                        Vector2Int point = new Vector2Int(x, y);
-                        if (!isPolygon || collider.OverlapPoint(point))
-                        {
-
-                            if (isRotated)
-                            {
-                                Vector2Int rotatedPoint = Utilities.RotateIntPointAroundPoint(intPosition, point, rotation);
-                                //Debug.Log($"#{i} Rotated {point} around {intPosition} to {rotatedPoint}");
-                                point = rotatedPoint;
-                            }
-                            Vector2Int converted = ConvertToMapCoordinates(point);
-                            //Debug.Log($"#{i} Converted {point} on the Map to (scaled) {converted} on the PathfindingMap");
-
-
-                            Map[converted.y][converted.x] = true; // [note] I haven't figured out why we need to pass the Y to the X and the X to the Y but this works
-                            points.Add(new int[] {converted.y, converted.x });
-                        }
-                    }
-                }
-
-                ObstaclePoints.Add(points.ToArray());
 
 
 
@@ -158,12 +107,78 @@ namespace Assets.Scripts.Level
         public void AddObstacle(Obstacle obstacle)
         {
             Obstacles.Add(obstacle);
+            ObstaclePoints.Add(new int[][] { });
             if (obstacle.IsMobile && !HasMovingObstacles)
             {
                 HasMovingObstacles = true;
             }
             NeedsToBeUpdated = true;
             //Debug.Log($"Adding {obstacle.Name} to Map");
+        }
+
+        /// <summary>
+        /// Gets all the points on an obstacle in the game and converts them to an array of points in the pathfinding map
+        /// </summary>
+        /// <param name="obstacle"></param>
+        public int[][] GetObstaclePoints(Obstacle obstacle)
+        {
+            Collider2D collider = obstacle.gameObject.GetComponent<Collider2D>();
+            Vector2 position = obstacle.GetPosition();
+            Vector2Int intPosition = new Vector2Int(Convert.ToInt32(position.x), Convert.ToInt32(position.y));
+
+            int width = Convert.ToInt32(obstacle.transform.localScale.x);
+            int height = Convert.ToInt32(obstacle.transform.localScale.y);
+
+            int startX = Convert.ToInt32(position.x - (width / 2));
+            int startY = Convert.ToInt32(position.y + (height / 2));
+
+            bool isPolygon = false;
+            bool isRotated = false;
+            float rotation = obstacle.transform.localEulerAngles.z * Mathf.Deg2Rad;
+
+            if (collider is PolygonCollider2D)
+            {
+                Bounds bounds = collider.bounds;
+
+                width = (int)bounds.size.x;
+                height = (int)bounds.size.y;
+                startX = Convert.ToInt32(position.x - (width / 2));
+                startY = Convert.ToInt32(position.y + (height / 2));
+                //Debug.Log($"{obstacle.Name} at {intPosition} has a polygon collider with a width of {width} and a height of {height} and a rotation of {rotation} that starts at {startX}, {startY}");
+                isPolygon = true;
+            }
+            if (rotation != 0 && !isPolygon)
+            {
+                //Debug.Log($"{obstacleObject.gameObject.name} is rotated by {obstacleObject.transform.localEulerAngles.z} degrees / {rotation} radians");
+                isRotated = true;
+            }
+
+            List<int[]> points = new List<int[]>();
+            for (int y = startY; y > startY - height; y -= Scale) // go across the bounds top to bottom (decreasing)
+            {
+                for (int x = startX; x < startX + width; x += Scale) // go across the bounds, left to right (increasing)
+                {
+                    Vector2Int point = new Vector2Int(x, y);
+                    if (!isPolygon || collider.OverlapPoint(point))
+                    {
+
+                        if (isRotated)
+                        {
+                            Vector2Int rotatedPoint = Utilities.RotateIntPointAroundPoint(intPosition, point, rotation);
+                            //Debug.Log($"#{i} Rotated {point} around {intPosition} to {rotatedPoint}");
+                            point = rotatedPoint;
+                        }
+                        Vector2Int converted = ConvertToMapCoordinates(point);
+                        //Debug.Log($"#{i} Converted {point} on the Map to (scaled) {converted} on the PathfindingMap");
+
+
+                        // [note] I haven't figured out why we need to pass the Y to the X and the X to the Y but this works
+                        points.Add(new int[] { converted.y, converted.x });
+                    }
+                }
+            }
+
+            return points.ToArray();
         }
         /// <summary>
         /// This gets called by ships when the map needs to be updated to perform proper pathfinding. 
@@ -176,14 +191,32 @@ namespace Assets.Scripts.Level
         /// 
         /// Scenario 3. A ship is moving on a preexisting route when an obstacle comes within its range. It passes that obstacle to the Pathfinder and the Pathfinder updates that obstacle and the ship finds a new path.
         /// </summary>
-        public void UpdateMap(List<Obstacle> obstacles)
+        public void UpdateMap(List<CollisionAsteroid> collisionAsteroids)
         {
             float start = Time.realtimeSinceStartup;
-            Debug.Log($"Updating map");
+            //Debug.Log($"Updating map");
 
-            if (obstacles.Count > 0) // there are obstacles within range of the ship that asked for the map to be updated
+            if (collisionAsteroids.Count > 0) // there are asteroids within range of the ship that asked for the map to be updated
             {
+                collisionAsteroids.ForEach((asteroid) =>
+                {
+                    //Debug.Log($"Updating the position of {asteroid.Name} on the pathfinding map");
+                    foreach (int[] point in ObstaclePoints[asteroid.Id])
+                    {
+                        Map[point[0]][point[1]] = false; // set its old position to walkable space
+                    }
 
+                    // Get the new points
+                    ObstaclePoints[asteroid.Id] = GetObstaclePoints(asteroid);
+                    foreach (int[] point in ObstaclePoints[asteroid.Id])
+                    {
+                        if (point[0] < Map.Length && point[1] < Map[0].Length)
+                        {
+                            //Debug.Log($"Valid indexes: {point[0]}, {point[1]}");
+                            Map[point[0]][point[1]] = true; // set its new position to unwalkable space
+                        }
+                    }
+                });
             }
             else // the ship sent an empty list which means there were no mobile obstacles within range but we should still update the map if need be for static obstacles
             {
@@ -216,15 +249,19 @@ namespace Assets.Scripts.Level
                 }
             }
 
+
             float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
-            Debug.Log($"InitializeMap() took {end} ms to complete.");
+            Debug.Log($"UpdateMap() took {end} ms to complete.");
 
         }
 
 
 
 
-
+        public bool IsObstacleAtPoint(Vector2 point)
+        {
+            return Obstacles.Any((obstacle) => obstacle.Collider.OverlapPoint(point));
+        }
         public Vector2Int ConvertToMapCoordinates(Vector2 coords)
         {
             return new Vector2Int(Convert.ToInt32(Width - (HalfWidth - coords.x)), Convert.ToInt32(Height - (HalfHeight + coords.y))) / Scale;

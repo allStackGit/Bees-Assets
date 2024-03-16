@@ -145,4 +145,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   Health: 0
   InitialHealth: 0
+  Id: 0
   Name: Obstacle
+  IsMobile: 0
+  Level: {fileID: 0}
+  Collider: {fileID: 1414471931842553196}

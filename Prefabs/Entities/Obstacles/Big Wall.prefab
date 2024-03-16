@@ -148,3 +148,5 @@ MonoBehaviour:
   Id: 0
   Name: Big Wall
   IsMobile: 0
+  Level: {fileID: 0}
+  Collider: {fileID: 908934210364151930}

@@ -82,11 +82,15 @@ namespace Assets.Scripts.Entities.Projectiles
 
         public void DamageObstacle(Obstacle obstacle)
         {
-            obstacle.Health -= Power;
-            if (obstacle.Health <= 0)
+            if (!obstacle.IsMapBorder)
             {
-                obstacle.Kill();
+                obstacle.Health -= Power;
+                if (obstacle.Health <= 0)
+                {
+                    obstacle.Kill();
+                }
             }
+
         }
         
         protected virtual void FixedUpdate()

@@ -10,26 +10,33 @@ namespace Assets.Scripts.Entities
     {
         public int Health, InitialHealth, Id;
         public string Name;
-        public bool IsMobile;
-        LevelStage Level;
+        public bool IsMobile, IsMapBorder;
+        public LevelStage Level;
+        public Collider2D Collider;
         // Use this for initialization
         private void Awake()
         {
             InitialHealth = Health;
-            gameObject.name = Name;
-            Debug.Log($"Obstacle has awoken: {Name}: {Health}");
+            //Debug.Log($"Obstacle has awoken: {Name}: {Health}");
         }
 
         public void Setup(LevelStage level, int id)
         {
             Level = level;
             Id = id;
+            Name = $"{Name} #{Id}";
+            gameObject.name = Name;
         }
         public void Kill()
         {
             Debug.Log($"Killing {Name}");
             Level.Pathfinder.AddToUpdateList(Id);
             Destroy(gameObject);
+        }
+
+        public Vector2 GetPosition()
+        {
+            return transform.localPosition;
         }
     }
 }

@@ -103,6 +103,8 @@ MonoBehaviour:
   Id: 0
   Name: Polygon Obstacle
   IsMobile: 0
+  Level: {fileID: 0}
+  Collider: {fileID: 1910029732471063117}
 --- !u!60 &1910029732471063117
 PolygonCollider2D:
   m_ObjectHideFlags: 0

@@ -104,7 +104,7 @@ namespace Assets.Scripts.Level
                         SavedSquad savedSquad = new SavedSquad(squadId, side, $"{type}s #{squadId}", Vector2.zero, false, false,
                             ConfigData.StartingSettings.DefaultShootingStrategy, ConfigData.UnsetColor, null);
                         savedSquad.SetupRandomShips(type);
-                        preloadSquads.Add(savedSquad);
+                        preloadSquads.Add(savedSquad);  
                     }
 
 
@@ -126,7 +126,7 @@ namespace Assets.Scripts.Level
                         //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 52),  // human squad // 4 Cruisers #52
 
 
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 32),  // bee squad // 1 Bumblebee #32
+                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 32),  // bee squad // 1 Bumblebee #32
                         ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 33),  // bee squad // 1 Honeybee #33
                         //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 34),  // bee squad // 1 Hornet #34
                         //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 35),  // bee squad // 1 Leafcutter #35
