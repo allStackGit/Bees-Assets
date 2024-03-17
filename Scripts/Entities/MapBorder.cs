@@ -6,12 +6,6 @@ namespace Assets.Scripts.Entities
     public class MapBorder : Obstacle
     {
 
-        // Use this for initialization
-        void Start()
-        {
-            IsMapBorder = true;
-        }
-
         private void OnTriggerExit2D(Collider2D collider)
         {
             //Debug.Log($"{Name} collided");
@@ -20,8 +14,17 @@ namespace Assets.Scripts.Entities
             if (collidingThing.CompareTag("Obstacle"))
             {
                 CollisionAsteroid asteroid = collidingThing.GetComponent<CollisionAsteroid>();
-                Debug.Log($"{asteroid.Name} left the map border and is being killed");
-                asteroid.Kill();
+                if (asteroid.HasEnteredMap)
+                {
+                    //Debug.Log($"{asteroid.Name} left the map border and is being killed");
+                    asteroid.Kill();
+                }
+                else
+                {
+                    //Debug.Log($"{asteroid.Name} entered the map border");
+                    asteroid.HasEnteredMap = true;
+                }
+
 
             }
         }

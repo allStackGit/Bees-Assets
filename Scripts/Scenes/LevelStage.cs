@@ -68,9 +68,9 @@ namespace Assets.Scripts.Scenes
         public SimpleMultiAgentGroup AgentGroup;
         public SimpleMultiAgentGroup HumanAgentGroup;
         public float Seconds;
-        public int Id = Utilities.Hash();
         public HashSet<int> HandledRequests = new HashSet<int>();
         public Pathfinder Pathfinder;
+        public int FixedUpdates;
         /// <summary>
         /// How frequently asteroids spawn in this level. Sets the upper bound in seconds of the randomly timed spawn
         /// </summary>
@@ -308,6 +308,7 @@ namespace Assets.Scripts.Scenes
             {
                 Seconds += Time.unscaledDeltaTime;
             }
+            FixedUpdates++;
         }
 
         void LevelOver() // [stats-method] [note]
@@ -319,8 +320,8 @@ namespace Assets.Scripts.Scenes
                 GameState state = GetState();
                 state.LevelEnded = true;
                 float fps = Time.frameCount / Time.unscaledTime;
+                float fups = FixedUpdates / Time.unscaledTime;
                 float latency = __AverageRequestTime;
-                string winner = "Humans";
 
                 if (state.IsSideKilled(ConfigData.Configuration.BeeSide) && !state.IsSideKilled(ConfigData.Configuration.HumanSide))
                 {
@@ -331,7 +332,6 @@ namespace Assets.Scripts.Scenes
                 {
                     WinningSide = ConfigData.Configuration.BeeSide;
                     ConfigData.__BeeWins++;
-                    winner = "Bees";
                 }
                 else if (state.IsSideKilled(ConfigData.Configuration.HumanSide) && state.IsSideKilled(ConfigData.Configuration.BeeSide))
                 {
@@ -345,7 +345,7 @@ namespace Assets.Scripts.Scenes
                 int totalGames = ConfigData.__HumanWins + ConfigData.__BeeWins;
                 int humanWinPercentage = (int)(((float)ConfigData.__HumanWins / totalGames) * 100);
                 int beeWinPercentage = (int)(((float)ConfigData.__BeeWins / totalGames) * 100);
-                Debug.Log($"{winner} won! H:{ConfigData.__HumanWins} ({humanWinPercentage}%) B:{ConfigData.__BeeWins} ({beeWinPercentage}%) fps: {fps} latency: {(int)(latency*1000)}ms Frames: {Time.frameCount} Seconds: {Time.unscaledTime} CPS: {ConfigData.__HivemindCommands/ Time.unscaledTime}");
+                Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".PadRight(15)}{$"fps: {fps}".Substring(0, 9)}  {$"fups: {fups}".Substring(0, 10)}     {$"latency: {(int)(latency*1000)}ms".PadRight(18)} {$"CPS: {ConfigData.__HivemindCommands / Time.unscaledTime}".PadRight(9).Substring(0, 9)}     |");
 
                 if (Menus != null)
                 {

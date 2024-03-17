@@ -10,9 +10,8 @@ GameObject:
   m_Component:
   - component: {fileID: 6142056938879716820}
   - component: {fileID: 4154339277496797366}
-  - component: {fileID: 8095520308157300066}
-  m_Layer: 19
-  m_Name: Warning Collider
+  m_Layer: 20
+  m_Name: Proximity Collider
   m_TagString: Asteroid Warning Collider
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -92,20 +91,6 @@ PolygonCollider2D:
       - {x: 0.2573399, y: 0.21684034}
       - {x: 0.25763372, y: 0.25230968}
   m_UseDelaunayMesh: 0
---- !u!114 &8095520308157300066
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2755228807673502984}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 73e1b3a6a8573794988a265ebedcc91a, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  Level: {fileID: 0}
-  Asteroid: {fileID: 0}
 --- !u!1 &7879729711353278377
 GameObject:
   m_ObjectHideFlags: 0
@@ -297,6 +282,7 @@ MonoBehaviour:
   Id: 0
   Name: Collision Asteroid
   IsMobile: 0
+  IsMapBorder: 0
   Level: {fileID: 0}
   Collider: {fileID: 6610865759102504746}
   Body: {fileID: 5293435074437591079}

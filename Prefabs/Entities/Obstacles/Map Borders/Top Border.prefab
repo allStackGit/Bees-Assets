@@ -11,7 +11,7 @@ GameObject:
   - component: {fileID: 8534863660445438486}
   - component: {fileID: 4408780908096395132}
   - component: {fileID: 8538481970784520678}
-  - component: {fileID: 5858146905997220656}
+  - component: {fileID: 8824466230303253864}
   m_Layer: 19
   m_Name: Top Border
   m_TagString: Obstacle
@@ -28,7 +28,7 @@ Transform:
   m_GameObject: {fileID: 5921109331714864026}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: 256, z: 0}
+  m_LocalPosition: {x: 0, y: 253, z: 0}
   m_LocalScale: {x: 512, y: 5, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -76,7 +76,7 @@ SpriteRenderer:
   m_SortingLayer: 1
   m_SortingOrder: 0
   m_Sprite: {fileID: 7482667652216324306, guid: 311925a002f4447b3a28927169b83ea6, type: 3}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_Color: {r: 1, g: 0.55378884, b: 0.4575472, a: 0.8235294}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
@@ -131,7 +131,7 @@ BoxCollider2D:
   serializedVersion: 2
   m_Size: {x: 1, y: 1}
   m_EdgeRadius: 0
---- !u!114 &5858146905997220656
+--- !u!114 &8824466230303253864
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -140,14 +140,14 @@ MonoBehaviour:
   m_GameObject: {fileID: 5921109331714864026}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b193967b34ee82745a91937153b61fce, type: 3}
+  m_Script: {fileID: 11500000, guid: 620d3ebbb8326854790574a16b7d90a4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  Health: 100
-  InitialHealth: 100
+  Health: 0
+  InitialHealth: 0
   Id: 0
-  Name: Big Wall
+  Name: Top Border
   IsMobile: 0
-  IsMapBorder: 0
+  IsMapBorder: 1
   Level: {fileID: 0}
   Collider: {fileID: 8538481970784520678}
