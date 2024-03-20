@@ -13,8 +13,8 @@ namespace Assets.Scripts.Entities.Projectiles
     public class RocketExplosion : Projectile
     {
         private bool _isHarmless; // After a few frames, the explosion is no longer damaging and becomes harmless to whoever hits it
-        private List<Ship> _shipsHit = new List<Ship>();
-        private List<Obstacle> _obstaclesHit = new List<Obstacle>();
+        private HashSet<Ship> _shipsHit = new HashSet<Ship>();
+        private HashSet<Obstacle> _obstaclesHit = new HashSet<Obstacle>();
 
         public override void ContactTarget(Ship target)
         {
@@ -26,7 +26,9 @@ namespace Assets.Scripts.Entities.Projectiles
         {
            if (obstacle != null)
             {
-                if (!HasHitObstacle(obstacle)){
+                if (!obstacle.IsMapBorder && !HasHitObstacle(obstacle))
+                {
+                    Debug.Log($"{Name} hit {obstacle.Name}");
                     DamageObstacle(obstacle);
                 }
             }
@@ -45,7 +47,6 @@ namespace Assets.Scripts.Entities.Projectiles
         public new virtual void Kill()
         {
             //Debug.Log("Killed off the rocket explosion");
-            Level.GetState().RemoveExplosion(this);
             Destroy(gameObject);
         }
         public void SetHarmless()
@@ -65,6 +66,10 @@ namespace Assets.Scripts.Entities.Projectiles
                     {
                         ShipCollision(CollidingQueue.Dequeue());
                     }
+                }
+                if (CollidingObstacleQueue.Count > 0)
+                {
+                    ContactObstacle(CollidingObstacleQueue.Dequeue());
                 }
             }
         }

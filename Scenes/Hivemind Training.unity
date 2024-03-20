@@ -306,6 +306,7 @@ MonoBehaviour:
   HasObstacles: 0
   ActivateCollisionAsteroids: 0
   OverrideTimeScale: 0
+  OverrideUserSide: 0
   TimeoutTime: 900
   SquadCount: 8
   MiniMapCamera: {fileID: 1653464701}
@@ -358,7 +359,6 @@ MonoBehaviour:
   MinZoom: 25
   ZoomSpeed: 2
   ScrollSpeed: 25
-  IsTestFiring: 0
   UseMouseScrolling: 0
   UserStartingPosition: {x: 0, y: -155}
   AIStartingPosition: {x: 0, y: 155}
@@ -573,6 +573,40 @@ MonoBehaviour:
   m_ChildScaleWidth: 0
   m_ChildScaleHeight: 0
   m_ReverseArrangement: 0
+--- !u!1001 &69159975
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 585586251}
+    m_Modifications:
+    - target: {fileID: 1222482973701953401, guid: 7a9b0af4e55a8fe4ebb8364ab29205c8, type: 3}
+      propertyPath: m_Name
+      value: Right Border Variant
+      objectReference: {fileID: 0}
+    - target: {fileID: 3795071168123713269, guid: 7a9b0af4e55a8fe4ebb8364ab29205c8, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3795071168123713269, guid: 7a9b0af4e55a8fe4ebb8364ab29205c8, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3795071168123713269, guid: 7a9b0af4e55a8fe4ebb8364ab29205c8, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 7a9b0af4e55a8fe4ebb8364ab29205c8, type: 3}
+--- !u!4 &69159976 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 3795071168123713269, guid: 7a9b0af4e55a8fe4ebb8364ab29205c8, type: 3}
+  m_PrefabInstance: {fileID: 69159975}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &79453610
 GameObject:
   m_ObjectHideFlags: 0
@@ -2374,6 +2408,7 @@ MonoBehaviour:
   HasObstacles: 0
   ActivateCollisionAsteroids: 0
   OverrideTimeScale: 0
+  OverrideUserSide: 0
   TimeoutTime: 900
   SquadCount: 8
   MiniMapCamera: {fileID: 1653464701}
@@ -2426,7 +2461,6 @@ MonoBehaviour:
   MinZoom: 25
   ZoomSpeed: 2
   ScrollSpeed: 25
-  IsTestFiring: 0
   UseMouseScrolling: 0
   UserStartingPosition: {x: 0, y: -155}
   AIStartingPosition: {x: 0, y: 155}
@@ -2453,6 +2487,40 @@ MonoBehaviour:
   FixedUpdates: 0
   AsteroidSpawnRate: 10
   AsteroidMaxSpeed: 10
+--- !u!1001 &504475592
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 585586251}
+    m_Modifications:
+    - target: {fileID: 5921109331714864026, guid: da38269fea4455643a492c57b83df01a, type: 3}
+      propertyPath: m_Name
+      value: Top Border
+      objectReference: {fileID: 0}
+    - target: {fileID: 8534863660445438486, guid: da38269fea4455643a492c57b83df01a, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8534863660445438486, guid: da38269fea4455643a492c57b83df01a, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8534863660445438486, guid: da38269fea4455643a492c57b83df01a, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: da38269fea4455643a492c57b83df01a, type: 3}
+--- !u!4 &504475593 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 8534863660445438486, guid: da38269fea4455643a492c57b83df01a, type: 3}
+  m_PrefabInstance: {fileID: 504475592}
+  m_PrefabAsset: {fileID: 0}
 --- !u!20 &519420031 stripped
 Camera:
   m_CorrespondingSourceObject: {fileID: 2944892714679254333, guid: e154edb1d8fb554428cdc7380556de19, type: 3}
@@ -2539,7 +2607,11 @@ Transform:
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 0}
   m_ConstrainProportionsScale: 1
-  m_Children: []
+  m_Children:
+  - {fileID: 706186612}
+  - {fileID: 1561347623}
+  - {fileID: 69159976}
+  - {fileID: 504475593}
   m_Father: {fileID: 1645976823}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &652767358
@@ -2802,6 +2874,7 @@ MonoBehaviour:
   HasObstacles: 0
   ActivateCollisionAsteroids: 0
   OverrideTimeScale: 0
+  OverrideUserSide: 0
   TimeoutTime: 900
   SquadCount: 8
   MiniMapCamera: {fileID: 1653464701}
@@ -2854,7 +2927,6 @@ MonoBehaviour:
   MinZoom: 25
   ZoomSpeed: 2
   ScrollSpeed: 25
-  IsTestFiring: 0
   UseMouseScrolling: 0
   UserStartingPosition: {x: 0, y: -155}
   AIStartingPosition: {x: 0, y: 155}
@@ -3097,6 +3169,56 @@ GameObject:
 RectTransform:
   m_CorrespondingSourceObject: {fileID: 1318501751415289206, guid: 31e2b232088eb6749aeed7426fa5f98a, type: 3}
   m_PrefabInstance: {fileID: 1630726930}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1001 &706186611
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 585586251}
+    m_Modifications:
+    - target: {fileID: 5988190058102727450, guid: 513ab5a01d209ed458031cf42d89913a, type: 3}
+      propertyPath: m_Name
+      value: Left Border Variant
+      objectReference: {fileID: 0}
+    - target: {fileID: 8595049480810513046, guid: 513ab5a01d209ed458031cf42d89913a, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8595049480810513046, guid: 513ab5a01d209ed458031cf42d89913a, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8595049480810513046, guid: 513ab5a01d209ed458031cf42d89913a, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8595049480810513046, guid: 513ab5a01d209ed458031cf42d89913a, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8595049480810513046, guid: 513ab5a01d209ed458031cf42d89913a, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8595049480810513046, guid: 513ab5a01d209ed458031cf42d89913a, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8595049480810513046, guid: 513ab5a01d209ed458031cf42d89913a, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 513ab5a01d209ed458031cf42d89913a, type: 3}
+--- !u!4 &706186612 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 8595049480810513046, guid: 513ab5a01d209ed458031cf42d89913a, type: 3}
+  m_PrefabInstance: {fileID: 706186611}
   m_PrefabAsset: {fileID: 0}
 --- !u!1 &725459426 stripped
 GameObject:
@@ -3415,6 +3537,7 @@ MonoBehaviour:
   HasObstacles: 0
   ActivateCollisionAsteroids: 0
   OverrideTimeScale: 0
+  OverrideUserSide: 0
   TimeoutTime: 900
   SquadCount: 8
   MiniMapCamera: {fileID: 1653464701}
@@ -3467,7 +3590,6 @@ MonoBehaviour:
   MinZoom: 25
   ZoomSpeed: 2
   ScrollSpeed: 25
-  IsTestFiring: 0
   UseMouseScrolling: 0
   UserStartingPosition: {x: 0, y: -155}
   AIStartingPosition: {x: 0, y: 155}
@@ -3675,6 +3797,7 @@ MonoBehaviour:
   HasObstacles: 0
   ActivateCollisionAsteroids: 0
   OverrideTimeScale: 0
+  OverrideUserSide: 0
   TimeoutTime: 900
   SquadCount: 8
   MiniMapCamera: {fileID: 1653464701}
@@ -3727,7 +3850,6 @@ MonoBehaviour:
   MinZoom: 25
   ZoomSpeed: 2
   ScrollSpeed: 25
-  IsTestFiring: 0
   UseMouseScrolling: 0
   UserStartingPosition: {x: 0, y: -155}
   AIStartingPosition: {x: 0, y: 155}
@@ -4261,6 +4383,7 @@ MonoBehaviour:
   HasObstacles: 0
   ActivateCollisionAsteroids: 0
   OverrideTimeScale: 0
+  OverrideUserSide: 0
   TimeoutTime: 900
   SquadCount: 8
   MiniMapCamera: {fileID: 1653464701}
@@ -4313,7 +4436,6 @@ MonoBehaviour:
   MinZoom: 25
   ZoomSpeed: 2
   ScrollSpeed: 25
-  IsTestFiring: 0
   UseMouseScrolling: 0
   UserStartingPosition: {x: 0, y: -155}
   AIStartingPosition: {x: 0, y: 155}
@@ -5414,6 +5536,56 @@ Canvas:
   m_SortingLayerID: 0
   m_SortingOrder: 1
   m_TargetDisplay: 0
+--- !u!1001 &1561347622
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 585586251}
+    m_Modifications:
+    - target: {fileID: 747841068951636138, guid: ca0cf340dfec807439b5c449cbfe5e9c, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 747841068951636138, guid: ca0cf340dfec807439b5c449cbfe5e9c, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 747841068951636138, guid: ca0cf340dfec807439b5c449cbfe5e9c, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 747841068951636138, guid: ca0cf340dfec807439b5c449cbfe5e9c, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 747841068951636138, guid: ca0cf340dfec807439b5c449cbfe5e9c, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 747841068951636138, guid: ca0cf340dfec807439b5c449cbfe5e9c, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 747841068951636138, guid: ca0cf340dfec807439b5c449cbfe5e9c, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3331873906501839142, guid: ca0cf340dfec807439b5c449cbfe5e9c, type: 3}
+      propertyPath: m_Name
+      value: Bottom Border Variant
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: ca0cf340dfec807439b5c449cbfe5e9c, type: 3}
+--- !u!4 &1561347623 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 747841068951636138, guid: ca0cf340dfec807439b5c449cbfe5e9c, type: 3}
+  m_PrefabInstance: {fileID: 1561347622}
+  m_PrefabAsset: {fileID: 0}
 --- !u!224 &1621432843 stripped
 RectTransform:
   m_CorrespondingSourceObject: {fileID: 2322509817334310926, guid: 2c69add7043f0224698172081a967d71, type: 3}
@@ -5654,8 +5826,9 @@ MonoBehaviour:
   RecordStats: 0
   DoesUserHaveController: 1
   HasObstacles: 1
-  ActivateCollisionAsteroids: 1
+  ActivateCollisionAsteroids: 0
   OverrideTimeScale: 1
+  OverrideUserSide: 0
   TimeoutTime: 900
   SquadCount: 8
   MiniMapCamera: {fileID: 1653464701}
@@ -5688,12 +5861,8 @@ MonoBehaviour:
   MiniMapContainer: {fileID: 1317578646}
   ObstaclePrefabs:
   - {fileID: 4057115948159840819, guid: 7af32c7ab23df8e498b7b176ef7c568c, type: 3}
-  - {fileID: 8266918874014940751, guid: f9736ad95b539174cb8ab30ebee39627, type: 3}
+  - {fileID: 7879729711353278377, guid: c1221e435f223a3499091315cf628421, type: 3}
   - {fileID: 2468503118127858094, guid: ca5b03952afd84743b50301f41e9bb12, type: 3}
-  - {fileID: 3331873906501839142, guid: ca0cf340dfec807439b5c449cbfe5e9c, type: 3}
-  - {fileID: 5988190058102727450, guid: 513ab5a01d209ed458031cf42d89913a, type: 3}
-  - {fileID: 1222482973701953401, guid: 7a9b0af4e55a8fe4ebb8364ab29205c8, type: 3}
-  - {fileID: 5921109331714864026, guid: da38269fea4455643a492c57b83df01a, type: 3}
   CollisionAsteroidPrefabs:
   - {fileID: 7879729711353278377, guid: 028d8479ccc194b44824e34bfa029f9c, type: 3}
   Menus: {fileID: 0}
@@ -5708,7 +5877,6 @@ MonoBehaviour:
   MinZoom: 25
   ZoomSpeed: 2
   ScrollSpeed: 25
-  IsTestFiring: 0
   UseMouseScrolling: 0
   UserStartingPosition: {x: 0, y: -155}
   AIStartingPosition: {x: 0, y: 155}
@@ -5864,6 +6032,7 @@ MonoBehaviour:
   HasObstacles: 0
   ActivateCollisionAsteroids: 0
   OverrideTimeScale: 0
+  OverrideUserSide: 0
   TimeoutTime: 900
   SquadCount: 8
   MiniMapCamera: {fileID: 1653464701}
@@ -5916,7 +6085,6 @@ MonoBehaviour:
   MinZoom: 25
   ZoomSpeed: 2
   ScrollSpeed: 25
-  IsTestFiring: 0
   UseMouseScrolling: 0
   UserStartingPosition: {x: 0, y: -155}
   AIStartingPosition: {x: 0, y: 155}
@@ -6062,6 +6230,7 @@ MonoBehaviour:
   HasObstacles: 0
   ActivateCollisionAsteroids: 0
   OverrideTimeScale: 0
+  OverrideUserSide: 0
   TimeoutTime: 900
   SquadCount: 8
   MiniMapCamera: {fileID: 1653464701}
@@ -6114,7 +6283,6 @@ MonoBehaviour:
   MinZoom: 25
   ZoomSpeed: 2
   ScrollSpeed: 25
-  IsTestFiring: 0
   UseMouseScrolling: 0
   UserStartingPosition: {x: 0, y: -155}
   AIStartingPosition: {x: 0, y: 155}
@@ -6897,7 +7065,7 @@ GameObject:
   m_CorrespondingSourceObject: {fileID: 1442138787464776824, guid: 823a9d141692ff0449c20cc32f940770, type: 3}
   m_PrefabInstance: {fileID: 1442138788578563722}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &2108627703
+--- !u!114 &2108627707
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -7071,7 +7239,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 1442138787464776825, guid: 823a9d141692ff0449c20cc32f940770, type: 3}
       propertyPath: m_SortingLayer
-      value: -1
+      value: 2
       objectReference: {fileID: 0}
     - target: {fileID: 1442138787464776830, guid: 823a9d141692ff0449c20cc32f940770, type: 3}
       propertyPath: m_RootOrder
@@ -7124,7 +7292,7 @@ PrefabInstance:
     m_AddedComponents:
     - targetCorrespondingSourceObject: {fileID: 1442138787464776824, guid: 823a9d141692ff0449c20cc32f940770, type: 3}
       insertIndex: -1
-      addedObject: {fileID: 2108627703}
+      addedObject: {fileID: 2108627707}
   m_SourcePrefab: {fileID: 100100000, guid: 823a9d141692ff0449c20cc32f940770, type: 3}
 --- !u!1 &1738279215635255397
 GameObject:
@@ -7380,7 +7548,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 2944892714679254333, guid: e154edb1d8fb554428cdc7380556de19, type: 3}
       propertyPath: m_CullingMask.m_Bits
-      value: 851689
+      value: 1900265
       objectReference: {fileID: 0}
     - target: {fileID: 2944892714679254334, guid: e154edb1d8fb554428cdc7380556de19, type: 3}
       propertyPath: m_Name

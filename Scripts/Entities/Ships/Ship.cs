@@ -42,13 +42,13 @@ namespace Assets.Scripts.Entities.Ships
         public Brain Brain = null;
         public Queue<Vector2> DestinationQueue = new Queue<Vector2>();
         public List<CollisionAsteroid> NearbyAsteroids = new List<CollisionAsteroid>();
+        public List<Turret> Turrets = new List<Turret>();
 
 
 
 
         // [tsv-calculation] [note]
         public float Firepower => HasWeapons ? Weapons.Sum(w => w.Firepower) : SpecialFirePower;
-        public List<Turret> Turrets => Weapons.Where((w) => w is Turret).ToList().ConvertAll<Turret>((w) => (Turret)w);
         public float DamagePerSecond => Turrets.Sum(t => t.DamagePerSecond);
         public int Range => HasWeapons ? Weapons.Max((w) => w.Range) : 0;
         public int Tsv => Utilities.CalculateTsv(this);
@@ -144,6 +144,7 @@ namespace Assets.Scripts.Entities.Ships
             ShipType = FleetShip.Type;
             OffsetFromCenter = offsetFromCenter;
             Body = GetComponent<Rigidbody2D>();
+            Collider = GetComponent<Collider2D>();
             Transform brain = transform.Find("Brain");
             MaxHealth = FleetShip.MaxHealth;
             if (brain != null && Level.ActivateBrains)
@@ -270,6 +271,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 Weapons.Add(weapon);
             }
 
+            Turrets = Weapons.Where((w) => w is Turret).ToList().ConvertAll((w) => (Turret)w);
+
             AdditionalTsv = shipStats.AdditionalTsv;
             Sight = shipStats.Sight;
             Speed = shipStats.Speed;
@@ -300,7 +303,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
                     //if (ConfigData.Development && !IsDead) // [alert] [debug] remove this for release
                     //{
-                        //UpdateTestProperties();
+                        UpdateTestProperties();
                     //}
                 }
             }
@@ -357,7 +360,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         // movement methods
         public void MoveToPoint(Vector2 destination)
         {
-            destination = Level.ForceBounds(destination);
+            //destination = Level.ForceBounds(destination);
             if (Level.HasObstacles)
             {
                 if (!Level.Pathfinder.IsObstacleAtPoint(destination))
@@ -425,45 +428,50 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         }
         private void FindShortestPath(Vector2 destination)
         {
-            float start = Time.realtimeSinceStartup;
-            DestinationQueue.Clear();
-            Vector2 startPosition = GetPosition();
+            //float start = Time.realtimeSinceStartup;
+            //DestinationQueue.Clear();
+            //Vector2 startPosition = GetPosition();
             
 
-            //Debug.Log($"Finding shortest path from {startPosition} to {destination} for {Name}");
+            ////Debug.Log($"Finding shortest path from {startPosition} to {destination} for {Name}");
 
-            if (Utilities.HasObstaclesInTheWay(startPosition, destination))
-            {
-                if (Level.Pathfinder.NeedsToBeUpdated)
-                {
-                    Level.Pathfinder.UpdateMap(NearbyAsteroids);
-                }
+            //if (Utilities.HasObstaclesInTheWay(startPosition, destination))
+            //{
+            //    if (Level.Pathfinder.NeedsToBeUpdated)
+            //    {
+            //        Level.Pathfinder.UpdateMap(NearbyAsteroids);
+            //    }
 
-                Vector2Int convertedStart = Level.Pathfinder.ConvertToMapCoordinates(startPosition);
-                Vector2Int convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
+            //    Vector2Int convertedStart = Level.Pathfinder.ConvertToMapCoordinates(startPosition);
+            //    Vector2Int convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
 
-                // Set the destination point to walkable just in case it was set to unwalkable by a previous asteroid and not updated
-                // We know that it is walkable because to get to this point we had to check for any obstacles there
-                Level.Pathfinder.Map[convertedStart.x][convertedStart.y] = false; 
-                //Debug.Log($"There is an obstacle in the way, using astar to find a path, start: {convertedStart}, end: {convertedDestination}");
-                //Debug.Log(Level.ConvertPathfindingToMapCoordinates(new Vector2Int(0, 0)));
+            //    // Set the destination point to walkable just in case it was set to unwalkable by a previous asteroid and not updated
+            //    // We know that it is walkable because to get to this point we had to check for any obstacles there
+            //    if (convertedDestination.x < Level.Pathfinder.Map.Length && convertedDestination.y < Level.Pathfinder.Map[0].Length)
+            //    {
+            //        Level.Pathfinder.Map[convertedStart.x][convertedStart.y] = false;
+            //        //Debug.Log($"There is an obstacle in the way, using astar to find a path, start: {convertedStart}, end: {convertedDestination}");
+            //        //Debug.Log(Level.ConvertPathfindingToMapCoordinates(new Vector2Int(0, 0)));
 
-                List<Vector2Int> result = new Astar(Level.Pathfinder.Map, convertedStart, convertedDestination, Astar.Type.EuclideanFree).Result;
-                for (int i = 0; i < result.Count; i++)
-                {
-                    Vector2 point = Level.Pathfinder.ConvertToLevelCoordinates(result[i]);
-                    //Debug.Log($"Destination #{(i + 1)}: {point}");
-                    DestinationQueue.Enqueue(point);
-                }
+            //        List<Vector2Int> result = new Astar(Level.Pathfinder.Map, convertedStart, convertedDestination, Astar.Type.EuclideanFree).Result;
+            //        for (int i = 0; i < result.Count; i++)
+            //        {
+            //            Vector2 point = Level.Pathfinder.ConvertToLevelCoordinates(result[i]);
+            //            //Debug.Log($"Destination #{(i + 1)}: {point}");
+            //            DestinationQueue.Enqueue(point);
+            //        }
+            //    }
+            //}
+            //else
+            //{
+            //    //Debug.Log("There is straight line to the destination");
+            //    DestinationQueue.Enqueue(destination);
+            //}
+            //float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
+            //Debug.Log($"FindShortestPath() took {end} ms to complete.");
 
-            }
-            else
-            {
-                //Debug.Log("There is straight line to the destination");
-                DestinationQueue.Enqueue(destination);
-            }
-            float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
-            Debug.Log($"FindShortestPath() took {end} ms to complete.");
+
+            DestinationQueue.Enqueue(destination);
 
         }
         /// <summary>
@@ -473,7 +481,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         {
             if (!Utilities.HasObstaclesInTheWay(GetPosition(), FinalDestination))
             {
-                Debug.Log($"Found a direct path for {Name} to {FinalDestination}");
+                //Debug.Log($"Found a direct path for {Name} to {FinalDestination}");
                 TargetCoordinates = FinalDestination;
                 IsFollowingPath = false;
                 DestinationQueue.Clear();
@@ -536,8 +544,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
             //Vector2 unclamped = transform.localPosition;
 
-            Vector2 pos = GetPosition();
-            transform.localPosition = new Vector2(Mathf.Clamp(pos.x, Level.MinX, Level.MaxX), Mathf.Clamp(pos.y, Level.MinY, Level.MaxY));
+            // This shouldn't be necessary any more because obstacles prevent ships from moving outside of bounds, not the clamping
+            //Vector2 pos = GetPosition();
+            //transform.localPosition = new Vector2(Mathf.Clamp(pos.x, Level.MinX, Level.MaxX), Mathf.Clamp(pos.y, Level.MinY, Level.MaxY));
+
             Body.velocity = velocity;
 
         }
@@ -627,6 +637,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             //Debug.Log(__LastStopReason);
             TargetCoordinates = Vector2.zero;
             Body.velocity = Vector2.zero;
+            Body.angularVelocity = 0;
             HasTargetCoordinates = false;
             if (IsFollowingPath)
             {
@@ -741,6 +752,24 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             //    HitObstacle(obstacle);
             //}
         }
+        //protected virtual void OnCollisionEnter2D(Collision2D collision)
+        //{
+        //    GameObject collidingThing = collision.gameObject;
+        //    //Debug.Log($"{Name} collided with {collidingThing.name} with velocity: {Body.velocity}");
+        //    //Body.velocity = Vector2.zero;
+        //    //Body.angularVelocity = 0;
+        //    //StopMoving("Hit an obstacle");
+
+        //}
+        //protected virtual void OnCollisionStay2D(Collision2D collision)
+        //{
+        //    GameObject collidingThing = collision.gameObject;
+        //    //Debug.Log($"{Name} collided with {collidingThing.name} with velocity: {Body.velocity}");
+        //    //Body.velocity = Vector2.zero;
+        //    //Body.angularVelocity = 0;
+        //    //StopMoving("Hit an obstacle");
+
+        //}
         public static void LogDamage(int power, Ship shooter, Ship target) // [damage-method] [note]
         {
             int targetOldTSV = target.Tsv;
@@ -930,10 +959,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         {
             return Level.GetState().GetAllEnemyShips(Side).Any((s) => s.IsShipWithinRange(this));
         }
-        public bool IsTooCloseToShip(Ship ship)
-        {
-            return DistanceTo(ship) <= ConfigData.CloseEnoughCoordinateVariance;
-        }
         public bool IsShipWithinRange(Ship ship)
         {
             return Weapons.Any((w) => w.IsShipWithinRange(ship));
@@ -991,36 +1016,22 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         }
         public bool CanSeeShip(Ship ship)
         {
-            return DistanceTo(ship) < Sight;
+            return DistanceToPoint(ship.Collider.ClosestPoint(GetPosition())) < Sight;
         }
         public Vector2 GetRandomPointOnShip(Vector2 nearPosition)
         {
-            Collider2D collider = GetComponent<Collider2D>();
             Vector2 randomPointBounds;
             Vector2 basePosition = GetPosition() + Level.GetPosition();
             float halfWidth = GetHalfWidth() - ConfigData.OffsetFromFront;
             float halfHeight = GetHalfHeight() - ConfigData.OffsetFromFront;
 
-            if (nearPosition != Vector2.zero)
+            randomPointBounds = Utilities.ForceBounds(10, 10, halfWidth, halfHeight, -1 * halfWidth, -1 * halfHeight);
+            basePosition = nearPosition + Level.GetPosition();
+
+            Vector2 randomPoint = Utilities.RandomCoordinate(Level, Vector2.zero, randomPointBounds, Vector2.zero) + basePosition;
+            if (!Collider.OverlapPoint(randomPoint))
             {
-                randomPointBounds = new Vector2(10, 10); // Limit the random point to some point near the nearPosiition
-                randomPointBounds = Utilities.ForceBounds(10, 10, halfWidth, halfHeight, -1 * halfWidth, -1 * halfHeight);
-                basePosition = nearPosition + Level.GetPosition();
-            }
-            else
-            {
-                randomPointBounds = new Vector2(halfWidth, halfHeight);
-            }
-             
-            Vector2 randomPoint = Vector2.zero;
-            int loops;
-            for (loops = 0; loops < 250 && !collider.OverlapPoint(randomPoint); loops++)
-            {
-                randomPoint = Utilities.RandomCoordinate(Level, Vector2.zero, randomPointBounds, Vector2.zero) + basePosition;
-            }
-            if (loops >= 250)
-            {
-                //Debug.Log($"Couldn't find a random coordinate that overlapped the collider for {Name}: {randomPoint}");
+                return Collider.ClosestPoint(randomPoint);
             }
             return randomPoint;
         }

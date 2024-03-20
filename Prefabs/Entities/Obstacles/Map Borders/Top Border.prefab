@@ -28,8 +28,8 @@ Transform:
   m_GameObject: {fileID: 5921109331714864026}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: 253, z: 0}
-  m_LocalScale: {x: 512, y: 5, z: 1}
+  m_LocalPosition: {x: 0, y: 268, z: 0}
+  m_LocalScale: {x: 560, y: 24, z: 0}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -149,5 +149,6 @@ MonoBehaviour:
   Name: Top Border
   IsMobile: 0
   IsMapBorder: 1
+  HasEnteredMap: 0
   Level: {fileID: 0}
   Collider: {fileID: 8538481970784520678}

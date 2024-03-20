@@ -20,7 +20,7 @@ namespace Assets.Scripts.Entities.Projectiles
         {
             if (Weapon != null && Weapon.Ship != null)
             {
-                _scale = 1f;
+                _scale = 2f;
                 _lastShooterPosition = Weapon.GetPosition();
                 _target = Weapon.TargetShip;
                 if (_target != null )
@@ -63,7 +63,6 @@ namespace Assets.Scripts.Entities.Projectiles
             BeamCannon weapon = (BeamCannon)Weapon;
             weapon.IsFiringLaserBeam = false;
             weapon.LaserBeamTarget = null;
-            Level.GetState().RemoveProjectile(this);
             Destroy(gameObject);
         }
         private Vector2 GetChangeInShooterPosition()
@@ -89,7 +88,7 @@ namespace Assets.Scripts.Entities.Projectiles
                 {
                     _lastTargetPoint = _target.GetPosition();
                 }
-                float distance = Weapon.DistanceToPoint(_lastTargetPoint);
+                //float distance = Weapon.DistanceToPoint(_lastTargetPoint);
 
                 if (transform.localScale.x < Range / 2)
                 {
@@ -106,7 +105,8 @@ namespace Assets.Scripts.Entities.Projectiles
 
                     Quaternion localRotation = Quaternion.Euler(0, 0, localAngle);
 
-                    Vector2 localCannonPoint = Weapon.GetLocalPosition() + LaserBeamOffset;
+                    Vector2 localCannonPoint = Vector2.zero + LaserBeamOffset;
+                    Debug.Log($"Beamcannon local position: {Weapon.GetLocalPosition()}");
                     Vector2 rotatedLocalPosition = localRotation * localCannonPoint;
                     //Vector2 rotatedCannonPosition = (Vector2)Shooter.transform.TransformPoint(rotatedLocalPosition);
                     //Vector2 rotatedMapPosition = (Vector2)Level.Map.transform.TransformPoint(rotatedLocalPosition);
@@ -125,6 +125,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
                     //Debug.Log($"Extending Laser Beam #{Id} to rotated cannon position: {offsetRotatedCannonPosition}");
 
+                    transform.localEulerAngles = new Vector3(0, 0, worldAngle);
                     transform.localPosition = offsetRotatedCannonPosition;
                     Body.velocity = Shooter.Body.velocity;
                     return;

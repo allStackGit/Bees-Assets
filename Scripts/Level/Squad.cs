@@ -160,7 +160,7 @@ namespace Assets.Scripts.Level
                 {
                     ship.Setup(
                         Level,
-                        Level.GetState().EntityCount++,
+                        Level.GetState().AddEntity(),
                         new FleetShip(id, Side, $"Random {squadType} - #{id}", squadType, true, false, 0, 0, 0, 0, 0, 0),
                         this,
                         offset
@@ -187,7 +187,7 @@ namespace Assets.Scripts.Level
             { // user side
                 OpponentId = 0;
 
-                if (Level.HasPlayer && !Level.IsTrainingNueralNetwork)
+                if (Level.HasPlayer)
                 {
                     SquadBox = Instantiate(Level.SquadBox, new Vector3(0, 0, 0), Quaternion.identity);
                     SquadBox.transform.parent = Level.Map.transform;
@@ -226,12 +226,9 @@ namespace Assets.Scripts.Level
                     adjustment *= 1.2f;
                 }
                 
-                float x = Mathf.Clamp((position.x + adjustment.x), Level.MinX, Level.MaxX);
-                float y = Mathf.Clamp((position.y + adjustment.y), Level.MinY, Level.MaxY);
-
                 //Debug.Log($"Sizefactor for {ship.Name}: {sizeFactor}");
                 //Debug.Log($"Local starting position for {ship.Name}: {new Vector2(x, y)}");
-                ship.transform.localPosition = new Vector2(x, y);
+                ship.transform.localPosition = Level.ForceBounds((position.x + adjustment.x), (position.y + adjustment.y));
             });
 
         }
@@ -307,9 +304,9 @@ namespace Assets.Scripts.Level
             List<Ship> ships = GetShips();
             foreach (Ship ship in ships)
             {
-                float x = Mathf.Clamp((destination.x + ship.OffsetFromCenter.x), Level.MinX, Level.MaxX);
-                float y = Mathf.Clamp((destination.y + ship.OffsetFromCenter.y), Level.MinY, Level.MaxY);
-                ship.MoveToPoint(new Vector2(x, y));
+                //float x = Mathf.Clamp((destination.x + ship.OffsetFromCenter.x), Level.MinX, Level.MaxX);
+                //float y = Mathf.Clamp((destination.y + ship.OffsetFromCenter.y), Level.MinY, Level.MaxY);
+                ship.MoveToPoint(destination + ship.OffsetFromCenter);
             }
                 
 
@@ -934,7 +931,7 @@ namespace Assets.Scripts.Level
         {
             //Debug.Log($"Squad #{squadNumber} is moving and the squad box will have width {GetWidth()}, height {GetHeight()}, and center point {GetCenterPoint()}");
             //Debug.Log($"Right most point {GetRightMostPoint()}, Left most point {GetLeftMostPoint()}, Top most point {GetTopMostPoint()}, Bottom most point {GetBottomMostPoint()}");
-            if (IsSelected && !Level.IsTrainingNueralNetwork && !Level.IsTrainingHiveMind)
+            if (IsSelected && Level.HasPlayer)
             {
                 SquadBox.SetActive(true);
                 SquadBox.transform.localPosition = GetCenterPoint();

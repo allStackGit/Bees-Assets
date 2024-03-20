@@ -201,8 +201,7 @@ namespace Assets.Scripts.Level.Commands
                             Striker striker = (Striker)ship;
                             if (!striker.HasCarrier) // if the striker doesn't have a carrier, return to the last carrier position
                             {
-                                Vector2 destination = striker.LastCarrierPosition;
-                                ship.MoveToPoint(Level.ForceBounds(destination + ship.OffsetFromCenter)); 
+                                ship.MoveToPoint(striker.LastCarrierPosition + ship.OffsetFromCenter); 
                             }
                         }
                     }

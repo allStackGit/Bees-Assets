@@ -22,11 +22,11 @@ namespace Assets.Scripts.Entities.Projectiles
         public float Angle;
         public GameObject ExplosionAnimationPrefab;
         public GameObject Explosion;
-        public List<Ship> ShipsToIgnore = new List<Ship>();
+        public HashSet<Ship> ShipsToIgnore = new HashSet<Ship>();
         public Queue<Ship> CollidingQueue = new Queue<Ship>();
         public Queue<Obstacle> CollidingObstacleQueue = new Queue<Obstacle>();
         public string Name;
-        public bool HasExplosion;
+        public bool HasExplosion, HasSetMovement;
         
         public void Setup(LevelStage level, int side, long id, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power)
         {
@@ -39,19 +39,22 @@ namespace Assets.Scripts.Entities.Projectiles
             this.Power = power;
             this.Angle = angle;
             Name = $"{Shooter.Name}: {name} - #{Id}";
+            gameObject.name = Name;
             StartingPosition = startingPosition;
             transform.localPosition = StartingPosition;
             Level = level;
             Body = GetComponent<Rigidbody2D>();
-            gameObject.name = Name;
+            Collider = GetComponent<Collider2D>();
             HasExplosion = ExplosionAnimationPrefab != null;
+            if (Body != null)
+            {
+                SetMovement();
+            }
         }
 
         public virtual void Kill()
         {
             //Debug.Log($"killed projectile {Name}");
-            Level.GetState().RemoveProjectile(this);
-
             Destroy(gameObject);
         }
 
@@ -75,20 +78,26 @@ namespace Assets.Scripts.Entities.Projectiles
         {
             if (obstacle != null)
             {
-                DamageObstacle(obstacle);
-                KillSequence();
+                if (!obstacle.IsMapBorder)
+                {
+                    Debug.Log($"{Name} hit {obstacle.Name}");
+                    DamageObstacle(obstacle);
+                    KillSequence();
+                }
+                else
+                {
+                    Kill();
+                }
+
             }
         }
 
         public void DamageObstacle(Obstacle obstacle)
         {
-            if (!obstacle.IsMapBorder)
+            obstacle.Health -= Power;
+            if (obstacle.Health <= 0)
             {
-                obstacle.Health -= Power;
-                if (obstacle.Health <= 0)
-                {
-                    obstacle.Kill();
-                }
+                obstacle.Kill();
             }
 
         }
@@ -106,25 +115,8 @@ namespace Assets.Scripts.Entities.Projectiles
                 {
                     ContactObstacle(CollidingObstacleQueue.Dequeue());
                 }
-                Move();
             }
             
-        }
-
-        private bool OutOfBounds()
-        {
-            Vector2 position = GetPosition();
-            if (Level.IsTrainingNueralNetwork)
-            {
-                return DistanceToPoint(StartingPosition) >= Range; // [alert] [rl-training] this should only be on to account for higher timescales with RL training
-
-            }
-            bool outOfBounds = DistanceToPoint(StartingPosition) >= Range || position.x > Level.MaxX || position.x < Level.MinX || position.y > Level.MaxY || position.y < Level.MinY;
-            //if (outOfBounds)
-            //{
-            //    Debug.Log($"Projectile ({name}) #{Id} at position ({position}) is out of bounds with a distance to starting point ({StartingPosition}) of ({DistanceToPoint(StartingPosition)})");
-            //}
-            return outOfBounds;
         }
 
         protected void RemoveDamageSentEntry()
@@ -140,30 +132,21 @@ namespace Assets.Scripts.Entities.Projectiles
 
         }
 
-        protected void Move()
+        /// <summary>
+        /// Sets the initial movement of the projectile and only needs to be set once unless it's a tracking projectile, in which case this won't work
+        /// </summary>
+        protected void SetMovement()
         {
-            //Debug.Log($"Moving position for #{Id}: {GetPosition()}");
-            if (OutOfBounds())
-            {
-                //Debug.Log($"Projectile ({name}) #{Id} went out of bounds! Range:  {Range}");
-                RemoveDamageSentEntry();
-                Kill();
-            }
-            else
-            {
-                transform.eulerAngles = Vector3.back * (Angle * Mathf.Rad2Deg);
+            transform.eulerAngles = Vector3.back * (Angle * Mathf.Rad2Deg);
 
-                float x = (float)(-1 * Speed * Math.Sin(Angle));
-                float y = (float)(-1 * Speed * Math.Cos(Angle));
+            Body.velocity = new Vector2((float)(-Speed * Mathf.Sin(Angle)), (float)(-Speed * Mathf.Cos(Angle)));
 
-                Body.velocity = new Vector3(x, y);
-            }
         }
 
         protected virtual void OnTriggerEnter2D(Collider2D collider) // projectile collision
         {
             GameObject collidingThing = collider.gameObject;
-            //Debug.Log($"Projectile #{Id} collided with {collidingThing.name} at {Level.Updates} updates");
+            //Debug.Log($"Projectile {Name} collided with {collidingThing.name}");
             if (collidingThing.CompareTag("Ship"))
             {
                 Ship ship = collidingThing.GetComponent<Ship>();
@@ -195,3 +178,4 @@ namespace Assets.Scripts.Entities.Projectiles
     
     
 }
+

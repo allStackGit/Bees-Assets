@@ -13,7 +13,6 @@ GameObject:
   - component: {fileID: 8276411991474546587}
   - component: {fileID: -4927107212366897339}
   - component: {fileID: 6775785947513820997}
-  - component: {fileID: 676764122444431878}
   m_Layer: 18
   m_Name: Frigate Rocket Explosion
   m_TagString: Projectile
@@ -75,7 +74,7 @@ SpriteRenderer:
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: -41909203
-  m_SortingLayer: 5
+  m_SortingLayer: 22
   m_SortingOrder: 0
   m_Sprite: {fileID: -2041476100, guid: 4796ae417ed93de4aac0627eb7235284, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -171,16 +170,5 @@ MonoBehaviour:
   Angle: 0
   ExplosionAnimationPrefab: {fileID: 0}
   Explosion: {fileID: 0}
-  ShipsToIgnore: []
---- !u!114 &676764122444431878
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 4140905405707596873}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f8857c05bf676234890f919a13fd56ff, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  Name: 
+  HasExplosion: 0

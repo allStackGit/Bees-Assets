@@ -108,6 +108,7 @@ MonoBehaviour:
   Age: 0
   Level: {fileID: 0}
   Side: 0
+  Collider: {fileID: 0}
   Body: {fileID: 0}
   Health: 0
   MaxHealth: 0
@@ -122,6 +123,7 @@ MonoBehaviour:
   HealthBar: {fileID: 6443253524508454614}
   MiniMapIcon: {fileID: 5838977564807558582}
   TargetCoordinates: {x: 0, y: 0}
+  FinalDestination: {x: 0, y: 0}
   OffsetFromCenter: {x: 0, y: 0}
   Squad: {fileID: 0}
   DefaultAngle: 0
@@ -130,8 +132,11 @@ MonoBehaviour:
   Name: 
   FireAtFrontOfShip: 0
   InCombat: 0
+  IsFollowingPath: 0
+  IsDead: 0
   HasBrain: 0
   IsMinionShip: 0
+  HasTargetCoordinates: 0
   Weapons: []
   ProjectilePrefabs:
   - {fileID: 0}
@@ -139,6 +144,8 @@ MonoBehaviour:
   - {fileID: 3735837283095508316}
   ColoredPrefabs: []
   Brain: {fileID: 0}
+  NearbyAsteroids: []
+  Turrets: []
   __PastCommands: []
   __Strategy: 
   __Squad: 
@@ -182,7 +189,7 @@ Rigidbody2D:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2518675752222090675}
-  m_BodyType: 1
+  m_BodyType: 0
   m_Simulated: 1
   m_UseFullKinematicContacts: 0
   m_UseAutoMass: 0
@@ -230,7 +237,7 @@ PolygonCollider2D:
   m_CallbackLayers:
     serializedVersion: 2
     m_Bits: 4294967295
-  m_IsTrigger: 1
+  m_IsTrigger: 0
   m_UsedByEffector: 0
   m_UsedByComposite: 0
   m_Offset: {x: 0, y: 0}

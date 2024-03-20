@@ -21,12 +21,10 @@ namespace Assets.Scripts.Level
         private bool _scrollNegative;
         private bool _leftShift;
         private bool _leftControl;
-        private bool _rKey;
         private bool _mouseAtTopEdge;
         private bool _mouseAtBottomEdge;
         private bool _mouseAtLeftEdge;  
         private bool _mouseAtRightEdge;
-        private bool _escapeKey;
         private bool _isLeftMouseDragging;
         private bool _selectingPatrolArea;
         private bool _selectingGuardTarget;
@@ -45,7 +43,10 @@ namespace Assets.Scripts.Level
         public List<Timer> Timers = new List<Timer>();
         public EventSystem EventSystem => Level.EventSystem;
 
+        // these are booleans for user inputs that are held down so that we don't need to fire the action the entire time they're held down
 
+        public bool IsShowingRanges;
+        public bool IsFiringManually;
 
 
         public LevelInputManager(LevelStage level, Selector selector)
@@ -77,12 +78,10 @@ namespace Assets.Scripts.Level
             _scrollNegative = false;
             _leftShift = false;
             _leftControl = false;
-            _rKey = false;
             _mouseAtLeftEdge = false;
             _mouseAtRightEdge = false;
             _mouseAtBottomEdge = false;
             _mouseAtTopEdge = false;
-            _escapeKey = false;
             _clickedShip = null;
         }
         private void CheckInputs() {
@@ -97,10 +96,6 @@ namespace Assets.Scripts.Level
             else if (Input.GetKey(KeyCode.LeftControl))
             {
                 _leftControl = true;
-            }
-            else if (Input.GetKey(KeyCode.R))
-            {
-                _rKey = true;
             }
             else
             {
@@ -305,6 +300,10 @@ namespace Assets.Scripts.Level
             }
             return false;
         }
+        private bool HasManualFireInput()
+        {
+            return Input.GetKey(KeyCode.F);
+        }
 
         /// <summary>
         /// The new logic is as follows:
@@ -321,21 +320,63 @@ namespace Assets.Scripts.Level
             {
                 if (HasShowRangesInput())
                 {
-                    Level.GetState().GetSelectedSquads().ForEach(s => {
-                        if (!s.IsShowingRanges)
-                        {
-                            s.ShowSquadRanges();
-                        }
-                    });
+                    if (!IsShowingRanges)
+                    {
+                        Level.GetState().GetSelectedSquads().ForEach(s => {
+                            if (!s.IsShowingRanges)
+                            {
+                                s.ShowSquadRanges();
+                            }
+                        });
+                        IsShowingRanges = true;
+                    }
                 }
                 else
                 {
-                    Level.GetState().GetSelectedSquads().ForEach(s => {
-                        if (s.IsShowingRanges)
-                        {
-                            s.HideSquadRanges();
-                        }
-                    });
+                    if (IsShowingRanges)
+                    {
+                        Level.GetState().GetSelectedSquads().ForEach(s => {
+                            if (s.IsShowingRanges)
+                            {
+                                s.HideSquadRanges();
+                            }
+                        });
+                        IsShowingRanges = false;
+                    }
+
+                }
+                if (HasManualFireInput())
+                {
+                    if (!IsFiringManually)
+                    {
+                        Level.GetState().GetSelectedSquads().ForEach(squad => {
+                            squad.GetShips().ForEach((ship) =>
+                            {
+                                ship.Turrets.ForEach((turret) =>
+                                {
+                                    turret.IsFiringManually = true;
+                                });
+                            });
+                        });
+                        IsFiringManually = true;
+                    }
+                    
+                }
+                else
+                {
+                    if (IsFiringManually)
+                    {
+                        Level.GetState().GetSelectedSquads().ForEach(squad => {
+                            squad.GetShips().ForEach((ship) =>
+                            {
+                                ship.Turrets.ForEach((turret) =>
+                                {
+                                    turret.IsFiringManually = false;
+                                });
+                            });
+                        });
+                        IsFiringManually = false;
+                    }
                 }
             }
             

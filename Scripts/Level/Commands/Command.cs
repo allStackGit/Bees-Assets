@@ -57,10 +57,10 @@ namespace Assets.Scripts.Level.Commands
         }
         public void AddDestination(Vector2 destination)
         {
-            float x = Mathf.Clamp(destination.x, Level.MinX, Level.MaxX);
-            float y = Mathf.Clamp(destination.y, Level.MinY, Level.MaxY);
+            //float x = Mathf.Clamp(destination.x, Level.MinX, Level.MaxX);
+            //float y = Mathf.Clamp(destination.y, Level.MinY, Level.MaxY);
 
-            destination = new Vector2(x, y);
+            //destination = new Vector2(x, y);
 
             _destinations.Add(destination); 
         }

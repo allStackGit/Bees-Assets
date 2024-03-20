@@ -55,7 +55,7 @@ namespace Assets.Scripts.Level
                 {
                     ship.Setup(
                         Level,
-                        Level.GetState().EntityCount++,
+                        Level.GetState().AddEntity(),
                         new FleetShip(id, Side, $"Carrier {SquadType} - #{id}", SquadType, true, false, 0, 0, 0, 0, 0, 0),
                         this,
                         offset

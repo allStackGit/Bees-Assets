@@ -23,11 +23,13 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public bool CeaseFire => Ship.Squad.CeaseFire;
         public bool HasTargetShip => TargetShip != null;
         public bool HasShipsWithinRange => ShipsWithinRange.Count > 0;
+        public int Id;
+        public LevelStage Level;
+        public RangeCollider RangeCollider;
         /// <summary>
-        /// Whether a weapon *should* fire at a target. It may still not be *able* to fire at a target, if for instance it's a turret and not aimed at the target.
+        /// Whether a weapon has a target ship and is not cease fire and therefore *should* fire at a target. It may still not be *able* to fire at a target, if for instance it's a turret and not aimed at the target.
         /// </summary>
         public bool ShouldFire => TargetShip != null && !CeaseFire;
-        public LevelStage Level => Ship.Level;
         public Squad Squad => Ship.Squad;
         public int Side => Ship.Side;
 
@@ -37,6 +39,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             GameObject projectilePrefab)
         {
             Ship = ship;
+            Level = Ship.Level;
+            Id = Level.GetState().GetId();
             Range = range;
             Power = power;
             SpecialFirepower = specialFirePower;
@@ -67,7 +71,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 RangeCollider rangeCollider = rangeColliderTransform.GetComponent<RangeCollider>();
                 if (rangeCollider != null )
                 {
-                    rangeCollider.Setup(this, Range, rangeColliderTransform);
+                    RangeCollider = rangeCollider;
+                    RangeCollider.Setup(this, Range, rangeColliderTransform);
                 }
 
             }
@@ -101,12 +106,16 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                         ShipDamageStatus shipDamageStatus = Squad.GetShipDamageStatus(potentialTargetShip);
                         if (useShipStatus)
                         {
-                            if (shipDamageStatus.totalDamageSentToShip < shipDamageStatus.health)
+                            if (shipDamageStatus.totalDamageSentToShip <= shipDamageStatus.health)
                             {
                                 SetTargetShip(potentialTargetShip);
                                 foundTarget = true;
                                 return foundTarget;
                             }
+                            //else
+                            //{
+                            //    Debug.Log($"{Ship.Name} cannot fire at {potentialTargetShip.Name} because {shipDamageStatus.totalDamageSentToShip} >= {shipDamageStatus.health}");
+                            //}
                         }
                         else
                         {
@@ -224,20 +233,20 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// <summary>Sorts the potential target ships according to the shooting strategy. Uses a cached queue </summary>
         public List<Ship> MakeTargetingQueue()
         {
-            //Debug.Log($"Making targeting queue. The squad is using {Squad.GetShootingStrategy()}");
+            
             List<Ship> queue = GetPotentialEnemyTargetShips();
             string strategy = Ship.ShootingStrategy;
             CachedShootingStrategy = strategy;
             CachedTargetingQueue = queue;
             if (strategy != null && !IsUsingCachedTargetingQueue)
             {
+                //Debug.Log($"Making targeting queue for {Ship.Name}. The squad is using {Squad.GetShootingStrategy()}");
                 switch (strategy)
                 {
                     case "First Seen":
                         return queue;
                     case "Random":
-                        System.Random rnd = Utilities.GetRandom();
-                        return queue.OrderBy(s => rnd.Next()).ToList();
+                        return queue.OrderBy(s => Utilities.RandomInt(2)).ToList();
                     case "Revenge":
                         return queue.OrderByDescending(s => s.LastKilled).ToList();
                     case "Most Dangerous":
@@ -288,6 +297,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                                     return 0;
                                 }
                             });
+                            //if (queue.Count > 0)
+                            //{
+                            //    Debug.Log($"The first entry in the sorted queue is {queue.First().Name}");
+                            //}
                             return queue;
                         }
                         else
@@ -302,8 +315,12 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         protected virtual void SendProjectile() // [projectile-method] [note]
         {
             //Debug.Log("Sending basic projectile");
-            ShipDamageStatus shipDamageStatus = Squad.GetShipDamageStatus(TargetShip);
-            shipDamageStatus.totalDamageSentToShip += Power;
+            if (HasTargetShip)
+            {
+                ShipDamageStatus shipDamageStatus = Squad.GetShipDamageStatus(TargetShip);
+                shipDamageStatus.totalDamageSentToShip += Power;
+            }
+
 
         }
 
@@ -322,7 +339,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         }
         public float DistanceTo(Entity entity)
         {
-            return DistanceToPoint(entity.GetPosition());
+            return DistanceToPoint(entity.Collider.ClosestPoint(GetPosition()));
         }
         public Vector2 GetPosition()
         {
@@ -377,6 +394,14 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 RangeCircle.SetActive(false);
             }
+        }
+        public bool Equals(Weapon weapon)
+        {
+            return weapon.Id == Id;
+        }
+        public override int GetHashCode()
+        {
+            return Id;
         }
     }
 }

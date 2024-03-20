@@ -23,7 +23,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
         private void IncreaseSpeed()
         {
-            Speed *= 1.5;
+            Body.velocity *= 1.5f;
         }
 
         public override void ContactTarget(Ship target)
@@ -43,8 +43,13 @@ namespace Assets.Scripts.Entities.Projectiles
         {
             if (obstacle != null)
             {
-                DamageObstacle(obstacle);
-                KillSequence();
+                if (!obstacle.IsMapBorder)
+                {
+                    //Debug.Log($"{Name} hit {obstacle.Name}");
+                    DamageObstacle(obstacle);
+                }
+                Kill();
+
             }
         }
 
@@ -55,7 +60,6 @@ namespace Assets.Scripts.Entities.Projectiles
             RocketExplosion explosion = (RocketExplosion) Explosion.GetComponent(typeof(RocketExplosion));
             GameState state = Level.GetState();
             explosion.Setup(this.Level, this.Side, state.AddEntity(), this.Weapon, this.Shooter, this.Target, this.GetPosition(), 0, 0, this.Power);
-            state.AddExplosion(explosion);
         }
 
         protected override void ShipCollision(Ship ship)

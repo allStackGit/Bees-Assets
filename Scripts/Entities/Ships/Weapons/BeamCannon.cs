@@ -12,33 +12,36 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public Ship LaserBeamTarget;
         protected override void Aim()
         {
-            if (TargetShip == null && LaserBeamTarget != null)
+            if (IsFiringManually)
             {
-                TargetShip = LaserBeamTarget;
-            }
-            if (TargetShip != null && !CeaseFire)
-            {
-                //Debug.Log($"Aiming {Piece.name} at {TargetShip.Name}");
-                Vector2 targetPoint = TargetShip.GetPosition();
-                if (FireAtFrontOfShip)
-                {
-                    Vector2 frontOfShip = targetPoint + new Vector2(0, TargetShip.GetHalfHeight() - ConfigData.OffsetFromFront);
-                    targetPoint = Utilities.RotatePointAroundPoint(targetPoint, frontOfShip, TargetShip.GetRotation() * Mathf.Deg2Rad);
-
-                }
-                AimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(targetPoint), RotationRate);
-
+                TargetPoint = Level.InputManager.GetMousePosition();
+                AimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
             }
             else
             {
-                if (!IsFiringLaserBeam)
+                if (TargetShip == null && LaserBeamTarget != null)
                 {
-                    //Debug.Log($"TargetShip is null, rotating back");
-                    AimedAtTarget = false;
-                    Utilities.TimedRotation(Piece, Ship.GetRotation(), RotationRate);
+                    TargetShip = LaserBeamTarget;
                 }
+                if (TargetShip != null && !CeaseFire)
+                {
+                    //Debug.Log($"Aiming {Piece.name} at {TargetShip.Name}");
+                    TargetPoint = GetTargetPoint(TargetShip);
+                    AimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
 
+                }
+                else
+                {
+                    if (!IsFiringLaserBeam)
+                    {
+                        //Debug.Log($"TargetShip is null, rotating back");
+                        AimedAtTarget = false;
+                        Utilities.TimedRotation(Piece, Ship.GetRotation(), RotationRate);
+                    }
+
+                }
             }
+            
 
         }
         protected override void SetTargetShip(Ship targetShip)
@@ -55,14 +58,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 //Debug.Log("Sending beam cannon projectile");
 
-                Vector2 targetPoint = TargetShip.GetPosition();
-                if (FireAtFrontOfShip)
-                {
-                    Vector2 frontOfShip = targetPoint + new Vector2(0, TargetShip.GetHalfHeight() - ConfigData.OffsetFromFront);
-                    targetPoint = Utilities.RotatePointAroundPoint(targetPoint, frontOfShip, TargetShip.GetRotation() * Mathf.Deg2Rad);
-
-                }
-                float angle = AngleToPoint(targetPoint);
+                
+                float angle = AngleToPoint(TargetPoint);
 
                 //Vector2 mapTransformPoint = Ship.Level.Map.transform.InverseTransformPoint(Piece.transform.position);
                 //Vector2 shipOffset = Ship.GetPosition() + (Vector2) transform.position;
@@ -72,10 +69,15 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 Level.AddProjectile(ProjectilePrefab, this, GetPosition(), angle);
                 Ship.FleetShip.ShotsFired++;
 
-                ShipDamageStatus shipDamageStatus = Squad.GetShipDamageStatus(TargetShip);
-                shipDamageStatus.totalDamageSentToShip += Power;
+                if (!IsFiringManually)
+                {
+                    ShipDamageStatus shipDamageStatus = Squad.GetShipDamageStatus(TargetShip);
+                    shipDamageStatus.totalDamageSentToShip += Power;
+                    LaserBeamTarget = TargetShip;
+                }
+
                 IsFiringLaserBeam = true;
-                LaserBeamTarget = TargetShip;
+
             }
 
 

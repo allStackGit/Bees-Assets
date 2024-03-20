@@ -35,7 +35,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 //Debug.Log($"Got target! {ship.name}");
                 _readyToChangeColor = true;
             }
-            else if(!CeaseFire)
+            else if(!CeaseFire || IsFiringManually)
             {
                 //Debug.Log("Setting color red!");
                 Pupil.color = ConfigData.GetUIColor("eye-aiming");
@@ -46,7 +46,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             //Debug.Log("Hornet aiming");
             base.Aim();
             // resets the eye color if there is no target
-            if (!HasTargetShip)
+            if (!HasTargetShip && !IsFiringManually)
             {
                 //Debug.Log("Setting color white!");
                 Pupil.color = Color.white;

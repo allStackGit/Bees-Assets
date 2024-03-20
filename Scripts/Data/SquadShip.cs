@@ -164,7 +164,7 @@ namespace Assets.Scripts.Data
             {
                 ship.Setup(
                     level,
-                    level.GetState().EntityCount++,
+                    level.GetState().IdCount++,
                     fleetShip,
                     squad,
                     Offset

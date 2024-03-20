@@ -78,7 +78,7 @@ SpriteRenderer:
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: 1725515015
-  m_SortingLayer: 19
+  m_SortingLayer: 20
   m_SortingOrder: 0
   m_Sprite: {fileID: 21300000, guid: 2b78f9fd4ca958844b8fb256917a56e7, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -107,6 +107,7 @@ MonoBehaviour:
   Age: 0
   Level: {fileID: 0}
   Side: 0
+  Collider: {fileID: 0}
   Body: {fileID: 0}
   Health: 0
   MaxHealth: 0
@@ -121,6 +122,7 @@ MonoBehaviour:
   HealthBar: {fileID: 8943563929590371903}
   MiniMapIcon: {fileID: 251367458246643864}
   TargetCoordinates: {x: 0, y: 0}
+  FinalDestination: {x: 0, y: 0}
   OffsetFromCenter: {x: 0, y: 0}
   Squad: {fileID: 0}
   DefaultAngle: 0
@@ -129,8 +131,11 @@ MonoBehaviour:
   Name: 
   FireAtFrontOfShip: 1
   InCombat: 0
+  IsFollowingPath: 0
+  IsDead: 0
   HasBrain: 0
   IsMinionShip: 0
+  HasTargetCoordinates: 0
   Weapons: []
   ProjectilePrefabs:
   - {fileID: 6428638681076635372, guid: c5d2fa5f5d52d0d4b855fdc29fca6e90, type: 3}
@@ -138,6 +143,8 @@ MonoBehaviour:
   - {fileID: 8842992509850816665}
   ColoredPrefabs: []
   Brain: {fileID: 0}
+  NearbyAsteroids: []
+  Turrets: []
   __PastCommands: []
   __Strategy: 
   __Squad: 
@@ -171,7 +178,7 @@ Rigidbody2D:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2518675752222090675}
-  m_BodyType: 1
+  m_BodyType: 0
   m_Simulated: 1
   m_UseFullKinematicContacts: 0
   m_UseAutoMass: 0
@@ -219,7 +226,7 @@ PolygonCollider2D:
   m_CallbackLayers:
     serializedVersion: 2
     m_Bits: 4294967295
-  m_IsTrigger: 1
+  m_IsTrigger: 0
   m_UsedByEffector: 0
   m_UsedByComposite: 0
   m_Offset: {x: 0, y: 0}
@@ -351,7 +358,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4949212615178794145, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayer
-      value: 19
+      value: 20
       objectReference: {fileID: 0}
     - target: {fileID: 4949212615178794145, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayerID
@@ -415,7 +422,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6507568151281305453, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayer
-      value: 19
+      value: 20
       objectReference: {fileID: 0}
     - target: {fileID: 6507568151281305453, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayerID
@@ -537,7 +544,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 246620123972439215, guid: 4553e81d8c0d7374ba15e1b2c1cfe898, type: 3}
       propertyPath: m_SortingLayer
-      value: 19
+      value: 20
       objectReference: {fileID: 0}
     - target: {fileID: 246620123972439215, guid: 4553e81d8c0d7374ba15e1b2c1cfe898, type: 3}
       propertyPath: m_SortingOrder

@@ -147,9 +147,9 @@ namespace Assets.Scripts.Entities.Ships
                 //Debug.Log($"Sending {striker.Id} back to its carrier");
                 if (HasCarrier)
                 {
-                    Vector2 destination = Carrier.GetPosition();
-                    Vector2 targetPoint = Level.ForceBounds(destination + OffsetFromCenter);
-                    float distance = DistanceToPoint(targetPoint);
+                    Vector2 destination = Carrier.GetPosition() + OffsetFromCenter;
+                    //Vector2 targetPoint = Level.ForceBounds(destination + OffsetFromCenter);
+                    float distance = DistanceToPoint(destination);
 
                     if (distance < ConfigData.CloseEnoughCoordinateVariance * 3)
                     {
@@ -164,7 +164,7 @@ namespace Assets.Scripts.Entities.Ships
                     else
                     {
                         //Debug.Log($"{striker.Id} is still {distance} away from {targetPoint}");
-                        MoveToPoint(targetPoint);
+                        MoveToPoint(destination);
                     }
                 }
             }

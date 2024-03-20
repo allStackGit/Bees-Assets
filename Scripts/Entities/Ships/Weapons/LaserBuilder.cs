@@ -30,7 +30,7 @@ namespace Assets.Scripts.Entities.Ships
         }
         public void ActuallyShoot() // [projectile-method] [note] this actually sends the projectile once the animation is finished
         {
-            if (_readyForFiring && HasTargetShip)
+            if (_readyForFiring && (HasTargetShip || IsFiringManually))
             {
                 //Debug.Log($"{Name} animation finished, sending projectile, deactivating animation");
                 base.SendProjectile();
@@ -51,7 +51,7 @@ namespace Assets.Scripts.Entities.Ships
         {
             //Debug.Log("Leafcutter aiming");
             base.Aim();
-            if (!HasTargetShip || CeaseFire)
+            if ((!HasTargetShip || CeaseFire) && !IsFiringManually)
             {
                 //Debug.Log($"{Name} has no TargetShip, deactivating animation");
                 LaserBuilderAnimation.SetActive(false);

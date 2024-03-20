@@ -35,7 +35,7 @@ namespace Assets.Scripts.Scenes
         public bool ReplaceDeadShips;
         public bool ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, UseSemiRandomSquads, UseFullyRandomSquads, UseFullyRandomEnemySquads, RecordStats, 
             DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids;
-        public int OverrideTimeScale, TimeoutTime, SquadCount;
+        public int OverrideTimeScale, OverrideUserSide, TimeoutTime, SquadCount;
         public Camera MiniMapCamera;
 
         public GameObject BargePrefab, BeehivePrefab, BumblebeePrefab, CarpenterBeePrefab, CarrierPrefab, CruiserPrefab, DreadnoughtPrefab, DronePrefab,
@@ -51,7 +51,7 @@ namespace Assets.Scripts.Scenes
         public float MinX, MinY, MaxX, MaxY;
         public Selector Selector;
         public int DefaultZoom, MaxZoom, MinZoom, ZoomSpeed, ScrollSpeed;
-        public bool IsTestFiring, UseMouseScrolling;
+        public bool UseMouseScrolling;
         public Vector2 UserStartingPosition, AIStartingPosition, MouseScrollDistanceFromEdge, DefaultCameraPosition;
         public AudioController Audio;
         public LevelConstructor LevelConstructor;
@@ -107,6 +107,10 @@ namespace Assets.Scripts.Scenes
             if (DoesUserHaveController)
             {
                 HasPlayer = true;
+                if (OverrideUserSide == 1 || OverrideUserSide == 2 && OverrideUserSide != ConfigData.Configuration.UserSide)
+                {
+                    ConfigData.SwapSides();
+                }
             }
             else
             {
@@ -235,10 +239,13 @@ namespace Assets.Scripts.Scenes
 
         private void SpawnObstacles()
         {
-            ObstaclePrefabs.ForEach((obstacle) =>
+            GameState state = GetState();
+            ObstaclePrefabs.ForEach((prefab) =>
             {
-                GameObject instance = Instantiate(obstacle);
+                GameObject instance = Instantiate(prefab);
                 instance.transform.parent = Map.transform;
+                Obstacle obstacle = instance.GetComponent<Obstacle>();
+                state.AddObstacle(obstacle);
             });
 
             if (ActivateCollisionAsteroids)
@@ -248,6 +255,7 @@ namespace Assets.Scripts.Scenes
         }
         private void SpawnAsteroid()
         {
+            GameState state = GetState();
             GameObject instance = Instantiate(CollisionAsteroidPrefabs[Utilities.RandomInt(CollisionAsteroidPrefabs.Count)]);
             instance.transform.parent = Map.transform;
             CollisionAsteroid asteroid = instance.GetComponent<CollisionAsteroid>();
@@ -256,6 +264,7 @@ namespace Assets.Scripts.Scenes
             Invoke(nameof(SpawnAsteroid), Utilities.RandomInt(AsteroidSpawnRate));
             Pathfinder.AddObstacle(asteroid);
             Pathfinder.NeedsToBeUpdated = true;
+            state.AddObstacle(asteroid);
         }
         new void Update()
         {
@@ -311,6 +320,9 @@ namespace Assets.Scripts.Scenes
             FixedUpdates++;
         }
 
+        /// <summary>
+        /// Ends the level and marks the winner
+        /// </summary>
         void LevelOver() // [stats-method] [note]
         {
             if (!IsTrainingNueralNetwork)
@@ -345,7 +357,7 @@ namespace Assets.Scripts.Scenes
                 int totalGames = ConfigData.__HumanWins + ConfigData.__BeeWins;
                 int humanWinPercentage = (int)(((float)ConfigData.__HumanWins / totalGames) * 100);
                 int beeWinPercentage = (int)(((float)ConfigData.__BeeWins / totalGames) * 100);
-                Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".PadRight(15)}{$"fps: {fps}".Substring(0, 9)}  {$"fups: {fups}".Substring(0, 10)}     {$"latency: {(int)(latency*1000)}ms".PadRight(18)} {$"CPS: {ConfigData.__HivemindCommands / Time.unscaledTime}".PadRight(9).Substring(0, 9)}     |");
+                Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".PadRight(15)}{$"fps: {fps}".Substring(0, 9)}  {$"fups: {fups}".Substring(0, 10)}     {$"latency: {(int)(latency*1000)}ms".PadRight(18)} {$"CPS: {ConfigData.__HivemindCommands / Time.unscaledTime}".PadRight(9).Substring(0, 9)}");
 
                 if (Menus != null)
                 {
@@ -398,8 +410,16 @@ namespace Assets.Scripts.Scenes
             }
             else
             {
-                SaveAndEnd();
-                //Invoke(nameof(SaveAndEnd), 1f);
+                if (IsTrainingHiveMind)
+                {
+                    SaveAndEnd();
+
+                }
+                else
+                {
+                    Invoke(nameof(SaveAndEnd), 2f);
+
+                }
             }
 
 
@@ -515,24 +535,42 @@ namespace Assets.Scripts.Scenes
             {
                 ConfigData.__PastServerRequests.Clear();
             }
-            CancelInvoke(nameof(TimeOut));
-            //Debug.Log("Cleared timeout");
-            if (!HasPlayer)
-            {
-                Invoke(nameof(TimeOut), TimeoutTime);
-            }
-            LevelConstructor.SetupShips();
 
             if (HasPlayer)
             {
                 Vector2 localizedPosition = DefaultCameraPosition + (Vector2)transform.position;
                 Camera.transform.position = new Vector3(localizedPosition.x, localizedPosition.y, -10);
                 InputManager.MaintainScrollBoundary();
+                if ((OverrideUserSide == 1 || OverrideUserSide == 2) && OverrideUserSide != ConfigData.Configuration.UserSide)
+                {
+                    ConfigData.SwapSides();
+                    Menus.ActionBox.Setup(this, EventSystem, ConfigData.Configuration.UserSide);
+                }
 
             }
+            else
+            {
+                CancelInvoke(nameof(TimeOut));
+                Invoke(nameof(TimeOut), TimeoutTime);
+            }
+            //Debug.Log("Cleared timeout");
+
+
+            if (HasObstacles)
+            {
+                SpawnObstacles();
+                Pathfinder = new Pathfinder(this);
+            }
+
+            LevelConstructor.SetupShips();
+
+            
 
 
         }
+        /// <summary>
+        /// Resets the level for Hivemind training
+        /// </summary>
         private void TimeOut()
         {
             Debug.Log("Level timed out!");
@@ -588,9 +626,9 @@ namespace Assets.Scripts.Scenes
                 ConfigData.AllShips.SaveSquadData();
             }
             //Debug.Log($"Resetting scene");
-            Ship[] ships = state.GetShips().ToArray();
+            Ship[] ships = state.GetShips().ToArray(); // need to convert this to an array because killing a ship removes it from the list of ships in the state
 
-            for(int i = 0; i < ships.Length; i++)
+            for (int i = 0; i < ships.Length; i++)
             {
                 Ship ship = ships[i];
 
@@ -600,7 +638,17 @@ namespace Assets.Scripts.Scenes
             {
                 Destroy(command);
             });
-            
+            Obstacle[] obstacles = state.GetObstacles().ToArray();
+            for (int i = 0; i < obstacles.Length; i++)
+            {
+                Obstacle obstacle = obstacles[i];
+                if (obstacle != null)
+                {
+                    obstacle.Kill();
+                }
+            }
+
+
             //StartNew();
             state.ClearLists();
             StartNew();
@@ -660,9 +708,8 @@ namespace Assets.Scripts.Scenes
                 power /= 2;
             }
             //Debug.Log($"Position before setup for {projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
-            projectile.Setup(this, shooter.Side, state.AddEntity(), weapon, shooter, target, startingPosition, angle, shooter.Range, power);
+            projectile.Setup(this, shooter.Side, state.AddEntity(), weapon, shooter, target, startingPosition, angle, weapon.Range, power);
             //Debug.Log($"Position after setup for #{projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
-            state.AddProjectile(projectile);
         }
         public GameState GetState()
         {

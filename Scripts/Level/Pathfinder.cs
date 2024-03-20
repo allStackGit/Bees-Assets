@@ -39,10 +39,10 @@ namespace Assets.Scripts.Level
         {
             Level = level;
 
-            Width = Level.MapWidth / Scale;
-            Height = Level.MapHeight / Scale;
-            HalfWidth = Level.HalfMapWidth / Scale;
-            HalfHeight = Level.HalfMapHeight / Scale;
+            Width = Convert.ToInt32(Level.MapWidth / Scale);
+            Height = Convert.ToInt32(Level.MapHeight / Scale);
+            HalfWidth = Convert.ToInt32(Level.HalfMapWidth / Scale);
+            HalfHeight = Convert.ToInt32(Level.HalfMapHeight / Scale);
 
             InitializeMap();
         }
@@ -80,7 +80,11 @@ namespace Assets.Scripts.Level
 
                 foreach (int[] point in ObstaclePoints[obstacle.Id])
                 {
-                    Map[point[0]][point[1]] = true; // set to unwalkable space
+                    if (point[0] > 0 && point[0] < Map.Length && point[1] > 0 && point[1] < Map[0].Length)
+                    {
+                        //Debug.Log($"Valid indexes: {point[0]}, {point[1]}");
+                        Map[point[0]][point[1]] = true; // set to unwalkable space
+                    }
                 }
 
 
@@ -102,7 +106,7 @@ namespace Assets.Scripts.Level
         {
             ObstaclesToUpdate.Add(id);
             NeedsToBeUpdated = true;
-            Debug.Log($"Setting #{id} to be updated");
+            //Debug.Log($"Setting #{id} to be updated");
         }
         public void AddObstacle(Obstacle obstacle)
         {
@@ -169,7 +173,7 @@ namespace Assets.Scripts.Level
                             point = rotatedPoint;
                         }
                         Vector2Int converted = ConvertToMapCoordinates(point);
-                        //Debug.Log($"#{i} Converted {point} on the Map to (scaled) {converted} on the PathfindingMap");
+                        //Debug.Log($" Converted {point} on the Map to (scaled) {converted} on the PathfindingMap");
 
 
                         // [note] I haven't figured out why we need to pass the Y to the X and the X to the Y but this works
@@ -206,16 +210,20 @@ namespace Assets.Scripts.Level
                         Map[point[0]][point[1]] = false; // set its old position to walkable space
                     }
 
-                    // Get the new points
-                    ObstaclePoints[asteroid.Id] = GetObstaclePoints(asteroid);
-                    foreach (int[] point in ObstaclePoints[asteroid.Id])
+                    if (asteroid != null)
                     {
-                        if (point[0] < Map.Length && point[1] < Map[0].Length)
+                        // Get the new points
+                        ObstaclePoints[asteroid.Id] = GetObstaclePoints(asteroid);
+                        foreach (int[] point in ObstaclePoints[asteroid.Id])
                         {
-                            //Debug.Log($"Valid indexes: {point[0]}, {point[1]}");
-                            Map[point[0]][point[1]] = true; // set its new position to unwalkable space
+                            if (point[0] < Map.Length && point[1] < Map[0].Length)
+                            {
+                                //Debug.Log($"Valid indexes: {point[0]}, {point[1]}");
+                                Map[point[0]][point[1]] = true; // set its new position to unwalkable space
+                            }
                         }
                     }
+                    
                 });
             }
             else // the ship sent an empty list which means there were no mobile obstacles within range but we should still update the map if need be for static obstacles
@@ -235,12 +243,12 @@ namespace Assets.Scripts.Level
                             Map[point[0]][point[1]] = false; // set its old position to walkable space
                         }
 
-                        toRemove.Add(i);
+                        toRemove.Add(obstacleIndex);
                     }
                 }
-                toRemove.ForEach((index) =>
+                toRemove.ForEach((obstacleIndex) =>
                 {
-                    ObstaclesToUpdate.RemoveAt(index);
+                    ObstaclesToUpdate.Remove(obstacleIndex);
                 });
 
                 if (ObstaclesToUpdate.Count == 0)
@@ -260,11 +268,11 @@ namespace Assets.Scripts.Level
 
         public bool IsObstacleAtPoint(Vector2 point)
         {
-            return Obstacles.Any((obstacle) => obstacle.Collider.OverlapPoint(point));
+            return Obstacles.Any((obstacle) => obstacle != null && obstacle.Collider.OverlapPoint(point));
         }
         public Vector2Int ConvertToMapCoordinates(Vector2 coords)
         {
-            return new Vector2Int(Convert.ToInt32(Width - (HalfWidth - coords.x)), Convert.ToInt32(Height - (HalfHeight + coords.y))) / Scale;
+            return new Vector2Int(Convert.ToInt32(Level.MapWidth - (Level.HalfMapWidth - coords.x)), Convert.ToInt32(Level.MapHeight - (Level.HalfMapHeight + coords.y))) / Scale;
         }
         public Vector2 ConvertToLevelCoordinates(Vector2Int coords)
         {

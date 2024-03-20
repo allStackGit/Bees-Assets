@@ -13,6 +13,7 @@ namespace Assets.Scripts.Entities
         public LevelStage Level;
         public int Side;
 
+        public Collider2D Collider;
         public Rigidbody2D Body;
         protected virtual void Update()
         {

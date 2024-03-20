@@ -107,6 +107,7 @@ MonoBehaviour:
   Age: 0
   Level: {fileID: 0}
   Side: 0
+  Collider: {fileID: 0}
   Body: {fileID: 0}
   Health: 0
   MaxHealth: 0
@@ -121,6 +122,7 @@ MonoBehaviour:
   HealthBar: {fileID: 462731896760843757}
   MiniMapIcon: {fileID: 3209521085061096430}
   TargetCoordinates: {x: 0, y: 0}
+  FinalDestination: {x: 0, y: 0}
   OffsetFromCenter: {x: 0, y: 0}
   Squad: {fileID: 0}
   DefaultAngle: 0
@@ -129,8 +131,11 @@ MonoBehaviour:
   Name: 
   FireAtFrontOfShip: 1
   InCombat: 0
+  IsFollowingPath: 0
+  IsDead: 0
   HasBrain: 0
   IsMinionShip: 0
+  HasTargetCoordinates: 0
   Weapons: []
   ProjectilePrefabs:
   - {fileID: 7501106849564186297, guid: 7e760e89d34f0d24c9681ff13db6a00a, type: 3}
@@ -139,6 +144,8 @@ MonoBehaviour:
   ColoredPrefabs:
   - {fileID: 716252764927314901}
   Brain: {fileID: 0}
+  NearbyAsteroids: []
+  Turrets: []
   __PastCommands: []
   __Strategy: 
   __Squad: 
@@ -367,6 +374,14 @@ PrefabInstance:
       value: 1193605531
       objectReference: {fileID: 0}
     - target: {fileID: 755083736942841004, guid: 562230a51d2eca44e85658480eb67c56, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 755083736942841004, guid: 562230a51d2eca44e85658480eb67c56, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0.48
+      objectReference: {fileID: 0}
+    - target: {fileID: 755083736942841004, guid: 562230a51d2eca44e85658480eb67c56, type: 3}
       propertyPath: m_LocalRotation.w
       value: 1
       objectReference: {fileID: 0}
@@ -386,6 +401,10 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 755083736942841004, guid: 562230a51d2eca44e85658480eb67c56, type: 3}
+      propertyPath: m_ConstrainProportionsScale
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 1334121294634142703, guid: 562230a51d2eca44e85658480eb67c56, type: 3}
       propertyPath: m_Name
       value: Beam Cannon
@@ -396,7 +415,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4006173252447011758, guid: 562230a51d2eca44e85658480eb67c56, type: 3}
       propertyPath: m_SortingLayer
-      value: 22
+      value: 23
       objectReference: {fileID: 0}
     - target: {fileID: 4006173252447011758, guid: 562230a51d2eca44e85658480eb67c56, type: 3}
       propertyPath: m_SortingLayerID
@@ -405,6 +424,10 @@ PrefabInstance:
     - target: {fileID: 4100548376408920609, guid: 562230a51d2eca44e85658480eb67c56, type: 3}
       propertyPath: m_Layer
       value: 12
+      objectReference: {fileID: 0}
+    - target: {fileID: 4100548376408920609, guid: 562230a51d2eca44e85658480eb67c56, type: 3}
+      propertyPath: m_IsActive
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4995298286985136805, guid: 562230a51d2eca44e85658480eb67c56, type: 3}
       propertyPath: m_SortingOrder

@@ -29,7 +29,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0.87881714, w: 0.4771588}
   m_LocalPosition: {x: -85, y: -120, z: 0}
-  m_LocalScale: {x: 257, y: 5, z: 0}
+  m_LocalScale: {x: 257, y: 10, z: 0}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -95,7 +95,7 @@ BoxCollider2D:
   m_GameObject: {fileID: 2468503118127858094}
   m_Enabled: 1
   m_Density: 1
-  m_Material: {fileID: 0}
+  m_Material: {fileID: 6200000, guid: b4ad96f79a27e3f4aa2aa54e15cb96c5, type: 2}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
@@ -115,7 +115,7 @@ BoxCollider2D:
   m_CallbackLayers:
     serializedVersion: 2
     m_Bits: 4294967295
-  m_IsTrigger: 1
+  m_IsTrigger: 0
   m_UsedByEffector: 0
   m_UsedByComposite: 0
   m_Offset: {x: 0, y: 0}
@@ -143,10 +143,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b193967b34ee82745a91937153b61fce, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  Health: 100
+  Health: 1000
   InitialHealth: 0
   Id: 0
   Name: Slanted
   IsMobile: 0
+  IsMapBorder: 0
+  HasEnteredMap: 0
   Level: {fileID: 0}
   Collider: {fileID: 7767618389719884225}

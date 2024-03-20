@@ -11,20 +11,20 @@ namespace Assets.Scripts.Entities
         public Rigidbody2D Body;
         public int Speed;
         public HashSet<Ship> NearbyShips = new HashSet<Ship>();
-        public bool HasEnteredMap;
+        public HashSet<Obstacle> NearbyObstacles = new HashSet<Obstacle>();
+        public Obstacle CollisionObstacle;
         // Use this for initialization
         public new void Setup(LevelStage level, int id)
         {
             base.Setup(level, id);
             Speed = Utilities.RandomInt(Level.AsteroidMaxSpeed);
-            int directionSign = Utilities.RandomSign();
 
             // starting right (+) or left (-)
-            Vector2 randomPosition = new Vector2(directionSign * (Level.HalfMapWidth + 100), (Utilities.RandomSign() * (Utilities.RandomInt(Level.HalfMapHeight))));
+            Vector2 randomPosition = new Vector2(Utilities.RandomSign() * (Level.HalfMapWidth + 100), (Utilities.RandomSign() * (Utilities.RandomInt(Level.HalfMapHeight))));
             
-            if (directionSign > 0) // start top / bottom instead
+            if (Utilities.CoinToss()) // start top / bottom instead
             {
-                randomPosition = new Vector2((Utilities.RandomSign() * (Utilities.RandomInt(Level.HalfMapWidth))), directionSign * (Level.HalfMapHeight + 100));
+                randomPosition = new Vector2((Utilities.RandomSign() * (Utilities.RandomInt(Level.HalfMapWidth))), Utilities.RandomSign() * (Level.HalfMapHeight + 100));
             }
             transform.localPosition = randomPosition;
             transform.localEulerAngles = new Vector3(0, 0, Utilities.RandomInt(360));
@@ -50,12 +50,28 @@ namespace Assets.Scripts.Entities
                 if (NearbyShips.Contains(ship))
                 {
                     //Debug.Log($"It looks like {ship.Name} was already nearby and hit {Name}");
-                    ship.Kill(null);
+                    //ship.Kill(null);
                 }
                 else
                 {
                     ship.FoundNearbyAsteroid(this);
                     NearbyShips.Add(ship);
+                    //Debug.Log($"{ship.Name} is near {Name}");
+                }
+            }
+            else if (collidingThing.CompareTag("Obstacle"))
+            {
+                Obstacle obstacle = collidingThing.GetComponent<Obstacle>();
+                if (NearbyObstacles.Contains(obstacle))
+                {
+                    //Debug.Log($"It looks like {ship.Name} was already nearby and hit {Name}");
+                    //ship.Kill(null);
+                    CollisionObstacle = obstacle;
+                    Invoke(nameof(DelayedCollision), 1);
+                }
+                else if (obstacle.IsMobile && obstacle.HasEnteredMap)
+                {
+                    NearbyObstacles.Add(obstacle);
                     //Debug.Log($"{ship.Name} is near {Name}");
                 }
             }
@@ -81,6 +97,24 @@ namespace Assets.Scripts.Entities
 
 
             }
+            else if (collidingThing.CompareTag("Obstacle"))
+            {
+                Obstacle obstacle = collidingThing.GetComponent<Obstacle>();
+                if (NearbyObstacles.Contains(obstacle))
+                {
+                    NearbyObstacles.Remove(obstacle);
+                }
+            }
+        }
+
+        private void DelayedCollision()
+        {
+            if (CollisionObstacle != null)
+            {
+                CollisionObstacle.Kill();
+                Kill();
+            }
+
         }
     }
 }

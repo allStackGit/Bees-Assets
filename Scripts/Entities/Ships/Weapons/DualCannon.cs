@@ -16,15 +16,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
 
             //get the angle to the target ship
-            Vector2 targetShipPosition = TargetShip.GetPosition();
-            if (FireAtFrontOfShip)
-            {
-                Vector2 frontOfShip = targetShipPosition + new Vector2(0, TargetShip.GetHalfHeight() - ConfigData.OffsetFromFront);
-                targetShipPosition = Utilities.RotatePointAroundPoint(targetShipPosition, frontOfShip, TargetShip.GetRotation() * Mathf.Deg2Rad);
-            }
-
-
-            float angle = Ship.AngleToPoint(targetShipPosition);
+            float angle = Ship.AngleToPoint(TargetPoint);
 
             // get the targetShipPosition of the cannons
             Vector2 shipPosition = Ship.GetPosition();
@@ -45,34 +37,13 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             Ship.FleetShip.ShotsFired += 2;
 
             // Set the damage status
-            ShipDamageStatus shipDamageStatus = Squad.GetShipDamageStatus(TargetShip);
-            shipDamageStatus.totalDamageSentToShip += Power * 2;
+            if (!IsFiringManually)
+            {
+                ShipDamageStatus shipDamageStatus = Squad.GetShipDamageStatus(TargetShip);
+                shipDamageStatus.totalDamageSentToShip += Power * 2;
+            }
+
         }
-
-        //public override void SetupRangeCircleAndCollider()
-        //{ 
-        //    Transform rangeCircleRight = Piece.transform.Find("Right Cannon/Range Circle Right");
-        //    Transform rangeCircleLeft = Piece.transform.Find("Left Cannon/Range Circle Left");
-        //    Transform rangeColliderRight = Piece.transform.Find("Right Cannon/Range Collider");
-        //    Transform rangeColliderLeft = Piece.transform.Find("Left Cannon/Range Collider");
-        //    if (rangeCircleRight != null && rangeCircleLeft != null)
-        //    {
-        //        RangeCircle = rangeCircleRight.gameObject;
-        //        RangeCircle.transform.localScale = new Vector3(Range * 2, Range * 2, 0);
-        //        RangeCircleLeft = rangeCircleLeft.gameObject;
-        //        RangeCircleLeft.transform.localScale = new Vector3(Range * 2, Range * 2, 0);
-        //        HasRangeCircle = true;
-
-        //        RangeCollider = rangeColliderRight.GetComponent<CircleCollider2D>();
-        //        RangeColliderLeft = rangeColliderLeft.GetComponent<CircleCollider2D>();
-        //        if (RangeCollider != null && RangeColliderLeft != null)
-        //        {
-        //            HasRangeCollider = true;
-        //            RangeCollider.radius = Range;
-        //            RangeColliderLeft.radius = Range;
-        //        }
-        //    }
-        //}
 
         // UI Methods
         public override void ShowRange()

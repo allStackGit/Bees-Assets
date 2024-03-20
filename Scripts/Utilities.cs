@@ -115,9 +115,12 @@ namespace Assets.Scripts
         }
         public static int RandomSign()
         {
-            int r = RandomInt(2);
-            //Debug.Log($"Random int: {r}");
-            return r > 0 ? 1 : -1;
+            //Debug.Log($"Random sign: {(r > 0 ? 1 : -1)}");
+            return RandomInt(2) > 0 ? 1 : -1;
+        }
+        public static bool CoinToss()
+        {
+            return RandomInt(2) == 0;
         }
         // not strictly speaking the maximum and minimum distance, but the max change in x or y
         public static Vector2 RandomCoordinate(LevelStage level, Vector2 position, Vector2 maxDistance, Vector2 minDistance)
@@ -129,7 +132,7 @@ namespace Assets.Scripts
                 newLocation = new Vector2(position.x + (RandomFloat(maxDistance.x) + minDistance.x) * RandomSign(), position.y + (RandomFloat(maxDistance.y) + minDistance.y) * RandomSign());
                 loops++;
             }
-            if (loops == 35)
+            if (loops == 100)
             {
                 Debug.Log($"Couldn't find a random coordinate that was in bounds: {newLocation}, {minDistance}, {maxDistance}");
             }

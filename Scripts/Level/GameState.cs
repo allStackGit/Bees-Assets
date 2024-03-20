@@ -5,6 +5,7 @@ using System.Linq;
 //using System.Security.Policy;
 using System.Text.RegularExpressions;
 using Assets.Scripts;
+using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Level.Commands;
@@ -20,22 +21,19 @@ namespace Assets.Scripts.Level
         private List<Ship> _ships = new List<Ship>();
         private List<Squad> _squads = new List<Squad>();
         private Queue<Squad> _squadsAwaitingCommands = new Queue<Squad>();
-        //private List<Projectile> _projectiles = new List<Projectile>();
-        //private List<RocketExplosion> _explosions = new List<RocketExplosion>();
-        //private List<Command> _commands = new List<Command>();
         private List<StoredCommand> _pastCommands = new List<StoredCommand>();
         private List<Squad> _selectedSquads = new List<Squad>();
+        private List<Obstacle> _obstacles = new List<Obstacle>();
 
-        public long EntityCount;
+        public int EntityCount, IdCount, UserCommands, AICommands;
         public bool IsPaused;
-        public int UserCommands = 0;
-        public int AICommands = 0;
         public bool GameOver = false;
         public bool LevelEnded = false;
         public int[] InitialTsv = new int[] { 0, 0 };
         public List<SpottedShip>[] SpottedShips = new List<SpottedShip>[] { new List<SpottedShip>(), new List<SpottedShip>() };
         public int[] OriginalSquadCounts = new int[] { 0, 0 };
         public LevelStage Level;
+
 
 
         public void Setup(LevelStage level)
@@ -50,6 +48,7 @@ namespace Assets.Scripts.Level
             _squadsAwaitingCommands.Clear();
             _pastCommands.Clear();
             _selectedSquads.Clear();
+            _obstacles.Clear();
             SpottedShips[0].Clear();
             SpottedShips[1].Clear();
         }
@@ -79,15 +78,17 @@ namespace Assets.Scripts.Level
                 ships.Add(new SpottedShip(spottedShip, spotter.Id));
             }
         }
-        public long AddEntity()
+        public int AddEntity()
         {
-            EntityCount++;
-            return EntityCount;
+            return EntityCount++;
         }
-        public long AddUserCommand()
+        public int AddUserCommand()
         {
-            UserCommands++;
-            return UserCommands;
+            return UserCommands++;
+        }
+        public int GetId()
+        {
+            return IdCount++;
         }
         public void AddShip(Ship ship)
         {
@@ -98,21 +99,9 @@ namespace Assets.Scripts.Level
         {
             _squads.Add(squad);
         }
-        public void AddProjectile(Projectile projectile)
+        public void AddObstacle(Obstacle obstacle)
         {
-            //_projectiles.Add(projectile);
-        }
-        public void AddExplosion(RocketExplosion explosion)
-        {
-            //_explosions.Add(explosion);
-        }
-        public void RemoveProjectile(Projectile projectile)
-        {
-            //_projectiles.Remove(projectile);
-        }
-        public void RemoveExplosion(RocketExplosion explosion)
-        {
-            //_explosions.Remove(explosion);
+            _obstacles.Add(obstacle);
         }
         public void RemoveShip(Ship ship)
         {
@@ -127,6 +116,10 @@ namespace Assets.Scripts.Level
 
             }
         }
+        public void RemoveObstacle(Obstacle obstacle)
+        {
+            _obstacles.Remove(obstacle);
+        }
         public void AddCommand(Command command)
         {
             //_commands.Add(command);
@@ -135,7 +128,10 @@ namespace Assets.Scripts.Level
             ConfigData.__HivemindCommands++;
         }
 
-
+        public List<Obstacle> GetObstacles()
+        {
+            return _obstacles;
+        }
         public List<Ship> GetShips(int side = 0)
         {
             return side switch

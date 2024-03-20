@@ -12,10 +12,15 @@ namespace Assets.Scripts.Entities.Ships.Weapons
     public class Turret : Weapon
     {
         public bool FireAtFrontOfShip, AimedAtTarget;
+        /// <summary>
+        /// Whether or not the ship is being controlled by a user to fire towards a particular point on the map
+        /// </summary>
+        public bool IsFiringManually;
         public int TargetingPasses, PassesPerFire;
         /// <summary> How many times the targeting sequence runs per fire sequence </summary>
         public float TargetingRate;
         public float DamagePerSecond => RateOfFire > 0 ? (Power / RateOfFire) : 0;
+        public Vector2 TargetPoint;
 
 
         public virtual void Setup(Ship ship, int range, int power, float rateOfFire, float projectileValue, GameObject piece,
@@ -46,10 +51,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// </summary>
         private void TargetingSequence()
         {
-            if (Level.IsTestFiring) // fire a projectile at the mouse if we're testing that
-            {
-                Level.AddProjectile(this.ProjectilePrefab, this, GetPosition(), AngleToPoint(Level.InputManager.GetMousePosition()));
-            }
             __NotShootingReason = $"Reset Reason.";
             TargetingPasses++;
             if (TargetingPasses == PassesPerFire)
@@ -57,10 +58,18 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 //Debug.Log($"{Name} hit {TargetingPasses} targeting passes, now firing");
                 TryToFire();
             }
+            else if (!IsFiringManually)
+            {
+                if (!CeaseFire)
+                {
+                    Targeting();
+                }
+                //Debug.Log($"{Name} targeting #{TargetingPasses}");
+
+            }
             else
             {
-                //Debug.Log($"{Name} targeting #{TargetingPasses}");
-                Targeting();
+                SetTargetShip(null);
             }
         }
         /// <summary>
@@ -68,22 +77,31 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// </summary>
         protected virtual void Aim()
         {
-            if (ShouldFire)
+            if (IsFiringManually)
             {
-                //Debug.Log($"Aiming {Piece.name}");
-                Vector2 targetPoint = GetTargetPoint(TargetShip);
-                AimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(targetPoint), RotationRate);
-
+                TargetPoint = Level.InputManager.GetMousePosition();
+                AimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
             }
             else
             {
-                AimedAtTarget = false;
-                if (!HasShipsWithinRange || CeaseFire)
+                if (ShouldFire)
                 {
-                    //Debug.Log($"{Name} has no ships to fire at, returning to default aim");
-                    Utilities.TimedRotation(Piece, Ship.GetRotation(), RotationRate);
+                    //Debug.Log($"Aiming {Piece.name}");
+                    TargetPoint = GetTargetPoint(TargetShip);
+                    AimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+
+                }
+                else
+                {
+                    AimedAtTarget = false;
+                    if (!HasShipsWithinRange || CeaseFire)
+                    {
+                        //Debug.Log($"{Name} has no ships to fire at, returning to default aim");
+                        Utilities.TimedRotation(Piece, Ship.GetRotation(), RotationRate);
+                    }
                 }
             }
+            
 
         }
         /// <summary>
@@ -93,8 +111,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             base.SendProjectile();
             //Debug.Log("Sending turret projectile");
-            Vector2 targetPoint = GetTargetPoint(TargetShip);
-            float angle = AngleToPoint(targetPoint);
+            float angle = AngleToPoint(TargetPoint);
 
             Level.AddProjectile(ProjectilePrefab, this, GetPosition(), angle);
             Ship.FleetShip.ShotsFired++;
@@ -113,6 +130,11 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 Vector2 frontOfShip = targetPoint + new Vector2(0, ship.GetHalfHeight() - ConfigData.OffsetFromFront);
                 targetPoint = Utilities.RotatePointAroundPoint(targetPoint, frontOfShip, ship.GetRotation() * Mathf.Deg2Rad);
 
+            }
+            if (!RangeCollider.Collider.OverlapPoint(targetPoint+Level.GetPosition()))
+            {
+                //Debug.Log($"{Ship.Name} is firing at {ship.Name} but the target point is not within range");
+                targetPoint = ship.Collider.ClosestPoint(GetPosition());
             }
             return targetPoint;
         }
@@ -168,52 +190,68 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             SendProjectile();
 
         }
+        protected void FireAtPoint()
+        {
+            Ship.SetCombatTimer();
+            SendProjectile();
+
+        }
         /// <summary>
         /// Tries to fire if the weapon has a valid target. Second in the targeting sequence but only called on the 3rd pass
         /// </summary>
         protected void TryToFire()
         {
             //Debug.Log($"{Name} trying to fire");
-            if (ShouldFire)
+            if (IsFiringManually)
             {
                 if (AimedAtTarget)
                 {
-                    Fire();
+                    FireAtPoint();
                 }
-                else
-                {
-                    __NotShootingReason = $"{Ship.Name} is not firing {Name} because the piece is not aimed at the target: {TargetShip.Name}";
-                    Ship potentialTargetShip = GetAimedAtTarget();
-                    if (potentialTargetShip != null)
-                    {
-                        SetTargetShip(potentialTargetShip);
-                        //Debug.Log($"{Name} was not aimed at it's target but was aimed at another target: {TargetShip.Name}. Firing");
-                        Fire();
-
-                    }
-                    else
-                    {
-                        //Debug.Log($"{Ship.Name} is not firing {Name} because the piece is not aimed at any target");
-                        __NotShootingReason = $"{Ship.Name} is not firing {Name} because the piece is not aimed at any target";
-                        //Invoke(nameof(FireNext), .1f);
-                    }
-                }
-
             }
             else
             {
-                if (TargetShip == null)
+                if (ShouldFire)
                 {
-                    //Debug.Log($"{Ship.Name} is not firing {Name} because the TargetShip is null");
-                    __NotShootingReason = $"{Ship.Name} is not firing {Piece.name} because the TargetShip is null";
-                    FireNext();
+                    if (AimedAtTarget)
+                    {
+                        Fire();
+                    }
+                    else
+                    {
+                        __NotShootingReason = $"{Ship.Name} is not firing {Name} because the piece is not aimed at the target: {TargetShip.Name}";
+                        Ship potentialTargetShip = GetAimedAtTarget();
+                        if (potentialTargetShip != null)
+                        {
+                            SetTargetShip(potentialTargetShip);
+                            //Debug.Log($"{Name} was not aimed at it's target but was aimed at another target: {TargetShip.Name}. Firing");
+                            Fire();
+
+                        }
+                        else
+                        {
+                            //Debug.Log($"{Ship.Name} is not firing {Name} because the piece is not aimed at any target");
+                            __NotShootingReason = $"{Ship.Name} is not firing {Name} because the piece is not aimed at any target";
+                            //Invoke(nameof(FireNext), .1f);
+                        }
+                    }
+
                 }
-                else if (CeaseFire)
+                else
                 {
-                    //Debug.Log($"{Ship.Name} is not firing {Piece.name} because CeaseFire is on");
-                    __NotShootingReason = $"{Ship.Name} is not firing {Name} because CeaseFire is on";
+                    if (TargetShip == null)
+                    {
+                        //Debug.Log($"{Ship.Name} is not firing {Name} because the TargetShip is null");
+                        __NotShootingReason = $"{Ship.Name} is not firing {Piece.name} because the TargetShip is null";
+                        FireNext();
+                    }
+                    else if (CeaseFire)
+                    {
+                        //Debug.Log($"{Ship.Name} is not firing {Piece.name} because CeaseFire is on");
+                        __NotShootingReason = $"{Ship.Name} is not firing {Name} because CeaseFire is on";
+                    }
+                    //Invoke(nameof(Fire), RateOfFire);
                 }
-                //Invoke(nameof(Fire), RateOfFire);
             }
 
             // Reset

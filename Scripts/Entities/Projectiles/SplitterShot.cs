@@ -18,7 +18,7 @@ namespace Assets.Scripts.Entities.Projectiles
             KillSequence(target);
         }
 
-        public void KillSequence(Ship target = null)
+        public void KillSequence(Ship target)
         {
             if (HasExplosion)
             {
@@ -26,6 +26,17 @@ namespace Assets.Scripts.Entities.Projectiles
                 Explosion.transform.parent = Level.Map.transform;
             }
             Split(target);
+            Kill();
+        }
+
+        public override void KillSequence()
+        {
+            if (HasExplosion)
+            {
+                Explosion = Instantiate(ExplosionAnimationPrefab, GetPosition() + Level.GetPosition(), Quaternion.identity);
+                Explosion.transform.parent = Level.Map.transform;
+            }
+            Split(null);
             Kill();
         }
 
@@ -64,7 +75,6 @@ namespace Assets.Scripts.Entities.Projectiles
                 LaserShot projectile = (LaserShot)shot.GetComponent(typeof(LaserShot));
                 GameState state = Level.GetState();
                 projectile.Setup(Level, Shooter.Side, state.AddEntity(), Weapon, Shooter, Target, startingPosition, radians, Weapon.Range/4, Weapon.Power/2);
-                state.AddProjectile(projectile);
                 projectile.ShipsToIgnore.Add(target);
 
             }
