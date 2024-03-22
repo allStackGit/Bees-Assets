@@ -46,7 +46,7 @@ namespace Assets.Scripts.Level.Commands
                     Invoke(nameof(FinishGuardingCommand), ConfigData.Configuration.AISquadGuardTime);
 
                 }
-                InvokeRepeating(nameof(Timer), .1f, .1f);
+                InvokeRepeating(nameof(Timer), ConfigData.CommandTimerFrequency, ConfigData.CommandTimerFrequency);
             }
             else
             {

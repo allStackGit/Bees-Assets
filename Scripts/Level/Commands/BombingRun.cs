@@ -73,7 +73,7 @@ namespace Assets.Scripts.Level.Commands
                 //Debug.Log("--------------------");
             }
 
-            InvokeRepeating(nameof(Timer), .01f, .5f);
+            InvokeRepeating(nameof(Timer), .01f, ConfigData.CommandTimerFrequency);
 
         }
         private bool CheckIfStrikersAreDefenseless()

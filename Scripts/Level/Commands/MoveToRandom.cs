@@ -17,7 +17,7 @@ namespace Assets.Scripts.Level.Commands
             Vector2 position = Squad.GetPosition();
             Vector2 randomCoordinates = Utilities.RandomCoordinate(Level, position, Vector2.one * ConfigData.Configuration.AIRandomMovementMaxDistance, Vector2.one * 10);
             SetAndMove(randomCoordinates);
-            InvokeRepeating(nameof(Timer), .1f, .1f);
+            InvokeRepeating(nameof(Timer), ConfigData.CommandTimerFrequency, ConfigData.CommandTimerFrequency);
 
 
         }

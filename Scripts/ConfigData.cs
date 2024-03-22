@@ -52,6 +52,7 @@ namespace Assets.Scripts
         public static bool IsSavedSquadsDataLoaded = false;
 
         public static int ObstaclesLayer = 1 << 19; // the layer masks need to all be 1 and then bitwise shifted to the left by the layer number
+        public static int ObstacleProximityRangesLayer = 1 << 20;
 
         public static float Tiny = 1; // this is the base size, equal to 4 World Units
         public static float Small = Tiny * 1.5f; 
@@ -149,6 +150,7 @@ namespace Assets.Scripts
         public static float CloseEnoughCoordinateVariance = 1.5f; // world units
         public static float OffsetFromFront = .25f;
         public const float FireShipExplosionSize = 32;
+        public const float CommandTimerFrequency = .5f;
         public static List<Scene> Scenes = new List<Scene>();
 
 

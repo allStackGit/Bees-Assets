@@ -30,7 +30,7 @@ namespace Assets.Scripts.Level.Commands
                     Vector2 position = Squad.GetPosition();
                     _retreatPoint = new Vector2((float)(Mathf.Sin(angle) * (idealDistance - distance) + position.x), (float)(Mathf.Cos(angle) * (idealDistance - distance) + position.y));
                     SetAndMove(_retreatPoint);
-                    InvokeRepeating(nameof(Timer), .5f, .5f);
+                    InvokeRepeating(nameof(Timer), ConfigData.CommandTimerFrequency, ConfigData.CommandTimerFrequency);
                 }
                 else
                 {

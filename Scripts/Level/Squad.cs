@@ -301,6 +301,7 @@ namespace Assets.Scripts.Level
             {
                 Level.Menus.ActionBox.HighlightSelectedButtons();
             }
+            float start = Time.realtimeSinceStartup;
             List<Ship> ships = GetShips();
             foreach (Ship ship in ships)
             {
@@ -308,7 +309,8 @@ namespace Assets.Scripts.Level
                 //float y = Mathf.Clamp((destination.y + ship.OffsetFromCenter.y), Level.MinY, Level.MaxY);
                 ship.MoveToPoint(destination + ship.OffsetFromCenter);
             }
-                
+            float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
+            Debug.Log($"It took {Math.Round(end, 2)} ms to set {Name} moving. The average was {Math.Round(end/ships.Count, 2)}ms");
 
         }
         public void MatchSpeed(float speed = 0)

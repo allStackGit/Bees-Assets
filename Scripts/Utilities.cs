@@ -243,6 +243,11 @@ namespace Assets.Scripts
             string path = $"{ConfigData.GetBasePath()}/{Hash()}.json";
             File.WriteAllText(path, contents);
         }
+        public static void WriteTextFile(string contents)
+        {
+            string path = $"{ConfigData.GetBasePath()}/{Hash()}.txt";
+            File.WriteAllText(path, contents);
+        }
         public static int[] SetChangablePixelsForImage(Color[] colors, Sprite sprite)
         {
             Texture2D sourceTexture = sprite.texture;
@@ -487,13 +492,24 @@ namespace Assets.Scripts
             return rateOfFire > 0 ? ((((power*ProjectileValue) / rateOfFire) * Mathf.Clamp(rotationRate/128, .5f, 1.25f)) * Mathf.Pow((range / 20), 2)) : specialFirepower;
         }
         /// <summary>
-        /// Raycasts from GetPosition() to destination to check for any obstacles in the path. Returns true if there are obstacles in the way
+        /// Linecasts from start to end to check for any obstacles in the path. Returns true if there are obstacles in the way
         /// </summary>
         /// <param name="destination"></param>
         /// <returns></returns>
         public static bool HasObstaclesInTheWay(Vector2 start, Vector2 end)
         {
             return Physics2D.Linecast(start, end, ConfigData.ObstaclesLayer).collider != null;
+        }
+
+        /// <summary>
+        /// Linecasts from start to end to check for any obstacles in the path. Returns true if there are obstacles or obstacle proximity ranges in the way
+        /// </summary>
+        /// <param name="start"></param>
+        /// <param name="end"></param>
+        /// <returns></returns>
+        public static bool HasObstaclesCloseToInTheWay(Vector2 start, Vector2 end)
+        {
+            return Physics2D.Linecast(start, end, ConfigData.ObstacleProximityRangesLayer).collider != null;
         }
         public static void Print2DArray(bool[][] array)
         {
@@ -502,11 +518,11 @@ namespace Assets.Scripts
             {
                 for (int y = 0; y < array[x].Length; y++)
                 {
-                    line += $"{(array[x][y] ? "%" : "+")},";
+                    line += $"{(array[y][x] ? "▢" : "■")}";
                 }
                 line += "\n";
             }
-            Debug.Log(line);
+            WriteTextFile(line);
         }
 
 

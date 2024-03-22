@@ -17,7 +17,7 @@ namespace Assets.Scripts.Level.Commands
             {
                 PrepareDamageToSendEntries("closest");
                 SetAndMove(destination);
-                InvokeRepeating(nameof(Timer), .1f, .1f);
+                InvokeRepeating(nameof(Timer), ConfigData.CommandTimerFrequency, ConfigData.CommandTimerFrequency);
             }
             else
             {

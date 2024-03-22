@@ -303,7 +303,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
                     //if (ConfigData.Development && !IsDead) // [alert] [debug] remove this for release
                     //{
-                        UpdateTestProperties();
+                        //UpdateTestProperties();
                     //}
                 }
             }
@@ -361,9 +361,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         public void MoveToPoint(Vector2 destination)
         {
             //destination = Level.ForceBounds(destination);
+            StopMoving("Got a new destination");
             if (Level.HasObstacles)
             {
-                if (!Level.Pathfinder.IsObstacleAtPoint(destination))
+                Obstacle obstacleAtPoint = Level.Pathfinder.GetObstacleAtPoint(destination);
+                if (obstacleAtPoint == null || (obstacleAtPoint.IsMobile && DistanceToPoint(destination) > 100))
                 {
                     FindShortestPath(destination);
                     if (DestinationQueue.Count > 0)
@@ -378,6 +380,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 }
                 else
                 {
+                    Debug.Log($"Cannot move {Name} there is an obstacle at the destination {destination}");
                     StopMoving("There is an obstacle at the destination");
                 }
                 
@@ -426,54 +429,96 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         {
             NearbyAsteroids.Remove(asteroid);
         }
+
+        /// <summary>
+        /// Uses pathfinding (if necessary) to find the shortest path to the destination
+        /// </summary>
+        /// <param name="destination"></param>
         private void FindShortestPath(Vector2 destination)
         {
-            //float start = Time.realtimeSinceStartup;
-            //DestinationQueue.Clear();
-            //Vector2 startPosition = GetPosition();
+            
+            DestinationQueue.Clear();
+            Vector2 startPosition = GetPosition();
+
+
+            //Debug.Log($"Finding shortest path from {startPosition} to {destination} for {Name}");
+
+            if (Utilities.HasObstaclesCloseToInTheWay(startPosition, destination))
+            {
+                if (Level.Pathfinder.NeedsToBeUpdated)
+                {
+                    Level.Pathfinder.UpdateMap(NearbyAsteroids);
+                }
+
+                Vector2Int convertedStart = Level.Pathfinder.ConvertToMapCoordinates(startPosition);
+                Vector2Int convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
+
+                Pathfinder.Path path = Level.Pathfinder.FindPath(convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y);
+
+                //Debug.Log($"Before consolidation, there are {path.Points.Count} destinations");
+                bool hasConsolidated = true;
+                int consolidations = 0;
+                int loops = 0;
+                while (hasConsolidated && path != null && !path.IsCached && path.Points.Count > 20)
+                {
+                    loops++;
+                    int tenth = path.Points.Count / 10;
+                    if (tenth < 1)
+                    {
+                        tenth = 1;
+                    }
+                    //Debug.Log($"There are now {result.Count} destinations after {consolidations} consolidations, the current 'safe' points are as follows");
+                    int endIndex = (path.Points.Count - (1 + consolidations));
+
+                    //for (int i = endIndex; i < result.Count; i++)
+                    //{
+                    //    Debug.Log($"#{i} safe point: {result[i]}");
+                    //}
+
+                    Vector2 endPoint = path.Points[endIndex];
+                    hasConsolidated = false;
+                    for (int i = 0; i < endIndex && !hasConsolidated; i += tenth) // loop from the start of the path to the end, taking a few at a time
+                    {
+                        Vector2 current = path.Points[i];
+                        //Debug.Log($"Trying to find a straight line between #{i} {current} and #{endIndex} {endPoint}");
+                        if (!Utilities.HasObstaclesCloseToInTheWay(current, endPoint)) // there is a straight line between these this point on the path and the end
+                        {
+                            hasConsolidated = true;
+                            consolidations++;
+                            int consolidationAmount = ((path.Points.Count - (consolidations + 1)) - i);
+                            //Debug.Log($"Found a straight line with no obstacles between #{i}  {current} and #{endIndex} {endPoint}. We are removing the {consolidationAmount} points between them");
+                            // delete everything between this point and the end point, exclusive
+                            path.Points.RemoveRange(i + 1, consolidationAmount);
+                        }
+                    }
+                }
+                //Debug.Log($"After consolidation, there are {path.Points.Count} destinations");
+                if (path != null && path.Points.Count > 0)
+                {
+                    for (int i = 0; i < path.Points.Count; i++)
+                    {
+                        DestinationQueue.Enqueue(path.Points[i]);
+                    }
+                }
+                else
+                {
+                    DestinationQueue.Enqueue(startPosition);
+                }
+
+            }
+            else
+            {
+                //Debug.Log("There is straight line to the destination");
+                DestinationQueue.Enqueue(destination);
+            }
             
 
-            ////Debug.Log($"Finding shortest path from {startPosition} to {destination} for {Name}");
 
-            //if (Utilities.HasObstaclesInTheWay(startPosition, destination))
-            //{
-            //    if (Level.Pathfinder.NeedsToBeUpdated)
-            //    {
-            //        Level.Pathfinder.UpdateMap(NearbyAsteroids);
-            //    }
-
-            //    Vector2Int convertedStart = Level.Pathfinder.ConvertToMapCoordinates(startPosition);
-            //    Vector2Int convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
-
-            //    // Set the destination point to walkable just in case it was set to unwalkable by a previous asteroid and not updated
-            //    // We know that it is walkable because to get to this point we had to check for any obstacles there
-            //    if (convertedDestination.x < Level.Pathfinder.Map.Length && convertedDestination.y < Level.Pathfinder.Map[0].Length)
-            //    {
-            //        Level.Pathfinder.Map[convertedStart.x][convertedStart.y] = false;
-            //        //Debug.Log($"There is an obstacle in the way, using astar to find a path, start: {convertedStart}, end: {convertedDestination}");
-            //        //Debug.Log(Level.ConvertPathfindingToMapCoordinates(new Vector2Int(0, 0)));
-
-            //        List<Vector2Int> result = new Astar(Level.Pathfinder.Map, convertedStart, convertedDestination, Astar.Type.EuclideanFree).Result;
-            //        for (int i = 0; i < result.Count; i++)
-            //        {
-            //            Vector2 point = Level.Pathfinder.ConvertToLevelCoordinates(result[i]);
-            //            //Debug.Log($"Destination #{(i + 1)}: {point}");
-            //            DestinationQueue.Enqueue(point);
-            //        }
-            //    }
-            //}
-            //else
-            //{
-            //    //Debug.Log("There is straight line to the destination");
-            //    DestinationQueue.Enqueue(destination);
-            //}
-            //float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
-            //Debug.Log($"FindShortestPath() took {end} ms to complete.");
-
-
-            DestinationQueue.Enqueue(destination);
+            //DestinationQueue.Enqueue(destination);
 
         }
+
+
         /// <summary>
         /// Periodically called while following a pathfinding path. Checks to see if there are any obstacles in the way and if not, cuts off the destination queue and takes a direct path
         /// </summary>
@@ -602,6 +647,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
         }
 
+
         /// <summary>
         /// Either stops the ship or sets it on course to the next destination
         /// </summary>
@@ -618,6 +664,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 StopMoving(reason);
             }
         }
+
+
         /// <summary>
         /// Checks if a ship is close enough to its target coordinates
         // [note] if GetHeight() is used then the ships don't endlessly circle but the larger ships stop noticably before their destination and it's hard to move them precisely
@@ -637,7 +685,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             //Debug.Log(__LastStopReason);
             TargetCoordinates = Vector2.zero;
             Body.velocity = Vector2.zero;
-            Body.angularVelocity = 0;
             HasTargetCoordinates = false;
             if (IsFollowingPath)
             {
@@ -942,6 +989,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 Destroy(gameObject);
             }
         }
+
+
 
 
         /* Range and distance methods */

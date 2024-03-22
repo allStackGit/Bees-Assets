@@ -385,6 +385,7 @@ MonoBehaviour:
   FixedUpdates: 0
   AsteroidSpawnRate: 10
   AsteroidMaxSpeed: 10
+  __CachedPaths: []
 --- !u!1 &21813683
 GameObject:
   m_ObjectHideFlags: 0
@@ -2487,6 +2488,7 @@ MonoBehaviour:
   FixedUpdates: 0
   AsteroidSpawnRate: 10
   AsteroidMaxSpeed: 10
+  __CachedPaths: []
 --- !u!1001 &504475592
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -2953,6 +2955,7 @@ MonoBehaviour:
   FixedUpdates: 0
   AsteroidSpawnRate: 10
   AsteroidMaxSpeed: 10
+  __CachedPaths: []
 --- !u!1 &689115621
 GameObject:
   m_ObjectHideFlags: 0
@@ -3616,6 +3619,7 @@ MonoBehaviour:
   FixedUpdates: 0
   AsteroidSpawnRate: 10
   AsteroidMaxSpeed: 10
+  __CachedPaths: []
 --- !u!1 &943905230
 GameObject:
   m_ObjectHideFlags: 0
@@ -3876,6 +3880,7 @@ MonoBehaviour:
   FixedUpdates: 0
   AsteroidSpawnRate: 10
   AsteroidMaxSpeed: 10
+  __CachedPaths: []
 --- !u!4 &1124640320 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 5790540700919467307, guid: 3fafbd32112ea274ca305ce0b38a6a94, type: 3}
@@ -4462,6 +4467,7 @@ MonoBehaviour:
   FixedUpdates: 0
   AsteroidSpawnRate: 10
   AsteroidMaxSpeed: 10
+  __CachedPaths: []
 --- !u!1 &1285766612
 GameObject:
   m_ObjectHideFlags: 0
@@ -5816,7 +5822,7 @@ MonoBehaviour:
   __UsedHashes: 
   __Updates: 0
   ReplaceDeadShips: 0
-  ActivateHiveMind: 0
+  ActivateHiveMind: 1
   ActivateBrains: 0
   IsTrainingNueralNetwork: 0
   IsTrainingHiveMind: 0
@@ -5860,9 +5866,12 @@ MonoBehaviour:
   SquadBox: {fileID: 4393128050314196725, guid: 606f56cf5efd9f84d9e877d10187ad8b, type: 3}
   MiniMapContainer: {fileID: 1317578646}
   ObstaclePrefabs:
-  - {fileID: 4057115948159840819, guid: 7af32c7ab23df8e498b7b176ef7c568c, type: 3}
-  - {fileID: 7879729711353278377, guid: c1221e435f223a3499091315cf628421, type: 3}
-  - {fileID: 2468503118127858094, guid: ca5b03952afd84743b50301f41e9bb12, type: 3}
+  - {fileID: 7326860766664323640, guid: 27fa09186320d8445b9492e3a3e46c84, type: 3}
+  - {fileID: 7879729711353278377, guid: 5fcd52a281817014b9f332bafca912b2, type: 3}
+  - {fileID: 7326860766664323640, guid: eae3f525c2071d9479a7e4e79ef26465, type: 3}
+  - {fileID: 364200722728071239, guid: 4610f97684230014b8d22b27367aadf2, type: 3}
+  - {fileID: 7326860766664323640, guid: a8ddb3b368f22334ebfe8c02bc1f86a4, type: 3}
+  - {fileID: 8009567663079250967, guid: 00c76dc033163234ea601d61410a7e9f, type: 3}
   CollisionAsteroidPrefabs:
   - {fileID: 7879729711353278377, guid: 028d8479ccc194b44824e34bfa029f9c, type: 3}
   Menus: {fileID: 0}
@@ -5878,7 +5887,7 @@ MonoBehaviour:
   ZoomSpeed: 2
   ScrollSpeed: 25
   UseMouseScrolling: 0
-  UserStartingPosition: {x: 0, y: -155}
+  UserStartingPosition: {x: 40, y: -155}
   AIStartingPosition: {x: 0, y: 155}
   MouseScrollDistanceFromEdge: {x: 10, y: 10}
   DefaultCameraPosition: {x: 0, y: -155}
@@ -5903,6 +5912,7 @@ MonoBehaviour:
   FixedUpdates: 0
   AsteroidSpawnRate: 10
   AsteroidMaxSpeed: 10
+  __CachedPaths: []
 --- !u!20 &1653464701 stripped
 Camera:
   m_CorrespondingSourceObject: {fileID: 1917256456456610196, guid: 8f7d76eeb7e124348a1a4e884ddafec8, type: 3}
@@ -6111,6 +6121,7 @@ MonoBehaviour:
   FixedUpdates: 0
   AsteroidSpawnRate: 10
   AsteroidMaxSpeed: 10
+  __CachedPaths: []
 --- !u!1001 &1702646739
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -6309,6 +6320,7 @@ MonoBehaviour:
   FixedUpdates: 0
   AsteroidSpawnRate: 10
   AsteroidMaxSpeed: 10
+  __CachedPaths: []
 --- !u!1 &1711188398
 GameObject:
   m_ObjectHideFlags: 0

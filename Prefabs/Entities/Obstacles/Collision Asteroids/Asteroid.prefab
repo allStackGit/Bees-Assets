@@ -283,8 +283,11 @@ MonoBehaviour:
   Name: Collision Asteroid
   IsMobile: 0
   IsMapBorder: 0
+  HasEnteredMap: 0
   Level: {fileID: 0}
   Collider: {fileID: 6610865759102504746}
+  ProximityCollider: {fileID: 4154339277496797366}
+  BaseSizeInWorldUnits: {x: 0, y: 0}
   Body: {fileID: 5293435074437591079}
   Speed: 0
-  WarningColliderObject: {fileID: 2755228807673502984}
+  CollisionObstacle: {fileID: 0}

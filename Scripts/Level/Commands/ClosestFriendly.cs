@@ -19,7 +19,7 @@ namespace Assets.Scripts.Level.Commands
 
             //_parameters.setTimer = false;
             _closestFriendlySquad = Squad.GetClosestValidFriendlySquad();
-            InvokeRepeating(nameof(Timer), .1f, .1f);
+            InvokeRepeating(nameof(Timer), ConfigData.CommandTimerFrequency, ConfigData.CommandTimerFrequency);
 
 
         }

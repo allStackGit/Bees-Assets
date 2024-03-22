@@ -27,7 +27,7 @@ namespace Assets.Scripts.Level.Commands
                     Utilities.RandomCoordinate(Level, Enemy.GetPosition(), Vector2.one * (Enemy.Range + 20), Vector2.one * Enemy.Range);
 
                 _hasReachedDestination = false;
-                InvokeRepeating(nameof(Timer), .1f, .1f);
+                InvokeRepeating(nameof(Timer), ConfigData.CommandTimerFrequency, ConfigData.CommandTimerFrequency);
             }
 
         }

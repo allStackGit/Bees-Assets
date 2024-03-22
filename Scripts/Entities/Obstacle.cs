@@ -12,7 +12,7 @@ namespace Assets.Scripts.Entities
         public string Name;
         public bool IsMobile, IsMapBorder, HasEnteredMap;
         public LevelStage Level;
-        public Collider2D Collider;
+        public Collider2D Collider, ProximityCollider;
         // Use this for initialization
         private void Awake()
         {

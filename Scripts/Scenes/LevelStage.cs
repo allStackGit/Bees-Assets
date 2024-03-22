@@ -86,6 +86,8 @@ namespace Assets.Scripts.Scenes
         public bool DidUserWin => WinningSide == ConfigData.Configuration.UserSide;
         public bool IsPaused => GetState().IsPaused;
 
+        public List<string> __CachedPaths;
+
         new void Start()
         {
             //Debug.Log($"Start level scene");
@@ -266,6 +268,14 @@ namespace Assets.Scripts.Scenes
             Pathfinder.NeedsToBeUpdated = true;
             state.AddObstacle(asteroid);
         }
+        private void UpdateDebugVariables()
+        {
+            if (Pathfinder != null)
+            {
+                __CachedPaths = Pathfinder.PathCache.Select((p) => p.ToString()).ToList();
+
+            }
+        }
         new void Update()
         {
             //GameObject.Find("Rotated Point").transform.position = Utilities.RotatePointAroundPoint(GameObject.Find("Pivot").transform.position, __OriginalPosition, __RotationTest);
@@ -318,6 +328,8 @@ namespace Assets.Scripts.Scenes
                 Seconds += Time.unscaledDeltaTime;
             }
             FixedUpdates++;
+
+            UpdateDebugVariables();
         }
 
         /// <summary>
