@@ -268,13 +268,6 @@ namespace Assets.Scripts.Level
         {
             return _pastCommands;
         }
-        public void LogState()
-        {
-            if (_pastCommands.Count % ConfigData.Configuration.StorageChunkSize == 0)
-            {
-                StoreCommands();
-            }
-        }
         public void StoreCommands()
         {
             List<StoredCommand> completes = _pastCommands.Where((c) => c.IsHiveMindCommand && c.IsFinalized && !c.IsStored).ToList();

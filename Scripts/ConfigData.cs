@@ -150,7 +150,7 @@ namespace Assets.Scripts
         public static float CloseEnoughCoordinateVariance = 1.5f; // world units
         public static float OffsetFromFront = .25f;
         public const float FireShipExplosionSize = 32;
-        public const float CommandTimerFrequency = .5f;
+        public const float CommandTimerFrequency = .1f;
         public static List<Scene> Scenes = new List<Scene>();
 
 
@@ -258,14 +258,21 @@ namespace Assets.Scripts
         }
         public static void SwapSides()
         {
-            if (Configuration.UserSide == Configuration.BeeSide)
+            if (Configuration.UserSide == Configuration.BeeSide) // if it was the bee side switch to the human side
             {
                 Configuration.UserSide = Configuration.HumanSide;
                 Configuration.AISide = Configuration.BeeSide;
-            }else if (Configuration.UserSide == Configuration.HumanSide)
+                SquadMakerSide = Configuration.HumanSide;
+                Configuration.SquadMakerFirstSide = Configuration.HumanSide;
+                Configuration.SquadMakerSecondSide = Configuration.BeeSide;
+            }
+            else if (Configuration.UserSide == Configuration.HumanSide) // switch to bees
             {
                 Configuration.UserSide = Configuration.BeeSide;
                 Configuration.AISide = Configuration.HumanSide;
+                SquadMakerSide = Configuration.BeeSide;
+                Configuration.SquadMakerFirstSide = Configuration.BeeSide;
+                Configuration.SquadMakerSecondSide = Configuration.HumanSide;
             }
         }
         public static Color GetUIColor(string name)

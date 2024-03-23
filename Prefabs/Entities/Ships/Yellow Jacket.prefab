@@ -37,6 +37,7 @@ Transform:
   - {fileID: 358229686724278738}
   - {fileID: 656151277153810066}
   - {fileID: 1000750152605894096}
+  - {fileID: 8704097238695063792}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!212 &2518675752222090673
@@ -78,7 +79,7 @@ SpriteRenderer:
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: -513767661
-  m_SortingLayer: 14
+  m_SortingLayer: 15
   m_SortingOrder: 0
   m_Sprite: {fileID: 21300000, guid: 7d3c88d90f6e83e4e8ea37fcd9b6e3ce, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -107,6 +108,7 @@ MonoBehaviour:
   Age: 0
   Level: {fileID: 0}
   Side: 0
+  Collider: {fileID: 0}
   Body: {fileID: 0}
   Health: 0
   MaxHealth: 0
@@ -121,8 +123,8 @@ MonoBehaviour:
   HealthBar: {fileID: 1390509230172763800}
   MiniMapIcon: {fileID: 5131106989116123935}
   TargetCoordinates: {x: 0, y: 0}
+  FinalDestination: {x: 0, y: 0}
   OffsetFromCenter: {x: 0, y: 0}
-  Velocity: {x: 0, y: 0}
   Squad: {fileID: 0}
   DefaultAngle: 0
   LastKilled: 0
@@ -130,9 +132,11 @@ MonoBehaviour:
   Name: 
   FireAtFrontOfShip: 0
   InCombat: 0
+  IsFollowingPath: 0
+  Vision: {fileID: 5533334073376613122}
+  IsDead: 0
   HasBrain: 0
   IsMinionShip: 0
-  IsDead: 0
   HasTargetCoordinates: 0
   Weapons: []
   ProjectilePrefabs:
@@ -141,6 +145,8 @@ MonoBehaviour:
   - {fileID: 9025357977541324812}
   ColoredPrefabs: []
   Brain: {fileID: 0}
+  NearbyAsteroids: []
+  Turrets: []
   __PastCommands: []
   __Strategy: 
   __Squad: 
@@ -323,6 +329,79 @@ GameObject:
   m_CorrespondingSourceObject: {fileID: 8270332901547302504, guid: 9b99fc9739de1804ca5c1dc2968281d9, type: 3}
   m_PrefabInstance: {fileID: 1118753870141812324}
   m_PrefabAsset: {fileID: 0}
+--- !u!1001 &2521876644857641643
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 2518675752222090672}
+    m_Modifications:
+    - target: {fileID: 5774358442302343926, guid: 752dd660be850b549a967e9e96f5ba1e, type: 3}
+      propertyPath: m_Name
+      value: Bee Vision Collider
+      objectReference: {fileID: 0}
+    - target: {fileID: 6500008320206064219, guid: 752dd660be850b549a967e9e96f5ba1e, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6500008320206064219, guid: 752dd660be850b549a967e9e96f5ba1e, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6500008320206064219, guid: 752dd660be850b549a967e9e96f5ba1e, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6500008320206064219, guid: 752dd660be850b549a967e9e96f5ba1e, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6500008320206064219, guid: 752dd660be850b549a967e9e96f5ba1e, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6500008320206064219, guid: 752dd660be850b549a967e9e96f5ba1e, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6500008320206064219, guid: 752dd660be850b549a967e9e96f5ba1e, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6500008320206064219, guid: 752dd660be850b549a967e9e96f5ba1e, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6500008320206064219, guid: 752dd660be850b549a967e9e96f5ba1e, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6500008320206064219, guid: 752dd660be850b549a967e9e96f5ba1e, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 752dd660be850b549a967e9e96f5ba1e, type: 3}
+--- !u!114 &5533334073376613122 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 7941494824958056873, guid: 752dd660be850b549a967e9e96f5ba1e, type: 3}
+  m_PrefabInstance: {fileID: 2521876644857641643}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0fc40819321686541a3ab67842cc5a3c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!4 &8704097238695063792 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 6500008320206064219, guid: 752dd660be850b549a967e9e96f5ba1e, type: 3}
+  m_PrefabInstance: {fileID: 2521876644857641643}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &3047959027514813813
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -407,7 +486,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4949212615178794145, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayer
-      value: 14
+      value: 15
       objectReference: {fileID: 0}
     - target: {fileID: 4949212615178794145, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayerID
@@ -471,7 +550,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6507568151281305453, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayer
-      value: 14
+      value: 15
       objectReference: {fileID: 0}
     - target: {fileID: 6507568151281305453, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayerID

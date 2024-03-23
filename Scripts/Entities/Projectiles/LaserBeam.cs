@@ -106,7 +106,7 @@ namespace Assets.Scripts.Entities.Projectiles
                     Quaternion localRotation = Quaternion.Euler(0, 0, localAngle);
 
                     Vector2 localCannonPoint = Vector2.zero + LaserBeamOffset;
-                    Debug.Log($"Beamcannon local position: {Weapon.GetLocalPosition()}");
+                    //Debug.Log($"Beamcannon local position: {Weapon.GetLocalPosition()}");
                     Vector2 rotatedLocalPosition = localRotation * localCannonPoint;
                     //Vector2 rotatedCannonPosition = (Vector2)Shooter.transform.TransformPoint(rotatedLocalPosition);
                     //Vector2 rotatedMapPosition = (Vector2)Level.Map.transform.TransformPoint(rotatedLocalPosition);

@@ -32,6 +32,7 @@ namespace Assets.Scripts.Entities.Ships
         public FleetShip FleetShip = null;
         public string ShipType, Name;
         public bool FireAtFrontOfShip, InCombat, IsFollowingPath;
+        public Vision Vision;
         /// <summary>
         /// A ship can be killed at some point of the frame and still exist until the end of the frame. Check this to see if a ship is dead but not yet destroyed.
         /// </summary>
@@ -287,6 +288,16 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             SetToDefaultAngle();
             SetCurrentSpeed(Speed);
 
+            if (IsUserControlled && Vision != null)
+            {
+                //Debug.Log($"Setting up vision for {Name}");
+
+                Vision.Setup(this);
+            }else if (Vision != null)
+            {
+                Vision.gameObject.SetActive(false);
+            }
+
 
         }
         protected void FixedUpdate()
@@ -360,7 +371,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         // movement methods
         public void MoveToPoint(Vector2 destination)
         {
-            //destination = Level.ForceBounds(destination);
+            destination = Level.ForceBounds(destination);
             StopMoving("Got a new destination");
             if (Level.HasObstacles)
             {
@@ -799,24 +810,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             //    HitObstacle(obstacle);
             //}
         }
-        //protected virtual void OnCollisionEnter2D(Collision2D collision)
-        //{
-        //    GameObject collidingThing = collision.gameObject;
-        //    //Debug.Log($"{Name} collided with {collidingThing.name} with velocity: {Body.velocity}");
-        //    //Body.velocity = Vector2.zero;
-        //    //Body.angularVelocity = 0;
-        //    //StopMoving("Hit an obstacle");
-
-        //}
-        //protected virtual void OnCollisionStay2D(Collision2D collision)
-        //{
-        //    GameObject collidingThing = collision.gameObject;
-        //    //Debug.Log($"{Name} collided with {collidingThing.name} with velocity: {Body.velocity}");
-        //    //Body.velocity = Vector2.zero;
-        //    //Body.angularVelocity = 0;
-        //    //StopMoving("Hit an obstacle");
-
-        //}
         public static void LogDamage(int power, Ship shooter, Ship target) // [damage-method] [note]
         {
             int targetOldTSV = target.Tsv;

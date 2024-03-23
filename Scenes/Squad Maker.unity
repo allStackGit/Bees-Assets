@@ -15979,12 +15979,12 @@ MonoBehaviour:
   EventSystem: {fileID: 155230033}
   FinalizedScene: 0
   WatchServerRequests: 0
-  HasIndependentSocket: 0
+  IsSocketManager: 0
   TimeScale: 1
-  Updates: 0
   __PastServerRequests: []
   __AverageRequestTime: 0
   __UsedHashes: 
+  __Updates: 0
   Side: 1
   BargeDragIcon: {fileID: 644091232}
   CarrierDragIcon: {fileID: 994602278}
@@ -16114,6 +16114,7 @@ MonoBehaviour:
   ScreenScaleFactor: {x: 0, y: 0}
   ReferenceScreenSize: {x: 3840, y: 2160}
   ActionBox: {fileID: 2027031817}
+  IsRandomizedOpposingSide: 1
 --- !u!1 &1539631625 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 9023671316290259264, guid: ba8e735e9f2a5b542916479f7ec91750, type: 3}

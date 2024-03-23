@@ -220,7 +220,6 @@ namespace Assets.Scripts.Level.Commands
             // 
 
             
-            this.Level.GetState().LogState();
             //Debug.Log($"Trying to destroy ({Squad.gameObject.name}, {name}) {Squad.gameObject.GetComponent<Command>()}");
             //if (Squad != null)
             //{

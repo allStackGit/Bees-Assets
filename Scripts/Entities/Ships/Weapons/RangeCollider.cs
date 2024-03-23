@@ -11,7 +11,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public int Range;
         public CircleCollider2D Collider;
 
-        public virtual void Setup(Weapon weapon, int range, Transform piece)
+        public virtual void Setup(Weapon weapon, int range)
         {
             Weapon = weapon;
             Range = range;
@@ -26,6 +26,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 Ship ship = collidingThing.GetComponent<Ship>();
                 Weapon.ShipsWithinRange.Add(ship);
+            }else if (collidingThing.CompareTag("Fog of War") && Weapon.Ship.IsUserControlled){
+                Destroy(collidingThing);
             }
 
         }

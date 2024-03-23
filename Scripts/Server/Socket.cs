@@ -431,7 +431,7 @@ namespace Assets.Scripts.Server
 
                         if (!state.GameOver)
                         {
-                            Debugger.Exception($"The squad sorter did not return a valid squad. Side: {squad.Side} Enemy Squads: {state.GetEnemySquads(squad.Side)}");
+                            Debugger.Log($"The squad sorter did not return a valid squad. Side: {squad.Side} Enemy Squads: {state.GetEnemySquads(squad.Side)}");
                         }
 
                     }

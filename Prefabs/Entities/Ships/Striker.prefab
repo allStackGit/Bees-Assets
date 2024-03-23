@@ -38,6 +38,7 @@ Transform:
   - {fileID: 9032726156953436954}
   - {fileID: 133761777903491038}
   - {fileID: 341305416785008614}
+  - {fileID: 5524331744488582693}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!212 &2518675752222090673
@@ -133,6 +134,7 @@ MonoBehaviour:
   FireAtFrontOfShip: 0
   InCombat: 0
   IsFollowingPath: 0
+  Vision: {fileID: 8695094240044842455}
   IsDead: 0
   HasBrain: 0
   IsMinionShip: 0
@@ -464,6 +466,83 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 7863977352822488368, guid: e09a69536eabd394983ce52315b1154b, type: 3}
   m_PrefabInstance: {fileID: 1186915284618165802}
   m_PrefabAsset: {fileID: 0}
+--- !u!1001 &1630009852544722046
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 2518675752222090672}
+    m_Modifications:
+    - target: {fileID: 5774358442302343926, guid: af7caa52462ab6244a840c36b91e9893, type: 3}
+      propertyPath: m_Name
+      value: Human Vision Collider
+      objectReference: {fileID: 0}
+    - target: {fileID: 6500008320206064219, guid: af7caa52462ab6244a840c36b91e9893, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6500008320206064219, guid: af7caa52462ab6244a840c36b91e9893, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6500008320206064219, guid: af7caa52462ab6244a840c36b91e9893, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6500008320206064219, guid: af7caa52462ab6244a840c36b91e9893, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6500008320206064219, guid: af7caa52462ab6244a840c36b91e9893, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6500008320206064219, guid: af7caa52462ab6244a840c36b91e9893, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6500008320206064219, guid: af7caa52462ab6244a840c36b91e9893, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6500008320206064219, guid: af7caa52462ab6244a840c36b91e9893, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6500008320206064219, guid: af7caa52462ab6244a840c36b91e9893, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6500008320206064219, guid: af7caa52462ab6244a840c36b91e9893, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7941494824958056873, guid: af7caa52462ab6244a840c36b91e9893, type: 3}
+      propertyPath: Ship
+      value: 
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: af7caa52462ab6244a840c36b91e9893, type: 3}
+--- !u!4 &5524331744488582693 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 6500008320206064219, guid: af7caa52462ab6244a840c36b91e9893, type: 3}
+  m_PrefabInstance: {fileID: 1630009852544722046}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &8695094240044842455 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 7941494824958056873, guid: af7caa52462ab6244a840c36b91e9893, type: 3}
+  m_PrefabInstance: {fileID: 1630009852544722046}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0fc40819321686541a3ab67842cc5a3c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1001 &2489557292663082041
 PrefabInstance:
   m_ObjectHideFlags: 0

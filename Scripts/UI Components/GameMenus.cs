@@ -89,6 +89,12 @@ namespace Assets.Scripts.UIComponents
             ConfigData.SquadMakerSide = ConfigData.Configuration.SquadMakerFirstSide;
             SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
         }
+        public void SwitchSides()
+        {
+            Level.UnPause();
+            ConfigData.SwapSides();
+            SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
+        }
         public void OpenLevelEndedDialogue()
         {
             Level.Pause();

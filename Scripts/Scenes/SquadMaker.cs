@@ -68,6 +68,7 @@ namespace Assets.Scripts.Scenes
         public Canvas DragCanvas;
         public Vector2 TooltipOffset, ShipStatsBoxOffset, ScreenScaleFactor, ReferenceScreenSize;
         public SquadActionBox ActionBox = null;
+        public bool IsRandomizedOpposingSide;
 
 
 
@@ -206,6 +207,11 @@ namespace Assets.Scripts.Scenes
             {
                 SetupForOpposingSide();
             }
+            else if (IsRandomizedOpposingSide)
+            {
+                SkipOpposingSideSetup();
+            }
+
 
             // Post setup
             //Debug.Log("Post setup");
@@ -216,6 +222,18 @@ namespace Assets.Scripts.Scenes
         }
         private void SetupForOpposingSide()
         {
+
+            // Hide the "Choose Opposing Force" options and extend the squad list size
+            OpposingForceLabel.SetActive(false);
+            OpposingForcePresetDropdown.SetActive(false);
+            RectTransform squadListRect = ChosenSquadList.transform.parent.parent.GetComponent<RectTransform>();
+            squadListRect.sizeDelta = new Vector2(squadListRect.sizeDelta.x, squadListRect.sizeDelta.y + 200);
+        }
+
+        private void SkipOpposingSideSetup()
+        {
+            NextButton.SetActive(false);
+            StartButton.SetActive(true);
 
             // Hide the "Choose Opposing Force" options and extend the squad list size
             OpposingForceLabel.SetActive(false);
@@ -1415,50 +1433,54 @@ namespace Assets.Scripts.Scenes
 
             //Debug.Log($"SMS: {ConfigData.SquadMakerSide}, SMFS: {ConfigData.Configuration.SquadMakerFirstSide}, SMSS: {ConfigData.Configuration.SquadMakerSecondSide}");
             // go to next side if you need to
-            List<SavedSquad> newlySavedOpposingSquads = new List<SavedSquad>();
-            if (Side == ConfigData.Configuration.SquadMakerFirstSide)
+            if (!IsRandomizedOpposingSide)
             {
-                if (_chosenOpposingForceOption == 0) // [alert] order needs to be changed
+                List<SavedSquad> newlySavedOpposingSquads = new List<SavedSquad>();
+                if (Side == ConfigData.Configuration.SquadMakerFirstSide)
                 {
-                    ConfigData.SquadMakerSide = ConfigData.Configuration.SquadMakerSecondSide;
-                    _nextScene = "Squad Maker";
-                    Invoke(nameof(LoadScene), .25f);
-                    return;
-                }
-                else if (_chosenOpposingForceOption == 1)
-                {
-                    _chosenSquads.ForEach((savedSquad) =>
+                    if (_chosenOpposingForceOption == 0) // [alert] order needs to be changed
                     {
-                        SavedSquad newSquad = new AutoBuiltSquad(ConfigData.Configuration.SquadMakerSecondSide, "random", savedSquad, false, false).Squad;
-                        newlySavedOpposingSquads.Add(newSquad);
-                    });
-                }
-                else if (_chosenOpposingForceOption == 2)
-                {
-                    _chosenSquads.ForEach((savedSquad) =>
+                        ConfigData.SquadMakerSide = ConfigData.Configuration.SquadMakerSecondSide;
+                        _nextScene = "Squad Maker";
+                        Invoke(nameof(LoadScene), .25f);
+                        return;
+                    }
+                    else if (_chosenOpposingForceOption == 1)
                     {
-                        SavedSquad newSquad = new AutoBuiltSquad(ConfigData.Configuration.SquadMakerSecondSide, "random", savedSquad, true, false).Squad;
-                        newlySavedOpposingSquads.Add(newSquad);
-                    });
+                        _chosenSquads.ForEach((savedSquad) =>
+                        {
+                            SavedSquad newSquad = new AutoBuiltSquad(ConfigData.Configuration.SquadMakerSecondSide, "random", savedSquad, false, false).Squad;
+                            newlySavedOpposingSquads.Add(newSquad);
+                        });
+                    }
+                    else if (_chosenOpposingForceOption == 2)
+                    {
+                        _chosenSquads.ForEach((savedSquad) =>
+                        {
+                            SavedSquad newSquad = new AutoBuiltSquad(ConfigData.Configuration.SquadMakerSecondSide, "random", savedSquad, true, false).Squad;
+                            newlySavedOpposingSquads.Add(newSquad);
+                        });
 
-                }
-                else if (_chosenOpposingForceOption == 3)
-                {
-                    _chosenSquads.ForEach((savedSquad) =>
+                    }
+                    else if (_chosenOpposingForceOption == 3)
                     {
-                        SavedSquad newSquad = new AutoBuiltSquad(ConfigData.Configuration.SquadMakerSecondSide, "random", savedSquad, false, true).Squad;
-                        newlySavedOpposingSquads.Add(newSquad);
-                    });
+                        _chosenSquads.ForEach((savedSquad) =>
+                        {
+                            SavedSquad newSquad = new AutoBuiltSquad(ConfigData.Configuration.SquadMakerSecondSide, "random", savedSquad, false, true).Squad;
+                            newlySavedOpposingSquads.Add(newSquad);
+                        });
+                    }
                 }
+                newlySavedOpposingSquads.ForEach((squad) =>
+                {
+                    Debug.Log($"Made squad worth {squad.GetMaxTsv()} tsv.");
+                    string ships = "";
+                    squad.GetShips().ForEach((s) => ships += $"{s.ShipType}, ");
+                    Debug.Log(ships);
+                });
+                ConfigData.SquadsChosenForLevel.AddRange(newlySavedOpposingSquads);
             }
-            newlySavedOpposingSquads.ForEach((squad) =>
-            {
-                Debug.Log($"Made squad worth {squad.GetMaxTsv()} tsv.");
-                string ships = "";
-                squad.GetShips().ForEach((s) => ships += $"{s.ShipType}, ");
-                Debug.Log(ships);
-            });
-            ConfigData.SquadsChosenForLevel.AddRange(newlySavedOpposingSquads);
+            
             //ConfigData.SquadsChosenForLevel.ForEach((s) => Debug.Log(s.ToString()));
             _nextScene = "Hivemind Training";
             Invoke(nameof(LoadScene), .5f);

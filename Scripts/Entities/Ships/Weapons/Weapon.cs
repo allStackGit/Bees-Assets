@@ -72,7 +72,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 if (rangeCollider != null )
                 {
                     RangeCollider = rangeCollider;
-                    RangeCollider.Setup(this, Range, rangeColliderTransform);
+                    RangeCollider.Setup(this, Range);
                 }
 
             }

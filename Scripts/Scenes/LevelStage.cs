@@ -34,14 +34,14 @@ namespace Assets.Scripts.Scenes
         /// </summary>
         public bool ReplaceDeadShips;
         public bool ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, UseSemiRandomSquads, UseFullyRandomSquads, UseFullyRandomEnemySquads, RecordStats, 
-            DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids;
+            DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids, ActivateFogOfWar, ActivateAudio, UseMouseScrolling;
         public int OverrideTimeScale, OverrideUserSide, TimeoutTime, SquadCount;
         public Camera MiniMapCamera;
 
         public GameObject BargePrefab, BeehivePrefab, BumblebeePrefab, CarpenterBeePrefab, CarrierPrefab, CruiserPrefab, DreadnoughtPrefab, DronePrefab,
             FactoryPrefab, FireShipPrefab, FlagshipPrefab, FrigatePrefab, GunshipPrefab, HoneybeePrefab, HornetPrefab, LeafcutterPrefab, QueenPrefab,
             ScoutPrefab, StrikerPrefab, WarpGatePrefab, WaspPrefab, YellowJacketPrefab,
-            Map, UIManager, SelectionBox, SquadBox, MiniMapContainer;
+            Map, UIManager, SelectionBox, SquadBox, MiniMapContainer, FogOfWar, FogSquare;
         public List<GameObject> ObstaclePrefabs = new List<GameObject>();
         public List<GameObject> CollisionAsteroidPrefabs = new List<GameObject>();
         public GameMenus Menus;
@@ -51,7 +51,6 @@ namespace Assets.Scripts.Scenes
         public float MinX, MinY, MaxX, MaxY;
         public Selector Selector;
         public int DefaultZoom, MaxZoom, MinZoom, ZoomSpeed, ScrollSpeed;
-        public bool UseMouseScrolling;
         public Vector2 UserStartingPosition, AIStartingPosition, MouseScrollDistanceFromEdge, DefaultCameraPosition;
         public AudioController Audio;
         public LevelConstructor LevelConstructor;
@@ -163,11 +162,18 @@ namespace Assets.Scripts.Scenes
                 {
                     Menus.ActionBox.Setup(this, EventSystem, ConfigData.Configuration.UserSide);
                 }
-                if (Audio != null)
+                if (ActivateAudio && Audio != null)
                 {
                     Audio.Setup();
                 }
 
+            }
+            else
+            {
+                if (Audio != null)
+                {
+                    Audio.gameObject.SetActive(false);
+                }
             }
 
 
@@ -212,12 +218,22 @@ namespace Assets.Scripts.Scenes
                 SpawnObstacles();
                 Pathfinder = new Pathfinder(this);
             }
+            if (ActivateFogOfWar)
+            {
+                SpawnFog();
+                FogOfWar.SetActive(true);
+            }
+            else
+            {
+                FogOfWar.SetActive(false);
+            }
 
             //Invoke(nameof(TimedOut), 60 * 5f);
         }
         protected override void FinalizeSceneWithUserData()
         {
             //Debug.Log($"Finalize scene");
+            float start = Time.realtimeSinceStartup;
             if (!ConfigData.Configuration.DoesUserHaveController && !DoesUserHaveController)
             {
                 Invoke(nameof(TimeOut), TimeoutTime);
@@ -235,9 +251,11 @@ namespace Assets.Scripts.Scenes
             {
                 Invoke(nameof(GetHiveMindCommands), .25f);
             }
+            float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
+            Debug.Log($"It took {Math.Round(end, 2)} ms to set up the level.");
         }
 
-        
+
 
         private void SpawnObstacles()
         {
@@ -267,6 +285,21 @@ namespace Assets.Scripts.Scenes
             Pathfinder.AddObstacle(asteroid);
             Pathfinder.NeedsToBeUpdated = true;
             state.AddObstacle(asteroid);
+        }
+        private void SpawnFog()
+        {
+            int HorizontalSquares = (int) Math.Ceiling(MapWidth / FogSquare.transform.localScale.x);
+            int VerticalSquares = (int)Math.Ceiling(MapHeight / FogSquare.transform.localScale.y);
+            for (int x = 0; x < HorizontalSquares; x++)
+            {
+                for (int y = 0; y < VerticalSquares; y++)
+                {
+                    GameObject fog = Instantiate(FogSquare);
+                    fog.transform.parent = FogOfWar.transform;
+                    fog.transform.position = new Vector2(fog.transform.position.x + (x * FogSquare.transform.localScale.x), fog.transform.position.y - (y * FogSquare.transform.localScale.y));
+                }
+
+            }
         }
         private void UpdateDebugVariables()
         {
@@ -386,6 +419,7 @@ namespace Assets.Scripts.Scenes
                     }
                     else
                     {
+                        Debug.Log($"{savedSquad.Name} has not been saved to storage #{savedSquad.Id}");
                         continue;
                     }
 
@@ -593,11 +627,10 @@ namespace Assets.Scripts.Scenes
         /// </summary>
         private void SaveAndEnd()
         {
-            //Debug.Log($"Saving and ending");
+            Debug.Log($"Saving and ending");
 
-                
+
             GameState state = GetState();
-            state.LogState();
             state.StoreCommands();
 
             if (RecordStats)
@@ -611,27 +644,28 @@ namespace Assets.Scripts.Scenes
                     }
                     else
                     {
+                        Debug.Log($"B: {savedSquad.Name} has not been saved to storage #{savedSquad.Id}");
                         continue;
                     }
-                    //Debug.Log($"Saving stats for {savedSquad.Name}: " +
-                    //$"Battles Fought: {savedSquad.Stats.BattlesFought} " +
-                    //$"Battles Won: {savedSquad.Stats.BattlesWon} " +
-                    //$"Ships Lost: {savedSquad.Stats.ShipsLost} " +
-                    //$"Damage Done: {savedSquad.Stats.DamageDone} " +
-                    //$"Damage Received: {savedSquad.Stats.DamageReceived} " +
-                    //$"Kills: {savedSquad.Stats.Kills} ");
+                    Debug.Log($"Saving stats for {savedSquad.Name}: " +
+                    $"Battles Fought: {savedSquad.Stats.BattlesFought} " +
+                    $"Battles Won: {savedSquad.Stats.BattlesWon} " +
+                    $"Ships Lost: {savedSquad.Stats.ShipsLost} " +
+                    $"Damage Done: {savedSquad.Stats.DamageDone} " +
+                    $"Damage Received: {savedSquad.Stats.DamageReceived} " +
+                    $"Kills: {savedSquad.Stats.Kills} ");
 
-                    //savedSquad.GetShips().ForEach((squadShip) =>
-                    //{
-                    //    FleetShip fleetShip = squadShip.GetFleetShip();
-                    //    Debug.Log($"Saving stats for {fleetShip.Name}: " +
-                    //    $"Battles Fought: {fleetShip.BattlesFought} " +
-                    //    $"Battles Won: {fleetShip.BattlesWon} " +
-                    //    $"Damage Done: {fleetShip.DamageDone} " +
-                    //    $"Damage Received: {fleetShip.DamageReceived} " +
-                    //    $"Shots Fired: {fleetShip.ShotsFired} " +
-                    //    $"Kills: {fleetShip.Kills} ");
-                    //});
+                    savedSquad.GetShips().ForEach((squadShip) =>
+                    {
+                        FleetShip fleetShip = squadShip.GetFleetShip();
+                        Debug.Log($"Saving stats for {fleetShip.Name}: " +
+                        $"Battles Fought: {fleetShip.BattlesFought} " +
+                        $"Battles Won: {fleetShip.BattlesWon} " +
+                        $"Damage Done: {fleetShip.DamageDone} " +
+                        $"Damage Received: {fleetShip.DamageReceived} " +
+                        $"Shots Fired: {fleetShip.ShotsFired} " +
+                        $"Kills: {fleetShip.Kills} ");
+                    });
                 }
 
                 ConfigData.AllShips.SaveFleetData();

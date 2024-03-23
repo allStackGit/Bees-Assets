@@ -48,7 +48,7 @@ namespace Assets.Scripts.Data
             {
                 Stats = new SquadStatBlock(Utilities.GenerateCommanderName(), 0, 0, 0, 0, 0, 0);
             }
-            if (Id > 0)
+            if (Id > -1)
             {
                 HasBeenSavedToStorage = true;
             }
@@ -218,6 +218,10 @@ namespace Assets.Scripts.Data
             {
                 clone.AddShipToSquad((SquadShip) ship.Clone());
             });
+            if (clone.Id > -1)
+            {
+                clone.HasBeenSavedToStorage = true;
+            }
             //clone.StartingPosition = new Vector2(StartingPosition.x, StartingPosition.y);
             return clone;
         }
@@ -226,7 +230,7 @@ namespace Assets.Scripts.Data
             Squad squad = level.AddComponent<Squad>();
             squad.Setup(
                 level,
-                this,
+                Id > -1 ? ConfigData.AllShips.GetSavedSquad(Id) : this,
                 ChosenShootingStrategy,
                 CeaseFire,
                 IsMatchingSpeed,
