@@ -227,9 +227,8 @@ namespace Assets.Scripts.Scenes
                 SpawnObstacles();
                 Pathfinder = new Pathfinder(this);
             }
-            if (ActivateFogOfWar)
+            if (ActivateFogOfWar && HasPlayer)
             {
-                StartFog();
                 FogOfWar.SetActive(true);
             }
             else
@@ -295,28 +294,6 @@ namespace Assets.Scripts.Scenes
             Pathfinder.AddObstacle(asteroid);
             Pathfinder.NeedsToBeUpdated = true;
             state.AddObstacle(asteroid);
-        }
-        private void StartFog()
-        {
-            //FogSquares.ForEach((fogSquare) =>
-            //{
-            //    Destroy(fogSquare);
-            //});
-            //FogSquares.Clear();
-            //int HorizontalSquares = (int) Math.Ceiling(MapWidth / FogSquare.transform.localScale.x);
-            //int VerticalSquares = (int)Math.Ceiling(MapHeight / FogSquare.transform.localScale.y);
-            //for (int x = 0; x < HorizontalSquares; x++)
-            //{
-            //    for (int y = 0; y < VerticalSquares; y++)
-            //    {
-            //        GameObject fog = Instantiate(FogSquare);
-            //        fog.transform.parent = FogOfWar.transform;
-            //        fog.transform.position = new Vector2(fog.transform.position.x + (x * FogSquare.transform.localScale.x), fog.transform.position.y - (y * FogSquare.transform.localScale.y));
-            //        FogSquares.Add(fog);
-            //    }
-
-            //}
-            FogOfWar.SetActive(true);
         }
         private void UpdateDebugVariables()
         {
@@ -618,15 +595,6 @@ namespace Assets.Scripts.Scenes
             {
                 SpawnObstacles();
                 Pathfinder = new Pathfinder(this);
-            }
-            if (ActivateFogOfWar)
-            {
-                StartFog();
-                FogOfWar.SetActive(true);
-            }
-            else
-            {
-                FogOfWar.SetActive(false);
             }
 
             LevelConstructor.SetupShips();
