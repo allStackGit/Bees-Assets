@@ -44,6 +44,8 @@ namespace Assets.Scripts.Entities.Ships
         public Queue<Vector2> DestinationQueue = new Queue<Vector2>();
         public List<CollisionAsteroid> NearbyAsteroids = new List<CollisionAsteroid>();
         public List<Turret> Turrets = new List<Turret>();
+        public float RotationSpeed;
+        public bool HasVision;
 
 
 
@@ -51,11 +53,10 @@ namespace Assets.Scripts.Entities.Ships
         // [tsv-calculation] [note]
         public float Firepower => HasWeapons ? Weapons.Sum(w => w.Firepower) : SpecialFirePower;
         public float DamagePerSecond => Turrets.Sum(t => t.DamagePerSecond);
-        public int Range => HasWeapons ? Weapons.Max((w) => w.Range) : 0;
+        public int MaxRange => HasWeapons ? Weapons.Max((w) => w.Range) : 0;
         public int Tsv => Utilities.CalculateTsv(this);
         public string ShipTypeLetter => Utilities.ConvertShipNameToType(ShipType);
         public double Seconds => GetLifeTime();
-        public float RotationSpeed => Speed * ConfigData.Configuration.RotationMultiplier;
         public bool HasWeapons => Weapons.Count > 0;
         public bool HasTargetShips => TargetShips.Count > 0;
         public bool IsUserControlled => Side == ConfigData.Configuration.UserSide && Level.HasPlayer;
@@ -277,9 +278,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             AdditionalTsv = shipStats.AdditionalTsv;
             Sight = shipStats.Sight;
             Speed = shipStats.Speed;
+            RotationSpeed = Speed * ConfigData.Configuration.RotationMultiplier;
 
 
-            
+
+
 
             OriginalTsv = Utilities.CalculateMaxTsv(this);
             _size = gameObject.GetComponent<SpriteRenderer>().bounds.size;
@@ -288,14 +291,19 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             SetToDefaultAngle();
             SetCurrentSpeed(Speed);
 
-            if (IsUserControlled && Vision != null)
+            if (IsUserControlled && Level.ActivateFogOfWar && Vision != null)
             {
                 //Debug.Log($"Setting up vision for {Name}");
-
+                HasVision = true;
                 Vision.Setup(this);
             }else if (Vision != null)
             {
                 Vision.gameObject.SetActive(false);
+            }
+            else if (IsHiveMindControlled)
+            {
+                Vision.Setup(this);
+                Level.GetState().HivemindShips[Side - 1].Add(Id, new HashSet<Ship>());
             }
 
 
@@ -1005,6 +1013,17 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         {
             return Weapons.Any((w) => w.IsShipWithinRange(ship));
         }
+        public bool CanSeeShip(Ship ship)
+        {
+            if (Sight > 0)
+            {
+                return DistanceTo(ship) <= Sight;
+            }
+            else
+            {
+                return IsShipWithinRange(ship);
+            }
+        }
         public bool IsAnySquadShipWithinRange(Squad squad)
         {
             return squad.GetShips().Any((ship) => IsShipWithinRange(ship));
@@ -1055,10 +1074,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         public float GetRotation()
         {
             return transform.eulerAngles.z;
-        }
-        public bool CanSeeShip(Ship ship)
-        {
-            return DistanceToPoint(ship.Collider.ClosestPoint(GetPosition())) < Sight;
         }
         public Vector2 GetRandomPointOnShip(Vector2 nearPosition)
         {

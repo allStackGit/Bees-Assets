@@ -99,7 +99,10 @@ namespace Assets.Scripts.Level.Commands
                 ShootingStrategy = shootingStrategy;
 
                 OutcomeId = commandOutcomeId;
-                Squad.PastCommands.Add(new StoredCommand(this));
+                if (!Level.IsTrainingHiveMind && !Level.IsTrainingNueralNetwork)
+                {
+                    Squad.PastCommands.Add(new StoredCommand(this));
+                }
                 Level.GetState().AddCommand(this);
 
                 Squad.Status = $"Executing Command #{OutcomeId}";
@@ -188,28 +191,39 @@ namespace Assets.Scripts.Level.Commands
                     Squad.AddToCommandList();
                     if (OutcomeId != 0 && IsHiveMindCommand)
                     {
-                        StoredCommand storedCommand = Level.GetState().GetPastCommands().FirstOrDefault(c => c.OutcomeId == OutcomeId);
-                        if (storedCommand != null)
+                        if (!Level.IsTrainingHiveMind && !Level.IsTrainingNueralNetwork)
                         {
-                            if (storedCommand.IsStored)
+                            StoredCommand storedCommand = Level.GetState().GetPastCommands().FirstOrDefault(c => c.OutcomeId == OutcomeId);
+                            if (storedCommand != null)
                             {
-                                Debug.Log($"Trying to finalize a command #${OutcomeId} with cause [{cause}] that has already been stored");
-                                return;
-                            }
-                            storedCommand.Tsv = Tsv;
-                            storedCommand.IsFinalized = true;
-                            //storedCommand.FinalizationCause = cause;
+                                if (storedCommand.IsStored)
+                                {
+                                    Debug.Log($"Trying to finalize a command #${OutcomeId} with cause [{cause}] that has already been stored");
+                                    return;
+                                }
+                                storedCommand.Tsv = Tsv;
+                                storedCommand.IsFinalized = true;
+                                //storedCommand.FinalizationCause = cause;
 
-                            StoredCommand squadCommand = Squad.PastCommands.FirstOrDefault(c => c.OutcomeId == OutcomeId);
-                            squadCommand.Age = Age;
-                            squadCommand.Enemy = Enemy.Name;
-                            squadCommand.Tsv = Tsv;
-                            squadCommand.FinalizationCause = cause;
+                                StoredCommand squadCommand = Squad.PastCommands.FirstOrDefault(c => c.OutcomeId == OutcomeId);
+                                squadCommand.Age = Age;
+                                if (Enemy != null)
+                                {
+                                    squadCommand.Enemy = Enemy.Name;
+                                }
+                                else
+                                {
+                                    squadCommand.Enemy = "";
+                                }
+                                squadCommand.Tsv = Tsv;
+                                squadCommand.FinalizationCause = cause;
+                            }
+                            else
+                            {
+                                Debug.Log($"Couldn't find a past command with id #{OutcomeId}  with cause [{cause}]");
+                            }
                         }
-                        else
-                        {
-                            Debug.Log($"Couldn't find a past command with id #{OutcomeId}  with cause [{cause}]");
-                        }
+                        
                     }
                 }
             }

@@ -462,7 +462,7 @@ namespace Assets.Scripts
             FleetShip striker = new FleetShip(-1, ConfigData.Configuration.HumanSide, "", "Striker", false, false, 0, 0, 0, 0, 0, 0);
             FleetShip drone = new FleetShip(-1, ConfigData.Configuration.HumanSide, "", "Drone", false, false, 0, 0, 0, 0, 0, 0);
 
-            return (striker.GetTsv() * ConfigData.Configuration.CarrierCarryStrikerMax) + (drone.GetTsv() * ConfigData.Configuration.CarrierCarryDroneMax);
+            return ((striker.GetTsv() * ConfigData.Configuration.CarrierCarryStrikerMax) * ConfigData.Configuration.CarrierSquadCount) + ((drone.GetTsv() * ConfigData.Configuration.CarrierCarryDroneMax) * ConfigData.Configuration.CarrierSquadCount);
         }
         public static int CalculateTsv(Ship ship)
         {
@@ -498,7 +498,7 @@ namespace Assets.Scripts
         /// <returns></returns>
         public static bool HasObstaclesInTheWay(Vector2 start, Vector2 end)
         {
-            return Physics2D.Linecast(start, end, ConfigData.ObstaclesLayer).collider != null;
+            return Physics2D.Linecast(start, end, ConfigData.ObstaclesLayerMask).collider != null;
         }
 
         /// <summary>
@@ -509,7 +509,7 @@ namespace Assets.Scripts
         /// <returns></returns>
         public static bool HasObstaclesCloseToInTheWay(Vector2 start, Vector2 end)
         {
-            return Physics2D.Linecast(start, end, ConfigData.ObstacleProximityRangesLayer).collider != null;
+            return Physics2D.Linecast(start, end, ConfigData.ObstacleProximityRangesLayerMask).collider != null;
         }
         public static void Print2DArray(bool[][] array)
         {

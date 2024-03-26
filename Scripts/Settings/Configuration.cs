@@ -34,6 +34,7 @@ namespace Assets.Scripts.Settings
         public float AISquadFollowingTime; // how many seconds a squad should follow the closest friendly squad
         public int CarrierCarryDroneMax;
         public int CarrierCarryStrikerMax;
+        public int CarrierSquadCount;
         public List<string> ShootingStrategies;
         public Dictionary<string, string> Tooltips;
 
@@ -71,6 +72,7 @@ namespace Assets.Scripts.Settings
         public int SquadMakerFirstSide;
         public int SquadMakerSecondSide;
         public int TotalLevels; // [alert] should be set to actual number of levels
+        public int SquadGenerationCount;
 
 
         public bool MirrorLocalStorageToServer => UseLocalStorage && MirrorStorage;
@@ -104,7 +106,9 @@ namespace Assets.Scripts.Settings
             AISquadFollowingTime = (int)so.AISquadFollowingTime;
             CarrierCarryDroneMax = (int)so.CarrierCarryDroneMax;
             CarrierCarryStrikerMax = (int)so.CarrierCarryStrikerMax;
+            CarrierSquadCount = (int)so.CarrierSquadCount;
             TotalLevels = (int)so.TotalLevels;
+            SquadGenerationCount = (int)so.SquadGenerationCount;
 
             Yes = (string)so.Yes;
             No = (string)so.No;

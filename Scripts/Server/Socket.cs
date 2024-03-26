@@ -204,6 +204,7 @@ namespace Assets.Scripts.Server
             //Debug.Log($"Content: {content}");
             string json = JsonConvert.SerializeObject(content);
             //Debug.Log($"Message to server: {json}");
+            ConfigData.__TotalRequests++;
             if (_useWebSocketSharp)
             {
                 _webSocketSharpSocket.Send(json);
@@ -338,6 +339,7 @@ namespace Assets.Scripts.Server
                     standingRequest.Status = 1;
                     standingRequest.Response = userDataResponse;
                     standingRequest.TimeOnQueue = Time.unscaledTime - standingRequest.StartTime;
+                    ConfigData.__TotalLatency += standingRequest.TimeOnQueue;
                     //Debug.Log($"Set the response {userDataResponse.Filename}, {userDataResponse.Contents}");
                 }
                 else
@@ -381,6 +383,7 @@ namespace Assets.Scripts.Server
                     standingRequest.Status = 1;
                     standingRequest.Response = userDataResponse;
                     standingRequest.TimeOnQueue = Time.unscaledTime - standingRequest.StartTime;
+                    ConfigData.__TotalLatency += standingRequest.TimeOnQueue;
                     //Debug.Log($"Set the response {userDataResponse.Filename}, {userDataResponse.Contents}");
                 }
                 else
@@ -404,6 +407,7 @@ namespace Assets.Scripts.Server
             {
                 StandingRequests.Remove(standingRequest);
                 standingRequest.TimeOnQueue = Time.unscaledTime - standingRequest.StartTime;
+                ConfigData.__TotalLatency += standingRequest.TimeOnQueue;
                 Squad squad = standingRequest.Squad;
                 if (squad != null && !squad.IsDead)
                 {
@@ -417,24 +421,7 @@ namespace Assets.Scripts.Server
                     //Debugger.LogSquads(level.GetState().GetSquads());
                     LevelStage level = standingRequest.Level;
                     level.HandledRequests.Add(standingRequest.Hash);
-                    GameState state = level.GetState();
-                    if (targetSquad != null && !targetSquad.IsDead && !state.GameOver)
-                    {
-                        //Debug.Log($"Making matchup for {squad.Name} with {squad.GetShips().Count} ships");
-                        squad.MakeMatchup(targetSquad);
-                        //Debug.Log($"matchup strategy after matchup made");
-                        //Debugger.LogSquads(level.GetState().GetSquads());
-                    }
-                    else
-                    {
-                        //Debug.Log("Exception");
-
-                        if (!state.GameOver)
-                        {
-                            Debugger.Log($"The squad sorter did not return a valid squad. Side: {squad.Side} Enemy Squads: {state.GetEnemySquads(squad.Side)}");
-                        }
-
-                    }
+                    squad.MakeMatchup(targetSquad);
                 }
                 else
                 {
@@ -457,6 +444,7 @@ namespace Assets.Scripts.Server
             {
                 StandingRequests.Remove(standingRequest);
                 standingRequest.TimeOnQueue = Time.unscaledTime - standingRequest.StartTime;
+                ConfigData.__TotalLatency += standingRequest.TimeOnQueue;
                 Squad squad = standingRequest.Squad;
                 LevelStage level = standingRequest.Level;
                 level.HandledRequests.Add(standingRequest.Hash);
@@ -534,6 +522,10 @@ namespace Assets.Scripts.Server
                             command = squad.transform.AddComponent<Guard>();
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
+                        case "Scouting":
+                            command = squad.transform.AddComponent<Scouting>();
+                            command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
+                            break;
                         default:
                             Debugger.Exception($"commandResponse doesn't match a known command: {commandResponse.Name}");
                             break;
@@ -562,6 +554,10 @@ namespace Assets.Scripts.Server
                     {
                         ((MoveToRandom)command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true);
                     }
+                    else if (commandResponse.Name == "Scouting")
+                    {
+                        ((Scouting)command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true);
+                    }
                     else
                     {
                         command.Execute(strategy, shootingStrategy, commandResponse.OutcomeId, false);
@@ -589,6 +585,7 @@ namespace Assets.Scripts.Server
                 standingRequest.Level.IsLevelSetupOnServer = true;
                 standingRequest.Level.HandledRequests.Add(response.Hash);
                 standingRequest.TimeOnQueue = Time.unscaledTime - standingRequest.StartTime;
+                ConfigData.__TotalLatency += standingRequest.TimeOnQueue;
             }
             else
             {
@@ -604,6 +601,7 @@ namespace Assets.Scripts.Server
             {
                 StandingRequests.Remove(standingRequest);
                 standingRequest.TimeOnQueue = Time.unscaledTime - standingRequest.StartTime;
+                ConfigData.__TotalLatency += standingRequest.TimeOnQueue;
             }
             else
             {

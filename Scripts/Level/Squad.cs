@@ -45,7 +45,7 @@ namespace Assets.Scripts.Level
         public int DamageDone => GetShips().Sum(s => s.FleetShip.DamageDone);
         public int Health => GetShips().Sum(s => s.Health);
         public float Firepower => GetShips().Sum(s => s.Firepower);
-        public int Range => GetShips().Max(s => s.Range);
+        public int MaxRange => GetShips().Max(s => s.MaxRange);
         public float TotalSpeed => GetShips().Sum(s => s.Speed);
         public float MaxSpeed => GetShips().Max(s => s.Speed);
         public int Tsv => GetShips().Sum(s => s.Tsv);
@@ -79,11 +79,6 @@ namespace Assets.Scripts.Level
 
 
         public List<Ship> __Ships;
-
-        private void UpdateTestProperties()
-        {
-            __Ships = GetShips();
-        }
 
         // Setup methods
         public void Setup(LevelStage level, SavedSquad savedSquad, string shootingStrategy, bool ceaseFire, bool isMatchingSpeed, 
@@ -120,6 +115,11 @@ namespace Assets.Scripts.Level
                 SquadBoxColor = ConfigData.GetUIColor("squadbox-default-color");
             }
             transform.parent = Level.Map.transform;
+
+            if (IsUserControlled)
+            {
+                InvokeRepeating(nameof(CheckChase), 5, 1);
+            }
         }
         public void SetupRandomSquadShips(string squadType)
         {
@@ -258,7 +258,6 @@ namespace Assets.Scripts.Level
             if (IsUserControlled && !Level.IsPaused)
             {
                 HasMovedBox = false;
-                CheckChase();
             }
             //UpdateTestProperties();
         }
@@ -370,11 +369,14 @@ namespace Assets.Scripts.Level
         // Combat methods
         private void CheckChase()
         {
-            if (_shouldChase && (Command == null || Command.Strategy.Name != "Aggressive"))
+            //Debug.Log($"Checking if {Name} should chase.");
+            if (_shouldChase && Command?.Strategy.Name != "Aggressive")
             {
                 Squad closestSquad = GetClosestEnemySquad();
+                //Debug.Log($"The closest Enemy to {Name} is {closestSquad.Name}");
                 if (CanSeeSquad(closestSquad))
                 {
+                    //Debug.Log($"Initiating chase by {Name} against {closestSquad.Name}.");
                     UserAggressive(closestSquad);
                 }
             }
@@ -433,10 +435,8 @@ namespace Assets.Scripts.Level
         }
         public Squad GetClosestEnemySquad()
         {
-            List<Squad> squads = Level.GetState().GetEnemySquads(Side);
-
             // Debug.Log($"Number of enemy squads {squads.Count}, {_level.GetState().GetSquads()}");
-            return squads.OrderBy(squad => squad.DistanceTo(GetPosition())).FirstOrDefault();
+            return Level.GetState().GetEnemySquads(Side).OrderBy(squad => squad.DistanceTo(GetPosition())).FirstOrDefault();
         }
         public Squad GetClosestValidFriendlySquad()
         {
@@ -464,14 +464,7 @@ namespace Assets.Scripts.Level
         /// <returns></returns>
         public List<Ship> GetEnemyShips()
         {
-            if (Side == ConfigData.Configuration.BeeSide) // bee side, get the human ships
-            {
-                return Level.GetState().GetHumanShips();
-            }
-            else
-            {
-                return Level.GetState().GetBeeShips();
-            }
+            return Level.GetState().GetShipsVisibleToHiveMind(Side).ToList();
         }
         public List<Ship> GetFriendlyShips()
         {
@@ -479,10 +472,11 @@ namespace Assets.Scripts.Level
         }
         public List<Ship> GetPotentialEnemies(Squad target)
         {
-            List<Ship> enemies = target.GetShips().ToList(); // the ToList() is very important to prevent this list from modifying the main squad list
+            
             List<Ship> potentialEnemies = GetEnemyShips();
+            List<Ship> enemies = potentialEnemies.Where((s) => s.Squad.Equals(target)).ToList();
 
-            foreach(Ship potentialEnemy in  potentialEnemies)
+            foreach (Ship potentialEnemy in  potentialEnemies)
             {
                 if (!potentialEnemy.Squad.Equals(target))
                 {
@@ -565,80 +559,95 @@ namespace Assets.Scripts.Level
             //Debug.Log(new string(letters));
             return new string(letters);
         }
-        public void MakeMatchup(Squad enemy)
+        public void MakeMatchup(Squad enemy = null)
         {
-            List<Ship> enemies = GetPotentialEnemies(enemy);
-            List<Ship> allies = GetPotentialAllies(enemy);
-
-            /*
-            Determines whether or not the squad is at the "walls"
-             */
-
-            int atTheWalls = 0;
-            int distance = 15;
-            Vector2 position = GetPosition();
-            if (position.x < (Level.MapRenderer.bounds.min.x + distance) || position.x > (Level.MapRenderer.bounds.max.x - distance)) // check if it's at the sides
+            string matchup = "";
+            HashSet<string> banned = BannedStrats;
+            if (enemy != null)
             {
-                atTheWalls = 1;
-                if (position.y < (Level.MapRenderer.bounds.min.y + distance) || position.y > (Level.MapRenderer.bounds.max.y - distance))
+                List<Ship> enemies = GetPotentialEnemies(enemy);
+                List<Ship> allies = GetPotentialAllies(enemy);
+
+                /*
+                Determines whether or not the squad is at the "walls"
+                 */
+
+                int atTheWalls = 0;
+                int distance = 15;
+                Vector2 position = GetPosition();
+                if (position.x < (Level.MapRenderer.bounds.min.x + distance) || position.x > (Level.MapRenderer.bounds.max.x - distance)) // check if it's at the sides
                 {
-                    atTheWalls = 2;
+                    atTheWalls = 1;
+                    if (position.y < (Level.MapRenderer.bounds.min.y + distance) || position.y > (Level.MapRenderer.bounds.max.y - distance))
+                    {
+                        atTheWalls = 2;
+                    }
                 }
-            }
-            else if (position.y < (Level.MapRenderer.bounds.min.y + distance) || position.y > (Level.MapRenderer.bounds.max.y - distance))
-            {
-                atTheWalls = 1;
-            }
+                else if (position.y < (Level.MapRenderer.bounds.min.y + distance) || position.y > (Level.MapRenderer.bounds.max.y - distance))
+                {
+                    atTheWalls = 1;
+                }
 
-            /*
-            This is the calculation for the enemy's current average percentage of health for each ship and then the same for the allies, and then compares the allies to the enemies
-             */
+                /*
+                This is the calculation for the enemy's current average percentage of health for each ship and then the same for the allies, and then compares the allies to the enemies
+                 */
 
-            int comparativeHealth = (int)Math.Round((Ship.GetAverageHealthPercent(allies) / Ship.GetAverageHealthPercent(enemies)) * 100);
+                int comparativeHealth = (int)Math.Round((Ship.GetAverageHealthPercent(allies) / Ship.GetAverageHealthPercent(enemies)) * 100);
 
-            /*
-             comparativeHealth
-             < 50 0
-             50 - 85 1
-             85 - 115 2
-             115 - 165 3
-             165+ 4
-             */
+                /*
+                 comparativeHealth
+                 < 50 0
+                 50 - 85 1
+                 85 - 115 2
+                 115 - 165 3
+                 165+ 4
+                 */
 
-            if (comparativeHealth < 50)
-            {
-                comparativeHealth = 0;
-            }
-            else if (comparativeHealth < 85)
-            {
-                comparativeHealth = 1;
-            }
-            else if (comparativeHealth < 115)
-            {
-                comparativeHealth = 2;
-            }
-            else if (comparativeHealth < 165)
-            {
-                comparativeHealth = 3;
+                if (comparativeHealth < 50)
+                {
+                    comparativeHealth = 0;
+                }
+                else if (comparativeHealth < 85)
+                {
+                    comparativeHealth = 1;
+                }
+                else if (comparativeHealth < 115)
+                {
+                    comparativeHealth = 2;
+                }
+                else if (comparativeHealth < 165)
+                {
+                    comparativeHealth = 3;
+                }
+                else
+                {
+                    comparativeHealth = 4;
+                }
+                StringBuilder sb = new StringBuilder();
+                sb.Append(AddToMatchup(allies));
+                sb.Append("|");
+                sb.Append(AddToMatchup(enemies));
+                sb.Append("|");
+                sb.Append((enemy.IsAnySquadShipWithinRangeOfAnyOfOurSquadShips(this) ? 1 : 0));
+                sb.Append("|");
+                sb.Append(comparativeHealth);
+                sb.Append("|");
+                sb.Append(atTheWalls);
+
+                matchup = sb.ToString();
             }
             else
             {
-                comparativeHealth = 4;
+                banned.Add("Aggressive");
+                banned.Add("Defensive");
+                banned.Add("Circle");
+                banned.Add("Right Swipe");
+                banned.Add("Left Swipe");
+                banned.Add("In and Out");
             }
-            StringBuilder sb = new StringBuilder();
-            sb.Append(AddToMatchup(allies));
-            sb.Append("|");
-            sb.Append(AddToMatchup(enemies));
-            sb.Append("|");
-            sb.Append((enemy.IsAnySquadShipWithinRangeOfAnyOfOurSquadShips(this) ? 1 : 0));
-            sb.Append("|");
-            sb.Append(comparativeHealth);
-            sb.Append("|");
-            sb.Append(atTheWalls);
+            
 
-            string matchup = sb.ToString();
-
-            ConfigData.Socket.SendRequest(new CommandRequest(new GetStrategy(matchup, OpponentId, BannedStrats.ToArray()),
+            ConfigData.Socket.SendRequest(new CommandRequest(new GetStrategy(matchup, OpponentId, banned.ToArray()),
                 this, enemy, Level, matchup, ConfigData.StandardMaxTimeOnQueue));
 
 
@@ -833,12 +842,12 @@ namespace Assets.Scripts.Level
             List<Ship> ships = GetShips();
             foreach (Ship ship in ships)
             {
-                List<Ship> squadShips = GetShips();
+                List<Ship> squadShips = squad.GetShips();
                 foreach (Ship squadShip in squadShips)
                 {
                     if (ship.CanSeeShip(squadShip))
                     {
-                        canSee = true;
+                        return true;
                     }
                 }
             }

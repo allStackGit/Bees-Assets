@@ -31,6 +31,13 @@ namespace Assets.Scripts
         public const int RLPort = 7242;
         public static int StandardMaxTimeOnQueue = 20;
 
+        public const int ObstaclesLayerMask = 1 << 19; // the layer masks need to all be 1 and then bitwise shifted to the left by the layer number
+        public const int ObstacleProximityRangesLayerMask = 1 << 20;
+        public const int BeeShipsLayerMask = 1 << 11;
+
+        public const int FogOfWarLayer = 21;
+        public const int VisionRangesLayer = 22;
+
         public static Configuration Configuration = null;
         public static StartingSettings StartingSettings = null;
         public static ShipStats ShipInfo = null;
@@ -51,8 +58,7 @@ namespace Assets.Scripts
         public static bool IsFleetDataLoaded = false; 
         public static bool IsSavedSquadsDataLoaded = false;
 
-        public static int ObstaclesLayer = 1 << 19; // the layer masks need to all be 1 and then bitwise shifted to the left by the layer number
-        public static int ObstacleProximityRangesLayer = 1 << 20;
+
 
         public static float Tiny = 1; // this is the base size, equal to 4 World Units
         public static float Small = Tiny * 1.5f; 
@@ -152,6 +158,8 @@ namespace Assets.Scripts
         public const float FireShipExplosionSize = 32;
         public const float CommandTimerFrequency = .1f;
         public static List<Scene> Scenes = new List<Scene>();
+        public static HashSet<long> UsedHashes = new HashSet<long>();
+
 
 
         public static KeyCode[] SquadKeys = new KeyCode[] { KeyCode.Alpha1, KeyCode.Alpha2, KeyCode.Alpha3, KeyCode.Alpha4, KeyCode.Alpha5, KeyCode.Alpha6, KeyCode.Alpha7, KeyCode.Alpha8, KeyCode.Alpha9, KeyCode.Alpha0 };
@@ -237,8 +245,8 @@ namespace Assets.Scripts
 
         // DEBUG VARIABLES
         public static HashSet<ServerRequest> __PastServerRequests = new HashSet<ServerRequest>();
-        public static HashSet<long> UsedHashes = new HashSet<long>();
-        public static int __BeeWins, __HumanWins, __HivemindCommands;
+        public static int __BeeWins, __HumanWins, __HivemindCommands, __TotalRequests;
+        public static double __TotalLatency, __AverageLatency;
 
 
         // private variables

@@ -14,7 +14,7 @@ namespace Assets.Scripts.Entities.Projectiles
 {
     public class Projectile : Entity
     {
-        public int Range, Power;
+        public int Power, Range;
         public double Speed;
         public Ship Shooter, Target;
         public Weapon Weapon;
@@ -104,7 +104,7 @@ namespace Assets.Scripts.Entities.Projectiles
         
         protected virtual void FixedUpdate()
         {
-            if (!Level.IsPaused && Range > 0)
+            if (!Level.IsPaused)
             {
                 if (CollidingQueue.Count > 0)
                 {
@@ -168,8 +168,9 @@ namespace Assets.Scripts.Entities.Projectiles
                 // if hit enemy projectile or fire ship explosion. the ships to ignore is for leafcutter split shots
                 if ((!IsFriendly(ship) || (Shooter.ShipType == "Fire Ship" && !Equals(Shooter))) && !ShipsToIgnore.Contains(ship))
                 {
+                    int originalPower = Power;
                     ContactTarget(ship);
-                    Ship.LogDamage(Power, Shooter, ship);
+                    Ship.LogDamage(originalPower, Shooter, ship);
                 }
             }
 

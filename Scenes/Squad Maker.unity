@@ -6754,7 +6754,7 @@ PrefabInstance:
     - target: {fileID: 1109014343575341394, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_Sprite
       value: 
-      objectReference: {fileID: 21300000, guid: 3ca3542d051f91c44afa6fe676fe2c67, type: 3}
+      objectReference: {fileID: 21300000, guid: 6fa64241b9a6f9c4f941a8f38449fa2c, type: 3}
     - target: {fileID: 2470922290977067781, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_Padding.m_Left
       value: 5
@@ -16086,7 +16086,7 @@ MonoBehaviour:
   StartButton: {fileID: 1602109856}
   OpposingForceLabel: {fileID: 1626510411}
   OpposingForcePresetDropdown: {fileID: 1615551064}
-  BargeSprite: {fileID: 21300000, guid: 3ca3542d051f91c44afa6fe676fe2c67, type: 3}
+  BargeSprite: {fileID: 21300000, guid: 6fa64241b9a6f9c4f941a8f38449fa2c, type: 3}
   CarrierSprite: {fileID: 21300000, guid: d345c41298bdcde4c81806f290b71b13, type: 3}
   CruiserSprite: {fileID: 21300000, guid: 4d8d12e8bab75924aac22692692865d4, type: 3}
   DreadnoughtSprite: {fileID: 21300000, guid: 9c7747c0ffc435e418024d989475bd92, type: 3}
@@ -21627,7 +21627,7 @@ PrefabInstance:
     - target: {fileID: 2053107092426468122, guid: ba8e735e9f2a5b542916479f7ec91750, type: 3}
       propertyPath: m_Sprite
       value: 
-      objectReference: {fileID: 21300000, guid: 3ca3542d051f91c44afa6fe676fe2c67, type: 3}
+      objectReference: {fileID: 21300000, guid: 6fa64241b9a6f9c4f941a8f38449fa2c, type: 3}
     - target: {fileID: 2318813119856053053, guid: ba8e735e9f2a5b542916479f7ec91750, type: 3}
       propertyPath: m_Delegates.Array.data[0].callback.m_PersistentCalls.m_Calls.Array.data[0].m_Mode
       value: 2

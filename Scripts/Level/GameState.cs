@@ -8,6 +8,7 @@ using Assets.Scripts;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships;
+using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Level.Commands;
 using Assets.Scripts.Scenes;
 using Assets.Scripts.Server;
@@ -33,6 +34,9 @@ namespace Assets.Scripts.Level
         public List<SpottedShip>[] SpottedShips = new List<SpottedShip>[] { new List<SpottedShip>(), new List<SpottedShip>() };
         public int[] OriginalSquadCounts = new int[] { 0, 0 };
         public LevelStage Level;
+        public HashSet<Ship>[] VisionCache = new HashSet<Ship>[] { new HashSet<Ship>(), new HashSet<Ship>() };
+        public Dictionary<long, HashSet<Ship>>[] HivemindShips = new Dictionary<long, HashSet<Ship>>[] { new Dictionary<long, HashSet<Ship>>(), new Dictionary<long, HashSet<Ship>>() };
+
 
 
 
@@ -141,6 +145,45 @@ namespace Assets.Scripts.Level
                 _ => _ships
             };
         }
+        public HashSet<Ship> GetShipsVisibleToHiveMind(int side)
+        {
+            //HashSet<Ship> ships;
+            //if (HasVisionCacheChanged[side - 1])
+            //{
+            //    ships = new HashSet<Ship>();
+            //    GetShips(side).ForEach((ship) =>
+            //    {
+            //        if (ship.HasVision)
+            //        {
+            //            ships.UnionWith(ship.ShipsWithinVision);
+            //        }
+            //        else if (ship.HasWeapons)
+            //        {
+            //            IEnumerable<HashSet<Ship>> shipLists = ship.Weapons.Select((weapon) => weapon.ShipsWithinRange);
+
+            //            foreach (HashSet<Ship> shipList in shipLists)
+            //            {
+            //                ships.UnionWith(shipList);
+            //            }
+            //        }
+            //    });
+            //    VisionCache[side -1] = ships;
+            //}
+            //else
+            //{
+            //    ships = VisionCache[side - 1].Where((ship) => ship != null && !ship.IsDead).ToHashSet();
+            //    HasVisionCacheChanged[side - 1] = false;
+            //}
+
+
+            //return ships;
+
+            return HivemindShips[side - 1].Aggregate(new HashSet<Ship>(), (sum, dictionary) => {
+                sum.UnionWith(dictionary.Value.Where((ship) => ship != null && !ship.IsDead));
+                return sum;
+            });
+        }
+
         public HashSet<string> GetHumanShipTypes()
         {
             return GetHumanShips().Select((s) => s.ShipType).ToHashSet();
@@ -174,6 +217,10 @@ namespace Assets.Scripts.Level
             return !GetShips().Any((s) => s.ShipType == shipType);
         }
 
+        public List<Squad> GetSquadsVisibleToHiveMind(int side = 0)
+        {
+            return GetShipsVisibleToHiveMind(side).Select((ship) => ship.Squad).ToList();
+        }
         public List<Squad> GetSelectedSquads()
         {
             return _selectedSquads.Where((squad) => squad != null).ToList();

@@ -16,7 +16,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public float RateOfFire, ProjectileValue, RotationRate, SpecialFirepower;
         public GameObject Piece, ProjectilePrefab, RangeCircle;
         public List<Ship> CachedTargetingQueue = new List<Ship>();
-        public List<Ship> ShipsWithinRange = new List<Ship>();
+        public HashSet<Ship> ShipsWithinRange = new HashSet<Ship>();
         public string CachedShootingStrategy, Name;
         public bool IsUsingCachedTargetingQueue, HasRangeCircle, HasRangeCollider;
         public float Firepower => Utilities.CalculateFirepower(Power, Range, RateOfFire, RotationRate, ProjectileValue, SpecialFirepower);
@@ -35,6 +35,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
 
         public string __NotShootingReason;
+        public List<Ship> __ShipsWithinRange;
         public virtual void Setup(Ship ship, int range, int power, float specialFirePower, float rateOfFire, float projectileValue, GameObject piece, 
             GameObject projectilePrefab)
         {
@@ -211,12 +212,13 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
             else
             {
-                return ShipsWithinRange;
+                return ShipsWithinRange.ToList();
             }
         }
         protected virtual List<Ship> GetPotentialEnemyTargetShips()
         {
             List<Ship> queue = GetEnemyShipsWithinRange();
+            __ShipsWithinRange = queue.ToList();
             if (CachedShootingStrategy == Ship.ShootingStrategy && queue.Count == CachedTargetingQueue.Count && !CachedTargetingQueue.Contains(null))
             {
                 IsUsingCachedTargetingQueue = true;
@@ -266,9 +268,9 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                         queue.Sort((a, b) => (int)(DistanceTo(b) - DistanceTo(a)));
                         return queue.ToList();
                     case "Most Range":
-                        return queue.OrderByDescending(s => s.Range).ToList();
+                        return queue.OrderByDescending(s => s.MaxRange).ToList();
                     case "Least Range":
-                        return queue.OrderBy(s => s.Range).ToList();
+                        return queue.OrderBy(s => s.MaxRange).ToList();
                     case "Fastest":
                         return queue.OrderByDescending(s => s.Speed).ToList();
                     case "Slowest":

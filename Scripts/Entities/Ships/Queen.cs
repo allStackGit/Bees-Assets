@@ -32,6 +32,7 @@ namespace Assets.Scripts.Entities.Ships
                 Debugger.Exception($"Queen Property [MinionCount] (MinionCount) cannot be greater than [_maxMinionsPerSquad] ({_maxMinionsPerSquad})");
             }
             InvokeRepeating(nameof(SpawnMinions), SpawnFrequency, SpawnFrequency);
+            RotationSpeed = Speed * ConfigData.Configuration.RotationMultiplier / 4;
         }
 
         private void SpawnMinions()

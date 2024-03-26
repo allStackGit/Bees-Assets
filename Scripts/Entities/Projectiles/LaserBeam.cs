@@ -6,6 +6,7 @@ using UnityEngine;
 using Assets.Scripts.Entities.Ships.Weapons;
 using System.Security.Cryptography;
 using static UnityEngine.GraphicsBuffer;
+using System.Collections.Generic;
 
 namespace Assets.Scripts.Entities.Projectiles
 {
@@ -16,6 +17,7 @@ namespace Assets.Scripts.Entities.Projectiles
         private float _scale;
         private Ship _target;
         private int _powerLoss;
+        private HashSet<Ship> _shipsHit = new HashSet<Ship>();
         void Start()
         {
             if (Weapon != null && Weapon.Ship != null)
@@ -33,23 +35,22 @@ namespace Assets.Scripts.Entities.Projectiles
         }
         public override void ContactTarget(Ship target)
         {
-            //Debug.Log($"{Name} hit {target.Name}");
-            int halfHealth = target.Health / 2;
-            _powerLoss = Mathf.Clamp(halfHealth, 0, Power);
-            if (Power <= halfHealth)
+            if (!_shipsHit.Contains(target))
             {
-                Invoke(nameof(Kill), .5f);
-                StopBeam();                
+                _shipsHit.Add(target);
+                //Debug.Log($"{Name} hit {target.Name}");
+                int halfHealth = target.Health / 2;
+                _powerLoss = Mathf.Clamp(halfHealth, 0, Power);
+                if (Power <= halfHealth)
+                {
+                    Kill();
+                }
+                Power -= _powerLoss;
+                //Debug.Log($"{Name} lost {_powerLoss} power and now has {Power} power.");
+                _powerLoss = 0;
             }
-            Invoke(nameof(DegradeBeam), 0f);
 
 
-        }
-        public void DegradeBeam()
-        {
-            Power -= _powerLoss;
-            //Debug.Log($"{Name} lost {_powerLoss} power and now has {Power} power.");
-            _powerLoss = 0;
 
         }
         public void StopBeam()

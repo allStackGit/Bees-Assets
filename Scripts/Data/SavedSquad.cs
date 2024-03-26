@@ -57,11 +57,11 @@ namespace Assets.Scripts.Data
         public void SetupRandomShips(string squadType)
         {
             int shipCount = 10;
-            if ((new List<string> { "Queen", "Fire Ship", "Carrier", "Flagship" }).Contains(squadType))
+            if ((new List<string> { "Queen", "Fire Ship", "Carrier", "Flagship", "Warp Gate" }).Contains(squadType))
             {
-                shipCount = UnityEngine.Random.Range(1, 2);
+                shipCount = 1;
             }
-            else if ((new List<string> { "Bumblebee", "Barge" }).Contains(squadType))
+            else if ((new List<string> { "Bumblebee", "Barge", "Carpenter Bee", "Factory", "Honeybee", "Scout" }).Contains(squadType))
             {
                 shipCount = UnityEngine.Random.Range(1, 4);
             }
@@ -69,9 +69,9 @@ namespace Assets.Scripts.Data
             {
                 shipCount = UnityEngine.Random.Range(2, 8);
             }
-            else if ((new List<string> { "Honeybee", "Hornet", "Yellow Jacket", "Scout" }).Contains(squadType))
+            else if ((new List<string> { "Hornet", "Yellow Jacket" }).Contains(squadType))
             {
-                shipCount = UnityEngine.Random.Range(4, 16);
+                shipCount = UnityEngine.Random.Range(4, 10);
             }
 
             for (int shipIndex = 0; shipIndex < shipCount; shipIndex++)

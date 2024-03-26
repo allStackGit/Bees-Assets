@@ -20,7 +20,7 @@ namespace Assets.Scripts.Level.Commands
             if (Enemy != null && !Enemy.IsDead)
             {
                 double distance = Squad.DistanceTo(Enemy.GetPosition());
-                double idealDistance = Enemy.Range * 1.5;
+                double idealDistance = Enemy.MaxRange * 1.5;
 
                 if (distance < idealDistance)
                 {

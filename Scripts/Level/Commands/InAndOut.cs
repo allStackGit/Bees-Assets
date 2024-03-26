@@ -22,9 +22,9 @@ namespace Assets.Scripts.Level.Commands
                 PrepareDamageToSendEntries();
                 float distance = Squad.DistanceTo(Enemy.GetPosition());
                 Vector2 position = Squad.GetPosition();
-                _returnPoint = distance > Enemy.Range && distance < 50 ?
+                _returnPoint = distance > Enemy.MaxRange && distance < 50 ?
                     Utilities.RandomCoordinate(Level, position, Vector2.one * 10, Vector2.zero) :
-                    Utilities.RandomCoordinate(Level, Enemy.GetPosition(), Vector2.one * (Enemy.Range + 20), Vector2.one * Enemy.Range);
+                    Utilities.RandomCoordinate(Level, Enemy.GetPosition(), Vector2.one * (Enemy.MaxRange + 20), Vector2.one * Enemy.MaxRange);
 
                 _hasReachedDestination = false;
                 InvokeRepeating(nameof(Timer), ConfigData.CommandTimerFrequency, ConfigData.CommandTimerFrequency);

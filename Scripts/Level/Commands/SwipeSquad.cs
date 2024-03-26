@@ -67,10 +67,10 @@ namespace Assets.Scripts.Level.Commands
 
 
 
-                        float distance = Enemy.Range * 1.5f;
-                        if (distance < Squad.Range - 2)
+                        float distance = Enemy.MaxRange * 1.5f;
+                        if (distance < Squad.MaxRange - 2)
                         {
-                            distance = Squad.Range - 2;
+                            distance = Squad.MaxRange - 2;
                         }
                         _swipeDestination = Squad.CirclePoint(angle, distance);
 

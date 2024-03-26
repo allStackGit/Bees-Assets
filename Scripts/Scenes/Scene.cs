@@ -4,6 +4,7 @@ using Assets.Scripts.UI_Components;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.EventSystems;
@@ -44,7 +45,7 @@ namespace Assets.Scripts.Scenes
             Timer = new Timer(.1f, ConfigData.Socket.Update);
             if (WatchServerRequests)
             {
-                InvokeRepeating(nameof(UpdateTestVariables), 10f, 10f);
+                //InvokeRepeating(nameof(UpdateTestVariables), 10f, 10f);
             }
             if (NetworkDisconnection == null)
             {
@@ -81,9 +82,8 @@ namespace Assets.Scripts.Scenes
         {
             if (ConfigData.__PastServerRequests.Count > 0)
             {
-                //__UsedHashes = ConfigData.UsedHashes.ToList();
-                //__PastServerRequests = ConfigData.__PastServerRequests.Select((r) => $"Request #{r.Hash} ({r.Type}) on queue for {r.TimeOnQueue}ms with {r.Resends} resends.").ToList();
-                __AverageRequestTime = ConfigData.__PastServerRequests.Sum((r) => r.TimeOnQueue) / ConfigData.__PastServerRequests.Count;
+                __UsedHashes = ConfigData.UsedHashes.ToList();
+                __PastServerRequests = ConfigData.__PastServerRequests.Select((r) => $"Request #{r.Hash} ({r.Type}) on queue for {r.TimeOnQueue}ms with {r.Resends} resends.").ToList();
                 //__Updates = Time.frameCount;
             }
 

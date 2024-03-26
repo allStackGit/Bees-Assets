@@ -144,6 +144,8 @@ MonoBehaviour:
   Brain: {fileID: 0}
   NearbyAsteroids: []
   Turrets: []
+  RotationSpeed: 0
+  HasVision: 0
   __PastCommands: []
   __Strategy: 
   __Squad: 

@@ -30,7 +30,7 @@ namespace Assets.Scripts.Entities.Ships
         protected override void OnTriggerEnter2D(Collider2D collider) // projectile collision
         {
             GameObject collidingThing = collider.gameObject;
-            if (collidingThing.name == ("Selection Box"))
+            if (collidingThing.name == "Selection Box")
             {
                 //Debug.Log("Striker hit selection box");
                 if (IsUserControlled)
@@ -48,12 +48,13 @@ namespace Assets.Scripts.Entities.Ships
 
                 if (TouchingShip != null && TouchingShip.Side != Side && Squad.HasCommand && HasTargetShips && TargetShips.Contains(TouchingShip) && AreBombsReady)
                 {
-                    //Debug.Log("Collided with our target ship!");
+                    //Debug.Log($"Collided with our target {TouchingShip.Name}, {collidingThing.name}!");
                     ContactedShip = TouchingShip;
                     DropBomb();
 
                 }
             }
+            
         }
         protected override void OnTriggerExit2D(Collider2D collider)
         {

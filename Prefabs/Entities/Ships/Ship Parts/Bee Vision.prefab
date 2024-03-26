@@ -11,8 +11,8 @@ GameObject:
   - component: {fileID: 6500008320206064219}
   - component: {fileID: 5084224720584038779}
   - component: {fileID: 7941494824958056873}
-  m_Layer: 17
-  m_Name: Bee Vision Collider
+  m_Layer: 23
+  m_Name: Bee Vision
   m_TagString: Ship Component
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -80,6 +80,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0fc40819321686541a3ab67842cc5a3c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  Ship: {fileID: 0}
-  Sight: 0
   Collider: {fileID: 5084224720584038779}
+  FogIlluminator: {fileID: 0}
+  Ship: {fileID: 0}

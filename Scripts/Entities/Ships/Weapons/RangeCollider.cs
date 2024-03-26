@@ -1,4 +1,7 @@
 ﻿using Assets.Scripts.Entities.Projectiles;
+using Assets.Scripts.Level;
+using Assets.Scripts.Level.Commands;
+using Assets.Scripts.Scenes;
 using System.Collections;
 using System.Xml.Linq;
 using UnityEngine;
@@ -10,6 +13,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public Weapon Weapon;
         public int Range;
         public CircleCollider2D Collider;
+        public LevelStage Level;
 
         public virtual void Setup(Weapon weapon, int range)
         {
@@ -17,7 +21,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             Range = range;
             Weapon.HasRangeCollider = true;
             Collider.radius = Range;
-
+            Level = Weapon.Level;
         }
         protected virtual void OnTriggerEnter2D(Collider2D collider)
         {
@@ -26,7 +30,19 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 Ship ship = collidingThing.GetComponent<Ship>();
                 Weapon.ShipsWithinRange.Add(ship);
-            }else if (collidingThing.CompareTag("Fog of War") && Weapon.Ship.IsUserControlled){
+
+                //if (Weapon.Ship.IsHiveMindControlled && Weapon.Ship.HasCommand)
+                //{
+                //    //Debug.Log($"{Weapon.Ship.Name} just saw {ship.Name} and added them to hivemind vision");
+                //    Level.GetState().HivemindShips[Weapon.Side - 1][Weapon.Ship.Id].Add(ship);
+                //    Weapon.Ship.Squad.Command.Tsv += 100;
+                //    if (Weapon.Squad.Command.Type == "Scouting")
+                //    {
+                //        ((Scouting) Weapon.Squad.Command).HasFoundShips = true;
+                //    }
+                //}
+            }
+            else if (collidingThing.CompareTag("Fog of War") && Weapon.Ship.IsUserControlled){
                 Destroy(collidingThing);
             }
 
@@ -38,6 +54,11 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 Ship ship = collidingThing.GetComponent<Ship>();
                 Weapon.ShipsWithinRange.Remove(ship);
+
+                //if (Weapon.Ship.IsHiveMindControlled)
+                //{
+                //    Level.GetState().HivemindShips[Weapon.Side - 1][Weapon.Ship.Id].Remove(ship);
+                //}
             }
             else if (collidingThing.CompareTag("Projectile"))
             {

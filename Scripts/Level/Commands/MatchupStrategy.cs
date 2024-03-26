@@ -28,7 +28,9 @@ namespace Assets.Scripts.Level.Commands
         {
             //Debug.Log("Sorting squads");
             //Debug.Log($"Squad: {Squad}");
-            List<Squad> queue = Level.GetState().GetEnemySquads(Side);
+            List<Squad> queue = Level.GetState().GetSquadsVisibleToHiveMind(Side);
+            //Debug.Log($"Squads visible to HiveMind {Side}: {queue.Count}");
+            //Debug.Log($"Ships visible to HiveMind {Side}: {Level.GetState().GetShipsVisibleToHiveMind(Side).Count}");
 
             if (queue.Count == 0)
             {
@@ -64,18 +66,18 @@ namespace Assets.Scripts.Level.Commands
                     queue.Sort((a, b) => (int)(b.DistanceTo(location) - a.DistanceTo(location)));
                     return queue.First();
                 case "Most Range":
-                    return queue.OrderByDescending(s => s.Range).First();
+                    return queue.OrderByDescending(s => s.MaxRange).First();
                 case "Least Range":
-                    return queue.OrderBy(s => s.Range).First();
+                    return queue.OrderBy(s => s.MaxRange).First();
                 case "Fastest":
                     return queue.OrderByDescending(s => s.TotalSpeed).First();
                 case "Slowest":
                     return queue.OrderBy(s => s.TotalSpeed).First();
                 case "In Combat":
-                    return queue.OrderByDescending(s => s.InCombat).ThenBy(s => s.Range).First();
+                    return queue.OrderByDescending(s => s.InCombat).ThenBy(s => s.MaxRange).FirstOrDefault();
                 case "Gang Up":
                     List<Squad> targetedSquads = Level.GetState().GetTargetedSquads(Side);
-                    return targetedSquads.Count > 0 ? targetedSquads.First() : queue.OrderByDescending(s => s.InCombat).ThenBy(s => s.Range).First(); // In Combat
+                    return targetedSquads.Count > 0 ? targetedSquads.First() : queue.OrderByDescending(s => s.InCombat).ThenBy(s => s.MaxRange).FirstOrDefault(); // In Combat
                 case "Most Valuable":
                     return queue.OrderByDescending(s => s.Tsv).First();
                 case "Least Valuable":
