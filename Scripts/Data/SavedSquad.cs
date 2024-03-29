@@ -76,7 +76,7 @@ namespace Assets.Scripts.Data
 
             for (int shipIndex = 0; shipIndex < shipCount; shipIndex++)
             {
-                int id = (int)Utilities.Hash() + ConfigData.AllShips.GetFleetShips().Count;
+                int id = Utilities.GetNegativeFleetshipId();
 
                 FleetShip fleetShip = new FleetShip(id, Side, $"{squadType} - #{id}", squadType, true, false, 0, 0, 0, 0, 0, 0);
                 Vector2 offset = ConfigData.CarrierColumnFormationOffsets[shipIndex];
@@ -230,7 +230,7 @@ namespace Assets.Scripts.Data
             Squad squad = level.AddComponent<Squad>();
             squad.Setup(
                 level,
-                Id > -1 ? ConfigData.AllShips.GetSavedSquad(Id) : this,
+                HasBeenSavedToStorage ? ConfigData.AllShips.GetSavedSquad(Id) : this,
                 ChosenShootingStrategy,
                 CeaseFire,
                 IsMatchingSpeed,

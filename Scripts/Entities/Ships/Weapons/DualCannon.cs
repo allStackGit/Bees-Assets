@@ -12,7 +12,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public Vector2 RightCannonOffset = new Vector2(1.1f, .5f);
         //public GameObject RangeCircleLeft; // For the second cannon in the dual cannon, the first one being the right one
         //public CircleCollider2D RangeColliderLeft; // Likewise for the range collider
-        protected override void SendProjectile() // [projectile-method] [note]
+        protected override void SendProjectile() // [projectile-method] [note] [stats-method]
         {
 
             //get the angle to the target ship

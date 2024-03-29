@@ -22,6 +22,7 @@ namespace Assets.Scripts.Entities.Ships
 {
     public class Ship : Entity
     {
+        public bool ShowDebug;
         public int Health, MaxHealth, OriginalHealth, OriginalTsv, Sight, AdditionalTsv;
         public float ProjectileValue, Speed, SpecialFirePower;
         public GameObject ShipExplosion, HealthBar, MiniMapIcon;
@@ -66,6 +67,10 @@ namespace Assets.Scripts.Entities.Ships
         public bool IsCarrierShip => ShipType == "Striker" || ShipType == "Drone";
         public string ShootingStrategy => HasBrain ? RLShootingStrategy : Squad.GetShootingStrategy();
         public List<Ship> TargetShips => HasWeapons ? Weapons.Select((w) => w.TargetShip).Where((s) => s != null).ToList() : new List<Ship>();
+        public List<Ship> ShipsWithinRange => HasWeapons ? Weapons.Select((w) => w.ShipsWithinRange).Aggregate(new HashSet<Ship>(), (list, current) => {
+            list.UnionWith(current);
+            return list;
+        }).ToList() : new List<Ship>();
         public bool HasCommand => Squad.HasCommand;
 
 
@@ -87,6 +92,7 @@ namespace Assets.Scripts.Entities.Ships
         public long __Tsv, __CommandTsv;
         public List<Ship> __TargetShips;
         public List<Ship> __SquadShips;
+        public List<string> __ShipsWithinRange;
         public bool __HasReachedDestination;
         public bool __SquadHasReachedDestination;
         public string __Enemy;
@@ -101,11 +107,12 @@ namespace Assets.Scripts.Entities.Ships
         public float RLHealth;
         public float RLShipType;
 
-        private void UpdateTestProperties()
+        private void UpdateDebugProperties()
         {
-            __Strategy = Squad.HasCommand && Squad.Command.HasStrategy ? Squad.Command.Strategy.Name : "-";
+            __Strategy = $"{Squad?.Command?.Strategy?.Name} - {Squad?.Command?.OutcomeId}";
             __Enemy =  Squad.HasEnemy ? Squad.Command.Enemy.Name : "-";
             __TargetShips = TargetShips;
+            __ShipsWithinRange = ShipsWithinRange.Select((ship) => ship.Name).ToList();
             __Squad = Squad.Name;
             __SquadStatus = Squad.Status;
             //__CommandStatus = Squad.HasCommand ? Squad.Comd.Status : "-";
@@ -291,14 +298,12 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             SetToDefaultAngle();
             SetCurrentSpeed(Speed);
 
-            if (IsUserControlled && Level.ActivateFogOfWar && Vision != null)
+
+            if (IsUserControlled && Level.ActivateFogOfWar)
             {
                 //Debug.Log($"Setting up vision for {Name}");
                 HasVision = true;
                 Vision.Setup(this);
-            }else if (Vision != null)
-            {
-                Vision.gameObject.SetActive(false);
             }
             else if (IsHiveMindControlled)
             {
@@ -320,10 +325,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                         CheckForBees();
                     }
 
-                    //if (ConfigData.Development && !IsDead) // [alert] [debug] remove this for release
-                    //{
-                        //UpdateTestProperties();
-                    //}
+                    if (Level.IsDebugging || ShowDebug) // [alert] [debug] remove this for release
+                    {
+                        UpdateDebugProperties();
+                    }
                 }
             }
         }
@@ -721,16 +726,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             {
                 transform.eulerAngles = Vector3.forward * 180;
             }
-            //if (DefaultAngle == 0)
-            //{
-            //    transform.eulerAngles = Vector3.forward;
-            //}
-            //else
-            //{
-            //    //transform.eulerAngles = Vector3.forward * 180;
-
-            //    transform.eulerAngles = Vector3.forward;
-            //}
         }
         public void Clicked(int mouseButton)
         {
@@ -867,13 +862,13 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         {
             if (shooter != null)
             {
-                shooter.FleetShip.DamageDone += -1 * tsvChange;
-                shooter.Squad.SavedSquad.Stats.DamageDone += -1 * tsvChange;
+                shooter.FleetShip.DamageDone += -tsvChange;
+                shooter.Squad.SavedSquad.Stats.DamageDone += -tsvChange;
             }
             else if (shooterSquad != null)
             {
                 //Debug.Log($"There was {tsvChange} damage done against {target.Name} but the shooter is null. The shooter squad got stats though.");
-                shooterSquad.SavedSquad.Stats.DamageDone += -1 * tsvChange;
+                shooterSquad.SavedSquad.Stats.DamageDone += -tsvChange;
             }
             else
             {
@@ -882,8 +877,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             }
             if (target != null)
             {
-                target.FleetShip.DamageReceived += -1 * tsvChange;
-                target.Squad.SavedSquad.Stats.DamageReceived += -1 * tsvChange;
+                target.FleetShip.DamageDone += -tsvChange;
+                target.Squad.SavedSquad.Stats.DamageReceived += -tsvChange;
 
                 if (target.Level.IsTrainingNueralNetwork)
                 {
@@ -995,20 +990,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
 
         /* Range and distance methods */
-        private float DistanceToClosestShip()
-        {
-            return DistanceTo(Level.GetState().GetShips().Where((s) => !Equals(s)).OrderBy((s) => DistanceTo(s)).First());
-        }
-        private float LengthOfLongestSide()
-        {
-            float width = GetHalfWidth();
-            float height = GetHalfHeight();
-            return width > height ? width : height;
-        }
-        public bool IsWithinRangeOfAnyEnemyShips()
-        {
-            return Level.GetState().GetAllEnemyShips(Side).Any((s) => s.IsShipWithinRange(this));
-        }
         public bool IsShipWithinRange(Ship ship)
         {
             return Weapons.Any((w) => w.IsShipWithinRange(ship));
@@ -1097,7 +1078,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         // Utility methods
         public new string ToString()
         {
-            return $"Ship Number #{Id} - {FleetShip.Name}";
+            return Name;
         }
         // Uses a list of ships, not necessarily squad ships
         public static double GetAverageHealthPercent(List<Ship> ships)
@@ -1153,9 +1134,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 explosion.transform.localPosition = GetPosition();
             }
         }
-
-
-
 
 
     }

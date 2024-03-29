@@ -121,55 +121,6 @@ namespace Assets.Scripts.Level
                 InvokeRepeating(nameof(CheckChase), 5, 1);
             }
         }
-        public void SetupRandomSquadShips(string squadType)
-        {
-            int squadId = -1 * Utilities.RandomInt(1000000);
-
-
-            int shipCount = 8;
-            if ((new List<string> { "Queen", "Fire Ship", "Carrier" }).Contains(squadType))
-            {
-                shipCount = UnityEngine.Random.Range(1, 3);
-            }
-            else if ((new List<string> { "Bumblebee", "Flagship", "Barge" }).Contains(squadType))
-            {
-                shipCount = UnityEngine.Random.Range(1, 5);
-            }
-            else if ((new List<string> { "Leafcutter", "Wasp", "Cruiser", "Dreadnought", "Frigate", "Gunship" }).Contains(squadType))
-            {
-                shipCount = UnityEngine.Random.Range(2, 6);
-            }
-            else if ((new List<string> { "Honeybee", "Hornet", "Yellow Jacket", "Scout" }).Contains(squadType))
-            {
-                shipCount = UnityEngine.Random.Range(4, 12);
-            }
-
-            for (int shipIndex = 0; shipIndex < shipCount; shipIndex++)
-            {
-                int id = (int)Utilities.Hash() + ConfigData.AllShips.GetFleetShips().Count;
-                Vector2 offset = ConfigData.CarrierColumnFormationOffsets[shipIndex];
-
-
-                //Debug.Log($"Offset: {offset}");
-                Ship ship;
-                (GameObject, Ship) tuple = Level.LevelConstructor.InstantiateShip(squadType);
-                ship = tuple.Item2;
-
-
-                if (ship != null)
-                {
-                    ship.Setup(
-                        Level,
-                        Level.GetState().AddEntity(),
-                        new FleetShip(id, Side, $"Random {squadType} - #{id}", squadType, true, false, 0, 0, 0, 0, 0, 0),
-                        this,
-                        offset
-                    );
-                }
-                AddShip(ship);
-                ship.SetColor();
-            }
-        }
         private void SetOpponent()
         {
             if (Side == ConfigData.Configuration.AISide)
@@ -225,10 +176,11 @@ namespace Assets.Scripts.Level
                 {
                     adjustment *= 1.2f;
                 }
-                
+
                 //Debug.Log($"Sizefactor for {ship.Name}: {sizeFactor}");
                 //Debug.Log($"Local starting position for {ship.Name}: {new Vector2(x, y)}");
-                ship.transform.localPosition = Level.ForceBounds((position.x + adjustment.x), (position.y + adjustment.y));
+                //ship.transform.localPosition = Level.ForceBounds((position.x + adjustment.x), (position.y + adjustment.y));
+                ship.transform.localPosition = new Vector2(position.x + adjustment.x, position.y + adjustment.y);
             });
 
         }
@@ -245,7 +197,7 @@ namespace Assets.Scripts.Level
             if (!Level.IsPaused)
             {
                 Age++;
-                if (Command != null)
+                if (HasCommand)
                 {
                     Command.Age++;
                 }
@@ -644,6 +596,13 @@ namespace Assets.Scripts.Level
                 banned.Add("Right Swipe");
                 banned.Add("Left Swipe");
                 banned.Add("In and Out");
+            }
+
+            int closestFriendlySquadCount = Level.GetState().GetSquadsBySide(Side).Where((squad) => squad?.Command?.Strategy.Name == "Closest Friendly").Count();
+            int friendlySquadCount = Level.GetState().GetSquadsBySide(Side).Count;
+            if (friendlySquadCount - 1  <= friendlySquadCount)
+            {
+                banned.Add("Closest Friendly");
             }
             
 

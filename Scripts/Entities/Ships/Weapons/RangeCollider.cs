@@ -42,9 +42,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 //    }
                 //}
             }
-            else if (collidingThing.CompareTag("Fog of War") && Weapon.Ship.IsUserControlled){
-                Destroy(collidingThing);
-            }
 
         }
         protected virtual void OnTriggerExit2D(Collider2D collider)

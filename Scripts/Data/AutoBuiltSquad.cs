@@ -29,7 +29,7 @@ namespace Assets.Scripts.Data
         public SavedSquad MakeEmptySquad()
         {
             // ConfigData.GetUserProgressData().GetNextSavedSquadId()
-            int id = -1 * Utilities.RandomInt(1000000);
+            int id = Utilities.GetNegativeSavedSquadId();
             SavedSquad squad = new SavedSquad(id, Side, $"Squadron #{id}", Vector2.zero, false, false, 
                 ConfigData.StartingSettings.DefaultShootingStrategy, ConfigData.UnsetColor, null);
 

@@ -39,6 +39,7 @@ namespace Assets.Scripts.Entities.Ships
         {
             // Spawn the minions
             //Debug.Log($"Spawning {MinionCount} {MinionType}s at {SpawnPoint}");
+            CurrentMinionSquad = null;
             for (int shipIndex = 0; shipIndex < MinionCount; shipIndex++)
             {
                 StartCoroutine(SpawnMinion(shipIndex, GetPosition() + SpawnPoint));
@@ -53,20 +54,19 @@ namespace Assets.Scripts.Entities.Ships
             Squad squad = Level.gameObject.AddComponent<Squad>();
             squad.Setup(
                 Level,
-                null,
+                Squad.SavedSquad,
                 Squad.GetShootingStrategy(),
                 Squad.CeaseFire,
                 Squad.IsMatchingSpeed,
-                (int)Utilities.Hash() + ConfigData.AllShips.GetSavedSquads().Count,
+                Utilities.GetNegativeSavedSquadId(),
                 Squad.Side,
-                state.GetSquadsBySide(Side).Count + 1,
+                state.OriginalSquadCounts[Side - 1] + 1,
                 $"{Squad.Name} - {MinionType} Spawn #{MinionSquadsCount}",
                 Squad.Color
             );
             state.AddSquad(squad);
             CurrentMinionSquad = squad;
             MinionSquads.Add(squad);
-            squad.SavedSquad = Squad.SavedSquad;
             MinionSquadsCount++;
             return squad;
         }
@@ -80,7 +80,7 @@ namespace Assets.Scripts.Entities.Ships
             {
                 squad = CreateMinionSquad();
             }
-            int id = (int)Utilities.Hash() + ConfigData.AllShips.GetFleetShips().Count;
+            int id = Utilities.GetNegativeFleetshipId();
             Vector2 offset = ConfigData.QueenYellowJacketSpawnFormation[shipIndex];
 
             Ship ship;
@@ -101,6 +101,7 @@ namespace Assets.Scripts.Entities.Ships
             }
             squad.AddShip(ship);
             ship.SetColor();
+            ship.FleetShip = FleetShip;
 
             Vector2 position = GetPosition();
             Vector2 rotatedSpawnPosition = Utilities.RotatePointAroundPoint(position, position + SpawnPoint, GetRotation() * Mathf.Deg2Rad);

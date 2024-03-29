@@ -39,6 +39,7 @@ namespace Assets.Scripts.Data
             BattlesWon = battlesWon;
             GetStats();
         }
+        
         private void GetStats()
         {
             ShipStatBlock shipInfo = ConfigData.GetShipInfo(Type);

@@ -158,6 +158,7 @@ namespace Assets.Scripts
         public const float FireShipExplosionSize = 32;
         public const float CommandTimerFrequency = .1f;
         public static List<Scene> Scenes = new List<Scene>();
+        public static Scene SocketManager;
         public static HashSet<long> UsedHashes = new HashSet<long>();
 
 
@@ -245,7 +246,7 @@ namespace Assets.Scripts
 
         // DEBUG VARIABLES
         public static HashSet<ServerRequest> __PastServerRequests = new HashSet<ServerRequest>();
-        public static int __BeeWins, __HumanWins, __HivemindCommands, __TotalRequests;
+        public static int __BeeWins, __HumanWins, __HivemindCommands, __TotalRequests, __LevelTimeouts;
         public static double __TotalLatency, __AverageLatency;
 
 
@@ -258,8 +259,9 @@ namespace Assets.Scripts
 
         public static bool HasSocketManager()
         {
-            return Scenes.Any((s) => s.IsSocketManager);
+            return SocketManager != null;
         }
+
         public static void RetryConnection()
         {
             Socket.MakeSocket();
@@ -268,6 +270,7 @@ namespace Assets.Scripts
         {
             if (Configuration.UserSide == Configuration.BeeSide) // if it was the bee side switch to the human side
             {
+                //Debug.Log($"Switching sides to humans");
                 Configuration.UserSide = Configuration.HumanSide;
                 Configuration.AISide = Configuration.BeeSide;
                 SquadMakerSide = Configuration.HumanSide;
@@ -276,11 +279,13 @@ namespace Assets.Scripts
             }
             else if (Configuration.UserSide == Configuration.HumanSide) // switch to bees
             {
+                //Debug.Log($"Switching sides to bees, U: {Configuration.UserSide}, AI: {Configuration.AISide}, H: {Configuration.HumanSide}, B: {Configuration.BeeSide}");
                 Configuration.UserSide = Configuration.BeeSide;
                 Configuration.AISide = Configuration.HumanSide;
                 SquadMakerSide = Configuration.BeeSide;
                 Configuration.SquadMakerFirstSide = Configuration.BeeSide;
                 Configuration.SquadMakerSecondSide = Configuration.HumanSide;
+                //Debug.Log($"Switched sides to bees, U: {Configuration.UserSide}, AI: {Configuration.AISide}, H: {Configuration.HumanSide}, B: {Configuration.BeeSide}");
             }
         }
         public static Color GetUIColor(string name)

@@ -253,6 +253,9 @@ namespace Assets.Scripts
         }
 
         // squad utility methods
+        /// <summary>
+        /// Replaces the dead ships is a SavedSquad with new ships from the fleet if available. If Level.ReplaceDeadShips isn't true then there aren't any dead ships to replace
+        /// </summary>
         public void ReplaceDeadSquadShips()
         {
             bool replaced = false;

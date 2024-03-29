@@ -107,7 +107,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// <summary>
         /// Sends the projectile to the Target Ship. Last in the Targeting sequence.
         /// </summary>
-        protected override void SendProjectile() // [projectile-method] [note]
+        protected override void SendProjectile() // [projectile-method] [note] [stats-method]
         {
             base.SendProjectile();
             //Debug.Log("Sending turret projectile");

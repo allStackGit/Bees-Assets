@@ -52,7 +52,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 TargetShip = targetShip;
             }
         }
-        protected override void SendProjectile() // [projectile-method] [note]
+        protected override void SendProjectile() // [projectile-method] [note] [stats-method]
         {
             if (!IsFiringLaserBeam)
             {

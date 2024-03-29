@@ -1,6 +1,7 @@
 ﻿using Assets.Scripts.Level;
 using Assets.Scripts.Level.Commands;
 using Assets.Scripts.Scenes;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using Unity.VisualScripting;
@@ -23,7 +24,13 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             if (Ship.IsHiveMindControlled)
             {
                 Collider = gameObject.AddComponent<CircleCollider2D>();
-                Collider.radius = ship.Sight;
+                int range = ship.Sight;
+                if (range == 0)
+                {
+                    range = ship.MaxRange;
+                }
+                Collider.radius = range;
+                Collider.isTrigger = true;
             }
             else
             {
@@ -44,24 +51,20 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         }
         protected virtual void OnTriggerEnter2D(Collider2D collider)
         {
-            GameObject collidingThing = collider.gameObject;
-            if (collidingThing.CompareTag("Fog of War"))
+            if (Ship.Squad.HasCommand)
             {
-                Destroy(collidingThing);
-            }
-            else if (Ship.IsHiveMindControlled && collidingThing.CompareTag("Ship"))
-            {
-                Ship ship = collidingThing.GetComponent<Ship>();
-                if (Ship.Squad.HasCommand)
+                Ship ship = collider.GetComponent<Ship>();
+                //Debug.Log($"{Ship.Name} from {Ship.Level.gameObject.name} just saw {ship.Name} and added them to hivemind vision");
+                if (!Ship.Level.GetState().VisionCache[Ship.Side - 1].Contains(ship))
                 {
-                    //Debug.Log($"{Ship.Name} just saw {ship.Name} and added them to hivemind vision");
-                    Ship.Squad.Command.Tsv += 100;
+                    Ship.Squad.Command.Tsv += (int)Math.Min(Math.Max(ship.Tsv * .05f, 50), 500);
                     Ship.Level.GetState().HivemindShips[Ship.Side - 1][Ship.Id].Add(ship);
                     if (Ship.Squad.Command.Type == "Scouting")
                     {
-                        ((Scouting)Ship.Squad.Command).HasFoundShips = true;
+                        ((Scouting)Ship.Squad.Command).FoundShips();
                     }
                 }
+
             }
 
         }

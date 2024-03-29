@@ -34,7 +34,7 @@ namespace Assets.Scripts.Scenes
         /// </summary>
         public bool ReplaceDeadShips;
         public bool ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, UseSemiRandomSquads, UseFullyRandomSquads, UseFullyRandomEnemySquads, RecordStats, 
-            DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids, ActivateFogOfWar, ActivateAudio, UseMouseScrolling;
+            DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids, ActivateFogOfWar, ActivateAudio, ActivateLoadingShipsMidLevel, UseMouseScrolling, IsDebugging;
         public int OverrideTimeScale, OverrideUserSide, GeneratedSquadCountOverride, TimeoutTime;
         /// <summary>
         /// How frequently asteroids spawn in this level. Sets the upper bound in seconds of the randomly timed spawn
@@ -60,6 +60,7 @@ namespace Assets.Scripts.Scenes
         public Selector Selector;
         public int DefaultZoom, MaxZoom, MinZoom, ZoomSpeed, ScrollSpeed;
         public Vector2 UserStartingPosition, AIStartingPosition, MouseScrollDistanceFromEdge, DefaultCameraPosition;
+        public Vector2[] StartingPositions = new Vector2[2];
         public AudioController Audio;
         public LevelConstructor LevelConstructor;
 
@@ -77,9 +78,11 @@ namespace Assets.Scripts.Scenes
         public float Seconds;
         public HashSet<int> HandledRequests = new HashSet<int>();
         public Pathfinder Pathfinder;
-        public int FixedUpdates;
-        public List<GameObject> FogSquares = new List<GameObject>();
+        public int FixedUpdates, TriggersActivated;
         public Sprite VisonSprite;
+        public float StartTime;
+        public List<SavedSquad>[] MidLevelSquads = new List<SavedSquad>[] { new List<SavedSquad>(), new List<SavedSquad>() };
+        public List<Trigger> Triggers = new List<Trigger>();
 
        
 
@@ -235,13 +238,15 @@ namespace Assets.Scripts.Scenes
             {
                 FogOfWar.SetActive(false);
             }
+            StartingPositions[ConfigData.Configuration.AISide - 1] = AIStartingPosition;
+            StartingPositions[ConfigData.Configuration.UserSide - 1] = UserStartingPosition;
 
             //Invoke(nameof(TimedOut), 60 * 5f);
         }
         protected override void FinalizeSceneWithUserData()
         {
             //Debug.Log($"Finalize scene");
-            float start = Time.realtimeSinceStartup;
+            StartTime = Time.realtimeSinceStartup;
             if (!ConfigData.Configuration.DoesUserHaveController && !DoesUserHaveController)
             {
                 Invoke(nameof(TimeOut), TimeoutTime);
@@ -253,14 +258,17 @@ namespace Assets.Scripts.Scenes
             IsLoaded = true;
             Setup();
             LevelConstructor.SetupShips();
-            _state.OriginalSquadCounts[ConfigData.Configuration.HumanSide - 1] = _state.GetSquadsBySide(ConfigData.Configuration.HumanSide).Count;
-            _state.OriginalSquadCounts[ConfigData.Configuration.BeeSide - 1] = _state.GetSquadsBySide(ConfigData.Configuration.BeeSide).Count;
             if (ActivateHiveMind)
             {
                 Invoke(nameof(GetHiveMindCommands), .25f);
             }
-            float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
-            //InvokeRepeating(nameof(UpdateDebugVariables), 1, 1);
+            float end = (Time.realtimeSinceStartup - StartTime) * 1000; // seconds to milliseconds
+            InvokeRepeating(nameof(UpdateDebugVariables), 2, 2);
+            if (ActivateLoadingShipsMidLevel)
+            {
+                SetTriggers();
+                InvokeRepeating(nameof(CheckTriggers), 5, 5);
+            }
             Debug.Log($"It took {Math.Round(end, 2)} ms to set up the level and {Math.Round(Time.realtimeSinceStartup, 2)}s total time.");
         }
 
@@ -301,8 +309,57 @@ namespace Assets.Scripts.Scenes
             {
                 __CachedPaths = Pathfinder.PathCache.Select((p) => p.ToString()).ToList();
             }
-            __BeeHivemindShips = GetState().GetShipsVisibleToHiveMind(1).Select(s => s.ToString()).ToList();
-            __HumanHivemindShips = GetState().GetShipsVisibleToHiveMind(2).Select(s => s.ToString()).ToList();
+            __BeeHivemindShips = GetState().GetShipsVisibleToHiveMind(ConfigData.Configuration.BeeSide).Select(s => s.ToString()).ToList();
+            __HumanHivemindShips = GetState().GetShipsVisibleToHiveMind(ConfigData.Configuration.HumanSide).Select(s => s.ToString()).ToList();
+        }
+        private void SetTriggers()
+        {
+            CancelInvoke(nameof(CheckTriggers));
+            Triggers.Clear();
+
+            Triggers.Add(new Trigger(() =>
+            {
+                return Time.realtimeSinceStartup - StartTime >= 10;
+            }, () =>
+            {
+                Debug.Log($"10 seconds have passed, spawning new bee ships");
+                Vector2 moveToPoint = Vector2.zero;
+                if (ConfigData.Configuration.UserSide == ConfigData.Configuration.BeeSide) {
+                    moveToPoint = StartingPositions[ConfigData.Configuration.BeeSide - 1];
+                }
+                LevelConstructor.AddShipsMidLevel(MidLevelSquads[ConfigData.Configuration.BeeSide - 1], StartingPositions[ConfigData.Configuration.BeeSide - 1] * new Vector2(0, 3), moveToPoint);
+
+            }));
+
+            Triggers.Add(new Trigger(() =>
+            {
+                return GetState().GetShips(ConfigData.Configuration.UserSide).Count <= 3;
+            }, () =>
+            {
+                Debug.Log($"There are only three (or fewer) of our ships left, spawning new friendly ships");
+                LevelConstructor.AddShipsMidLevel(MidLevelSquads[ConfigData.Configuration.UserSide - 1], StartingPositions[ConfigData.Configuration.UserSide - 1] * new Vector2(0, 3), StartingPositions[ConfigData.Configuration.UserSide - 1]);
+
+            }));
+
+        }
+        /// <summary>
+        /// Checks if any of the trigger conditions to load new ships for a level have been satisfied or not. For actual levels, this should probably be defined in some external file on a per level basis
+        /// </summary>
+        private void CheckTriggers()
+        {
+            //Debug.Log($"Checking triggers");
+
+            Triggers.ForEach((trigger) =>
+            {
+                if (trigger.Conditional())
+                {
+                    trigger.Action();
+                }
+            });
+            Triggers = Triggers.Where((trigger) => !trigger.HasBeenTriggered).ToList();   
+            if (Triggers.Count == 0) { 
+                CancelInvoke(nameof(CheckTriggers));
+            }
         }
         new void Update()
         {
@@ -327,7 +384,7 @@ namespace Assets.Scripts.Scenes
                     LevelOver();
                 }
 
-                if ((state.IsPaused || NetworkDisconnection.IsOpen || !IsLevelSetupOnServer) && !IsTrainingNueralNetwork)
+                if ((state.IsPaused || ConfigData.SocketManager.NetworkDisconnection.IsOpen || !IsLevelSetupOnServer) && !IsTrainingNueralNetwork)
                 {
                     Time.timeScale = 0;
                 }
@@ -391,7 +448,7 @@ namespace Assets.Scripts.Scenes
                 int totalGames = ConfigData.__HumanWins + ConfigData.__BeeWins;
                 int humanWinPercentage = (int)(((float)ConfigData.__HumanWins / totalGames) * 100);
                 int beeWinPercentage = (int)(((float)ConfigData.__BeeWins / totalGames) * 100);
-                Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".PadRight(15)}   {$"fps: {fps}".Substring(0, 10)}  {$"fups: {fups}".Substring(0, 10)}     {$"latency: {(int)(ConfigData.__AverageLatency*1000)}ms".PadRight(18)} {$"CPS: {ConfigData.__HivemindCommands / Time.unscaledTime}".PadRight(9).Substring(0, 9)}");
+                Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".PadRight(15)}   {$"fps: {fps}".Substring(0, 10)}  {$"fups: {fups}".Substring(0, 10)}     {$"latency: {(int)(ConfigData.__AverageLatency*1000)}ms".PadRight(18)} {$"CPS: {ConfigData.__HivemindCommands / Time.unscaledTime}".PadRight(9).Substring(0, 9)}   LTO: {ConfigData.__LevelTimeouts}");
 
                 if (Menus != null)
                 {
@@ -503,6 +560,10 @@ namespace Assets.Scripts.Scenes
                
             }
 
+            StartingPositions[ConfigData.Configuration.AISide - 1] = AIStartingPosition;
+            StartingPositions[ConfigData.Configuration.UserSide - 1] = UserStartingPosition;
+
+
 
             if (!isStepTimeout)
             {
@@ -540,7 +601,6 @@ namespace Assets.Scripts.Scenes
                 HumanAgentGroup.EndGroupEpisode();
             }
 
-            state.InitialTsv = new int[] { 0, 0 };
             state.SpottedShips = new List<SpottedShip>[] { new List<SpottedShip>(), new List<SpottedShip>() };
 
 
@@ -560,9 +620,11 @@ namespace Assets.Scripts.Scenes
         public void StartNew()
         {
             GameState state = GetState();
+            state.ResetState();
             state.GameOver = false;
             state.LevelEnded = false;
             Seconds = 0;
+            StartTime = Time.realtimeSinceStartup;
             //Socket.StandingRequests.Clear();
             ConfigData.Socket.HandledRequests.Except(HandledRequests);
             HandledRequests.Clear();
@@ -597,10 +659,14 @@ namespace Assets.Scripts.Scenes
                 Pathfinder = new Pathfinder(this);
             }
 
-            LevelConstructor.SetupShips();
+            if (ActivateLoadingShipsMidLevel)
+            {
+                SetTriggers();
+                InvokeRepeating(nameof(CheckTriggers), 5, 5);
+            }
 
-            _state.OriginalSquadCounts[ConfigData.Configuration.HumanSide - 1] = _state.GetSquadsBySide(ConfigData.Configuration.HumanSide).Count;
-            _state.OriginalSquadCounts[ConfigData.Configuration.BeeSide - 1] = _state.GetSquadsBySide(ConfigData.Configuration.BeeSide).Count;
+            ConfigData.SquadsChosenForLevel = ConfigData.SquadsChosenForLevel.Where((chosenSquad) => !MidLevelSquads[chosenSquad.Side - 1].Contains(chosenSquad)).ToList();
+            LevelConstructor.SetupShips();
 
 
 
@@ -613,6 +679,7 @@ namespace Assets.Scripts.Scenes
         private void TimeOut()
         {
             Debug.Log("Level timed out!");
+            ConfigData.__LevelTimeouts++;
             SaveAndEnd();
         }
         /// <summary>
@@ -689,7 +756,7 @@ namespace Assets.Scripts.Scenes
 
 
             //StartNew();
-            state.ClearLists();
+            
             StartNew();
             //Invoke(nameof(StartNew), .1f);
             //Invoke(nameof(ReloadScene), 1f);

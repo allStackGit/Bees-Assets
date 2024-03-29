@@ -525,6 +525,15 @@ namespace Assets.Scripts
             WriteTextFile(line);
         }
 
+        public static int GetNegativeFleetshipId()
+        {
+            return -(Hash() + ConfigData.AllShips.GetFleetShips().Count);
+        }
+        public static int GetNegativeSavedSquadId()
+        {
+            return -(Hash() + ConfigData.AllShips.GetSavedSquads().Count);
+        }
+
 
 
 

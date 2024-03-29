@@ -40,6 +40,9 @@ namespace Assets.Scripts.Scenes
             if (!ConfigData.HasSocketManager())
             {
                 IsSocketManager = true;
+                ConfigData.SocketManager = this;
+                NetworkDisconnection = new Dialogue(DialoguePrefab, "Server disconnected!", "The game needs to be connected to the server in order to function properly.",
+                                               new List<string>() { "Retry", "Exit Game" }, new List<UnityAction>() { ConfigData.RetryConnection, Exit });
             }
             InvokeRepeating(nameof(LoadSettingsWhenOpen), .1f, .1f);
             Timer = new Timer(.1f, ConfigData.Socket.Update);
@@ -47,12 +50,7 @@ namespace Assets.Scripts.Scenes
             {
                 //InvokeRepeating(nameof(UpdateTestVariables), 10f, 10f);
             }
-            if (NetworkDisconnection == null)
-            {
-                //Debug.Log("Setting Network disconnection dialogue");
-                NetworkDisconnection = new Dialogue(DialoguePrefab, "Server disconnected!", "The game needs to be connected to the server in order to function properly.",
-                                            new List<string>() { "Retry", "Exit Game" }, new List<UnityAction>() { ConfigData.RetryConnection, Exit });
-            }
+
 
 
         }
@@ -95,15 +93,15 @@ namespace Assets.Scripts.Scenes
             Timer.Update();
             
 
-            if (ConfigData.Socket.HasClosed && !NetworkDisconnection.IsOpen)
+            if (ConfigData.Socket.HasClosed && IsSocketManager && !NetworkDisconnection.IsOpen)
             {
                 NetworkDisconnection.Show();
             }
-            else if (ConfigData.Socket.IsOpen && NetworkDisconnection.IsOpen)
+            else if (ConfigData.Socket.IsOpen && IsSocketManager && NetworkDisconnection.IsOpen)
             {
                 NetworkDisconnection.Hide();
             }
-            if (!NetworkDisconnection.IsOpen)
+            if (!ConfigData.SocketManager.NetworkDisconnection.IsOpen)
             {
                 // [alert] [debug]
               

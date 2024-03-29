@@ -179,7 +179,7 @@ MonoBehaviour:
   Body: {fileID: 0}
   Power: 0
   Range: 0
-  Speed: 150
+  Speed: 200
   Shooter: {fileID: 0}
   Target: {fileID: 0}
   Weapon: {fileID: 0}

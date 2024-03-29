@@ -163,12 +163,12 @@ namespace Assets.Scripts.Level.Commands
         }
         private void Finalize(string cause)
         {
-            CancelInvoke(); 
+            //CancelInvoke(); 
             
             FinalizationCause = cause;
             //Debug.Log($"Finalized because of [{FinalizationCause}]");
             IsFinalized = true;
-            ClearDestinations();
+            //ClearDestinations();
 
             if (Squad != null)
             {
@@ -189,7 +189,7 @@ namespace Assets.Scripts.Level.Commands
                 if (Squad.IsHiveMindControlled && Level.ActivateHiveMind)
                 {
                     Squad.AddToCommandList();
-                    if (OutcomeId != 0 && IsHiveMindCommand)
+                    if (OutcomeId != 0)
                     {
                         if (!Level.IsTrainingHiveMind && !Level.IsTrainingNueralNetwork)
                         {

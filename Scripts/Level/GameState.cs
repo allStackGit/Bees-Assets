@@ -45,7 +45,7 @@ namespace Assets.Scripts.Level
             Level = level;
             // Debug.Log("Game State has been setup");
         }
-        public void ClearLists()
+        public void ResetState()
         {
             _ships.Clear();
             _squads.Clear();
@@ -55,6 +55,10 @@ namespace Assets.Scripts.Level
             _obstacles.Clear();
             SpottedShips[0].Clear();
             SpottedShips[1].Clear();
+            InitialTsv = new int[] { 0, 0 };
+            OriginalSquadCounts = new int[] { 0, 0 };
+            HivemindShips = new Dictionary<long, HashSet<Ship>>[] { new Dictionary<long, HashSet<Ship>>(), new Dictionary<long, HashSet<Ship>>() };
+            VisionCache = new HashSet<Ship>[] { new HashSet<Ship>(), new HashSet<Ship>() };
         }
 
         public void AddSpottedShip(Ship ship, Ship spotter)
@@ -102,6 +106,7 @@ namespace Assets.Scripts.Level
         public void AddSquad(Squad squad)
         {
             _squads.Add(squad);
+            OriginalSquadCounts[squad.Side - 1]++;
         }
         public void AddObstacle(Obstacle obstacle)
         {
@@ -177,11 +182,12 @@ namespace Assets.Scripts.Level
 
 
             //return ships;
-
-            return HivemindShips[side - 1].Aggregate(new HashSet<Ship>(), (sum, dictionary) => {
+            VisionCache[side - 1] = HivemindShips[side - 1].Aggregate(new HashSet<Ship>(), (sum, dictionary) => {
                 sum.UnionWith(dictionary.Value.Where((ship) => ship != null && !ship.IsDead));
                 return sum;
             });
+            
+            return VisionCache[side - 1];
         }
 
         public HashSet<string> GetHumanShipTypes()
@@ -204,6 +210,11 @@ namespace Assets.Scripts.Level
         {
             return GetShips(ConfigData.Configuration.HumanSide);
         }
+        /// <summary>
+        /// Gets all ships that do not match the side given
+        /// </summary>
+        /// <param name="side"></param>
+        /// <returns></returns>
         public List<Ship> GetAllEnemyShips(int side)
         {
             return _ships.Where(ship => ship.Side != side).ToList();

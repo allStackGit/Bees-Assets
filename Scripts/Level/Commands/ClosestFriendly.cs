@@ -20,6 +20,7 @@ namespace Assets.Scripts.Level.Commands
             //_parameters.setTimer = false;
             _closestFriendlySquad = Squad.GetClosestValidFriendlySquad();
             InvokeRepeating(nameof(Timer), ConfigData.CommandTimerFrequency, ConfigData.CommandTimerFrequency);
+            Invoke(nameof(FinishFollowing), ConfigData.Configuration.AISquadFollowingTime);
 
 
         }
@@ -40,7 +41,7 @@ namespace Assets.Scripts.Level.Commands
                     {
                         Squad.Status = $"Following friendly squad #{_closestFriendlySquad.SquadNumber}";
                         SetAndMove(_closestFriendlySquad.GetPosition());
-                        Invoke(nameof(FinishFollowing), ConfigData.Configuration.AISquadFollowingTime);
+                        
                     }
 
                 }

@@ -16,7 +16,6 @@ namespace Assets.Scripts.Level
         public void SetupCarrierSquad(Carrier carrier, string squadType)
         {
             Carrier = carrier;
-            SavedSquad = Carrier.Squad.SavedSquad;
             SquadType = squadType;
             SetupShips();
             SetShootingStrategy(carrier.Squad.GetShootingStrategy());
@@ -34,7 +33,7 @@ namespace Assets.Scripts.Level
 
             for (int shipIndex = 0; shipIndex < shipCount; shipIndex++)
             {
-                int id = (int) Utilities.Hash() + ConfigData.AllShips.GetFleetShips().Count;
+                int id = Utilities.GetNegativeFleetshipId();
                 Vector2 offset = Vector2.left;
 
                 if (formation == "Double Column")
