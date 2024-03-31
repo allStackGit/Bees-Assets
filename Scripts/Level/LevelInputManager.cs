@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Assets.Scripts;
+using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Level;
 using Assets.Scripts.Scenes;
@@ -35,6 +36,7 @@ namespace Assets.Scripts.Level
         private Vector2 _mouseDownPosition;
 
         private Ship _clickedShip = null;
+        private MiningAsteroid _clickedMiningAsteroid = null;
 
         public Selector Selector;
         public LevelStage Level;
@@ -83,6 +85,7 @@ namespace Assets.Scripts.Level
             _mouseAtBottomEdge = false;
             _mouseAtTopEdge = false;
             _clickedShip = null;
+            _clickedMiningAsteroid = null;
         }
         private void CheckInputs() {
 
@@ -267,20 +270,7 @@ namespace Assets.Scripts.Level
         }
         private bool HasSelectingGuardShipInput()
         {
-            if (Input.GetMouseButtonUp(RightClick))
-            {
-                //Debug.Log("There was a right click for guard ship");
-                if (_clickedShip != null)
-                {
-                    //Debug.Log("Clicked ship is not null");
-                    if (_clickedShip.IsUserControlled)
-                    {
-                        
-                        return true;
-                    }
-                }
-            }
-            return false;
+            return _selectingGuardTarget && Input.GetMouseButtonUp(RightClick) && _clickedShip != null && _clickedShip.IsUserControlled;
         }
         private bool HasAttackingShipInput()
         {
@@ -303,6 +293,30 @@ namespace Assets.Scripts.Level
         private bool HasManualFireInput()
         {
             return Input.GetKey(KeyCode.F);
+        }
+        private bool HasMiningCommandInput()
+        {
+            if (_rightMouseButtonUp)
+            {
+                //Debug.Log($"right up: {_rightMouseButtonUp}");
+                RaycastHit2D[] hits = Physics2D.RaycastAll(Level.Camera.ScreenToWorldPoint(Input.mousePosition), Vector2.zero);
+                for (int i = 0; i < hits.Length; i++)
+                {
+                    RaycastHit2D hit = hits[i];
+                    if (hit.collider != null && hit.collider.CompareTag("Mining Asteroid"))
+                    {
+                        //Debug.Log($"hit: {hit.collider.gameObject.name}");
+                        _clickedMiningAsteroid = hit.collider.gameObject.GetComponent<MiningAsteroid>();
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+        private bool HasFullRetreatCommandInput()
+        {
+            //Debug.Log($"right up: {Input.GetMouseButtonUp(RightClick)}, _clickedShip: {_clickedShip?.Name}");
+            return Input.GetMouseButtonUp(RightClick) && _clickedShip != null && _clickedShip.IsWarpGate;
         }
 
         /// <summary>
@@ -393,11 +407,20 @@ namespace Assets.Scripts.Level
                 else if (HasSelectingGuardShipInput())
                 {
                     //Debug.Log("Has input for selecting guard ship");
-                    CheckForSelectingGuard(_clickedShip);
+                    SetSelectingGuard(_clickedShip);
                 }
                 else if (HasAttackingShipInput())
                 {
                     _clickedShip.Clicked(RightClick);
+                }
+                else if (HasFullRetreatCommandInput())
+                {
+                    SetSquadsToFullRetreat((WarpGate)_clickedShip);
+                }
+                else if (HasMiningCommandInput())
+                {
+                    //Debug.Log($"Setting squads to mine");
+                    SetSquadsToMine(_clickedMiningAsteroid);
                 }
                 else if (HasMoveSquadsInput())
                 {
@@ -502,17 +525,14 @@ namespace Assets.Scripts.Level
         }
 
 
-        private void CheckForSelectingGuard(Ship ship)
+        private void SetSelectingGuard(Ship ship)
         {
-            if ( _selectingGuardTarget) // if we're set to select a guard target
+            //Debug.Log($"Selecting {ship.name} for guarding");
+            Level.GetState().GetSelectedSquads().ForEach((squad) =>
             {
-                //Debug.Log($"Selecting {ship.name} for guarding");
-                Level.GetState().GetSelectedSquads().ForEach((squad) =>
-                {
-                    squad.UserGuard(ship.Squad); // make all selected ships guard this squad
-                });
-                _selectingGuardTarget = false;
-            }
+                squad.UserGuard(ship.Squad); // make all selected ships guard this squad
+            });
+            _selectingGuardTarget = false;
         }
         private bool CheckForSelectingSquad()
         {
@@ -566,8 +586,7 @@ namespace Assets.Scripts.Level
         }
         private void MoveSquads(Vector2 targetPosition)
         {
-            List<Squad> squads = Level.GetState().GetSelectedSquads();
-            squads.ForEach((squad) =>
+            Level.GetState().GetSelectedSquads().ForEach((squad) =>
             {
                 Vector2 localized = targetPosition - Level.GetPosition();
                 //Debug.Log($"Squad: {squad.Name} World point target position: {targetPosition}, localized: {localized}");
@@ -580,6 +599,20 @@ namespace Assets.Scripts.Level
                 // if the user is controlling this squad and setting it to target an enemy, end that.
                 squad.FinalizeUserCommand();
                 squad.Move(localized);
+            });
+        }
+        private void SetSquadsToMine(MiningAsteroid asteroid)
+        {
+            Level.GetState().GetSelectedSquads().ForEach((squad) =>
+            {
+                squad.UserMining(asteroid);
+            });
+        }
+        private void SetSquadsToFullRetreat(WarpGate warpGate)
+        {
+            Level.GetState().GetSelectedSquads().ForEach((squad) =>
+            {
+                squad.UserFullRetreat(warpGate);
             });
         }
         private bool CheckForSelectingPatrolArea()

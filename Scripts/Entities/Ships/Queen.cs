@@ -93,7 +93,7 @@ namespace Assets.Scripts.Entities.Ships
                 ship.Setup(
                     Level,
                     Level.GetState().AddEntity(),
-                    new FleetShip(id, Side, $"{ShipType} Minion {MinionType} - #{id}", MinionType, true, false, 0, 0, 0, 0, 0, 0),
+                    new FleetShip(id, Side, $"{ShipType} Minion {MinionType} - #{id}", MinionType, true, false, 0, 0, 0, 0, 0, 0, 0),
                     squad,
                     offset
                 );

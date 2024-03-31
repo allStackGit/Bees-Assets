@@ -121,6 +121,14 @@ namespace Assets.Scripts
                     }
                     
                     break;
+                case "Minerals Mined":
+                    rankings = GetVisibleFleetShipsBySide(side).OrderByDescending((s) => s.MineralsMined).ToList();
+                    ranking = rankings.IndexOf(ship) + 1;
+                    while (ranking > 1 && ship.MineralsMined == rankings.ElementAt(ranking - 2).MineralsMined)
+                    {
+                        ranking--;
+                    }
+                    break;
 
             }
             return ranking;

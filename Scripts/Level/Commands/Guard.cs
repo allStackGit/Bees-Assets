@@ -106,7 +106,7 @@ namespace Assets.Scripts.Level.Commands
         {
             return Level.GetState().GetSquadsBySide(Side)
                 .Where((s) => !s.Equals(Squad) && (!s.HasCommand || !s.Command.HasStrategy || s.Command.Strategy.Name != "Guard"))
-                .OrderBy(s => s.DistanceTo(Squad.GetPosition())).ToList().FirstOrDefault();
+                .OrderBy(s => s.DistanceToPoint(Squad.GetPosition())).ToList().FirstOrDefault();
         }
         public List<Squad> GetGuardingSquads()
         {
@@ -128,17 +128,18 @@ namespace Assets.Scripts.Level.Commands
 
         private void FinishGuardingCommand()
         {
-            if (Squad != null)
+            if (!Squad.IsDead)
             {
                 Squad.SetSquadSpeed(Squad.MaxSpeed);
                 GetGuardingSquads().ForEach((squad) =>
                 {
                     ((Guard)squad.Command).OtherGuardSquads.Remove(Squad);
                 }); // [alert] need to do this when the user finishes too
-               
+                CancelInvoke(nameof(Timer));
+                SetFinalize("Finished Guarding");
+
             }
-            CancelInvoke(nameof(Timer));
-            SetFinalize("Finished Guarding");
+
 
         }
     }

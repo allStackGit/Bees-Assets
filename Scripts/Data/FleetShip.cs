@@ -12,7 +12,7 @@ namespace Assets.Scripts.Data
         public int Id, Side;
         public string Name, Type;
         public bool IsVisibleToUser, IsDead;
-        public int ShotsFired, DamageDone, DamageReceived, Kills, BattlesFought, BattlesWon;
+        public int ShotsFired, DamageDone, DamageReceived, Kills, BattlesFought, BattlesWon, MineralsMined, MineralsMinedThisLevel;
         public int BattlesLost => BattlesFought - BattlesWon;
 
         public int Health, MaxHealth, AdditionalTsv, Sight;
@@ -23,7 +23,7 @@ namespace Assets.Scripts.Data
        
         public float Firepower => GetFirepower();
 
-        public FleetShip(int id, int side, string name, string type, bool isVisibleToUser, bool isDead, int shotsFired, int damageDone, int damageReceived, int kills, int battlesFought, int battlesWon)
+        public FleetShip(int id, int side, string name, string type, bool isVisibleToUser, bool isDead, int shotsFired, int damageDone, int damageReceived, int kills, int battlesFought, int battlesWon, int mineralsMined)
         {
             Id = id;
             Side = side;
@@ -37,6 +37,7 @@ namespace Assets.Scripts.Data
             Kills = kills;
             BattlesFought = battlesFought;
             BattlesWon = battlesWon;
+            MineralsMined = mineralsMined;
             GetStats();
         }
         

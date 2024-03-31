@@ -352,14 +352,13 @@ namespace Assets.Scripts
         public static bool TimedRotation(GameObject entity, float rotation, float rotationSpeed)
         {
             float difference = Mathf.DeltaAngle(entity.transform.eulerAngles.z, rotation);
-            float closeEnough = 3;
             //Debug.Log($"Difference in angles {difference}, {(difference > closeEnough ? "counter-clockwise" : "clockwise")}");
-            if (difference > closeEnough)
+            if (difference > 3)
             {
                 entity.transform.Rotate(new Vector3(0, 0, 1 * Time.fixedDeltaTime * rotationSpeed * 1));
                 return false;
             }
-            else if (difference < (0 - closeEnough))
+            else if (difference <  -3)
             {
                 entity.transform.Rotate(new Vector3(0, 0, 1 * Time.fixedDeltaTime * rotationSpeed * -1));
                 return false;
@@ -369,6 +368,16 @@ namespace Assets.Scripts
                 entity.transform.eulerAngles = new Vector3(0, 0, rotation);
                 return true;
             }
+        }
+
+        public static bool IsRotatedTowards(GameObject entity, float rotation)
+        {
+            float difference = Mathf.DeltaAngle(entity.transform.eulerAngles.z, rotation);
+            if (difference > 3 || difference < -3)
+            {
+                return false;
+            }
+            return true;
         }
         /// <summary>
         /// Checks to see if a game object is rotated towards a rotation or not
@@ -459,8 +468,8 @@ namespace Assets.Scripts
         }
         public static int CalculateCarrierAdditionalTsv()
         {
-            FleetShip striker = new FleetShip(-1, ConfigData.Configuration.HumanSide, "", "Striker", false, false, 0, 0, 0, 0, 0, 0);
-            FleetShip drone = new FleetShip(-1, ConfigData.Configuration.HumanSide, "", "Drone", false, false, 0, 0, 0, 0, 0, 0);
+            FleetShip striker = new FleetShip(-1, ConfigData.Configuration.HumanSide, "", "Striker", false, false, 0, 0, 0, 0, 0, 0, 0);
+            FleetShip drone = new FleetShip(-1, ConfigData.Configuration.HumanSide, "", "Drone", false, false, 0, 0, 0, 0, 0, 0, 0);
 
             return ((striker.GetTsv() * ConfigData.Configuration.CarrierCarryStrikerMax) * ConfigData.Configuration.CarrierSquadCount) + ((drone.GetTsv() * ConfigData.Configuration.CarrierCarryDroneMax) * ConfigData.Configuration.CarrierSquadCount);
         }

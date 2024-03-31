@@ -48,7 +48,7 @@ namespace Assets.Scripts.Scenes
             Timer = new Timer(.1f, ConfigData.Socket.Update);
             if (WatchServerRequests)
             {
-                //InvokeRepeating(nameof(UpdateTestVariables), 10f, 10f);
+                InvokeRepeating(nameof(UpdateTestVariables), 1f, 1f);
             }
 
 

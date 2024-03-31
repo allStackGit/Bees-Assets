@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using Assets.Scripts;
 using Assets.Scripts.Data;
+using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Level.Commands;
 using Assets.Scripts.Scenes;
@@ -56,6 +57,7 @@ namespace Assets.Scripts.Level
         public bool IsAttacking => HasCommand && Command.IsAttacking;
         public Vector2 StartingPosition => Side == ConfigData.Configuration.UserSide ? Level.UserStartingPosition : Level.AIStartingPosition;
         public bool IsDefenseless => GetShips().All((s) => s.Firepower == 0);
+        public bool HasMiningShips => GetShips().Any((s) => s.IsMiningShip);
         public bool AttackOnSight => !CeaseFire;
         public bool Holding => !ShouldChase();
         public bool IsCarrierSquad => this is CarrierSquad;
@@ -388,12 +390,12 @@ namespace Assets.Scripts.Level
         public Squad GetClosestEnemySquad()
         {
             // Debug.Log($"Number of enemy squads {squads.Count}, {_level.GetState().GetSquads()}");
-            return Level.GetState().GetEnemySquads(Side).OrderBy(squad => squad.DistanceTo(GetPosition())).FirstOrDefault();
+            return Level.GetState().GetEnemySquads(Side).OrderBy(squad => squad.DistanceToPoint(GetPosition())).FirstOrDefault();
         }
         public Squad GetClosestValidFriendlySquad()
         {
             List<Squad> squads = Level.GetState().GetSquadsBySide(Side).Where(squad => !squad.Equals(this) && (!squad.HasCommand || squad.Command.Type != "Closest Friendly")).ToList();
-            return squads.OrderBy(squad => squad.DistanceTo(GetPosition())).FirstOrDefault();
+            return squads.OrderBy(squad => squad.DistanceToPoint(GetPosition())).FirstOrDefault();
         }
         public Squad GetEnemy()
         {
@@ -514,7 +516,7 @@ namespace Assets.Scripts.Level
         public void MakeMatchup(Squad enemy = null)
         {
             string matchup = "";
-            HashSet<string> banned = BannedStrats;
+            HashSet<string> banned = BannedStrats.ToHashSet(); // the ToHashSet is important to prevent modification of the original set
             if (enemy != null)
             {
                 List<Ship> enemies = GetPotentialEnemies(enemy);
@@ -598,13 +600,32 @@ namespace Assets.Scripts.Level
                 banned.Add("In and Out");
             }
 
-            int closestFriendlySquadCount = Level.GetState().GetSquadsBySide(Side).Where((squad) => squad?.Command?.Strategy.Name == "Closest Friendly").Count();
-            int friendlySquadCount = Level.GetState().GetSquadsBySide(Side).Count;
+            GameState state = Level.GetState();
+            int closestFriendlySquadCount = state.GetSquadsBySide(Side).Where((squad) => squad?.Command?.Strategy.Name == "Closest Friendly").Count();
+            int friendlySquadCount = state.GetSquadsBySide(Side).Count;
             if (friendlySquadCount - 1  <= friendlySquadCount)
             {
                 banned.Add("Closest Friendly");
             }
-            
+            if (!BannedStrats.Contains("Mining") && (!HasMiningShips || !Level.ActivateMining))
+            {
+                BannedStrats.Add("Mining");
+                banned.Add("Mining");
+            }
+            if (!BannedStrats.Contains("Full Retreat") && (Side != ConfigData.Configuration.HumanSide || !state.HasWarpGates))
+            {
+                BannedStrats.Add("Full Retreat");
+                banned.Add("Full Retreat");
+            }
+            //if (HasOnlyYellowJackets)
+            //{
+            //    Debug.Log($"Trying to get a command for {Name} against {enemy?.Name}");
+            //    for (int i = 0; i < banned.Count; i++)
+            //    {
+            //        Debug.Log($"banned #{i} is {banned.ElementAt(i)}");
+            //    }
+            //}
+
 
             ConfigData.Socket.SendRequest(new CommandRequest(new GetStrategy(matchup, OpponentId, banned.ToArray()),
                 this, enemy, Level, matchup, ConfigData.StandardMaxTimeOnQueue));
@@ -663,6 +684,26 @@ namespace Assets.Scripts.Level
                 Level.Menus.ActionBox.HighlightSelectedButtons();
             }
         }
+        public void UserMining(MiningAsteroid miningAsteroid)
+        {
+            if (HasMiningShips)
+            {
+                (Strategy, ShootingStrategy) strategies = MakeUserCommand("Mining", null);
+                ((Mining)Command).Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), true, miningAsteroid);
+            }
+            else
+            {
+                FinalizeUserCommand();
+                Move(miningAsteroid.GetPosition());
+            }
+
+        }
+        public void UserFullRetreat(WarpGate warpGate)
+        {
+            (Strategy, ShootingStrategy) strategies = MakeUserCommand("Full Retreat", null);
+            ((FullRetreat)Command).Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), true, warpGate);
+
+        }
         public void UserAggressive(Squad enemy)
         {
             if (HasOnlyBombers)
@@ -671,13 +712,13 @@ namespace Assets.Scripts.Level
                 return;
             }
             //Debug.Log($"Creating \"Aggressive\" command for {Name} against {enemy.Name}");
-            (Strategy, ShootingStrategy) strategies = MakeUserCommand("Aggressive", enemy); // selectedSquad is the user's squad, and Squad is this ship's squad
+            (Strategy, ShootingStrategy) strategies = MakeUserCommand("Aggressive", enemy); 
             Command.Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), false);
         }
         public void UserBombingRun(Squad enemy)
         {
             //Debug.Log($"Creating \"Bombing Run\" command for {Name} against {enemy.Name}");
-            (Strategy, ShootingStrategy) strategies = MakeUserCommand("Bombing Run", enemy); // selectedSquad is the user's squad, and Squad is this ship's squad
+            (Strategy, ShootingStrategy) strategies = MakeUserCommand("Bombing Run", enemy); 
             ((BombingRun)Command).Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), false);
         }
         public (Strategy, ShootingStrategy) MakeUserCommand(string command, Squad enemy)
@@ -700,6 +741,12 @@ namespace Assets.Scripts.Level
                     break;
                 case "Patrol":
                     Command = gameObject.AddComponent<Patrol>();
+                    break;
+                case "Mining":
+                    Command = gameObject.AddComponent<Mining>();
+                    break;
+                case "Full Retreat":
+                    Command = gameObject.AddComponent<FullRetreat>();
                     break;
                 default:
                     Debugger.Exception($"Invalid command {command} issued to user squad");
@@ -730,6 +777,10 @@ namespace Assets.Scripts.Level
                 }
                 Command.SetFinalize("New command given");
             }
+        }
+        public MiningAsteroid GetNearestMiningAsteroid()
+        {
+            return (MiningAsteroid)Level.GetState().GetObstacles().Where((o) => o.IsMiningAsteroid).OrderBy((o) => DistanceToPoint(o.GetPosition())).FirstOrDefault();
         }
 
 
@@ -833,7 +884,7 @@ namespace Assets.Scripts.Level
             }
             return false;
         }
-        public float DistanceTo(Vector2 point)
+        public float DistanceToPoint(Vector2 point)
         {
             return Vector2.Distance(GetPosition(), point);
         }

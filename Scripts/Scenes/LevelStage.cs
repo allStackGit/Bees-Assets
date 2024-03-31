@@ -16,6 +16,7 @@ using System.Security.Cryptography;
 using Unity.MLAgents;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.UIElements;
 
 namespace Assets.Scripts.Scenes
 {
@@ -34,7 +35,7 @@ namespace Assets.Scripts.Scenes
         /// </summary>
         public bool ReplaceDeadShips;
         public bool ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, UseSemiRandomSquads, UseFullyRandomSquads, UseFullyRandomEnemySquads, RecordStats, 
-            DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids, ActivateFogOfWar, ActivateAudio, ActivateLoadingShipsMidLevel, UseMouseScrolling, IsDebugging;
+            DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateAudio, ActivateLoadingShipsMidLevel, UseMouseScrolling, IsDebugging;
         public int OverrideTimeScale, OverrideUserSide, GeneratedSquadCountOverride, TimeoutTime;
         /// <summary>
         /// How frequently asteroids spawn in this level. Sets the upper bound in seconds of the randomly timed spawn
@@ -51,6 +52,7 @@ namespace Assets.Scripts.Scenes
             ScoutPrefab, StrikerPrefab, WarpGatePrefab, WaspPrefab, YellowJacketPrefab,
             Map, UIManager, SelectionBox, SquadBox, MiniMapContainer, FogOfWar;
         public List<GameObject> ObstaclePrefabs = new List<GameObject>();
+        public List<GameObject> MiningAsteroidPrefabs = new List<GameObject>();
         public List<GameObject> CollisionAsteroidPrefabs = new List<GameObject>();
         public GameMenus Menus;
         public LevelInputManager InputManager;
@@ -230,6 +232,10 @@ namespace Assets.Scripts.Scenes
                 SpawnObstacles();
                 Pathfinder = new Pathfinder(this);
             }
+            if (ActivateMining)
+            {
+                SpawnMiningAsteroids();
+            }
             if (ActivateFogOfWar && HasPlayer)
             {
                 FogOfWar.SetActive(true);
@@ -279,10 +285,11 @@ namespace Assets.Scripts.Scenes
             GameState state = GetState();
             ObstaclePrefabs.ForEach((prefab) =>
             {
+                Vector2 position = prefab.transform.position;
                 GameObject instance = Instantiate(prefab);
                 instance.transform.parent = Map.transform;
-                Obstacle obstacle = instance.GetComponent<Obstacle>();
-                state.AddObstacle(obstacle);
+                instance.transform.localPosition = position;
+                state.AddObstacle(instance.GetComponent<Obstacle>());
             });
 
             if (ActivateCollisionAsteroids)
@@ -290,18 +297,35 @@ namespace Assets.Scripts.Scenes
                 Invoke(nameof(SpawnAsteroid), AsteroidSpawnRate + Utilities.RandomInt(AsteroidSpawnRate));
             }
         }
+        private void SpawnMiningAsteroids()
+        {
+            GameState state = GetState();
+            MiningAsteroidPrefabs.ForEach((prefab) =>
+            {
+                Vector2 position = prefab.transform.position;
+                GameObject instance = Instantiate(prefab);
+                instance.transform.parent = Map.transform;
+                instance.transform.localPosition = position;
+                MiningAsteroid asteroid = instance.GetComponent<MiningAsteroid>();
+                state.AddObstacle(asteroid);
+                asteroid.Setup(this, state.GetId());
+
+            });
+        }
         private void SpawnAsteroid()
         {
             GameState state = GetState();
+            Vector2 position = CollisionAsteroidPrefabs[Utilities.RandomInt(CollisionAsteroidPrefabs.Count)].transform.position;
             GameObject instance = Instantiate(CollisionAsteroidPrefabs[Utilities.RandomInt(CollisionAsteroidPrefabs.Count)]);
             instance.transform.parent = Map.transform;
+            instance.transform.localPosition = position;
             CollisionAsteroid asteroid = instance.GetComponent<CollisionAsteroid>();
-            asteroid.Setup(this, Pathfinder.ObstacleCount++);
+            state.AddObstacle(asteroid);
+            asteroid.Setup(this, state.GetObstacles().Count);
 
             Invoke(nameof(SpawnAsteroid), Utilities.RandomInt(AsteroidSpawnRate));
             Pathfinder.AddObstacle(asteroid);
             Pathfinder.NeedsToBeUpdated = true;
-            state.AddObstacle(asteroid);
         }
         private void UpdateDebugVariables()
         {
@@ -424,6 +448,7 @@ namespace Assets.Scripts.Scenes
                 state.LevelEnded = true;
                 float fps = Time.frameCount / Time.unscaledTime;
                 float fups = FixedUpdates / Time.unscaledTime;
+                ConfigData.__TotalLength += Time.realtimeSinceStartup - StartTime;
                 ConfigData.__AverageLatency = ConfigData.__TotalLatency / ConfigData.__TotalRequests;
 
                 if (state.IsSideKilled(ConfigData.Configuration.BeeSide) && !state.IsSideKilled(ConfigData.Configuration.HumanSide))
@@ -448,7 +473,11 @@ namespace Assets.Scripts.Scenes
                 int totalGames = ConfigData.__HumanWins + ConfigData.__BeeWins;
                 int humanWinPercentage = (int)(((float)ConfigData.__HumanWins / totalGames) * 100);
                 int beeWinPercentage = (int)(((float)ConfigData.__BeeWins / totalGames) * 100);
-                Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".PadRight(15)}   {$"fps: {fps}".Substring(0, 10)}  {$"fups: {fups}".Substring(0, 10)}     {$"latency: {(int)(ConfigData.__AverageLatency*1000)}ms".PadRight(18)} {$"CPS: {ConfigData.__HivemindCommands / Time.unscaledTime}".PadRight(9).Substring(0, 9)}   LTO: {ConfigData.__LevelTimeouts}");
+                ConfigData.__AverageLength = ConfigData.__TotalLength / totalGames;
+
+Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".PadRight(15)}   {$"fps: {fps}".PadRight(10).Substring(0, 10)}  {$"fups: {fups}".PadRight(10).Substring(0, 10)}     " +
+                    $"{$"latency: {(int)(ConfigData.__AverageLatency*1000)}ms".PadRight(18)} {$"CPS: {ConfigData.__HivemindCommands / Time.unscaledTime}".PadRight(9).Substring(0, 9)}   " +
+                    $"LTO: {ConfigData.__LevelTimeouts} AveLT: {(int) ConfigData.__AverageLength}s");
 
                 if (Menus != null)
                 {
@@ -486,6 +515,18 @@ namespace Assets.Scripts.Scenes
                         {
                             fleetShip.BattlesWon++;
                         }
+                        Debug.Log($"{fleetShip.Name} has mined {fleetShip.MineralsMined} minerals in its lifetime. It has mined {fleetShip.MineralsMinedThisLevel} minerals this level");
+                        if (fleetShip.Side == ConfigData.Configuration.UserSide)
+                        {
+                            ConfigData.GetUserProgressData().MinedTSV += fleetShip.MineralsMinedThisLevel;
+                        }
+                        else
+                        {
+                            ConfigData.GetUserProgressData().HivemindMinedTSV += fleetShip.MineralsMinedThisLevel;
+                        }
+                        fleetShip.MineralsMined += fleetShip.MineralsMinedThisLevel;
+                        fleetShip.MineralsMinedThisLevel = 0;
+
                     });
                 }
 
@@ -658,6 +699,10 @@ namespace Assets.Scripts.Scenes
                 SpawnObstacles();
                 Pathfinder = new Pathfinder(this);
             }
+            if (ActivateMining)
+            {
+                SpawnMiningAsteroids();
+            }
 
             if (ActivateLoadingShipsMidLevel)
             {
@@ -730,6 +775,7 @@ namespace Assets.Scripts.Scenes
 
                 ConfigData.AllShips.SaveFleetData();
                 ConfigData.AllShips.SaveSquadData();
+                ConfigData.GetUserProgressData().Save();
             }
             //Debug.Log($"Resetting scene");
             Ship[] ships = state.GetShips().ToArray(); // need to convert this to an array because killing a ship removes it from the list of ships in the state

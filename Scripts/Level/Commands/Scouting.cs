@@ -20,15 +20,13 @@ namespace Assets.Scripts.Level.Commands
             Vector2 randomCoordinates = Utilities.RandomCoordinate(Level, position, Vector2.one * ConfigData.Configuration.AIRandomMovementMaxDistance, Vector2.one * 10);
             SetAndMove(randomCoordinates);
             InvokeRepeating(nameof(Timer), ConfigData.CommandTimerFrequency, 5);
-
-            Squad.Status = $"Moving to random destination to look for ships: {randomCoordinates}";
             Invoke(nameof(EndCommand), ConfigData.Configuration.AISquadPatrolTime);
 
 
         }
         private void Timer()
         {
-            if (Squad.HasReachedDestination)
+            if (!Squad.IsDead && Squad.HasReachedDestination)
             {
                 Vector2 position = Squad.GetPosition();
                 Vector2 randomCoordinates = Utilities.RandomCoordinate(Level, position, Vector2.one * ConfigData.Configuration.AIRandomMovementMaxDistance, Vector2.one * 10);

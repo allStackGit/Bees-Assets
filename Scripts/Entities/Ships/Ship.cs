@@ -38,7 +38,7 @@ namespace Assets.Scripts.Entities.Ships
         /// A ship can be killed at some point of the frame and still exist until the end of the frame. Check this to see if a ship is dead but not yet destroyed.
         /// </summary>
         public bool IsDead;
-        public bool HasBrain, IsMinionShip, HasTargetCoordinates;
+        public bool HasBrain, IsMinionShip, HasTargetCoordinates, IsMiningShip, IsWarpGate;
         public List<Weapon> Weapons;
         public List<GameObject> ProjectilePrefabs, WeaponPrefabs, ColoredPrefabs;
         public Brain Brain = null;
@@ -86,6 +86,7 @@ namespace Assets.Scripts.Entities.Ships
 
         // Test variables
         public List<string> __PastCommands = new List<string>();
+        public List<string> __BannedStrats = new List<string>();
         public string __Strategy, __Squad, __SquadStatus, __CommandStatus, __LastStopReason;
         public Vector2 __CommandDestination, __Velocity, __TargetCoordinates;
         public float __Firepower, __DamagePerSecond;
@@ -129,6 +130,7 @@ namespace Assets.Scripts.Entities.Ships
             __HasReachedDestination = HasReachedDestination;
             __SquadHasReachedDestination = Squad.HasReachedDestination;
             __SquadShips = Squad.GetShips();
+            __BannedStrats = Squad.BannedStrats.ToList();
 
             //AverageReward = AverageRewardSum / Actions;
             //AverageRandomReward = AverageRandomRewardSum / RandomActions;
@@ -210,40 +212,46 @@ namespace Assets.Scripts.Entities.Ships
             {
                 SpecialFirePower = shipStats.Powers[0] / 5;
             }
-
+            else if (fleetShip.Type == "Carpenter Bee" || fleetShip.Type == "Factory")
+            {
+                IsMiningShip = true;
+            }
+            else if (fleetShip.Type == "Warp Gate")
+            {
+                IsWarpGate = true;
+                Level.GetState().HasWarpGates = true;
+            }
             for (int i = 0; i < shipStats.ProjectileValues.Count; i++)
             {
                 string weaponType = shipStats.WeaponTypes[i];
                 Weapon weapon = null;
                 if (weaponType == "Turret")
                 {
-                    Turret turret = gameObject.AddComponent<Turret>();
-                    weapon = turret;
+                    weapon = gameObject.AddComponent<Turret>();
                 }
                 else if (weaponType == "Eye")
                 {
-                    Eye eye = gameObject.AddComponent<Eye>();
-                    weapon = eye;
-                }
-                else if (weaponType == "Dual Cannon")
-                {
-                    DualCannon dualCannon = gameObject.AddComponent<DualCannon>();
-                    weapon = dualCannon;
-                }
-                else if (weaponType == "Beam Cannon")
-                {
-                    BeamCannon beamCannon = gameObject.AddComponent<BeamCannon>();
-                    weapon = beamCannon;
+                    weapon = gameObject.AddComponent<Eye>();
                 }
                 else if (weaponType == "Bomb")
                 {
-                    Bomb bomb = gameObject.AddComponent<Bomb>();
-                    weapon = bomb;
+                    weapon = gameObject.AddComponent<Bomb>();
                 }
                 else if (weaponType == "Split Shot")
                 {
-                    LaserBuilder laserBuilder = gameObject.AddComponent<LaserBuilder>();
-                    weapon = laserBuilder;
+                    weapon = gameObject.AddComponent<LaserBuilder>();
+                }
+                else if (weaponType == "Dual Cannon")
+                {
+                    weapon = gameObject.AddComponent<DualCannon>();
+                }
+                else if (weaponType == "Beam Cannon")
+                {
+                    weapon = gameObject.AddComponent<BeamCannon>();
+                }
+                else if (weaponType == "Full Ship Turret")
+                {
+                    weapon = gameObject.AddComponent<FullShipTurret>();
                 }
                 else
                 {
@@ -261,6 +269,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     }else if (weapon is LaserBuilder)
                     {
                         ((LaserBuilder)weapon).Setup(this, shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
+shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFrontOfShip, shipStats.RotationRates[i]);
+                    }
+                    else if (weapon is FullShipTurret)
+                    {
+                        ((FullShipTurret)weapon).Setup(this, shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
 shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFrontOfShip, shipStats.RotationRates[i]);
                     }
                     else
@@ -907,15 +920,19 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
 
         }
-        protected void LogKillStats(Ship killer) // [stats-method] [note]
+        protected void LogKillerStats(Ship killer) // [stats-method] [note]
+        {
+            killer.FleetShip.Kills++;
+            killer.Squad.SavedSquad.Stats.Kills++;
+        }
+        protected void LogKilledStats() // [stats-method]
         {
             if (Level.ReplaceDeadShips && !IsCarrierShip && !IsMinionShip && Squad.SavedSquad.HasBeenSavedToStorage)
             {
                 FleetShip.IsDead = true;
             }
             Squad.SavedSquad.Stats.ShipsLost++;
-            killer.FleetShip.Kills++;
-            killer.Squad.SavedSquad.Stats.Kills++;
+            FleetShip.MineralsMinedThisLevel = 0;
         }
         protected virtual void OnTriggerExit2D(Collider2D collider)
         {
@@ -941,16 +958,9 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     if (killer != null)
                     {
                         killer.LastKilled = Time.frameCount;
-                        LogKillStats(killer);
+                        LogKillerStats(killer);
                     }
-                    else
-                    {
-                        if (Level.ReplaceDeadShips && !IsCarrierShip && !IsMinionShip && Squad.SavedSquad.HasBeenSavedToStorage)
-                        {
-                            FleetShip.IsDead = true;
-                        }
-                        Squad.SavedSquad.Stats.ShipsLost++;
-                    }
+                    LogKilledStats();
                 }
 
 

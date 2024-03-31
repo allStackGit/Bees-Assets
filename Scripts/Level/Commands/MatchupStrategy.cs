@@ -59,11 +59,11 @@ namespace Assets.Scripts.Level.Commands
                     return queue.OrderBy(s => s.Firepower).First();
                 case "Closest":
                     location = Squad.GetPosition();
-                    queue.Sort((a, b) => (int)(a.DistanceTo(location) - b.DistanceTo(location)));
+                    queue.Sort((a, b) => (int)(a.DistanceToPoint(location) - b.DistanceToPoint(location)));
                     return queue.First();
                 case "Furthest":
                     location = Squad.GetPosition();
-                    queue.Sort((a, b) => (int)(b.DistanceTo(location) - a.DistanceTo(location)));
+                    queue.Sort((a, b) => (int)(b.DistanceToPoint(location) - a.DistanceToPoint(location)));
                     return queue.First();
                 case "Most Range":
                     return queue.OrderByDescending(s => s.MaxRange).First();

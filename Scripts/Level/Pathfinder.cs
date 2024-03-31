@@ -27,7 +27,6 @@ namespace Assets.Scripts.Level
         private int _scale = 5;
         private int _padding = 2;
         public int Width, Height, HalfWidth, HalfHeight;
-        public int ObstacleCount;
         public LevelStage Level;
         public List<Obstacle> Obstacles = new List<Obstacle>();
         /// <summary>
@@ -130,6 +129,7 @@ namespace Assets.Scripts.Level
 
 
             GameObject[] obstacles = GameObject.FindGameObjectsWithTag("Obstacle");
+            GameState state = Level.GetState();
 
             for (int i = 0; i < obstacles.Length; i++)
             {
@@ -139,7 +139,7 @@ namespace Assets.Scripts.Level
 
                 //Debug.Log($"Found {obstacleObject.name}: {obstacle}");
 
-                obstacle.Setup(Level, ObstacleCount++);
+                obstacle.Setup(Level, state.GetId());
 
                 AddObstacle(obstacle);
                 

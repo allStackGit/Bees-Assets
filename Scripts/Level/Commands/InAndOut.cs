@@ -20,7 +20,7 @@ namespace Assets.Scripts.Level.Commands
                 IsAttacking = true;
 
                 PrepareDamageToSendEntries();
-                float distance = Squad.DistanceTo(Enemy.GetPosition());
+                float distance = Squad.DistanceToPoint(Enemy.GetPosition());
                 Vector2 position = Squad.GetPosition();
                 _returnPoint = distance > Enemy.MaxRange && distance < 50 ?
                     Utilities.RandomCoordinate(Level, position, Vector2.one * 10, Vector2.zero) :

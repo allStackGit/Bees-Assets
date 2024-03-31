@@ -10,7 +10,7 @@ namespace Assets.Scripts.Entities
     {
         public int Health, InitialHealth, Id;
         public string Name;
-        public bool IsMobile, IsMapBorder, HasEnteredMap;
+        public bool IsMobile, IsMapBorder, HasEnteredMap, IsDead, IsMiningAsteroid;
         public LevelStage Level;
         public Collider2D Collider, ProximityCollider;
         // Use this for initialization
@@ -28,9 +28,10 @@ namespace Assets.Scripts.Entities
             gameObject.name = Name;
 
         }
-        public void Kill()
+        public virtual void Kill()
         {
             //Debug.Log($"Killing {Name}");
+            IsDead = true;
             Level.Pathfinder.AddToUpdateList(Id);
             Level.GetState().RemoveObstacle(this);
             Destroy(gameObject);

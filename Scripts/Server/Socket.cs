@@ -8,6 +8,8 @@ using Assets.Scripts.Level;
 using Assets.Scripts.Level.Commands;
 
 using Unity.VisualScripting;
+using Assets.Scripts.Entities;
+using Assets.Scripts.Entities.Ships;
 
 namespace Assets.Scripts.Server
 {
@@ -455,6 +457,10 @@ namespace Assets.Scripts.Server
                 {
                     //Debug.Log("squad is not null");
                     Command command = null;
+                    if (squad.BannedStrats.Contains(commandResponse.Name))
+                    {
+                        Debug.LogError($"{squad.Name} was given banned strat {commandResponse.Name} #{commandResponse.Hash}, isCached? {commandResponse.IsCached}");
+                    }
                     switch (commandResponse.Name)
                     {
                         case "Aggressive":
@@ -526,6 +532,14 @@ namespace Assets.Scripts.Server
                             command = squad.transform.AddComponent<Scouting>();
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
+                        case "Mining":
+                            command = squad.transform.AddComponent<Mining>();
+                            command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
+                            break;
+                        case "Full Retreat":
+                            command = squad.transform.AddComponent<FullRetreat>();
+                            command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
+                            break;
                         default:
                             Debugger.Exception($"commandResponse doesn't match a known command: {commandResponse.Name}");
                             break;
@@ -558,8 +572,22 @@ namespace Assets.Scripts.Server
                     {
                         ((Scouting)command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true);
                     }
+                    else if (commandResponse.Name == "Mining")
+                    {
+                        ((Mining)command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true, squad.GetNearestMiningAsteroid());
+                    }
+                    else if (commandResponse.Name == "Full Retreat")
+                    {
+                        Vector2 position = squad.GetPosition();
+                        WarpGate warpGate = (WarpGate) state.GetHumanShips().Where((s) => s.IsWarpGate).OrderBy((s) => s.DistanceToPoint(position)).FirstOrDefault();
+                        ((FullRetreat)command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true, warpGate);
+                    }
                     else
                     {
+                        if (command is BombingRun && standingRequest.Enemy == null)
+                        {
+                            Debug.Log($"Trying to execute bombing run ({commandResponse.Name}) for {squad.Name} against null enemy from #{commandResponse.Hash}. IsCached? {commandResponse.IsCached}");
+                        }
                         command.Execute(strategy, shootingStrategy, commandResponse.OutcomeId, false);
                     }
 

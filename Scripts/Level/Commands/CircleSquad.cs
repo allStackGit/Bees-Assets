@@ -36,7 +36,7 @@ namespace Assets.Scripts.Level.Commands
                     {
                         if (!_hasSetIdealDistance)
                         {
-                            _idealDistance = Enemy.DistanceTo(Squad.GetPosition()) * .97f;
+                            _idealDistance = Enemy.DistanceToPoint(Squad.GetPosition()) * .97f;
                             _angle = Enemy.AngleToPoint(Squad.GetPosition()) - (Mathf.PI * .5f);
                             _hasSetIdealDistance = true;
                         }

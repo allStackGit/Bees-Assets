@@ -52,7 +52,7 @@ namespace Assets.Scripts.Entities.Ships
                 if (killer != null)
                 {
                     killer.LastKilled = Time.frameCount;
-                    LogKillStats(killer);
+                    LogKillerStats(killer);
                 }
                 else
                 {

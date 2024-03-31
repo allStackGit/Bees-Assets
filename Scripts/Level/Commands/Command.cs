@@ -121,34 +121,35 @@ namespace Assets.Scripts.Level.Commands
          */
         public void PrepareDamageToSendEntries(string which = "")
         {
-
-            List<Ship> ships = new List<Ship>();
-            if (which == "closest")
+            if (!Squad.IsDefenseless)
             {
-                Squad closestEnemy = Squad.GetClosestEnemySquad();
-                if (closestEnemy != null)
+                List<Ship> ships = new List<Ship>();
+                if (which == "closest")
                 {
-                    ships = closestEnemy.GetShips();
+                    Squad closestEnemy = Squad.GetClosestEnemySquad();
+                    if (closestEnemy != null)
+                    {
+                        ships = closestEnemy.GetShips();
 
+                    }
+                }
+                else if (Enemy != null)
+                {
+                    ships = Enemy.GetShips();
+                }
+                foreach (Ship ship in ships)
+                {
+                    ShipDamageStatus entry = Squad.DamageSentToEnemyShipsBySquad.Find((entry) => entry.ship.Equals(ship));
+                    if (entry == null)
+                    {
+                        Squad.DamageSentToEnemyShipsBySquad.Add(new ShipDamageStatus(ship));
+                    }
                 }
             }
-            else if (Enemy != null)
-            {
-                ships = Enemy.GetShips();
-            }
-            foreach(Ship ship in ships)
-            {
-                ShipDamageStatus entry = Squad.DamageSentToEnemyShipsBySquad.Find((entry) => entry.ship.Equals(ship));
-                if (entry == null)
-                {
-                    Squad.DamageSentToEnemyShipsBySquad.Add(new ShipDamageStatus(ship));
-                }
-            }
-            
         }
 
         // Finalizes the command and stops the squad so long as the command hasn't already been finalized
-        public void SetFinalize(string cause)
+        public virtual void SetFinalize(string cause)
         {
             if (!Squad.IsDead)
             {

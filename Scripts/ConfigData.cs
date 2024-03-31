@@ -76,18 +76,18 @@ namespace Assets.Scripts
             { "Cruiser",        new Vector2(320, 360)},
             { "Dreadnought",    new Vector2(320, 420)},
             { "Drone",          new Vector2(160, 160)},
-            { "Factory",        Vector2.zero },
+            { "Factory",        new Vector2(427, 567) },
             { "Fire Ship",      new Vector2(760, 360)},
             { "Flagship",       new Vector2(640, 760)},
             { "Frigate",        new Vector2(240, 240)},
             { "Gunship",        new Vector2(240, 240)}, 
             { "Scout",          new Vector2(200, 160)},
             { "Striker",        new Vector2(160, 160)},
-            { "Warp Gate",      Vector2.zero },
+            { "Warp Gate",      new Vector2(427, 567) },
 
             { "Beehive",        Vector2.zero },
             { "Bumblebee",      new Vector2(680, 480)},
-            { "Carpenter Bee",  Vector2.zero },
+            { "Carpenter Bee",  new Vector2(427, 567) },
             { "Honeybee",       new Vector2(160, 160)},
             { "Hornet",         new Vector2(160, 160)},
             { "Leafcutter",     new Vector2(320, 320)},
@@ -101,18 +101,18 @@ namespace Assets.Scripts
             { "Cruiser",        Medium},
             { "Dreadnought",    Medium},
             { "Drone",          Tiny},
-            { "Factory",        0 },
+            { "Factory",        Huge },
             { "Fire Ship",      Huge},
             { "Flagship",       Huge},
             { "Frigate",        Small},
             { "Gunship",        Small},
             { "Scout",          Tiny},
             { "Striker",          Tiny},
-            { "Warp Gate",      0 },
+            { "Warp Gate",      Huge },
 
             { "Beehive",        0 },
             { "Bumblebee",      Large},
-            { "Carpenter Bee",  0 },
+            { "Carpenter Bee",  Huge },
             { "Honeybee",       Tiny},
             { "Hornet",         Tiny},
             { "Leafcutter",     Medium},
@@ -247,7 +247,7 @@ namespace Assets.Scripts
         // DEBUG VARIABLES
         public static HashSet<ServerRequest> __PastServerRequests = new HashSet<ServerRequest>();
         public static int __BeeWins, __HumanWins, __HivemindCommands, __TotalRequests, __LevelTimeouts;
-        public static double __TotalLatency, __AverageLatency;
+        public static double __TotalLatency, __AverageLatency, __TotalLength, __AverageLength;
 
 
         // private variables

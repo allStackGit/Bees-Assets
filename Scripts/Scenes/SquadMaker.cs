@@ -994,7 +994,7 @@ namespace Assets.Scripts.Scenes
         }
         public void SaveNewSquad()
         {
-            Debug.Log("New squad, does not exist yet");
+            //Debug.Log("New squad, does not exist yet");
             _currentSquad.Id = ConfigData.GetUserProgressData().GetNextSavedSquadId();
             if (_currentSquad.Name == "")
             {
@@ -1294,7 +1294,8 @@ namespace Assets.Scripts.Scenes
                         $"Shots Fired: {ship.ShotsFired.ToString("N0")}     (#{ConfigData.AllShips.GetShipRanking(ship, "ShotsFired")})\n" +
                         $"Damage Done: {ship.DamageDone.ToString("N0")}     (#{ConfigData.AllShips.GetShipRanking(ship, "DamageDone")})\n" +
                         $"Damage Received: {ship.DamageReceived.ToString("N0")}     (#{ConfigData.AllShips.GetShipRanking(ship, "DamageReceived")})\n" +
-                        $"Kills: {ship.Kills.ToString("N0")}     (#{ConfigData.AllShips.GetShipRanking(ship, "Kills")})\n";
+                        $"Kills: {ship.Kills.ToString("N0")}    (#{ConfigData.AllShips.GetShipRanking(ship, "Kills")})\n" + 
+                        $"{(ship.Type == "Carpenter Bee" || ship.Type == "Factory" ? $"Minerals Mined: {ship.MineralsMined.ToString("N0")}  (#{ConfigData.AllShips.GetShipRanking(ship, "Minerals Mined")})" : "\n")}";
 
 
                     ShipStatsBox.SetActive(true);
