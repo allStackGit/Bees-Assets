@@ -65,9 +65,8 @@ namespace Assets.Scripts
         public static float Medium = Tiny * 2f;
         public static float Large = Tiny * 3f;
         public static float Huge = Tiny * 4f;
-        public static float PlusUltra = Tiny * 8f; 
-
-        public static Vector2 BaseShipSize = new Vector2(160, 160); // This is the base size for ship sizes because it's the smallest ship size, the same size as the drone, striker, honeybee, and hornet
+        public static float PlusUltra = Tiny * 8f;
+        public static float BigChungus = Tiny * 32f;
 
         public static Vector2 TwoThirdsToSquare = new Vector2(1.5f, 1);
         public static readonly Dictionary<string, Vector2> ShipSizes = new Dictionary<string, Vector2>() {
@@ -116,7 +115,7 @@ namespace Assets.Scripts
             { "Honeybee",       Tiny},
             { "Hornet",         Tiny},
             { "Leafcutter",     Medium},
-            { "Queen",          PlusUltra},
+            { "Queen",          BigChungus},
             { "Wasp",           Small},
             { "Yellow Jacket",  Tiny},
         };
@@ -154,6 +153,9 @@ namespace Assets.Scripts
         public static readonly List<int> InitialVisibleShips = Enumerable.Range(0, 2900).ToList(); // // [alert] [server] Starting ships should be pulled from server
         public static bool FirstTimePlaying = true; // [alert] should be linked to whether a user has actually played before   
         public static float CloseEnoughCoordinateVariance = 1.5f; // world units
+        /// <summary>
+        /// Offset in world units from the front of a ship when aiming at the front of a ship
+        /// </summary>
         public static float OffsetFromFront = .25f;
         public const float FireShipExplosionSize = 32;
         public const float CommandTimerFrequency = .1f;
@@ -169,14 +171,26 @@ namespace Assets.Scripts
         public static int ScreenWidth = Screen.width;
         public static int ScreenHeight = Screen.height;
         public static int PixelsPerUnit = 40;
-        public static Vector2 MapEdgePadding = new Vector2(5, 5); // How much padding to put on the edges of the map and stop units from moving there. World Units
+        /// <summary>
+        /// How much padding to put on the edges of the map and stop units from moving there.
+        /// </summary>
+        public static Vector2 MapEdgePadding = new Vector2(5, 5);
         public static Color UnsetColor = Color.clear;
-        
 
-        public static Vector2 DragIconSize = new Vector2(48, 64); // the size of the drag icons (in locally scaled units) for all ships regardless of the size of the ship
-        public static float WorldUnitScaleFactor = 2.5f;
-        public static Vector2 ShipOffset = new Vector2(15, 15); // the minimum offset between ships in the squad maker in UI world units.
-        public static Vector2 SnapDistance = new Vector2(5, 5); // the distance from the axis before trying to snap the ship into place
+        /// <summary>
+        /// The minimum offset between ships in the squad maker in UI world units.
+        /// </summary>
+        public static Vector2 ShipOffset = new Vector2(15, 15);
+        /// <summary>
+        /// The distance from the axis before trying to snap the ship into place
+        /// </summary>
+        public static Vector2 SnapDistance = new Vector2(5, 5);
+        /// <summary>
+        /// The distance in from the center of the box when placing drag icons in the squad maker
+        /// </summary>
+        public static int OffsetFromCenterOfSquadMakerDropBox = 230;
+
+        public static Vector2 BaseDragIconSize = new Vector2(.2f, .2f);
 
 
         public static Vector2[] CarrierDoubleColumnFormationOffsets = new Vector2[] {

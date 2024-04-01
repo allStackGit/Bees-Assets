@@ -584,10 +584,10 @@ namespace Assets.Scripts.Server
                     }
                     else
                     {
-                        if (command is BombingRun && standingRequest.Enemy == null)
-                        {
-                            Debug.Log($"Trying to execute bombing run ({commandResponse.Name}) for {squad.Name} against null enemy from #{commandResponse.Hash}. IsCached? {commandResponse.IsCached}");
-                        }
+                        //if (command is BombingRun && standingRequest.Enemy == null)
+                        //{
+                        //    Debug.Log($"Trying to execute bombing run ({commandResponse.Name}) for {squad.Name} against null enemy from #{commandResponse.Hash}. IsCached? {commandResponse.IsCached}");
+                        //}
                         command.Execute(strategy, shootingStrategy, commandResponse.OutcomeId, false);
                     }
 

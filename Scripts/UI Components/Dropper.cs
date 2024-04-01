@@ -17,14 +17,14 @@ namespace Assets.Scripts.UIComponents
     {
         //private DragIcon _dragIcon;
         private SquadMaker _scene;
-        private bool _isValidDropLocation, _isAutoPlacing, _isDragging;
+        private bool _isAutoPlacing, _isDragging;
         private List<DragIcon> _dragIcons = new List<DragIcon>();
         private DragIcon _currentDragIcon;
         private int _dragIconCount = 0;
+        public bool IsValidDropLocation;
 
 
         public bool IsDragging => _isDragging;
-        public bool IsValidDropLocation => _isValidDropLocation;
         public SavedSquad CurrentSquad => _scene.GetCurrentSquad();
         public List<FleetShip> FleetList => _scene.GetFleetList();
         public bool HasCurrentSquad => CurrentSquad != null;
@@ -94,7 +94,7 @@ namespace Assets.Scripts.UIComponents
             {
                 _isAutoPlacing = isAutoPlacing;
                 _isDragging = true;
-                _isValidDropLocation = false;
+                IsValidDropLocation = false;
                 Vector2 size = _currentDragIcon.GetIcon().GetComponent<RectTransform>().sizeDelta;
                 //Debug.Log($"sizeDelta for current drag icon: {size}");
 
@@ -125,7 +125,7 @@ namespace Assets.Scripts.UIComponents
             _isAutoPlacing = true;
             _currentDragIcon.SetPosition(position);
             _scene.DragStatusBox.transform.position = _currentDragIcon.Position;
-            SetIsValidDropLocation(CheckValidDropLocation(position, false, ship, _currentDragIcon.GetFleetShip().Type));
+            IsValidDropLocation = CheckValidDropLocation(position, false, ship, _currentDragIcon.GetFleetShip().Type);
             return IsValidDropLocation;
         }
         public void AutoPlaceShip(string shipType)
@@ -136,7 +136,7 @@ namespace Assets.Scripts.UIComponents
                 Vector2 position = _scene.DropBox.transform.position;
                 SetupActiveDragging(position, true);
 
-                SetIsValidDropLocation(true);
+                IsValidDropLocation = true;
                 _scene.FleetDragEnd();
                 _scene.SetFormation("Line");
             }
@@ -164,12 +164,12 @@ namespace Assets.Scripts.UIComponents
                 if (CheckValidDropLocation(position, true, null, _currentDragIcon.GetFleetShip().Type))
                 {
                     Utilities.SetGoodColor(_scene.DragStatusBox);
-                    SetIsValidDropLocation(true);
+                    IsValidDropLocation = true;
                 }
                 else
                 {
                     Utilities.SetBadColor(_scene.DragStatusBox);
-                    SetIsValidDropLocation(false);
+                    IsValidDropLocation = false;
 
                 }
             }
@@ -280,7 +280,7 @@ namespace Assets.Scripts.UIComponents
 
                 Vector2 change = Utilities.WorldUnitsToScreenPixels(ConfigData.GetShipOffset(dragIcon.GetFleetShip().Type), _scene.Camera) * 1.05f;
 
-                //Debug.Log($"Ship offset world units for auto placing: {ConfigData.ShipOffset}, screen pixels {change}");
+                Debug.Log($"Ship offset world units for auto placing: {ConfigData.ShipOffset}, screen pixels {change}");
 
                 //Debug.Log($"change: {change}");
 
@@ -288,7 +288,7 @@ namespace Assets.Scripts.UIComponents
                 float yIncrement = change.y;
 
 
-                Vector2 position = new Vector2(_scene.DropBox.transform.position.x, _scene.DropBox.transform.position.y + 290);
+                Vector2 position = new Vector2(_scene.DropBox.transform.position.x, _scene.DropBox.transform.position.y + ConfigData.OffsetFromCenterOfSquadMakerDropBox);
                 float movement;
                 float movementDown = level * yIncrement;
                 int steps = ships;
@@ -306,8 +306,8 @@ namespace Assets.Scripts.UIComponents
                 int sideCheck = maxWidth;
                 if (!hollow || maxWidth < 3 || ships == sideCheck - 2 || ships == sideCheck - 1)
                 {
-                    //Debug.Log($"Placing the ship because it's either not hollow ({hollow}) or the maxWidth is less than 3 ({maxWidth}) or the shipIndex" +
-                    //    $"is equal to {sideCheck - 2} or {sideCheck - 1} ({ships})");
+                    Debug.Log($"Placing the ship because it's either not hollow ({hollow}) or the maxWidth is less than 3 ({maxWidth}) or the shipIndex" +
+                        $"is equal to {sideCheck - 2} or {sideCheck - 1} ({ships})");
                     Vector2 movedPosition = new Vector2(position.x + movement, position.y - movementDown);
 
                     dragIcon.Reposition(movedPosition, null);
@@ -315,8 +315,8 @@ namespace Assets.Scripts.UIComponents
                 }
                 else
                 {
-                    //Debug.Log($"NOT placing the ship because it's hollow ({hollow}) and the maxWidth is more than or equal to 3 ({maxWidth}) and the shipIndex" +
-                    //    $"is Not equal to {sideCheck - 2} or {sideCheck - 1} ({ships})");
+                    Debug.Log($"NOT placing the ship because it's hollow ({hollow}) and the maxWidth is more than or equal to 3 ({maxWidth}) and the shipIndex" +
+                        $"is Not equal to {sideCheck - 2} or {sideCheck - 1} ({ships})");
                     dragIcons.Add(dragIcon);
                 }
 
@@ -504,10 +504,6 @@ namespace Assets.Scripts.UIComponents
             {
                 _scene.ClearUnsavedSquad();
             }
-        }
-        public void SetIsValidDropLocation(bool isValid)
-        {
-            _isValidDropLocation = isValid;
         }
         public void ResetDrag()
         {

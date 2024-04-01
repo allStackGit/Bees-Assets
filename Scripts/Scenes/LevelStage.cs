@@ -36,7 +36,7 @@ namespace Assets.Scripts.Scenes
         public bool ReplaceDeadShips;
         public bool ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, UseSemiRandomSquads, UseFullyRandomSquads, UseFullyRandomEnemySquads, RecordStats, 
             DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateAudio, ActivateLoadingShipsMidLevel, UseMouseScrolling, IsDebugging;
-        public int OverrideTimeScale, OverrideUserSide, GeneratedSquadCountOverride, TimeoutTime;
+        public int OverrideTimeScale, OverrideUserSide, GeneratedSquadCountOverride, InitialCommandDelay, TimeoutTime;
         /// <summary>
         /// How frequently asteroids spawn in this level. Sets the upper bound in seconds of the randomly timed spawn
         /// </summary>
@@ -96,6 +96,7 @@ namespace Assets.Scripts.Scenes
         public List<string> __CachedPaths;
         public List<string> __BeeHivemindShips;
         public List<string> __HumanHivemindShips;
+        public List<string> __PastCommands;
 
         new void Start()
         {
@@ -266,10 +267,13 @@ namespace Assets.Scripts.Scenes
             LevelConstructor.SetupShips();
             if (ActivateHiveMind)
             {
-                Invoke(nameof(GetHiveMindCommands), .25f);
+                Invoke(nameof(GetHiveMindCommands), InitialCommandDelay);
             }
             float end = (Time.realtimeSinceStartup - StartTime) * 1000; // seconds to milliseconds
-            InvokeRepeating(nameof(UpdateDebugVariables), 2, 2);
+            if (IsDebugging)
+            {
+                InvokeRepeating(nameof(UpdateDebugVariables), 2, 2);
+            }
             if (ActivateLoadingShipsMidLevel)
             {
                 SetTriggers();
@@ -335,6 +339,7 @@ namespace Assets.Scripts.Scenes
             }
             __BeeHivemindShips = GetState().GetShipsVisibleToHiveMind(ConfigData.Configuration.BeeSide).Select(s => s.ToString()).ToList();
             __HumanHivemindShips = GetState().GetShipsVisibleToHiveMind(ConfigData.Configuration.HumanSide).Select(s => s.ToString()).ToList();
+            __PastCommands = GetState().GetPastCommands().Select((c) => $"Command #{c.OutcomeId} - {c.Strategy.Name} for Squad {c.Squad} with {c.Tsv} TSV").ToList();
         }
         private void SetTriggers()
         {

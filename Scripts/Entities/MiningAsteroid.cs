@@ -19,7 +19,7 @@ namespace Assets.Scripts.Entities
                 Ship ship = collidingThing.GetComponent<Ship>();
                 if (ship.IsMiningShip && ship.Squad?.Command?.Strategy.Name == "Mining" && ((Mining)ship.Squad?.Command).TargetAstroid == this)
                 {
-                    Debug.Log($"{ship.Name} is mining {Name}");
+                    //Debug.Log($"{ship.Name} is mining {Name}");
                     if (!SquadsMining.Contains(ship.Squad))
                     {
                         SquadsMining.Add(ship.Squad);
