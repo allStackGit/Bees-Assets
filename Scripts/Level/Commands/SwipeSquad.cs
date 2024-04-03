@@ -32,7 +32,8 @@ namespace Assets.Scripts.Level.Commands
                     if (!_gotToEnemy && !Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(Enemy)) // if we haven't reached the enemy yet
                     {
                         //Debug.Log($"Enemy: {Enemy.Name} IsDead: {Enemy.IsDead}");
-                        SetAndMove(Enemy.GetPosition());
+                        //SetAndMove(Enemy.GetPosition());
+                        MoveTowardsEnemies();
                     }
                     else if (_swipeDestination == Vector2.zero) // if we just reached the enemy but haven't set where to swipe off to
                     {

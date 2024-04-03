@@ -72,7 +72,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 if (!IsFiringManually)
                 {
                     ShipDamageStatus shipDamageStatus = Squad.GetShipDamageStatus(TargetShip);
-                    shipDamageStatus.totalDamageSentToShip += Power;
+                    shipDamageStatus.TotalDamageSentToShip += Power;
                     LaserBeamTarget = TargetShip;
                 }
 

@@ -9,7 +9,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 {
     public class Bomb : Weapon
     {
-        protected override List<Ship> GetPotentialEnemyTargetShips()
+        protected override List<Ship> GetPotentialEnemyTargetShips(bool disregardRange)
         {
             List<Ship> queue = new List<Ship>();
             if (Ship.Squad.HasEnemy && Ship.Squad.IsAttacking)
@@ -49,7 +49,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         protected override void SetTargetShip(Ship targetShip)
         {
             ShipDamageStatus shipDamageStatus = Squad.GetShipDamageStatus(targetShip);
-            shipDamageStatus.totalDamageSentToShip += Power;
+            shipDamageStatus.TotalDamageSentToShip += Power;
             TargetShip = targetShip;
             //Debug.Log($"Setting target ship to {TargetShip.Name} and sending {Power} / {shipDamageStatus.totalDamageSentToShip} damage ");
 

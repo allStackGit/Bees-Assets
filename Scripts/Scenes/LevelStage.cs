@@ -35,8 +35,26 @@ namespace Assets.Scripts.Scenes
         /// </summary>
         public bool ReplaceDeadShips;
         public bool ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, UseSemiRandomSquads, UseFullyRandomSquads, UseFullyRandomEnemySquads, RecordStats, 
-            DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateAudio, ActivateLoadingShipsMidLevel, UseMouseScrolling, IsDebugging;
+            DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateAudio, ActivateLoadingShipsMidLevel, UseMouseScrolling, IsDebugging, MakeEnemyCeaseFire;
         public int OverrideTimeScale, OverrideUserSide, GeneratedSquadCountOverride, InitialCommandDelay, TimeoutTime;
+        public GameObject UIManager, SelectionBox, MiniMapContainer, FogOfWar;
+        public AudioController Audio;
+        public Camera MiniMapCamera;
+        public GameMenus Menus;
+        public LevelInputManager InputManager;
+        public SpriteRenderer MapRenderer;
+        public Selector Selector;
+        public LevelConstructor LevelConstructor;
+        public Pathfinder Pathfinder;
+        public Sprite VisonSprite;
+        public SimpleMultiAgentGroup AgentGroup;
+        public SimpleMultiAgentGroup HumanAgentGroup;
+       
+
+        public GameObject BargePrefab, BeehivePrefab, BumblebeePrefab, CarpenterBeePrefab, CarrierPrefab, CruiserPrefab, DreadnoughtPrefab, DronePrefab,
+            FactoryPrefab, FireShipPrefab, FlagshipPrefab, FrigatePrefab, GunshipPrefab, HoneybeePrefab, HornetPrefab, LeafcutterPrefab, QueenPrefab,
+            ScoutPrefab, StrikerPrefab, WarpGatePrefab, WaspPrefab, YellowJacketPrefab,
+            Map, SquadBox;
         /// <summary>
         /// How frequently asteroids spawn in this level. Sets the upper bound in seconds of the randomly timed spawn
         /// </summary>
@@ -45,26 +63,14 @@ namespace Assets.Scripts.Scenes
         /// Sets the upper bounds for how fast an asteroid can move
         /// </summary>
         public int AsteroidMaxSpeed;
-        public Camera MiniMapCamera;
-
-        public GameObject BargePrefab, BeehivePrefab, BumblebeePrefab, CarpenterBeePrefab, CarrierPrefab, CruiserPrefab, DreadnoughtPrefab, DronePrefab,
-            FactoryPrefab, FireShipPrefab, FlagshipPrefab, FrigatePrefab, GunshipPrefab, HoneybeePrefab, HornetPrefab, LeafcutterPrefab, QueenPrefab,
-            ScoutPrefab, StrikerPrefab, WarpGatePrefab, WaspPrefab, YellowJacketPrefab,
-            Map, UIManager, SelectionBox, SquadBox, MiniMapContainer, FogOfWar;
         public List<GameObject> ObstaclePrefabs = new List<GameObject>();
         public List<GameObject> MiningAsteroidPrefabs = new List<GameObject>();
         public List<GameObject> CollisionAsteroidPrefabs = new List<GameObject>();
-        public GameMenus Menus;
-        public LevelInputManager InputManager;
-        public dynamic TestObject = null;
-        public SpriteRenderer MapRenderer;
+
         public float MinX, MinY, MaxX, MaxY;
-        public Selector Selector;
         public int DefaultZoom, MaxZoom, MinZoom, ZoomSpeed, ScrollSpeed;
         public Vector2 UserStartingPosition, AIStartingPosition, MouseScrollDistanceFromEdge, DefaultCameraPosition;
         public Vector2[] StartingPositions = new Vector2[2];
-        public AudioController Audio;
-        public LevelConstructor LevelConstructor;
 
         public List<string> HasBeeTypes = new List<string>();
         public List<string> FoundBeeTypes = new List<string>();
@@ -75,13 +81,10 @@ namespace Assets.Scripts.Scenes
         public int WinningSide;
         public float MapX, MapY, MaxDistance, HalfX, HalfY;
         public int MapWidth, MapHeight, HalfMapWidth, HalfMapHeight;
-        public SimpleMultiAgentGroup AgentGroup;
-        public SimpleMultiAgentGroup HumanAgentGroup;
+
         public float Seconds;
         public HashSet<int> HandledRequests = new HashSet<int>();
-        public Pathfinder Pathfinder;
         public int FixedUpdates, TriggersActivated;
-        public Sprite VisonSprite;
         public float StartTime;
         public List<SavedSquad>[] MidLevelSquads = new List<SavedSquad>[] { new List<SavedSquad>(), new List<SavedSquad>() };
         public List<Trigger> Triggers = new List<Trigger>();
@@ -520,7 +523,7 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
                         {
                             fleetShip.BattlesWon++;
                         }
-                        Debug.Log($"{fleetShip.Name} has mined {fleetShip.MineralsMined} minerals in its lifetime. It has mined {fleetShip.MineralsMinedThisLevel} minerals this level");
+                        //Debug.Log($"{fleetShip.Name} has mined {fleetShip.MineralsMined} minerals in its lifetime. It has mined {fleetShip.MineralsMinedThisLevel} minerals this level");
                         if (fleetShip.Side == ConfigData.Configuration.UserSide)
                         {
                             ConfigData.GetUserProgressData().MinedTSV += fleetShip.MineralsMinedThisLevel;

@@ -10,9 +10,13 @@ namespace Assets.Scripts.Level.Commands
 {
     public class BombingRun : Command
     {
-        /*
-         Only available to Yellow Jackets, Fireships, and Strikers. Sends all ships straight onto the ships of the squad and back to the carrier if applicable
-         */
+        /// <summary>
+        /// Only available to Yellow Jackets, Fireships, and Strikers. Sends all ships straight onto the ships of the squad and back to the carrier if applicable
+        /// </summary>
+        /// <param name="strategy"></param>
+        /// <param name="shootingStrategy"></param>
+        /// <param name="commandOutcomeId"></param>
+        /// <param name="noEnemy"></param>
         public override void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy)
         {
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
@@ -60,7 +64,7 @@ namespace Assets.Scripts.Level.Commands
                 // loop through all the ships in the target squad
                 Bomb bomb = (Bomb)ship.Weapons.First();
                 int loops = 0;
-                while (!bomb.DetermineTargetShip(bomb.MakeTargetingQueue(), true) && loops < 10)
+                while (!bomb.DetermineTargetShip(bomb.MakeTargetingQueue(true), true) && loops < 10)
                 {
                     Squad.DamageSentToEnemyShipsBySquad.Clear();
                     loops++;
@@ -145,7 +149,7 @@ namespace Assets.Scripts.Level.Commands
                 Squad.Status = $"In the middle of bombing run against {Enemy.Name}";
                 List<Ship> ships = Squad.GetShips();
                 List<FireShip> fireShipsToDetonate = new List<FireShip>();
-                Squad.GetShips().ForEach((ship) =>
+                ships.ForEach((ship) =>
                 {
                     if (ShouldShipPursueTarget(ship))
                     {

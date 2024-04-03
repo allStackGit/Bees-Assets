@@ -46,7 +46,7 @@ namespace Assets.Scripts.Entities.Ships
                 //    $"{Squad}, " +
                 //    $"{TargetShips.First()}");
 
-                if (TouchingShip != null && TouchingShip.Side != Side && Squad.HasCommand && HasTargetShips && TargetShips.Contains(TouchingShip) && AreBombsReady)
+                if (TouchingShip.Side != Side && Squad.HasCommand && HasTargetShips && TargetShips.Contains(TouchingShip) && AreBombsReady)
                 {
                     //Debug.Log($"Collided with our target {TouchingShip.Name}, {collidingThing.name}!");
                     ContactedShip = TouchingShip;

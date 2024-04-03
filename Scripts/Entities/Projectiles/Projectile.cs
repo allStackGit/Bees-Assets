@@ -55,6 +55,7 @@ namespace Assets.Scripts.Entities.Projectiles
         public virtual void Kill()
         {
             //Debug.Log($"killed projectile {Name}");
+            RemoveDamageSentEntry();
             Destroy(gameObject);
         }
 
@@ -119,14 +120,18 @@ namespace Assets.Scripts.Entities.Projectiles
             
         }
 
-        protected void RemoveDamageSentEntry()
+        public void RemoveDamageSentEntry()
         {
             if (Target != null)
             {
                 ShipDamageStatus status = Shooter.Squad.GetShipDamageStatus(Target);
-                if (status.totalDamageSentToShip > Power)
+                if (status.TotalDamageSentToShip >= Power)
                 {
-                    status.totalDamageSentToShip -= Power;
+                    status.TotalDamageSentToShip -= Power;
+                }
+                else
+                {
+                    status.TotalDamageSentToShip = 0;
                 }
             }
 

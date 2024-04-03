@@ -26,23 +26,25 @@ namespace Assets.Scripts.Level.Commands
                 if (Enemy != null && !Enemy.IsDead)
                 {
                     Squad.Status = $"Moving to circle enemy squad #{Enemy.SquadNumber}";
+                    Vector2 squadPosition = Squad.GetPosition();
                     if (!_gotToEnemy && !Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(Enemy))
                     {
                         //Debug.Log($"{Squad.Name} is trying to get to a good circling position against {Enemy.Name}");
                         Squad.Status = $"Trying to get to a good circling position against {Enemy.Name}";
                         SetAndMove(Enemy.GetPosition());
+                        //MoveTowardsEnemies();
                     }
                     else
                     {
                         if (!_hasSetIdealDistance)
                         {
-                            _idealDistance = Enemy.DistanceToPoint(Squad.GetPosition()) * .97f;
-                            _angle = Enemy.AngleToPoint(Squad.GetPosition()) - (Mathf.PI * .5f);
+                            _idealDistance = Enemy.DistanceToPoint(squadPosition) * .97f;
+                            _angle = Enemy.AngleToPoint(squadPosition) - (Mathf.PI * .5f);
                             _hasSetIdealDistance = true;
                         }
 
                         _gotToEnemy = true;
-                        float angle = Enemy.AngleToPoint(Squad.GetPosition());
+                        float angle = Enemy.AngleToPoint(squadPosition);
 
                         _angle = angle + (.06f * Mathf.PI);
                         //Debug.Log($"{Squad.Name} is circling enemy squad # {Enemy.Name} at {_idealDistance} away");

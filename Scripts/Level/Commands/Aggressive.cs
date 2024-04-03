@@ -1,14 +1,20 @@
 ﻿
 using System.Collections;
+using System.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Level.Commands
 {
     public class Aggressive : Command
     {
-        /*
-        Sends the squad towards the enemy and follows them, attacking until one squad is dead
-         */
+
+        /// <summary>
+        ///  Sends the squad towards the enemy and follows them, attacking until one squad is dead
+        /// </summary>
+        /// <param name="strategy"></param>
+        /// <param name="shootingStrategy"></param>
+        /// <param name="commandOutcomeId"></param>
+        /// <param name="noEnemy"></param>
         public override void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy)
         {
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
@@ -31,7 +37,8 @@ namespace Assets.Scripts.Level.Commands
                     if (!Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(Enemy)) // check if all of their squad ships are within range of all of our squad ships
                     {
                         //Debug.Log($"Enemy: {Enemy.Name} IsDead: {Enemy.IsDead}");
-                        SetAndMove(Enemy.GetPosition());
+                        //SetAndMove(Enemy.GetPosition());
+                        MoveTowardsEnemies();
                     }
                     else
                     {

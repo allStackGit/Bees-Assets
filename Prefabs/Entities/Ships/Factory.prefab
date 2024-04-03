@@ -126,6 +126,7 @@ MonoBehaviour:
   OffsetFromCenter: {x: 0, y: 0}
   Squad: {fileID: 0}
   DefaultAngle: 0
+  TargetDirection: 0
   LastKilled: 0
   ShipType: 
   Name: 
@@ -137,6 +138,9 @@ MonoBehaviour:
   HasBrain: 0
   IsMinionShip: 0
   HasTargetCoordinates: 0
+  IsMiningShip: 0
+  IsWarpGate: 0
+  HasTargetDirection: 0
   Weapons: []
   ProjectilePrefabs:
   - {fileID: 3911271517188601395, guid: 3da77696d01a3ea46b81fbca2a24e25d, type: 3}
@@ -148,7 +152,10 @@ MonoBehaviour:
   Turrets: []
   RotationSpeed: 0
   HasVision: 0
+  TargetEnemy: {fileID: 0}
+  ShipCollider: {fileID: 7223834970426240026}
   __PastCommands: []
+  __BannedStrats: []
   __Strategy: 
   __Squad: 
   __SquadStatus: 
@@ -167,6 +174,9 @@ MonoBehaviour:
   __HasReachedDestination: 0
   __SquadHasReachedDestination: 0
   __Enemy: 
+  __TargetEnemy: 
+  __DamageStatuses: []
+  __CommandTargetingQueue: []
   Direction: 0
   ShouldDetonate: 0
   RLShootingStrategy: 

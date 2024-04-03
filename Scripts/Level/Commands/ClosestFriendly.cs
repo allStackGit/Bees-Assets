@@ -40,7 +40,7 @@ namespace Assets.Scripts.Level.Commands
                     else
                     {
                         Squad.Status = $"Following friendly squad #{_closestFriendlySquad.SquadNumber}";
-                        SetAndMove(_closestFriendlySquad.GetPosition());
+                        SetAndMove(position);
                         
                     }
 

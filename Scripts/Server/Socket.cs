@@ -457,16 +457,20 @@ namespace Assets.Scripts.Server
                 {
                     //Debug.Log("squad is not null");
                     Command command = null;
-                    if (squad.BannedStrats.Contains(commandResponse.Name))
-                    {
-                        Debug.LogError($"{squad.Name} was given banned strat {commandResponse.Name} #{commandResponse.Hash}, isCached? {commandResponse.IsCached}");
-                    }
+                    //if (squad.BannedStrats.Contains(commandResponse.Name))
+                    //{
+                    //    Debug.LogError($"{squad.Name} was given banned strat {commandResponse.Name} #{commandResponse.Hash}, isCached? {commandResponse.IsCached}");
+                    //}
                     switch (commandResponse.Name)
                     {
                         case "Aggressive":
                             if (squad.HasOnlyBombers)
                             {
                                 command = squad.transform.AddComponent<BombingRun>();
+                            }
+                            else if (squad.HasOnlyBarges)
+                            {
+                                command = squad.transform.AddComponent<Charge>();
                             }
                             else
                             {
@@ -487,6 +491,10 @@ namespace Assets.Scripts.Server
                             {
                                 command = squad.transform.AddComponent<BombingRun>();
                             }
+                            else if (squad.HasOnlyBarges)
+                            {
+                                command = squad.transform.AddComponent<Charge>();
+                            }
                             else
                             {
                                 command = squad.transform.AddComponent<CircleSquad>();
@@ -498,6 +506,10 @@ namespace Assets.Scripts.Server
                             if (squad.HasOnlyBombers)
                             {
                                 command = squad.transform.AddComponent<BombingRun>();
+                            }
+                            else if (squad.HasOnlyBarges)
+                            {
+                                command = squad.transform.AddComponent<Charge>();
                             }
                             else
                             {
@@ -513,6 +525,10 @@ namespace Assets.Scripts.Server
                             if (squad.HasOnlyBombers)
                             {
                                 command = squad.transform.AddComponent<BombingRun>();
+                            }
+                            else if (squad.HasOnlyBarges)
+                            {
+                                command = squad.transform.AddComponent<Charge>();
                             }
                             else
                             {
@@ -541,46 +557,46 @@ namespace Assets.Scripts.Server
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
                         default:
-                            Debugger.Exception($"commandResponse doesn't match a known command: {commandResponse.Name}");
+                            Debug.LogError($"commandResponse doesn't match a known command: {commandResponse.Name}");
                             break;
                     }
 
                     squad.Command = command;
                     squad.Command.MatchupStrategy = squad.MatchupStrategy;
 
-                    Strategy strategy = new Strategy(command, commandResponse.Name, commandResponse.MatchupString, commandResponse.MatchupId, commandResponse.OutcomeId);
-                    ShootingStrategy shootingStrategy = new ShootingStrategy(command, commandResponse.ShootingStrategyName, commandResponse.ShootingStrategyMatchupString, commandResponse.ShootingStrategyMatchupId, commandResponse.ShootingStrategyOutcomeId);
+                    Strategy strategy = new Strategy(squad.Command, commandResponse.Name, commandResponse.MatchupString, commandResponse.MatchupId, commandResponse.OutcomeId);
+                    ShootingStrategy shootingStrategy = new ShootingStrategy(squad.Command, commandResponse.ShootingStrategyName, commandResponse.ShootingStrategyMatchupString, commandResponse.ShootingStrategyMatchupId, commandResponse.ShootingStrategyOutcomeId);
                     
                     if (commandResponse.Name == "Patrol")
                     {
                         //Debug.Log("Got a patrol");
-                        ((Patrol)command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true, Vector2.zero, Vector2.zero);
+                        ((Patrol)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true, Vector2.zero, Vector2.zero);
                     }
                     else if (commandResponse.Name == "Guard")
                     {
-                        ((Guard)command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true, null);
+                        ((Guard)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true, null);
                     }
                     else if (commandResponse.Name == "Closest Friendly")
                     {
-                        ((ClosestFriendly)command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true);
+                        ((ClosestFriendly)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true);
                     }
                     else if (commandResponse.Name == "Random")
                     {
-                        ((MoveToRandom)command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true);
+                        ((MoveToRandom)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true);
                     }
                     else if (commandResponse.Name == "Scouting")
                     {
-                        ((Scouting)command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true);
+                        ((Scouting)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true);
                     }
                     else if (commandResponse.Name == "Mining")
                     {
-                        ((Mining)command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true, squad.GetNearestMiningAsteroid());
+                        ((Mining)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true, squad.GetNearestMiningAsteroid());
                     }
                     else if (commandResponse.Name == "Full Retreat")
                     {
                         Vector2 position = squad.GetPosition();
                         WarpGate warpGate = (WarpGate) state.GetHumanShips().Where((s) => s.IsWarpGate).OrderBy((s) => s.DistanceToPoint(position)).FirstOrDefault();
-                        ((FullRetreat)command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true, warpGate);
+                        ((FullRetreat)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true, warpGate);
                     }
                     else
                     {
@@ -588,7 +604,7 @@ namespace Assets.Scripts.Server
                         //{
                         //    Debug.Log($"Trying to execute bombing run ({commandResponse.Name}) for {squad.Name} against null enemy from #{commandResponse.Hash}. IsCached? {commandResponse.IsCached}");
                         //}
-                        command.Execute(strategy, shootingStrategy, commandResponse.OutcomeId, false);
+                        squad.Command.Execute(strategy, shootingStrategy, commandResponse.OutcomeId, false);
                     }
 
                 }

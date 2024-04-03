@@ -64,6 +64,7 @@ namespace Assets.Scripts.Entities.Projectiles
             BeamCannon weapon = (BeamCannon)Weapon;
             weapon.IsFiringLaserBeam = false;
             weapon.LaserBeamTarget = null;
+            RemoveDamageSentEntry();
             Destroy(gameObject);
         }
         private Vector2 GetChangeInShooterPosition()

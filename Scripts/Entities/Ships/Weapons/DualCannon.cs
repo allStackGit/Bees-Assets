@@ -40,7 +40,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             if (!IsFiringManually)
             {
                 ShipDamageStatus shipDamageStatus = Squad.GetShipDamageStatus(TargetShip);
-                shipDamageStatus.totalDamageSentToShip += Power * 2;
+                shipDamageStatus.TotalDamageSentToShip += Power * 2;
             }
 
         }

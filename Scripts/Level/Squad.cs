@@ -65,6 +65,7 @@ namespace Assets.Scripts.Level
         public bool HasOnlyYellowJackets => GetShips().All((s) => s.ShipType == "Yellow Jacket");
         public bool HasOnlyStrikers => GetShips().All((s) => s.ShipType == "Striker");
         public bool HasOnlyBombers => GetShips().All((s) => s.ShipType == "Striker" || s.ShipType == "Yellow Jacket" || s.ShipType == "Fire Ship");
+        public bool HasOnlyBarges => GetShips().All((s) => s.ShipType == "Barge");
         public bool IsUserControlled => Side == ConfigData.Configuration.UserSide && Level.HasPlayer;
         public bool IsHiveMindControlled => Side == ConfigData.Configuration.AISide || (Side == ConfigData.Configuration.UserSide && !Level.HasPlayer);
         /// <summary>
@@ -121,6 +122,10 @@ namespace Assets.Scripts.Level
             if (IsUserControlled)
             {
                 InvokeRepeating(nameof(CheckChase), 5, 1);
+            }
+            if (Side == ConfigData.Configuration.AISide && Level.MakeEnemyCeaseFire)
+            {
+                CeaseFire = true;
             }
         }
         private void SetOpponent()
@@ -666,8 +671,11 @@ namespace Assets.Scripts.Level
         {
 
             (Strategy, ShootingStrategy) strategies = MakeUserCommand("Guard", null);
-
-            ((Guard)Command).Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), true, squad);
+            if (strategies.Item1 != null)
+            {
+                ((Guard)Command).Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), true, squad);
+            }
+            
             if (Level.DoesUserHaveController)
             {
                 Level.Menus.ActionBox.HighlightSelectedButtons();
@@ -677,8 +685,11 @@ namespace Assets.Scripts.Level
         {
             //Debug.Log($"Selecting patrol area for {Name}");
             (Strategy, ShootingStrategy) strategies = MakeUserCommand("Patrol", null);
-
-            ((Patrol)Command).Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), true, topLeft, bottomRight);
+            if (strategies.Item1 != null)
+            {
+                ((Patrol)Command).Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), true, topLeft, bottomRight);
+            }
+            
             if (Level.DoesUserHaveController)
             {
                 Level.Menus.ActionBox.HighlightSelectedButtons();
@@ -689,19 +700,28 @@ namespace Assets.Scripts.Level
             if (HasMiningShips)
             {
                 (Strategy, ShootingStrategy) strategies = MakeUserCommand("Mining", null);
-                ((Mining)Command).Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), true, miningAsteroid);
+                if (strategies.Item1 != null)
+                {
+                    ((Mining)Command).Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), true, miningAsteroid);
+                }
             }
             else
             {
-                FinalizeUserCommand();
-                Move(miningAsteroid.GetPosition());
+                if (FinalizeUserCommand())
+                {
+                    Move(miningAsteroid.GetPosition());
+                }
             }
 
         }
         public void UserFullRetreat(WarpGate warpGate)
         {
             (Strategy, ShootingStrategy) strategies = MakeUserCommand("Full Retreat", null);
-            ((FullRetreat)Command).Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), true, warpGate);
+            if (strategies.Item1 != null)
+            {
+                ((FullRetreat)Command).Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), true, warpGate);
+            }
+            
 
         }
         public void UserAggressive(Squad enemy)
@@ -711,72 +731,116 @@ namespace Assets.Scripts.Level
                 UserBombingRun(enemy);
                 return;
             }
+            else if (HasOnlyBarges)
+            {
+                UserCharge(enemy);
+                return;
+            }
             //Debug.Log($"Creating \"Aggressive\" command for {Name} against {enemy.Name}");
-            (Strategy, ShootingStrategy) strategies = MakeUserCommand("Aggressive", enemy); 
-            Command.Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), false);
+            (Strategy, ShootingStrategy) strategies = MakeUserCommand("Aggressive", enemy);
+            if (strategies.Item1 != null)
+            {
+                Command.Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), false);
+            }
+            
         }
         public void UserBombingRun(Squad enemy)
         {
             //Debug.Log($"Creating \"Bombing Run\" command for {Name} against {enemy.Name}");
-            (Strategy, ShootingStrategy) strategies = MakeUserCommand("Bombing Run", enemy); 
-            ((BombingRun)Command).Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), false);
+            (Strategy, ShootingStrategy) strategies = MakeUserCommand("Bombing Run", enemy);
+            if (strategies.Item1 != null)
+            {
+                ((BombingRun)Command).Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), false);
+            }
+            
+        }
+        public void UserCharge(Squad enemy)
+        {
+            //Debug.Log($"Creating \"Bombing Run\" command for {Name} against {enemy.Name}");
+            (Strategy, ShootingStrategy) strategies = MakeUserCommand("Charge", enemy);
+            if (strategies.Item1 != null)
+            {
+                ((Charge)Command).Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), false);
+            }
+            
         }
         public (Strategy, ShootingStrategy) MakeUserCommand(string command, Squad enemy)
         {
             //Debug.Log($"{Name} now has command against {enemy.Name}");
-            FinalizeUserCommand();
 
-            MatchupStrategy = null;
-
-            switch (command)
+            if (FinalizeUserCommand())
             {
-                case "Aggressive":
-                    Command = gameObject.AddComponent<Aggressive>();
-                    break;
-                case "Bombing Run":
-                    Command = gameObject.AddComponent<BombingRun>();
-                    break;
-                case "Guard":
-                    Command = gameObject.AddComponent<Guard>();
-                    break;
-                case "Patrol":
-                    Command = gameObject.AddComponent<Patrol>();
-                    break;
-                case "Mining":
-                    Command = gameObject.AddComponent<Mining>();
-                    break;
-                case "Full Retreat":
-                    Command = gameObject.AddComponent<FullRetreat>();
-                    break;
-                default:
-                    Debugger.Exception($"Invalid command {command} issued to user squad");
-                    break;
+                MatchupStrategy = null;
+
+                switch (command)
+                {
+                    case "Aggressive":
+                        Command = gameObject.AddComponent<Aggressive>();
+                        break;
+                    case "Bombing Run":
+                        Command = gameObject.AddComponent<BombingRun>();
+                        break;
+                    case "Charge":
+                        Command = gameObject.AddComponent<Charge>();
+                        break;
+                    case "Guard":
+                        Command = gameObject.AddComponent<Guard>();
+                        break;
+                    case "Patrol":
+                        Command = gameObject.AddComponent<Patrol>();
+                        break;
+                    case "Mining":
+                        Command = gameObject.AddComponent<Mining>();
+                        break;
+                    case "Full Retreat":
+                        Command = gameObject.AddComponent<FullRetreat>();
+                        break;
+                    default:
+                        Debugger.Exception($"Invalid command {command} issued to user squad");
+                        break;
+                }
+
+
+
+                Command.Setup(this, false, enemy, null);
+
+                return (new Strategy(Command, command, null, 0, 0), new ShootingStrategy(Command, GetShootingStrategy(), null, 0, 0));
+            }
+            else
+            {
+                return (null, null);
             }
 
-
-
-            Command.Setup(this, false, enemy, null);
-
-            return (new Strategy(Command, command, null, 0, 0), new ShootingStrategy(Command, GetShootingStrategy(), null, 0, 0));
+            
 
 
         }
-        public void FinalizeUserCommand()
+        public bool FinalizeUserCommand()
         {
             if (HasCommand)
             {
                 //Debug.Log($"Finalizing command for {Name}");
-
-                if (Command.Type == "Guard")
+                if (Command.Type != "Charge" || !((Charge)Command).IsCharging)
                 {
-                    UnmatchSpeed();
-                    ((Guard)Command).GetGuardingSquads().ForEach((squad) =>
+                    if (Command.Type == "Guard")
                     {
-                        ((Guard)squad.Command).OtherGuardSquads.Remove(this);
-                    });
+                        UnmatchSpeed();
+                        ((Guard)Command).GetGuardingSquads().ForEach((squad) =>
+                        {
+                            ((Guard)squad.Command).OtherGuardSquads.Remove(this);
+                        });
+                    }
+                    Command.SetFinalize("New command given");
+                    return true;
                 }
-                Command.SetFinalize("New command given");
+                else
+                {
+                    Debug.Log($"Can't finalize command for {Name}, the squad is charging");
+                }
+                return false;
+                
             }
+            return true;
         }
         public MiningAsteroid GetNearestMiningAsteroid()
         {
@@ -795,7 +859,7 @@ namespace Assets.Scripts.Level
             ShipDamageStatus shipDamageStatus = null;
             if (damageSentToEnemyShipsBySquad.Count > 0)
             {
-                shipDamageStatus = damageSentToEnemyShipsBySquad.FirstOrDefault(s => s != null && s.ship != null && s.ship.Equals(potentialTargetShip));
+                shipDamageStatus = damageSentToEnemyShipsBySquad.FirstOrDefault(s => s != null && s.Ship != null && s.Ship.Equals(potentialTargetShip));
             }
 
             if (shipDamageStatus == null)
@@ -888,6 +952,10 @@ namespace Assets.Scripts.Level
         {
             return Vector2.Distance(GetPosition(), point);
         }
+        /// <summary>
+        /// The calculated center point of the squad
+        /// </summary>
+        /// <returns></returns>
         public Vector2 GetPosition()
         {
             return GetCenterPoint();

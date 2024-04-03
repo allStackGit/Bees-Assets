@@ -597,8 +597,11 @@ namespace Assets.Scripts.Level
                 //targetPosition = new Vector2(x, y);
 
                 // if the user is controlling this squad and setting it to target an enemy, end that.
-                squad.FinalizeUserCommand();
-                squad.Move(localized);
+                if (squad.FinalizeUserCommand())
+                {
+                    squad.Move(localized);
+                }
+                
             });
         }
         private void SetSquadsToMine(MiningAsteroid asteroid)

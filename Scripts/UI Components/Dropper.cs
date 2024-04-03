@@ -280,7 +280,7 @@ namespace Assets.Scripts.UIComponents
 
                 Vector2 change = Utilities.WorldUnitsToScreenPixels(ConfigData.GetShipOffset(dragIcon.GetFleetShip().Type), _scene.Camera) * 1.05f;
 
-                Debug.Log($"Ship offset world units for auto placing: {ConfigData.ShipOffset}, screen pixels {change}");
+                //Debug.Log($"Ship offset world units for auto placing: {ConfigData.ShipOffset}, screen pixels {change}");
 
                 //Debug.Log($"change: {change}");
 
@@ -306,8 +306,8 @@ namespace Assets.Scripts.UIComponents
                 int sideCheck = maxWidth;
                 if (!hollow || maxWidth < 3 || ships == sideCheck - 2 || ships == sideCheck - 1)
                 {
-                    Debug.Log($"Placing the ship because it's either not hollow ({hollow}) or the maxWidth is less than 3 ({maxWidth}) or the shipIndex" +
-                        $"is equal to {sideCheck - 2} or {sideCheck - 1} ({ships})");
+                    //Debug.Log($"Placing the ship because it's either not hollow ({hollow}) or the maxWidth is less than 3 ({maxWidth}) or the shipIndex" +
+                    //    $"is equal to {sideCheck - 2} or {sideCheck - 1} ({ships})");
                     Vector2 movedPosition = new Vector2(position.x + movement, position.y - movementDown);
 
                     dragIcon.Reposition(movedPosition, null);
@@ -315,8 +315,8 @@ namespace Assets.Scripts.UIComponents
                 }
                 else
                 {
-                    Debug.Log($"NOT placing the ship because it's hollow ({hollow}) and the maxWidth is more than or equal to 3 ({maxWidth}) and the shipIndex" +
-                        $"is Not equal to {sideCheck - 2} or {sideCheck - 1} ({ships})");
+                    //Debug.Log($"NOT placing the ship because it's hollow ({hollow}) and the maxWidth is more than or equal to 3 ({maxWidth}) and the shipIndex" +
+                    //    $"is Not equal to {sideCheck - 2} or {sideCheck - 1} ({ships})");
                     dragIcons.Add(dragIcon);
                 }
 
@@ -325,7 +325,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void BoxFormation()
         {
-            Debug.Log($"Making a box formation");
+            //Debug.Log($"Making a box formation");
             List<DragIcon> dragIcons = GetDragIcons();
             if (dragIcons.Count < 4) // make a line across
             {
@@ -350,7 +350,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void RectangleFormation()
         {
-            Debug.Log($"Making a rectangle formation");
+            //Debug.Log($"Making a rectangle formation");
             List<DragIcon> dragIcons = GetDragIcons();
             if (dragIcons.Count < 5)
             {

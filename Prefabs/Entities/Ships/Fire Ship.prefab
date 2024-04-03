@@ -79,7 +79,7 @@ SpriteRenderer:
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: 845175763
-  m_SortingLayer: 6
+  m_SortingLayer: 9
   m_SortingOrder: 0
   m_Sprite: {fileID: 21300000, guid: c2d50367ba7668e428d971aed684feb2, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -110,6 +110,7 @@ MonoBehaviour:
   Side: 0
   Collider: {fileID: 0}
   Body: {fileID: 0}
+  ShowDebug: 0
   Health: 0
   MaxHealth: 0
   OriginalHealth: 0
@@ -127,6 +128,7 @@ MonoBehaviour:
   OffsetFromCenter: {x: 0, y: 0}
   Squad: {fileID: 0}
   DefaultAngle: 0
+  TargetDirection: 0
   LastKilled: 0
   ShipType: 
   Name: 
@@ -138,6 +140,9 @@ MonoBehaviour:
   HasBrain: 0
   IsMinionShip: 0
   HasTargetCoordinates: 0
+  IsMiningShip: 0
+  IsWarpGate: 0
+  HasTargetDirection: 0
   Weapons: []
   ProjectilePrefabs:
   - {fileID: 0}
@@ -147,7 +152,12 @@ MonoBehaviour:
   Brain: {fileID: 0}
   NearbyAsteroids: []
   Turrets: []
+  RotationSpeed: 0
+  HasVision: 0
+  TargetEnemy: {fileID: 0}
+  ShipCollider: {fileID: 3694386544647984224}
   __PastCommands: []
+  __BannedStrats: []
   __Strategy: 
   __Squad: 
   __SquadStatus: 
@@ -162,9 +172,13 @@ MonoBehaviour:
   __CommandTsv: 0
   __TargetShips: []
   __SquadShips: []
+  __ShipsWithinRange: []
   __HasReachedDestination: 0
   __SquadHasReachedDestination: 0
   __Enemy: 
+  __TargetEnemy: 
+  __DamageStatuses: []
+  __CommandTargetingQueue: []
   Direction: 0
   ShouldDetonate: 0
   RLShootingStrategy: 
@@ -273,7 +287,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4949212615178794145, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayer
-      value: 6
+      value: 9
       objectReference: {fileID: 0}
     - target: {fileID: 4949212615178794145, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayerID
@@ -337,7 +351,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6507568151281305453, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayer
-      value: 6
+      value: 9
       objectReference: {fileID: 0}
     - target: {fileID: 6507568151281305453, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayerID

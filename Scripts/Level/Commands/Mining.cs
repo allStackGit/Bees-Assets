@@ -72,28 +72,32 @@ namespace Assets.Scripts.Level.Commands
         public void Mine() // [stats-method]
         {
             ShipsMining = ShipsMining.Where((s) => s != null && !s.IsDead).ToList();
-            //Debug.Log($"There are {ShipsMining.Count} ships mining for {Squad.Name}");
-            int miningRate = MiningRate * ShipsMining.Count;
-            int amountMined = miningRate;
-            if (TargetAstroid.Health < miningRate)
+            if (ShipsMining.Count > 0)
             {
-                amountMined = TargetAstroid.Health;
+                //Debug.Log($"There are {ShipsMining.Count} ships mining for {Squad.Name}");
+                int miningRate = MiningRate * ShipsMining.Count;
+                int amountMined = miningRate;
+                if (TargetAstroid.Health < miningRate)
+                {
+                    amountMined = TargetAstroid.Health;
+                }
+
+                Tsv += amountMined;
+                TargetAstroid.Health -= amountMined;
+                //Debug.Log($"{Squad.Name} mined {amountMined} from {TargetAstroid.Name}. It has {TargetAstroid.Health} health left");
+                if (TargetAstroid.Health <= 0)
+                {
+                    TargetAstroid.Kill();
+                }
+
+                int amountPerShip = miningRate / ShipsMining.Count;
+                ShipsMining.ForEach((ship) =>
+                {
+                    ship.FleetShip.MineralsMinedThisLevel += amountPerShip;
+                    ship.AdditionalTsv += amountPerShip;
+                });
             }
 
-            Tsv += amountMined;
-            TargetAstroid.Health -= amountMined;
-            //Debug.Log($"{Squad.Name} mined {amountMined} from {TargetAstroid.Name}. It has {TargetAstroid.Health} health left");
-            if (TargetAstroid.Health <= 0)
-            {
-                TargetAstroid.Kill();
-            }
-
-            int amountPerShip = miningRate / ShipsMining.Count;
-            ShipsMining.ForEach((ship) =>
-            {
-                ship.FleetShip.MineralsMinedThisLevel += amountPerShip;
-                ship.AdditionalTsv += amountPerShip;
-            });
         }
         public override void SetFinalize(string cause)
         {

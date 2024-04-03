@@ -20,11 +20,12 @@ namespace Assets.Scripts.Level.Commands
                 IsAttacking = true;
 
                 PrepareDamageToSendEntries();
-                float distance = Squad.DistanceToPoint(Enemy.GetPosition());
                 Vector2 position = Squad.GetPosition();
+                Vector2 enemyPosition = Enemy.GetPosition();
+                float distance = Squad.DistanceToPoint(enemyPosition);
                 _returnPoint = distance > Enemy.MaxRange && distance < 50 ?
                     Utilities.RandomCoordinate(Level, position, Vector2.one * 10, Vector2.zero) :
-                    Utilities.RandomCoordinate(Level, Enemy.GetPosition(), Vector2.one * (Enemy.MaxRange + 20), Vector2.one * Enemy.MaxRange);
+                    Utilities.RandomCoordinate(Level, enemyPosition, Vector2.one * (Enemy.MaxRange + 20), Vector2.one * Enemy.MaxRange);
 
                 _hasReachedDestination = false;
                 InvokeRepeating(nameof(Timer), ConfigData.CommandTimerFrequency, ConfigData.CommandTimerFrequency);
@@ -42,7 +43,8 @@ namespace Assets.Scripts.Level.Commands
                     {
                         Squad.Status = $"Targeting enemy squad #{Enemy.SquadNumber} for In and Out";
                         //Debug.Log($"Enemy: {Enemy.Name} IsDead: {Enemy.IsDead}");
-                        SetAndMove(Enemy.GetPosition());
+                        //SetAndMove(Enemy.GetPosition());
+                        MoveTowardsEnemies();
                     }
                     else if (!Squad.HasReachedDestination)
                     {

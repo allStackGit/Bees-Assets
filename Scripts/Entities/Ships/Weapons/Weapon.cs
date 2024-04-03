@@ -107,7 +107,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                         ShipDamageStatus shipDamageStatus = Squad.GetShipDamageStatus(potentialTargetShip);
                         if (useShipStatus)
                         {
-                            if (shipDamageStatus.totalDamageSentToShip <= shipDamageStatus.health)
+                            if (shipDamageStatus.TotalDamageSentToShip <= shipDamageStatus.Health)
                             {
                                 SetTargetShip(potentialTargetShip);
                                 foundTarget = true;
@@ -158,7 +158,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         }
         /// <summary> Called every 1/3 Rate of Fire. Sends the targeting queue to DetermineTargetShip. 
         /// Every time this method is called, a target ship should be selected if there is one available </summary>
-        protected void Targeting()
+        public void Targeting()
         {
             //Debug.Log($"Targeting! with {Ship.FleetShip.Name}");
 
@@ -167,7 +167,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 if (Ship.IsUserControlled) // user controlled fire sequence
                 {
-                    List<Ship> queue = MakeTargetingQueue();
+                    List<Ship> queue = MakeTargetingQueue(false);
                     if (!DetermineTargetShip(queue, true))
                     {
                         DetermineTargetShip(queue, false);
@@ -177,7 +177,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 {
                     if ((Ship.HasCommand || Ship.HasBrain) && !Squad.IsRetreating) // if you've got a command, and you're not retreating
                     {
-                        List<Ship> queue = MakeTargetingQueue();
+                        List<Ship> queue = MakeTargetingQueue(false);
                         if (!DetermineTargetShip(queue, true))
                         {
                             DetermineTargetShip(queue, false);
@@ -207,7 +207,12 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             if (Ship.Squad.HasEnemy && Ship.Squad.IsAttacking)
             {
-                return ShipsWithinRange.Where((s) => s.Squad == Ship.Squad.Command.Enemy).ToList();
+                IEnumerable<Ship> enemies = ShipsWithinRange.Where((s) => s.Squad == Ship.Squad.Command.Enemy);
+                if (enemies.Any())
+                {
+                    return enemies.ToList();
+                }
+                return ShipsWithinRange.ToList();
                 //return Ship.Squad.Command.Enemy.GetShips().Where((s) => IsShipWithinRange(s)).ToList();
             }
             else
@@ -215,9 +220,17 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 return ShipsWithinRange.ToList();
             }
         }
-        protected virtual List<Ship> GetPotentialEnemyTargetShips()
+        protected virtual List<Ship> GetPotentialEnemyTargetShips(bool disregardRange)
         {
-            List<Ship> queue = GetEnemyShipsWithinRange();
+            List<Ship> queue;
+            if (disregardRange)
+            {
+                queue = Squad.Command.Enemy.GetShips();
+            }
+            else
+            {
+                queue = GetEnemyShipsWithinRange();
+            }
             __ShipsWithinRange = queue.ToList();
             if (CachedShootingStrategy == Ship.ShootingStrategy && queue.Count == CachedTargetingQueue.Count && !CachedTargetingQueue.Contains(null))
             {
@@ -233,10 +246,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             CachedTargetingQueue.Clear();
         }
         /// <summary>Sorts the potential target ships according to the shooting strategy. Uses a cached queue </summary>
-        public List<Ship> MakeTargetingQueue()
+        public List<Ship> MakeTargetingQueue(bool disregardRange)
         {
             
-            List<Ship> queue = GetPotentialEnemyTargetShips();
+            List<Ship> queue = GetPotentialEnemyTargetShips(disregardRange);
             string strategy = Ship.ShootingStrategy;
             CachedShootingStrategy = strategy;
             CachedTargetingQueue = queue;
@@ -320,7 +333,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             if (HasTargetShip)
             {
                 ShipDamageStatus shipDamageStatus = Squad.GetShipDamageStatus(TargetShip);
-                shipDamageStatus.totalDamageSentToShip += Power;
+                shipDamageStatus.TotalDamageSentToShip += Power;
             }
 
 

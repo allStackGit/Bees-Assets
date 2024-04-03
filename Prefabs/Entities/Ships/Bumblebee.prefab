@@ -79,7 +79,7 @@ SpriteRenderer:
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: -1262946043
-  m_SortingLayer: 8
+  m_SortingLayer: 11
   m_SortingOrder: 0
   m_Sprite: {fileID: 21300000, guid: 350d0547bddb6c94bbb40d50884b48c3, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -128,6 +128,7 @@ MonoBehaviour:
   OffsetFromCenter: {x: 0, y: 0}
   Squad: {fileID: 0}
   DefaultAngle: 0
+  TargetDirection: 0
   LastKilled: 0
   ShipType: 
   Name: 
@@ -139,6 +140,9 @@ MonoBehaviour:
   HasBrain: 0
   IsMinionShip: 0
   HasTargetCoordinates: 0
+  IsMiningShip: 0
+  IsWarpGate: 0
+  HasTargetDirection: 0
   Weapons: []
   ProjectilePrefabs:
   - {fileID: 3307778784346582978, guid: a7fafdd7241b4e742b78484c3c81c8b9, type: 3}
@@ -150,7 +154,10 @@ MonoBehaviour:
   Turrets: []
   RotationSpeed: 0
   HasVision: 0
+  TargetEnemy: {fileID: 0}
+  ShipCollider: {fileID: 2223322355541266078}
   __PastCommands: []
+  __BannedStrats: []
   __Strategy: 
   __Squad: 
   __SquadStatus: 
@@ -165,9 +172,13 @@ MonoBehaviour:
   __CommandTsv: 0
   __TargetShips: []
   __SquadShips: []
+  __ShipsWithinRange: []
   __HasReachedDestination: 0
   __SquadHasReachedDestination: 0
   __Enemy: 
+  __TargetEnemy: 
+  __DamageStatuses: []
+  __CommandTargetingQueue: []
   Direction: 0
   ShouldDetonate: 0
   RLShootingStrategy: 
@@ -230,7 +241,7 @@ PolygonCollider2D:
   m_CallbackLayers:
     serializedVersion: 2
     m_Bits: 4294967295
-  m_IsTrigger: 0
+  m_IsTrigger: 1
   m_UsedByEffector: 0
   m_UsedByComposite: 0
   m_Offset: {x: 0, y: 0}
@@ -345,7 +356,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4949212615178794145, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayer
-      value: 8
+      value: 11
       objectReference: {fileID: 0}
     - target: {fileID: 4949212615178794145, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingOrder
@@ -417,7 +428,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6507568151281305453, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayer
-      value: 8
+      value: 11
       objectReference: {fileID: 0}
     - target: {fileID: 6507568151281305453, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingOrder
@@ -452,7 +463,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 301538961799670568, guid: 03b034f2c8b3a024f82eedca09fb290c, type: 3}
       propertyPath: m_SortingLayer
-      value: 8
+      value: 11
       objectReference: {fileID: 0}
     - target: {fileID: 301538961799670568, guid: 03b034f2c8b3a024f82eedca09fb290c, type: 3}
       propertyPath: m_SortingOrder
@@ -508,7 +519,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8712735557502011637, guid: 03b034f2c8b3a024f82eedca09fb290c, type: 3}
       propertyPath: m_SortingLayer
-      value: 23
+      value: 26
       objectReference: {fileID: 0}
     - target: {fileID: 8712735557502011637, guid: 03b034f2c8b3a024f82eedca09fb290c, type: 3}
       propertyPath: m_SortingLayerID

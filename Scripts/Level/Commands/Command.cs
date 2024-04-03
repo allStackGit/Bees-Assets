@@ -24,6 +24,8 @@ namespace Assets.Scripts.Level.Commands
         public MatchupStrategy MatchupStrategy = null;
         public ShootingStrategy ShootingStrategy = null;
         public bool IsAttacking;
+        public Queue<Ship> OriginalQueue;
+        public Queue<Ship> TargetingQueue;
 
 
         private List<Vector2> _destinations = new List<Vector2>();
@@ -44,6 +46,12 @@ namespace Assets.Scripts.Level.Commands
             Enemy = enemy;
             Matchup = matchup;
             IsHiveMindCommand = isHiveMindCommand;
+
+            if (Enemy != null)
+            {
+                OriginalQueue = new Queue<Ship>(MakeTargetingQueue());
+                TargetingQueue = new Queue<Ship>(OriginalQueue);
+            }
         }
 
         public void SetDestination(Vector2 destination)
@@ -81,6 +89,14 @@ namespace Assets.Scripts.Level.Commands
             SetDestination(destination);
             Squad.Move(GetDestination());
         }
+        public void MoveTowardsEnemies()
+        {
+            Squad.GetShips().ForEach((ship) =>
+            {
+                ship.MoveToPoint(ship.GetTargetEnemy().GetPosition());
+                
+            });
+        }
         public void StandStill()
         {
             if (Squad!= null)
@@ -116,6 +132,85 @@ namespace Assets.Scripts.Level.Commands
             }
 
         }
+
+        public List<Ship> MakeTargetingQueue()
+        {
+
+            List<Ship> queue = Enemy.GetShips();
+            string strategy = Squad.GetShootingStrategy();
+            if (strategy != null)
+            {
+                //Debug.Log($"Making targeting queue for {Ship.Name}. The squad is using {Squad.GetShootingStrategy()}");
+                switch (strategy)
+                {
+                    case "First Seen":
+                        return queue;
+                    case "Random":
+                        return queue.OrderBy(s => Utilities.RandomInt(2)).ToList();
+                    case "Revenge":
+                        return queue.OrderByDescending(s => s.LastKilled).ToList();
+                    case "Most Dangerous":
+                        return queue.OrderByDescending(s => s.FleetShip.DamageDone).ToList();
+                    case "Least Health":
+                        return queue.OrderBy(s => s.Health).ToList();
+                    case "Most Health":
+                        return queue.OrderByDescending(s => s.Health).ToList();
+                    case "Most Powerful":
+                        return queue.OrderByDescending(s => s.Firepower).ToList();
+                    case "Least Powerful":
+                        return queue.OrderBy(s => s.Firepower).ToList();
+                    case "Closest":
+                        queue.Sort((a, b) => (int)(Squad.DistanceToPoint(a.GetPosition()) - Squad.DistanceToPoint(b.GetPosition())));
+                        return queue.ToList();
+                    case "Furthest":
+                        queue.Sort((a, b) => (int)(Squad.DistanceToPoint(b.GetPosition()) - Squad.DistanceToPoint(a.GetPosition())));
+                        return queue.ToList();
+                    case "Most Range":
+                        return queue.OrderByDescending(s => s.MaxRange).ToList();
+                    case "Least Range":
+                        return queue.OrderBy(s => s.MaxRange).ToList();
+                    case "Fastest":
+                        return queue.OrderByDescending(s => s.Speed).ToList();
+                    case "Slowest":
+                        return queue.OrderBy(s => s.Speed).ToList();
+                    case "Most Valuable":
+                        return queue.OrderByDescending(s => s.Tsv).ToList();
+                    case "Least Valuable":
+                        return queue.OrderBy(s => s.Tsv).ToList();
+                    default:
+                        if (strategy.StartsWith("Type "))
+                        {
+                            string type = strategy.Substring(5);
+                            queue.Sort((a, b) =>
+                            {
+                                //Debug.Log($"Strategy: {strategy}, Type: {type}, A ShipTypeLetter: {a.ShipTypeLetter}, B ShipTypeLetter: {b.ShipTypeLetter}");
+                                if (a.ShipTypeLetter == type && b.ShipTypeLetter != type)
+                                {
+                                    return -1;
+                                }
+                                else if (b.ShipTypeLetter == type && a.ShipTypeLetter != type)
+                                {
+                                    return 1;
+                                }
+                                else
+                                {
+                                    return 0;
+                                }
+                            });
+                            //if (queue.Count > 0)
+                            //{
+                            //    Debug.Log($"The first entry in the sorted queue is {queue.First().Name}");
+                            //}
+                            return queue;
+                        }
+                        else
+                        {
+                            return queue;
+                        }
+                }
+            }
+            return queue;
+        }
         /*
          * This method finds the enemies of the command's squad and makes sure there's a ship damage status entry for each enemy ship
          */
@@ -139,7 +234,7 @@ namespace Assets.Scripts.Level.Commands
                 }
                 foreach (Ship ship in ships)
                 {
-                    ShipDamageStatus entry = Squad.DamageSentToEnemyShipsBySquad.Find((entry) => entry.ship.Equals(ship));
+                    ShipDamageStatus entry = Squad.DamageSentToEnemyShipsBySquad.Find((entry) => entry.Ship.Equals(ship));
                     if (entry == null)
                     {
                         Squad.DamageSentToEnemyShipsBySquad.Add(new ShipDamageStatus(ship));
@@ -164,8 +259,8 @@ namespace Assets.Scripts.Level.Commands
         }
         private void Finalize(string cause)
         {
-            //CancelInvoke(); 
-            
+            CancelInvoke();
+
             FinalizationCause = cause;
             //Debug.Log($"Finalized because of [{FinalizationCause}]");
             IsFinalized = true;
@@ -173,6 +268,11 @@ namespace Assets.Scripts.Level.Commands
 
             if (Squad != null)
             {
+                Squad.GetShips().ForEach((ship) =>
+                {
+                    ship.TargetEnemy = null;
+
+                });
                 Squad.IsRetreating = false;
                 Squad.Status = "idle";
                 if (Squad.IsChasing())
