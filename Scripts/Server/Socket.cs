@@ -423,7 +423,7 @@ namespace Assets.Scripts.Server
                     //Debugger.LogSquads(level.GetState().GetSquads());
                     LevelStage level = standingRequest.Level;
                     level.HandledRequests.Add(standingRequest.Hash);
-                    squad.MakeMatchup(targetSquad);
+                    squad.MakeMatchupAndGetCommand(targetSquad);
                 }
                 else
                 {

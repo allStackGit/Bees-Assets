@@ -41,7 +41,7 @@ namespace Assets.Scripts.Data
             GetStats();
         }
         
-        private void GetStats()
+        private void GetStats() // [tsv-calculation]
         {
             ShipStatBlock shipInfo = ConfigData.GetShipInfo(Type);
             //Debug.Log($"Got ship info for {Type}. [{shipInfo}]");
@@ -62,13 +62,17 @@ namespace Assets.Scripts.Data
                 AdditionalTsv = Utilities.CalculateCarrierAdditionalTsv();
                 //Debug.Log($"AdditionalTSV for Carrier is {AdditionalTsv}. {drone.GetTsv()} for each drone and {striker.GetTsv()} for each striker");
             }
-            else if (Type == "Striker")
+            else if (Type == "Striker" || Type == "Barge")
             {
-                SpecialFirePower.Add(shipInfo.Powers.First()/5);
+                SpecialFirePower.Add(shipInfo.Powers.First()/3);
             }
             else if (Type == "Yellow Jacket")
             {
-                SpecialFirePower.Add(shipInfo.Powers.First() / 10);
+                SpecialFirePower.Add(shipInfo.Powers.First() / 5);
+            }
+            else if (Type == "Fire Ship")
+            {
+                SpecialFirePower.Add((shipInfo.Powers.First() * shipInfo.ProjectileValues.First()));
             }
             else if (Type == "Fire Ship")
             {

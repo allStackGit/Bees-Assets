@@ -31,7 +31,7 @@ namespace Assets.Scripts.Level
         public Color SquadBoxColor;
         public SavedSquad SavedSquad;
         public GameObject SquadBox;
-        public bool HasMovedBox, IsMatchingSpeed, CeaseFire, IsRetreating, HasAddedShips, IsShowingRanges;
+        public bool HasMovedBox, IsMatchingSpeed, CeaseFire, IsRetreating, HasAddedShips, IsShowingRanges, IsGrowingSquad;
         /// <summary>
         /// A squad can be dead for one frame before it is destroyed. It's important to check for the death of a squad on anything run by a timer outside of the squad object
         /// </summary>
@@ -183,6 +183,10 @@ namespace Assets.Scripts.Level
                 {
                     adjustment *= 1.2f;
                 }
+                else if (ship.ShipType == "Barge" || ship.ShipType == "Fire Ship")
+                {
+                    adjustment *= new Vector2(1.4f, 1);
+                }
 
                 //Debug.Log($"Sizefactor for {ship.Name}: {sizeFactor}");
                 //Debug.Log($"Local starting position for {ship.Name}: {new Vector2(x, y)}");
@@ -270,6 +274,13 @@ namespace Assets.Scripts.Level
             float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
             //Debug.Log($"It took {Math.Round(end, 2)} ms to set {Name} moving. The average was {Math.Round(end/ships.Count, 2)}ms");
 
+        }
+        public void StopMoving(string reason)
+        {
+            GetShips().ForEach((ship) =>
+            {
+                ship.StopMoving(reason);
+            });
         }
         public void MatchSpeed(float speed = 0)
         {
@@ -365,14 +376,6 @@ namespace Assets.Scripts.Level
                     {
 
                         state.GameOver = true;
-
-                        state.GetAllSquads().ForEach((squad) =>
-                        {
-                            if (squad.HasCommand)
-                            {
-                                squad.Command.SetFinalize("Level ended");
-                            }
-                        });
                     }
                     else
                     {
@@ -518,10 +521,16 @@ namespace Assets.Scripts.Level
             //Debug.Log(new string(letters));
             return new string(letters);
         }
-        public void MakeMatchup(Squad enemy = null)
+        public void MakeMatchupAndGetCommand(Squad enemy = null)
         {
             string matchup = "";
+            if (Level.OverrideStrats.Count > 0) // [debug]
+            {
+                BannedStrats.UnionWith(ConfigData.CommandTypes);
+                BannedStrats = BannedStrats.Except(Level.OverrideStrats).ToHashSet();
+            }
             HashSet<string> banned = BannedStrats.ToHashSet(); // the ToHashSet is important to prevent modification of the original set
+
             if (enemy != null)
             {
                 List<Ship> enemies = GetPotentialEnemies(enemy);
@@ -622,6 +631,7 @@ namespace Assets.Scripts.Level
                 BannedStrats.Add("Full Retreat");
                 banned.Add("Full Retreat");
             }
+
             //if (HasOnlyYellowJackets)
             //{
             //    Debug.Log($"Trying to get a command for {Name} against {enemy?.Name}");
@@ -731,11 +741,11 @@ namespace Assets.Scripts.Level
                 UserBombingRun(enemy);
                 return;
             }
-            else if (HasOnlyBarges)
-            {
-                UserCharge(enemy);
-                return;
-            }
+            //else if (HasOnlyBarges)
+            //{
+            //    UserCharge(enemy);
+            //    return;
+            //}
             //Debug.Log($"Creating \"Aggressive\" command for {Name} against {enemy.Name}");
             (Strategy, ShootingStrategy) strategies = MakeUserCommand("Aggressive", enemy);
             if (strategies.Item1 != null)
@@ -754,16 +764,15 @@ namespace Assets.Scripts.Level
             }
             
         }
-        public void UserCharge(Squad enemy)
-        {
-            //Debug.Log($"Creating \"Bombing Run\" command for {Name} against {enemy.Name}");
-            (Strategy, ShootingStrategy) strategies = MakeUserCommand("Charge", enemy);
-            if (strategies.Item1 != null)
-            {
-                ((Charge)Command).Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), false);
-            }
-            
-        }
+        //public void UserCharge(Squad enemy)
+        //{
+        //    //Debug.Log($"Creating \"Bombing Run\" command for {Name} against {enemy.Name}");
+        //    (Strategy, ShootingStrategy) strategies = MakeUserCommand("Charge", enemy);
+        //    if (strategies.Item1 != null)
+        //    {
+        //        ((Charge)Command).Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), false);
+        //    }
+        //}
         public (Strategy, ShootingStrategy) MakeUserCommand(string command, Squad enemy)
         {
             //Debug.Log($"{Name} now has command against {enemy.Name}");
@@ -780,9 +789,9 @@ namespace Assets.Scripts.Level
                     case "Bombing Run":
                         Command = gameObject.AddComponent<BombingRun>();
                         break;
-                    case "Charge":
-                        Command = gameObject.AddComponent<Charge>();
-                        break;
+                    //case "Charge":
+                    //    Command = gameObject.AddComponent<Charge>();
+                    //    break;
                     case "Guard":
                         Command = gameObject.AddComponent<Guard>();
                         break;
@@ -820,23 +829,33 @@ namespace Assets.Scripts.Level
             if (HasCommand)
             {
                 //Debug.Log($"Finalizing command for {Name}");
-                if (Command.Type != "Charge" || !((Charge)Command).IsCharging)
+                //if (Command.Type != "Charge" || !((Charge)Command).IsCharging)
+                //{
+                //    if (Command.Type == "Guard")
+                //    {
+                //        UnmatchSpeed();
+                //        ((Guard)Command).GetGuardingSquads().ForEach((squad) =>
+                //        {
+                //            ((Guard)squad.Command).OtherGuardSquads.Remove(this);
+                //        });
+                //    }
+                //    Command.SetFinalize("New command given");
+                //    return true;
+                //}
+                //else
+                //{
+                //    Debug.Log($"Can't finalize command for {Name}, the squad is charging");
+                //}
+                if (Command.Type == "Guard")
                 {
-                    if (Command.Type == "Guard")
+                    UnmatchSpeed();
+                    ((Guard)Command).GetGuardingSquads().ForEach((squad) =>
                     {
-                        UnmatchSpeed();
-                        ((Guard)Command).GetGuardingSquads().ForEach((squad) =>
-                        {
-                            ((Guard)squad.Command).OtherGuardSquads.Remove(this);
-                        });
-                    }
-                    Command.SetFinalize("New command given");
-                    return true;
+                        ((Guard)squad.Command).OtherGuardSquads.Remove(this);
+                    });
                 }
-                else
-                {
-                    Debug.Log($"Can't finalize command for {Name}, the squad is charging");
-                }
+                Command.SetFinalize("New command given");
+                return true;
                 return false;
                 
             }

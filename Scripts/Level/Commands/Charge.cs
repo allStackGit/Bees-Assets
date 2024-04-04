@@ -3,6 +3,7 @@ using Assets.Scripts.Entities.Ships.Weapons;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Xml.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Level.Commands
@@ -40,21 +41,25 @@ namespace Assets.Scripts.Level.Commands
                 {
                     ((Barge)ship).HasCompletedRun = false;
                 }
-                Bomb bomb = (Bomb)ship.Weapons.First();
-                int loops = 0;
-                while (!bomb.DetermineTargetShip(bomb.MakeTargetingQueue(true), true) && loops < 10)
-                {
-                    Squad.DamageSentToEnemyShipsBySquad.Clear();
-                    loops++;
-                }
+                GetTargetShip(ship);
             }
 
             InvokeRepeating(nameof(Timer), .1f, ConfigData.CommandTimerFrequency);
 
         }
+        private void GetTargetShip(Ship ship)
+        {
+            Bomb bomb = (Bomb)ship.Weapons.First();
+            int loops = 0;
+            while (!bomb.DetermineTargetShip(bomb.MakeTargetingQueue(true), true) && loops < 10)
+            {
+                Squad.DamageSentToEnemyShipsBySquad.Clear();
+                loops++;
+            }
+        }
         private void SendShipToTarget(Ship ship)
         {
-            ship.MoveToDirection(ship.TargetShips.First().GetPosition()); // Move to the primary target ship
+            ship.MoveToDirectionOfPoint(ship.TargetShips.First().GetPosition()); // Move to the primary target ship
         }
         private bool HaveAllShipsFinished(List<Barge> ships)
         {
@@ -65,7 +70,7 @@ namespace Assets.Scripts.Level.Commands
         }
         private bool ShouldShipPursueTarget(Barge ship)
         {
-            return !ship.IsCharging && ship.HasTargetShips && ship.TargetShips.Any((targetShip) => targetShip != null);
+            return !ship.HasStartedCharging && !ship.HasCompletedRun && ship.HasTargetShips && ship.TargetShips.Any((targetShip) => targetShip != null);
         }
 
         private bool HasTargetsWithinChargingRange(Ship ship)
@@ -73,9 +78,45 @@ namespace Assets.Scripts.Level.Commands
             return ship.HasTargetShips && ship.TargetShips.Any((targetShip) => targetShip != null &&  ship.ShipsWithinRange.Contains(targetShip) && Utilities.IsRotatedTowards(ship.gameObject, ship.GetDegreesTowardsPoint(targetShip.GetPosition())));
         }
 
-        
 
 
+        public IEnumerator ChargeTarget(Barge barge)
+        {
+            Ship target = barge.TargetShips.First();
+            barge.OriginalPower = barge.Charge.Power;
+
+            barge.StopMoving("Pausing to build up steam before charging");
+            //Debug.Log($"{barge.Name} is about to charge {target.Name}");
+
+            yield return new WaitForSeconds(2);
+
+            if (!barge.IsDead && target != null && !target.IsDead)
+            {
+                //Debug.Log($"Charging!");
+                barge.IsCharging = true;
+                barge.SetCurrentSpeed(80, 80);
+                barge.MoveToDirectionOfPoint(target.GetPosition());
+            }
+
+
+
+            yield return new WaitForSeconds(1);
+            barge.StopCharge();
+
+            //yield return new WaitForSeconds(1);
+            //Debug.Log("1 second");
+            //yield return new WaitForSeconds(1);
+            //Debug.Log("2 seconds");
+            //yield return new WaitForSeconds(1);
+            //Debug.Log("3 seconds");
+            //yield return new WaitForSeconds(1);
+            //Debug.Log("4 seconds");
+            //yield return new WaitForSeconds(1);
+            yield return new WaitForSeconds(5);
+
+            barge.FinishCoolDown();
+
+        }
 
 
         private void Timer()
@@ -95,28 +136,31 @@ namespace Assets.Scripts.Level.Commands
                             {
                                 ChargingShips.Add(ship);
                                 IsCharging = true;
-                                StartCoroutine(ship.ChargeTarget());
+                                StartCoroutine(ChargeTarget(ship));
                             }
                         }
                         else
                         {
                             SendShipToTarget(ship);
                         }
-                    }
-                    else // if you don't have target ships or all of them are dead
+                    }else if (!ship.HasTargetShips)
                     {
-                        if (!ship.IsCharging)
-                        {
-                            ship.HasCompletedRun = true;
-                        }
+                        GetTargetShip(ship);
                     }
+                    //else // if you don't have target ships or all of them are dead
+                    //{
+                    //    Debug.Log($"{ship.Name} should not pursure targets because either it is charging ({ship.IsCharging}), or does not have target ships that aren't null {(ship.HasTargetShips && ship.TargetShips.Any((targetShip) => targetShip != null))}");
+                    //    if (!ship.IsCharging)
+                    //    {
+                    //        ship.HasCompletedRun = true;
+                    //    }
+                    //}
                 });
 
 
                 if (HaveAllShipsFinished(ships))
                 {
-                    Debug.Log("Ended bombing run");
-                    CancelInvoke(nameof(Timer));
+                    //Debug.Log("Ended charging run");
                     SetFinalize("Completed charging run");
 
                 }

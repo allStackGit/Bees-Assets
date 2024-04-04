@@ -146,6 +146,9 @@ namespace Assets.Scripts
             { "Yellow Jacket",  new Color[] {UnsetColor } },
         };
 
+        public static HashSet<string> CommandTypes = new HashSet<string> { "Aggressive", "Defensive", "Random", "Circle", "Right Swipe", "Left Swipe", "Closest Friendly",
+        "In and Out", "Patrol", "Guard", "Scouting", "Mining", "Full Retreat" };
+
         public static int SquadMakerSide;
 
         public static bool UseWebSocketSharp = true; // Whether to use the "WebSocketSharp" implementation of WebSockets or use the "NativeWebSocket" implmentation
@@ -157,7 +160,7 @@ namespace Assets.Scripts
         /// Offset in world units from the front of a ship when aiming at the front of a ship
         /// </summary>
         public static float OffsetFromFront = .25f;
-        public const float FireShipExplosionSize = 32;
+        public const float FireShipExplosionSize = 64;
         public const float CommandTimerFrequency = .1f;
         public static List<Scene> Scenes = new List<Scene>();
         public static Scene SocketManager;

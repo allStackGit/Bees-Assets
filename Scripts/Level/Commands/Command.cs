@@ -248,7 +248,8 @@ namespace Assets.Scripts.Level.Commands
         {
             if (!Squad.IsDead)
             {
-                StandStill();
+                //StandStill();
+                //Squad.StopMoving("Command ended");
                 Finalize(cause);
             }
 
@@ -260,81 +261,79 @@ namespace Assets.Scripts.Level.Commands
         private void Finalize(string cause)
         {
             CancelInvoke();
+            StopAllCoroutines();
 
             FinalizationCause = cause;
-            //Debug.Log($"Finalized because of [{FinalizationCause}]");
+            //Debug.Log($"Finalized #{OutcomeId} - {Strategy.Name} because of [{FinalizationCause}]");
             IsFinalized = true;
             //ClearDestinations();
 
             if (Squad != null)
             {
-                Squad.GetShips().ForEach((ship) =>
-                {
-                    ship.TargetEnemy = null;
-
-                });
-                Squad.IsRetreating = false;
-                Squad.Status = "idle";
-                if (Squad.IsChasing())
-                {
-                    Squad.SetChase(false);
-                }
-                if (Squad.IsSelected && Level.Menus != null)
-                {
-                    Level.Menus.ActionBox.HighlightSelectedButtons();
-                }
-
-                Squad.Command = null;
-
-
-                if (Squad.IsHiveMindControlled && Level.ActivateHiveMind)
-                {
-                    Squad.AddToCommandList();
-                    if (OutcomeId != 0)
-                    {
-                        if (!Level.IsTrainingHiveMind && !Level.IsTrainingNueralNetwork)
-                        {
-                            StoredCommand storedCommand = Level.GetState().GetPastCommands().FirstOrDefault(c => c.OutcomeId == OutcomeId);
-                            if (storedCommand != null)
-                            {
-                                if (storedCommand.IsStored)
-                                {
-                                    Debug.Log($"Trying to finalize a command #${OutcomeId} with cause [{cause}] that has already been stored");
-                                    return;
-                                }
-                                storedCommand.Tsv = Tsv;
-                                storedCommand.IsFinalized = true;
-                                //storedCommand.FinalizationCause = cause;
-
-                                StoredCommand squadCommand = Squad.PastCommands.FirstOrDefault(c => c.OutcomeId == OutcomeId);
-                                squadCommand.Age = Age;
-                                if (Enemy != null)
-                                {
-                                    squadCommand.Enemy = Enemy.Name;
-                                }
-                                else
-                                {
-                                    squadCommand.Enemy = "";
-                                }
-                                squadCommand.Tsv = Tsv;
-                                squadCommand.FinalizationCause = cause;
-                            }
-                            else
-                            {
-                                Debug.Log($"Couldn't find a past command with id #{OutcomeId}  with cause [{cause}]");
-                            }
-                        }
-                        
-                    }
-                }
+                
             }
             else
             {
-                Debug.Log($"Tried to finalize command #{OutcomeId} for a null squad");
+                Debug.LogError($"Tried to finalize command #{OutcomeId} for a null squad");
+            }
+
+            Squad.GetShips().ForEach((ship) =>
+            {
+                ship.TargetEnemy = null;
+
+            });
+            Squad.IsRetreating = false;
+            Squad.Status = "idle";
+            if (Squad.IsChasing())
+            {
+                Squad.SetChase(false);
+            }
+            if (Squad.IsSelected && Level.Menus != null)
+            {
+                Level.Menus.ActionBox.HighlightSelectedButtons();
+            }
+
+            Squad.Command = null;
+
+            if (Squad.IsHiveMindControlled && Level.ActivateHiveMind)
+            {
+                Squad.AddToCommandList();
+            }
+            if (Level.IsDebugging)
+            {
+                StoredCommand storedCommand = Level.GetState().GetPastCommands().FirstOrDefault(c => c.OutcomeId == OutcomeId);
+                if (storedCommand != null)
+                {
+                    if (storedCommand.IsStored)
+                    {
+                        Debug.Log($"Trying to finalize a command #${OutcomeId} with cause [{cause}] that has already been stored");
+                        return;
+                    }
+                    storedCommand.Tsv = Tsv;
+                    storedCommand.IsFinalized = true;
+                    //storedCommand.FinalizationCause = cause;
+
+                    StoredCommand squadCommand = Squad.PastCommands.FirstOrDefault(c => c.OutcomeId == OutcomeId);
+                    squadCommand.Age = Age;
+                    if (Enemy != null)
+                    {
+                        squadCommand.Enemy = Enemy.Name;
+                    }
+                    else
+                    {
+                        squadCommand.Enemy = "";
+                    }
+                    squadCommand.Tsv = Tsv;
+                    squadCommand.FinalizationCause = cause;
+                }
+                else
+                {
+                    Debug.Log($"Couldn't find a past command with id #{OutcomeId}  with cause [{cause}]");
+                }
             }
             // 
 
-            
+
             //Debug.Log($"Trying to destroy ({Squad.gameObject.name}, {name}) {Squad.gameObject.GetComponent<Command>()}");
             //if (Squad != null)
             //{

@@ -94,9 +94,9 @@ namespace Assets.Scripts.Entities
         {
             return transform.localPosition;
         }
-        private void OnDestroy()
+        public float GetRotation()
         {
-            CancelInvoke();
+            return transform.eulerAngles.z;
         }
     }
 

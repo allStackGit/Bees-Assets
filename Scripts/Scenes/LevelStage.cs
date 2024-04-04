@@ -37,6 +37,7 @@ namespace Assets.Scripts.Scenes
         public bool ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, UseSemiRandomSquads, UseFullyRandomSquads, UseFullyRandomEnemySquads, RecordStats, 
             DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateAudio, ActivateLoadingShipsMidLevel, UseMouseScrolling, IsDebugging, MakeEnemyCeaseFire;
         public int OverrideTimeScale, OverrideUserSide, GeneratedSquadCountOverride, InitialCommandDelay, TimeoutTime;
+        public List<string> OverrideStrats = new List<string> { "Aggressive", "Random" };
         public GameObject UIManager, SelectionBox, MiniMapContainer, FogOfWar;
         public AudioController Audio;
         public Camera MiniMapCamera;
@@ -453,6 +454,15 @@ namespace Assets.Scripts.Scenes
                 Pause();
                 //Debug.Log("LEVEL OVER!");
                 GameState state = GetState();
+
+                state.GetAllSquads().ForEach((squad) =>
+                {
+                    if (squad.HasCommand)
+                    {
+                        squad.Command.SetFinalize("Level ended");
+                    }
+                });
+
                 state.LevelEnded = true;
                 float fps = Time.frameCount / Time.unscaledTime;
                 float fups = FixedUpdates / Time.unscaledTime;

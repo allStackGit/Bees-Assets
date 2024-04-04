@@ -13,18 +13,18 @@ namespace Assets.Scripts.Entities.Ships
     public class Barge : Ship
     {
         public bool HasCompletedRun;
+        /// <summary>
+        /// Whether the ship has started the charge action
+        /// </summary>
+        public bool HasStartedCharging;
         public bool IsCharging;
-        public HashSet<Ship> NearbyShips = new HashSet<Ship>();
-        public Weapon Charge => Weapons.First();
         public int OriginalPower;
-        public float OriginalSpeed;
+        public Weapon Charge => Weapons.First();
 
 
-        public List<string> __NearbyShips;
 
         protected override void UpdateDebugProperties()
         {
-            __NearbyShips = NearbyShips.Select((s) => s.Name).ToList();
             base.UpdateDebugProperties();
         }
 
@@ -42,14 +42,6 @@ namespace Assets.Scripts.Entities.Ships
             else if (collidingThing.CompareTag("Ship") && ShipCollider.IsTouching(collider))
             {
                 Ship hit = collidingThing.GetComponent<Ship>();
-                //if (hit.Side != Side && !NearbyShips.Contains(hit))
-                //{
-                //    NearbyShips.Add(hit);
-                //}
-                //else if (NearbyShips.Contains(hit) && IsCharging)
-                //{
-                //    HitShip(hit);
-                //}
 
                 if (hit.Side != Side && IsCharging)
                 {
@@ -59,19 +51,6 @@ namespace Assets.Scripts.Entities.Ships
 
         }
 
-        //protected override void OnTriggerExit2D(Collider2D collider) 
-        //{
-        //    GameObject collidingThing = collider.gameObject;
-        //    if (collidingThing.CompareTag("Ship"))
-        //    {
-        //        Ship hit = collidingThing.GetComponent<Ship>();
-        //        if (NearbyShips.Contains(hit))
-        //        {
-        //            NearbyShips.Remove(hit);
-        //        }
-        //    }
-
-        //}
 
         public void HitShip(Ship ship)
         {
@@ -79,33 +58,33 @@ namespace Assets.Scripts.Entities.Ships
             LogDamage(damage, this, ship);
             LogDamage((int)(damage * .75f), ship, this);
             Charge.Power -= damage;
-            Debug.Log($"{Name} hit {ship.Name} and did {damage} damage");
+            //Debug.Log($"{Name} hit {ship.Name} and did {damage} damage");
 
-            if (Charge.Power == 0)
+            if (Charge.Power == 0 || Level.GetState().GameOver) // if ran out of power or we killed the last ship stop the charge immediately
             {
                 StopCharge();
             }
         }
 
-        public IEnumerator ChargeTarget()
+        public IEnumerator ChargeForward()
         {
-            Ship target = TargetShips.First();
             OriginalPower = Charge.Power;
-            OriginalSpeed = Speed;
 
-            IsCharging = true;
             StopMoving("Pausing to build up steam before charging");
-            Debug.Log($"{Name} is about to charge {target.Name}");
+            CannotChangeMovementOrders = true;
+            //Debug.Log($"{Name} is about to charge");
 
             yield return new WaitForSeconds(2);
 
-            if (!IsDead && target != null && !target.IsDead)
+            if (!IsDead)
             {
                 //Debug.Log($"Charging!");
                 IsCharging = true;
-                Speed = 80;
-                SetCurrentSpeed(Speed);
-                MoveToDirection(target.GetPosition());
+                HasStartedCharging = true;
+                CannotChangeMovementOrders = false;
+                SetCurrentSpeed(80, 80);
+                MoveInDirection(GetRotation());
+                CannotChangeMovementOrders = true;
             }
 
 
@@ -113,18 +92,30 @@ namespace Assets.Scripts.Entities.Ships
             yield return new WaitForSeconds(1);
             StopCharge();
 
+            //yield return new WaitForSeconds(1);
+            //Debug.Log("1 second");
+            //yield return new WaitForSeconds(1);
+            //Debug.Log("2 seconds");
+            //yield return new WaitForSeconds(1);
+            //Debug.Log("3 seconds");
+            //yield return new WaitForSeconds(1);
+            //Debug.Log("4 seconds");
+            //yield return new WaitForSeconds(1);
             yield return new WaitForSeconds(5);
+
             FinishCoolDown();
 
         }
+
+
 
         public void StopCharge() // [stats-method]
         {
             if (!IsDead)
             {
-                Speed = 0;
-                SetCurrentSpeed(Speed);
-                StopMoving("Finished charging");
+                IsCharging = false;
+                SetCurrentSpeed(0, 0);
+                StopMoving($"Finished charging");
                 Charge.Power = OriginalPower;
 
                 int oldTsv = Tsv;
@@ -135,7 +126,11 @@ namespace Assets.Scripts.Entities.Ships
                 FleetShip.DamageReceived += -tsvChange;
                 Squad.SavedSquad.Stats.DamageReceived += -tsvChange;
 
-                Squad.Command.Tsv += tsvChange; // subtract the TSV from the target
+                if (Squad.HasCommand)
+                {
+                    Squad.Command.Tsv += tsvChange; // subtract the TSV from the target
+                }
+                UpdateHealthBar();
 
                 //Debug.Log($"Finished charging");
             }
@@ -147,11 +142,11 @@ namespace Assets.Scripts.Entities.Ships
             if (!IsDead)
             {
                 //Debug.Log($"Finished cool down");
-                IsCharging = false;
-                Speed = OriginalSpeed;
+                HasStartedCharging = false;
                 SetCurrentSpeed(Speed);
                 HasCompletedRun = true;
-                StopMoving("Finished cool down");
+                StopMoving($"Finished cool down");
+                CannotChangeMovementOrders = false;
             }
 
         }

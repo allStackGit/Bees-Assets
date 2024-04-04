@@ -29,7 +29,7 @@ namespace Assets.Scripts.Entities.Ships
         {
             if (MinionCount > _maxMinionsPerSquad)
             {
-                Debugger.Exception($"Queen Property [MinionCount] (MinionCount) cannot be greater than [_maxMinionsPerSquad] ({_maxMinionsPerSquad})");
+                Debug.LogError($"Queen Property [MinionCount] (MinionCount) cannot be greater than [_maxMinionsPerSquad] ({_maxMinionsPerSquad})");
             }
             InvokeRepeating(nameof(SpawnMinions), SpawnFrequency, SpawnFrequency);
             RotationSpeed = Speed * ConfigData.Configuration.RotationMultiplier / 4;
@@ -39,7 +39,12 @@ namespace Assets.Scripts.Entities.Ships
         {
             // Spawn the minions
             //Debug.Log($"Spawning {MinionCount} {MinionType}s at {SpawnPoint}");
-            CurrentMinionSquad = null;
+            if (CurrentMinionSquad != null)
+            {
+                CurrentMinionSquad.IsGrowingSquad = false;
+                CurrentMinionSquad = null;
+            }
+
             for (int shipIndex = 0; shipIndex < MinionCount; shipIndex++)
             {
                 StartCoroutine(SpawnMinion(shipIndex, GetPosition() + SpawnPoint));
@@ -68,6 +73,7 @@ namespace Assets.Scripts.Entities.Ships
             CurrentMinionSquad = squad;
             MinionSquads.Add(squad);
             MinionSquadsCount++;
+            squad.IsGrowingSquad = true;
             return squad;
         }
         private IEnumerator SpawnMinion(int shipIndex, Vector2 squadGatheringPoint)

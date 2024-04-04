@@ -77,7 +77,7 @@ namespace Assets.Scripts.Level.Commands
                 //Debug.Log("--------------------");
             }
 
-            InvokeRepeating(nameof(Timer), .01f, ConfigData.CommandTimerFrequency);
+            InvokeRepeating(nameof(Timer), ConfigData.CommandTimerFrequency, ConfigData.CommandTimerFrequency);
 
         }
         private bool CheckIfStrikersAreDefenseless()
@@ -137,6 +137,10 @@ namespace Assets.Scripts.Level.Commands
                     YellowJacket yellowJacket = (YellowJacket)ship;
                     return yellowJacket.HasCompletedRun;
                 }
+                else if (ship.ShipType == "Fire Ship")
+                {
+                    return false;
+                }
                 return true;
             });
         }
@@ -155,7 +159,7 @@ namespace Assets.Scripts.Level.Commands
                     {
 
                         SendShipToTarget(ship);
-                        if (ship.ShipType == "Fire Ship" && ship.DistanceToPoint(ship.TargetCoordinates) < (ConfigData.FireShipExplosionSize - 5))
+                        if (Squad.IsHiveMindControlled && ship.ShipType == "Fire Ship" && ship.DistanceToPoint(ship.TargetCoordinates) < (ConfigData.FireShipExplosionSize - 5))
                         {
                             // if you're a fire ship and within detonation distance of your target, detonate
                             fireShipsToDetonate.Add((FireShip)ship);

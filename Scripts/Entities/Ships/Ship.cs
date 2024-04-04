@@ -17,6 +17,7 @@ using Assets.Scripts.Server;
 using Unity.MLAgents;
 using UnityEngine.UIElements;
 using System.Reflection.Emit;
+using Unity.Mathematics;
 
 namespace Assets.Scripts.Entities.Ships
 {
@@ -32,7 +33,7 @@ namespace Assets.Scripts.Entities.Ships
         public long LastKilled;
         public FleetShip FleetShip = null;
         public string ShipType, Name;
-        public bool FireAtFrontOfShip, InCombat, IsFollowingPath;
+        public bool FireAtFrontOfShip, InCombat, IsFollowingPath, CannotChangeMovementOrders;
         public Vision Vision;
         /// <summary>
         /// A ship can be killed at some point of the frame and still exist until the end of the frame. Check this to see if a ship is dead but not yet destroyed.
@@ -109,6 +110,7 @@ namespace Assets.Scripts.Entities.Ships
         public string __TargetEnemy;
         public List<string> __DamageStatuses;
         public List<string> __CommandTargetingQueue;
+        public float __CurrentSpeed;
 
 
 
@@ -149,6 +151,7 @@ namespace Assets.Scripts.Entities.Ships
                 __TargetEnemy = $"Targeting {TargetEnemy.Name} in {TargetEnemy.Squad.Name} at {TargetEnemy.GetPosition()}";
             }
             __CommandTargetingQueue = Squad.HasCommand && Squad.Command.HasEnemy ? Squad.Command.TargetingQueue.Select((ship) =>  ship.Name).ToList() : new List<string>();
+            __CurrentSpeed = _currentSpeed;
             //AverageReward = AverageRewardSum / Actions;
             //AverageRandomReward = AverageRandomRewardSum / RandomActions;
             //AverageLearnedReward = AverageLearnedRewardSum / LearnedActions;
@@ -160,7 +163,7 @@ namespace Assets.Scripts.Entities.Ships
 
 
         // setup methods
-        public virtual void Setup(LevelStage level, long id, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
+        public virtual void Setup(LevelStage level, long id, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter) // [tsv-calculation]
         {
             //Debug.Log($"Setting up ship IsCarrierShip: {IsCarrierShip}");
 
@@ -219,7 +222,7 @@ namespace Assets.Scripts.Entities.Ships
 
             if (fleetShip.Type == "Striker" || fleetShip.Type == "Barge")
             {
-                SpecialFirePower = shipStats.Powers[0] / 5;
+                SpecialFirePower = shipStats.Powers[0] / 3;
             }
             else if (fleetShip.Type == "Fire Ship")
             {
@@ -414,49 +417,61 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         // movement methods
         public void MoveToPoint(Vector2 destination)
         {
-            destination = Level.ForceBounds(destination);
-            StopMoving("Got a new destination");
-            if (Level.HasObstacles)
+            if (!CannotChangeMovementOrders)
             {
-                Obstacle obstacleAtPoint = Level.Pathfinder.GetObstacleAtPoint(destination);
-                if (obstacleAtPoint == null || (obstacleAtPoint.IsMobile && DistanceToPoint(destination) > 100))
+                destination = Level.ForceBounds(destination);
+                StopMoving("Got a new destination");
+                if (Level.HasObstacles)
                 {
-                    FindShortestPath(destination);
-                    if (DestinationQueue.Count > 0)
+                    Obstacle obstacleAtPoint = Level.Pathfinder.GetObstacleAtPoint(destination);
+                    if (obstacleAtPoint == null || (obstacleAtPoint.IsMobile && DistanceToPoint(destination) > 100))
                     {
-                        FinalDestination = DestinationQueue.Last();
-                        TargetCoordinates = DestinationQueue.Dequeue();
-                        IsFollowingPath = true;
-                        HasTargetCoordinates = true;
-                        //Debug.Log($"We've got a destination queue {DestinationQueue.Count} entries long! Heading to {TargetCoordinates} first");
-                        InvokeRepeating(nameof(CheckForDirectPath), 5f, 5f);
+                        FindShortestPath(destination);
+                        if (DestinationQueue.Count > 0)
+                        {
+                            FinalDestination = DestinationQueue.Last();
+                            TargetCoordinates = DestinationQueue.Dequeue();
+                            IsFollowingPath = true;
+                            HasTargetCoordinates = true;
+                            //Debug.Log($"We've got a destination queue {DestinationQueue.Count} entries long! Heading to {TargetCoordinates} first");
+                            InvokeRepeating(nameof(CheckForDirectPath), 5f, 5f);
+                        }
                     }
+                    else
+                    {
+                        Debug.Log($"Cannot move {Name} there is an obstacle at the destination {destination}");
+                        StopMoving("There is an obstacle at the destination");
+                    }
+
                 }
                 else
                 {
-                    Debug.Log($"Cannot move {Name} there is an obstacle at the destination {destination}");
-                    StopMoving("There is an obstacle at the destination");
+                    IsFollowingPath = false;
+                    TargetCoordinates = destination;
+                    HasTargetCoordinates = true;
                 }
-                
             }
-            else
-            {
-                IsFollowingPath = false;
-                TargetCoordinates = destination;
-                HasTargetCoordinates = true;
-            }
+            
         }
 
-        public void MoveToDirection(Vector2 directionPoint)
+        public void MoveToDirectionOfPoint(Vector2 directionPoint)
         {
             directionPoint = Level.ForceBounds(directionPoint);
-            StopMoving("Got a new destination");
+            MoveInDirection(GetDegreesTowardsPoint(directionPoint));
+        }
+        public void MoveInDirection(float direction)
+        {
+            if (!CannotChangeMovementOrders)
+            {
+                StopMoving("Got a new destination");
 
-            IsFollowingPath = false;
-            TargetCoordinates = Vector2.zero;
-            HasTargetCoordinates = false;
-            HasTargetDirection = true;
-            TargetDirection = GetDegreesTowardsPoint(directionPoint);
+                IsFollowingPath = false;
+                TargetCoordinates = Vector2.zero;
+                HasTargetCoordinates = false;
+                HasTargetDirection = true;
+                TargetDirection = direction;
+            }
+
         }
 
         /// <summary>
@@ -681,13 +696,17 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 rotation = GetDegreesTowardsPoint(TargetCoordinates);
 
             }
-            else
+            else if (HasTargetDirection)
             {
                 rotation = TargetDirection;
             }
+            else
+            {
+                return;
+            }
 
             Utilities.TimedRotation(gameObject, rotation, RotationSpeed);
-            float degrees = transform.eulerAngles.z - 180;
+            float degrees = GetRotation() - 180;
             float angle = degrees * Mathf.Deg2Rad;
 
             Vector2 velocity = new Vector2((maxSpeed * Mathf.Sin(angle)), (-1 * maxSpeed * Mathf.Cos(angle)));
@@ -770,7 +789,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         public void StopMoving(string reason)
         {
            
-            __LastStopReason = $"Stopped at {GetPosition()} on the way to {TargetCoordinates} because of {reason} at {Age} ticks.";
+            __LastStopReason = $"{Name} stopped at {GetPosition()} on the way to {TargetCoordinates} because of {reason} at {Age} ticks.";
             //Debug.Log(__LastStopReason);
             TargetCoordinates = Vector2.zero;
             Body.velocity = Vector2.zero;
@@ -812,10 +831,13 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 state.SelectSquad(Squad);
             }
         }
-        public void SetCurrentSpeed(float speed)
+        public void SetCurrentSpeed(float speed, float maxSpeed = -1)
         {
-            speed = Mathf.Clamp(speed, 1, Speed);
-            _currentSpeed = speed;
+            if (maxSpeed == -1)
+            {
+                maxSpeed = Speed;
+            }
+            _currentSpeed = math.min(speed, maxSpeed);
         }
 
 
@@ -1047,15 +1069,25 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         }
         public Ship GetTargetEnemy()
         {
-            while (!HasTargetEnemy)
+            int loop = 0;
+            while (!HasTargetEnemy && loop < 10) // [note] the loop check should be removed if no longer needed
             {
+                loop++;
                 if (Squad.Command.TargetingQueue.Count == 0)
                 {
+                    if (Squad.Command.Enemy.IsGrowingSquad)
+                    {
+                        Squad.Command.OriginalQueue = new Queue<Ship>(Squad.Command.MakeTargetingQueue());
+                    }
                     Squad.Command.TargetingQueue = new Queue<Ship>(Squad.Command.OriginalQueue);
                 }
                 TargetEnemy = Squad.Command.TargetingQueue.Dequeue();
 
                 //Debug.Log($"{Name} doesn't have target ships so it's moving towards the target ship in the squad, {TargetEnemy.Name}");
+            }
+            if (loop == 10)
+            {
+                Debug.Log($"Hit loop limit for getTargetEnemy()");
             }
             return TargetEnemy;
 
@@ -1126,10 +1158,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         {
             //return Utilities.RotatePointAroundPoint(GetPosition(), new Vector2(GetX(), GetY() - GetHalfHeight()), transform.eulerAngles.z);
             return new Vector2(GetX(), GetY() - GetHalfHeight());
-        }
-        public float GetRotation()
-        {
-            return transform.eulerAngles.z;
         }
         public Vector2 GetRandomPointOnShip(Vector2 nearPosition)
         {

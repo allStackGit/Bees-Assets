@@ -9,6 +9,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Unity.Mathematics;
 using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.UI;
@@ -475,6 +476,7 @@ namespace Assets.Scripts
         }
         public static int CalculateTsv(Ship ship)
         {
+            //Debug.Log($"Calculating TSV for {ship.Name}");
             return CalculateTsv(ship.Speed, ship.Firepower, ship.Health, ship.Sight, ship.AdditionalTsv);
         }
         public static int CalculateMaxTsv(Ship ship)
@@ -492,8 +494,11 @@ namespace Assets.Scripts
         public static int CalculateTsv(float speed, float firepower, int health, int sight, int additionalTsv)
         {
             double speedValue = speed / 3;
-            int fullHealthTsv = (int)Math.Round((firepower > 0 ? firepower : 1) * (speedValue > 1 ? speedValue : 1) * (health / 200), 0) + sight;
-            return ((health > 0 ? 1 : 0) * fullHealthTsv) + ((health > 0 ? 1 : 0) * (health + additionalTsv));
+            int fullHealthTsv = (int)Math.Round((firepower > 0 ? firepower : 1) * (speedValue > 1 ? speedValue : 1) * (math.max(health / 200, 1)), 0) + sight;
+            int tsv = ((health > 0 ? 1 : 0) * fullHealthTsv) + ((health > 0 ? 1 : 0) * (health + additionalTsv));
+            //Debug.Log($"This ship has speed {speed}, speedValue {speedValue}, firepower {firepower}, health: {health}, sight {sight}, fullHealthTSV {fullHealthTsv}, additionalTSV {additionalTsv}" +
+            //    $" to culminate in tsv of {tsv}");
+            return tsv;
         }
         public static float CalculateFirepower(int power, int range, float rateOfFire, float rotationRate, float ProjectileValue, float specialFirepower)
         {

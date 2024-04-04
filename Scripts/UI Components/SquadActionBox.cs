@@ -18,7 +18,7 @@ namespace Assets.Scripts.UIComponents
 {
     public class SquadActionBox : MonoBehaviour
     {
-        public GameObject MatchSpeedButton, CeaseFireButton, AttackOnSightButton, PatrolButton, GuardButton, ChaseButton, HoldButton, DetonateButton, 
+        public GameObject MatchSpeedButton, CeaseFireButton, AttackOnSightButton, PatrolButton, GuardButton, ChaseButton, HoldButton, DetonateButton, ChargeButton, 
             TypeSelector, ActionTitle, ActionExplanation;
 
         private EventSystem _eventSystem;
@@ -42,6 +42,7 @@ namespace Assets.Scripts.UIComponents
             Destroy(ChaseButton);
             Destroy(HoldButton);
             Destroy(DetonateButton);
+            Destroy(ChargeButton);
             ActualSetup();
             
         }
@@ -215,15 +216,10 @@ namespace Assets.Scripts.UIComponents
             }
             if (HasLevel)
             {
-                bool hasFireShip = false;
-                Level.GetState().GetSelectedSquads().ForEach((squad) =>
-                {
-                    if (squad.GetShips().Any((s) => s.ShipType == "Fire Ship"))
-                    {
-                        hasFireShip = true;
-                    }
-                });
-                DetonateButton.SetActive(hasFireShip);
+                GameState state = Level.GetState();
+                ChargeButton.SetActive(state.GetSelectedSquads().Any((squad) => squad.GetShips().Any((ship) => ship.ShipType == "Barge")));
+                DetonateButton.SetActive(state.GetSelectedSquads().Any((squad) => squad.GetShips().Any((ship) => ship.ShipType == "Fire Ship")));
+
 
                 if (IsAction("Patrol"))
                 {
@@ -439,6 +435,10 @@ namespace Assets.Scripts.UIComponents
                         explanation.text = $"The Fire Ship(s) of the selected squadron(s) will detonate their nuclear cargo, severely damaging or destroying all ships around them.";
                         break;
 
+                    case "Charge":
+                        explanation.text = $"The Barge(s) of the selected squadron(s) will build up power and then charge forward, ramming ships in front of them and taking damage.";
+                        break;
+
                     case "Match Speed":
                         explanation.text = $"{beginningActionText} all fly at the same speed: the speed of the slowest ships.";
                         break;
@@ -636,6 +636,19 @@ namespace Assets.Scripts.UIComponents
                                     FireShip fireShip = (FireShip)ship;
                                     fireShip.Detonate();
                                 });
+                            });
+                            break;
+
+                        case "Charge":
+                            Level.GetState().GetSelectedSquads().ForEach((squad) =>
+                            {
+                                foreach (Ship ship in squad.GetShips().Where((s) => s.ShipType == "Barge"))
+                                {
+                                    if (!ship.CannotChangeMovementOrders)
+                                    {
+                                        StartCoroutine(((Barge)ship).ChargeForward());
+                                    }
+                                }
                             });
                             break;
 
