@@ -35,7 +35,7 @@ namespace Assets.Scripts.Level
             IsHiveMindCommand = command.IsHiveMindCommand;
 
             Enemy = command.Enemy != null ? command.Enemy.name : null;
-            //Squad = command.Squad.StaticClone();
+            Squad = command.Squad.Name;
 
             // these are important for sending the results of these strategies back tot he Hive Mind server
             MatchupStrategy = command.MatchupStrategy;

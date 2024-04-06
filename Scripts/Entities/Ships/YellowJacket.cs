@@ -24,7 +24,7 @@ namespace Assets.Scripts.Entities.Ships
                     Level.Selector.SelectShip(this);
                 }
             }
-            else if (collidingThing.CompareTag("Ship"))
+            else if (collidingThing.CompareTag("Ship") && ShipCollider.IsTouching(collider))
             {
                 TouchingShip = collidingThing.GetComponent<Ship>();
                 //Debug.Log($"Striker collided with a ship!" +
@@ -48,7 +48,7 @@ namespace Assets.Scripts.Entities.Ships
             if (TouchingShip != null && collidingThing.CompareTag("Ship"))
             {
                 Ship ship = collidingThing.GetComponent<Ship>();
-                if (ship != null && ship.Equals(TouchingShip))
+                if (ship.Equals(TouchingShip))
                 {
                     TouchingShip = null;
                 }

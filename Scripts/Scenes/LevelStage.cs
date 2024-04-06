@@ -352,27 +352,24 @@ namespace Assets.Scripts.Scenes
 
             Triggers.Add(new Trigger(() =>
             {
-                return Time.realtimeSinceStartup - StartTime >= 10;
+                return Time.realtimeSinceStartup - StartTime >= 60;
             }, () =>
             {
-                Debug.Log($"10 seconds have passed, spawning new bee ships");
-                Vector2 moveToPoint = Vector2.zero;
-                if (ConfigData.Configuration.UserSide == ConfigData.Configuration.BeeSide) {
-                    moveToPoint = StartingPositions[ConfigData.Configuration.BeeSide - 1];
-                }
-                LevelConstructor.AddShipsMidLevel(MidLevelSquads[ConfigData.Configuration.BeeSide - 1], StartingPositions[ConfigData.Configuration.BeeSide - 1] * new Vector2(0, 3), moveToPoint);
+                Debug.Log($"60 seconds have passed, spawning new enemy ships");
+                Vector2 moveToPoint = StartingPositions[ConfigData.Configuration.AISide - 1];
+                LevelConstructor.AddShipsMidLevel(MidLevelSquads[ConfigData.Configuration.AISide - 1], StartingPositions[ConfigData.Configuration.AISide - 1] * new Vector2(0, 3), moveToPoint);
 
             }));
 
-            Triggers.Add(new Trigger(() =>
-            {
-                return GetState().GetShips(ConfigData.Configuration.UserSide).Count <= 3;
-            }, () =>
-            {
-                Debug.Log($"There are only three (or fewer) of our ships left, spawning new friendly ships");
-                LevelConstructor.AddShipsMidLevel(MidLevelSquads[ConfigData.Configuration.UserSide - 1], StartingPositions[ConfigData.Configuration.UserSide - 1] * new Vector2(0, 3), StartingPositions[ConfigData.Configuration.UserSide - 1]);
+            //Triggers.Add(new Trigger(() =>
+            //{
+            //    return GetState().GetShips(ConfigData.Configuration.UserSide).Count <= 3;
+            //}, () =>
+            //{
+            //    Debug.Log($"There are only three (or fewer) of our ships left, spawning new friendly ships");
+            //    LevelConstructor.AddShipsMidLevel(MidLevelSquads[ConfigData.Configuration.UserSide - 1], StartingPositions[ConfigData.Configuration.UserSide - 1] * new Vector2(0, 3), StartingPositions[ConfigData.Configuration.UserSide - 1]);
 
-            }));
+            //}));
 
         }
         /// <summary>

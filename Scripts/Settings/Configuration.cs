@@ -14,7 +14,7 @@ namespace Assets.Scripts.Settings
         public bool IsDeadVersion;
         public bool UseLocalStorage;
         public bool MirrorStorage;
-        public List<string> CensoredWords;
+        public HashSet<string> CensoredWords;
         public int MaxSquadSize; 
         public int MaxSquadWidth;
         public int MaxSquadHeight;
@@ -35,7 +35,7 @@ namespace Assets.Scripts.Settings
         public int CarrierCarryDroneMax;
         public int CarrierCarryStrikerMax;
         public int CarrierSquadCount;
-        public List<string> ShootingStrategies;
+        public HashSet<string> ShootingStrategies;
         public Dictionary<string, string> Tooltips;
 
         public string Yes;
@@ -62,11 +62,13 @@ namespace Assets.Scripts.Settings
 
         // [alert] Should probably be based off of user progress at some point
 
-        public List<string> VisibleBeeShipTypes;
-        public List<string> VisibleHumanShipTypes;
-        public List<string> InvisibleBeeShipTypes;
-        public List<string> InvisibleHumanShipTypes;
-        public List<string> AllShipTypes;
+        public HashSet<string> VisibleBeeShipTypes;
+        public HashSet<string> VisibleHumanShipTypes;
+        public HashSet<string> InvisibleBeeShipTypes;
+        public HashSet<string> InvisibleHumanShipTypes;
+        public HashSet<string> VisibleShipTypes;
+        public HashSet<string> InvisibleShipTypes;
+        public HashSet<string> AllShipTypes;
         public int AISide; // [alert]  // depends on whether the user is playing as the humans or the bees
         public int UserSide;
         public int SquadMakerFirstSide;
@@ -182,19 +184,20 @@ namespace Assets.Scripts.Settings
                 SquadMakerSecondSide = HumanSide;
             }
 
-            CensoredWords = Utilities.JArrayToList<string>(so.CensoredWords);
-            ShootingStrategies = Utilities.JArrayToList<string>(so.ShootingStrategies);
-            VisibleBeeShipTypes = Utilities.JArrayToList<string>(so.VisibleBeeShipTypes);
-            VisibleHumanShipTypes = Utilities.JArrayToList<string>(so.VisibleHumanShipTypes);
-            InvisibleBeeShipTypes = Utilities.JArrayToList<string>(so.InvisibleBeeShipTypes);
-            InvisibleHumanShipTypes = Utilities.JArrayToList<string>(so.InvisibleHumanShipTypes);
+            CensoredWords = new HashSet<string>(Utilities.JArrayToList<string>(so.CensoredWords));
+            ShootingStrategies = new HashSet<string>(Utilities.JArrayToList<string>(so.ShootingStrategies));
+            VisibleBeeShipTypes = new HashSet<string>(Utilities.JArrayToList<string>(so.VisibleBeeShipTypes));
+            VisibleHumanShipTypes = new HashSet<string>(Utilities.JArrayToList<string>(so.VisibleHumanShipTypes));
+            InvisibleBeeShipTypes = new HashSet<string>(Utilities.JArrayToList<string>(so.InvisibleBeeShipTypes));
+            InvisibleHumanShipTypes = new HashSet<string>(Utilities.JArrayToList<string>(so.InvisibleHumanShipTypes));
             Tooltips = Utilities.JArrayToDictionary<string, string>(so.Tooltips);
 
+          
 
-            AllShipTypes = InvisibleBeeShipTypes;
-            AllShipTypes.AddRange(InvisibleHumanShipTypes);
-            AllShipTypes.AddRange(VisibleBeeShipTypes);
-            AllShipTypes.AddRange(VisibleHumanShipTypes);
+            VisibleShipTypes = new HashSet<string>(VisibleHumanShipTypes.Union(VisibleBeeShipTypes));
+            InvisibleShipTypes = new HashSet<string>(InvisibleHumanShipTypes.Union(VisibleBeeShipTypes));
+            AllShipTypes = new HashSet<string>(InvisibleBeeShipTypes.Union(VisibleShipTypes).Union(InvisibleShipTypes));
+
         }
     }
 }

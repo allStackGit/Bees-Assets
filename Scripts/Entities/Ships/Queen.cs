@@ -39,11 +39,7 @@ namespace Assets.Scripts.Entities.Ships
         {
             // Spawn the minions
             //Debug.Log($"Spawning {MinionCount} {MinionType}s at {SpawnPoint}");
-            if (CurrentMinionSquad != null)
-            {
-                CurrentMinionSquad.IsGrowingSquad = false;
-                CurrentMinionSquad = null;
-            }
+            CurrentMinionSquad = null;
 
             for (int shipIndex = 0; shipIndex < MinionCount; shipIndex++)
             {
