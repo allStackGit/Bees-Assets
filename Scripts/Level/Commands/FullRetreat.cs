@@ -49,6 +49,9 @@ public class FullRetreat : Command
     public IEnumerator DelayedKill(Ship ship)
     {
         yield return new WaitForSeconds(2);
-        ship.Kill(null, true);
+        if (!ship.IsDead)
+        {
+            ship.Kill(null, true);
+        }
     }
 }

@@ -16,7 +16,7 @@ namespace Assets.Scripts.Settings
         public float Speed;
         public List<int> Ranges, Powers;
         public List<float> RatesOfFire, ProjectileValues, RotationRates;
-        public List<string> WeaponTypes;
+        public List<string> WeaponTypes, WeaponNames;
 
         public ShipStatBlock(string type, string description, int health, List<int> ranges, List<int> powers, int sight, int additionalTsv, 
             List<float> projectileValues, List<float> ratesOfFire, List<float> rotationRates, float speed, List<string> weaponTypes)

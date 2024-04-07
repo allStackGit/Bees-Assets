@@ -23,10 +23,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public Vector2 TargetPoint;
 
 
-        public virtual void Setup(Ship ship, int range, int power, float rateOfFire, float projectileValue, GameObject piece,
+        public virtual void Setup(Ship ship, string type, int range, int power, float rateOfFire, float projectileValue, GameObject piece,
             GameObject projectilePrefab, bool fireAtFrontOfShip, float rotationRate)
         {
-            base.Setup(ship, range, power, 0, rateOfFire, projectileValue, piece, projectilePrefab);
+            base.Setup(ship, type, range, power, 0, rateOfFire, projectileValue, piece, projectilePrefab);
             FireAtFrontOfShip = fireAtFrontOfShip;
             PassesPerFire = 3;
             TargetingRate = RateOfFire / PassesPerFire;

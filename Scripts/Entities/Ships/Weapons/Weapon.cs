@@ -17,8 +17,9 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public GameObject Piece, ProjectilePrefab, RangeCircle;
         public List<Ship> CachedTargetingQueue = new List<Ship>();
         public HashSet<Ship> ShipsWithinRange = new HashSet<Ship>();
-        public string CachedShootingStrategy, Name;
-        public bool IsUsingCachedTargetingQueue, HasRangeCircle, HasRangeCollider;
+        public string CachedShootingStrategy, Name, Type;
+        public bool IsUsingCachedTargetingQueue, HasRangeCircle, HasRangeCollider, HasSoundEffect;
+        public AudioSource SoundEffect;
         public float Firepower => Utilities.CalculateFirepower(Power, Range, RateOfFire, RotationRate, ProjectileValue, SpecialFirepower);
         public bool CeaseFire => Ship.Squad.CeaseFire;
         public bool HasTargetShip => TargetShip != null;
@@ -36,7 +37,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         public string __NotShootingReason;
         public List<Ship> __ShipsWithinRange;
-        public virtual void Setup(Ship ship, int range, int power, float specialFirePower, float rateOfFire, float projectileValue, GameObject piece, 
+        public virtual void Setup(Ship ship, string type, int range, int power, float specialFirePower, float rateOfFire, float projectileValue, GameObject piece, 
             GameObject projectilePrefab)
         {
             Ship = ship;
@@ -53,6 +54,15 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             Piece = piece;
             ProjectilePrefab = projectilePrefab;
             Name = $"{ship.Name}: {Piece.name}";
+            Type = type;
+            if (!Level.IsTrainingHiveMind && !Level.IsTrainingNueralNetwork && Level.Audio.WeaponSounds.ContainsKey(Type))
+            {
+                HasSoundEffect = true;
+                SoundEffect = Instantiate(Level.Audio.WeaponSounds[Type]);
+                SoundEffect.transform.parent = piece.transform;
+                SoundEffect.transform.localPosition = Vector2.zero;
+
+            }
 
             SetupRangeCircleAndCollider();
             //Piece.transform.parent = ship.transform;
@@ -335,8 +345,16 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 ShipDamageStatus shipDamageStatus = Squad.GetShipDamageStatus(TargetShip);
                 shipDamageStatus.TotalDamageSentToShip += Power;
             }
+            PlaySoundEffect();
 
 
+        }
+        protected void PlaySoundEffect()
+        {
+            if (HasSoundEffect)
+            {
+                SoundEffect.Play();
+            }
         }
 
         // distance and position methods

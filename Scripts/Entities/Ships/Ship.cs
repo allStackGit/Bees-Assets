@@ -245,7 +245,7 @@ namespace Assets.Scripts.Entities.Ships
             {
                 string weaponType = shipStats.WeaponTypes[i];
                 Weapon weapon = null;
-                if (weaponType == "Turret")
+                if (weaponType == "Turret" || weaponType == "Light Cannon")
                 {
                     weapon = gameObject.AddComponent<Turret>();
                 }
@@ -284,21 +284,21 @@ namespace Assets.Scripts.Entities.Ships
                     //Debug.Log($"it's a turret!");
                     if (weapon is Eye)
                     {
-                        ((Eye)weapon).Setup(this, shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
+                        ((Eye)weapon).Setup(this, weaponType, shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
 shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFrontOfShip, shipStats.RotationRates[i]);
                     }else if (weapon is LaserBuilder)
                     {
-                        ((LaserBuilder)weapon).Setup(this, shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
+                        ((LaserBuilder)weapon).Setup(this, weaponType, shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
 shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFrontOfShip, shipStats.RotationRates[i]);
                     }
                     else if (weapon is FullShipTurret)
                     {
-                        ((FullShipTurret)weapon).Setup(this, shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
+                        ((FullShipTurret)weapon).Setup(this, weaponType, shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
 shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFrontOfShip, shipStats.RotationRates[i]);
                     }
                     else
                     {
-                        ((Turret)weapon).Setup(this, shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
+                        ((Turret)weapon).Setup(this, weaponType, shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
 shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFrontOfShip, shipStats.RotationRates[i]);
                     }
 
@@ -306,7 +306,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 else
                 {
                     //Debug.Log($"{weapon.GetType()} -- {typeof(Turret)}");
-                    weapon.Setup(this, shipStats.Ranges[i], shipStats.Powers[i], SpecialFirePower, shipStats.RatesOfFire[i],
+                    weapon.Setup(this, weaponType, shipStats.Ranges[i], shipStats.Powers[i], SpecialFirePower, shipStats.RatesOfFire[i],
                     shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i]);
                 }
 
@@ -1073,20 +1073,38 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             while (!HasTargetEnemy && loop < 10) // [note] the loop check should be removed if no longer needed
             {
                 loop++;
-                if (Squad.Command.TargetingQueue.Count == 0)
+                try
                 {
-                    if (Squad.Command.Enemy.IsGrowingSquad)
+                    if (Squad.Command.TargetingQueue.Count == 0)
                     {
-                        Squad.Command.OriginalQueue = new Queue<Ship>(Squad.Command.MakeTargetingQueue());
+                        if (Squad.Command.Enemy.IsGrowingSquad)
+                        {
+                            Squad.Command.OriginalQueue = new Queue<Ship>(Squad.Command.MakeTargetingQueue());
+                        }
+                        Squad.Command.TargetingQueue = new Queue<Ship>(Squad.Command.OriginalQueue);
                     }
-                    Squad.Command.TargetingQueue = new Queue<Ship>(Squad.Command.OriginalQueue);
+                    TargetEnemy = Squad.Command.TargetingQueue.Dequeue();
+                }catch(Exception e)
+                {
+                    Debug.Log($"Squad: {Squad}");
+                    Debug.Log($"Command: {Squad?.Command}");
+                    Debug.Log($"TargetingQueue: {Squad?.Command?.TargetingQueue}");
+                    Debug.Log($"Enemy: {Squad?.Command?.Enemy?.Name}");
+                    Debug.Log($"Make Targeting Queue: {Squad?.Command?.MakeTargetingQueue()}");
+                    throw e;
                 }
-                TargetEnemy = Squad.Command.TargetingQueue.Dequeue();
+                
+
 
                 //Debug.Log($"{Name} doesn't have target ships so it's moving towards the target ship in the squad, {TargetEnemy.Name}");
             }
             if (loop == 10)
             {
+                Debug.Log($"Squad: {Squad}");
+                Debug.Log($"Command: {Squad?.Command}");
+                Debug.Log($"TargetingQueue: {Squad?.Command?.TargetingQueue}");
+                Debug.Log($"Enemy: {Squad?.Command?.Enemy?.Name}");
+                Debug.Log($"Make Targeting Queue: {Squad?.Command?.MakeTargetingQueue()}");
                 Debug.Log($"Hit loop limit for getTargetEnemy()");
             }
             return TargetEnemy;

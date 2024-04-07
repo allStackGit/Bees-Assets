@@ -7,21 +7,24 @@ namespace Assets.Scripts
 {
     public class AudioController : MonoBehaviour
     {
-        public AudioSource LocationIntro = null;
-        public AudioSource CarpenterBeeIntro = null;
-        public AudioSource HoneybeeIntro = null;
-        public AudioSource HornetIntro = null;
-        public AudioSource WaspIntro = null;
+        public AudioSource LocationIntro;
+        public AudioSource CarpenterBeeIntro;
+        public AudioSource HoneybeeIntro;
+        public AudioSource HornetIntro;
+        public AudioSource WaspIntro;
 
-        public AudioSource LocationLoop = null;
-        public AudioSource CarpenterBeeLoop = null;
-        public AudioSource HoneybeeLoop = null;
-        public AudioSource HornetLoop = null;
-        public AudioSource WaspLoop = null;
-        public AudioSource HumanLoop = null;
+        public AudioSource LocationLoop;
+        public AudioSource CarpenterBeeLoop;
+        public AudioSource HoneybeeLoop;
+        public AudioSource HornetLoop;
+        public AudioSource WaspLoop;
+        public AudioSource HumanLoop;
+
+        public AudioSource LightCannonSound;  
 
         public Dictionary<string, AudioSource> BeesIntros = new Dictionary<string, AudioSource>();
         public Dictionary<string, AudioSource> BeesLoops = new Dictionary<string, AudioSource>();
+        public Dictionary<string, AudioSource> WeaponSounds = new Dictionary<string, AudioSource>();
         public List<AudioSource> Loops = new List<AudioSource>();
         public List<AudioSource> Intros = new List<AudioSource>();
 
@@ -54,6 +57,8 @@ namespace Assets.Scripts
             Loops.Add(HornetLoop);
             Loops.Add(WaspLoop);
             Loops.Add(HumanLoop);
+
+            WeaponSounds.Add("Light Cannon", LightCannonSound);
 
             //mute bee intros
             MuteSource(CarpenterBeeIntro);
@@ -117,18 +122,18 @@ namespace Assets.Scripts
             
             if (IntroEnded)
             {
-                Loops.ToList().ForEach((source) =>
+                Loops.ForEach((source) =>
                 {
                     source.Pause();
                 });
             }
             else
             {
-                Loops.ToList().ForEach((source) =>
+                Loops.ForEach((source) =>
                 {
                     source.Stop();
                 });
-                Intros.ToList().ForEach((source) =>
+                Intros.ForEach((source) =>
                 {
                     source.Pause();
                 });
@@ -139,7 +144,7 @@ namespace Assets.Scripts
         {
             if (IntroEnded)
             {
-                Loops.ToList().ForEach((source) =>
+                Loops.ForEach((source) =>
                 {
                     source.Play();
                 });
@@ -147,7 +152,7 @@ namespace Assets.Scripts
             else
             {
                 float timeLeft = IntroLength;
-                Intros.ToList().ForEach((source) =>
+                Intros.ForEach((source) =>
                 {
                     source.Play();
                     timeLeft = IntroLength - source.time;
@@ -155,7 +160,7 @@ namespace Assets.Scripts
 
                 //Debug.Log($"Setting the loops to play after being paused. They were delayed by {IntroLength}s initially but they are now delayed by {timeLeft}s.");
                 // play loops
-                Loops.ToList().ForEach((source) =>
+                Loops.ForEach((source) =>
                 {
                     PlayLoop(timeLeft, source);
 
