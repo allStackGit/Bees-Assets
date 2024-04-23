@@ -95,7 +95,7 @@ BoxCollider2D:
   m_GameObject: {fileID: 5921109331714864026}
   m_Enabled: 1
   m_Density: 1
-  m_Material: {fileID: 0}
+  m_Material: {fileID: 6200000, guid: 3b5e4b9abe869c347bf134bee9d4ae66, type: 2}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
@@ -115,7 +115,7 @@ BoxCollider2D:
   m_CallbackLayers:
     serializedVersion: 2
     m_Bits: 4294967295
-  m_IsTrigger: 1
+  m_IsTrigger: 0
   m_UsedByEffector: 0
   m_UsedByComposite: 0
   m_Offset: {x: 0, y: 0}
@@ -150,6 +150,8 @@ MonoBehaviour:
   IsMobile: 0
   IsMapBorder: 1
   HasEnteredMap: 0
+  IsDead: 0
+  IsMiningAsteroid: 0
   Level: {fileID: 0}
   Collider: {fileID: 8538481970784520678}
   ProximityCollider: {fileID: 0}

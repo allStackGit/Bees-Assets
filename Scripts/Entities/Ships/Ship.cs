@@ -18,6 +18,9 @@ using Unity.MLAgents;
 using UnityEngine.UIElements;
 using System.Reflection.Emit;
 using Unity.Mathematics;
+using System.IO;
+using NUnit;
+using static UnityEngine.Rendering.ProbeAdjustmentVolume;
 
 namespace Assets.Scripts.Entities.Ships
 {
@@ -199,14 +202,6 @@ namespace Assets.Scripts.Entities.Ships
             _healthBarFiller = HealthBar.transform.GetChild(0);
             _healthBarFillerSprite = HealthBar.transform.GetChild(0).GetComponent<SpriteRenderer>();
 
-            //Vector2 sizeFactor = (ConfigData.ShipSizes.GetValueOrDefault(ShipType) / ConfigData.Tiny) * 2.22f;
-
-
-            //HealthBar.transform.localScale = new Vector2(sizeFactor.x, HealthBar.transform.localScale.y);
-            //HealthBar.transform.position = new Vector2(sizeFactor.x * -.5f, (sizeFactor.y * -.75f)-.75f);
-
-
-            //MiniMapIcon.transform.localScale = sizeFactor * 1.5f;
             if (squad.Color != ConfigData.UnsetColor)
             {
                 Utilities.SetUIColor(MiniMapIcon, squad.Color);
@@ -325,7 +320,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
 
             OriginalTsv = Utilities.CalculateMaxTsv(this);
-            _size = gameObject.GetComponent<SpriteRenderer>().bounds.size;
+            _size = Collider.bounds.size;
             //squad.AddShip(this);
             Level.GetState().AddShip(this);
             SetToDefaultAngle();
@@ -423,25 +418,42 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 StopMoving("Got a new destination");
                 if (Level.HasObstacles)
                 {
-                    Obstacle obstacleAtPoint = Level.Pathfinder.GetObstacleAtPoint(destination);
-                    if (obstacleAtPoint == null || (obstacleAtPoint.IsMobile && DistanceToPoint(destination) > 100))
+                    // Checks if there is an obstacle at that point
+
+                    //Obstacle obstacleAtPoint = Level.Pathfinder.GetObstacleAtPoint(destination);
+                    //if (obstacleAtPoint == null || (obstacleAtPoint.IsMobile && DistanceToPoint(destination) > 100))
+                    //{
+                    //    FindShortestPath(destination);
+                    //    if (DestinationQueue.Count > 0)
+                    //    {
+                    //        FinalDestination = DestinationQueue.Last();
+                    //        TargetCoordinates = DestinationQueue.Dequeue();
+                    //        IsFollowingPath = true;
+                    //        HasTargetCoordinates = true;
+                    //        //Debug.Log($"We've got a destination queue {DestinationQueue.Count} entries long! Heading to {TargetCoordinates} first");
+                    //        InvokeRepeating(nameof(CheckForDirectPath), 5f, 5f);
+                    //    }
+                    //}
+                    //else
+                    //{
+                    //    Debug.Log($"Cannot move {Name} there is an obstacle at the destination {destination}");
+                    //    StopMoving("There is an obstacle at the destination");
+                    //}
+                    //Obstacle obstacleAtPoint = Level.Pathfinder.GetObstacleAtPoint(destination);
+                    //if (obstacleAtPoint != null)
+                    //{
+                    //    destination = obstacleAtPoint.ProximityCollider.ClosestPoint(destination);
+                    //}
+                    float start = Time.realtimeSinceStartup;
+                    FindShortestPath(destination, () =>
                     {
-                        FindShortestPath(destination);
-                        if (DestinationQueue.Count > 0)
-                        {
-                            FinalDestination = DestinationQueue.Last();
-                            TargetCoordinates = DestinationQueue.Dequeue();
-                            IsFollowingPath = true;
-                            HasTargetCoordinates = true;
-                            //Debug.Log($"We've got a destination queue {DestinationQueue.Count} entries long! Heading to {TargetCoordinates} first");
-                            InvokeRepeating(nameof(CheckForDirectPath), 5f, 5f);
-                        }
-                    }
-                    else
-                    {
-                        Debug.Log($"Cannot move {Name} there is an obstacle at the destination {destination}");
-                        StopMoving("There is an obstacle at the destination");
-                    }
+                        FinalDestination = DestinationQueue.Last();
+                        TargetCoordinates = DestinationQueue.Dequeue();
+                        IsFollowingPath = true;
+                        HasTargetCoordinates = true;
+                        float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
+                        Debug.Log($"It took {Math.Round(end, 2)} ms to find the path for {Name}.");
+                    });
 
                 }
                 else
@@ -515,7 +527,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         /// Uses pathfinding (if necessary) to find the shortest path to the destination
         /// </summary>
         /// <param name="destination"></param>
-        private void FindShortestPath(Vector2 destination)
+        private void FindShortestPath(Vector2 destination, Action callback)
         {
             
             DestinationQueue.Clear();
@@ -524,7 +536,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
             //Debug.Log($"Finding shortest path from {startPosition} to {destination} for {Name}");
 
-            if (Utilities.HasObstaclesCloseToInTheWay(startPosition, destination))
+            if (Utilities.HasObstaclesInTheWay(startPosition, destination))
             {
                 if (Level.Pathfinder.NeedsToBeUpdated)
                 {
@@ -534,63 +546,92 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 Vector2Int convertedStart = Level.Pathfinder.ConvertToMapCoordinates(startPosition);
                 Vector2Int convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
 
-                Pathfinder.Path path = Level.Pathfinder.FindPath(convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y);
-
-                //Debug.Log($"Before consolidation, there are {path.Points.Count} destinations");
-                bool hasConsolidated = true;
-                int consolidations = 0;
-                int loops = 0;
-                while (hasConsolidated && path != null && !path.IsCached && path.Points.Count > 20)
+                StartCoroutine(Level.Pathfinder.FindPath(convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance(), Level.MaximumClearance, (path) =>
                 {
-                    loops++;
-                    int tenth = path.Points.Count / 10;
-                    if (tenth < 1)
+                    if (path != null && path.Points.Count > 0)
                     {
-                        tenth = 1;
-                    }
-                    //Debug.Log($"There are now {result.Count} destinations after {consolidations} consolidations, the current 'safe' points are as follows");
-                    int endIndex = (path.Points.Count - (1 + consolidations));
+                        /* This consolidates destinations from back to front, if there aren't straight lines left at the back, the front won't get consolidated */
+                        //Debug.Log($"Before consolidation, there are {path?.Points.Count} destinations");
+                        //bool hasConsolidated = true;
+                        //int consolidations = 0;
+                        //int loops = 0;
+                        //int chunkCount = 100;
+                        //int chunk;
+                        //while (hasConsolidated && path != null && !path.IsCached && path.Points.Count > 20)
+                        //{
+                        //    loops++;
+                        //    chunk = path.Points.Count / chunkCount;
+                        //    if (chunk < 1)
+                        //    {
+                        //        chunk = 1;
+                        //    }
+                        //    //Debug.Log($"There are now {path.Points.Count} destinations after {consolidations} consolidations, the current 'safe' points are as follows");
+                        //    int endIndex = (path.Points.Count - (1 + consolidations));
 
-                    //for (int i = endIndex; i < result.Count; i++)
-                    //{
-                    //    Debug.Log($"#{i} safe point: {result[i]}");
-                    //}
+                        //    //for (int i = endIndex; i < result.Count; i++)
+                        //    //{
+                        //    //    Debug.Log($"#{i} safe point: {result[i]}");
+                        //    //}
 
-                    Vector2 endPoint = path.Points[endIndex];
-                    hasConsolidated = false;
-                    for (int i = 0; i < endIndex && !hasConsolidated; i += tenth) // loop from the start of the path to the end, taking a few at a time
-                    {
-                        Vector2 current = path.Points[i];
-                        //Debug.Log($"Trying to find a straight line between #{i} {current} and #{endIndex} {endPoint}");
-                        if (!Utilities.HasObstaclesCloseToInTheWay(current, endPoint)) // there is a straight line between these this point on the path and the end
+                        //    Vector2 endPoint = path.Points[endIndex];
+                        //    hasConsolidated = false;
+                        //    for (int i = 0; i < endIndex && !hasConsolidated; i += chunk) // loop from the start of the path to the end, taking a few at a time
+                        //    {
+                        //        Vector2 current = path.Points[i];
+                        //        //Debug.Log($"Trying to find a straight line between #{i} {current} and #{endIndex} {endPoint}");
+                        //        if (!Utilities.HasObstaclesInTheWay(current, endPoint)) // there is a straight line between these this point on the path and the end
+                        //        {
+                        //            hasConsolidated = true;
+                        //            consolidations++;
+                        //            int consolidationAmount = ((path.Points.Count - (consolidations + 1)) - i);
+                        //            //Debug.Log($"Found a straight line with no obstacles between #{i}  {current} and #{endIndex} {endPoint}. We are removing the {consolidationAmount} points between them");
+                        //            // delete everything between this point and the end point, exclusive
+                        //            path.Points.RemoveRange(i + 1, consolidationAmount);
+                        //        }
+                        //    }
+                        //}
+                        //Debug.Log($"There are now {path.Points.Count} destinations after {consolidations} consolidations");
+
+
+                        // Enqueue destinations
+                        for (int i = 0; i < path.Points.Count; i++)
                         {
-                            hasConsolidated = true;
-                            consolidations++;
-                            int consolidationAmount = ((path.Points.Count - (consolidations + 1)) - i);
-                            //Debug.Log($"Found a straight line with no obstacles between #{i}  {current} and #{endIndex} {endPoint}. We are removing the {consolidationAmount} points between them");
-                            // delete everything between this point and the end point, exclusive
-                            path.Points.RemoveRange(i + 1, consolidationAmount);
+                            DestinationQueue.Enqueue(path.Points[i]);
                         }
+                        callback();
                     }
-                }
-                //Debug.Log($"After consolidation, there are {path.Points.Count} destinations");
-                if (path != null && path.Points.Count > 0)
-                {
-                    for (int i = 0; i < path.Points.Count; i++)
+                    else
                     {
-                        DestinationQueue.Enqueue(path.Points[i]);
+                        DestinationQueue.Enqueue(startPosition);
+                        callback();
                     }
-                }
-                else
-                {
-                    DestinationQueue.Enqueue(startPosition);
-                }
+                }));
+
+
+
+
+                //Pathfinder.Path path = Level.Pathfinder.FindPath(convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y);
+                //if (path != null && path.Points.Count > 0)
+                //{
+                //    //Debug.Log($"Enqueing destinations");
+                //    for (int i = 0; i < path.Points.Count; i++)
+                //    {
+                //        DestinationQueue.Enqueue(path.Points[i]);
+                //    }
+                //    callback();
+                //}
+                //else
+                //{
+                //    DestinationQueue.Enqueue(startPosition);
+                //    callback();
+                //}
 
             }
             else
             {
-                //Debug.Log("There is straight line to the destination");
+                Debug.Log("There is straight line to the destination");
                 DestinationQueue.Enqueue(destination);
+                callback();
             }
             
 
@@ -896,10 +937,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     Level.Selector.SelectShip(this);
                 }
             }
-            //else if (collidingThing.CompareTag("Obstacle"))
+            //else if (collidingThing.CompareTag("Obstacle") && BumperCollider.IsTouching(collider))
             //{
             //    Obstacle obstacle = collidingThing.GetComponent<Obstacle>();
-            //    HitObstacle(obstacle);
+            //    Debug.Log($"{Name} bumper collided with {obstacle.Name}");
+            //    StopMoving("Hit obstacle");
             //}
         }
         public static void LogDamage(int power, Ship shooter, Ship target) // [damage-method] [note]
@@ -1046,12 +1088,15 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     Carrier nextCarrier = (Carrier)state.GetHumanShips().FirstOrDefault((s) => s is Carrier);
                     if (nextCarrier != null)
                     {
-                        state.GetHumanShips().Where((ship) => ship is Striker && ((Striker)ship).Carrier.Equals(this)).ToList().ForEach((ship) => ((Striker)ship).Carrier = nextCarrier);
-                        state.GetHumanShips().Where((ship) => ship is Drone && ((Drone)ship).Carrier.Equals(this)).ToList().ForEach((ship) => ((Drone)ship).Carrier = nextCarrier);
+                        state.GetHumanShips().Where((ship) => ship.ShipType == "Striker" && ((Striker)ship).Carrier.Equals(this)).ToList().ForEach((ship) => ((Striker)ship).Carrier = nextCarrier);
+                        state.GetHumanShips().Where((ship) => ship.ShipType == "Drone" && ((Drone)ship).Carrier.Equals(this)).ToList().ForEach((ship) => ((Drone)ship).Carrier = nextCarrier);
                     }
                     else
                     {
-                        state.GetHumanShips().Where((ship) => ship is Striker && ((Striker)ship).Carrier.Equals(this)).ToList().ForEach((ship) => ((Striker)ship).LastCarrierPosition = GetPosition());
+                        Squad.GetShips().Where((ship) => ship.ShipType == "Striker").ToList().ForEach((ship) => {
+                            Striker striker = (Striker)ship;
+                            striker.LastCarrierPosition = GetPosition();
+                        });
                     }
 
                 }
@@ -1087,7 +1132,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 }catch(Exception e)
                 {
                     Debug.Log($"Squad: {Squad}");
-                    Debug.Log($"Command: {Squad?.Command}");
+                    Debug.Log($"Command: {Squad?.Command}"); // command is null
                     Debug.Log($"TargetingQueue: {Squad?.Command?.TargetingQueue}");
                     Debug.Log($"Enemy: {Squad?.Command?.Enemy?.Name}");
                     Debug.Log($"Make Targeting Queue: {Squad?.Command?.MakeTargetingQueue()}");
@@ -1101,7 +1146,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             if (loop == 10)
             {
                 Debug.Log($"Squad: {Squad}");
-                Debug.Log($"Command: {Squad?.Command}");
+                Debug.Log($"Command: {Squad?.Command}"); 
                 Debug.Log($"TargetingQueue: {Squad?.Command?.TargetingQueue}");
                 Debug.Log($"Enemy: {Squad?.Command?.Enemy?.Name}");
                 Debug.Log($"Make Targeting Queue: {Squad?.Command?.MakeTargetingQueue()}");
@@ -1193,6 +1238,16 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 return Collider.ClosestPoint(randomPoint);
             }
             return randomPoint;
+        }
+        public int GetClearance()
+        {
+            int clearance = Level.ShipClearances.GetValueOrDefault(ShipType);
+            if (clearance == 0)
+            {
+                Level.CalculateShipClearances();
+                clearance = Level.ShipClearances.GetValueOrDefault(ShipType);
+            }
+            return clearance;
         }
 
 

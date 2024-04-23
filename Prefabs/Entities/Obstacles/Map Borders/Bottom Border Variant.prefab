@@ -80,6 +80,10 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 8538481970784520678, guid: da38269fea4455643a492c57b83df01a, type: 3}
+      propertyPath: m_IsTrigger
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 8824466230303253864, guid: da38269fea4455643a492c57b83df01a, type: 3}
       propertyPath: Name
       value: Bottom Border

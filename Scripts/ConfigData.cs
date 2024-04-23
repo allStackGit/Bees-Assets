@@ -38,12 +38,17 @@ namespace Assets.Scripts
         public const int FogOfWarLayer = 21;
         public const int VisionRangesLayer = 22;
 
-        public static Configuration Configuration = null;
-        public static StartingSettings StartingSettings = null;
-        public static ShipStats ShipInfo = null;
+        public static Configuration Configuration;
+        public static StartingSettings StartingSettings;
+        public static ShipStats ShipInfo;
 
 
-        // 2 = standard testing, 3 = standard beta, 4 = bennett beta, 5 = ml agents rl testing, 6 = fast paced version, 7 = new NN training version
+        // 2 = standard testing,
+        // 3 = standard beta,
+        // 4 = bennett beta,
+        // 5 = ml agents rl testing,
+        // 6 = standard testing [highest trained]
+        // 7 = new NN training version
         public const int Version = 6; // [alert] should be increased when released
         public const string BaseFolder = "SaveData";
         public const string PortraitFolder = "Sprites/People";
@@ -54,9 +59,9 @@ namespace Assets.Scripts
         public const string SavedSquadsDataFilename = "saved_squads_data";
 
         // data loaded booleans
-        public static bool IsUserProgressDataLoaded = false;
-        public static bool IsFleetDataLoaded = false; 
-        public static bool IsSavedSquadsDataLoaded = false;
+        public static bool IsUserProgressDataLoaded;
+        public static bool IsFleetDataLoaded; 
+        public static bool IsSavedSquadsDataLoaded;
 
 
 
@@ -75,18 +80,18 @@ namespace Assets.Scripts
             { "Cruiser",        new Vector2(320, 360)},
             { "Dreadnought",    new Vector2(320, 420)},
             { "Drone",          new Vector2(160, 160)},
-            { "Factory",        new Vector2(427, 567) },
+            { "Factory",        new Vector2(427, 567)},
             { "Fire Ship",      new Vector2(760, 360)},
             { "Flagship",       new Vector2(640, 760)},
             { "Frigate",        new Vector2(240, 240)},
             { "Gunship",        new Vector2(240, 240)}, 
             { "Scout",          new Vector2(200, 160)},
             { "Striker",        new Vector2(160, 160)},
-            { "Warp Gate",      new Vector2(427, 567) },
+            { "Warp Gate",      new Vector2(427, 567)},
 
             { "Beehive",        Vector2.zero },
             { "Bumblebee",      new Vector2(680, 480)},
-            { "Carpenter Bee",  new Vector2(427, 567) },
+            { "Carpenter Bee",  new Vector2(427, 567)},
             { "Honeybee",       new Vector2(160, 160)},
             { "Hornet",         new Vector2(160, 160)},
             { "Leafcutter",     new Vector2(320, 320)},
@@ -100,18 +105,18 @@ namespace Assets.Scripts
             { "Cruiser",        Medium},
             { "Dreadnought",    Medium},
             { "Drone",          Tiny},
-            { "Factory",        Huge },
+            { "Factory",        Huge},
             { "Fire Ship",      Huge},
             { "Flagship",       Huge},
             { "Frigate",        Small},
             { "Gunship",        Small},
             { "Scout",          Tiny},
             { "Striker",          Tiny},
-            { "Warp Gate",      Huge },
+            { "Warp Gate",      Huge},
 
             { "Beehive",        0 },
             { "Bumblebee",      Large},
-            { "Carpenter Bee",  Huge },
+            { "Carpenter Bee",  Huge},
             { "Honeybee",       Tiny},
             { "Hornet",         Tiny},
             { "Leafcutter",     Medium},
@@ -165,6 +170,7 @@ namespace Assets.Scripts
         public static List<Scene> Scenes = new List<Scene>();
         public static Scene SocketManager;
         public static HashSet<long> UsedHashes = new HashSet<long>();
+        public static WaitForEndOfFrame WaitForEndOfFrame = new WaitForEndOfFrame();
 
 
 

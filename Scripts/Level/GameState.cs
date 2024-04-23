@@ -154,36 +154,7 @@ namespace Assets.Scripts.Level
         }
         public HashSet<Ship> GetShipsVisibleToHiveMind(int side)
         {
-            //HashSet<Ship> ships;
-            //if (HasVisionCacheChanged[side - 1])
-            //{
-            //    ships = new HashSet<Ship>();
-            //    GetShips(side).ForEach((ship) =>
-            //    {
-            //        if (ship.HasVision)
-            //        {
-            //            ships.UnionWith(ship.ShipsWithinVision);
-            //        }
-            //        else if (ship.HasWeapons)
-            //        {
-            //            IEnumerable<HashSet<Ship>> shipLists = ship.Weapons.Select((weapon) => weapon.ShipsWithinRange);
 
-            //            foreach (HashSet<Ship> shipList in shipLists)
-            //            {
-            //                ships.UnionWith(shipList);
-            //            }
-            //        }
-            //    });
-            //    VisionCache[side -1] = ships;
-            //}
-            //else
-            //{
-            //    ships = VisionCache[side - 1].Where((ship) => ship != null && !ship.IsDead).ToHashSet();
-            //    HasVisionCacheChanged[side - 1] = false;
-            //}
-
-
-            //return ships;
             VisionCache[side - 1] = HivemindShips[side - 1].Aggregate(new HashSet<Ship>(), (sum, dictionary) => {
                 sum.UnionWith(dictionary.Value.Where((ship) => ship != null && !ship.IsDead));
                 return sum;

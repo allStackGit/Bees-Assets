@@ -4,7 +4,6 @@ using Assets.Scripts.Level;
 using Assets.Scripts.Scenes;
 using System;
 using System.Collections.Generic;
-using Unity.VisualScripting;
 using UnityEngine;
 
 namespace Assets.Scripts.Data
@@ -94,70 +93,70 @@ namespace Assets.Scripts.Data
             switch (fleetShip.Type)
             {
                 case "Barge":
-                    ship = level.AddComponent<Barge>();
+                    ship = level.gameObject.AddComponent<Barge>();
                     break;
                 case "Beehive":
-                    ship = level.AddComponent<Beehive>();
+                    ship = level.gameObject.AddComponent<Beehive>();
                     break;
                 case "Bumblebee":
-                    ship = level.AddComponent<Bumblebee>();
+                    ship = level.gameObject.AddComponent<Bumblebee>();
                     break;
                 case "Carpenter Bee":
-                    ship = level.AddComponent<CarpenterBee>();
+                    ship = level.gameObject.AddComponent<CarpenterBee>();
                     break;
                 case "Carrier":
-                    ship = level.AddComponent<Carrier>();
+                    ship = level.gameObject.AddComponent<Carrier>();
                     break;
                 case "Cruiser":
-                    ship = level.AddComponent<Cruiser>();
+                    ship = level.gameObject.AddComponent<Cruiser>();
                     break;
                 case "Dreadnought":
-                    ship = level.AddComponent<Dreadnought>();
+                    ship = level.gameObject.AddComponent<Dreadnought>();
                     break;
                 case "Drone":
-                    ship = level.AddComponent<Drone>();
+                    ship = level.gameObject.AddComponent<Drone>();
                     break;
                 case "Factory":
-                    ship = level.AddComponent<Factory>();
+                    ship = level.gameObject.AddComponent<Factory>();
                     break;
                 case "Fire Ship":
-                    ship = level.AddComponent<FireShip>();
+                    ship = level.gameObject.AddComponent<FireShip>();
                     break;
                 case "Flagship":
-                    ship = level.AddComponent<Flagship>();
+                    ship = level.gameObject.AddComponent<Flagship>();
                     break;
                 case "Frigate":
-                    ship = level.AddComponent<Frigate>();
+                    ship = level.gameObject.AddComponent<Frigate>();
                     break;
                 case "Gunship":
-                    ship = level.AddComponent<Gunship>();
+                    ship = level.gameObject.AddComponent<Gunship>();
                     break;
                 case "Honeybee":
-                    ship = level.AddComponent<Honeybee>();
+                    ship = level.gameObject.AddComponent<Honeybee>();
                     break;
                 case "Hornet":
-                    ship = level.AddComponent<Hornet>();
+                    ship = level.gameObject.AddComponent<Hornet>();
                     break;
                 case "Leafcutter":
-                    ship = level.AddComponent<Leafcutter>();
+                    ship = level.gameObject.AddComponent<Leafcutter>();
                     break;
                 case "Queen":
-                    ship = level.AddComponent<Queen>();
+                    ship = level.gameObject.AddComponent<Queen>();
                     break;
                 case "Scout":
-                    ship = level.AddComponent<Scout>();
+                    ship = level.gameObject.AddComponent<Scout>();
                     break;
                 case "Striker":
-                    ship = level.AddComponent<Striker>();
+                    ship = level.gameObject.AddComponent<Striker>();
                     break;
                 case "Warp Gate":
-                    ship = level.AddComponent<WarpGate>();
+                    ship = level.gameObject.AddComponent<WarpGate>();
                     break;
                 case "Wasp":
-                    ship = level.AddComponent<Wasp>();
+                    ship = level.gameObject.AddComponent<Wasp>();
                     break;
                 case "Yellow Jacket":
-                    ship = level.AddComponent<YellowJacket>();
+                    ship = level.gameObject.AddComponent<YellowJacket>();
                     break;
             }
             if (ship != null)

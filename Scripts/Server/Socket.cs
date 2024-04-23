@@ -7,7 +7,7 @@ using Assets.Scripts.Data;
 using Assets.Scripts.Level;
 using Assets.Scripts.Level.Commands;
 
-using Unity.VisualScripting;
+
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
 
@@ -466,38 +466,38 @@ namespace Assets.Scripts.Server
                         case "Aggressive":
                             if (squad.HasOnlyBombers)
                             {
-                                command = squad.transform.AddComponent<BombingRun>();
+                                command = squad.gameObject.AddComponent<BombingRun>();
                             }
                             else if (squad.HasOnlyBarges)
                             {
-                                command = squad.transform.AddComponent<Charge>();
+                                command = squad.gameObject.AddComponent<Charge>();
                             }
                             else
                             {
-                                command = squad.transform.AddComponent<Aggressive>();
+                                command = squad.gameObject.AddComponent<Aggressive>();
                             }
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
                         case "Defensive":
-                            command = squad.transform.AddComponent<Retreat>();
+                            command = squad.gameObject.AddComponent<Retreat>();
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
                         case "Random":
-                            command = squad.transform.AddComponent<MoveToRandom>();
+                            command = squad.gameObject.AddComponent<MoveToRandom>();
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
                         case "Circle":
                             if (squad.HasOnlyBombers)
                             {
-                                command = squad.transform.AddComponent<BombingRun>();
+                                command = squad.gameObject.AddComponent<BombingRun>();
                             }
                             else if (squad.HasOnlyBarges)
                             {
-                                command = squad.transform.AddComponent<Charge>();
+                                command = squad.gameObject.AddComponent<Charge>();
                             }
                             else
                             {
-                                command = squad.transform.AddComponent<CircleSquad>();
+                                command = squad.gameObject.AddComponent<CircleSquad>();
                             }
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
@@ -505,55 +505,55 @@ namespace Assets.Scripts.Server
                         case "Left Swipe":
                             if (squad.HasOnlyBombers)
                             {
-                                command = squad.transform.AddComponent<BombingRun>();
+                                command = squad.gameObject.AddComponent<BombingRun>();
                             }
                             else if (squad.HasOnlyBarges)
                             {
-                                command = squad.transform.AddComponent<Charge>();
+                                command = squad.gameObject.AddComponent<Charge>();
                             }
                             else
                             {
-                                command = squad.transform.AddComponent<SwipeSquad>();
+                                command = squad.gameObject.AddComponent<SwipeSquad>();
                             }
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
                         case "Closest Friendly":
-                            command = squad.transform.AddComponent<ClosestFriendly>();
+                            command = squad.gameObject.AddComponent<ClosestFriendly>();
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
                         case "In and Out":
                             if (squad.HasOnlyBombers)
                             {
-                                command = squad.transform.AddComponent<BombingRun>();
+                                command = squad.gameObject.AddComponent<BombingRun>();
                             }
                             else if (squad.HasOnlyBarges)
                             {
-                                command = squad.transform.AddComponent<Charge>();
+                                command = squad.gameObject.AddComponent<Charge>();
                             }
                             else
                             {
-                                command = squad.transform.AddComponent<InAndOut>();
+                                command = squad.gameObject.AddComponent<InAndOut>();
                             }
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
                         case "Patrol":
-                            command = squad.transform.AddComponent<Patrol>();
+                            command = squad.gameObject.AddComponent<Patrol>();
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
                         case "Guard":
-                            command = squad.transform.AddComponent<Guard>();
+                            command = squad.gameObject.AddComponent<Guard>();
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
                         case "Scouting":
-                            command = squad.transform.AddComponent<Scouting>();
+                            command = squad.gameObject.AddComponent<Scouting>();
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
                         case "Mining":
-                            command = squad.transform.AddComponent<Mining>();
+                            command = squad.gameObject.AddComponent<Mining>();
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
                         case "Full Retreat":
-                            command = squad.transform.AddComponent<FullRetreat>();
+                            command = squad.gameObject.AddComponent<FullRetreat>();
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
                         default:

@@ -6,7 +6,7 @@ using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Level;
 using Assets.Scripts.Scenes;
-using Unity.VisualScripting;
+
 using UnityEngine;
 using static UnityEngine.GraphicsBuffer;
 
@@ -81,7 +81,7 @@ namespace Assets.Scripts.Entities.Projectiles
             {
                 if (!obstacle.IsMapBorder)
                 {
-                    Debug.Log($"{Name} hit {obstacle.Name}");
+                    //Debug.Log($"{Name} hit {obstacle.Name}");
                     DamageObstacle(obstacle);
                     KillSequence();
                 }
@@ -95,11 +95,11 @@ namespace Assets.Scripts.Entities.Projectiles
 
         public void DamageObstacle(Obstacle obstacle)
         {
-            obstacle.Health -= Power;
-            if (obstacle.Health <= 0)
-            {
-                obstacle.Kill();
-            }
+            //obstacle.Health -= Power;
+            //if (obstacle.Health <= 0)
+            //{
+            //    obstacle.Kill();
+            //}
 
         }
         

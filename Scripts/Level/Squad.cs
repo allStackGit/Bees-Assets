@@ -272,7 +272,7 @@ namespace Assets.Scripts.Level
                 ship.MoveToPoint(destination + ship.OffsetFromCenter);
             }
             float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
-            //Debug.Log($"It took {Math.Round(end, 2)} ms to set {Name} moving. The average was {Math.Round(end/ships.Count, 2)}ms");
+            Debug.Log($"It took {Math.Round(end, 2)} ms to set {Name} moving. The average was {Math.Round(end / ships.Count, 2)}ms");
 
         }
         public void StopMoving(string reason)

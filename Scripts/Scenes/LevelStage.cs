@@ -35,7 +35,8 @@ namespace Assets.Scripts.Scenes
         /// </summary>
         public bool ReplaceDeadShips;
         public bool ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, UseSemiRandomSquads, UseFullyRandomSquads, UseFullyRandomEnemySquads, RecordStats, 
-            DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateAudio, ActivateLoadingShipsMidLevel, UseMouseScrolling, IsDebugging, MakeEnemyCeaseFire;
+            DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateAudio, ActivateLoadingShipsMidLevel, UseMouseScrolling, IsDebugging, 
+            MakeEnemyCeaseFire, UnlockCamera;
         public int OverrideTimeScale, OverrideUserSide, GeneratedSquadCountOverride, InitialCommandDelay, TimeoutTime;
         public List<string> OverrideStrats = new List<string> { "Aggressive", "Random" };
         public GameObject UIManager, SelectionBox, MiniMapContainer, FogOfWar;
@@ -54,7 +55,7 @@ namespace Assets.Scripts.Scenes
 
         public GameObject BargePrefab, BeehivePrefab, BumblebeePrefab, CarpenterBeePrefab, CarrierPrefab, CruiserPrefab, DreadnoughtPrefab, DronePrefab,
             FactoryPrefab, FireShipPrefab, FlagshipPrefab, FrigatePrefab, GunshipPrefab, HoneybeePrefab, HornetPrefab, LeafcutterPrefab, QueenPrefab,
-            ScoutPrefab, StrikerPrefab, WarpGatePrefab, WaspPrefab, YellowJacketPrefab,
+            ScoutPrefab, StrikerPrefab, WarpGatePrefab, WaspPrefab, YellowJacketPrefab, ValidPrefab, InvalidPrefab,
             Map, SquadBox;
         /// <summary>
         /// How frequently asteroids spawn in this level. Sets the upper bound in seconds of the randomly timed spawn
@@ -81,7 +82,8 @@ namespace Assets.Scripts.Scenes
         public bool HasPlayer;
         public int WinningSide;
         public float MapX, MapY, MaxDistance, HalfX, HalfY;
-        public int MapWidth, MapHeight, HalfMapWidth, HalfMapHeight;
+        public int MapWidth, MapHeight, HalfMapWidth, HalfMapHeight, MaximumClearance;
+        public Dictionary<string, int> ShipClearances = new Dictionary<string, int>();
 
         public float Seconds;
         public HashSet<int> HandledRequests = new HashSet<int>();
@@ -97,7 +99,7 @@ namespace Assets.Scripts.Scenes
         public bool DidUserWin => WinningSide == ConfigData.Configuration.UserSide;
         public bool IsPaused => GetState().IsPaused;
 
-        public List<string> __CachedPaths;
+        //public List<string> __CachedPaths;
         public List<string> __BeeHivemindShips;
         public List<string> __HumanHivemindShips;
         public List<string> __PastCommands;
@@ -179,7 +181,6 @@ namespace Assets.Scripts.Scenes
                 if (HasPlayer)
                 {
                     Menus.ActionBox.Setup(this, EventSystem, ConfigData.Configuration.UserSide);
-                    Camera.orthographicSize = DefaultZoom;
                 }
                 if (ActivateAudio && Audio != null)
                 {
@@ -217,8 +218,9 @@ namespace Assets.Scripts.Scenes
             HalfX = MapX / 2;
             HalfY = MapY / 2;
 
-            if (HasPlayer)
+            if (HasPlayer && !UnlockCamera)
             {
+                Camera.orthographicSize = DefaultZoom;
                 //Debug.Log($"MapRenderer.size.x: {MapRenderer.size.x}, Camera aspect: {Camera.aspect}");
                 MiniMapCamera.orthographicSize = (MapRenderer.size.x / (Camera.aspect * 2));
                 MaxZoom = (int)MiniMapCamera.orthographicSize;
@@ -269,6 +271,7 @@ namespace Assets.Scripts.Scenes
             IsLoaded = true;
             Setup();
             LevelConstructor.SetupShips();
+            CalculateShipClearances();
             if (ActivateHiveMind)
             {
                 Invoke(nameof(GetHiveMindCommands), InitialCommandDelay);
@@ -287,7 +290,25 @@ namespace Assets.Scripts.Scenes
         }
 
 
+        public void CalculateShipClearances()
+        {
+            List<Ship> ships = GetState().GetShips();
+            while (ships.Count > 0)
+            {
+                string shipType = ships[0].ShipType;
+                float width = ships[0].GetHalfWidth();
+                float height = ships[0].GetHalfHeight();
+                int clearance = (width > height ? Mathf.CeilToInt(width) : Mathf.CeilToInt(height)) + 2; // 2 for padding
+                ShipClearances.Add(shipType, clearance);
+                
+                if (clearance > MaximumClearance)
+                {
+                    MaximumClearance = clearance;
+                }
 
+                ships = ships.Where((s) => s.ShipType != shipType).ToList();
+            }
+        }
         private void SpawnObstacles()
         {
             GameState state = GetState();
@@ -337,10 +358,10 @@ namespace Assets.Scripts.Scenes
         }
         private void UpdateDebugVariables()
         {
-            if (Pathfinder != null)
-            {
-                __CachedPaths = Pathfinder.PathCache.Select((p) => p.ToString()).ToList();
-            }
+            //if (Pathfinder != null)
+            //{
+            //    __CachedPaths = Pathfinder.PathCache.Select((p) => p.ToString()).ToList();
+            //}
             __BeeHivemindShips = GetState().GetShipsVisibleToHiveMind(ConfigData.Configuration.BeeSide).Select(s => s.ToString()).ToList();
             __HumanHivemindShips = GetState().GetShipsVisibleToHiveMind(ConfigData.Configuration.HumanSide).Select(s => s.ToString()).ToList();
             __PastCommands = GetState().GetPastCommands().Select((c) => $"Command #{c.OutcomeId} - {c.Strategy.Name} for Squad {c.Squad} with {c.Tsv} TSV").ToList();

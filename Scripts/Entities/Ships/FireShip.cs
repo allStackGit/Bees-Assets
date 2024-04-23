@@ -3,7 +3,7 @@ using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Level;
 using System.Linq;
-using Unity.VisualScripting;
+
 using UnityEngine;
 using static UnityEngine.GraphicsBuffer;
 
@@ -22,62 +22,67 @@ namespace Assets.Scripts.Entities.Ships
 
         public override void Kill(Ship killer, bool endKill = false) // [kill-method] [damage-method] [note] [stats-method]
         {
-            GameState state = Level.GetState();
-            //Debug.Log("Fireship exploding");
-            if (!endKill)
+            if (!IsDead)
             {
-                Explosion = Instantiate(ShipExplosion, GetPosition(), Quaternion.identity);
-                Explosion.transform.parent = Level.Map.transform;
-                RocketExplosion explosion = (RocketExplosion)Explosion.GetComponent(typeof(RocketExplosion));
-                explosion.Setup(Level, Side, state.AddEntity(), Bomb, this, null, GetPosition(), 0, 0, Bomb.Power);
-
-
-                int oldTsv = Tsv;
-                Health -= Bomb.Power;
-
-                if (Health < 0)
+                IsDead = true;
+                GameState state = Level.GetState();
+                //Debug.Log("Fireship exploding");
+                if (!endKill)
                 {
-                    Health = 0;
+                    Explosion = Instantiate(ShipExplosion, GetPosition(), Quaternion.identity);
+                    Explosion.transform.parent = Level.Map.transform;
+                    RocketExplosion explosion = (RocketExplosion)Explosion.GetComponent(typeof(RocketExplosion));
+                    explosion.Setup(Level, Side, state.AddEntity(), Bomb, this, null, GetPosition(), 0, 0, Bomb.Power);
+
+
+                    int oldTsv = Tsv;
+                    Health -= Bomb.Power;
+
+                    if (Health < 0)
+                    {
+                        Health = 0;
+                    }
+
+                    int tsvChange = Tsv - oldTsv; // this is a negative number since being hit by a projectile should induce a loss of TSV
+                                                  //Debug.Log($"Calling hit stats with a fire ship explosion. The shooter and shooter squad are null but the fire ship and fire ship squad are the target");
+                    LogHitStats(null, null, this, this.Squad, tsvChange, true);
+
+                    if (Squad.Command != null)
+                    {
+                        Squad.Command.Tsv += tsvChange; // subtract the TSV from the squad
+                    }
+
+                    if (killer != null)
+                    {
+                        killer.LastKilled = Time.frameCount;
+                        LogKillerStats(killer);
+                    }
+                    else
+                    {
+                        if (Level.ReplaceDeadShips && Squad.SavedSquad.HasBeenSavedToStorage)
+                        {
+                            FleetShip.IsDead = true;
+                        }
+                        Squad.SavedSquad.Stats.ShipsLost++;
+                    }
                 }
 
-                int tsvChange = Tsv - oldTsv; // this is a negative number since being hit by a projectile should induce a loss of TSV
-                                              //Debug.Log($"Calling hit stats with a fire ship explosion. The shooter and shooter squad are null but the fire ship and fire ship squad are the target");
-                LogHitStats(null, null, this, this.Squad, tsvChange, true);
 
-                if (Squad.Command != null)
-                {
-                    Squad.Command.Tsv += tsvChange; // subtract the TSV from the squad
-                }
+                state.RemoveShip(this);
+                Squad.RemoveShip(this);
 
-                if (killer != null)
+                if (Squad.GetShips().Count == 0)
                 {
-                    killer.LastKilled = Time.frameCount;
-                    LogKillerStats(killer);
+                    //Squad.SavedSquad.Stats.BattlesFought++;
+                    Squad.Kill(endKill);
                 }
                 else
                 {
-                    if (Level.ReplaceDeadShips && Squad.SavedSquad.HasBeenSavedToStorage)
-                    {
-                        FleetShip.IsDead = true;
-                    }
-                    Squad.SavedSquad.Stats.ShipsLost++;
+                    Squad.SetOffsets();
                 }
+                Destroy(gameObject);
             }
-
-
-            state.RemoveShip(this);
-            Squad.RemoveShip(this);
-
-            if (Squad.GetShips().Count == 0)
-            {
-                //Squad.SavedSquad.Stats.BattlesFought++;
-                Squad.Kill(endKill);
-            }
-            else
-            {
-                Squad.SetOffsets();
-            }
-            Destroy(gameObject);
+           
 
         }
     }

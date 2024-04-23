@@ -10,9 +10,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Unity.Mathematics;
-using Unity.VisualScripting;
+
 using UnityEngine;
 using UnityEngine.UI;
+using WebSocketSharp;
 using Random = System.Random;
 
 namespace Assets.Scripts
@@ -204,7 +205,9 @@ namespace Assets.Scripts
             string[] consonants = { "b", "c", "d", "f", "g", "h", "j", "k", "l", "m", "l", "n", "p", "q", "r", "s", "sh", "zh", "t", "v", "w", "x" };
             string[] vowels = { "a", "e", "i", "o", "u", "ae", "y" };
             string name = "";
-            name += consonants[_rnd.Next(consonants.Length)].FirstCharacterToUpper();
+            string firstPiece = consonants[_rnd.Next(consonants.Length)];
+            firstPiece = firstPiece.Substring(0, 1).ToUpper() + firstPiece.Substring(1);
+            name += firstPiece;
             name += vowels[_rnd.Next(vowels.Length)];
             int lettersAdded = 2;
             while (lettersAdded < length)
@@ -217,7 +220,7 @@ namespace Assets.Scripts
             }
             foreach (string word in ConfigData.Configuration.CensoredWords)
             {
-                if (name.ContainsInsensitive(word))
+                if (name.Contains(word.ToLower()))
                 {
                     return GenerateName(length);
                 }
@@ -521,10 +524,17 @@ namespace Assets.Scripts
         /// <param name="start"></param>
         /// <param name="end"></param>
         /// <returns></returns>
-        public static bool HasObstaclesCloseToInTheWay(Vector2 start, Vector2 end)
-        {
-            return Physics2D.Linecast(start, end, ConfigData.ObstacleProximityRangesLayerMask).collider != null;
-        }
+        //public static bool HasObstaclesCloseToInTheWay(Vector2 start, Vector2 end)
+        //{
+        //    //Collider2D obstacle = Physics2D.Linecast(start, end, ConfigData.ObstacleProximityRangesLayerMask).collider;
+        //    //if (obstacle != null)
+        //    //{
+        //    //    Debug.Log($"There is {obstacle.gameObject.name} in the way between {start} and {end}");
+        //    //    return true;
+        //    //}
+        //    //return false;
+        //    //return Physics2D.Linecast(start, end, ConfigData.ObstacleProximityRangesLayerMask).collider != null;
+        //}
         public static void Print2DArray(bool[][] array)
         {
             string line = "";
@@ -537,6 +547,36 @@ namespace Assets.Scripts
                 line += "\n";
             }
             WriteTextFile(line);
+        }
+
+        public static void Print2DArrayAsImage(int[][] array)
+        {
+            //array.Reverse();
+            Texture2D texture = new Texture2D(array.Length, array[0].Length, TextureFormat.RGB24, false);
+            //Color[] pixels = texture.GetPixels();
+            for (int y = 0; y < array[0].Length; y++)
+            {
+                for (int x = 0; x < array.Length; x++)
+                {
+
+                    if (array[x][y] > 0)
+                    {
+
+                        texture.SetPixel(x, array[0].Length-(y+1), new Color(0, ((float)array[x][y] / (array.Length / 2)) + .25f, .25f));
+                    } 
+                    else
+                    {
+                        texture.SetPixel(x, array[0].Length - (y + 1), ConfigData.GetUIColor("bad"));
+
+                    }
+                }
+            }
+            //Color[] pixels = texture.GetPixels();
+            //System.Array.Reverse(pixels, 0, pixels.Length);
+            //texture.SetPixels(pixels);
+            //texture.Apply();
+            string path = $"{ConfigData.GetBasePath()}/{Hash()}.png";
+            File.WriteAllBytes(path, texture.EncodeToPNG());
         }
 
         public static int GetNegativeFleetshipId()

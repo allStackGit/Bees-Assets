@@ -4,7 +4,6 @@ using Assets.Scripts.Scenes;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Unity.VisualScripting;
 using UnityEngine;
 
 namespace Assets.Scripts.Data
@@ -227,7 +226,7 @@ namespace Assets.Scripts.Data
         }
         public Squad ToSquad(LevelStage level)
         {
-            Squad squad = level.AddComponent<Squad>();
+            Squad squad = level.gameObject.AddComponent<Squad>();
             squad.Setup(
                 level,
                 HasBeenSavedToStorage ? ConfigData.AllShips.GetSavedSquad(Id) : this,

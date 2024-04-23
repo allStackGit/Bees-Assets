@@ -13,12 +13,6 @@ namespace Assets.Scripts.Entities
         public bool IsMobile, IsMapBorder, HasEnteredMap, IsDead, IsMiningAsteroid;
         public LevelStage Level;
         public Collider2D Collider, ProximityCollider;
-        // Use this for initialization
-        private void Awake()
-        {
-            InitialHealth = Health;
-            //Debug.Log($"Obstacle has awoken: {Name}: {Health}");
-        }
 
         public void Setup(LevelStage level, int id)
         {
@@ -26,6 +20,8 @@ namespace Assets.Scripts.Entities
             Id = id;
             Name = $"{Name} #{Id}";
             gameObject.name = Name;
+            InitialHealth = Health;
+
 
         }
         public virtual void Kill()

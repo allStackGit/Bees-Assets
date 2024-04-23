@@ -31,9 +31,12 @@ namespace Assets.Scripts.Level
         private bool _selectingGuardTarget;
         private bool _isRightMouseDownPrior;
         private bool _isRightMouseDragging;
+        private bool _isDragMovementBlockedByTimer;
         //private bool _isDragMovingSquads;
         private Vector2 _mousePosition;
         private Vector2 _mouseDownPosition;
+        private Vector2 _previousMousePosition;
+        private Vector2 _previousDragMousePosition;
 
         private Ship _clickedShip = null;
         private MiningAsteroid _clickedMiningAsteroid = null;
@@ -89,6 +92,7 @@ namespace Assets.Scripts.Level
         }
         private void CheckInputs() {
 
+            _previousMousePosition = _mousePosition;
             Vector2 mouse = Input.mousePosition;
             _mousePosition = Level.Camera.ScreenToWorldPoint(mouse);
 
@@ -251,14 +255,19 @@ namespace Assets.Scripts.Level
         }
         private bool HasDragMoveSquadsInput()
         {
-            if (EventSystem.IsPointerOverGameObject())
+            if (!_isDragMovementBlockedByTimer && !EventSystem.IsPointerOverGameObject() && _isRightMouseDragging && Vector2.Distance(_previousDragMousePosition, _mousePosition) > 5)
             {
-                return false;
-            }else if (_isRightMouseDragging)
-            {
+                //Debug.Log($"Drag moving");
+                _isDragMovementBlockedByTimer = true;
+                _previousDragMousePosition = _mousePosition;
+                Timers.Add(new Timer(.25f, UnblockDragMovement));
                 return Input.GetMouseButton(RightClick);
             }
             return false;
+        }
+        private void UnblockDragMovement()
+        {
+            _isDragMovementBlockedByTimer = false;
         }
         private bool HasMoveSquadsInput()
         {
@@ -795,10 +804,14 @@ namespace Assets.Scripts.Level
         public void MaintainScrollBoundary()
         {
             //Level.MiniMapCamera.transform.position = new Vector3(0, 0, -10);
-            MaintainHorizontalScrollBoundary(Level.Camera);
-            MaintainHorizontalScrollBoundary(Level.MiniMapCamera);
-            MaintainVerticalScrollBoundary(Level.Camera);
-            MaintainVerticalScrollBoundary(Level.MiniMapCamera);
+            if (Level.HasPlayer && !Level.UnlockCamera)
+            {
+                MaintainHorizontalScrollBoundary(Level.Camera);
+                MaintainHorizontalScrollBoundary(Level.MiniMapCamera);
+                MaintainVerticalScrollBoundary(Level.Camera);
+                MaintainVerticalScrollBoundary(Level.MiniMapCamera);
+            }
+
         }
         private void MaintainHorizontalScrollBoundary(Camera camera)
         {

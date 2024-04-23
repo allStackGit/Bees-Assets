@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using TMPro;
-using Unity.VisualScripting;
+
 using UnityEngine;
 using UnityEngine.EventSystems;
 
@@ -130,7 +130,7 @@ namespace Assets.Scripts.UIComponents
 
 
             ColorSquare.GetComponent<UnityEngine.UI.Image>().color = color;
-            HexInput.GetComponent<TMP_InputField>().SetTextWithoutNotify($"#{color.ToHexString().Substring(0, 6).ToLower()}");
+            HexInput.GetComponent<TMP_InputField>().SetTextWithoutNotify($"#{ColorUtility.ToHtmlStringRGB(color).Substring(0, 6).ToLower()}");
             return color;
 
         }

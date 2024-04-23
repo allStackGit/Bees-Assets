@@ -75,7 +75,7 @@ SpriteRenderer:
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: -467856233
-  m_SortingLayer: 21
+  m_SortingLayer: 24
   m_SortingOrder: 0
   m_Sprite: {fileID: -1477229664, guid: 5edeab9d0b71a574490be0201d7ef32a, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -199,8 +199,8 @@ MonoBehaviour:
   Side: 0
   Collider: {fileID: 0}
   Body: {fileID: 0}
-  Range: 0
   Power: 0
+  Range: 0
   Speed: 100
   Shooter: {fileID: 0}
   Target: {fileID: 0}
