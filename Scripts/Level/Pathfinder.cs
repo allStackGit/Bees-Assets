@@ -190,11 +190,14 @@ namespace Assets.Scripts.Level
         {
             float start = Time.realtimeSinceStartup;
             int totalLoopCount = 0;
+            int nodesFullyChecked = 0;
             int minY, minX, maxY, maxX, boundsX, boundsY = 0;
 
             bool hasHitObstacle;
             MapNode currentNode;
             MapNode loopNode;
+            MapNode ghostNode = null; //  _grid.Nodes[487][66];
+            MapNode ghostNodeNeighbor = _grid.Nodes[487][65];
 
             HashSet<MapNode> checkedNodes = new HashSet<MapNode>(_grid.NodeSet.Where((n) => n.Clearance == 0));
             Queue<MapNode> uncheckedNodes = new Queue<MapNode>();
@@ -203,10 +206,21 @@ namespace Assets.Scripts.Level
             while (uncheckedNodes.Count > 0)
             {
                 currentNode = uncheckedNodes.Dequeue();
+                if (currentNode == ghostNode)
+                {
+                    Debug.Log($"Found ghost node: {ghostNode}");
+                    //ghostNode.DebugNodeImage();
+                }
+                //else if (currentNode == ghostNodeNeighbor)
+                //{
+                //    Debug.Log($"The current node is the ghost neighbor {ghostNodeNeighbor}");
+                //    Debug.Log($"It's container is {currentNode.ContainerNode}");
+                //    currentNode.ContainerNode.DebugNodeImage();
+                //}
                 //uncheckedNodes.Remove(currentNode);
                 if (!checkedNodes.Contains(currentNode)) // skip obstacles
                 {
-
+                    currentNode.LoopOrder = nodesFullyChecked++;
                     hasHitObstacle = false;
                     minY = currentNode.y - currentNode.Clearance;
                     minX = currentNode.x - currentNode.Clearance;
@@ -222,6 +236,11 @@ namespace Assets.Scripts.Level
                         {
                             totalLoopCount++;
                             loopNode = _grid.GetNode(boundsX, maxY);
+                            //if (loopNode == ghostNodeNeighbor)
+                            //{
+                            //    Debug.Log($"The bottom clearance loopnode node is the ghost neighbor {loopNode}, currentNode: {currentNode}");
+                            //}
+
                             //Debug.Log($"Checking {loopNode.Index} as a child of {currentNode}");
                             if (loopNode.Clearance == 0)
                             {
@@ -287,15 +306,31 @@ namespace Assets.Scripts.Level
 
                                     if (!hasHitObstacle)
                                     {
+                                        HashSet<MapNode> borderChildren = new HashSet<MapNode> ();
                                         borderNodes.ForEach((borderNode) =>
                                         {
+                                            if (borderNode == ghostNode)
+                                            {
+                                                Debug.Log($"Found ghost node as border node: {ghostNode}");
+                                                //ghostNode.DebugNodeImage();
+                                            }
+                                            
                                             //Debug.Log($"{borderNode.Index} is being added as a child of {currentNode.Id}");
                                             //PreCheckedNodes.Add(loopNode);
                                             checkedNodes.Add(borderNode);
                                             borderNode.ContainerNode = currentNode;
                                             currentNode.Children.Add(borderNode);
+                                            if (borderNode.Children.Count > 0)
+                                            {
+                                                borderChildren.UnionWith(borderNode.Children);
+                                                borderNode.Children.Clear();
+                                            }
                                             //loopNode.Neighbors = currentNode.Neighbors;
 
+                                        });
+                                        borderChildren.Where((child) => !currentNode.Children.Contains(child)).ToList().ForEach((borderChild) =>
+                                        {
+                                            checkedNodes.Remove(borderChild);
                                         });
                                         currentNode.Clearance++;
                                         maxY++;
@@ -310,6 +345,11 @@ namespace Assets.Scripts.Level
                     currentNode.OriginalClearance = currentNode.Clearance;
                     //PreCheckedNodes.Remove(currentNode);
                     checkedNodes.Add(currentNode);
+                    if (currentNode == ghostNode)
+                    {
+                        Debug.Log($"adding ghost node to checked: {ghostNode}");
+                        //ghostNode.DebugNodeImage();
+                    }
                     currentNode.GetNeighbors().ForEach((n) => uncheckedNodes.Enqueue(_grid.GetNode(n.x, n.y)));
                     //Debug.Log($"Completed {currentNode}");
 
@@ -322,13 +362,31 @@ namespace Assets.Scripts.Level
                     }
 
                 }
+                else
+                {
+                    if (currentNode == ghostNode)
+                    {
+                        Debug.Log($"Ghost node has already been checked: {ghostNode}");
+                    }
+                }
             }
             Debug.Log($"Checked Nodes: {checkedNodes.Count}");
             Debug.Log($"Total nodes: {_grid.NodeSet.Count}");
             _grid.NodeSet.ExceptWith(checkedNodes);
-            Debug.Log($"Missing nodes: {_grid.NodeSet.Count}, {_grid.NodeSet.First()}");
+            if (_grid.NodeSet.Count > 0)
+            {
+                Debug.Log($"Missing nodes: {_grid.NodeSet.Count}, {_grid.NodeSet.First()}");
+            }
+            if (ghostNode != null)
+            {
+                Debug.Log($"Found ghost node: {ghostNode}");
+                Debug.Log($"Ghost's container: {ghostNode.ContainerNode}");
+                Debug.Log($"Ghost's container's container: {ghostNode.ContainerNode.ContainerNode}");
+            }
 
-            _grid.PrintGridImage(4);
+            //ghostNode.DebugNodeImage();
+            _grid.PrintGridImage();
+            
             float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
             Debug.Log($"InitializeMap() took {end} ms to complete. There were {totalLoopCount} loops measuring clearance");
         }
@@ -1118,10 +1176,10 @@ namespace Assets.Scripts.Level
 
             public MapNode GetNode(int x, int y)
             {
-                if (x == 0 && y == 138)
-                {
-                    Debug.Log($"Found next to ghost node! {Nodes[x][y]}");
-                }
+                //if (x == 487 && y == 66)
+                //{
+                //    Debug.Log($"Found ghost node! {Nodes[x][y]}");
+                //}
                 return Nodes[x][y];
             }
 
@@ -1170,7 +1228,7 @@ namespace Assets.Scripts.Level
                 File.WriteAllBytes(path, texture.EncodeToPNG());
             }
 
-            public void PrintGridImage(int scale)
+            public void PrintGridImage(int scale = 2)
             {
                 Texture2D texture = new Texture2D(Width * scale, Height * scale, TextureFormat.RGB24, false);
                 //Color[] pixels = texture.GetPixels();
@@ -1194,6 +1252,7 @@ namespace Assets.Scripts.Level
                         }
                         else if (node.Clearance == 1) // not an obstacle, checked, and part of the path
                         {
+                            //Debug.Log(node);
                             color = Color.black;
                         }
                         else if (node.Clearance > 1) // not an obstacle, checked, and not part of the path
@@ -1261,10 +1320,38 @@ namespace Assets.Scripts.Level
 
                     }
                 }
-                //Debug.Log($"Setting last pixel at ({lastNode.x}, {(Height - (lastNode.y + 1))}) to yellow");
-                //Color[] pixels = texture.GetPixels();
-                //System.Array.Reverse(pixels, 0, pixels.Length);
-                //texture.SetPixels(pixels);
+
+                //for (int y = 0; y < Height * scale; y += scale)
+                //{
+                //    for (int x = 0; x < Width * scale; x += scale)
+                //    {
+                //        Color color = Color.yellow; // has not been checked
+                //        node = Nodes[x / scale][y / scale];
+                //        if (checkedNodes.Contains(node))
+                //        {
+                //            color = Color.blue;
+                //        }
+                //        else if (node.Clearance == 0) // obstacle
+                //        {
+                //            color = ConfigData.GetUIColor("bad");
+                //        }
+                //        else if (node.Clearance == 1) // not an obstacle, checked, and part of the path
+                //        {
+                //            //Debug.Log(node);
+                //            color = Color.grey;
+                //        }
+
+                //        for (int v = 0; v < scale; v++)
+                //        {
+                //            for (int h = 0; h < scale; h++)
+                //            {
+                //                texture.SetPixel((node.x * scale) + h, (Height * scale) - ((node.y * scale) + (1 - v)), color); // regular
+                //            }
+                //        }
+
+                //    }
+                //}
+
                 texture.Apply();
                 string path = $"{ConfigData.GetBasePath()}/{Utilities.Hash()}.png";
                 File.WriteAllBytes(path, texture.EncodeToPNG());
@@ -1286,6 +1373,7 @@ namespace Assets.Scripts.Level
             public readonly int Id;
             public int OriginalClearance;
             public int Clearance;
+            public int LoopOrder = -1;
             public bool HasBeenChecked;
             public bool IsPartOfPath;
             public MapNode PreviousNode;
@@ -1312,49 +1400,186 @@ namespace Assets.Scripts.Level
                 ContainerNode = this;
                 //Id = x >= y ? x * x + x + y : x + y * y;  // Szudzik's function
             }
+            public void DebugNodeImage(int scale = 2)
+            {
+                if (ContainerNode != this)
+                {
+                    ContainerNode.DebugNodeImage(scale);
+                }
+                Texture2D texture = new Texture2D(Grid.Width * scale, Grid.Height * scale, TextureFormat.RGB24, false);
+                //Color[] pixels = texture.GetPixels();
+                MapNode node;
+                HashSet<MapNode> checkedNodes = new HashSet<MapNode>();
+                for (int y = 0; y < Grid.Height * scale; y += scale)
+                {
+                    for (int x = 0; x < Grid.Width * scale; x += scale)
+                    {
+                        Color color = Color.yellow; // has not been checked
+                        node = Grid.Nodes[x / scale][y / scale];
+                        if (checkedNodes.Contains(node))
+                        {
+                            continue;
+                        }
+                        if (node.Clearance == 0) // obstacle
+                        {
+                            color = ConfigData.GetUIColor("bad");
+                        }
+                        else if (node != this) // not an obstacle, checked, and part of the path
+                        {
+                            color = Color.grey;
+                        }
+
+                        if (node == this)
+                        {
+                            //Debug.Log($"Found the node to debug! {node}");
+                            List<MapNode> children = Children.ToList();
+                            children.ForEach((childNode) =>
+                            {
+                                color = Color.blue;
+
+                                for (int v = 0; v < scale; v++)
+                                {
+                                    for (int h = 0; h < scale; h++)
+                                    {
+                                        texture.SetPixel((childNode.x * scale) + h, (Grid.Height * scale) - ((childNode.y * scale) + (1 - v)), color); // regular
+                                    }
+                                }
+                                checkedNodes.Add(childNode);
+                            });
+
+                            Neighbors.ForEach((neighborNode) =>
+                            {
+                                color = Color.red;
+
+                                for (int v = 0; v < scale; v++)
+                                {
+                                    for (int h = 0; h < scale; h++)
+                                    {
+                                        texture.SetPixel((neighborNode.x * scale) + h, (Grid.Height * scale) - ((neighborNode.y * scale) + (1 - v)), color); // regular
+                                    }
+                                }
+                                checkedNodes.Add(neighborNode);
+                            });
+
+                            for (int v = 0; v < scale; v++)
+                            {
+                                for (int h = 0; h < scale; h++)
+                                {
+                                    texture.SetPixel((node.x * scale) + h, (Grid.Height * scale) - ((node.y * scale) + (1 - v)), Color.red); // regular
+                                }
+                            }
+                            checkedNodes.Add(node);
+
+                        }
+                        else
+                        {
+                            for (int v = 0; v < scale; v++)
+                            {
+                                for (int h = 0; h < scale; h++)
+                                {
+                                    texture.SetPixel((node.x * scale) + h, (Grid.Height * scale) - ((node.y * scale) + (1 - v)), color); // regular
+                                }
+                            }
+
+                        }
+
+
+                    }
+                }
+                texture.Apply();
+                string path = $"{ConfigData.GetBasePath()}/{Id}_{Utilities.Hash()}.png";
+                File.WriteAllBytes(path, texture.EncodeToPNG());
+            }
             public List<MapNode> GetNeighbors()
             {
+                int minY = Mathf.Clamp(y - Clearance, 0, Grid.Height -1);
+                int minX = Mathf.Clamp(x - Clearance, 0, Grid.Width - 1);
+                int maxY = Mathf.Clamp(y + Clearance, 0, Grid.Height - 1);
+                int maxX = Mathf.Clamp(x + Clearance, 0, Grid.Width - 1);
 
-                if (this.x - this.Clearance >= 0) // There is space to the left
+                //Debug.Log($"minX {minX}, maxX {maxX}, minY {minY}, maxY {maxY}");
+
+                // bottom border
+                for (int boundsX = minX; boundsX <= maxX; boundsX++)
                 {
-                    Neighbors.Add(Grid.Nodes[this.x - this.Clearance][this.y]); // get left neighbor
-                    if (this.y - this.Clearance >= 0)
+                    MapNode loopNode = Grid.Nodes[boundsX][maxY];
+                    if (loopNode.Clearance > 0)
                     {
-                        Neighbors.Add(Grid.Nodes[this.x - this.Clearance][this.y - this.Clearance]); // get top left neighbor
-                    }
-                    if (this.y + this.Clearance < Grid.Height)
-                    {
-                        Neighbors.Add(Grid.Nodes[this.x - this.Clearance][this.y + this.Clearance]); // get bottom left neighbor
-                    }
-                }
-
-                if (this.x + this.Clearance < Grid.Width) // There is space to the right
-                {
-                    Neighbors.Add(Grid.Nodes[this.x + this.Clearance][this.y]); // get right neighbor
-                    if (this.y - this.Clearance >= 0)
-                    {
-                        Neighbors.Add(Grid.Nodes[this.x + this.Clearance][this.y - this.Clearance]); // get top right neighbor
-                    }
-
-                    if (this.y + this.Clearance < Grid.Height)
-                    {
-                        Neighbors.Add(Grid.Nodes[this.x + this.Clearance][this.y + this.Clearance]); // get bottom right neighbor
+                        Neighbors.Add(loopNode);
                     }
                 }
 
-
-
-                if (this.y - this.Clearance >= 0) // there is space above
+                // top border
+                for (int boundsX = minX; boundsX <= maxX; boundsX++)
                 {
-                    Neighbors.Add(Grid.Nodes[this.x][this.y - this.Clearance]);
+                    MapNode loopNode = Grid.Nodes[boundsX][minY];
+                    if (loopNode.Clearance > 0)
+                    {
+                        Neighbors.Add(loopNode);
+                    }
                 }
 
-                if (this.y + this.Clearance < Grid.Height) // there is space below
+                // right border
+                for (int boundsY = maxY - 1; boundsY > minY; boundsY--)
                 {
-                    Neighbors.Add(Grid.Nodes[this.x][this.y + this.Clearance]);
+                    MapNode loopNode = Grid.Nodes[maxX][boundsY];
+                    if (loopNode.Clearance > 0)
+                    {
+                        Neighbors.Add(loopNode);
+                    }
+                }
+
+                // left border
+                for (int boundsY = maxY - 1; boundsY > minY; boundsY--)
+                {
+                    MapNode loopNode = Grid.Nodes[minX][boundsY];
+                    if (loopNode.Clearance > 0)
+                    {
+                        Neighbors.Add(loopNode);
+                    }
                 }
 
                 return Neighbors;
+                //if (this.x - this.Clearance >= 0) // There is space to the left
+                //{
+                //    Neighbors.Add(Grid.Nodes[this.x - this.Clearance][this.y]); // get left neighbor
+                //    if (this.y - this.Clearance >= 0)
+                //    {
+                //        Neighbors.Add(Grid.Nodes[this.x - this.Clearance][this.y - this.Clearance]); // get top left neighbor
+                //    }
+                //    if (this.y + this.Clearance < Grid.Height)
+                //    {
+                //        Neighbors.Add(Grid.Nodes[this.x - this.Clearance][this.y + this.Clearance]); // get bottom left neighbor
+                //    }
+                //}
+
+                //if (this.x + this.Clearance < Grid.Width) // There is space to the right
+                //{
+                //    Neighbors.Add(Grid.Nodes[this.x + this.Clearance][this.y]); // get right neighbor
+                //    if (this.y - this.Clearance >= 0)
+                //    {
+                //        Neighbors.Add(Grid.Nodes[this.x + this.Clearance][this.y - this.Clearance]); // get top right neighbor
+                //    }
+
+                //    if (this.y + this.Clearance < Grid.Height)
+                //    {
+                //        Neighbors.Add(Grid.Nodes[this.x + this.Clearance][this.y + this.Clearance]); // get bottom right neighbor
+                //    }
+                //}
+
+
+
+                //if (this.y - this.Clearance >= 0) // there is space above
+                //{
+                //    Neighbors.Add(Grid.Nodes[this.x][this.y - this.Clearance]);
+                //}
+
+                //if (this.y + this.Clearance < Grid.Height) // there is space below
+                //{
+                //    Neighbors.Add(Grid.Nodes[this.x][this.y + this.Clearance]);
+                //}
+
+                //return Neighbors;
             }
             public void CalculateTotalCost()
             {
@@ -1423,7 +1648,7 @@ namespace Assets.Scripts.Level
             }
             protected string Info()
             {
-                return $"MapNode #{Id}: ({x}, {y}), vector: ({Vector}), Clearance: {Clearance}, Container: {ContainerNode.Id}, Children: {Children.Count}\n";
+                return $"MapNode #{Id} - {LoopOrder}: ({x}, {y}), vector: ({Vector}), Clearance: {Clearance}, Container: {ContainerNode.Id}, Children: {Children.Count}\n";
             }
             public override string ToString()
             {
