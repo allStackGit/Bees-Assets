@@ -56,8 +56,8 @@ namespace Assets.Scripts.Level
             HalfWidth = (int)Math.Ceiling((double)Level.HalfMapWidth / _scale);
             HalfHeight = (int)Math.Ceiling((double)Level.HalfMapHeight / _scale);
 
-            Level.StartCoroutine(InitializeMap());
-            //InitializeMap();
+            //Level.StartCoroutine(InitializeMap());
+            InitializeMap();
 
         }
 
@@ -186,9 +186,155 @@ namespace Assets.Scripts.Level
 
         }
 
-        public IEnumerator InitializeMap()
+        public IEnumerator CalculateClearance()
         {
             float start = Time.realtimeSinceStartup;
+            int totalLoopCount = 0;
+            int minY, minX, maxY, maxX, boundsX, boundsY = 0;
+
+            bool hasHitObstacle;
+            MapNode currentNode;
+            MapNode loopNode;
+
+            HashSet<MapNode> checkedNodes = new HashSet<MapNode>(_grid.NodeSet.Where((n) => n.Clearance == 0));
+            Queue<MapNode> uncheckedNodes = new Queue<MapNode>();
+            uncheckedNodes.Enqueue(_grid.GetNode(0, 0));
+
+            while (uncheckedNodes.Count > 0)
+            {
+                currentNode = uncheckedNodes.Dequeue();
+                //uncheckedNodes.Remove(currentNode);
+                if (!checkedNodes.Contains(currentNode)) // skip obstacles
+                {
+
+                    hasHitObstacle = false;
+                    minY = currentNode.y - currentNode.Clearance;
+                    minX = currentNode.x - currentNode.Clearance;
+                    maxY = currentNode.y + currentNode.Clearance;
+                    maxX = currentNode.x + currentNode.Clearance;
+
+                    while (!hasHitObstacle && maxX < _grid.Width && maxY < _grid.Height && minX >= 0 && minY >= 0)
+                    {
+                        List<MapNode> borderNodes = new List<MapNode>();
+                        // bottom border
+                        //Debug.Log($"Checking clearance ({currentNode.Clearance+1}) for {currentNode.Index}: minX: {minX}, maxX: {maxX}, minY: {minY}, maxY: {maxY}");
+                        for (boundsX = minX; boundsX <= maxX; boundsX++)
+                        {
+                            totalLoopCount++;
+                            loopNode = _grid.GetNode(boundsX, maxY);
+                            //Debug.Log($"Checking {loopNode.Index} as a child of {currentNode}");
+                            if (loopNode.Clearance == 0)
+                            {
+                                //Debug.Log($"{currentNode.Index} Has hit obstacle {loopNode.Index}");
+                                hasHitObstacle = true;
+                                break;
+                            }
+                            //Debug.Log($"{loopNode.Index} is being added as a child of {currentNode}");
+                            borderNodes.Add(loopNode);
+                        }
+
+                        // top border
+                        if (!hasHitObstacle)
+                        {
+                            for (boundsX = minX; boundsX <= maxX; boundsX++)
+                            {
+                                totalLoopCount++;
+                                loopNode = _grid.GetNode(boundsX, minY);
+                                //Debug.Log($"Checking {loopNode.Index} as a child of {currentNode}");
+                                if (loopNode.Clearance == 0)
+                                {
+                                    //Debug.Log($"{currentNode.Index} Has hit obstacle {loopNode.Index}");
+                                    hasHitObstacle = true;
+                                    break;
+                                }
+
+                                borderNodes.Add(loopNode);
+                            }
+
+                            // right border
+                            if (!hasHitObstacle)
+                            {
+                                for (boundsY = maxY - 1; boundsY > minY; boundsY--)
+                                {
+                                    totalLoopCount++;
+                                    loopNode = _grid.GetNode(maxX, boundsY);
+                                    //Debug.Log($"Checking {loopNode.Index} as a child of {currentNode}");
+                                    if (loopNode.Clearance == 0)
+                                    {
+                                        hasHitObstacle = true;
+                                        //Debug.Log($"{currentNode.Index} Has hit obstacle {loopNode.Index}");
+                                        break;
+                                    }
+                                    borderNodes.Add(loopNode);
+                                }
+
+                                // left border
+                                if (!hasHitObstacle)
+                                {
+                                    for (boundsY = maxY - 1; boundsY > minY; boundsY--)
+                                    {
+                                        totalLoopCount++;
+                                        loopNode = _grid.GetNode(minX, boundsY);
+                                        //Debug.Log($"Checking {loopNode.Index} as a child of {currentNode}");
+                                        if (loopNode.Clearance == 0)
+                                        {
+                                            hasHitObstacle = true;
+                                            //Debug.Log($"{currentNode.Index} Has hit obstacle {loopNode.Index}");
+                                            break;
+                                        }
+                                        borderNodes.Add(loopNode);
+                                    }
+
+                                    if (!hasHitObstacle)
+                                    {
+                                        borderNodes.ForEach((borderNode) =>
+                                        {
+                                            //Debug.Log($"{borderNode.Index} is being added as a child of {currentNode.Id}");
+                                            //PreCheckedNodes.Add(loopNode);
+                                            checkedNodes.Add(borderNode);
+                                            borderNode.ContainerNode = currentNode;
+                                            currentNode.Children.Add(borderNode);
+                                            //loopNode.Neighbors = currentNode.Neighbors;
+
+                                        });
+                                        currentNode.Clearance++;
+                                        maxY++;
+                                        maxX++;
+                                        minY--;
+                                        minX--;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    currentNode.OriginalClearance = currentNode.Clearance;
+                    //PreCheckedNodes.Remove(currentNode);
+                    checkedNodes.Add(currentNode);
+                    currentNode.GetNeighbors().ForEach((n) => uncheckedNodes.Enqueue(_grid.GetNode(n.x, n.y)));
+                    //Debug.Log($"Completed {currentNode}");
+
+                    float loopTime = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
+                    if (loopTime % 1000 < 100)
+                    {
+                        Debug.Log($"Completed node after {loopTime} ms. Loops: {totalLoopCount}, Unchecked/Checked: {uncheckedNodes.Count}/{checkedNodes.Count}");
+                        //yield break;
+                        yield return ConfigData.WaitForEndOfFrame;
+                    }
+
+                }
+            }
+            Debug.Log($"Checked Nodes: {checkedNodes.Count}");
+            Debug.Log($"Total nodes: {_grid.NodeSet.Count}");
+            _grid.NodeSet.ExceptWith(checkedNodes);
+            Debug.Log($"Missing nodes: {_grid.NodeSet.Count}, {_grid.NodeSet.First()}");
+
+            _grid.PrintGridImage(4);
+            float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
+            Debug.Log($"InitializeMap() took {end} ms to complete. There were {totalLoopCount} loops measuring clearance");
+        }
+
+        public void InitializeMap()
+        {
             //Debug.Log($"Loading pathfinder map at {Scale}x");
             // initialize everything as open space
             _grid = new Grid(Width, Height, this);
@@ -224,168 +370,9 @@ namespace Assets.Scripts.Level
                 }
             }
 
-            int totalLoopCount = 0;
-            int maxWidth = _grid.Width - 1;
-            int maxHeight = _grid.Height - 1;
-            int minY, minX, maxY, maxX, boundsX, boundsY = 0;
-
-            bool hasHitObstacle;
-            MapNode currentNode = _grid.Nodes[0][0];
-            MapNode loopNode;
-            Debug.Log($"Starting with {currentNode}");
-
-            HashSet<MapNode> checkedNodes = new HashSet<MapNode>();
-            Queue<MapNode> uncheckedNodes = new Queue<MapNode>();
-
-            while (currentNode != null)
-            {
-                //uncheckedNodes.Remove(currentNode);
-                if (currentNode.Clearance > 0 && !checkedNodes.Contains(currentNode)) // skip obstacles
-                {
-
-                    hasHitObstacle = false;
-                    minY = currentNode.y - currentNode.Clearance;
-                    minX = currentNode.x - currentNode.Clearance;
-                    maxY = currentNode.y + currentNode.Clearance;
-                    maxX = currentNode.x + currentNode.Clearance;
-
-                    while (!hasHitObstacle && maxX <= maxWidth && maxY <= maxHeight && minX >= 0 && minY >= 0)
-                    {
-                        List<MapNode> borderNodes = new List<MapNode>();
-                        // bottom border
-                        //Debug.Log($"Checking clearance ({currentNode.Clearance+1}) for {currentNode.Index}: minX: {minX}, maxX: {maxX}, minY: {minY}, maxY: {maxY}");
-                        for (boundsX = minX; boundsX <= maxX; boundsX++)
-                        {
-                            totalLoopCount++;
-                            loopNode = _grid.Nodes[boundsX][maxY];
-                            //Debug.Log($"Checking {loopNode.Index} as a child of {currentNode}");
-                            if (loopNode.Clearance == 0)
-                            {
-                                //Debug.Log($"{currentNode.Index} Has hit obstacle {loopNode.Index}");
-                                hasHitObstacle = true;
-                                break;
-                            }
-                            //Debug.Log($"{loopNode.Index} is being added as a child of {currentNode}");
-                            borderNodes.Add(loopNode);
-                        }
-
-                        // top border
-                        if (!hasHitObstacle)
-                        {
-                            for (boundsX = minX; boundsX <= maxX; boundsX++)
-                            {
-                                totalLoopCount++;
-                                loopNode = _grid.Nodes[boundsX][minY];
-                                //Debug.Log($"Checking {loopNode.Index} as a child of {currentNode}");
-                                if (loopNode.Clearance == 0)
-                                {
-                                    //Debug.Log($"{currentNode.Index} Has hit obstacle {loopNode.Index}");
-                                    hasHitObstacle = true;
-                                    break;
-                                }
-
-                                borderNodes.Add(loopNode);
-                            }
-                        }
+            Level.StartCoroutine(CalculateClearance());
 
 
-                        // right border
-                        if (!hasHitObstacle)
-                        {
-                            for (boundsY = maxY - 1; boundsY > minY; boundsY--)
-                            {
-                                totalLoopCount++;
-                                loopNode = _grid.Nodes[maxX][boundsY];
-                                //Debug.Log($"Checking {loopNode.Index} as a child of {currentNode}");
-                                if (loopNode.Clearance == 0)
-                                {
-                                    hasHitObstacle = true;
-                                    //Debug.Log($"{currentNode.Index} Has hit obstacle {loopNode.Index}");
-                                    break;
-                                }
-                                borderNodes.Add(loopNode);
-                            }
-                        }
-                        // left border
-                        if (!hasHitObstacle)
-                        {
-                            for (boundsY = maxY - 1; boundsY > minY; boundsY--)
-                            {
-                                totalLoopCount++;
-                                loopNode = _grid.Nodes[minX][boundsY];
-                                //Debug.Log($"Checking {loopNode.Index} as a child of {currentNode}");
-                                if (loopNode.Clearance == 0)
-                                {
-                                    hasHitObstacle = true;
-                                    //Debug.Log($"{currentNode.Index} Has hit obstacle {loopNode.Index}");
-                                    break;
-                                }
-                                borderNodes.Add(loopNode);
-                            }
-
-                            if (!hasHitObstacle)
-                            {
-                                borderNodes.ForEach((borderNode) =>
-                                {
-                                    //Debug.Log($"{borderNode.Index} is being added as a child of {currentNode.Id}");
-                                    //PreCheckedNodes.Add(loopNode);
-                                    checkedNodes.Add(borderNode);
-                                    borderNode.ContainerNode = currentNode;
-                                    currentNode.Children.Add(borderNode);
-                                    //loopNode.Neighbors = currentNode.Neighbors;
-
-                                });
-                                currentNode.Clearance++;
-                                maxY++;
-                                maxX++;
-                                minY--;
-                                minX--;
-                            }
-                        }
-
-                        //if (currentNode.Clearance % 10 == 0)
-                        //{
-                        //    Debug.Log($"yielding: {currentNode}");
-                        //    yield return ConfigData.WaitForEndOfFrame;
-                        //}
-                    }
-                    currentNode.OriginalClearance = currentNode.Clearance;
-                    //PreCheckedNodes.Remove(currentNode);
-                    checkedNodes.Add(currentNode);
-                    currentNode.GetNeighbors().ForEach((n) => uncheckedNodes.Enqueue(n));
-                    //Debug.Log($"Completed {currentNode}");
-
-                    currentNode = uncheckedNodes.Dequeue();
-
-                    float loopTime = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
-                    if (checkedNodes.Count % 1000 == 0) 
-                    {
-                        Debug.Log($"Completed node after {loopTime} ms. Loops: {totalLoopCount}, Unchecked/Checked: {uncheckedNodes.Count}/{checkedNodes.Count}");
-                        //yield break;
-                        yield return ConfigData.WaitForEndOfFrame;
-                    }
-
-                }
-                else
-                {
-                    //float loopTime = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
-                    //Debug.Log(currentNode);
-                    //Debug.Log($"NULL node after {loopTime} ms. Loops: {totalLoopCount}");
-                    //yield return ConfigData.WaitForEndOfFrame;
-                    //Debug.Log($"Already cheecked {currentNode.Id}, moving onto {uncheckedNodes.FirstOrDefault()}");
-                    if (uncheckedNodes.Count > 0)
-                    {
-                        currentNode = uncheckedNodes.Dequeue();
-                    }
-                    else
-                    {
-                        currentNode = null;
-                    }
-                }
-            }
-
-
-            _grid.PrintGridImage();
             NeedsToBeUpdated = false;
 
             //GetMapFreeSpace();
@@ -394,164 +381,164 @@ namespace Assets.Scripts.Level
             //_grid.SetNeighbors();
 
 
-            float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
-            Debug.Log($"InitializeMap() took {end} ms to complete. There were {totalLoopCount} loops measuring clearance");
-            yield break;
+            //float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
+            //Debug.Log($"InitializeMap() took {end} ms to complete. There were {totalLoopCount} loops measuring clearance");
+
+
+
+            //public IEnumerator InitializeMap()
+            //{
+            //    float start = Time.realtimeSinceStartup;
+            //    //Debug.Log($"Loading pathfinder map at {Scale}x");
+            //    // initialize everything as open space
+            //    _grid = new Grid(Width, Height, this);
+
+            //    GameObject[] obstacles = GameObject.FindGameObjectsWithTag("Obstacle");
+            //    GameState state = Level.GetState();
+
+            //    for (int i = 0; i < obstacles.Length; i++)
+            //    {
+
+            //        GameObject obstacleObject = obstacles[i];
+            //        Obstacle obstacle = obstacleObject.GetComponent<Obstacle>();
+            //        //Debug.Log($"Found {obstacleObject.name}: {obstacle}");
+
+            //        obstacle.Setup(Level, state.GetId());
+            //        AddObstacle(obstacle);
+            //        ObstaclePoints[obstacle.Id] = GetObstaclePoints(obstacle);
+
+            //        //Debug.Log($"The first point on {obstacle.Name} is ({ObstaclePoints[obstacle.Id][0][0]}, {ObstaclePoints[obstacle.Id][0][1]}) on the map");
+
+            //        foreach (int[] point in ObstaclePoints[obstacle.Id])
+            //        {
+            //            if (point[0] >= 0 && point[0] < _grid.Width && point[1] >= 0 && point[1] < _grid.Height)
+            //            {
+            //                //Debug.Log($"Valid indexes: {point[0]}, {point[1]}");
+            //                _grid.Nodes[point[0]][point[1]].Clearance = 0; // set to unwalkable space
+            //                _grid.Nodes[point[0]][point[1]].OriginalClearance = 0;
+            //            }
+            //            else if (!obstacle.IsMapBorder)
+            //            {
+            //                Debug.Log($"Invalid indexes: {point[0]}, {point[1]}");
+            //            }
+            //        }
+            //    }
+
+            //    // calculate clearances
+            //    int totalLoopCount = 0;
+            //    int maxWidth = _grid.Width - 1;
+            //    int maxHeight = _grid.Height - 1;
+            //    int minY, minX, maxY, maxX, y, x, boundsX, boundsY = 0;
+            //    bool hasHitObstacle;
+            //    for (y = 0; y < _grid.Height; y++)
+            //    {
+            //        for (x = 0; x < _grid.Width; x++)
+            //        {
+            //            if (_grid.Nodes[x][y].Clearance > 0) // skip obstacles
+            //            {
+            //                hasHitObstacle = false;
+            //                minY = y - _grid.Nodes[x][y].Clearance;
+            //                minX = x - _grid.Nodes[x][y].Clearance;
+            //                maxY = y + _grid.Nodes[x][y].Clearance;
+            //                maxX = x + _grid.Nodes[x][y].Clearance;
+            //                while (!hasHitObstacle && maxX <= maxWidth && maxY <= maxHeight && minX >= 0 && minY >= 0)
+            //                {
+            //                    // bottom border
+            //                    for (boundsX = minX; boundsX < maxX; boundsX++)
+            //                    {
+            //                        //totalLoopCount++;
+
+            //                        if (_grid.Nodes[boundsX][maxY].Clearance == 0)
+            //                        {
+            //                            //Debug.Log($"{_grid.Nodes[x][y]} Has hit obstacle {_grid.Nodes[boundsX][_grid.Nodes[x][y].Clearance]}");
+            //                            hasHitObstacle = true;
+            //                            break;
+            //                        }
+
+            //                    }
+
+            //                    // top border
+            //                    if (!hasHitObstacle)
+            //                    {
+            //                        for (boundsX = minX; boundsX < maxX; boundsX++)
+            //                        {
+            //                            //totalLoopCount++;
+            //                            if (_grid.Nodes[boundsX][minY].Clearance == 0)
+            //                            {
+            //                                //Debug.Log($"{_grid.Nodes[x][y]} Has hit obstacle {_grid.Nodes[boundsX][_grid.Nodes[x][y].Clearance]}");
+            //                                hasHitObstacle = true;
+            //                                break;
+            //                            }
+            //                        }
+            //                    }
+
+
+            //                    // right border
+            //                    if (!hasHitObstacle)
+            //                    {
+            //                        for (boundsY = maxY - 1; boundsY > y; boundsY--)
+            //                        {
+            //                            //totalLoopCount++;
+            //                            if (_grid.Nodes[maxX][boundsY].Clearance == 0)
+            //                            {
+            //                                hasHitObstacle = true;
+            //                                //Debug.Log($"{_grid.Nodes[x][y]} Has hit obstacle {_grid.Nodes[boundsX][_grid.Nodes[x][y].Clearance]}");
+            //                                break;
+            //                            }
+            //                        }
+            //                    }
+            //                    // left border
+            //                    if (!hasHitObstacle)
+            //                    {
+            //                        for (boundsY = maxY - 1; boundsY > y; boundsY--)
+            //                        {
+            //                            //totalLoopCount++;
+            //                            if (_grid.Nodes[minX][boundsY].Clearance == 0)
+            //                            {
+            //                                hasHitObstacle = true;
+            //                                //Debug.Log($"{_grid.Nodes[x][y]} Has hit obstacle {_grid.Nodes[boundsX][_grid.Nodes[x][y].Clearance]}");
+            //                                break;
+            //                            }
+            //                        }
+
+            //                        if (!hasHitObstacle)
+            //                        {
+            //                            _grid.Nodes[x][y].Clearance++;
+            //                            maxY++;
+            //                            maxX++;
+            //                            minY--;
+            //                            minX--;
+            //                        }
+            //                    }
+
+
+            //                }
+            //                _grid.Nodes[x][y].OriginalClearance = _grid.Nodes[x][y].Clearance;
+            //                //Debug.Log(_grid.Nodes[x][y]);
+            //            }
+            //            else
+            //            {
+            //                //totalLoopCount++;
+            //            }
+            //        }
+            //        //float loopTime = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
+            //        //Debug.Log($"Completed row #{y} after {loopTime} ms. Loops: {totalLoopCount}");
+            //        yield return ConfigData.WaitForEndOfFrame;
+            //    }
+
+            //    //Utilities.Print2DArray(_grid.Nodes.Select((n) => n.Select((innerNode) => innerNode.IsWalkable).ToArray()).ToArray());
+            //    //Utilities.Print2DArrayAsImage(_grid.Nodes.Select((n) => n.Select((innerNode) => innerNode.Clearance).ToArray()).ToArray());
+            //    _grid.PrintGridImage();
+            //    NeedsToBeUpdated = false;
+
+            //    //GetMapFreeSpace();
+            //    //BakeMap();
+
+            //    float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
+            //    Debug.Log($"InitializeMap() took {end} ms to complete. There were {totalLoopCount} loops measuring clearance");
+            //    yield break;
+            //}
         }
-
-        //public IEnumerator InitializeMap()
-        //{
-        //    float start = Time.realtimeSinceStartup;
-        //    //Debug.Log($"Loading pathfinder map at {Scale}x");
-        //    // initialize everything as open space
-        //    _grid = new Grid(Width, Height, this);
-
-        //    GameObject[] obstacles = GameObject.FindGameObjectsWithTag("Obstacle");
-        //    GameState state = Level.GetState();
-
-        //    for (int i = 0; i < obstacles.Length; i++)
-        //    {
-
-        //        GameObject obstacleObject = obstacles[i];
-        //        Obstacle obstacle = obstacleObject.GetComponent<Obstacle>();
-        //        //Debug.Log($"Found {obstacleObject.name}: {obstacle}");
-
-        //        obstacle.Setup(Level, state.GetId());
-        //        AddObstacle(obstacle);
-        //        ObstaclePoints[obstacle.Id] = GetObstaclePoints(obstacle);
-
-        //        //Debug.Log($"The first point on {obstacle.Name} is ({ObstaclePoints[obstacle.Id][0][0]}, {ObstaclePoints[obstacle.Id][0][1]}) on the map");
-
-        //        foreach (int[] point in ObstaclePoints[obstacle.Id])
-        //        {
-        //            if (point[0] >= 0 && point[0] < _grid.Width && point[1] >= 0 && point[1] < _grid.Height)
-        //            {
-        //                //Debug.Log($"Valid indexes: {point[0]}, {point[1]}");
-        //                _grid.Nodes[point[0]][point[1]].Clearance = 0; // set to unwalkable space
-        //                _grid.Nodes[point[0]][point[1]].OriginalClearance = 0;
-        //            }
-        //            else if (!obstacle.IsMapBorder)
-        //            {
-        //                Debug.Log($"Invalid indexes: {point[0]}, {point[1]}");
-        //            }
-        //        }
-        //    }
-
-        //    // calculate clearances
-        //    int totalLoopCount = 0;
-        //    int maxWidth = _grid.Width - 1;
-        //    int maxHeight = _grid.Height - 1;
-        //    int minY, minX, maxY, maxX, y, x, boundsX, boundsY = 0;
-        //    bool hasHitObstacle;
-        //    for (y = 0; y < _grid.Height; y++)
-        //    {
-        //        for (x = 0; x < _grid.Width; x++)
-        //        {
-        //            if (_grid.Nodes[x][y].Clearance > 0) // skip obstacles
-        //            {
-        //                hasHitObstacle = false;
-        //                minY = y - _grid.Nodes[x][y].Clearance;
-        //                minX = x - _grid.Nodes[x][y].Clearance;
-        //                maxY = y + _grid.Nodes[x][y].Clearance;
-        //                maxX = x + _grid.Nodes[x][y].Clearance;
-        //                while (!hasHitObstacle && maxX <= maxWidth && maxY <= maxHeight && minX >= 0 && minY >= 0)
-        //                {
-        //                    // bottom border
-        //                    for (boundsX = minX; boundsX < maxX; boundsX++)
-        //                    {
-        //                        //totalLoopCount++;
-
-        //                        if (_grid.Nodes[boundsX][maxY].Clearance == 0)
-        //                        {
-        //                            //Debug.Log($"{_grid.Nodes[x][y]} Has hit obstacle {_grid.Nodes[boundsX][_grid.Nodes[x][y].Clearance]}");
-        //                            hasHitObstacle = true;
-        //                            break;
-        //                        }
-
-        //                    }
-
-        //                    // top border
-        //                    if (!hasHitObstacle)
-        //                    {
-        //                        for (boundsX = minX; boundsX < maxX; boundsX++)
-        //                        {
-        //                            //totalLoopCount++;
-        //                            if (_grid.Nodes[boundsX][minY].Clearance == 0)
-        //                            {
-        //                                //Debug.Log($"{_grid.Nodes[x][y]} Has hit obstacle {_grid.Nodes[boundsX][_grid.Nodes[x][y].Clearance]}");
-        //                                hasHitObstacle = true;
-        //                                break;
-        //                            }
-        //                        }
-        //                    }
-
-
-        //                    // right border
-        //                    if (!hasHitObstacle)
-        //                    {
-        //                        for (boundsY = maxY - 1; boundsY > y; boundsY--)
-        //                        {
-        //                            //totalLoopCount++;
-        //                            if (_grid.Nodes[maxX][boundsY].Clearance == 0)
-        //                            {
-        //                                hasHitObstacle = true;
-        //                                //Debug.Log($"{_grid.Nodes[x][y]} Has hit obstacle {_grid.Nodes[boundsX][_grid.Nodes[x][y].Clearance]}");
-        //                                break;
-        //                            }
-        //                        }
-        //                    }
-        //                    // left border
-        //                    if (!hasHitObstacle)
-        //                    {
-        //                        for (boundsY = maxY - 1; boundsY > y; boundsY--)
-        //                        {
-        //                            //totalLoopCount++;
-        //                            if (_grid.Nodes[minX][boundsY].Clearance == 0)
-        //                            {
-        //                                hasHitObstacle = true;
-        //                                //Debug.Log($"{_grid.Nodes[x][y]} Has hit obstacle {_grid.Nodes[boundsX][_grid.Nodes[x][y].Clearance]}");
-        //                                break;
-        //                            }
-        //                        }
-
-        //                        if (!hasHitObstacle)
-        //                        {
-        //                            _grid.Nodes[x][y].Clearance++;
-        //                            maxY++;
-        //                            maxX++;
-        //                            minY--;
-        //                            minX--;
-        //                        }
-        //                    }
-
-
-        //                }
-        //                _grid.Nodes[x][y].OriginalClearance = _grid.Nodes[x][y].Clearance;
-        //                //Debug.Log(_grid.Nodes[x][y]);
-        //            }
-        //            else
-        //            {
-        //                //totalLoopCount++;
-        //            }
-        //        }
-        //        //float loopTime = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
-        //        //Debug.Log($"Completed row #{y} after {loopTime} ms. Loops: {totalLoopCount}");
-        //        yield return ConfigData.WaitForEndOfFrame;
-        //    }
-
-        //    //Utilities.Print2DArray(_grid.Nodes.Select((n) => n.Select((innerNode) => innerNode.IsWalkable).ToArray()).ToArray());
-        //    //Utilities.Print2DArrayAsImage(_grid.Nodes.Select((n) => n.Select((innerNode) => innerNode.Clearance).ToArray()).ToArray());
-        //    _grid.PrintGridImage();
-        //    NeedsToBeUpdated = false;
-
-        //    //GetMapFreeSpace();
-        //    //BakeMap();
-
-        //    float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
-        //    Debug.Log($"InitializeMap() took {end} ms to complete. There were {totalLoopCount} loops measuring clearance");
-        //    yield break;
-        //}
-
         /// <summary>
         /// adds the index to Obstacles to Update 
         /// </summary>
@@ -988,7 +975,7 @@ namespace Assets.Scripts.Level
                 CheckedNodes.Add(currentNode);
 
                 //Debug.Log($"Getting neighbors for {currentNode}");
-                foreach (MapNode neighbor in GetNeighbors(currentNode))
+                foreach (MapNode neighbor in currentNode.Neighbors)
                 {
                     if (CheckedNodes.Contains(neighbor))
                     {
@@ -1065,52 +1052,6 @@ namespace Assets.Scripts.Level
             yield break;
 
         }
-        private List<MapNode> GetNeighbors(MapNode node)
-        {
-            List<MapNode> neighbors = new List<MapNode>();
-
-            if (node.x - 1 >= 0) // There is space to the left
-            {
-                neighbors.Add(_grid.Nodes[node.x - 1][node.y]); // get left neighbor
-                if (node.y - 1 >= 0)
-                {
-                    neighbors.Add(_grid.Nodes[node.x - 1][node.y - 1]); // get bottom left neighbor
-                }
-                if (node.y + 1 < _grid.Height)
-                {
-                    neighbors.Add(_grid.Nodes[node.x - 1][node.y + 1]); // get top left neighbor
-                }
-            }
-
-            if (node.x + 1 < _grid.Width) // There is space to the right
-            {
-                neighbors.Add(_grid.Nodes[node.x + 1][node.y]); // get right neighbor
-                if (node.y - 1 >= 0)
-                {
-                    neighbors.Add(_grid.Nodes[node.x + 1][node.y - 1]); // get bottom right neighbor
-                }
-
-                if (node.y + 1 < _grid.Height)
-                {
-                    neighbors.Add(_grid.Nodes[node.x + 1][node.y + 1]); // get top right neighbor
-                }
-            }
-
-
-
-            if (node.y - 1 >= 0) // there is space below
-            {
-                neighbors.Add(_grid.Nodes[node.x][node.y - 1]);
-            }
-
-            if (node.y + 1 < _grid.Height) // there is space above
-            {
-                neighbors.Add(_grid.Nodes[node.x][node.y + 1]);
-            }
-
-            return neighbors;
-        }
-
 
         // Utility methods
         public bool IsObstacleAtPoint(Vector2 point)
@@ -1162,6 +1103,7 @@ namespace Assets.Scripts.Level
                     {
                         Nodes[x][y] = new MapNode(x, y, this);
                         TotalNodes++;
+                        NodeSet.Add(Nodes[x][y]);
                         //if (!NodeSet.Contains(Nodes[x][y])) // [debug]
                         //{
                         //    NodeSet.Add(Nodes[x][y]);
@@ -1172,6 +1114,15 @@ namespace Assets.Scripts.Level
                         //}
                     }
                 }
+            }
+
+            public MapNode GetNode(int x, int y)
+            {
+                if (x == 0 && y == 138)
+                {
+                    Debug.Log($"Found next to ghost node! {Nodes[x][y]}");
+                }
+                return Nodes[x][y];
             }
 
             public void DebugGridAsImage(Vector2Int lastNode)
@@ -1219,20 +1170,20 @@ namespace Assets.Scripts.Level
                 File.WriteAllBytes(path, texture.EncodeToPNG());
             }
 
-            public void PrintGridImage()
+            public void PrintGridImage(int scale)
             {
-                Texture2D texture = new Texture2D(Width * 2, Height * 2, TextureFormat.RGB24, false);
+                Texture2D texture = new Texture2D(Width * scale, Height * scale, TextureFormat.RGB24, false);
                 //Color[] pixels = texture.GetPixels();
                 HashSet<MapNode> checkedNodes = new HashSet<MapNode>();
                 bool hasPlacedSquare = false;
                 MapNode node;
-                for (int y = 0; y < Height * 2; y += 2)
+                for (int y = 0; y < Height * scale; y += scale)
                 {
-                    for (int x = 0; x < Width * 2; x += 2)
+                    for (int x = 0; x < Width * scale; x += scale)
                     {
                         Color color = Color.yellow; // has not been checked
-                        node = Nodes[x / 2][y / 2];
-                        if (checkedNodes.Contains(node))
+                        node = Nodes[x / scale][y / scale];
+                        if (checkedNodes.Contains(node)) 
                         {
                             continue;
                         }
@@ -1248,74 +1199,62 @@ namespace Assets.Scripts.Level
                         else if (node.Clearance > 1) // not an obstacle, checked, and not part of the path
                         {
                             color = Color.blue;
-                            //color = new Color(Utilities.RandomInt(2) + .5f / 2.0f, Utilities.RandomInt(2) + .5f / 2.0f, Utilities.RandomInt(2) + .5f / 2.0f);
+                            //color = new Color(Utilities.RandomInt(scale) + .5f / scale.0f, Utilities.RandomInt(scale) + .5f / scale.0f, Utilities.RandomInt(scale) + .5f / scale.0f);
                         }
 
                         if (!hasPlacedSquare && children.Count > 1)
                         {
 
-                            
+                            int minX = children.OrderBy((c) => c.x).First().x;
+                            int maxX = children.OrderByDescending((c) => c.x).First().x;
+                            int minY = children.OrderBy((c) => c.y).First().y;
+                            int maxY = children.OrderByDescending((c) => c.y).First().y;
+                            Color borderColor = new Color(Utilities.RandomInt(2) + .5f / 2.0f, Utilities.RandomInt(2) + .5f / 2.0f, Utilities.RandomInt(2) + .5f / 2.0f);
 
                             children.ForEach((childNode) =>
                             {
-                                texture.SetPixel((childNode.x*2), (Height * 2) - ((childNode.y*2) + 1), color); // regular
-                                texture.SetPixel((childNode.x*2) + 1, (Height * 2) - ((childNode.y*2) + 1), color); // right
-                                texture.SetPixel((childNode.x*2), (Height * 2) - (childNode.y * 2), color); // down
-                                texture.SetPixel((childNode.x*2) + 1, (Height * 2) - (childNode.y * 2), color); // down and right
+                                if (childNode.x == minX || childNode.x == maxX || childNode.y ==  minY || childNode.y == maxY)
+                                {
+                                    color = borderColor;
+                                }
+                                else
+                                {
+                                    color = Color.blue;
+                                }
+
                                 checkedNodes.Add(childNode);
+
+                                for (int v = 0; v < scale; v++)
+                                {
+                                    for (int h = 0; h < scale; h++)
+                                    {
+                                        texture.SetPixel((childNode.x * scale) + h, (Height * scale) - ((childNode.y * scale) + (1 - v)), color); // regular
+                                    }
+                                }
+                                checkedNodes.Add(childNode);
+
                             });
 
-                            texture.SetPixel((node.x * 2), (Height * 2) - ((node.y * 2) + 1), Color.red); // regular
-                            texture.SetPixel((node.x * 2) + 1, (Height * 2) - ((node.y * 2) + 1), Color.red); // right
-                            texture.SetPixel((node.x * 2), (Height * 2) - (node.y * 2), Color.red); // down
-                            texture.SetPixel((node.x * 2) + 1, (Height * 2) - (node.y * 2), Color.red); // down and right
+                            for (int v = 0; v < scale; v++)
+                            {
+                                for (int h = 0; h < scale; h++)
+                                {
+                                    texture.SetPixel((node.x * scale) + h, (Height * scale) - ((node.y * scale) + (1 - v)), Color.red); // regular
+                                }
+                            }
                             //hasPlacedSquare = true;
                             checkedNodes.Add(node);
 
-                            //int clearance = (node.Clearance - 1) * 2;
-                            ////Debug.Log($"clearance: {clearance} Node: {node}, color: {color}");
-                            //int containedX = node.x - node.Clearance;
-                            //for (int c = (x - clearance); c < (x + 1 + clearance); c += 2)
-                            //{
-                            //    containedX++;
-                            //    int containedY = node.y - node.Clearance;
-                            //    //Debug.Log($"({containedX}, {containedY})");
-                            //    for (int r = (y - clearance); r < (y + 1 + clearance); r += 2)
-                            //    {
-                            //        containedY++;
-                            //        //Debug.Log($"contained: ({containedX}, {containedY}) / ({c}, {r})");
-                            //        if (checkedNodes.Contains(Nodes[containedX][containedY]))
-                            //        {
-                            //            continue;
-                            //        }
-                            //        //try
-                            //        //{
-                            //        //    if (checkedNodes.Contains(Nodes[containedX][containedY]))
-                            //        //    {
-                            //        //        continue;
-                            //        //    }
-                            //        //}
-                            //        //catch (Exception e)
-                            //        //{
-                            //        //    Debug.Log($"Indexes {containedX}, {containedY}, node: {node}");
-                            //        //    throw e;
-                            //        //}
-
-                            //        texture.SetPixel(c, Height * 2 - (r + 1), color); // regular
-                            //        texture.SetPixel(c + 1, Height * 2 - (r + 1), color); // right
-                            //        texture.SetPixel(c, Height * 2 - r, color); // down
-                            //        texture.SetPixel(c + 1, Height * 2 - r, color); // down and right
-                            //        checkedNodes.Add(Nodes[containedX][containedY]);
-                            //        //hasPlacedSquare = true;
-                            //    }
-                            //}
                         }
                         else
                         {
-                            texture.SetPixel(x, Height * 2 - (y + 1), color); // regular
-                            texture.SetPixel(x + 1, Height * 2 - (y + 1), color); // right
-                            texture.SetPixel(x, Height * 2 - y, color); // down
-                            texture.SetPixel(x + 1, Height * 2 - y, color); // down and right
+                            for (int v = 0; v < scale; v++)
+                            {
+                                for (int h = 0; h < scale; h++)
+                                {
+                                    texture.SetPixel((node.x * scale) + h, (Height * scale) - ((node.y * scale) + (1 - v)), color); // regular
+                                }
+                            }
 
                         }
 
@@ -1381,11 +1320,11 @@ namespace Assets.Scripts.Level
                     Neighbors.Add(Grid.Nodes[this.x - this.Clearance][this.y]); // get left neighbor
                     if (this.y - this.Clearance >= 0)
                     {
-                        Neighbors.Add(Grid.Nodes[this.x - this.Clearance][this.y - this.Clearance]); // get bottom left neighbor
+                        Neighbors.Add(Grid.Nodes[this.x - this.Clearance][this.y - this.Clearance]); // get top left neighbor
                     }
                     if (this.y + this.Clearance < Grid.Height)
                     {
-                        Neighbors.Add(Grid.Nodes[this.x - this.Clearance][this.y + this.Clearance]); // get top left neighbor
+                        Neighbors.Add(Grid.Nodes[this.x - this.Clearance][this.y + this.Clearance]); // get bottom left neighbor
                     }
                 }
 
@@ -1394,23 +1333,23 @@ namespace Assets.Scripts.Level
                     Neighbors.Add(Grid.Nodes[this.x + this.Clearance][this.y]); // get right neighbor
                     if (this.y - this.Clearance >= 0)
                     {
-                        Neighbors.Add(Grid.Nodes[this.x + this.Clearance][this.y - this.Clearance]); // get bottom right neighbor
+                        Neighbors.Add(Grid.Nodes[this.x + this.Clearance][this.y - this.Clearance]); // get top right neighbor
                     }
 
                     if (this.y + this.Clearance < Grid.Height)
                     {
-                        Neighbors.Add(Grid.Nodes[this.x + this.Clearance][this.y + this.Clearance]); // get top right neighbor
+                        Neighbors.Add(Grid.Nodes[this.x + this.Clearance][this.y + this.Clearance]); // get bottom right neighbor
                     }
                 }
 
 
 
-                if (this.y - this.Clearance >= 0) // there is space below
+                if (this.y - this.Clearance >= 0) // there is space above
                 {
                     Neighbors.Add(Grid.Nodes[this.x][this.y - this.Clearance]);
                 }
 
-                if (this.y + this.Clearance < Grid.Height) // there is space above
+                if (this.y + this.Clearance < Grid.Height) // there is space below
                 {
                     Neighbors.Add(Grid.Nodes[this.x][this.y + this.Clearance]);
                 }
