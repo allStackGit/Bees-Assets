@@ -197,18 +197,17 @@ namespace Assets.Scripts.Level
             MapNode currentNode;
             MapNode loopNode;
 
-            HashSet<MapNode> permanantNodes = new HashSet<MapNode>();
             HashSet<MapNode> checkedNodes = new HashSet<MapNode>(_grid.NodeSet.Where((n) => n.Clearance == 0));
             Queue<MapNode> uncheckedNodes = new Queue<MapNode>();
             uncheckedNodes.Enqueue(_grid.GetNode(0, 0));
             int fullLoops = 0;
-            while (uncheckedNodes.Count > 0 && fullLoops < 128)
+            while (uncheckedNodes.Count > 0)
             {
                 fullLoops++;
                 while (uncheckedNodes.Count > 0)
                 {
                     currentNode = uncheckedNodes.Dequeue();
-                    if (!checkedNodes.Contains(currentNode)) // skip obstacles
+                    if (!checkedNodes.Contains(currentNode) && !currentNode.IsPermanant) // skip obstacles and permanant nodes
                     {
                         currentNode.LoopOrder = nodesFullyChecked++;
                         hasHitObstacle = false;
@@ -324,14 +323,24 @@ namespace Assets.Scripts.Level
                         float loopTime = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
                         if (loopTime % 1000 < 100)
                         {
-                            //Debug.Log($"Completed node after {loopTime} ms. Loops: {totalLoopCount}, Unchecked/Checked: {uncheckedNodes.Count}/{checkedNodes.Count}");
+                            //Debug.Log($"Completed node after {loopTime} ms. Loops: {totalLoopCount} / {fullLoops}, Unchecked/Checked: {uncheckedNodes.Count}/{checkedNodes.Count}");
                             //yield break;
                             yield return ConfigData.WaitForEndOfFrame;
                         }
 
                     }
+                    else
+                    {
+                        if (!checkedNodes.Contains(currentNode))
+                        {
+                            currentNode.GetNeighbors().ForEach((n) => uncheckedNodes.Enqueue(_grid.GetNode(n.x, n.y)));
+                            checkedNodes.Add(currentNode);
+                            checkedNodes.UnionWith(currentNode.Children);
+                        }
+
+                    }
                 }
-                List<MapNode> potentialNodes = _grid.NodeSet.Where((n) => n.Clearance > 1 && n.ContainerNode == n && !permanantNodes.Contains(n)).OrderByDescending(n => n.Clearance).ToList();
+                List<MapNode> potentialNodes = _grid.NodeSet.Where((n) => n.Clearance > 1 && n.ContainerNode == n && !n.IsPermanant).OrderByDescending(n => n.Clearance).ToList();
                 //Debug.Log($"potential nodes: {potentialNodes.Count}, " +
                 //    $"{_grid.NodeSet.Count}, " +
                 //    $"{_grid.NodeSet.Where((n) => n.Clearance > 1).Count()}, " +
@@ -340,7 +349,7 @@ namespace Assets.Scripts.Level
                 {
                     MapNode largestNode = potentialNodes.First();
                     List<MapNode> largestNodes = potentialNodes.Where((n) => n.Clearance == largestNode.Clearance).ToList();
-                    Debug.Log($"largestNodes: {largestNodes.Count}");
+                    Debug.Log($" #{fullLoops} largestNodes: {largestNodes.Count}");
 
                     while (largestNodes.Count > 0)
                     {
@@ -367,14 +376,12 @@ namespace Assets.Scripts.Level
                         else
                         {
                             //node.DebugNodeImage();
-                            permanantNodes.Add(node);
                             node.Children.ToList().ForEach((child) =>
                             {
                                 child.IsPermanant = true;
                                 child.ContainerNode = node;
                                 child.Children.Clear();
                                 child.Clearance = 1;
-                                permanantNodes.Add(child);
                             });
                             node.IsPermanant = true;
                             largestNodes.RemoveAt(0);
@@ -385,7 +392,7 @@ namespace Assets.Scripts.Level
                     // reset other nodes
                     checkedNodes.ToList().ForEach((node) =>
                     {
-                        if (!permanantNodes.Contains(node) && node.Clearance > 0)
+                        if (!node.IsPermanant && node.Clearance > 0)
                         {
                             node.Clearance = 1;
                             node.ContainerNode = node;
@@ -393,18 +400,27 @@ namespace Assets.Scripts.Level
                         }
 
                     });
-                    checkedNodes = new HashSet<MapNode>(permanantNodes);
-                    checkedNodes.First().GetNeighbors().ForEach((n) => uncheckedNodes.Enqueue(_grid.GetNode(n.x, n.y)));
+                    checkedNodes.Clear();
+                    _grid.NodeSet.First().GetNeighbors().ForEach((n) => uncheckedNodes.Enqueue(_grid.GetNode(n.x, n.y)));
                 }
                 else
                 {
                     Debug.Log($"No more potential nodes");
+
+                    // mark the rest of the nodes as permanant
+                    checkedNodes.ToList().ForEach((node) =>
+                    {
+                        if (!node.IsPermanant && node.Clearance == 1)
+                        {
+                            node.IsPermanant = true;
+                            node.ContainerNode = node;
+                        }
+
+                    });
                 }
-                _grid.PrintPermanantNodesImage();
-
-
             }
-            
+            _grid.PrintPermanantNodesImage();
+
 
             Debug.Log($"Checked Nodes: {checkedNodes.Count}");
             Debug.Log($"Total nodes: {_grid.NodeSet.Count}");
@@ -1402,7 +1418,7 @@ namespace Assets.Scripts.Level
                 {
                     for (int x = 0; x < Width * scale; x += scale)
                     {
-                        Color color = Color.grey; // has not been checked
+                        Color color = Color.red; // has not been checked
                         node = Nodes[x / scale][y / scale];
                         if (checkedNodes.Contains(node))
                         {
@@ -1413,11 +1429,11 @@ namespace Assets.Scripts.Level
                         {
                             color = ConfigData.GetUIColor("bad");
                         }
-                        //else if (node.Clearance == 1) // not an obstacle, checked, and part of the path
-                        //{
-                        //    //Debug.Log(node);
-                        //    color = Color.black;
-                        //}
+                        else if (node.Clearance == 1 && node.IsPermanant) // not an obstacle, checked, and part of the path
+                        {
+                            //Debug.Log(node);
+                            color = Color.black;
+                        }
                         //else if (node.Clearance > 1) // not an obstacle, checked, and not part of the path
                         //{
                         //    color = Color.blue;
@@ -1431,7 +1447,7 @@ namespace Assets.Scripts.Level
                             int maxX = children.OrderByDescending((c) => c.x).First().x;
                             int minY = children.OrderBy((c) => c.y).First().y;
                             int maxY = children.OrderByDescending((c) => c.y).First().y;
-                            Color borderColor = new Color(Utilities.RandomInt(2) + .5f / 2.0f, Utilities.RandomInt(2) + .5f / 2.0f, Utilities.RandomInt(2) + .5f / 2.0f);
+                            Color borderColor = Color.yellow; //new Color(Utilities.RandomInt(2) + .5f / 2.0f, Utilities.RandomInt(2) + .5f / 2.0f, Utilities.RandomInt(2) + .5f / 2.0f);
 
                             children.ForEach((childNode) =>
                             {
@@ -1441,7 +1457,7 @@ namespace Assets.Scripts.Level
                                 }
                                 else
                                 {
-                                    color = Color.blue;
+                                    color = Color.green;
                                 }
 
                                 checkedNodes.Add(childNode);
@@ -1461,7 +1477,7 @@ namespace Assets.Scripts.Level
                             {
                                 for (int h = 0; h < scale; h++)
                                 {
-                                    texture.SetPixel((node.x * scale) + h, (Height * scale) - ((node.y * scale) + (1 - v)), Color.red); // regular
+                                    texture.SetPixel((node.x * scale) + h, (Height * scale) - ((node.y * scale) + (1 - v)), Color.black); // regular
                                 }
                             }
                             //hasPlacedSquare = true;
@@ -1638,7 +1654,7 @@ namespace Assets.Scripts.Level
                     MapNode loopNode = Grid.Nodes[boundsX][maxY];
                     if (loopNode.Clearance > 0)
                     {
-                        Neighbors.Add(loopNode);
+                        Neighbors.Add(loopNode.ContainerNode);
                     }
                 }
 
@@ -1648,7 +1664,7 @@ namespace Assets.Scripts.Level
                     MapNode loopNode = Grid.Nodes[boundsX][minY];
                     if (loopNode.Clearance > 0)
                     {
-                        Neighbors.Add(loopNode);
+                        Neighbors.Add(loopNode.ContainerNode);
                     }
                 }
 
@@ -1658,7 +1674,7 @@ namespace Assets.Scripts.Level
                     MapNode loopNode = Grid.Nodes[maxX][boundsY];
                     if (loopNode.Clearance > 0)
                     {
-                        Neighbors.Add(loopNode);
+                        Neighbors.Add(loopNode.ContainerNode);
                     }
                 }
 
@@ -1668,7 +1684,7 @@ namespace Assets.Scripts.Level
                     MapNode loopNode = Grid.Nodes[minX][boundsY];
                     if (loopNode.Clearance > 0)
                     {
-                        Neighbors.Add(loopNode);
+                        Neighbors.Add(loopNode.ContainerNode);
                     }
                 }
 
