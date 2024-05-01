@@ -201,6 +201,7 @@ namespace Assets.Scripts.Level
             Queue<MapNode> uncheckedNodes = new Queue<MapNode>();
             uncheckedNodes.Enqueue(_grid.GetNode(0, 0));
             int fullLoops = 0;
+            int totalLargeNodes = 0;
             while (uncheckedNodes.Count > 0)
             {
                 fullLoops++;
@@ -295,11 +296,11 @@ namespace Assets.Scripts.Level
                                             {
                                                 //Debug.Log($"{borderNode.Index} is being added as a child of {currentNode.Id}");
                                                 //PreCheckedNodes.Add(loopNode);
-                                                checkedNodes.Add(borderNode);
-                                                if (borderNode.Clearance < currentNode.Clearance)
-                                                {
-                                                    borderNode.ContainerNode = currentNode;
-                                                }
+                                                //checkedNodes.Add(borderNode);
+                                                //if (borderNode.Clearance < currentNode.Clearance)
+                                                //{
+                                                //    borderNode.ContainerNode = currentNode;
+                                                //}
                                                 currentNode.Children.Add(borderNode);
                                                 //loopNode.Neighbors = currentNode.Neighbors;
 
@@ -317,7 +318,15 @@ namespace Assets.Scripts.Level
                         currentNode.OriginalClearance = currentNode.Clearance;
                         //PreCheckedNodes.Remove(currentNode);
                         checkedNodes.Add(currentNode);
-                        currentNode.GetNeighbors().ForEach((n) => uncheckedNodes.Enqueue(_grid.GetNode(n.x, n.y)));
+                        //currentNode.GetNeighbors().ForEach((n) => uncheckedNodes.Enqueue(_grid.GetNode(n.x, n.y)));
+                        if (currentNode.x < _grid.Width - 1)
+                        {
+                            uncheckedNodes.Enqueue(_grid.Nodes[currentNode.x + 1][currentNode.y]);
+                        }
+                        else if (currentNode.y < _grid.Height - 1)
+                        {
+                            uncheckedNodes.Enqueue(_grid.Nodes[0][currentNode.y + 1]);
+                        }
                         //Debug.Log($"Completed {currentNode}");
 
                         float loopTime = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
@@ -333,9 +342,17 @@ namespace Assets.Scripts.Level
                     {
                         if (!checkedNodes.Contains(currentNode))
                         {
-                            currentNode.GetNeighbors().ForEach((n) => uncheckedNodes.Enqueue(_grid.GetNode(n.x, n.y)));
+                            //currentNode.GetNeighbors().ForEach((n) => uncheckedNodes.Enqueue(_grid.GetNode(n.x, n.y)));
                             checkedNodes.Add(currentNode);
                             checkedNodes.UnionWith(currentNode.Children);
+                        }
+                        if (currentNode.x < _grid.Width - 1)
+                        {
+                            uncheckedNodes.Enqueue(_grid.Nodes[currentNode.x + 1][currentNode.y]);
+                        }
+                        else if (currentNode.y < _grid.Height - 1)
+                        {
+                            uncheckedNodes.Enqueue(_grid.Nodes[0][currentNode.y + 1]);
                         }
 
                     }
@@ -349,7 +366,6 @@ namespace Assets.Scripts.Level
                 {
                     MapNode largestNode = potentialNodes.First();
                     List<MapNode> largestNodes = potentialNodes.Where((n) => n.Clearance == largestNode.Clearance).ToList();
-                    Debug.Log($" #{fullLoops} largestNodes: {largestNodes.Count}");
 
                     while (largestNodes.Count > 0)
                     {
@@ -376,6 +392,7 @@ namespace Assets.Scripts.Level
                         else
                         {
                             //node.DebugNodeImage();
+                            totalLargeNodes++;
                             node.Children.ToList().ForEach((child) =>
                             {
                                 child.IsPermanant = true;
@@ -401,11 +418,17 @@ namespace Assets.Scripts.Level
 
                     });
                     checkedNodes.Clear();
-                    _grid.NodeSet.First().GetNeighbors().ForEach((n) => uncheckedNodes.Enqueue(_grid.GetNode(n.x, n.y)));
+                    //_grid.NodeSet.First().GetNeighbors().ForEach((n) => uncheckedNodes.Enqueue(_grid.GetNode(n.x, n.y)));
+                    Debug.Log($" #{fullLoops} largest nodes so far: {totalLargeNodes}");
+
+                    uncheckedNodes.Clear();
+                    uncheckedNodes.Enqueue(_grid.Nodes[0][0]);
+                    _grid.PrintPermanantNodesImage();
+                    yield return ConfigData.WaitForEndOfFrame;
                 }
                 else
                 {
-                    Debug.Log($"No more potential nodes");
+                    Debug.Log($"No more potential nodes: {totalLargeNodes}");
 
                     // mark the rest of the nodes as permanant
                     checkedNodes.ToList().ForEach((node) =>
@@ -414,16 +437,17 @@ namespace Assets.Scripts.Level
                         {
                             node.IsPermanant = true;
                             node.ContainerNode = node;
+                            totalLargeNodes++;
                         }
 
                     });
                 }
-            }
+            }  
             _grid.PrintPermanantNodesImage();
 
 
             Debug.Log($"Checked Nodes: {checkedNodes.Count}");
-            Debug.Log($"Total nodes: {_grid.NodeSet.Count}");
+            Debug.Log($"Total nodes: {_grid.NodeSet.Count} / {totalLargeNodes}");
             HashSet<MapNode> missingNodes = new HashSet<MapNode>(_grid.NodeSet);
             missingNodes.ExceptWith(checkedNodes);
             if (missingNodes.Count > 0)
@@ -1457,7 +1481,7 @@ namespace Assets.Scripts.Level
                                 }
                                 else
                                 {
-                                    color = Color.green;
+                                    color = Color.cyan;
                                 }
 
                                 checkedNodes.Add(childNode);
