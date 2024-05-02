@@ -1,5 +1,7 @@
 ﻿using Assets.Scripts.Entities;
 using Assets.Scripts.Scenes;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -188,6 +190,7 @@ namespace Assets.Scripts.Level
 
         public IEnumerator CalculateClearance()
         {
+
             float start = Time.realtimeSinceStartup;
             int totalLoopCount = 0;
             int minY, minX, maxY, maxX, boundsX, boundsY, largestNodeSize = 0;
@@ -304,20 +307,6 @@ namespace Assets.Scripts.Level
 
                                             if (!hasHitObstacle)
                                             {
-                                                //borderNodes.ForEach((borderNode) =>
-                                                //{
-                                                //    //Debug.Log($"{borderNode.Index} is being added as a child of {currentNode.Id}");
-                                                //    //PreCheckedNodes.Add(loopNode);
-                                                //    //checkedNodes.Add(borderNode);
-                                                //    //if (borderNode.Clearance < currentNode.Clearance)
-                                                //    //{
-                                                //    //    borderNode.ContainerNode = currentNode;
-                                                //    //}
-                                                //    currentNode.Children.Add(borderNode);
-                                                //    //loopNode.Neighbors = currentNode.Neighbors;
-
-                                                //});
-                                                //currentNode.Children.UnionWith(borderNodes);
                                                 potentialChildren.UnionWith(borderNodes);
                                                 currentNode.Clearance++;
                                                 maxY++;
@@ -330,11 +319,7 @@ namespace Assets.Scripts.Level
                                 }
                             }
                             currentNode.OriginalClearance = currentNode.Clearance;
-                            if (potentialChildren.Count >= mostChildrenCount)
-                            {
-                                mostChildrenCount = potentialChildren.Count;
-                                currentNode.Children.UnionWith(potentialChildren);
-                            }
+                            currentNode.Children.UnionWith(potentialChildren);
                             //PreCheckedNodes.Remove(currentNode);
                             checkedNodes.Add(currentNode);
                             //Debug.Log($"Completed {currentNode}");
@@ -351,53 +336,47 @@ namespace Assets.Scripts.Level
                     }
                 }
                 potentialNodes = _grid.NodeSet.Where((n) => !n.IsPermanant && n.Clearance > 1 && n.ContainerNode == n).ToList();
-                //Debug.Log($"potential nodes: {potentialNodes.Count}, " +
-                //    $"{_grid.NodeSet.Count}, " +
-                //    $"{_grid.NodeSet.Where((n) => n.Clearance > 1).Count()}, " +
-                //    $"{_grid.NodeSet.Where((n) => n.Clearance > 1 && n.ContainerNode == n).Count()}");
                 if (potentialNodes.Count > 0)
                 {
                     largestNodeSize = potentialNodes.OrderByDescending(n => n.Clearance).First().Clearance;
                     largestNodes = potentialNodes.Where((n) => n.Clearance == largestNodeSize).ToList();
+                    //largestNodes = potentialNodes.OrderByDescending(n => n.Clearance).ToList();
 
                     while (largestNodes.Count > 0)
                     {
                         loopNode = largestNodes[0];
 
                         // check for intersecting nodes
-                        intersectingNodes.Clear();
-                        largestNodes.ForEach((otherNode) =>
+                        int oldCount = largestNodes.Count;
+                        largestNodes.RemoveAll((n) => 
                         {
-                            if (otherNode != loopNode && loopNode.Children.Intersect(otherNode.Children).Any())
+                            if (n == loopNode)
                             {
-                                //Debug.Log($"node {node.Index} intersects with other node {otherNode.Index}");
-                                intersectingNodes.Add(otherNode);
+                                return false;
                             }
+                            foreach (MapNode child in n.Children)
+                            {
+                                if (loopNode.Children.Contains(child))
+                                {
+                                    return true;
+                                }
+                            }
+                            return false;
                         });
 
-                        if (intersectingNodes.Count > 0)
+                        totalLargeNodes++;
+                        loopNode.Children.ToList().ForEach((child) =>
                         {
-                            intersectingNodes.ForEach((intersectingNode) =>
-                            {
-                                largestNodes.Remove(intersectingNode);
-                            });
-                        }
-                        else
-                        {
-                            //node.DebugNodeImage();
-                            totalLargeNodes++;
-                            loopNode.Children.ToList().ForEach((child) =>
-                            {
-                                child.IsPermanant = true;
-                                child.ContainerNode = loopNode;
-                                child.Children.Clear();
-                                child.Clearance = 1;
-                            });
-                            loopNode.IsPermanant = true;
-                            largestNodes.RemoveAt(0);
-                            Debug.Log($"The largest node (tied) is {loopNode}");
-
-                        }
+                            child.IsPermanant = true;
+                            child.ContainerNode = loopNode;
+                            child.Children.Clear();
+                            child.Clearance = 1;
+                        });
+                        loopNode.IsPermanant = true;
+                        _grid.ClearanceMap.Add(loopNode);
+                        largestNodes.Remove(loopNode);
+                        //Debug.Log($"The largest node (tied) is {loopNode}");
+                        yield return ConfigData.WaitForEndOfFrame;
                     }
                     // reset other nodes
                     checkedNodes.ToList().ForEach((node) =>
@@ -413,10 +392,9 @@ namespace Assets.Scripts.Level
                     //_grid.NodeSet.First().GetNeighbors().ForEach((n) => uncheckedNodes.Enqueue(_grid.GetNode(n.x, n.y)));
                     float loopTime = (Time.realtimeSinceStartup - loopStart) * 1000; // seconds to milliseconds
                     Debug.Log($" #{fullLoops} took {loopTime}ms largest nodes so far: {totalLargeNodes}");
-                    mostChildrenCount /= 2; // [alert] this could be a reason for children to not get counted
+                    //mostChildrenCount /= 2; // [alert] this could be a reason for children to not get counted
 
-                    //uncheckedNodes.Clear();
-                    //uncheckedNodes.Enqueue(_grid.Nodes[0][0]);
+
                     //_grid.PrintPermanantNodesImage();
                     checkedNodes = _grid.NodeSet.Where((n) => n.IsPermanant).ToHashSet();
                     yield return ConfigData.WaitForEndOfFrame;
@@ -456,6 +434,9 @@ namespace Assets.Scripts.Level
 
             AssembleClearanceMap();
             SaveClearanceMap();
+            //LoadClearanceMap();
+            //_grid.PrintPermanantNodesImage();
+            //SaveClearanceMap("_b");
 
             float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
             Debug.Log($"InitializeMap() took {end} ms to complete. There were {totalLoopCount} loops measuring clearance");
@@ -463,35 +444,82 @@ namespace Assets.Scripts.Level
 
         public void AssembleClearanceMap()
         {
-            Queue<MapNode> queue = new Queue<MapNode>();
-            HashSet<MapNode> checkedNodes = new HashSet<MapNode>();
-            queue.Enqueue(_grid.NodeSet.First());
-            while (queue.Count > 0)
+            _grid.ClearanceMap.ToList().ForEach((node) =>
             {
-                MapNode node = queue.Dequeue();
-                if (!checkedNodes.Contains(node))
-                {
-                    _grid.ClearanceMap.Add(node);
-                    checkedNodes.Add(node);
-                    node.GetNeighbors().ForEach((n) => queue.Enqueue(n));
-                }
-
-            }
+                //node.DebugNodeImage();
+                node.GetNeighbors();
+                //Debug.Log($"Assembled {node}");
+            });
 
         }
 
-        public void SaveClearanceMap()
+        public void SaveClearanceMap(string version = "")
         {
             string json = "[";            
             _grid.ClearanceMap.ToList().ForEach((node) => json += $"{node.ToJson()}, ");
             json = json.Remove(json.Length - 2);
             json += "]";
-            string path = $"{ConfigData.GetBasePath()}/{Utilities.Hash()}.json";
+            string path = $"{ConfigData.GetBasePath()}/ClearanceMap{version}.json";
             File.WriteAllText(path, json);
         }
-        public void LoadClearanceMap()
+        public IEnumerator LoadClearanceMap()
         {
+            float start = Time.realtimeSinceStartup;
+            string contents = "";
+            StreamReader fileStream = new StreamReader($"{ConfigData.GetBasePath()}/ClearanceMap.json");
+            int loops = 0;
 
+            while (!fileStream.EndOfStream)
+            {
+                loops++;
+                string line = fileStream.ReadLine();
+                contents += line;
+                if (loops % 1000 == 0)
+                {
+                    yield return ConfigData.WaitForEndOfFrame;
+                }
+            }
+
+            fileStream.Close();
+            List<dynamic> nodes = Utilities.JArrayToList<dynamic>((JArray)JsonConvert.DeserializeObject(contents));
+
+            foreach (dynamic node in nodes)
+            {
+                loops++;
+                MapNode mapNode = _grid.Nodes[(int)node.x][(int)node.y];
+                //mapNode.ContainerNode = _grid.Nodes[(int)node.CN.x][(int)node.CN.y];
+                mapNode.ContainerNode = mapNode;
+                mapNode.Clearance = (int)node.OC;
+                mapNode.OriginalClearance = mapNode.Clearance;
+
+                List<dynamic> children = Utilities.JArrayToList<dynamic>(node.C);
+                List<dynamic> neighbors = Utilities.JArrayToList<dynamic>(node.N);
+
+                children.ForEach((child) =>
+                {
+                    MapNode mapChild = _grid.Nodes[(int)child.x][(int)child.y];
+                    mapChild.ContainerNode = mapNode;
+                    mapChild.IsPermanant = true;
+                    mapNode.Children.Add(mapChild);
+                });
+
+                neighbors.ForEach((neighbor) =>
+                {
+                    MapNode mapNeighbor = _grid.Nodes[(int)neighbor.x][(int)neighbor.y];
+                    mapNeighbor.IsPermanant = true;
+                    mapNode.Neighbors.Add(mapNeighbor);
+                });
+                mapNode.IsPermanant = true;
+                _grid.ClearanceMap.Add(mapNode);
+                //Debug.Log($"Loaded {mapNode}");
+                if (loops % 100 == 0)
+                {
+                    yield return ConfigData.WaitForEndOfFrame;
+                }
+            }
+            _grid.PrintPermanantNodesImage();
+            float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
+            Debug.Log($"Loaded clearance map in {end} ms");
         }
         public void InitializeMap()
         {
@@ -531,7 +559,8 @@ namespace Assets.Scripts.Level
                 }
             }
 
-            Level.StartCoroutine(CalculateClearance());
+            Level.StartCoroutine(LoadClearanceMap());
+            //Level.StartCoroutine(CalculateClearance());
 
 
             NeedsToBeUpdated = false;
@@ -1414,7 +1443,7 @@ namespace Assets.Scripts.Level
             public MapNode PreviousNode;
             public MapNode ContainerNode;
             public HashSet<MapNode> Children = new HashSet<MapNode>();
-            public List<MapNode> Neighbors = new List<MapNode>();
+            public HashSet<MapNode> Neighbors = new HashSet<MapNode>();
             public Grid Grid;
 
             /// <summary>
@@ -1482,7 +1511,7 @@ namespace Assets.Scripts.Level
                                 checkedNodes.Add(childNode);
                             });
 
-                            Neighbors.ForEach((neighborNode) =>
+                            Neighbors.ToList().ForEach((neighborNode) =>
                             {
                                 color = Color.red;
 
@@ -1574,7 +1603,7 @@ namespace Assets.Scripts.Level
                     }
                 }
 
-                return Neighbors;
+                return Neighbors.ToList();
             }
             public void CalculateTotalCost()
             {
@@ -1651,7 +1680,7 @@ namespace Assets.Scripts.Level
                     $"Neighbors ({Neighbors.Count}):\n\n";
                 for (int i = 0; i < Neighbors.Count && i < 10; i++)
                 {
-                    //toString += Neighbors[i].Info();
+                    toString += Neighbors.ElementAt(i).Info();
                 }
                 toString += $"Children ({Children.Count}):\n\n";
                 for (int i = 0; i < Children.Count && i < 10; i++)
@@ -1661,10 +1690,26 @@ namespace Assets.Scripts.Level
                 return toString;
 
             }
-
             public string ToJson()
             {
-                return JsonUtility.ToJson(this);
+                string json = $"{{ \"Id\": {Id}, \"x\": {x}, \"y\": {y}, \"OC\": {OriginalClearance}, \"C\": [";
+                Children.ToList().ForEach((n) => json += $" {{ \"x\": {n.x}, \"y\": {n.y} }},");
+                if (Children.Count > 0)
+                {
+                    json = json.Substring(0, json.Length - 1);
+                }
+
+                json += "], \"N\": [";
+                Neighbors.ToList().ForEach((n) => json += $" {{ \"x\": {n.x}, \"y\": {n.y} }},");
+
+                if (Neighbors.Count > 0)
+                {
+                    json = json.Substring(0, json.Length - 1);
+                }
+                
+                json += "]}";
+
+                return json;
             }
         }
         public class MapNodeComparer : IComparer<MapNode>
