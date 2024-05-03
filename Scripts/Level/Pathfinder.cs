@@ -23,8 +23,8 @@ namespace Assets.Scripts.Level
         public HashSet<MapNode> CheckedNodes = new HashSet<MapNode>();
         public HashSet<Path> PathCache = new HashSet<Path>();
         public HashSet<Vector2Int> FreeAreas = new HashSet<Vector2Int>();
-        public double TimeLimit = 360f;
-        public int DebugLoops = int.MaxValue;
+        public double TimeLimit = 5;
+        public int DebugLoops = 100;
         public int MaxLoopsPerFrame = 1000;
 
         private Grid _grid;
@@ -562,7 +562,7 @@ namespace Assets.Scripts.Level
             Level.StartCoroutine(LoadClearanceMap());
             //Level.StartCoroutine(CalculateClearance());
 
-
+            _grid.ClearanceMapList = _grid.ClearanceMap.ToList();
             NeedsToBeUpdated = false;
 
         }
@@ -725,10 +725,12 @@ namespace Assets.Scripts.Level
         }
         private int CalculateDistance(MapNode a, MapNode b)
         {
-            int xDistance = Mathf.Abs(a.x - b.x);
-            int yDistance = Mathf.Abs(a.y - b.y);
-            int remaining = Mathf.Abs(xDistance - yDistance);
-            return DIAGONAL_COST * Mathf.Min(xDistance, yDistance) + HORIZONTAL_COST * remaining;
+            //int xDistance = Mathf.Abs(a.x - b.x);
+            //int yDistance = Mathf.Abs(a.y - b.y);
+            //int remaining = Mathf.Abs(xDistance - yDistance);
+            //return DIAGONAL_COST * Mathf.Min(xDistance, yDistance) + HORIZONTAL_COST * remaining;
+
+            return (int) Vector2.Distance(a.Vector, b.Vector);
 
         }
         private MapNode GetCheapestNode(List<MapNode> list)
@@ -911,7 +913,7 @@ namespace Assets.Scripts.Level
                 yield break;
             }
 
-            if (endNode.Clearance < maximumClearance)
+            if (endNode.ContainerNode.Clearance < maximumClearance)
             {
 
                 //if (!isBaking)
@@ -933,7 +935,7 @@ namespace Assets.Scripts.Level
 
 
 
-            if (startNode.Clearance < maximumClearance)
+            if (startNode.ContainerNode.Clearance < maximumClearance)
             {
                 Debug.Log($"The start ({startNode.Vector}) isn't walkable space");
                 startNode = FindNearestWalkablePoint(endNode, startNode, maximumClearance);
@@ -943,25 +945,47 @@ namespace Assets.Scripts.Level
             UncheckedNodes = new List<MapNode>() { startNode };
             CheckedNodes.Clear();
 
-            for (int x = 0; x < _grid.Width; x++)
+            //for (int x = 0; x < _grid.Width; x++)
+            //{
+            //    for (int y = 0; y < _grid.Height; y++)
+            //    {
+            //        MapNode node = _grid.Nodes[x][y];
+            //        node.CostToHere = int.MaxValue;
+            //        node.CalculateTotalCost();
+            //        node.PreviousNode = null;
+            //        node.HasBeenChecked = false;
+            //        node.IsPartOfPath = false;
+            //    }
+            //}
+
+            Queue<MapNode> queue = new Queue<MapNode>();
+            HashSet<MapNode> checkedNodes = new HashSet<MapNode>();
+            queue.Enqueue(_grid.ClearanceMapList.First());
+
+            while (queue.Count > 0)
             {
-                for (int y = 0; y < _grid.Height; y++)
+                MapNode node = queue.Dequeue();
+                if (!checkedNodes.Contains(node))
                 {
-                    MapNode node = _grid.Nodes[x][y];
+                    checkedNodes.Add(node);
                     node.CostToHere = int.MaxValue;
                     node.CalculateTotalCost();
                     node.PreviousNode = null;
                     node.HasBeenChecked = false;
                     node.IsPartOfPath = false;
+                    foreach (MapNode neighbor in node.Neighbors)
+                    {
+                        queue.Enqueue(neighbor);
+                    }
                 }
+                
             }
-
-
             startNode.CostToHere = 0;
             startNode.HueristicCost = CalculateDistance(startNode, endNode);
             startNode.CalculateTotalCost();
 
             int loops = 0;
+            Debug.Log($"Startnode: {startNode}");
             while (UncheckedNodes.Count > 0 && Time.realtimeSinceStartup - start < TimeLimit)
             {
                 loops++;
@@ -997,12 +1021,22 @@ namespace Assets.Scripts.Level
                     callback(path);
                     yield break;
                 }
+                else if (currentNode.Children.Contains(endNode))
+                {
+                    endNode.PreviousNode = currentNode;
+                    MakeDestinationList(endNode, path);
+                    PathCache.Add(path);
+                    Debug.Log($"Found the end node as a child of another node {currentNode}");
+                    _grid.DebugGridAsImage(new Vector2Int(endNode.x, endNode.y));
+                    callback(path);
+                    yield break;
+                }
                 UncheckedNodes.Remove(currentNode);
                 currentNode.HasBeenChecked = true;
                 CheckedNodes.Add(currentNode);
 
                 //Debug.Log($"Getting neighbors for {currentNode}");
-                foreach (MapNode neighbor in currentNode.Neighbors)
+                foreach (MapNode neighbor in currentNode.ContainerNode.Neighbors)
                 {
                     if (CheckedNodes.Contains(neighbor))
                     {
@@ -1070,7 +1104,7 @@ namespace Assets.Scripts.Level
             }
             else if (UncheckedNodes.Count == 0)
             {
-                Debug.Log($"No more nodes to check. CurrentNode: {currentNode}, checkedNodes: {CheckedNodes.Count} / {_grid.TotalNodes} / {_grid.Width * _grid.Height} / {_grid.NodeSet.Count}");
+                Debug.Log($"No more nodes to check.  checkedNodes: {CheckedNodes.Count} / {_grid.TotalNodes} / {_grid.ClearanceMap.Count}  CurrentNode: {currentNode},");
             }
 
             // couldn't find the path
@@ -1113,7 +1147,8 @@ namespace Assets.Scripts.Level
             public int Height;
             public int TotalNodes;
             public HashSet<MapNode> NodeSet = new HashSet<MapNode>();
-            public HashSet<MapNode> ClearanceMap = new HashSet<MapNode> ();
+            public HashSet<MapNode> ClearanceMap = new HashSet<MapNode>();
+            public List<MapNode> ClearanceMapList = new List<MapNode>();
             public MapNode[][] Nodes;
             public Pathfinder Pathfinder;
 
@@ -1692,7 +1727,7 @@ namespace Assets.Scripts.Level
             }
             public string ToJson()
             {
-                string json = $"{{ \"Id\": {Id}, \"x\": {x}, \"y\": {y}, \"OC\": {OriginalClearance}, \"C\": [";
+                string json = $"{{\"x\": {x}, \"y\": {y}, \"OC\": {OriginalClearance}, \"C\": [";
                 Children.ToList().ForEach((n) => json += $" {{ \"x\": {n.x}, \"y\": {n.y} }},");
                 if (Children.Count > 0)
                 {
