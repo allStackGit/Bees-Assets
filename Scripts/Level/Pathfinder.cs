@@ -24,7 +24,7 @@ namespace Assets.Scripts.Level
         public HashSet<Path> PathCache = new HashSet<Path>();
         public HashSet<Vector2Int> FreeAreas = new HashSet<Vector2Int>();
         public double TimeLimit = 5;
-        public int DebugLoops = 100;
+        public int DebugLoops = 0;
         public int MaxLoopsPerFrame = 1000;
 
         private Grid _grid;
@@ -410,6 +410,7 @@ namespace Assets.Scripts.Level
                         {
                             node.IsPermanant = true;
                             node.ContainerNode = node;
+                            _grid.ClearanceMap.Add(node);
                             totalLargeNodes++;
                         }
 
@@ -517,7 +518,7 @@ namespace Assets.Scripts.Level
                     yield return ConfigData.WaitForEndOfFrame;
                 }
             }
-            _grid.PrintPermanantNodesImage();
+            //_grid.PrintPermanantNodesImage();
             float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
             Debug.Log($"Loaded clearance map in {end} ms");
         }
@@ -961,35 +962,42 @@ namespace Assets.Scripts.Level
             Queue<MapNode> queue = new Queue<MapNode>();
             HashSet<MapNode> checkedNodes = new HashSet<MapNode>();
             queue.Enqueue(_grid.ClearanceMapList.First());
-
+            checkedNodes.Add(_grid.ClearanceMapList.First());
             while (queue.Count > 0)
             {
                 MapNode node = queue.Dequeue();
-                if (!checkedNodes.Contains(node))
+                node.CostToHere = int.MaxValue;
+                node.CalculateTotalCost();
+                node.PreviousNode = null;
+                node.HasBeenChecked = false;
+                node.IsPartOfPath = false;
+                foreach (MapNode neighbor in node.Neighbors)
                 {
-                    checkedNodes.Add(node);
-                    node.CostToHere = int.MaxValue;
-                    node.CalculateTotalCost();
-                    node.PreviousNode = null;
-                    node.HasBeenChecked = false;
-                    node.IsPartOfPath = false;
-                    foreach (MapNode neighbor in node.Neighbors)
+                    if (!checkedNodes.Contains(neighbor))
                     {
+                        checkedNodes.Add(neighbor);
                         queue.Enqueue(neighbor);
                     }
                 }
-                
+
             }
             startNode.CostToHere = 0;
             startNode.HueristicCost = CalculateDistance(startNode, endNode);
             startNode.CalculateTotalCost();
+            if (startNode.ContainerNode != startNode)
+            {
+                startNode.Neighbors.Add(startNode.ContainerNode);
+            }
 
             int loops = 0;
-            Debug.Log($"Startnode: {startNode}");
+            float startupTime = (Time.realtimeSinceStartup - start) * 1000;
+            Debug.Log($"Startup time took: {startupTime} ms");
+            //Debug.Log($"Startnode: {startNode}, queueLoops: {queueLoops}, clearanceMapList: {_grid.ClearanceMapList.Count}");
             while (UncheckedNodes.Count > 0 && Time.realtimeSinceStartup - start < TimeLimit)
             {
                 loops++;
                 currentNode = GetCheapestNode(UncheckedNodes);
+                //Debug.Log($"Current node: {currentNode}");
 
                 // skips ahead to further down the line if it detects we're in free space
                 //if (loops % 20 == 0 && (IsInFreeSpace(currentNode.x, currentNode.y, endNode.x, endNode.y)))
@@ -1001,16 +1009,16 @@ namespace Assets.Scripts.Level
                 //}
 
                 //skip ahead to further down if we raycasted a straight line
-                if (loops % 20 == 0 && (CalculateDistance(currentNode, endNode) > 40 && !Utilities.HasObstaclesInTheWay(currentNode.Vector, endNode.Vector)))
-                {
-                    endNode.PreviousNode = currentNode;
-                    MakeDestinationList(endNode, path);
-                    PathCache.Add(path);
-                    Debug.Log($"Found a straight line from {currentNode.Vector} to the end {endNode.Vector}");
-                    _grid.DebugGridAsImage(new Vector2Int(endNode.x, endNode.y));
-                    callback(path);
-                    yield break;
-                }
+                //if (loops % 20 == 0 && (CalculateDistance(currentNode, endNode) > 40 && !Utilities.HasObstaclesInTheWay(currentNode.Vector, endNode.Vector)))
+                //{
+                //    endNode.PreviousNode = currentNode;
+                //    MakeDestinationList(endNode, path);
+                //    PathCache.Add(path);
+                //    Debug.Log($"Found a straight line from {currentNode.Vector} to the end {endNode.Vector}");
+                //    _grid.DebugGridAsImage(new Vector2Int(endNode.x, endNode.y));
+                //    callback(path);
+                //    yield break;
+                //}
 
                 if (currentNode == endNode)
                 {
@@ -1026,7 +1034,7 @@ namespace Assets.Scripts.Level
                     endNode.PreviousNode = currentNode;
                     MakeDestinationList(endNode, path);
                     PathCache.Add(path);
-                    Debug.Log($"Found the end node as a child of another node {currentNode}");
+                    Debug.Log($"Found the end node ({loops} loops) as a child of another node {currentNode}");
                     _grid.DebugGridAsImage(new Vector2Int(endNode.x, endNode.y));
                     callback(path);
                     yield break;
@@ -1036,23 +1044,23 @@ namespace Assets.Scripts.Level
                 CheckedNodes.Add(currentNode);
 
                 //Debug.Log($"Getting neighbors for {currentNode}");
-                foreach (MapNode neighbor in currentNode.ContainerNode.Neighbors)
+                foreach (MapNode neighbor in currentNode.Neighbors)
                 {
                     if (CheckedNodes.Contains(neighbor))
                     {
-                        if (loops > DebugLoops)
-                        {
-                            Debug.Log($"Found an already checked node at {neighbor}");
-                        }
+                        //if (loops > DebugLoops)
+                        //{
+                        //    Debug.Log($"Found an already checked node at {neighbor}");
+                        //}
                         continue;
                     }
 
-                    if (neighbor.Clearance < maximumClearance)
+                    if (neighbor.Clearance == 0) // < maximum clearance
                     {
-                        if (loops > DebugLoops)
-                        {
-                            Debug.Log($"Found an unwalkable node at {neighbor}");
-                        }
+                        //if (loops > DebugLoops)
+                        //{
+                        //    Debug.Log($"Found an unwalkable node at {neighbor}");
+                        //}
                         currentNode.HasBeenChecked = true;
                         CheckedNodes.Add(neighbor);
                         continue;
@@ -1069,27 +1077,27 @@ namespace Assets.Scripts.Level
 
                         if (!UncheckedNodes.Contains(neighbor))
                         {
-                            if (loops > DebugLoops)
-                            {
-                                Debug.Log($"Unchecked Added {neighbor}");
-                            }
+                            //if (loops > DebugLoops)
+                            //{
+                            //    Debug.Log($"Unchecked Added {neighbor}");
+                            //}
                             UncheckedNodes.Add(neighbor);
                         }
-                        else
-                        {
-                            if (loops > DebugLoops)
-                            {
-                                Debug.Log($"Unchecked nodes already contains {neighbor}");
-                            }
-                        }
+                        //else
+                        //{
+                        //    if (loops > DebugLoops)
+                        //    {
+                        //        Debug.Log($"Unchecked nodes already contains {neighbor}");
+                        //    }
+                        //}
                     }
-                    else
-                    {
-                        if (loops > DebugLoops)
-                        {
-                            Debug.Log($"the cost to here {tempCostToHere} was >= to {neighbor.CostToHere} with {neighbor}");
-                        }
-                    }
+                    //else
+                    //{
+                    //    if (loops > DebugLoops)
+                    //    {
+                    //        Debug.Log($"the cost to here {tempCostToHere} was >= to {neighbor.CostToHere} with {neighbor}");
+                    //    }
+                    //}
                 }
 
                 if (loops % MaxLoopsPerFrame == 0)
@@ -1109,6 +1117,7 @@ namespace Assets.Scripts.Level
 
             // couldn't find the path
             _grid.DebugGridAsImage(new Vector2Int(currentNode.x, currentNode.y));
+            currentNode.DebugNodeImage();
             callback(null);
             yield break;
 
@@ -1727,7 +1736,7 @@ namespace Assets.Scripts.Level
             }
             public string ToJson()
             {
-                string json = $"{{\"x\": {x}, \"y\": {y}, \"OC\": {OriginalClearance}, \"C\": [";
+                string json = $"{{\"Id\": {Id}, \"x\": {x}, \"y\": {y}, \"OC\": {OriginalClearance}, \"C\": [";
                 Children.ToList().ForEach((n) => json += $" {{ \"x\": {n.x}, \"y\": {n.y} }},");
                 if (Children.Count > 0)
                 {
