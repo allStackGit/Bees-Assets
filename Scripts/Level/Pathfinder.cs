@@ -188,9 +188,8 @@ namespace Assets.Scripts.Level
 
         }
 
-        public IEnumerator CalculateClearance()
+        public IEnumerator CalculateSquares()
         {
-
             float start = Time.realtimeSinceStartup;
             int totalLoopCount = 0;
             int minY, minX, maxY, maxX, boundsX, boundsY, largestNodeSize = 0;
@@ -202,14 +201,14 @@ namespace Assets.Scripts.Level
             HashSet<MapNode> checkedNodes = new HashSet<MapNode>(_grid.NodeSet.Where((n) => n.IsPermanant));
             //Queue<MapNode> uncheckedNodes = new Queue<MapNode>();
             HashSet<MapNode> borderNodes = new HashSet<MapNode>();
-            HashSet<MapNode> potentialChildren= new HashSet<MapNode>();
+            HashSet<MapNode> potentialChildren = new HashSet<MapNode>();
             List<MapNode> potentialNodes;
             List<MapNode> largestNodes;
             List<MapNode> intersectingNodes = new List<MapNode>();
             //uncheckedNodes.Enqueue(_grid.GetNode(0, 0));
             int fullLoops = 0;
             int totalLargeNodes = 0;
-            int mostChildrenCount = 0;
+            int clearance;
             while (checkedNodes.Count < _grid.NodeSet.Count)
             {
                 float loopStart = Time.realtimeSinceStartup;
@@ -219,14 +218,15 @@ namespace Assets.Scripts.Level
                     for (int x = 0; x < _grid.Width; x++)
                     {
                         currentNode = _grid.Nodes[x][y];
+                        clearance = 1;
 
                         if (!checkedNodes.Contains(currentNode)) // skip obstacles and permanant nodes
                         {
                             hasHitObstacle = false;
-                            minY = currentNode.y - currentNode.Clearance;
-                            minX = currentNode.x - currentNode.Clearance;
-                            maxY = currentNode.y + currentNode.Clearance;
-                            maxX = currentNode.x + currentNode.Clearance;
+                            minY = currentNode.y - clearance;
+                            minX = currentNode.x - clearance;
+                            maxY = currentNode.y + clearance;
+                            maxX = currentNode.x + clearance;
                             potentialChildren.Clear();
                             while (!hasHitObstacle && maxX < _grid.Width && maxY < _grid.Height && minX >= 0 && minY >= 0)
                             {
@@ -308,7 +308,7 @@ namespace Assets.Scripts.Level
                                             if (!hasHitObstacle)
                                             {
                                                 potentialChildren.UnionWith(borderNodes);
-                                                currentNode.Clearance++;
+                                                clearance++;
                                                 maxY++;
                                                 maxX++;
                                                 minY--;
@@ -318,7 +318,6 @@ namespace Assets.Scripts.Level
                                     }
                                 }
                             }
-                            currentNode.OriginalClearance = currentNode.Clearance;
                             currentNode.Children.UnionWith(potentialChildren);
                             //PreCheckedNodes.Remove(currentNode);
                             checkedNodes.Add(currentNode);
@@ -335,12 +334,11 @@ namespace Assets.Scripts.Level
                         }
                     }
                 }
-                potentialNodes = _grid.NodeSet.Where((n) => !n.IsPermanant && n.Clearance > 1 && n.ContainerNode == n).ToList();
+                potentialNodes = _grid.NodeSet.Where((n) => !n.IsPermanant && n.Children.Count > 1 && n.ContainerNode == n).ToList();
                 if (potentialNodes.Count > 0)
                 {
-                    largestNodeSize = potentialNodes.OrderByDescending(n => n.Clearance).First().Clearance;
-                    largestNodes = potentialNodes.Where((n) => n.Clearance == largestNodeSize).ToList();
-                    //largestNodes = potentialNodes.OrderByDescending(n => n.Clearance).ToList();
+                    largestNodeSize = potentialNodes.OrderByDescending(n => n.Children.Count).First().Children.Count;
+                    largestNodes = potentialNodes.Where((n) => n.Children.Count == largestNodeSize).ToList();
 
                     while (largestNodes.Count > 0)
                     {
@@ -348,7 +346,7 @@ namespace Assets.Scripts.Level
 
                         // check for intersecting nodes
                         int oldCount = largestNodes.Count;
-                        largestNodes.RemoveAll((n) => 
+                        largestNodes.RemoveAll((n) =>
                         {
                             if (n == loopNode)
                             {
@@ -370,7 +368,6 @@ namespace Assets.Scripts.Level
                             child.IsPermanant = true;
                             child.ContainerNode = loopNode;
                             child.Children.Clear();
-                            child.Clearance = 1;
                         });
                         loopNode.IsPermanant = true;
                         _grid.ClearanceMap.Add(loopNode);
@@ -381,9 +378,8 @@ namespace Assets.Scripts.Level
                     // reset other nodes
                     checkedNodes.ToList().ForEach((node) =>
                     {
-                        if (!node.IsPermanant && node.Clearance > 0)
+                        if (!node.IsPermanant)
                         {
-                            node.Clearance = 1;
                             node.ContainerNode = node;
                             node.Children.Clear();
                         }
@@ -406,7 +402,7 @@ namespace Assets.Scripts.Level
                     // mark the rest of the nodes as permanant
                     checkedNodes.ToList().ForEach((node) =>
                     {
-                        if (!node.IsPermanant && node.Clearance == 1)
+                        if (!node.IsPermanant)
                         {
                             node.IsPermanant = true;
                             node.ContainerNode = node;
@@ -416,7 +412,7 @@ namespace Assets.Scripts.Level
 
                     });
                 }
-            }  
+            }
             _grid.PrintPermanantNodesImage();
 
 
@@ -439,6 +435,120 @@ namespace Assets.Scripts.Level
             //_grid.PrintPermanantNodesImage();
             //SaveClearanceMap("_b");
 
+            float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
+            Debug.Log($"InitializeMap() took {end} ms to complete. There were {totalLoopCount} loops measuring square sizes");
+        }
+
+        public IEnumerator CalculateClearance()
+        {
+            float start = Time.realtimeSinceStartup;
+            int totalLoopCount = 0;
+            int minY, minX, maxY, maxX, boundsX, boundsY = 0;
+
+            bool hasHitObstacle;
+            MapNode currentNode;
+            MapNode loopNode;
+
+            for (int y = 0; y < _grid.Height; y++)
+            {
+                for (int x = 0; x < _grid.Width; x++)
+                {
+                    currentNode = _grid.Nodes[x][y];
+                    if (currentNode.Clearance > 0)
+                    {
+                        hasHitObstacle = false;
+                        minY = currentNode.y - currentNode.Clearance;
+                        minX = currentNode.x - currentNode.Clearance;
+                        maxY = currentNode.y + currentNode.Clearance;
+                        maxX = currentNode.x + currentNode.Clearance;
+                        while (!hasHitObstacle && maxX < _grid.Width && maxY < _grid.Height && minX >= 0 && minY >= 0)
+                        {
+                            // bottom border
+                            //Debug.Log($"Checking clearance ({currentNode.Clearance+1}) for {currentNode.Index}: minX: {minX}, maxX: {maxX}, minY: {minY}, maxY: {maxY}");
+                            for (boundsX = minX; boundsX <= maxX; boundsX++)
+                            {
+                                totalLoopCount++;
+                                //loopNode = _grid.GetNode(boundsX, maxY);
+                                loopNode = _grid.Nodes[boundsX][maxY];
+
+                                //Debug.Log($"Checking {loopNode.Index} as a child of {currentNode}");
+                                if (loopNode.Clearance == 0)
+                                {
+                                    //Debug.Log($"{currentNode.Index} Has hit obstacle {loopNode.Index}");
+                                    hasHitObstacle = true;
+                                    break;
+                                }
+                                //Debug.Log($"{loopNode.Index} is being added as a child of {currentNode}");
+                            }
+
+                            // top border
+                            if (!hasHitObstacle)
+                            {
+                                for (boundsX = minX; boundsX <= maxX; boundsX++)
+                                {
+                                    totalLoopCount++;
+                                    //loopNode = _grid.GetNode(boundsX, minY);
+                                    loopNode = _grid.Nodes[boundsX][minY];
+                                    //Debug.Log($"Checking {loopNode.Index} as a child of {currentNode}");
+                                    if (loopNode.Clearance == 0)
+                                    {
+                                        //Debug.Log($"{currentNode.Index} Has hit obstacle {loopNode.Index}");
+                                        hasHitObstacle = true;
+                                        break;
+                                    }
+                                }
+
+                                // right border
+                                if (!hasHitObstacle)
+                                {
+                                    for (boundsY = maxY - 1; boundsY > minY; boundsY--)
+                                    {
+                                        totalLoopCount++;
+                                        //loopNode = _grid.GetNode(maxX, boundsY);
+                                        loopNode = _grid.Nodes[maxX][boundsY];
+                                        //Debug.Log($"Checking {loopNode.Index} as a child of {currentNode}");
+                                        if (loopNode.Clearance == 0)
+                                        {
+                                            hasHitObstacle = true;
+                                            //Debug.Log($"{currentNode.Index} Has hit obstacle {loopNode.Index}");
+                                            break;
+                                        }
+                                    }
+
+                                    // left border
+                                    if (!hasHitObstacle)
+                                    {
+                                        for (boundsY = maxY - 1; boundsY > minY; boundsY--)
+                                        {
+                                            totalLoopCount++;
+                                            //loopNode = _grid.GetNode(minX, boundsY);
+                                            loopNode = _grid.Nodes[minX][boundsY];
+                                            //Debug.Log($"Checking {loopNode.Index} as a child of {currentNode}");
+                                            if (loopNode.Clearance == 0)
+                                            {
+                                                hasHitObstacle = true;
+                                                //Debug.Log($"{currentNode.Index} Has hit obstacle {loopNode.Index}");
+                                                break;
+                                            }
+                                        }
+
+                                        if (!hasHitObstacle)
+                                        {
+                                            currentNode.Clearance++;
+                                            maxY++;
+                                            maxX++;
+                                            minY--;
+                                            minX--;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        currentNode.OriginalClearance = currentNode.Clearance;
+                    }
+                }
+                yield return ConfigData.WaitForEndOfFrame;
+            }
             float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
             Debug.Log($"InitializeMap() took {end} ms to complete. There were {totalLoopCount} loops measuring clearance");
         }
@@ -501,6 +611,8 @@ namespace Assets.Scripts.Level
                     MapNode mapChild = _grid.Nodes[(int)child.x][(int)child.y];
                     mapChild.ContainerNode = mapNode;
                     mapChild.IsPermanant = true;
+                    mapChild.OriginalClearance = (int) child.OC;
+                    mapChild.Clearance = mapChild.OriginalClearance;
                     mapNode.Children.Add(mapChild);
                 });
 
@@ -562,6 +674,7 @@ namespace Assets.Scripts.Level
 
             Level.StartCoroutine(LoadClearanceMap());
             //Level.StartCoroutine(CalculateClearance());
+            //Level.StartCoroutine(CalculateSquares());
 
             _grid.ClearanceMapList = _grid.ClearanceMap.ToList();
             NeedsToBeUpdated = false;
@@ -748,19 +861,13 @@ namespace Assets.Scripts.Level
         }
         private void MakeDestinationList(MapNode endNode, Path path)
         {
-            float start = Time.realtimeSinceStartup;
             List<Vector2> destinationList = new List<Vector2> { endNode.Vector };
             MapNode currentNode = endNode;
-            while (currentNode.PreviousNode != null && Time.realtimeSinceStartup - start < TimeLimit)
+            while (currentNode.PreviousNode != null)
             {
                 destinationList.Add(currentNode.PreviousNode.Vector);
-                currentNode.PreviousNode.IsPartOfPath = true;
+                //currentNode.PreviousNode.IsPartOfPath = true;
                 currentNode = currentNode.PreviousNode;
-            }
-
-            if (Time.realtimeSinceStartup - start > TimeLimit)
-            {
-                Debug.Log($"Ran out of time while trying to make the path");
             }
             destinationList.Reverse();
             path.SetPoints(destinationList);
@@ -901,18 +1008,18 @@ namespace Assets.Scripts.Level
             startNode = _grid.Nodes[startX][startY];
             endNode = _grid.Nodes[endX][endY];
             path = new Path(startX, startY, endX, endY);
-            cachedPath = PathCache.FirstOrDefault((p) => path.Equals(p));
+            //cachedPath = PathCache.FirstOrDefault((p) => path.Equals(p));
 
             //Debug.Log($"Cached path: {cachedPath}, contains: {PathCache.Contains(path)} path Id: {path.Id}");
 
 
-            if (cachedPath != null)
-            {
-                Debug.Log("Found a cached path!");
-                cachedPath.IsCached = true;
-                callback(cachedPath);
-                yield break;
-            }
+            //if (cachedPath != null)
+            //{
+            //    Debug.Log("Found a cached path!");
+            //    cachedPath.IsCached = true;
+            //    callback(cachedPath);
+            //    yield break;
+            //}
 
             if (endNode.ContainerNode.Clearance < maximumClearance)
             {
@@ -929,18 +1036,18 @@ namespace Assets.Scripts.Level
                 //}
 
 
-                Debug.Log($"The destination ({endNode.Vector}) isn't walkable space");
+                //Debug.Log($"The destination ({endNode.Vector}) isn't walkable space");
                 endNode = FindNearestWalkablePoint(startNode, endNode, maximumClearance);
-                Debug.Log($"Found new end point that is walkable: {endNode.Vector}");
+                //Debug.Log($"Found new end point that is walkable: {endNode.Vector}");
             }
 
 
 
             if (startNode.ContainerNode.Clearance < maximumClearance)
             {
-                Debug.Log($"The start ({startNode.Vector}) isn't walkable space");
+                //Debug.Log($"The start ({startNode.Vector}) isn't walkable space");
                 startNode = FindNearestWalkablePoint(endNode, startNode, maximumClearance);
-                Debug.Log($"Found new start point that is walkable: {startNode.Vector}");
+                //Debug.Log($"Found new start point that is walkable: {startNode.Vector}");
             }
 
             UncheckedNodes = new List<MapNode>() { startNode };
@@ -969,8 +1076,8 @@ namespace Assets.Scripts.Level
                 node.CostToHere = int.MaxValue;
                 node.CalculateTotalCost();
                 node.PreviousNode = null;
-                node.HasBeenChecked = false;
-                node.IsPartOfPath = false;
+                //node.HasBeenChecked = false;
+                //node.IsPartOfPath = false;
                 foreach (MapNode neighbor in node.Neighbors)
                 {
                     if (!checkedNodes.Contains(neighbor))
@@ -1022,10 +1129,10 @@ namespace Assets.Scripts.Level
 
                 if (currentNode == endNode)
                 {
-                    Debug.Log($"Reached the end destination");
                     MakeDestinationList(endNode, path);
-                    PathCache.Add(path);
-                    _grid.DebugGridAsImage(new Vector2Int(currentNode.x, currentNode.y));
+                    //PathCache.Add(path);
+                    //Debug.Log($"Reached the end destination");
+                    //_grid.DebugGridAsImage(new Vector2Int(currentNode.x, currentNode.y));
                     callback(path);
                     yield break;
                 }
@@ -1033,9 +1140,9 @@ namespace Assets.Scripts.Level
                 {
                     endNode.PreviousNode = currentNode;
                     MakeDestinationList(endNode, path);
-                    PathCache.Add(path);
-                    Debug.Log($"Found the end node ({loops} loops) as a child of another node {currentNode}");
-                    _grid.DebugGridAsImage(new Vector2Int(endNode.x, endNode.y));
+                    //PathCache.Add(path);
+                    //Debug.Log($"Found the end node ({loops} loops) as a child of another node {currentNode}");
+                    //_grid.DebugGridAsImage(new Vector2Int(endNode.x, endNode.y));
                     callback(path);
                     yield break;
                 }
@@ -1055,7 +1162,7 @@ namespace Assets.Scripts.Level
                         continue;
                     }
 
-                    if (neighbor.Clearance == 0) // < maximum clearance
+                    if (neighbor.Clearance < maximumClearance) // < maximum clearance                 == 0
                     {
                         //if (loops > DebugLoops)
                         //{
@@ -1116,8 +1223,8 @@ namespace Assets.Scripts.Level
             }
 
             // couldn't find the path
-            _grid.DebugGridAsImage(new Vector2Int(currentNode.x, currentNode.y));
-            currentNode.DebugNodeImage();
+            //_grid.DebugGridAsImage(new Vector2Int(currentNode.x, currentNode.y));
+            //currentNode.DebugNodeImage();
             callback(null);
             yield break;
 
@@ -1737,14 +1844,14 @@ namespace Assets.Scripts.Level
             public string ToJson()
             {
                 string json = $"{{\"Id\": {Id}, \"x\": {x}, \"y\": {y}, \"OC\": {OriginalClearance}, \"C\": [";
-                Children.ToList().ForEach((n) => json += $" {{ \"x\": {n.x}, \"y\": {n.y} }},");
+                Children.ToList().ForEach((n) => json += $" {{ \"Id\": {n.Id}, \"x\": {n.x}, \"y\": {n.y}, \"OC\": {n.OriginalClearance} }},");
                 if (Children.Count > 0)
                 {
                     json = json.Substring(0, json.Length - 1);
                 }
 
                 json += "], \"N\": [";
-                Neighbors.ToList().ForEach((n) => json += $" {{ \"x\": {n.x}, \"y\": {n.y} }},");
+                Neighbors.ToList().ForEach((n) => json += $" {{ \"Id\": {n.Id}, \"x\": {n.x}, \"y\": {n.y}, \"OC\": {n.OriginalClearance} }},");
 
                 if (Neighbors.Count > 0)
                 {

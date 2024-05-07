@@ -452,7 +452,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                         IsFollowingPath = true;
                         HasTargetCoordinates = true;
                         float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
-                        Debug.Log($"It took {Math.Round(end, 2)} ms to find the path for {Name}.");
+                        Debug.Log($"It took {Math.Round(end, 2)} ms to find the path for {Name} with Clearance: {Level.MaximumClearance}.");
                     });
 
                 }
