@@ -546,7 +546,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 Vector2Int convertedStart = Level.Pathfinder.ConvertToMapCoordinates(startPosition);
                 Vector2Int convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
 
-                StartCoroutine(Level.Pathfinder.FindPath(convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance(), Level.MaximumClearance, (path) =>
+                StartCoroutine(Level.Pathfinder.FindPath(convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, Level.MaximumClearance, false, (path) =>
                 {
                     if (path != null && path.Points.Count > 0)
                     {

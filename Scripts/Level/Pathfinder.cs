@@ -2,6 +2,7 @@
 using Assets.Scripts.Scenes;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using NUnit;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -63,42 +64,56 @@ namespace Assets.Scripts.Level
 
         }
 
-        private void BakeMap()
-
+        private IEnumerator BakeMap()
         {
-
-            int baseIncrement = 1;
-
-            int endPoint = 10;
-
-            for (int startX = 0; startX < endPoint; startX += baseIncrement)
-
+            float start = Time.realtimeSinceStartup;
+            HashSet<MapNode> allNodes = new HashSet<MapNode>(_grid.ClearanceMap);
+            Queue<MapNode> queue = new Queue<MapNode>();
+            HashSet<MapNode> checkedNodes = new HashSet<MapNode>();
+            queue.Enqueue(_grid.ClearanceMapList.First());
+            checkedNodes.Add(_grid.ClearanceMapList.First());
+            while (queue.Count > 0)
             {
-
-                for (int startY = 0; startY < endPoint; startY += baseIncrement)
-
+                MapNode node = queue.Dequeue();
+                allNodes.UnionWith(node.Neighbors);
+                foreach (MapNode neighbor in node.Neighbors)
                 {
-
-                    for (int endX = baseIncrement; endX < endPoint; endX += baseIncrement)
-
+                    if (!checkedNodes.Contains(neighbor))
                     {
-
-                        for (int endY = baseIncrement; endY < endPoint; endY += baseIncrement)
-
-                        {
-
-                            //FindPath(startX, startY, endX, endY);
-
-                        }
-
+                        checkedNodes.Add(neighbor);
+                        queue.Enqueue(neighbor);
                     }
-
                 }
-
             }
 
+            List<MapNode> nodes = allNodes.Where((n) => n.Clearance > 1).ToList();
+            long loops = 0;
+            MapNode startNode;
+            MapNode endNode;
+            Debug.Log($"There are {nodes.Count} nodes");
+            float end;
+            for (int i = 0; i < nodes.Count; i++)
+            {
+                startNode = nodes[i];
+                for (int j = 0; j < nodes.Count; j++)
+                {
+                    endNode = nodes[j];
+                    if (startNode != endNode)
+                    {
+                        Level.StartCoroutine(FindPath(startNode.x, startNode.y, endNode.x, endNode.y, 1, true, null));
+                    }
+                    loops++;
+                    
+                }
+                end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
+                Debug.Log($"#{i} BakeMap() took {end} ms so far.");
+                yield return ConfigData.WaitForEndOfFrame;
+            }
+            end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
+            Debug.Log($"BakeMap() took {end} ms to complete with {PathCache.Count} paths cached.");
+            Level.StartCoroutine(SavePathCache());
         }
-        private int SquareSize = 100;
+        private int SquareSize = 100; 
         private void GetMapFreeSpace()
 
         {
@@ -573,7 +588,65 @@ namespace Assets.Scripts.Level
             string path = $"{ConfigData.GetBasePath()}/ClearanceMap{version}.json";
             File.WriteAllText(path, json);
         }
-        public IEnumerator LoadClearanceMap()
+        public IEnumerator SavePathCache(string version = "")
+        {
+            float start = Time.realtimeSinceStartup;
+            float end;
+            string json = "[";
+            //PathCache.ToList().ForEach((path) => json += $"{path.ToJson()}, ");
+            Debug.Log($"About to convert the paths to JSON list");
+            yield return ConfigData.WaitForEndOfFrame;
+            json += PathCache.Select((path) => $"{path.ToJson()}, ").Aggregate("", (agg, b) =>  agg + b);
+            Debug.Log($"Converted the paths to JSON list");
+            yield return ConfigData.WaitForEndOfFrame;
+            json = json.Remove(json.Length - 2);
+            json += "]";
+
+            string path = $"{ConfigData.GetBasePath()}/PathCache{version}.json";
+            Debug.Log($"Prepared to write");
+            yield return ConfigData.WaitForEndOfFrame;
+            File.WriteAllText(path, json);
+            end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
+            Debug.Log($"Save Path Cache took {end} ms.");
+
+            //string path = $"{ConfigData.GetBasePath()}/PathCache{version}.json";
+            ////Debug.Log($"Made the file path");
+            ////yield return ConfigData.WaitForEndOfFrame;
+            //StreamWriter writer = new StreamWriter(path, false);
+            ////Debug.Log($"Started the writer");
+            ////yield return ConfigData.WaitForEndOfFrame;
+            //writer.WriteLine("[");
+            ////Debug.Log($"Wrote the opening bracket");
+            ////yield return ConfigData.WaitForEndOfFrame;
+            //IEnumerable<string> pathsJson = PathCache.Select((path) => $"{path.ToJson()}, ");
+            ////Debug.Log($"Converted the paths to JSON");
+            //yield return ConfigData.WaitForEndOfFrame;
+            //for (int i = 0; i < PathCache.Count; i++)
+            //{
+            //    if (i < PathCache.Count - 1)
+            //    {
+            //        writer.WriteLine(pathsJson.ElementAt(i));
+            //        if (i % 500 == 0)
+            //        {
+            //            Debug.Log($"Wrote line #{i} to disk for path cache");
+            //            yield return ConfigData.WaitForEndOfFrame;
+            //        }
+
+            //    }
+            //    else
+            //    {
+            //        string json = pathsJson.ElementAt(i);
+            //        Debug.Log($"Final json {json}");
+            //        json = json.Remove(json.Length - 2);
+            //        writer.WriteLine(json);
+            //    }
+            //}
+            //writer.WriteLine("]");
+            //writer.Close();
+            //end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
+            //Debug.Log($"Save Path Cache took {end} ms.");
+        }
+        public IEnumerator LoadClearanceMap(Action callback)
         {
             float start = Time.realtimeSinceStartup;
             string contents = "";
@@ -633,6 +706,46 @@ namespace Assets.Scripts.Level
             //_grid.PrintPermanantNodesImage();
             float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
             Debug.Log($"Loaded clearance map in {end} ms");
+            callback();
+        }
+        public IEnumerator LoadPathCache()
+        {
+            float start = Time.realtimeSinceStartup;
+            string contents = "";
+            StreamReader fileStream = new StreamReader($"{ConfigData.GetBasePath()}/PathCache.json");
+            int loops = 0;
+
+            while (!fileStream.EndOfStream)
+            {
+                loops++;
+                string line = fileStream.ReadLine();
+                contents += line;
+                if (loops % 1000 == 0)
+                {
+                    yield return ConfigData.WaitForEndOfFrame;
+                }
+            }
+
+            fileStream.Close();
+            List<dynamic> paths = Utilities.JArrayToList<dynamic>((JArray)JsonConvert.DeserializeObject(contents));
+
+            foreach (dynamic path in paths)
+            {
+                loops++;
+                Path cachedPath = new Path((int) path.StartX, (int) path.StartY, (int) path.EndX, (int) path.EndY);
+                cachedPath.Points = new List<Vector2>();
+
+                List<dynamic> points = Utilities.JArrayToList<dynamic>(path.Points);
+
+                points.ForEach((point) =>
+                {
+                    cachedPath.Points.Add(new Vector2((int)point.x, (int)point.y));
+                });
+                
+            }
+            //_grid.PrintPermanantNodesImage();
+            float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
+            Debug.Log($"Loaded path cache in {end} ms");
         }
         public void InitializeMap()
         {
@@ -672,11 +785,15 @@ namespace Assets.Scripts.Level
                 }
             }
 
-            Level.StartCoroutine(LoadClearanceMap());
+            Level.StartCoroutine(LoadClearanceMap(() =>
+            {
+                _grid.ClearanceMapList = _grid.ClearanceMap.ToList();
+                Level.StartCoroutine(LoadPathCache());
+                //Level.StartCoroutine(BakeMap());
+            }));
             //Level.StartCoroutine(CalculateClearance());
             //Level.StartCoroutine(CalculateSquares());
 
-            _grid.ClearanceMapList = _grid.ClearanceMap.ToList();
             NeedsToBeUpdated = false;
 
         }
@@ -999,56 +1116,70 @@ namespace Assets.Scripts.Level
             return null;
 
         }
-        public IEnumerator FindPath(int startX, int startY, int endX, int endY, int minimumClearance, int maximumClearance, Action<Path> callback)
+        public IEnumerator FindPath(int startX, int startY, int endX, int endY, int maximumClearance, bool isBaking, Action<Path> callback)
         {
             //minimumClearance = 1;
             //maximumClearance = 1;
             //Debug.Log($"Trying to find a path with clearance ({minimumClearance} - {maximumClearance}) from ({startX}, {startY}) to ({endX}, {endY})");
-            float start = Time.realtimeSinceStartup;
-            startNode = _grid.Nodes[startX][startY];
-            endNode = _grid.Nodes[endX][endY];
-            path = new Path(startX, startY, endX, endY);
-            //cachedPath = PathCache.FirstOrDefault((p) => path.Equals(p));
+            //float start = Time.realtimeSinceStartup;
 
-            //Debug.Log($"Cached path: {cachedPath}, contains: {PathCache.Contains(path)} path Id: {path.Id}");
-
-
-            //if (cachedPath != null)
-            //{
-            //    Debug.Log("Found a cached path!");
-            //    cachedPath.IsCached = true;
-            //    callback(cachedPath);
-            //    yield break;
-            //}
-
-            if (endNode.ContainerNode.Clearance < maximumClearance)
+            if (isBaking)
             {
+                startNode = _grid.Nodes[startX][startY];
+                endNode = _grid.Nodes[endX][endY];
+                path = new Path(startNode.ContainerNode.x, startNode.ContainerNode.y, endNode.ContainerNode.x, endNode.ContainerNode.y);
+            }
+            else
+            {
+                path = new Path(startX, startY, endX, endY);
 
-                //if (!isBaking)
-                //{
-                //    Debug.Log($"The destination ({endNode.Vector}) isn't walkable space");
-                //    endNode = FindNearestWalkablePoint(startNode, endNode);
-                //    Debug.Log($"Found new end point that is walkable: {endNode.Vector}");
-                //}
-                //else
-                //{
-                //    endNode = FindNearestWalkablePoint(startNode, endNode);
-                //}
-
-
-                //Debug.Log($"The destination ({endNode.Vector}) isn't walkable space");
-                endNode = FindNearestWalkablePoint(startNode, endNode, maximumClearance);
-                //Debug.Log($"Found new end point that is walkable: {endNode.Vector}");
             }
 
-
-
-            if (startNode.ContainerNode.Clearance < maximumClearance)
+            if (!isBaking)
             {
-                //Debug.Log($"The start ({startNode.Vector}) isn't walkable space");
-                startNode = FindNearestWalkablePoint(endNode, startNode, maximumClearance);
-                //Debug.Log($"Found new start point that is walkable: {startNode.Vector}");
+                cachedPath = PathCache.FirstOrDefault((p) => path.Equals(p));
+                //Debug.Log($"Cached path: {cachedPath}, contains: {PathCache.Contains(path)} path Id: {path.Id}");
+
+                if (cachedPath != null)
+                {
+                    Debug.Log("Found a cached path!");
+                    //cachedPath.IsCached = true;
+                    callback(cachedPath);
+                    yield break;
+                }
+                startNode = _grid.Nodes[startX][startY];
+                endNode = _grid.Nodes[endX][endY];
+                if (endNode.ContainerNode.Clearance < maximumClearance)
+                {
+
+                    //if (!isBaking)
+                    //{
+                    //    Debug.Log($"The destination ({endNode.Vector}) isn't walkable space");
+                    //    endNode = FindNearestWalkablePoint(startNode, endNode);
+                    //    Debug.Log($"Found new end point that is walkable: {endNode.Vector}");
+                    //}
+                    //else
+                    //{
+                    //    endNode = FindNearestWalkablePoint(startNode, endNode);
+                    //}
+
+
+                    //Debug.Log($"The destination ({endNode.Vector}) isn't walkable space");
+                    //Debug.Log($"Found new end point that is walkable: {endNode.Vector}");
+
+                    endNode = FindNearestWalkablePoint(startNode, endNode, maximumClearance);
+                }
+
+
+
+                if (startNode.ContainerNode.Clearance < maximumClearance)
+                {
+                    //Debug.Log($"The start ({startNode.Vector}) isn't walkable space");
+                    startNode = FindNearestWalkablePoint(endNode, startNode, maximumClearance);
+                    //Debug.Log($"Found new start point that is walkable: {startNode.Vector}");
+                }
             }
+
 
             UncheckedNodes = new List<MapNode>() { startNode };
             CheckedNodes.Clear();
@@ -1097,10 +1228,10 @@ namespace Assets.Scripts.Level
             }
 
             int loops = 0;
-            float startupTime = (Time.realtimeSinceStartup - start) * 1000;
-            Debug.Log($"Startup time took: {startupTime} ms");
+            //float startupTime = (Time.realtimeSinceStartup - start) * 1000;
+            //Debug.Log($"Startup time took: {startupTime} ms");
             //Debug.Log($"Startnode: {startNode}, queueLoops: {queueLoops}, clearanceMapList: {_grid.ClearanceMapList.Count}");
-            while (UncheckedNodes.Count > 0 && Time.realtimeSinceStartup - start < TimeLimit)
+            while (UncheckedNodes.Count > 0 /* && Time.realtimeSinceStartup - start < TimeLimit */)
             {
                 loops++;
                 currentNode = GetCheapestNode(UncheckedNodes);
@@ -1130,20 +1261,26 @@ namespace Assets.Scripts.Level
                 if (currentNode == endNode)
                 {
                     MakeDestinationList(endNode, path);
-                    //PathCache.Add(path);
+                    PathCache.Add(path);
                     //Debug.Log($"Reached the end destination");
                     //_grid.DebugGridAsImage(new Vector2Int(currentNode.x, currentNode.y));
-                    callback(path);
+                    if (!isBaking)
+                    {
+                        callback(path);
+                    }
                     yield break;
                 }
                 else if (currentNode.Children.Contains(endNode))
                 {
                     endNode.PreviousNode = currentNode;
                     MakeDestinationList(endNode, path);
-                    //PathCache.Add(path);
+                    PathCache.Add(path);
                     //Debug.Log($"Found the end node ({loops} loops) as a child of another node {currentNode}");
                     //_grid.DebugGridAsImage(new Vector2Int(endNode.x, endNode.y));
-                    callback(path);
+                    if (!isBaking)
+                    {
+                        callback(path);
+                    }
                     yield break;
                 }
                 UncheckedNodes.Remove(currentNode);
@@ -1213,19 +1350,25 @@ namespace Assets.Scripts.Level
                 }
             }
 
-            if (Time.realtimeSinceStartup - start > TimeLimit)
+            
+            if (!isBaking)
             {
-                Debug.Log($"Ran out of time while trying to find a path from {startNode.Vector} to {endNode.Vector}");
-            }
-            else if (UncheckedNodes.Count == 0)
-            {
-                Debug.Log($"No more nodes to check.  checkedNodes: {CheckedNodes.Count} / {_grid.TotalNodes} / {_grid.ClearanceMap.Count}  CurrentNode: {currentNode},");
-            }
+                //if (Time.realtimeSinceStartup - start > TimeLimit)
+                //{
+                //    Debug.Log($"Ran out of time while trying to find a path from {startNode.Vector} to {endNode.Vector}");
+                //}
+                //else 
+                if (UncheckedNodes.Count == 0)
+                {
+                    Debug.Log($"No more nodes to check.  checkedNodes: {CheckedNodes.Count} / {_grid.TotalNodes} / {_grid.ClearanceMap.Count}  CurrentNode: {currentNode},");
+                }
 
-            // couldn't find the path
-            //_grid.DebugGridAsImage(new Vector2Int(currentNode.x, currentNode.y));
-            //currentNode.DebugNodeImage();
-            callback(null);
+                // couldn't find the path
+                //_grid.DebugGridAsImage(new Vector2Int(currentNode.x, currentNode.y));
+                //currentNode.DebugNodeImage();
+                callback(null);
+
+            }
             yield break;
 
         }
@@ -1947,6 +2090,19 @@ namespace Assets.Scripts.Level
             public override string ToString()
             {
                 return $"Path #{Id} starting from ({StartX}, {StartY}) and going through {Points.Count} points to get to ({EndX}, {EndY})";
+            }
+            public string ToJson()
+            {
+                string json = $"{{\"StartX\": {StartX}, \"StartY\": {StartY}, \"EndX\": {EndX}, \"EndY\": {EndY}, \"Points\": [";
+                Points.ForEach((p) => json += $" {{ \"x\": {p.x}, \"y\": {p.y} }},");
+                if (Points.Count > 0)
+                {
+                    json = json.Substring(0, json.Length - 1);
+                }
+
+                json += "]}";
+
+                return json;
             }
         }
     }

@@ -11,6 +11,7 @@ using Assets.Scripts.UIComponents;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using Unity.MLAgents;
@@ -103,6 +104,7 @@ namespace Assets.Scripts.Scenes
         public List<string> __BeeHivemindShips;
         public List<string> __HumanHivemindShips;
         public List<string> __PastCommands;
+        public List<string> __CachedPaths;
 
         new void Start()
         {
@@ -358,10 +360,10 @@ namespace Assets.Scripts.Scenes
         }
         private void UpdateDebugVariables()
         {
-            //if (Pathfinder != null)
-            //{
-            //    __CachedPaths = Pathfinder.PathCache.Select((p) => p.ToString()).ToList();
-            //}
+            if (Pathfinder != null)
+            {
+                __CachedPaths = Pathfinder.PathCache.Select((p) => p.ToString()).ToList();
+            }
             __BeeHivemindShips = GetState().GetShipsVisibleToHiveMind(ConfigData.Configuration.BeeSide).Select(s => s.ToString()).ToList();
             __HumanHivemindShips = GetState().GetShipsVisibleToHiveMind(ConfigData.Configuration.HumanSide).Select(s => s.ToString()).ToList();
             __PastCommands = GetState().GetPastCommands().Select((c) => $"Command #{c.OutcomeId} - {c.Strategy.Name} for Squad {c.Squad} with {c.Tsv} TSV").ToList();
