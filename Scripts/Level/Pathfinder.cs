@@ -7,6 +7,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using UnityEditor.Experimental.GraphView;
 using UnityEngine;
 
 
@@ -19,7 +20,8 @@ namespace Assets.Scripts.Level
 
         public const int DIAGONAL_COST = 14;
         public const int HORIZONTAL_COST = 10;
-        public List<MapNode> UncheckedNodes;
+        public SortedSet<MapNode> UncheckedNodes;
+        public List<MapNode> ResettableNodes;
         public HashSet<MapNode> CheckedNodes = new HashSet<MapNode>();
         public HashSet<Path> PathCache = new HashSet<Path>();
         public HashSet<Vector2Int> FreeAreas = new HashSet<Vector2Int>();
@@ -446,7 +448,7 @@ namespace Assets.Scripts.Level
             AssembleClearanceMap();
             SaveClearanceMap();
             //LoadClearanceMap();
-            //_grid.PrintPermanantNodesImage();
+            _grid.PrintPermanantNodesImage();
             //SaveClearanceMap("_b");
 
             float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
@@ -728,47 +730,9 @@ namespace Assets.Scripts.Level
             Path cachedPath;
             string[] paths;
 
-            //StreamReader fileStream = new StreamReader($"{ConfigData.GetBasePath()}/PathCache.json");
-            string[] lines = File.ReadAllLines($"{ConfigData.GetBasePath()}/PathCache.txt");
-            ////List<List<dynamic>> pathsList = File.ReadAllLines($"{ConfigData.GetBasePath()}/PathCache.json").Select((p) => Utilities.JArrayToList(JsonConvert.DeserializeObject(p))).ToList();
-            Debug.Log($"Loaded cache file in {((Time.realtimeSinceStartup - fullStart) * 1000)} ms");
-            yield return ConfigData.WaitForEndOfFrame;
-            float start = Time.realtimeSinceStartup;
-
-            List<JArray> partialCache = new List<JArray>();
-            //object temp;
-            //int i = 0;
-            //IEnumerable<bool> r = lines.Select((p) =>
-            //{
-            //    Debug.Log($"i: {i++}");
-            //    temp = (JArray)JsonConvert.DeserializeObject(p);
-            //    partialCache.Add(temp);
-
-            //    IEnumerable<bool> r = temp.Select(path =>
-            //    {
-            //        cachedPath = new Path((int)path["sx"], (int)path["sy"], (int)path["ex"], (int)path["ey"]);
-            //        cachedPath.Points = new List<Vector2>();
-
-            //        points = Utilities.JArrayToList(path["p"]);
-
-            //        points.ForEach((point) =>
-            //        {
-            //            cachedPath.Points.Add(new Vector2((int)point.x, (int)point.y));
-            //        });
-            //        PathCache.Add(cachedPath);
-
-            //        return true;
-            //    });
-
-            //    return true;
-            //});
-            //Debug.Log($"Converted file lines ({lines.Length}) to path cache in {((Time.realtimeSinceStartup - start) * 1000)} ms");
-            //start = Time.realtimeSinceStartup;
-            //Debug.Log($"r: {r.Count()}");
-            //Debug.Log($"Counted the ienumerable in {((Time.realtimeSinceStartup - start) * 1000)} ms");
             int lineCount = 0;
 
-            foreach (string p in lines)
+            foreach (string p in File.ReadAllLines($"{ConfigData.GetBasePath()}/PathCache.txt"))
             {
                 lineCount++;
                 //Debug.Log(p);
@@ -780,7 +744,7 @@ namespace Assets.Scripts.Level
                     cachedPath = new Path(points[0], points[1], points[2], points[3]);
                     cachedPath.Points = new List<Vector2>();
 
-                    for (int  i = 4; i <  points.Count; i += 2)
+                    for (int  i = 4; i < points.Count; i += 2)
                     {
                         cachedPath.Points.Add(new Vector2(points[i], points[i+1]));
                     }
@@ -792,132 +756,12 @@ namespace Assets.Scripts.Level
                 {
                     yield return ConfigData.WaitForEndOfFrame;
                 }
-                //temp = JsonConvert.DeserializeObject(p);
-                //partialCache.Add(temp);
-
-
-                //foreach (JToken path in temp)
-                //{
-                //    cachedPath = new Path((int)path["sx"], (int)path["sy"], (int)path["ex"], (int)path["ey"]);
-                //    cachedPath.Points = new List<Vector2>();
-
-                //    points = Utilities.JArrayToList(path["p"]);
-
-                //    points.ForEach((point) =>
-                //    {
-                //        cachedPath.Points.Add(new Vector2((int)point.x, (int)point.y));
-                //    });
-                //    PathCache.Add(cachedPath);
-                //}
 
             }
-            //Debug.Log($"Converted file lines ({lines.Length}) to partial cache in {((Time.realtimeSinceStartup - start) * 1000)} ms");
-            //yield return ConfigData.WaitForEndOfFrame;
-            //start = Time.realtimeSinceStartup;
-            //foreach (JArray t in partialCache)
-            //{
-
-            //    foreach (JToken path in t)
-            //    {
-            //        cachedPath = new Path((int)path["sx"], (int)path["sy"], (int)path["ex"], (int)path["ey"]);
-            //        cachedPath.Points = new List<Vector2>();
-
-            //        points = Utilities.JArrayToList(path["p"]);
-
-            //        points.ForEach((point) =>
-            //        {
-            //            cachedPath.Points.Add(new Vector2((int)point.x, (int)point.y));
-            //        });
-            //        PathCache.Add(cachedPath);
-            //    }
-
-            //}
-            //Debug.Log($"Converted partial cache ({lines.Length}) to path cache in {((Time.realtimeSinceStartup - start) * 1000)} ms");
-            //Debug.Log($"Converted file lines ({lines.Length}) to json objects in {((Time.realtimeSinceStartup - start) * 1000)} ms");
-            //yield break;
-            //start = Time.realtimeSinceStartup;
-
-            //partialCache = new List<JArray>();
-            //foreach (string line in lines)
-            //{
-            //    temp = (JArray)JsonConvert.DeserializeObject(line);
-            //    //partialCache.Add(temp);
-            //}
-            //Debug.Log($"Foreached  file lines ({lines.Length}) to json objects list in {((Time.realtimeSinceStartup - start) * 1000)} ms");
-            //yield break;
-            ////Debug.Log(jsonObjects.First()[0]);
-            //yield return ConfigData.WaitForEndOfFrame;
-            //start = Time.realtimeSinceStartup;
-
-            ////List<JArray> pathsList = jsonObjects.ToList();
-
-            ////List<List<dynamic>> pathsList = jsonObjects.Select((p) => Utilities.JArrayToList(p)).ToList();
-            ////int count = jsonObjects.Count();
-            ////Debug.Log($"Got length of JSON objects ({count}:{lines.Length}) in {((Time.realtimeSinceStartup - start) * 1000)} ms");
-            ////yield return ConfigData.WaitForEndOfFrame;
-            ////start = Time.realtimeSinceStartup;
-
-
-            //for (int i = 0; i < lines.Length; i++) 
-            //{
-
-            //    foreach (JToken path in partialCache.ElementAt(i))
-            //    {
-            //        //Debug.Log(path);
-            //        //yield break;
-            //        cachedPath = new Path((int)path["sx"], (int)path["sy"], (int)path["ex"], (int)path["ey"]);
-            //        cachedPath.Points = new List<Vector2>();
-
-            //        points = Utilities.JArrayToList(path["p"]);
-
-            //        points.ForEach((point) =>
-            //        {
-            //            cachedPath.Points.Add(new Vector2((int)point.x, (int)point.y));
-            //        });
-            //        PathCache.Add(cachedPath);
-
-            //    }
-
-            //    if (i % 1000 == 0)
-            //    {
-            //        Debug.Log($"Loaded line #{i}");
-            //        yield return ConfigData.WaitForEndOfFrame;
-            //    }
-            //}
-            //Debug.Log($"Converted json lists to path cache in {((Time.realtimeSinceStartup - start) * 1000)} ms");
-            //_grid.PrintPermanantNodesImage();
+            
             float end = (Time.realtimeSinceStartup - fullStart) * 1000; // seconds to milliseconds
             Debug.Log($"Loaded path cache in {end} ms");
-            //while (!fileStream.EndOfStream)
-            //{
-            //    loops++;
-            //    contents += fileStream.ReadLine();
-            //    if (loops % 1000 == 0)
-            //    {
-            //        yield return ConfigData.WaitForEndOfFrame;
-            //    }
-            //}
-
-            //fileStream.Close();
-            //List<dynamic> paths = Utilities.JArrayToList<dynamic>((JArray)JsonConvert.DeserializeObject(contents));
-
-            //foreach (dynamic path in paths)
-            //{
-            //    loops++;
-            //    Path cachedPath = new Path((int) path.StartX, (int) path.StartY, (int) path.EndX, (int) path.EndY);
-            //    cachedPath.Points = new List<Vector2>();
-
-            //    List<dynamic> points = Utilities.JArrayToList<dynamic>(path.Points);
-
-            //    points.ForEach((point) =>
-            //    {
-            //        cachedPath.Points.Add(new Vector2((int)point.x, (int)point.y));
-            //    });
-
-            //}
-            ////_grid.PrintPermanantNodesImage();
-            //float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
-            //Debug.Log($"Loaded path cache in {end} ms");
+            
         }
         public void InitializeMap()
         {
@@ -1164,7 +1008,7 @@ namespace Assets.Scripts.Level
 
 
         private MapNode startNode, endNode, currentNode;
-        private Path path, cachedPath;
+        private Path path, potentialCachedPath, cachedPath;
         public MapNode FindNearestWalkablePoint(MapNode startNode, MapNode endNode, int minimumClearance)
         {
 
@@ -1293,23 +1137,23 @@ namespace Assets.Scripts.Level
             //minimumClearance = 1;
             //maximumClearance = 1;
             //Debug.Log($"Trying to find a path with clearance ({minimumClearance} - {maximumClearance}) from ({startX}, {startY}) to ({endX}, {endY})");
-            //float start = Time.realtimeSinceStartup;
-
+            float start = Time.realtimeSinceStartup;
+            startNode = _grid.Nodes[startX][startY];
+            endNode = _grid.Nodes[endX][endY];
             if (isBaking)
             {
-                startNode = _grid.Nodes[startX][startY];
-                endNode = _grid.Nodes[endX][endY];
+
                 path = new Path(startNode.ContainerNode.x, startNode.ContainerNode.y, endNode.ContainerNode.x, endNode.ContainerNode.y);
             }
             else
             {
-                path = new Path(startX, startY, endX, endY);
-
+                path = new Path(startNode.x, startNode.y, endNode.x, endNode.y);
+                potentialCachedPath = new Path(startNode.ContainerNode.x, startNode.ContainerNode.y, endNode.ContainerNode.x, endNode.ContainerNode.y);
             }
 
             if (!isBaking)
             {
-                cachedPath = PathCache.FirstOrDefault((p) => path.Equals(p));
+                //cachedPath = PathCache.FirstOrDefault((p) => potentialCachedPath.Equals(p));
                 //Debug.Log($"Cached path: {cachedPath}, contains: {PathCache.Contains(path)} path Id: {path.Id}");
 
                 if (cachedPath != null)
@@ -1353,7 +1197,7 @@ namespace Assets.Scripts.Level
             }
 
 
-            UncheckedNodes = new List<MapNode>() { startNode };
+            UncheckedNodes = new SortedSet<MapNode>() { startNode };
             CheckedNodes.Clear();
 
             //for (int x = 0; x < _grid.Width; x++)
@@ -1368,29 +1212,42 @@ namespace Assets.Scripts.Level
             //        node.IsPartOfPath = false;
             //    }
             //}
-
-            Queue<MapNode> queue = new Queue<MapNode>();
-            HashSet<MapNode> checkedNodes = new HashSet<MapNode>();
-            queue.Enqueue(_grid.ClearanceMapList.First());
-            checkedNodes.Add(_grid.ClearanceMapList.First());
-            while (queue.Count > 0)
+            if (ResettableNodes == null)
             {
-                MapNode node = queue.Dequeue();
-                node.CostToHere = int.MaxValue;
-                node.CalculateTotalCost();
-                node.PreviousNode = null;
-                //node.HasBeenChecked = false;
-                //node.IsPartOfPath = false;
-                foreach (MapNode neighbor in node.Neighbors)
+                Queue<MapNode> queue = new Queue<MapNode>();
+                HashSet<MapNode> checkedNodes = new HashSet<MapNode>();
+                queue.Enqueue(_grid.ClearanceMapList.First());
+                checkedNodes.Add(_grid.ClearanceMapList.First());
+                while (queue.Count > 0)
                 {
-                    if (!checkedNodes.Contains(neighbor))
+                    MapNode node = queue.Dequeue();
+                    node.CostToHere = int.MaxValue;
+                    node.TotalCost = int.MaxValue;
+                    node.PreviousNode = null;
+                    //node.HasBeenChecked = false;
+                    //node.IsPartOfPath = false;
+                    foreach (MapNode neighbor in node.Neighbors)
                     {
-                        checkedNodes.Add(neighbor);
-                        queue.Enqueue(neighbor);
+                        if (!checkedNodes.Contains(neighbor))
+                        {
+                            checkedNodes.Add(neighbor);
+                            queue.Enqueue(neighbor);
+                        }
                     }
-                }
 
+                }
+                ResettableNodes = checkedNodes.ToList();
             }
+            else
+            {
+                ResettableNodes.ForEach((n) =>
+                {
+                    n.CostToHere = int.MaxValue;
+                    n.TotalCost = int.MaxValue;
+                    n.PreviousNode = null;
+                });
+            }
+
             startNode.CostToHere = 0;
             startNode.HueristicCost = CalculateDistance(startNode, endNode);
             startNode.CalculateTotalCost();
@@ -1400,13 +1257,14 @@ namespace Assets.Scripts.Level
             }
 
             int loops = 0;
-            //float startupTime = (Time.realtimeSinceStartup - start) * 1000;
-            //Debug.Log($"Startup time took: {startupTime} ms");
+            float startupTime = (Time.realtimeSinceStartup - start) * 1000;
+            Debug.Log($"Startup time took: {startupTime} ms");
             //Debug.Log($"Startnode: {startNode}, queueLoops: {queueLoops}, clearanceMapList: {_grid.ClearanceMapList.Count}");
             while (UncheckedNodes.Count > 0 /* && Time.realtimeSinceStartup - start < TimeLimit */)
             {
                 loops++;
-                currentNode = GetCheapestNode(UncheckedNodes);
+                //currentNode = GetCheapestNode(UncheckedNodes);
+                currentNode = UncheckedNodes.First();
                 //Debug.Log($"Current node: {currentNode}");
 
                 // skips ahead to further down the line if it detects we're in free space
