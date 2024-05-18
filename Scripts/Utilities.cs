@@ -455,6 +455,10 @@ namespace Assets.Scripts
         {
            return ((JArray)jArray).ToList<dynamic>().ConvertAll((item) => (T)item);
         }
+        public static List<dynamic> JArrayToList(dynamic jArray)
+        {
+            return ((JArray)jArray).ToList<dynamic>();
+        }
         public static T[] JArrayToArray<T>(dynamic jArray)
         {
             return Array.ConvertAll(((JArray)jArray).ToArray<dynamic>(), (item) => (T)item);

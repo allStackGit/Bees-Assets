@@ -2,7 +2,6 @@
 using Assets.Scripts.Scenes;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using NUnit;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -592,59 +591,73 @@ namespace Assets.Scripts.Level
         {
             float start = Time.realtimeSinceStartup;
             float end;
-            string json = "[";
-            //PathCache.ToList().ForEach((path) => json += $"{path.ToJson()}, ");
-            Debug.Log($"About to convert the paths to JSON list");
-            yield return ConfigData.WaitForEndOfFrame;
-            json += PathCache.Select((path) => $"{path.ToJson()}, ").Aggregate("", (agg, b) =>  agg + b);
-            Debug.Log($"Converted the paths to JSON list");
-            yield return ConfigData.WaitForEndOfFrame;
-            json = json.Remove(json.Length - 2);
-            json += "]";
 
-            string path = $"{ConfigData.GetBasePath()}/PathCache{version}.json";
-            Debug.Log($"Prepared to write");
-            yield return ConfigData.WaitForEndOfFrame;
-            File.WriteAllText(path, json);
-            end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
-            Debug.Log($"Save Path Cache took {end} ms.");
+
+            //string json = "[";
+            ////PathCache.ToList().ForEach((path) => json += $"{path.ToJson()}, ");
+            //Debug.Log($"About to convert the paths to JSON list");
+            //yield return ConfigData.WaitForEndOfFrame;
+            //json += PathCache.Select((path) => $"{path.ToJson()}, ").Aggregate("", (agg, b) =>  agg + b);
+            //Debug.Log($"Converted the paths to JSON list");
+            //yield return ConfigData.WaitForEndOfFrame;
+            //json = json.Remove(json.Length - 2);
+            //json += "]";
 
             //string path = $"{ConfigData.GetBasePath()}/PathCache{version}.json";
-            ////Debug.Log($"Made the file path");
-            ////yield return ConfigData.WaitForEndOfFrame;
-            //StreamWriter writer = new StreamWriter(path, false);
-            ////Debug.Log($"Started the writer");
-            ////yield return ConfigData.WaitForEndOfFrame;
-            //writer.WriteLine("[");
-            ////Debug.Log($"Wrote the opening bracket");
-            ////yield return ConfigData.WaitForEndOfFrame;
-            //IEnumerable<string> pathsJson = PathCache.Select((path) => $"{path.ToJson()}, ");
-            ////Debug.Log($"Converted the paths to JSON");
+            //Debug.Log($"Prepared to write");
             //yield return ConfigData.WaitForEndOfFrame;
-            //for (int i = 0; i < PathCache.Count; i++)
-            //{
-            //    if (i < PathCache.Count - 1)
-            //    {
-            //        writer.WriteLine(pathsJson.ElementAt(i));
-            //        if (i % 500 == 0)
-            //        {
-            //            Debug.Log($"Wrote line #{i} to disk for path cache");
-            //            yield return ConfigData.WaitForEndOfFrame;
-            //        }
-
-            //    }
-            //    else
-            //    {
-            //        string json = pathsJson.ElementAt(i);
-            //        Debug.Log($"Final json {json}");
-            //        json = json.Remove(json.Length - 2);
-            //        writer.WriteLine(json);
-            //    }
-            //}
-            //writer.WriteLine("]");
-            //writer.Close();
+            //File.WriteAllText(path, json);
             //end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
             //Debug.Log($"Save Path Cache took {end} ms.");
+
+            string path = $"{ConfigData.GetBasePath()}/PathCache{version}.txt";
+            //Debug.Log($"Made the file path");
+            //yield return ConfigData.WaitForEndOfFrame;
+            StreamWriter writer = new StreamWriter(path, false);
+            //Debug.Log($"Started the writer");
+            //yield return ConfigData.WaitForEndOfFrame;
+            //writer.WriteLine("[");
+            //Debug.Log($"Wrote the opening bracket");
+            //yield return ConfigData.WaitForEndOfFrame;
+            List<string> pathsStrings = PathCache.Select((path) => $"{path.ToFile()}|").ToList();
+            Debug.Log($"Converted the paths to File");
+            yield return ConfigData.WaitForEndOfFrame;
+            for (int i = 0; i < pathsStrings.Count + 4; i+=5)
+            {
+                //if (i < PathCache.Count - 5)
+                //{
+                //    writer.WriteLineAsync(pathsJson.Take(5).Aggregate("[", (agg, b) => agg + b + ",")+"]");
+                //    if (i % 500 == 0)
+                //    {
+                //        Debug.Log($"Wrote line #{i} to disk for path cache");
+                //        yield return ConfigData.WaitForEndOfFrame;
+                //    }
+
+                //}
+                //else
+                //{
+                //    string json = pathsJson.ElementAt(i);
+                //    Debug.Log($"Final json {json}");
+                //    json = json.Remove(json.Length - 2);
+                //    writer.WriteLine(json);
+                //}
+                string line = pathsStrings.Take(5).Aggregate("", (agg, b) => agg + b);
+                //Debug.Log(pathsJson.Count);
+                pathsStrings.RemoveRange(0, Math.Min(5, pathsStrings.Count));
+                line = line.Remove(line.Length - 1);
+                writer.WriteLine(line);
+                if (i % 500 == 0)
+                {
+                    Debug.Log($"Wrote line #{i} to disk for path cache");
+                    yield return ConfigData.WaitForEndOfFrame;
+                }
+                //Debug.Log($"Wrote line #{i} to disk for path cache");
+                //yield return ConfigData.WaitForEndOfFrame;
+            }
+            //writer.WriteLine("]");
+            writer.Close();
+            end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
+            Debug.Log($"Save Path Cache took {end} ms.");
         }
         public IEnumerator LoadClearanceMap(Action callback)
         {
@@ -665,7 +678,7 @@ namespace Assets.Scripts.Level
             }
 
             fileStream.Close();
-            List<dynamic> nodes = Utilities.JArrayToList<dynamic>((JArray)JsonConvert.DeserializeObject(contents));
+            List<dynamic> nodes = Utilities.JArrayToList((JArray)JsonConvert.DeserializeObject(contents));
 
             foreach (dynamic node in nodes)
             {
@@ -676,8 +689,8 @@ namespace Assets.Scripts.Level
                 mapNode.Clearance = (int)node.OC;
                 mapNode.OriginalClearance = mapNode.Clearance;
 
-                List<dynamic> children = Utilities.JArrayToList<dynamic>(node.C);
-                List<dynamic> neighbors = Utilities.JArrayToList<dynamic>(node.N);
+                List<dynamic> children = Utilities.JArrayToList(node.C);
+                List<dynamic> neighbors = Utilities.JArrayToList(node.N);
 
                 children.ForEach((child) =>
                 {
@@ -710,42 +723,201 @@ namespace Assets.Scripts.Level
         }
         public IEnumerator LoadPathCache()
         {
-            float start = Time.realtimeSinceStartup;
-            string contents = "";
-            StreamReader fileStream = new StreamReader($"{ConfigData.GetBasePath()}/PathCache.json");
-            int loops = 0;
+            float fullStart = Time.realtimeSinceStartup;
+            List<int> points;
+            Path cachedPath;
+            string[] paths;
 
-            while (!fileStream.EndOfStream)
+            //StreamReader fileStream = new StreamReader($"{ConfigData.GetBasePath()}/PathCache.json");
+            string[] lines = File.ReadAllLines($"{ConfigData.GetBasePath()}/PathCache.txt");
+            ////List<List<dynamic>> pathsList = File.ReadAllLines($"{ConfigData.GetBasePath()}/PathCache.json").Select((p) => Utilities.JArrayToList(JsonConvert.DeserializeObject(p))).ToList();
+            Debug.Log($"Loaded cache file in {((Time.realtimeSinceStartup - fullStart) * 1000)} ms");
+            yield return ConfigData.WaitForEndOfFrame;
+            float start = Time.realtimeSinceStartup;
+
+            List<JArray> partialCache = new List<JArray>();
+            //object temp;
+            //int i = 0;
+            //IEnumerable<bool> r = lines.Select((p) =>
+            //{
+            //    Debug.Log($"i: {i++}");
+            //    temp = (JArray)JsonConvert.DeserializeObject(p);
+            //    partialCache.Add(temp);
+
+            //    IEnumerable<bool> r = temp.Select(path =>
+            //    {
+            //        cachedPath = new Path((int)path["sx"], (int)path["sy"], (int)path["ex"], (int)path["ey"]);
+            //        cachedPath.Points = new List<Vector2>();
+
+            //        points = Utilities.JArrayToList(path["p"]);
+
+            //        points.ForEach((point) =>
+            //        {
+            //            cachedPath.Points.Add(new Vector2((int)point.x, (int)point.y));
+            //        });
+            //        PathCache.Add(cachedPath);
+
+            //        return true;
+            //    });
+
+            //    return true;
+            //});
+            //Debug.Log($"Converted file lines ({lines.Length}) to path cache in {((Time.realtimeSinceStartup - start) * 1000)} ms");
+            //start = Time.realtimeSinceStartup;
+            //Debug.Log($"r: {r.Count()}");
+            //Debug.Log($"Counted the ienumerable in {((Time.realtimeSinceStartup - start) * 1000)} ms");
+            int lineCount = 0;
+
+            foreach (string p in lines)
             {
-                loops++;
-                string line = fileStream.ReadLine();
-                contents += line;
-                if (loops % 1000 == 0)
+                lineCount++;
+                //Debug.Log(p);
+                paths = p.Split("|");
+                foreach (string path in paths)
+                {
+                    //Debug.Log(path);
+                    points = path.Split(",").Select(int.Parse).ToList();
+                    cachedPath = new Path(points[0], points[1], points[2], points[3]);
+                    cachedPath.Points = new List<Vector2>();
+
+                    for (int  i = 4; i <  points.Count; i += 2)
+                    {
+                        cachedPath.Points.Add(new Vector2(points[i], points[i+1]));
+                    }
+
+                    PathCache.Add(cachedPath);
+                }
+
+                if (lineCount % 500 == 0)
                 {
                     yield return ConfigData.WaitForEndOfFrame;
                 }
+                //temp = JsonConvert.DeserializeObject(p);
+                //partialCache.Add(temp);
+
+
+                //foreach (JToken path in temp)
+                //{
+                //    cachedPath = new Path((int)path["sx"], (int)path["sy"], (int)path["ex"], (int)path["ey"]);
+                //    cachedPath.Points = new List<Vector2>();
+
+                //    points = Utilities.JArrayToList(path["p"]);
+
+                //    points.ForEach((point) =>
+                //    {
+                //        cachedPath.Points.Add(new Vector2((int)point.x, (int)point.y));
+                //    });
+                //    PathCache.Add(cachedPath);
+                //}
+
             }
+            //Debug.Log($"Converted file lines ({lines.Length}) to partial cache in {((Time.realtimeSinceStartup - start) * 1000)} ms");
+            //yield return ConfigData.WaitForEndOfFrame;
+            //start = Time.realtimeSinceStartup;
+            //foreach (JArray t in partialCache)
+            //{
 
-            fileStream.Close();
-            List<dynamic> paths = Utilities.JArrayToList<dynamic>((JArray)JsonConvert.DeserializeObject(contents));
+            //    foreach (JToken path in t)
+            //    {
+            //        cachedPath = new Path((int)path["sx"], (int)path["sy"], (int)path["ex"], (int)path["ey"]);
+            //        cachedPath.Points = new List<Vector2>();
 
-            foreach (dynamic path in paths)
-            {
-                loops++;
-                Path cachedPath = new Path((int) path.StartX, (int) path.StartY, (int) path.EndX, (int) path.EndY);
-                cachedPath.Points = new List<Vector2>();
+            //        points = Utilities.JArrayToList(path["p"]);
 
-                List<dynamic> points = Utilities.JArrayToList<dynamic>(path.Points);
+            //        points.ForEach((point) =>
+            //        {
+            //            cachedPath.Points.Add(new Vector2((int)point.x, (int)point.y));
+            //        });
+            //        PathCache.Add(cachedPath);
+            //    }
 
-                points.ForEach((point) =>
-                {
-                    cachedPath.Points.Add(new Vector2((int)point.x, (int)point.y));
-                });
-                
-            }
+            //}
+            //Debug.Log($"Converted partial cache ({lines.Length}) to path cache in {((Time.realtimeSinceStartup - start) * 1000)} ms");
+            //Debug.Log($"Converted file lines ({lines.Length}) to json objects in {((Time.realtimeSinceStartup - start) * 1000)} ms");
+            //yield break;
+            //start = Time.realtimeSinceStartup;
+
+            //partialCache = new List<JArray>();
+            //foreach (string line in lines)
+            //{
+            //    temp = (JArray)JsonConvert.DeserializeObject(line);
+            //    //partialCache.Add(temp);
+            //}
+            //Debug.Log($"Foreached  file lines ({lines.Length}) to json objects list in {((Time.realtimeSinceStartup - start) * 1000)} ms");
+            //yield break;
+            ////Debug.Log(jsonObjects.First()[0]);
+            //yield return ConfigData.WaitForEndOfFrame;
+            //start = Time.realtimeSinceStartup;
+
+            ////List<JArray> pathsList = jsonObjects.ToList();
+
+            ////List<List<dynamic>> pathsList = jsonObjects.Select((p) => Utilities.JArrayToList(p)).ToList();
+            ////int count = jsonObjects.Count();
+            ////Debug.Log($"Got length of JSON objects ({count}:{lines.Length}) in {((Time.realtimeSinceStartup - start) * 1000)} ms");
+            ////yield return ConfigData.WaitForEndOfFrame;
+            ////start = Time.realtimeSinceStartup;
+
+
+            //for (int i = 0; i < lines.Length; i++) 
+            //{
+
+            //    foreach (JToken path in partialCache.ElementAt(i))
+            //    {
+            //        //Debug.Log(path);
+            //        //yield break;
+            //        cachedPath = new Path((int)path["sx"], (int)path["sy"], (int)path["ex"], (int)path["ey"]);
+            //        cachedPath.Points = new List<Vector2>();
+
+            //        points = Utilities.JArrayToList(path["p"]);
+
+            //        points.ForEach((point) =>
+            //        {
+            //            cachedPath.Points.Add(new Vector2((int)point.x, (int)point.y));
+            //        });
+            //        PathCache.Add(cachedPath);
+
+            //    }
+
+            //    if (i % 1000 == 0)
+            //    {
+            //        Debug.Log($"Loaded line #{i}");
+            //        yield return ConfigData.WaitForEndOfFrame;
+            //    }
+            //}
+            //Debug.Log($"Converted json lists to path cache in {((Time.realtimeSinceStartup - start) * 1000)} ms");
             //_grid.PrintPermanantNodesImage();
-            float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
+            float end = (Time.realtimeSinceStartup - fullStart) * 1000; // seconds to milliseconds
             Debug.Log($"Loaded path cache in {end} ms");
+            //while (!fileStream.EndOfStream)
+            //{
+            //    loops++;
+            //    contents += fileStream.ReadLine();
+            //    if (loops % 1000 == 0)
+            //    {
+            //        yield return ConfigData.WaitForEndOfFrame;
+            //    }
+            //}
+
+            //fileStream.Close();
+            //List<dynamic> paths = Utilities.JArrayToList<dynamic>((JArray)JsonConvert.DeserializeObject(contents));
+
+            //foreach (dynamic path in paths)
+            //{
+            //    loops++;
+            //    Path cachedPath = new Path((int) path.StartX, (int) path.StartY, (int) path.EndX, (int) path.EndY);
+            //    cachedPath.Points = new List<Vector2>();
+
+            //    List<dynamic> points = Utilities.JArrayToList<dynamic>(path.Points);
+
+            //    points.ForEach((point) =>
+            //    {
+            //        cachedPath.Points.Add(new Vector2((int)point.x, (int)point.y));
+            //    });
+
+            //}
+            ////_grid.PrintPermanantNodesImage();
+            //float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
+            //Debug.Log($"Loaded path cache in {end} ms");
         }
         public void InitializeMap()
         {
@@ -2091,17 +2263,11 @@ namespace Assets.Scripts.Level
             {
                 return $"Path #{Id} starting from ({StartX}, {StartY}) and going through {Points.Count} points to get to ({EndX}, {EndY})";
             }
-            public string ToJson()
+            public string ToFile()
             {
-                string json = $"{{\"StartX\": {StartX}, \"StartY\": {StartY}, \"EndX\": {EndX}, \"EndY\": {EndY}, \"Points\": [";
-                Points.ForEach((p) => json += $" {{ \"x\": {p.x}, \"y\": {p.y} }},");
-                if (Points.Count > 0)
-                {
-                    json = json.Substring(0, json.Length - 1);
-                }
-
-                json += "]}";
-
+                string json = $"{StartX},{StartY},{EndX},{EndY},";
+                Points.ForEach((p) => json += $"{p.x},{p.y},");
+                json = json.Substring(0, json.Length - 1);
                 return json;
             }
         }
