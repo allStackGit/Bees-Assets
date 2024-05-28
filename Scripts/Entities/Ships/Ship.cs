@@ -527,11 +527,14 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         /// Uses pathfinding (if necessary) to find the shortest path to the destination
         /// </summary>
         /// <param name="destination"></param>
+
+        Vector2Int convertedStart, convertedDestination;
+        Vector2 startPosition;
         private void FindShortestPath(Vector2 destination, Action callback)
         {
             
             DestinationQueue.Clear();
-            Vector2 startPosition = GetPosition();
+            startPosition = GetPosition();
 
 
             //Debug.Log($"Finding shortest path from {startPosition} to {destination} for {Name}");
@@ -543,68 +546,73 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     Level.Pathfinder.UpdateMap(NearbyAsteroids);
                 }
 
-                Vector2Int convertedStart = Level.Pathfinder.ConvertToMapCoordinates(startPosition);
-                Vector2Int convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
+                convertedStart = Level.Pathfinder.ConvertToMapCoordinates(startPosition);
+                convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
 
-                StartCoroutine(Level.Pathfinder.FindPath(convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, Level.MaximumClearance, false, (path) =>
+                StartCoroutine(Level.Pathfinder.FindPath(convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, 1, (path) =>
                 {
-                    if (path != null && path.Points.Count > 0)
+                    //if (path.Points.Count > 0)
+                    //{
+                    //    /* This consolidates destinations from back to front, if there aren't straight lines left at the back, the front won't get consolidated */
+                    //    //Debug.Log($"Before consolidation, there are {path?.Points.Count} destinations");
+                    //    //bool hasConsolidated = true;
+                    //    //int consolidations = 0;
+                    //    //int loops = 0;
+                    //    //int chunkCount = 100;
+                    //    //int chunk;
+                    //    //while (hasConsolidated && path != null && !path.IsCached && path.Points.Count > 20)
+                    //    //{
+                    //    //    loops++;
+                    //    //    chunk = path.Points.Count / chunkCount;
+                    //    //    if (chunk < 1)
+                    //    //    {
+                    //    //        chunk = 1;
+                    //    //    }
+                    //    //    //Debug.Log($"There are now {path.Points.Count} destinations after {consolidations} consolidations, the current 'safe' points are as follows");
+                    //    //    int endIndex = (path.Points.Count - (1 + consolidations));
+
+                    //    //    //for (int i = endIndex; i < result.Count; i++)
+                    //    //    //{
+                    //    //    //    Debug.Log($"#{i} safe point: {result[i]}");
+                    //    //    //}
+
+                    //    //    Vector2 endPoint = path.Points[endIndex];
+                    //    //    hasConsolidated = false;
+                    //    //    for (int i = 0; i < endIndex && !hasConsolidated; i += chunk) // loop from the start of the path to the end, taking a few at a time
+                    //    //    {
+                    //    //        Vector2 current = path.Points[i];
+                    //    //        //Debug.Log($"Trying to find a straight line between #{i} {current} and #{endIndex} {endPoint}");
+                    //    //        if (!Utilities.HasObstaclesInTheWay(current, endPoint)) // there is a straight line between these this point on the path and the end
+                    //    //        {
+                    //    //            hasConsolidated = true;
+                    //    //            consolidations++;
+                    //    //            int consolidationAmount = ((path.Points.Count - (consolidations + 1)) - i);
+                    //    //            //Debug.Log($"Found a straight line with no obstacles between #{i}  {current} and #{endIndex} {endPoint}. We are removing the {consolidationAmount} points between them");
+                    //    //            // delete everything between this point and the end point, exclusive
+                    //    //            path.Points.RemoveRange(i + 1, consolidationAmount);
+                    //    //        }
+                    //    //    }
+                    //    //}
+                    //    //Debug.Log($"There are now {path.Points.Count} destinations after {consolidations} consolidations");
+
+
+                    //    // Enqueue destinations
+                    //    for (int i = 0; i < path.Points.Count; i++)
+                    //    {
+                    //        DestinationQueue.Enqueue(path.Points[i]);
+                    //    }
+                    //    callback();
+                    //}
+                    //else
+                    //{
+                    //    DestinationQueue.Enqueue(startPosition);
+                    //    callback();
+                    //}
+                    for (int i = 0; i < path.Points.Count; i++)
                     {
-                        /* This consolidates destinations from back to front, if there aren't straight lines left at the back, the front won't get consolidated */
-                        //Debug.Log($"Before consolidation, there are {path?.Points.Count} destinations");
-                        //bool hasConsolidated = true;
-                        //int consolidations = 0;
-                        //int loops = 0;
-                        //int chunkCount = 100;
-                        //int chunk;
-                        //while (hasConsolidated && path != null && !path.IsCached && path.Points.Count > 20)
-                        //{
-                        //    loops++;
-                        //    chunk = path.Points.Count / chunkCount;
-                        //    if (chunk < 1)
-                        //    {
-                        //        chunk = 1;
-                        //    }
-                        //    //Debug.Log($"There are now {path.Points.Count} destinations after {consolidations} consolidations, the current 'safe' points are as follows");
-                        //    int endIndex = (path.Points.Count - (1 + consolidations));
-
-                        //    //for (int i = endIndex; i < result.Count; i++)
-                        //    //{
-                        //    //    Debug.Log($"#{i} safe point: {result[i]}");
-                        //    //}
-
-                        //    Vector2 endPoint = path.Points[endIndex];
-                        //    hasConsolidated = false;
-                        //    for (int i = 0; i < endIndex && !hasConsolidated; i += chunk) // loop from the start of the path to the end, taking a few at a time
-                        //    {
-                        //        Vector2 current = path.Points[i];
-                        //        //Debug.Log($"Trying to find a straight line between #{i} {current} and #{endIndex} {endPoint}");
-                        //        if (!Utilities.HasObstaclesInTheWay(current, endPoint)) // there is a straight line between these this point on the path and the end
-                        //        {
-                        //            hasConsolidated = true;
-                        //            consolidations++;
-                        //            int consolidationAmount = ((path.Points.Count - (consolidations + 1)) - i);
-                        //            //Debug.Log($"Found a straight line with no obstacles between #{i}  {current} and #{endIndex} {endPoint}. We are removing the {consolidationAmount} points between them");
-                        //            // delete everything between this point and the end point, exclusive
-                        //            path.Points.RemoveRange(i + 1, consolidationAmount);
-                        //        }
-                        //    }
-                        //}
-                        //Debug.Log($"There are now {path.Points.Count} destinations after {consolidations} consolidations");
-
-
-                        // Enqueue destinations
-                        for (int i = 0; i < path.Points.Count; i++)
-                        {
-                            DestinationQueue.Enqueue(path.Points[i]);
-                        }
-                        callback();
+                        DestinationQueue.Enqueue(path.Points[i]);
                     }
-                    else
-                    {
-                        DestinationQueue.Enqueue(startPosition);
-                        callback();
-                    }
+                    callback();
                 }));
 
 
