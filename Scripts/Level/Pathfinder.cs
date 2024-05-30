@@ -808,6 +808,25 @@ namespace Assets.Scripts.Level
                 _grid.ClearanceMapList = _grid.ClearanceMap.ToList();
                 //Level.StartCoroutine(LoadPathCache());
                 //Level.StartCoroutine(BakeMap());
+
+                Queue<MapNode> queue = new Queue<MapNode>();
+                HashSet<MapNode> checkedNodes = new HashSet<MapNode>();
+                queue.Enqueue(_grid.ClearanceMapList[0]);
+                checkedNodes.Add(_grid.ClearanceMapList[0]);
+                while (queue.Count > 0)
+                {
+                    MapNode node = queue.Dequeue();
+                    node.Neighbors.ForEach((neighbor) =>
+                    {
+                        if (!checkedNodes.Contains(neighbor))
+                        {
+                            checkedNodes.Add(neighbor);
+                            queue.Enqueue(neighbor);
+                        }
+                    });
+
+                }
+                ResettableNodes = checkedNodes.ToList();
             }));
             //Level.StartCoroutine(CalculateClearance());
             //Level.StartCoroutine(CalculateSquares());
@@ -1013,12 +1032,22 @@ namespace Assets.Scripts.Level
         {
             destinationList = new List<Vector2> { endNode.Vector };
             currentNode = endNode;
-            while (currentNode.PreviousNode != MapNode.NullNode)
+            try
             {
-                destinationList.Add(currentNode.PreviousNode.Vector);
-                //currentNode.PreviousNode.IsPartOfPath = true;
-                currentNode = currentNode.PreviousNode;
+                while (currentNode.PreviousNode != MapNode.NullNode)
+                {
+                    //Debug.Log(currentNode.PreviousNode.Id);
+                    destinationList.Add(currentNode.PreviousNode.Vector);
+                    //currentNode.PreviousNode.IsPartOfPath = true;
+                    currentNode = currentNode.PreviousNode;
+                }
+            }catch (Exception ex)
+            {
+                Debug.Log(currentNode.PreviousNode);
+                Debug.Log(currentNode.PreviousNode.Id);
+                throw ex;
             }
+            
             destinationList.Reverse();
             //path.SetPoints(destinationList);
             path.Points = destinationList;
@@ -1195,56 +1224,12 @@ namespace Assets.Scripts.Level
             //        node.IsPartOfPath = false;
             //    }
             //}
-            if (ResettableNodes == null)
+            ResettableNodes.ForEach((n) =>
             {
-                Queue<MapNode> queue = new Queue<MapNode>();
-                HashSet<MapNode> checkedNodes = new HashSet<MapNode>();
-                queue.Enqueue(_grid.ClearanceMapList[0]);
-                checkedNodes.Add(_grid.ClearanceMapList[0]);
-                while (queue.Count > 0)
-                {
-                    MapNode node = queue.Dequeue();
-                    node.CostToHere = int.MaxValue;
-                    node.TotalCost = int.MaxValue;
-                    node.PreviousNode = null;
-                    //node.HasBeenChecked = false;
-                    //node.IsPartOfPath = false;
-
-                    node.Neighbors.ForEach((neighbor) =>
-                    {
-                        if (!checkedNodes.Contains(neighbor))
-                        {
-                            checkedNodes.Add(neighbor);
-                            queue.Enqueue(neighbor);
-                        }
-                    });
-
-                }
-                ResettableNodes = checkedNodes.ToList();
-            }
-            else
-            {
-                ResettableNodes.ForEach((n) =>
-                {
-                    n.CostToHere = int.MaxValue;
-                    n.TotalCost = int.MaxValue;
-                    n.PreviousNode = null;
-                });
-
-                //foreach (MapNode n in ResettableNodes)
-                //{
-                //    n.CostToHere = int.MaxValue;
-                //    n.TotalCost = int.MaxValue;
-                //    n.PreviousNode = MapNode.NullNode;
-                //}
-
-                //for (iterator = 0; iterator < ResettableNodes.Count; iterator++)
-                //{
-                //    ResettableNodes[iterator].CostToHere = int.MaxValue;
-                //    ResettableNodes[iterator].TotalCost = int.MaxValue;
-                //    ResettableNodes[iterator].PreviousNode = null;
-                //}
-            }
+                n.CostToHere = int.MaxValue;
+                n.TotalCost = int.MaxValue;
+                n.PreviousNode = MapNode.NullNode;
+            });
 
             startNode.CostToHere = 0;
             startNode.HueristicCost = CalculateDistance(startNode, endNode);
@@ -1311,7 +1296,10 @@ namespace Assets.Scripts.Level
                 //else 
                 if (currentNode.Children.Contains(endNode) || currentNode == endNode)
                 {
-                    endNode.PreviousNode = currentNode;
+                    if (endNode != currentNode)
+                    {
+                        endNode.PreviousNode = currentNode;
+                    }
                     MakeDestinationList(endNode, path);
 
                     //PathCache.Add(path);
@@ -1369,12 +1357,11 @@ namespace Assets.Scripts.Level
             }
 
 
-            //if (Time.realtimeSinceStartup - start > TimeLimit)
-            //{
-            //    Debug.Log($"Ran out of time while trying to find a path from {startNode.Vector} to {endNode.Vector}");
-            //}
-            //else 
-            if (UncheckedNodes.Count == 0)
+            if (getNode > TimeLimit)
+            {
+                Debug.Log($"Ran out of time while trying to find a path");
+            }
+            else if (UncheckedNodes.Count == 0)
             {
                 Debug.Log($"No more nodes to check.  checkedNodes: {CheckedNodes.Count} / {_grid.TotalNodes} / {_grid.ClearanceMap.Count}  CurrentNode: {currentNode},");
             }
@@ -2001,7 +1988,7 @@ namespace Assets.Scripts.Level
             }
             protected string Info()
             {
-                return $"MapNode #{Id} - {(IsPermanant ? "Y" : "N")}: ({x}, {y}), Clearance: {Clearance}, Container: #{ContainerNode.Id}, Children: {Children.Count}\n";
+                return $"MapNode #{Id} - {(IsPermanant ? "Y" : "N")}: ({x}, {y}), PreviousNode: {PreviousNode.Id}, Clearance: {Clearance}, Container: #{ContainerNode.Id}, Children: {Children.Count}\n";
             }
             public override string ToString()
             {

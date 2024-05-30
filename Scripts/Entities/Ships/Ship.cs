@@ -452,7 +452,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                         IsFollowingPath = true;
                         HasTargetCoordinates = true;
                         float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
-                        Debug.Log($"It took {Math.Round(end, 2)} ms to find the path for {Name} with Clearance: {Level.MaximumClearance}.");
+                        //Debug.Log($"It took {Math.Round(end, 2)} ms to find the path for {Name} with Clearance: {Level.MaximumClearance}.");
                     });
 
                 }
@@ -608,9 +608,17 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     //    DestinationQueue.Enqueue(startPosition);
                     //    callback();
                     //}
-                    for (int i = 0; i < path.Points.Count; i++)
+                    if (path != null)
                     {
-                        DestinationQueue.Enqueue(path.Points[i]);
+                        for (int i = 0; i < path.Points.Count; i++)
+                        {
+                            DestinationQueue.Enqueue(path.Points[i]);
+                        }
+
+                    }
+                    else
+                    {
+                        DestinationQueue.Enqueue(startPosition);
                     }
                     callback();
                 }));
