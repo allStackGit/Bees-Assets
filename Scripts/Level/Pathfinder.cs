@@ -569,6 +569,7 @@ namespace Assets.Scripts.Level
             }
             float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
             Debug.Log($"InitializeMap() took {end} ms to complete. There were {totalLoopCount} loops measuring clearance");
+            Level.StartCoroutine(CalculateSquares());
         }
 
         public void AssembleClearanceMap()
@@ -695,6 +696,7 @@ namespace Assets.Scripts.Level
 
                 List<dynamic> children = Utilities.JArrayToList(node.C);
                 List<dynamic> neighbors = Utilities.JArrayToList(node.N);
+                //List<dynamic> immediateNeighbors = Utilities.JArrayToList(node.IN);
 
                 children.ForEach((child) =>
                 {
@@ -712,6 +714,14 @@ namespace Assets.Scripts.Level
                     mapNeighbor.IsPermanant = true;
                     mapNode.Neighbors.Add(mapNeighbor);
                 });
+
+                //immediateNeighbors.ForEach((neighbor) =>
+                //{
+                //    MapNode mapNeighbor = _grid.Nodes[(int)neighbor.x][(int)neighbor.y];
+                //    mapNeighbor.IsPermanant = true;
+                //    mapNode.ImmediateNeighbors.Add(mapNeighbor);
+                //});
+
                 mapNode.IsPermanant = true;
                 _grid.ClearanceMap.Add(mapNode);
                 //Debug.Log($"Loaded {mapNode}");
@@ -807,7 +817,7 @@ namespace Assets.Scripts.Level
             {
                 _grid.ClearanceMapList = _grid.ClearanceMap.ToList();
                 //Level.StartCoroutine(LoadPathCache());
-                //Level.StartCoroutine(BakeMap());
+
 
                 Queue<MapNode> queue = new Queue<MapNode>();
                 HashSet<MapNode> checkedNodes = new HashSet<MapNode>();
@@ -827,6 +837,8 @@ namespace Assets.Scripts.Level
 
                 }
                 ResettableNodes = checkedNodes.ToList();
+
+                //Level.StartCoroutine(BakeMap());
             }));
             //Level.StartCoroutine(CalculateClearance());
             //Level.StartCoroutine(CalculateSquares());
@@ -1032,22 +1044,30 @@ namespace Assets.Scripts.Level
         {
             destinationList = new List<Vector2> { endNode.Vector };
             currentNode = endNode;
-            try
+            //try
+            //{
+            //    while (currentNode.PreviousNode != MapNode.NullNode)
+            //    {
+            //        //Debug.Log(currentNode.PreviousNode.Id);
+            //        destinationList.Add(currentNode.PreviousNode.Vector);
+            //        currentNode.PreviousNode.IsPartOfPath = true;
+            //        currentNode = currentNode.PreviousNode;
+            //    }
+            //}catch (Exception ex)
+            //{
+            //    Debug.Log(currentNode.PreviousNode);
+            //    Debug.Log(currentNode.PreviousNode.Id);
+            //    throw ex;
+            //}
+
+            while (currentNode.PreviousNode != MapNode.NullNode)
             {
-                while (currentNode.PreviousNode != MapNode.NullNode)
-                {
-                    //Debug.Log(currentNode.PreviousNode.Id);
-                    destinationList.Add(currentNode.PreviousNode.Vector);
-                    //currentNode.PreviousNode.IsPartOfPath = true;
-                    currentNode = currentNode.PreviousNode;
-                }
-            }catch (Exception ex)
-            {
-                Debug.Log(currentNode.PreviousNode);
-                Debug.Log(currentNode.PreviousNode.Id);
-                throw ex;
+                //Debug.Log(currentNode.PreviousNode.Id);
+                destinationList.Add(currentNode.PreviousNode.Vector);
+                currentNode.PreviousNode.IsPartOfPath = true;
+                currentNode = currentNode.PreviousNode;
             }
-            
+
             destinationList.Reverse();
             //path.SetPoints(destinationList);
             path.Points = destinationList;
@@ -1181,6 +1201,198 @@ namespace Assets.Scripts.Level
             return null;
 
         }
+        public IEnumerator FindFullPath(int startX, int startY, int endX, int endY, int maximumClearance, Action<Path> callback)
+        {
+            //minimumClearance = 1;
+            //maximumClearance = 1;
+            //Debug.Log($"Trying to find a path with clearance ({minimumClearance} - {maximumClearance}) from ({startX}, {startY}) to ({endX}, {endY})");
+            start = Time.realtimeSinceStartup;
+            neighborLoop = 0;
+            getNode = 0;
+
+            startNode = _grid.Nodes[startX][startY];
+            endNode = _grid.Nodes[endX][endY];
+
+            if (endNode.Clearance < maximumClearance)
+            {
+                endNode = FindNearestWalkablePoint(startNode, endNode, maximumClearance);
+            }
+
+            if (startNode.Clearance < maximumClearance)
+            {
+                //Debug.Log($"The start ({startNode.Vector}) isn't walkable space");
+                startNode = FindNearestWalkablePoint(endNode, startNode, maximumClearance);
+                //Debug.Log($"Found new start point that is walkable: {startNode.Vector}");
+            }
+            Debug.Log($"Starting at {startNode}");
+            path = new Path(startNode.x, startNode.y, endNode.x, endNode.y);
+
+            UncheckedNodes = new List<MapNode>() { startNode };
+            UncheckedNodesSet = new HashSet<MapNode> { startNode };
+            //SortedNodes = new SortedDictionary<int, MapNode> { { startNode.SortingId, startNode }  };
+            CheckedNodes.Clear();
+
+            //for (int x = 0; x < _grid.Width; x++)
+            //{
+            //    for (int y = 0; y < _grid.Height; y++)
+            //    {
+            //        MapNode node = _grid.Nodes[x][y];
+            //        node.CostToHere = int.MaxValue;
+            //        node.CalculateTotalCost();
+            //        node.PreviousNode = null;
+            //        node.HasBeenChecked = false;
+            //        node.IsPartOfPath = false;
+            //    }
+            //}
+            _grid.NodeList.ForEach((n) =>
+            {
+                n.CostToHere = int.MaxValue;
+                n.TotalCost = int.MaxValue;
+                n.PreviousNode = MapNode.NullNode;
+            });
+
+            startNode.CostToHere = 0;
+            startNode.HueristicCost = CalculateDistance(startNode, endNode);
+            startNode.CalculateTotalCost();
+            //if (startNode.ContainerNode != startNode)
+            //{
+            //    startNode.Neighbors.Add(startNode.ContainerNode);
+            //}
+
+            //loops = 0;
+            previousNode = startNode;
+            startupTime = (Time.realtimeSinceStartup - start) * 1000;
+            //Debug.Log($"Startup time took: {startupTime} ms");
+            //Debug.Log($"Startnode: {startNode}, queueLoops: {queueLoops}, clearanceMapList: {_grid.ClearanceMapList.Count}");
+            while (UncheckedNodes.Count > 0 && getNode < TimeLimit)
+            {
+                startTimer = Time.realtimeSinceStartup;
+                //loops++;
+
+                currentNode = GetCheapestNode(UncheckedNodes);
+                //if (loops > 1)
+                //{
+                //    Debug.Log($"Difference in TC between current and previous: {currentNode.TotalCost - previousNode.TotalCost}");
+                //}
+                previousNode = currentNode;
+                //currentNode = UncheckedNodes.First();
+                //currentNode = SortedNodes.First().Value;
+                //Debug.Log($"Sorted set, first: {SortedNodes.First().Value.TotalCost}, cheapestNode: {currentNode.TotalCost}");
+                //yield return ConfigData.WaitForEndOfFrame;
+
+                //currentNode = UncheckedNodes.First();
+                //Debug.Log($"Current node: {currentNode}");
+
+                // skips ahead to further down the line if it detects we're in free space
+                //if (loops % 20 == 0 && (IsInFreeSpace(currentNode.x, currentNode.y, endNode.x, endNode.y)))
+                //{
+                //    endNode.PreviousNode = currentNode;
+                //    MakeDestinationList(endNode, path);
+                //    PathCache.Add(path);
+                //    return path;
+                //}
+
+                //skip ahead to further down if we raycasted a straight line
+                //if (loops % 20 == 0 && (CalculateDistance(currentNode, endNode) > 40 && !Utilities.HasObstaclesInTheWay(currentNode.Vector, endNode.Vector)))
+                //{
+                //    endNode.PreviousNode = currentNode;
+                //    MakeDestinationList(endNode, path);
+                //    PathCache.Add(path);
+                //    Debug.Log($"Found a straight line from {currentNode.Vector} to the end {endNode.Vector}");
+                //    _grid.DebugGridAsImage(new Vector2Int(endNode.x, endNode.y));
+                //    callback(path);
+                //    yield break;
+                //}
+
+                //if (currentNode == endNode)
+                //{
+                //    MakeDestinationList(endNode, path);
+                //    //PathCache.Add(path);
+                //    //Debug.Log($"Reached the end destination");
+                //    //_grid.DebugGridAsImage(new Vector2Int(currentNode.x, currentNode.y));
+                //    callback(path);
+                //    yield break;
+                //}
+                //else 
+                if (currentNode.Children.Contains(endNode) || currentNode == endNode)
+                {
+                    if (endNode != currentNode)
+                    {
+                        endNode.PreviousNode = currentNode;
+                    }
+                    MakeDestinationList(endNode, path);
+
+                    //PathCache.Add(path);
+                    //Debug.Log($"Found the end node ({loops} loops) as a child of another node {currentNode}");
+                    _grid.DebugGridAsImage(new Vector2Int(endNode.x, endNode.y));
+                    total = Time.realtimeSinceStartup - start;
+                    Debug.Log($"Finished finding path. Loops: ({loops}) startup time: {startupTime}ms, getNode Time: {getNode * 1000}ms, neighborLoop Time: {neighborLoop * 1000}ms, Total: {(total * 1000)}ms");
+                    //Debug.Log($" == {MapNode.equalsCalls}");
+                    callback(path);
+                    yield break;
+                }
+                UncheckedNodes.Remove(currentNode);
+                UncheckedNodesSet.Remove(currentNode);
+                //SortedNodes.Remove(currentNode.SortingId);
+                currentNode.HasBeenChecked = true;
+                CheckedNodes.Add(currentNode);
+
+                //Debug.Log($"Getting neighbors for {currentNode}");
+                getNode += Time.realtimeSinceStartup - startTimer;
+
+                startTimer = Time.realtimeSinceStartup;
+
+                currentNode.ImmediateNeighbors.ForEach((neighbor) =>
+                {
+                    if (!CheckedNodes.Contains(neighbor))
+                    {
+                        if (neighbor.Clearance > maximumClearance) // < maximum clearance                 == 0
+                        {
+                            tempCostToHere = currentNode.CostToHere + CalculateDistance(currentNode, neighbor);
+                            if (tempCostToHere < neighbor.CostToHere)
+                            {
+                                //SortedNodes.Remove(neighbor.SortingId);
+                                neighbor.PreviousNode = currentNode;
+                                neighbor.CostToHere = tempCostToHere;
+                                neighbor.HueristicCost = CalculateDistance(neighbor, endNode);
+                                neighbor.CalculateTotalCost();
+                                //UncheckedNodes.Add(neighbor);
+                                if (!UncheckedNodesSet.Contains(neighbor))
+                                {
+                                    UncheckedNodes.Add(neighbor);
+                                    UncheckedNodesSet.Add(neighbor);
+                                    //SortedNodes.Add(neighbor.SortingId, neighbor);
+                                }
+                            }
+                        }
+                    }
+                });
+
+                //if (loops % MaxLoopsPerFrame == 0)
+                //{
+                //    yield return ConfigData.WaitForEndOfFrame;
+                //}
+                neighborLoop += Time.realtimeSinceStartup - startTimer;
+
+            }
+
+
+            if (getNode > TimeLimit)
+            {
+                Debug.Log($"Ran out of time while trying to find a path");
+            }
+            else if (UncheckedNodes.Count == 0)
+            {
+                Debug.Log($"No more nodes to check.  checkedNodes: {CheckedNodes.Count} / {_grid.TotalNodes} / {_grid.ClearanceMap.Count}  CurrentNode: {currentNode},");
+            }
+
+            // couldn't find the path
+            _grid.DebugGridAsImage(new Vector2Int(currentNode.x, currentNode.y));
+            //currentNode.DebugNodeImage();
+            callback(null);
+            yield break;
+
+        }
         public IEnumerator FindPath(int startX, int startY, int endX, int endY, int maximumClearance, Action<Path> callback)
         {
             //minimumClearance = 1;
@@ -1204,6 +1416,7 @@ namespace Assets.Scripts.Level
                 startNode = FindNearestWalkablePoint(endNode, startNode, maximumClearance);
                 //Debug.Log($"Found new start point that is walkable: {startNode.Vector}");
             }
+
 
             path = new Path(startNode.x, startNode.y, endNode.x, endNode.y);
 
@@ -1302,11 +1515,11 @@ namespace Assets.Scripts.Level
                     }
                     MakeDestinationList(endNode, path);
 
-                    //PathCache.Add(path);
+                    PathCache.Add(path);
                     //Debug.Log($"Found the end node ({loops} loops) as a child of another node {currentNode}");
-                    //_grid.DebugGridAsImage(new Vector2Int(endNode.x, endNode.y));
                     total = Time.realtimeSinceStartup - start;
                     Debug.Log($"Finished finding path. Loops: ({loops}) startup time: {startupTime}ms, getNode Time: {getNode * 1000}ms, neighborLoop Time: {neighborLoop * 1000}ms, Total: {(total * 1000)}ms");
+                    _grid.DebugGridAsImage(new Vector2Int(endNode.x, endNode.y));
                     //Debug.Log($" == {MapNode.equalsCalls}");
                     callback(path);
                     yield break;
@@ -1314,7 +1527,7 @@ namespace Assets.Scripts.Level
                 UncheckedNodes.Remove(currentNode);
                 UncheckedNodesSet.Remove(currentNode);
                 //SortedNodes.Remove(currentNode.SortingId);
-                //currentNode.HasBeenChecked = true;
+                currentNode.HasBeenChecked = true;
                 CheckedNodes.Add(currentNode);
 
                 //Debug.Log($"Getting neighbors for {currentNode}");
@@ -1367,7 +1580,7 @@ namespace Assets.Scripts.Level
             }
 
             // couldn't find the path
-            //_grid.DebugGridAsImage(new Vector2Int(currentNode.x, currentNode.y));
+            _grid.DebugGridAsImage(new Vector2Int(currentNode.x, currentNode.y));
             //currentNode.DebugNodeImage();
             callback(null);
             yield break;
@@ -1411,6 +1624,7 @@ namespace Assets.Scripts.Level
             public int Height;
             public int TotalNodes;
             public HashSet<MapNode> NodeSet = new HashSet<MapNode>();
+            public List<MapNode> NodeList = new List<MapNode>();
             public HashSet<MapNode> ClearanceMap = new HashSet<MapNode>();
             //public Dictionary<long, Path> EmptyPathsSet = new Dictionary<long, Path>();
             public List<MapNode> ClearanceMapList = new List<MapNode>();
@@ -1432,6 +1646,7 @@ namespace Assets.Scripts.Level
                         Nodes[x][y] = new MapNode(x, y, this);
                         TotalNodes++;
                         NodeSet.Add(Nodes[x][y]);
+                        NodeList.Add(Nodes[x][y]);
                         //if (!NodeSet.Contains(Nodes[x][y])) // [debug]
                         //{
                         //    NodeSet.Add(Nodes[x][y]);
@@ -1466,17 +1681,17 @@ namespace Assets.Scripts.Level
                         {
                             color = ConfigData.GetUIColor("bad");
                         }
-                        //else if (node.IsPartOfPath) // not an obstacle, checked, and part of the path
-                        //{
-                        //    color = ConfigData.GetUIColor("medium");
-                        //}
-                        //else if (node.HasBeenChecked) // not an obstacle, checked, and not part of the path
-                        //{
-                        //    color = Color.black;
-                        //}
-                        
-                       
-                        
+                        else if (node.IsPartOfPath) // not an obstacle, checked, and part of the path
+                        {
+                            color = ConfigData.GetUIColor("medium");
+                        }
+                        else if (node.HasBeenChecked) // not an obstacle, checked, and not part of the path
+                        {
+                            color = Color.black;
+                        }
+
+
+
                         texture.SetPixel(x, Height * 2 - (y + 1), color); // regular
                         texture.SetPixel(x + 1, Height * 2 - (y + 1), color); // right
                         texture.SetPixel(x, Height * 2 - y, color); // down
@@ -1738,13 +1953,14 @@ namespace Assets.Scripts.Level
             //public int SortingId;
             public int OriginalClearance;
             public int Clearance;
-            //public bool HasBeenChecked;
-            //public bool IsPartOfPath;
+            public bool HasBeenChecked;
+            public bool IsPartOfPath;
             public bool IsPermanant;
             public MapNode PreviousNode = NullNode;
             public MapNode ContainerNode = NullNode;
             public HashSet<MapNode> Children = new HashSet<MapNode>();
             public List<MapNode> Neighbors = new List<MapNode>();
+            public List<MapNode> ImmediateNeighbors = new List<MapNode>();
             public Grid Grid;
 
             /// <summary>
@@ -1867,6 +2083,7 @@ namespace Assets.Scripts.Level
             }
             public List<MapNode> GetNeighbors()
             {
+                GetImmediateNeighbors();
                 int minY = Mathf.Clamp(y - Clearance, 0, Grid.Height -1);
                 int minX = Mathf.Clamp(x - Clearance, 0, Grid.Width - 1);
                 int maxY = Mathf.Clamp(y + Clearance, 0, Grid.Height - 1);
@@ -1913,8 +2130,57 @@ namespace Assets.Scripts.Level
                         Neighbors.Add(loopNode.ContainerNode);
                     }
                 }
+                Neighbors = Neighbors.ToHashSet().ToList();
+                return Neighbors;
+            }
+            public List<MapNode> GetImmediateNeighbors()
+            {
 
-                return Neighbors.ToList();
+                if (x - 1 >= 0) // There is space to the left
+                {
+
+                    ImmediateNeighbors.Add(Grid.Nodes[x - 1][y]); // get left neighbor
+
+                    if (y - 1 >= 0)
+                    {
+                        ImmediateNeighbors.Add(Grid.Nodes[x - 1][y - 1]); // get bottom left neighbor
+                    }
+
+                    if (y + 1 < Grid.Height)
+                    {
+                        ImmediateNeighbors.Add(Grid.Nodes[x - 1][y + 1]); // get top left neighbor
+                    }
+
+                }
+                if (x + 1 < Grid.Width) // There is space to the right
+                {
+
+                    ImmediateNeighbors.Add(Grid.Nodes[x + 1][y]); // get right neighbor
+
+                    if (y - 1 >= 0)
+                    {
+                        ImmediateNeighbors.Add(Grid.Nodes[x + 1][y - 1]); // get bottom right neighbor
+                    }
+
+                    if (y + 1 < Grid.Height)
+                    {
+                        ImmediateNeighbors.Add(Grid.Nodes[x + 1][y + 1]); // get top right neighbor
+                    }
+
+                }
+
+                if (y - 1 >= 0) // there is space below
+                {
+                    ImmediateNeighbors.Add(Grid.Nodes[x][y - 1]);
+                }
+
+                if (y + 1 < Grid.Height) // there is space above
+                {
+                    ImmediateNeighbors.Add(Grid.Nodes[x][y + 1]);
+                }
+
+
+                return ImmediateNeighbors;
             }
             public void CalculateTotalCost()
             {
@@ -2003,6 +2269,12 @@ namespace Assets.Scripts.Level
                 {
                     toString += Children.ElementAt(i).Info();
                 }
+
+                toString += $"Immediate Neighbors ({ImmediateNeighbors.Count}):\n\n";
+                for (int i = 0; i < ImmediateNeighbors.Count && i < 10; i++)
+                {
+                    toString += ImmediateNeighbors.ElementAt(i).Info();
+                }
                 return toString;
 
             }
@@ -2016,13 +2288,21 @@ namespace Assets.Scripts.Level
                 }
 
                 json += "], \"N\": [";
-                Neighbors.ToList().ForEach((n) => json += $" {{ \"Id\": {n.Id}, \"x\": {n.x}, \"y\": {n.y}, \"OC\": {n.OriginalClearance} }},");
+                Neighbors.ForEach((n) => json += $" {{ \"Id\": {n.Id}, \"x\": {n.x}, \"y\": {n.y}, \"OC\": {n.OriginalClearance} }},");
 
                 if (Neighbors.Count > 0)
                 {
                     json = json.Substring(0, json.Length - 1);
                 }
-                
+
+                //json += "], \"IN\": [";
+                //ImmediateNeighbors.ForEach((n) => json += $" {{ \"Id\": {n.Id}, \"x\": {n.x}, \"y\": {n.y}, \"OC\": {n.OriginalClearance} }},");
+
+                //if (ImmediateNeighbors.Count > 0)
+                //{
+                //    json = json.Substring(0, json.Length - 1);
+                //}
+
                 json += "]}";
 
                 return json;
