@@ -28,6 +28,7 @@ namespace Assets.Scripts.Level
         public HashSet<Path> PathCache = new HashSet<Path>();
         public HashSet<Vector2Int> FreeAreas = new HashSet<Vector2Int>();
         public float TimeLimit = .25f;
+        public float FullMapTimeLimit = 5;
         public int DebugLoops = 0;
         public int MaxLoopsPerFrame = 1000;
 
@@ -777,6 +778,7 @@ namespace Assets.Scripts.Level
         }
         public void InitializeMap()
         {
+            float start = Time.realtimeSinceStartup;
             //Debug.Log($"Loading pathfinder map at {Scale}x");
             // initialize everything as open space
             _grid = new Grid(Width, Height, this);
@@ -838,6 +840,13 @@ namespace Assets.Scripts.Level
                 }
                 ResettableNodes = checkedNodes.ToList();
 
+                _grid.NodeList.ForEach((node) =>
+                {
+                    node.GetImmediateNeighbors();
+                });
+
+                float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
+                Debug.Log($"Initialized map in {end} ms");
                 //Level.StartCoroutine(BakeMap());
             }));
             //Level.StartCoroutine(CalculateClearance());
@@ -1019,11 +1028,36 @@ namespace Assets.Scripts.Level
             //return (int) Math.Sqrt(Math.Pow((a.Vector.x -  b.Vector.x), 2) + Math.Pow((a.Vector.y - b.Vector.y), 2));
 
         }
+        int xDistance, yDistance;
+        private int CalculateFullMapDistance(MapNode a, MapNode b)
+        {
+            xDistance = Mathf.Abs(a.x - b.x);
+            yDistance = Mathf.Abs(a.y - b.y);
+            return DIAGONAL_COST * Mathf.Min(xDistance, yDistance) + HORIZONTAL_COST * Mathf.Abs(xDistance - yDistance);
+
+        }
         private MapNode cheapest;
         private int cheapestIterator;
         private MapNode GetCheapestNode(List<MapNode> list)
         {
 
+            cheapest = list[0];
+            for (cheapestIterator = 1; cheapestIterator < list.Count; cheapestIterator++)
+            {
+                if (cheapest.TotalCost - previousNode.TotalCost <= 1)
+                {
+                    return cheapest;
+                }
+                if (list[cheapestIterator].TotalCost < cheapest.TotalCost)
+                {
+                    cheapest = list[cheapestIterator];
+                }
+            }
+            return cheapest;
+        }
+
+        private MapNode GetFullMapCheapestNode(List<MapNode> list)
+        {
             cheapest = list[0];
             for (cheapestIterator = 1; cheapestIterator < list.Count; cheapestIterator++)
             {
@@ -1064,7 +1098,7 @@ namespace Assets.Scripts.Level
             {
                 //Debug.Log(currentNode.PreviousNode.Id);
                 destinationList.Add(currentNode.PreviousNode.Vector);
-                currentNode.PreviousNode.IsPartOfPath = true;
+                //currentNode.PreviousNode.IsPartOfPath = true;
                 currentNode = currentNode.PreviousNode;
             }
 
@@ -1224,7 +1258,7 @@ namespace Assets.Scripts.Level
                 startNode = FindNearestWalkablePoint(endNode, startNode, maximumClearance);
                 //Debug.Log($"Found new start point that is walkable: {startNode.Vector}");
             }
-            Debug.Log($"Starting at {startNode}");
+            //Debug.Log($"Starting at {startNode}");
             path = new Path(startNode.x, startNode.y, endNode.x, endNode.y);
 
             UncheckedNodes = new List<MapNode>() { startNode };
@@ -1249,10 +1283,12 @@ namespace Assets.Scripts.Level
                 n.CostToHere = int.MaxValue;
                 n.TotalCost = int.MaxValue;
                 n.PreviousNode = MapNode.NullNode;
+                //n.HasBeenChecked = false;
+                //n.IsPartOfPath = false;
             });
 
             startNode.CostToHere = 0;
-            startNode.HueristicCost = CalculateDistance(startNode, endNode);
+            startNode.HueristicCost = CalculateFullMapDistance(startNode, endNode);
             startNode.CalculateTotalCost();
             //if (startNode.ContainerNode != startNode)
             //{
@@ -1264,12 +1300,12 @@ namespace Assets.Scripts.Level
             startupTime = (Time.realtimeSinceStartup - start) * 1000;
             //Debug.Log($"Startup time took: {startupTime} ms");
             //Debug.Log($"Startnode: {startNode}, queueLoops: {queueLoops}, clearanceMapList: {_grid.ClearanceMapList.Count}");
-            while (UncheckedNodes.Count > 0 && getNode < TimeLimit)
+            while (UncheckedNodes.Count > 0 && getNode < FullMapTimeLimit)
             {
                 startTimer = Time.realtimeSinceStartup;
                 //loops++;
 
-                currentNode = GetCheapestNode(UncheckedNodes);
+                currentNode = GetFullMapCheapestNode(UncheckedNodes);
                 //if (loops > 1)
                 //{
                 //    Debug.Log($"Difference in TC between current and previous: {currentNode.TotalCost - previousNode.TotalCost}");
@@ -1314,17 +1350,13 @@ namespace Assets.Scripts.Level
                 //    yield break;
                 //}
                 //else 
-                if (currentNode.Children.Contains(endNode) || currentNode == endNode)
+                if (currentNode == endNode)
                 {
-                    if (endNode != currentNode)
-                    {
-                        endNode.PreviousNode = currentNode;
-                    }
                     MakeDestinationList(endNode, path);
 
                     //PathCache.Add(path);
                     //Debug.Log($"Found the end node ({loops} loops) as a child of another node {currentNode}");
-                    _grid.DebugGridAsImage(new Vector2Int(endNode.x, endNode.y));
+                    //_grid.DebugGridAsImage(new Vector2Int(endNode.x, endNode.y));
                     total = Time.realtimeSinceStartup - start;
                     Debug.Log($"Finished finding path. Loops: ({loops}) startup time: {startupTime}ms, getNode Time: {getNode * 1000}ms, neighborLoop Time: {neighborLoop * 1000}ms, Total: {(total * 1000)}ms");
                     //Debug.Log($" == {MapNode.equalsCalls}");
@@ -1334,7 +1366,7 @@ namespace Assets.Scripts.Level
                 UncheckedNodes.Remove(currentNode);
                 UncheckedNodesSet.Remove(currentNode);
                 //SortedNodes.Remove(currentNode.SortingId);
-                currentNode.HasBeenChecked = true;
+                //currentNode.HasBeenChecked = true;
                 CheckedNodes.Add(currentNode);
 
                 //Debug.Log($"Getting neighbors for {currentNode}");
@@ -1348,13 +1380,13 @@ namespace Assets.Scripts.Level
                     {
                         if (neighbor.Clearance > maximumClearance) // < maximum clearance                 == 0
                         {
-                            tempCostToHere = currentNode.CostToHere + CalculateDistance(currentNode, neighbor);
+                            tempCostToHere = currentNode.CostToHere + CalculateFullMapDistance(currentNode, neighbor);
                             if (tempCostToHere < neighbor.CostToHere)
                             {
                                 //SortedNodes.Remove(neighbor.SortingId);
                                 neighbor.PreviousNode = currentNode;
                                 neighbor.CostToHere = tempCostToHere;
-                                neighbor.HueristicCost = CalculateDistance(neighbor, endNode);
+                                neighbor.HueristicCost = CalculateFullMapDistance(neighbor, endNode);
                                 neighbor.CalculateTotalCost();
                                 //UncheckedNodes.Add(neighbor);
                                 if (!UncheckedNodesSet.Contains(neighbor))
