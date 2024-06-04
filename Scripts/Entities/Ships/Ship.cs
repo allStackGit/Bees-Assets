@@ -21,6 +21,7 @@ using Unity.Mathematics;
 using System.IO;
 using NUnit;
 using static UnityEngine.Rendering.ProbeAdjustmentVolume;
+using System.Threading;
 
 namespace Assets.Scripts.Entities.Ships
 {
@@ -56,6 +57,8 @@ namespace Assets.Scripts.Entities.Ships
         /// </summary>
         public Ship TargetEnemy;
         public PolygonCollider2D ShipCollider;
+        public volatile bool PathfindingThreadComplete;
+        public volatile Pathfinder.Path PathfindingValue;
 
 
 
@@ -343,6 +346,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         }
         protected void FixedUpdate()
         {
+            if (PathfindingThreadComplete)
+            {
+                MergePathfindingPaths();
+                PathfindingThreadComplete = false;
+            }
             if (!Level.IsPaused)
             {
                 Move();
@@ -530,6 +538,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
         Vector2Int convertedStart, convertedDestination;
         Vector2 startPosition;
+        private void MergePathfindingPaths()
+        {
+            Debug.Log($"Merging pathfinding paths for {Name}");
+        }
         private void FindShortestPath(Vector2 destination, Action callback)
         {
             
@@ -548,8 +560,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
                 convertedStart = Level.Pathfinder.ConvertToMapCoordinates(startPosition);
                 convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
-
-                StartCoroutine(Level.Pathfinder.FindFullPath(convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance(), (path) =>
+                StartCoroutine(Level.Pathfinder.FindPath(this, convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance(), (path) =>
                 {
                     //if (path.Points.Count > 0)
                     //{

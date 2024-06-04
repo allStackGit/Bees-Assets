@@ -1,13 +1,15 @@
 ﻿using Assets.Scripts.Entities;
+using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Scenes;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using NUnit.Framework;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using SW = System.Diagnostics;
 using UnityEngine;
 
 
@@ -22,13 +24,12 @@ namespace Assets.Scripts.Level
         public const int HORIZONTAL_COST = 10;
         public List<MapNode> UncheckedNodes;
         public HashSet<MapNode> UncheckedNodesSet;
-        public SortedDictionary<int, MapNode> SortedNodes;
-        public List<MapNode> ResettableNodes;
         public HashSet<MapNode> CheckedNodes = new HashSet<MapNode>();
+        public List<MapNode> ResettableNodes;
         public HashSet<Path> PathCache = new HashSet<Path>();
         public HashSet<Vector2Int> FreeAreas = new HashSet<Vector2Int>();
         public float TimeLimit = .25f;
-        public float FullMapTimeLimit = 5;
+        public float BTTimeLimit = 5;
         public int DebugLoops = 0;
         public int MaxLoopsPerFrame = 1000;
 
@@ -104,7 +105,7 @@ namespace Assets.Scripts.Level
                     endNode = nodes[j];
                     if (startNode != endNode)
                     {
-                        Level.StartCoroutine(FindPath(startNode.x, startNode.y, endNode.x, endNode.y, 1, null));
+                        Level.StartCoroutine(FindPath(null, startNode.x, startNode.y, endNode.x, endNode.y, 1, null));
                     }
                     loops++;
                     
@@ -690,6 +691,7 @@ namespace Assets.Scripts.Level
             {
                 loops++;
                 MapNode mapNode = _grid.Nodes[(int)node.x][(int)node.y];
+                
                 //mapNode.ContainerNode = _grid.Nodes[(int)node.CN.x][(int)node.CN.y];
                 mapNode.ContainerNode = mapNode;
                 mapNode.Clearance = (int)node.OC;
@@ -839,11 +841,6 @@ namespace Assets.Scripts.Level
 
                 }
                 ResettableNodes = checkedNodes.ToList();
-
-                _grid.NodeList.ForEach((node) =>
-                {
-                    node.GetImmediateNeighbors();
-                });
 
                 float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
                 Debug.Log($"Initialized map in {end} ms");
@@ -1028,36 +1025,11 @@ namespace Assets.Scripts.Level
             //return (int) Math.Sqrt(Math.Pow((a.Vector.x -  b.Vector.x), 2) + Math.Pow((a.Vector.y - b.Vector.y), 2));
 
         }
-        int xDistance, yDistance;
-        private int CalculateFullMapDistance(MapNode a, MapNode b)
-        {
-            xDistance = Mathf.Abs(a.x - b.x);
-            yDistance = Mathf.Abs(a.y - b.y);
-            return DIAGONAL_COST * Mathf.Min(xDistance, yDistance) + HORIZONTAL_COST * Mathf.Abs(xDistance - yDistance);
-
-        }
         private MapNode cheapest;
         private int cheapestIterator;
         private MapNode GetCheapestNode(List<MapNode> list)
         {
 
-            cheapest = list[0];
-            for (cheapestIterator = 1; cheapestIterator < list.Count; cheapestIterator++)
-            {
-                if (cheapest.TotalCost - previousNode.TotalCost <= 1)
-                {
-                    return cheapest;
-                }
-                if (list[cheapestIterator].TotalCost < cheapest.TotalCost)
-                {
-                    cheapest = list[cheapestIterator];
-                }
-            }
-            return cheapest;
-        }
-
-        private MapNode GetFullMapCheapestNode(List<MapNode> list)
-        {
             cheapest = list[0];
             for (cheapestIterator = 1; cheapestIterator < list.Count; cheapestIterator++)
             {
@@ -1108,10 +1080,7 @@ namespace Assets.Scripts.Level
         }
 
 
-        private MapNode startNode, endNode, currentNode, previousNode;
-        private Path path, potentialCachedPath, cachedPath;
-        private float start, neighborLoop, getNode, startTimer, middleTimer, startupTime, sortTime, total;
-        private int loops, tempCostToHere, iterator;
+
         public MapNode FindNearestWalkablePoint(MapNode startNode, MapNode endNode, int minimumClearance)
         {
 
@@ -1235,198 +1204,329 @@ namespace Assets.Scripts.Level
             return null;
 
         }
-        public IEnumerator FindFullPath(int startX, int startY, int endX, int endY, int maximumClearance, Action<Path> callback)
+        private int BTCalculateDistance(MapNode a, MapNode b)
+        {
+            int xDistance = Mathf.Abs(a.x - b.x);
+            int yDistance = Mathf.Abs(a.y - b.y);
+            return DIAGONAL_COST * Mathf.Min(xDistance, yDistance) + HORIZONTAL_COST * Mathf.Abs(xDistance - yDistance);
+
+        }
+        public MapNode BTFindNearestWalkablePoint(MapNode startNode, MapNode endNode, int minimumClearance, MapNode[][] nodes)
+        {
+
+            int loops = 0;
+            int baseInterval = 1;
+            int yInterval = -1; // N
+            int xInterval = 1; // E
+
+            /*
+            Find the direction from start node to end node (N, NE, E, SE, S, SW, W, NW)
+            Find the first walkable point in that same direction
+            Find the first walkable point in the opposite direction (from end to start)
+            Return the point closest to the original end point
+             */
+
+
+            if (startNode.x < endNode.x && startNode.y < endNode.y)
+            {
+                //direction = 2; // SE
+                xInterval = 1 * baseInterval;
+            }
+            else if (startNode.x > endNode.x && startNode.y < endNode.y)
+            {
+                //direction = 4; // SW
+                yInterval = 1 * baseInterval;
+                xInterval = -1 * baseInterval;
+            }
+            else if (startNode.x > endNode.x && startNode.y > endNode.y)
+            {
+                //direction = 6; // NW
+                yInterval = -1 * baseInterval;
+                xInterval = -1 * baseInterval;
+            }
+            else if (startNode.x == endNode.x && startNode.y > endNode.y)
+            {
+                //direction = 7; // N
+                yInterval = -1 * baseInterval;
+                xInterval = 0;
+            }
+            else if (startNode.x < endNode.x && startNode.y == endNode.y)
+            {
+                //direction = 1; // E
+                yInterval = 0;
+                xInterval = 1 * baseInterval;
+            }
+            else if (startNode.x == endNode.x && startNode.y < endNode.y)
+            {
+                //direction = 3; // S
+                yInterval = 1 * baseInterval;
+                xInterval = 0;
+            }
+            else if (startNode.x > endNode.x && startNode.y == endNode.y)
+            {
+                //direction = 5; // W
+                yInterval = 0;
+                xInterval = -1 * baseInterval;
+            }
+
+            //oppositeDirection = (direction + 4) % 8;
+
+            //Debug.Log($"startNode: {startNode.Vector}, endNode: {endNode.Vector} index direction: {direction}, opposite index direction: {oppositeDirection}");
+            MapNode directionNode = nodes[endNode.x + xInterval][endNode.y + yInterval];
+            MapNode oppositeDirectionNode = nodes[endNode.x - xInterval][endNode.y - yInterval];
+
+            while (loops < 100)
+            {
+                loops++;
+                //Debug.Log($"Moving in directions {direction}, and {oppositeDirection} and checking points {directionNode.Vector} and {oppositeDirectionNode.Vector}");
+                if (directionNode.Clearance >= minimumClearance)
+                {
+                    return directionNode;
+                }
+
+                if (oppositeDirectionNode.Clearance >= minimumClearance)
+                {
+                    return oppositeDirectionNode;
+                }
+
+                int yIncrease = directionNode.y + yInterval;
+                int xIncrease = directionNode.x + xInterval;
+                int yDecrease = oppositeDirectionNode.y - yInterval;
+                int xDecrease = oppositeDirectionNode.x - xInterval;
+                if (yIncrease > _grid.Height - 1)
+                {
+                    yIncrease = _grid.Height - 1;
+                }
+                else if (yIncrease < 0)
+                {
+                    yIncrease = 0;
+                }
+                if (xIncrease > _grid.Width - 1)
+                {
+                    xIncrease = _grid.Width - 1;
+                }
+                else if (xIncrease < 0)
+                {
+                    xIncrease = 0;
+                }
+                if (yDecrease < 0)
+                {
+                    yDecrease = 0;
+                }
+                else if (yDecrease > _grid.Height - 1)
+                {
+                    yDecrease = _grid.Height - 1;
+                }
+                if (xDecrease < 0)
+                {
+                    xDecrease = 0;
+                }
+                else if (xDecrease > _grid.Width - 1)
+                {
+                    xDecrease = _grid.Width - 1;
+                }
+                directionNode = nodes[xIncrease][yIncrease];
+                oppositeDirectionNode = nodes[xDecrease][yDecrease];
+            }
+            if (loops == 100) // [debug]
+            {
+                Debug.LogError($"The loop broke after 100 loops trying to find a walkable point near {endNode.Vector} starting from {startNode.Vector}");
+            }
+            return null;
+
+        }
+        private void BTMakeDestinationList(MapNode BTEndNode, Path BTPath)
+        {
+            List<Vector2> BTDestinationList = new List<Vector2> { BTEndNode.Vector };
+            
+            MapNode BTCurrentNode = BTEndNode;
+
+            while (BTCurrentNode.PreviousNode != MapNode.NullNode)
+            {
+                //Debug.Log(currentNode.PreviousNode.Id);
+                BTDestinationList.Add(BTCurrentNode.PreviousNode.Vector);
+                //currentNode.PreviousNode.IsPartOfPath = true;
+                BTCurrentNode = BTCurrentNode.PreviousNode;
+            }
+
+            BTDestinationList.Reverse();
+            //path.SetPoints(destinationList);
+            BTPath.Points = BTDestinationList;
+        }
+        private MapNode BTGetCheapestNode(List<MapNode> list, MapNode previousNode)
+        {
+            MapNode cheapest = list[0];
+            for (int cheapestIterator = 1; cheapestIterator < list.Count; cheapestIterator++)
+            {
+                if (cheapest.TotalCost - previousNode.TotalCost <= 1)
+                {
+                    return cheapest;
+                }
+                if (list[cheapestIterator].TotalCost < cheapest.TotalCost)
+                {
+                    cheapest = list[cheapestIterator];
+                }
+            }
+            return cheapest;
+        }
+
+        public void BTFindPath(Ship BTShip, MapNode BTStartNode, MapNode BTEndNode, int clearance)
         {
             //minimumClearance = 1;
             //maximumClearance = 1;
             //Debug.Log($"Trying to find a path with clearance ({minimumClearance} - {maximumClearance}) from ({startX}, {startY}) to ({endX}, {endY})");
-            start = Time.realtimeSinceStartup;
-            neighborLoop = 0;
-            getNode = 0;
+            SW.Stopwatch total = SW.Stopwatch.StartNew();
+            long BTNeighborLoop = 0;
+            long BTGetNode = 0;
+            int BTLoops = 0;
+            int BTTempCostToHere;
+            MapNode[][] BTNodes;
+            int nodeCount = 0;
 
-            startNode = _grid.Nodes[startX][startY];
-            endNode = _grid.Nodes[endX][endY];
-
-            if (endNode.Clearance < maximumClearance)
+            BTNodes = new MapNode[_grid.Width][];
+            for (int x = 0; x < _grid.Width; x++)
             {
-                endNode = FindNearestWalkablePoint(startNode, endNode, maximumClearance);
+                BTNodes[x] = new MapNode[_grid.Height];
+                for (int y = 0; y < _grid.Height; y++)
+                {
+                    MapNode original = _grid.Nodes[x][y];
+                    MapNode node = new MapNode(x, y, _grid, nodeCount++);
+                    node.Clearance = original.Clearance;
+                    node.CostToHere = int.MaxValue;
+                    node.TotalCost = int.MaxValue;
+                    node.PreviousNode = MapNode.NullNode;
+                    BTNodes[x][y] = node;
+
+                }
             }
 
-            if (startNode.Clearance < maximumClearance)
+            BTStartNode = BTNodes[BTStartNode.x][BTStartNode.y];
+            BTEndNode = BTNodes[BTEndNode.x][BTEndNode.y];
+
+            Debug.Log($"BTS: {BTStartNode}");
+            Debug.Log($"BTE: {BTEndNode}");
+
+
+            if (BTEndNode.Clearance < clearance)
+            {
+                BTEndNode = BTFindNearestWalkablePoint(BTStartNode, BTEndNode, clearance, BTNodes);
+            }
+
+            if (BTStartNode.Clearance < clearance)
             {
                 //Debug.Log($"The start ({startNode.Vector}) isn't walkable space");
-                startNode = FindNearestWalkablePoint(endNode, startNode, maximumClearance);
+                BTStartNode = BTFindNearestWalkablePoint(BTEndNode, BTStartNode, clearance, BTNodes);
                 //Debug.Log($"Found new start point that is walkable: {startNode.Vector}");
             }
             //Debug.Log($"Starting at {startNode}");
-            path = new Path(startNode.x, startNode.y, endNode.x, endNode.y);
+            Path BTPath = new Path(BTStartNode.x, BTStartNode.y, BTEndNode.x, BTEndNode.y);
 
-            UncheckedNodes = new List<MapNode>() { startNode };
-            UncheckedNodesSet = new HashSet<MapNode> { startNode };
+            List<MapNode> BTUncheckedNodes = new List<MapNode>() { BTStartNode };
+            HashSet<MapNode> BTUncheckedNodesSet = new HashSet<MapNode> { BTStartNode };
             //SortedNodes = new SortedDictionary<int, MapNode> { { startNode.SortingId, startNode }  };
-            CheckedNodes.Clear();
+            HashSet<MapNode> BTCheckedNodes = new HashSet<MapNode>();
 
-            //for (int x = 0; x < _grid.Width; x++)
-            //{
-            //    for (int y = 0; y < _grid.Height; y++)
-            //    {
-            //        MapNode node = _grid.Nodes[x][y];
-            //        node.CostToHere = int.MaxValue;
-            //        node.CalculateTotalCost();
-            //        node.PreviousNode = null;
-            //        node.HasBeenChecked = false;
-            //        node.IsPartOfPath = false;
-            //    }
-            //}
-            _grid.NodeList.ForEach((n) =>
-            {
-                n.CostToHere = int.MaxValue;
-                n.TotalCost = int.MaxValue;
-                n.PreviousNode = MapNode.NullNode;
-                //n.HasBeenChecked = false;
-                //n.IsPartOfPath = false;
-            });
 
-            startNode.CostToHere = 0;
-            startNode.HueristicCost = CalculateFullMapDistance(startNode, endNode);
-            startNode.CalculateTotalCost();
+
+            BTStartNode.CostToHere = 0;
+            BTStartNode.HueristicCost = BTCalculateDistance(BTStartNode, BTEndNode);
+            BTStartNode.CalculateTotalCost();
             //if (startNode.ContainerNode != startNode)
             //{
             //    startNode.Neighbors.Add(startNode.ContainerNode);
             //}
 
             //loops = 0;
-            previousNode = startNode;
-            startupTime = (Time.realtimeSinceStartup - start) * 1000;
+            MapNode BTPreviousNode = BTStartNode;
+            long BTStartupTime = total.ElapsedMilliseconds;
             //Debug.Log($"Startup time took: {startupTime} ms");
             //Debug.Log($"Startnode: {startNode}, queueLoops: {queueLoops}, clearanceMapList: {_grid.ClearanceMapList.Count}");
-            while (UncheckedNodes.Count > 0 && getNode < FullMapTimeLimit)
+            MapNode BTCurrentNode = MapNode.NullNode;
+            while (BTUncheckedNodes.Count > 0 && BTGetNode < BTTimeLimit)
             {
-                startTimer = Time.realtimeSinceStartup;
-                //loops++;
+                SW.Stopwatch sw = SW.Stopwatch.StartNew();
+                BTLoops++;
 
-                currentNode = GetFullMapCheapestNode(UncheckedNodes);
-                //if (loops > 1)
-                //{
-                //    Debug.Log($"Difference in TC between current and previous: {currentNode.TotalCost - previousNode.TotalCost}");
-                //}
-                previousNode = currentNode;
-                //currentNode = UncheckedNodes.First();
-                //currentNode = SortedNodes.First().Value;
-                //Debug.Log($"Sorted set, first: {SortedNodes.First().Value.TotalCost}, cheapestNode: {currentNode.TotalCost}");
-                //yield return ConfigData.WaitForEndOfFrame;
+                BTCurrentNode = BTGetCheapestNode(BTUncheckedNodes, BTPreviousNode);
 
-                //currentNode = UncheckedNodes.First();
-                //Debug.Log($"Current node: {currentNode}");
+                BTPreviousNode = BTCurrentNode;
 
-                // skips ahead to further down the line if it detects we're in free space
-                //if (loops % 20 == 0 && (IsInFreeSpace(currentNode.x, currentNode.y, endNode.x, endNode.y)))
-                //{
-                //    endNode.PreviousNode = currentNode;
-                //    MakeDestinationList(endNode, path);
-                //    PathCache.Add(path);
-                //    return path;
-                //}
-
-                //skip ahead to further down if we raycasted a straight line
-                //if (loops % 20 == 0 && (CalculateDistance(currentNode, endNode) > 40 && !Utilities.HasObstaclesInTheWay(currentNode.Vector, endNode.Vector)))
-                //{
-                //    endNode.PreviousNode = currentNode;
-                //    MakeDestinationList(endNode, path);
-                //    PathCache.Add(path);
-                //    Debug.Log($"Found a straight line from {currentNode.Vector} to the end {endNode.Vector}");
-                //    _grid.DebugGridAsImage(new Vector2Int(endNode.x, endNode.y));
-                //    callback(path);
-                //    yield break;
-                //}
-
-                //if (currentNode == endNode)
-                //{
-                //    MakeDestinationList(endNode, path);
-                //    //PathCache.Add(path);
-                //    //Debug.Log($"Reached the end destination");
-                //    //_grid.DebugGridAsImage(new Vector2Int(currentNode.x, currentNode.y));
-                //    callback(path);
-                //    yield break;
-                //}
-                //else 
-                if (currentNode == endNode)
+                if (BTCurrentNode == BTEndNode)
                 {
-                    MakeDestinationList(endNode, path);
-
-                    //PathCache.Add(path);
-                    //Debug.Log($"Found the end node ({loops} loops) as a child of another node {currentNode}");
-                    //_grid.DebugGridAsImage(new Vector2Int(endNode.x, endNode.y));
-                    total = Time.realtimeSinceStartup - start;
-                    Debug.Log($"Finished finding path. Loops: ({loops}) startup time: {startupTime}ms, getNode Time: {getNode * 1000}ms, neighborLoop Time: {neighborLoop * 1000}ms, Total: {(total * 1000)}ms");
-                    //Debug.Log($" == {MapNode.equalsCalls}");
-                    callback(path);
-                    yield break;
+                    BTMakeDestinationList(BTEndNode, BTPath);
+                    sw.Stop();
+                    BTGetNode += sw.ElapsedMilliseconds;
+                    total.Stop();
+                    float BTTotal = total.ElapsedMilliseconds;
+                    Debug.Log($"Finished background finding path. Loops: ({BTLoops}) startup time: {BTStartupTime}ms, getNode Time: {BTGetNode}ms, neighborLoop Time: {BTNeighborLoop}ms, Total: {(BTTotal)}ms");
+                    BTShip.PathfindingValue = BTPath;
+                    BTShip.PathfindingThreadComplete = true;
+                    return;
                 }
-                UncheckedNodes.Remove(currentNode);
-                UncheckedNodesSet.Remove(currentNode);
-                //SortedNodes.Remove(currentNode.SortingId);
-                //currentNode.HasBeenChecked = true;
-                CheckedNodes.Add(currentNode);
+                BTUncheckedNodes.Remove(BTCurrentNode);
+                BTUncheckedNodesSet.Remove(BTCurrentNode);
+
+                BTCheckedNodes.Add(BTCurrentNode);
 
                 //Debug.Log($"Getting neighbors for {currentNode}");
-                getNode += Time.realtimeSinceStartup - startTimer;
+                sw.Stop();
+                BTGetNode += sw.ElapsedMilliseconds;
 
-                startTimer = Time.realtimeSinceStartup;
+                sw = SW.Stopwatch.StartNew();
 
-                currentNode.ImmediateNeighbors.ForEach((neighbor) =>
+                BTCurrentNode.GetImmediateNeighbors(BTNodes).ForEach((neighbor) =>
                 {
-                    if (!CheckedNodes.Contains(neighbor))
+                    if (!BTCheckedNodes.Contains(neighbor))
                     {
-                        if (neighbor.Clearance > maximumClearance) // < maximum clearance                 == 0
+                        //Debug.Log($"Neighbor: {neighbor}");
+                        if (neighbor.Clearance > clearance) // < maximum clearance                 == 0
                         {
-                            tempCostToHere = currentNode.CostToHere + CalculateFullMapDistance(currentNode, neighbor);
-                            if (tempCostToHere < neighbor.CostToHere)
+                            //Debug.Log($"Passed clearance");
+                            BTTempCostToHere = BTCurrentNode.CostToHere + BTCalculateDistance(BTCurrentNode, neighbor);
+                            if (BTTempCostToHere < neighbor.CostToHere)
                             {
-                                //SortedNodes.Remove(neighbor.SortingId);
-                                neighbor.PreviousNode = currentNode;
-                                neighbor.CostToHere = tempCostToHere;
-                                neighbor.HueristicCost = CalculateFullMapDistance(neighbor, endNode);
+                                //Debug.Log($"Lower Cost");
+                                neighbor.PreviousNode = BTCurrentNode;
+                                neighbor.CostToHere = BTTempCostToHere;
+                                neighbor.HueristicCost = BTCalculateDistance(neighbor, BTEndNode);
                                 neighbor.CalculateTotalCost();
                                 //UncheckedNodes.Add(neighbor);
-                                if (!UncheckedNodesSet.Contains(neighbor))
+                                if (!BTUncheckedNodesSet.Contains(neighbor))
                                 {
-                                    UncheckedNodes.Add(neighbor);
-                                    UncheckedNodesSet.Add(neighbor);
-                                    //SortedNodes.Add(neighbor.SortingId, neighbor);
+                                    BTUncheckedNodes.Add(neighbor);
+                                    BTUncheckedNodesSet.Add(neighbor);
                                 }
                             }
+ 
+
                         }
                     }
                 });
 
-                //if (loops % MaxLoopsPerFrame == 0)
-                //{
-                //    yield return ConfigData.WaitForEndOfFrame;
-                //}
-                neighborLoop += Time.realtimeSinceStartup - startTimer;
+                sw.Stop();
+                BTNeighborLoop += sw.ElapsedMilliseconds;
 
             }
 
 
-            if (getNode > TimeLimit)
+            if (BTGetNode > BTTimeLimit)
             {
                 Debug.Log($"Ran out of time while trying to find a path");
             }
-            else if (UncheckedNodes.Count == 0)
+            else if (BTUncheckedNodes.Count == 0)
             {
-                Debug.Log($"No more nodes to check.  checkedNodes: {CheckedNodes.Count} / {_grid.TotalNodes} / {_grid.ClearanceMap.Count}  CurrentNode: {currentNode},");
+                Debug.Log($"No more nodes to check.  checkedNodes: {BTCheckedNodes.Count} / {_grid.TotalNodes} / {_grid.ClearanceMap.Count}  CurrentNode: {BTCurrentNode},");
             }
 
-            // couldn't find the path
-            _grid.DebugGridAsImage(new Vector2Int(currentNode.x, currentNode.y));
-            //currentNode.DebugNodeImage();
-            callback(null);
-            yield break;
-
         }
-        public IEnumerator FindPath(int startX, int startY, int endX, int endY, int maximumClearance, Action<Path> callback)
+
+        private MapNode startNode, endNode, currentNode, previousNode;
+        private Path path, potentialCachedPath, cachedPath;
+        private float start, neighborLoop, getNode, startTimer, middleTimer, startupTime, sortTime, total;
+        private int loops, tempCostToHere, iterator;
+        public IEnumerator FindPath(Ship ship, int startX, int startY, int endX, int endY, int maximumClearance, Action<Path> callback)
         {
+
             //minimumClearance = 1;
             //maximumClearance = 1;
             //Debug.Log($"Trying to find a path with clearance ({minimumClearance} - {maximumClearance}) from ({startX}, {startY}) to ({endX}, {endY})");
@@ -1436,6 +1536,13 @@ namespace Assets.Scripts.Level
 
             startNode = _grid.Nodes[startX][startY];
             endNode = _grid.Nodes[endX][endY];
+
+
+            Thread thread = new Thread(() =>
+            {
+                BTFindPath(ship, startNode, endNode, maximumClearance);
+            });
+            thread.Start();
 
             if (endNode.ContainerNode.Clearance < maximumClearance)
             {
@@ -1551,7 +1658,7 @@ namespace Assets.Scripts.Level
                     //Debug.Log($"Found the end node ({loops} loops) as a child of another node {currentNode}");
                     total = Time.realtimeSinceStartup - start;
                     Debug.Log($"Finished finding path. Loops: ({loops}) startup time: {startupTime}ms, getNode Time: {getNode * 1000}ms, neighborLoop Time: {neighborLoop * 1000}ms, Total: {(total * 1000)}ms");
-                    _grid.DebugGridAsImage(new Vector2Int(endNode.x, endNode.y));
+                    //_grid.DebugGridAsImage(new Vector2Int(endNode.x, endNode.y));
                     //Debug.Log($" == {MapNode.equalsCalls}");
                     callback(path);
                     yield break;
@@ -1656,7 +1763,6 @@ namespace Assets.Scripts.Level
             public int Height;
             public int TotalNodes;
             public HashSet<MapNode> NodeSet = new HashSet<MapNode>();
-            public List<MapNode> NodeList = new List<MapNode>();
             public HashSet<MapNode> ClearanceMap = new HashSet<MapNode>();
             //public Dictionary<long, Path> EmptyPathsSet = new Dictionary<long, Path>();
             public List<MapNode> ClearanceMapList = new List<MapNode>();
@@ -1675,10 +1781,9 @@ namespace Assets.Scripts.Level
                     Nodes[x] = new MapNode[Height];
                     for (int y = 0; y < Height; y++)
                     {
-                        Nodes[x][y] = new MapNode(x, y, this);
+                        Nodes[x][y] = new MapNode(x, y, this, TotalNodes++);
                         TotalNodes++;
                         NodeSet.Add(Nodes[x][y]);
-                        NodeList.Add(Nodes[x][y]);
                         //if (!NodeSet.Contains(Nodes[x][y])) // [debug]
                         //{
                         //    NodeSet.Add(Nodes[x][y]);
@@ -1972,7 +2077,7 @@ namespace Assets.Scripts.Level
 
         public class MapNode : IComparable<MapNode>
         {
-            public static MapNode NullNode = new MapNode(-1, -1, null);
+            public static MapNode NullNode = new MapNode(-1, -1, null, -1);
             public int CostToHere; // The g cost
             public int HueristicCost; // The h cost
             public int TotalCost; // The f cost
@@ -2001,7 +2106,7 @@ namespace Assets.Scripts.Level
             public Vector2 Vector;
             public Vector2Int VectorInt;
 
-            public MapNode(int x, int y, Grid grid)
+            public MapNode(int x, int y, Grid grid, int id)
             {
                 this.x = x;
                 this.y = y;
@@ -2011,12 +2116,9 @@ namespace Assets.Scripts.Level
                     Grid = grid;
                     Vector = Grid.Pathfinder.ConvertToLevelCoordinates(x, y);
                     VectorInt = Grid.Pathfinder.ConvertToLevelCoordinatesInt(x, y);
-                    Id = Grid.TotalNodes;
                 }
-                else
-                {
-                    Id = -1;
-                }
+                Id = id;
+
 
                 Clearance = 1;
                 OriginalClearance = Clearance;
@@ -2115,7 +2217,6 @@ namespace Assets.Scripts.Level
             }
             public List<MapNode> GetNeighbors()
             {
-                GetImmediateNeighbors();
                 int minY = Mathf.Clamp(y - Clearance, 0, Grid.Height -1);
                 int minX = Mathf.Clamp(x - Clearance, 0, Grid.Width - 1);
                 int maxY = Mathf.Clamp(y + Clearance, 0, Grid.Height - 1);
@@ -2165,50 +2266,50 @@ namespace Assets.Scripts.Level
                 Neighbors = Neighbors.ToHashSet().ToList();
                 return Neighbors;
             }
-            public List<MapNode> GetImmediateNeighbors()
+            public List<MapNode> GetImmediateNeighbors(MapNode[][] nodes)
             {
 
                 if (x - 1 >= 0) // There is space to the left
                 {
 
-                    ImmediateNeighbors.Add(Grid.Nodes[x - 1][y]); // get left neighbor
+                    ImmediateNeighbors.Add(nodes[x - 1][y]); // get left neighbor
 
                     if (y - 1 >= 0)
                     {
-                        ImmediateNeighbors.Add(Grid.Nodes[x - 1][y - 1]); // get bottom left neighbor
+                        ImmediateNeighbors.Add(nodes[x - 1][y - 1]); // get bottom left neighbor
                     }
 
                     if (y + 1 < Grid.Height)
                     {
-                        ImmediateNeighbors.Add(Grid.Nodes[x - 1][y + 1]); // get top left neighbor
+                        ImmediateNeighbors.Add(nodes[x - 1][y + 1]); // get top left neighbor
                     }
 
                 }
                 if (x + 1 < Grid.Width) // There is space to the right
                 {
 
-                    ImmediateNeighbors.Add(Grid.Nodes[x + 1][y]); // get right neighbor
+                    ImmediateNeighbors.Add(nodes[x + 1][y]); // get right neighbor
 
                     if (y - 1 >= 0)
                     {
-                        ImmediateNeighbors.Add(Grid.Nodes[x + 1][y - 1]); // get bottom right neighbor
+                        ImmediateNeighbors.Add(nodes[x + 1][y - 1]); // get bottom right neighbor
                     }
 
                     if (y + 1 < Grid.Height)
                     {
-                        ImmediateNeighbors.Add(Grid.Nodes[x + 1][y + 1]); // get top right neighbor
+                        ImmediateNeighbors.Add(nodes[x + 1][y + 1]); // get top right neighbor
                     }
 
                 }
 
                 if (y - 1 >= 0) // there is space below
                 {
-                    ImmediateNeighbors.Add(Grid.Nodes[x][y - 1]);
+                    ImmediateNeighbors.Add(nodes[x][y - 1]);
                 }
 
                 if (y + 1 < Grid.Height) // there is space above
                 {
-                    ImmediateNeighbors.Add(Grid.Nodes[x][y + 1]);
+                    ImmediateNeighbors.Add(nodes[x][y + 1]);
                 }
 
 
@@ -2286,10 +2387,11 @@ namespace Assets.Scripts.Level
             }
             protected string Info()
             {
-                return $"MapNode #{Id} - {(IsPermanant ? "Y" : "N")}: ({x}, {y}), PreviousNode: {PreviousNode.Id}, Clearance: {Clearance}, Container: #{ContainerNode.Id}, Children: {Children.Count}\n";
+                return $"MapNode #{Id} - {(IsPermanant ? "Y" : "N")}: ({x}, {y}), PreviousNode: {PreviousNode.Id}, Clearance: {Clearance}, Container: #{ContainerNode.Id}, IN: {ImmediateNeighbors.Count}\n";
             }
             public override string ToString()
             {
+                return Info();
                 string toString = Info() +
                     $"Neighbors ({Neighbors.Count}):\n\n";
                 for (int i = 0; i < Neighbors.Count && i < 10; i++)

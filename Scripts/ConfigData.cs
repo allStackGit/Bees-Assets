@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using UnityEngine;
 using UnityEngine.UI;            
 
@@ -171,6 +172,7 @@ namespace Assets.Scripts
         public static Scene SocketManager;
         public static HashSet<long> UsedHashes = new HashSet<long>();
         public static WaitForEndOfFrame WaitForEndOfFrame = new WaitForEndOfFrame();
+        public static List<Thread> Threads = new List<Thread>();
 
 
 
