@@ -172,7 +172,7 @@ namespace Assets.Scripts
         public static Scene SocketManager;
         public static HashSet<long> UsedHashes = new HashSet<long>();
         public static WaitForEndOfFrame WaitForEndOfFrame = new WaitForEndOfFrame();
-        public static List<Thread> Threads = new List<Thread>();
+        public static int MaxThreads = SystemInfo.processorCount - 1;
 
 
 
@@ -267,6 +267,7 @@ namespace Assets.Scripts
         public static bool AreAllSettingsLoaded => (ShipInfo != null && ShipInfo.IsLoaded) && (Configuration != null && Configuration.IsLoaded)
             && (StartingSettings != null && StartingSettings.IsLoaded);
         public static bool IsAllUserDataLoaded => IsUserProgressDataLoaded && IsFleetDataLoaded && IsSavedSquadsDataLoaded;  
+
 
 
         // DEBUG VARIABLES

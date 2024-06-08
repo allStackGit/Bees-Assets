@@ -449,6 +449,10 @@ namespace Assets.Scripts.Scenes
                         if (!IsTrainingHiveMind)
                         {
                             InputManager.Update();
+                            if (HasObstacles)
+                            {
+                                Pathfinder.Update();
+                            }
 
                         }
                     }

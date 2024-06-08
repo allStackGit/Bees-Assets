@@ -346,6 +346,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         }
         protected void FixedUpdate()
         {
+            // Debug angles from ships
+            //if (Squad.IsSelected)
+            //{
+            //    Debug.Log(GetRotatedAngleToPoint(Level.InputManager.GetMousePosition()));
+            //}
             if (PathfindingThreadComplete)
             {
                 MergePathfindingPaths();
@@ -540,7 +545,22 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         Vector2 startPosition;
         private void MergePathfindingPaths()
         {
-            Debug.Log($"Merging pathfinding paths for {Name}");
+            float start = Time.realtimeSinceStartup;
+            //Debug.Log($"Merging pathfinding paths for {Name}");
+            Vector2 firstPoint = PathfindingValue.Points.Take(50).OrderBy((p) => DistanceToPoint(p)).Take(25).OrderBy((p) => GetRotatedAngleToPoint(p)).First();
+
+            //Debug.Log($"First point is {firstPoint}");
+            DestinationQueue.Clear();
+            for (int i = PathfindingValue.Points.IndexOf(firstPoint); i < PathfindingValue.Points.Count; i++)
+            {
+                DestinationQueue.Enqueue(PathfindingValue.Points[i]);
+            }
+            FinalDestination = DestinationQueue.Last();
+            TargetCoordinates = DestinationQueue.Dequeue();
+
+
+
+            //Debug.Log($"Merged full path to destination in {(Time.realtimeSinceStartup - start) * 1000}ms");
         }
         private void FindShortestPath(Vector2 destination, Action callback)
         {

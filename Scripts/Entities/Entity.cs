@@ -2,6 +2,7 @@ using Assets.Scripts.Scenes;
 using System;
 
 using UnityEngine;
+using UnityEngine.UIElements;
 
 namespace Assets.Scripts.Entities
 {
@@ -69,6 +70,15 @@ namespace Assets.Scripts.Entities
             }
             //Debug.Log($"Angle towards movement point after adjustment {degrees}");
             return degrees;
+        }
+        public float GetRotatedAngleToPoint(Vector2 point)
+        {
+            float result = GetDegreesTowardsPoint(point) - GetRotation();
+            if (result < 0)
+            {
+                result += 360;
+            }
+            return result;
         }
         public Vector2 CirclePoint(float angle, float distance)
         {

@@ -38,6 +38,7 @@ namespace Assets.Scripts.Scenes
         {
             //Debug.Log($"Starting {Name} scene");
             ConfigData.Scenes.Add(this);
+            
             if (!ConfigData.HasSocketManager())
             {
                 IsSocketManager = true;
