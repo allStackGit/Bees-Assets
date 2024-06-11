@@ -90,8 +90,10 @@ namespace Assets.Scripts.Level
                                 Ships[i] = p.Ship;
                                 BTFindPath(i);
                             });
+                            //Debug.Log($"Queued Started BT {ThreadsStarted} % {ConfigData.MaxThreads} : #{i}|{Thread}|{(ThreadsStarted % ConfigData.MaxThreads)} ");
+                            //Debug.Log($"Queued Started BT #{i}");
                             task.Start();
-                            ThreadsStarted++;
+                            //ThreadsStarted++;
                             PathsWaitingToRemove.Add(p);
                             break;
                         }
@@ -854,58 +856,58 @@ namespace Assets.Scripts.Level
                 }
             }
 
-            //Level.StartCoroutine(LoadClearanceMap(() =>
-            //{
-            //    _grid.ClearanceMapList = _grid.ClearanceMap.ToList();
-            //    //Level.StartCoroutine(LoadPathCache());
+            Level.StartCoroutine(LoadClearanceMap(() =>
+            {
+                _grid.ClearanceMapList = _grid.ClearanceMap.ToList();
+                //Level.StartCoroutine(LoadPathCache());
 
 
-            //    Queue<MapNode> queue = new Queue<MapNode>();
-            //    HashSet<MapNode> checkedNodes = new HashSet<MapNode>();
-            //    queue.Enqueue(_grid.ClearanceMapList[0]);
-            //    checkedNodes.Add(_grid.ClearanceMapList[0]);
-            //    while (queue.Count > 0)
-            //    {
-            //        MapNode node = queue.Dequeue();
-            //        node.Neighbors.ForEach((neighbor) =>
-            //        {
-            //            if (!checkedNodes.Contains(neighbor))
-            //            {
-            //                checkedNodes.Add(neighbor);
-            //                queue.Enqueue(neighbor);
-            //            }
-            //        });
+                Queue<MapNode> queue = new Queue<MapNode>();
+                HashSet<MapNode> checkedNodes = new HashSet<MapNode>();
+                queue.Enqueue(_grid.ClearanceMapList[0]);
+                checkedNodes.Add(_grid.ClearanceMapList[0]);
+                while (queue.Count > 0)
+                {
+                    MapNode node = queue.Dequeue();
+                    node.Neighbors.ForEach((neighbor) =>
+                    {
+                        if (!checkedNodes.Contains(neighbor))
+                        {
+                            checkedNodes.Add(neighbor);
+                            queue.Enqueue(neighbor);
+                        }
+                    });
 
-            //    }
-            //    ResettableNodes = checkedNodes.ToList();
+                }
+                ResettableNodes = checkedNodes.ToList();
 
 
-            //    for (int i = 0; i < ConfigData.MaxThreads; i++)
-            //    {
-            //        int nodeCount = 0;
-            //        GridNodes[i] = new MapNode[_grid.Width][];
-            //        for (int x = 0; x < _grid.Width; x++)
-            //        {
-            //            GridNodes[i][x] = new MapNode[_grid.Height];
-            //            for (int y = 0; y < _grid.Height; y++)
-            //            {
-            //                MapNode original = _grid.Nodes[x][y];
-            //                MapNode node = new MapNode(x, y, _grid, nodeCount++);
-            //                node.Clearance = original.Clearance;
-            //                node.CostToHere = int.MaxValue;
-            //                node.TotalCost = int.MaxValue;
-            //                node.PreviousNode = MapNode.NullNode;
-            //                GridNodes[i][x][y] = node;
+                for (int i = 0; i < ConfigData.MaxThreads; i++)
+                {
+                    int nodeCount = 0;
+                    GridNodes[i] = new MapNode[_grid.Width][];
+                    for (int x = 0; x < _grid.Width; x++)
+                    {
+                        GridNodes[i][x] = new MapNode[_grid.Height];
+                        for (int y = 0; y < _grid.Height; y++)
+                        {
+                            MapNode original = _grid.Nodes[x][y];
+                            MapNode node = new MapNode(x, y, _grid, nodeCount++);
+                            node.Clearance = original.Clearance;
+                            node.CostToHere = int.MaxValue;
+                            node.TotalCost = int.MaxValue;
+                            node.PreviousNode = MapNode.NullNode;
+                            GridNodes[i][x][y] = node;
 
-            //            }
-            //        }
-            //    }
+                        }
+                    }
+                }
 
-            //    float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
-            //    Debug.Log($"Initialized map in {end} ms");
-            //    //Level.StartCoroutine(BakeMap());
-            //}));
-            Level.StartCoroutine(CalculateClearance());
+                float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
+                Debug.Log($"Initialized map in {end} ms");
+                //Level.StartCoroutine(BakeMap());
+            }));
+            //Level.StartCoroutine(CalculateClearance());
             //Level.StartCoroutine(CalculateSquares());
 
             NeedsToBeUpdated = false;
@@ -1404,8 +1406,10 @@ namespace Assets.Scripts.Level
             {
                 //Debug.Log(currentNode.PreviousNode.Id);
                 BTDestinationList.Add(BTCurrentNode.PreviousNode.Vector);
-                //currentNode.PreviousNode.IsPartOfPath = true;
                 BTCurrentNode = BTCurrentNode.PreviousNode;
+
+                BTCurrentNode.PreviousNode.IsPartOfPath = true;
+
             }
 
             BTDestinationList.Reverse();
@@ -1433,8 +1437,9 @@ namespace Assets.Scripts.Level
         public List<PathWaiting> PathsWaitingToRemove = new List<PathWaiting>();
         public Thread[] Threads = new Thread[ConfigData.MaxThreads];
         public bool[] IsThreadActive = new bool[ConfigData.MaxThreads];
-        public int ThreadsStarted = -1;
-        public int Thread => ThreadsStarted % ConfigData.MaxThreads;
+        //public int ThreadsStarted = -1;
+        //public int ThreadIndex;
+        //public int Thread => ThreadsStarted % ConfigData.MaxThreads;
         public SW.Stopwatch[] Totals = new SW.Stopwatch[ConfigData.MaxThreads];
         public SW.Stopwatch[] NeighborLoops = new SW.Stopwatch[ConfigData.MaxThreads];
         public SW.Stopwatch[] GetNodes = new SW.Stopwatch[ConfigData.MaxThreads];
@@ -1463,7 +1468,8 @@ namespace Assets.Scripts.Level
         }
         public void BTFindPath(int index)
         {
-            Debug.Log($"Started BT #{index}");
+            //Debug.Log($"_Started BT {ThreadsStarted} % {ConfigData.MaxThreads} : #{index}|{Thread}|{(ThreadsStarted % ConfigData.MaxThreads)} ");
+            //Debug.Log($"_Started BT #{index}");
             //minimumClearance = 1;
             //maximumClearance = 1;
             //Debug.Log($"Trying to find a path with clearance ({minimumClearance} - {maximumClearance}) from ({startX}, {startY}) to ({endX}, {endY})");
@@ -1481,6 +1487,9 @@ namespace Assets.Scripts.Level
                     GridNodes[index][x][y].CostToHere = int.MaxValue;
                     GridNodes[index][x][y].TotalCost = int.MaxValue;
                     GridNodes[index][x][y].PreviousNode = MapNode.NullNode;
+
+                    GridNodes[index][x][y].HasBeenChecked = false;
+                    GridNodes[index][x][y].IsPartOfPath = false;
 
                 }
             }
@@ -1547,9 +1556,13 @@ namespace Assets.Scripts.Level
                     BTMakeDestinationList(EndNodes[index], BTPath);
                     Totals[index].Stop();
                     GetNodes[index].Stop();
-                    Debug.Log($"Finished background finding path #{index}. ({BTPath.Points.Count}) Loops: ({BTLoops}) startup time: {BTStartupTime}ms, getNode Time: {GetNodes[index].Elapsed.TotalMilliseconds}ms, neighborLoop Time: {NeighborLoops[index].Elapsed.TotalMilliseconds}ms, Total: {(Totals[index].Elapsed.TotalMilliseconds)}ms");
+                    //Debug.Log($"Finished background finding path #{index}. ({BTPath.Points.Count}) Loops: ({BTLoops}) startup time: {BTStartupTime}ms, getNode Time: {GetNodes[index].Elapsed.TotalMilliseconds}ms, neighborLoop Time: {NeighborLoops[index].Elapsed.TotalMilliseconds}ms, Total: {(Totals[index].Elapsed.TotalMilliseconds)}ms");
                     Ships[index].PathfindingValue = BTPath;
                     Ships[index].PathfindingThreadComplete = true;
+
+                    Ships[index].DebugGrid = _grid;
+                    Ships[index].DebugNodes = GridNodes[index];
+                    Ships[index].DebugEndNode = EndNodes[index];
                     IsThreadActive[index] = false;
                     return;
                 }
@@ -1557,6 +1570,7 @@ namespace Assets.Scripts.Level
                 BTUncheckedNodesSet.Remove(BTCurrentNode);
 
                 BTCheckedNodes.Add(BTCurrentNode);
+                BTCurrentNode.HasBeenChecked = true;
 
                 //Debug.Log($"Getting neighbors for {currentNode}");
                 GetNodes[index].Stop();
@@ -1626,24 +1640,60 @@ namespace Assets.Scripts.Level
 
 
             //Totals[Thread] = SW.Stopwatch.StartNew();
-            ThreadsStarted++;
-            if (!IsThreadActive[Thread])
+            //ThreadsStarted++;
+            //ThreadIndex = ThreadsStarted % ConfigData.MaxThreads;
+            //PathsWaiting = PathsWaiting.Where((p) => p.Ship != ship).ToList(); // remove all queued pathfinding for this ship
+            //if (!IsThreadActive[ThreadIndex])
+            //{
+            //    IsThreadActive[ThreadIndex] = true;
+            //    Task task = new Task(() =>
+            //    {
+            //        StartNodes[ThreadIndex] = startNode;
+            //        EndNodes[ThreadIndex] = endNode;
+            //        Clearances[ThreadIndex] = maximumClearance;
+            //        Ships[ThreadIndex] = ship;
+            //        BTFindPath(ThreadIndex);
+            //    });
+            //    Debug.Log($"Standard Started BT {ThreadsStarted} % {ConfigData.MaxThreads} : #{ThreadIndex}|{Thread}|{(ThreadsStarted % ConfigData.MaxThreads)} ");
+            //    task.Start();
+            //}
+            //else
+            //{
+            //    ThreadsStarted--;
+            //    //Debug.Log($"Queued BT #{Thread} / {ThreadsStarted} because the thread is active");
+            //    PathsWaiting.Add(new PathWaiting(ship, startNode, endNode, maximumClearance));
+            //}
+            bool startedTask = false;
+            PathsWaiting = PathsWaiting.Where((p) => p.Ship != ship).ToList(); // remove all queued pathfinding for this ship
+            for (int i = 0; i < ConfigData.MaxThreads; i++)
             {
-                IsThreadActive[Thread] = true;
-                Task task = new Task(() =>
+                if (!IsThreadActive[i])
                 {
-                    StartNodes[Thread] = startNode;
-                    EndNodes[Thread] = endNode;
-                    Clearances[Thread] = maximumClearance;
-                    Ships[Thread] = ship;
-                    BTFindPath(Thread);
-                });
-                task.Start();
+                    IsThreadActive[i] = true;
+                    Task task = new Task(() =>
+                    {
+                        StartNodes[i] = startNode;
+                        EndNodes[i] = endNode;
+                        Clearances[i] = maximumClearance;
+                        Ships[i] = ship;
+                        BTFindPath(i);
+                    });
+                    //Debug.Log($"Standard Started BT {ThreadsStarted} % {ConfigData.MaxThreads} : #{i}|{Thread}|{(ThreadsStarted % ConfigData.MaxThreads)} ");
+                    //Debug.Log($"Standard Started #{i}");
+                    task.Start();
+                    startedTask = true;
+                    //ThreadsStarted++;
+                    //PathsWaitingToRemove.Add(p);
+                    break;
+                }
             }
-            else
+            if (!startedTask)
             {
                 PathsWaiting.Add(new PathWaiting(ship, startNode, endNode, maximumClearance));
             }
+
+            callback(null);
+            yield break;
             //if (ConfigData.UsedThreads < ConfigData.MaxThreads)
             //{
             //    Task task = new Task(() =>
@@ -1779,7 +1829,7 @@ namespace Assets.Scripts.Level
                     //Debug.Log($"Found the end node ({loops} loops) as a child of another node {currentNode}");
                     total = Time.realtimeSinceStartup - start;
                     Debug.Log($"Finished finding path. Loops: ({loops}) startup time: {startupTime}ms, getNode Time: {getNode * 1000}ms, neighborLoop Time: {neighborLoop * 1000}ms, Total: {(total * 1000)}ms");
-                    //_grid.DebugGridAsImage(new Vector2Int(endNode.x, endNode.y));
+                    _grid.DebugGridAsImage(new Vector2Int(endNode.x, endNode.y), _grid.Nodes, 4);
                     //Debug.Log($" == {MapNode.equalsCalls}");
                     callback(path);
                     yield break;
@@ -1840,7 +1890,7 @@ namespace Assets.Scripts.Level
             }
 
             // couldn't find the path
-            _grid.DebugGridAsImage(new Vector2Int(currentNode.x, currentNode.y));
+            //_grid.DebugGridAsImage(new Vector2Int(currentNode.x, currentNode.y));
             //currentNode.DebugNodeImage();
             callback(null);
             yield break;
@@ -1924,17 +1974,17 @@ namespace Assets.Scripts.Level
                 //}
                 return Nodes[x][y];
             }
-            public void DebugGridAsImage(Vector2Int lastNode)
+            public void DebugGridAsImage(Vector2Int lastNode, MapNode[][] nodes, int scale = 2)
             {
-                Texture2D texture = new Texture2D(Width * 2, Height * 2, TextureFormat.RGB24, false);
+                Texture2D texture = new Texture2D(Width * scale, Height * scale, TextureFormat.RGB24, false);
                 //Color[] pixels = texture.GetPixels();
                 MapNode node;
-                for (int y = 0; y < Height * 2; y += 2)
+                for (int y = 0; y < Height * scale; y += scale)
                 {
-                    for (int x = 0; x < Width * 2; x += 2)
+                    for (int x = 0; x < Width * scale; x += scale)
                     {
                         Color color = Color.grey; // has not been checked
-                        node = Nodes[x/2][y/2];
+                        node = nodes[ x/ scale][y / scale];
                         if (node.Clearance == 0) // obstacle
                         {
                             color = ConfigData.GetUIColor("bad");
@@ -1949,17 +1999,33 @@ namespace Assets.Scripts.Level
                         }
 
 
+                        for (int v = 0; v < scale; v++)
+                        {
+                            for (int h = 0; h < scale; h++)
+                            {
+                                texture.SetPixel((node.x * scale) + h, (Height * scale) - ((node.y * scale) + (1 - v)), color); // regular
+                            }
+                        }
 
-                        texture.SetPixel(x, Height * 2 - (y + 1), color); // regular
-                        texture.SetPixel(x + 1, Height * 2 - (y + 1), color); // right
-                        texture.SetPixel(x, Height * 2 - y, color); // down
-                        texture.SetPixel(x + 1, Height * 2 - y, color); // down and right
+                        //texture.SetPixel(x, Height * 2 - (y + 1), color); // regular
+                        //texture.SetPixel(x + 1, Height * 2 - (y + 1), color); // right
+                        //texture.SetPixel(x, Height * 2 - y, color); // down
+                        //texture.SetPixel(x + 1, Height * 2 - y, color); // down and right
                     }
                 }
-                texture.SetPixel(lastNode.x, Height * 2 - (lastNode.y + 1), ConfigData.GetUIColor("medium"));
-                texture.SetPixel(lastNode.x + 1, Height * 2 - (lastNode.y + 1), ConfigData.GetUIColor("medium"));
-                texture.SetPixel(lastNode.x, Height * 2 - lastNode.y, ConfigData.GetUIColor("medium"));
-                texture.SetPixel(lastNode.x + 1, Height * 2 - lastNode.y, ConfigData.GetUIColor("medium"));
+
+                for (int v = 0; v < scale; v++)
+                {
+                    for (int h = 0; h < scale; h++)
+                    {
+                        texture.SetPixel((lastNode.x * scale) + h, (Height * scale) - ((lastNode.y * scale) + (1 - v)), ConfigData.GetUIColor("medium")); // last pixel
+                    }
+                }
+
+                //texture.SetPixel(lastNode.x, Height * 2 - (lastNode.y + 1), ConfigData.GetUIColor("medium"));
+                //texture.SetPixel(lastNode.x + 1, Height * 2 - (lastNode.y + 1), ConfigData.GetUIColor("medium"));
+                //texture.SetPixel(lastNode.x, Height * 2 - lastNode.y, ConfigData.GetUIColor("medium"));
+                //texture.SetPixel(lastNode.x + 1, Height * 2 - lastNode.y, ConfigData.GetUIColor("medium"));
                 //Debug.Log($"Setting last pixel at ({lastNode.x}, {(Height - (lastNode.y + 1))}) to yellow");
                 //Color[] pixels = texture.GetPixels();
                 //System.Array.Reverse(pixels, 0, pixels.Length);

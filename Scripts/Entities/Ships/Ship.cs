@@ -59,6 +59,9 @@ namespace Assets.Scripts.Entities.Ships
         public PolygonCollider2D ShipCollider;
         public volatile bool PathfindingThreadComplete;
         public volatile Pathfinder.Path PathfindingValue;
+        public volatile Pathfinder.Grid DebugGrid;
+        public volatile Pathfinder.MapNode[][] DebugNodes;
+        public volatile Pathfinder.MapNode DebugEndNode;
 
 
 
@@ -457,14 +460,14 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     //{
                     //    destination = obstacleAtPoint.ProximityCollider.ClosestPoint(destination);
                     //}
-                    float start = Time.realtimeSinceStartup;
+                    //float start = Time.realtimeSinceStartup;
                     FindShortestPath(destination, () =>
                     {
                         FinalDestination = DestinationQueue.Last();
                         TargetCoordinates = DestinationQueue.Dequeue();
                         IsFollowingPath = true;
                         HasTargetCoordinates = true;
-                        float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
+                        //float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
                         //Debug.Log($"It took {Math.Round(end, 2)} ms to find the path for {Name} with Clearance: {Level.MaximumClearance}.");
                     });
 
@@ -545,9 +548,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         Vector2 startPosition;
         private void MergePathfindingPaths()
         {
+            //DebugGrid.DebugGridAsImage(new Vector2Int(DebugEndNode.x, DebugEndNode.y), DebugNodes, 4);
             float start = Time.realtimeSinceStartup;
-            //Debug.Log($"Merging pathfinding paths for {Name}");
-            Vector2 firstPoint = PathfindingValue.Points.Take(50).OrderBy((p) => DistanceToPoint(p)).Take(25).OrderBy((p) => GetRotatedAngleToPoint(p)).First();
+            //Debug.Log($"Merging pathfinding paths for {Name} with {PathfindingValue.Points.Count} points");
+            Vector2 firstPoint = PathfindingValue.Points.Take(25).OrderBy((p) => DistanceToPoint(p)).Take(10).OrderBy((p) => GetRotatedAngleToPoint(p)).First();
 
             //Debug.Log($"First point is {firstPoint}");
             DestinationQueue.Clear();
@@ -557,9 +561,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             }
             FinalDestination = DestinationQueue.Last();
             TargetCoordinates = DestinationQueue.Dequeue();
-
-
-
+            IsFollowingPath = true;
+            HasTargetCoordinates = true;
             //Debug.Log($"Merged full path to destination in {(Time.realtimeSinceStartup - start) * 1000}ms");
         }
         private void FindShortestPath(Vector2 destination, Action callback)
