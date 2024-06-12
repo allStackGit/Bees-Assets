@@ -512,6 +512,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             Level.Pathfinder.NeedsToBeUpdated = true;
             if (IsFollowingPath)
             {
+                Debug.Log($"There's an asteroid {asteroid.Name} nearby on our path {Name}");
                 // If we're following a pathfinder path, recalculate the path because we're near an asteroid
                 MoveToPoint(FinalDestination);
                 InvokeRepeating(nameof(NearbyAsteroidDoubleCheck), 1f, 1f);
@@ -548,7 +549,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         Vector2 startPosition;
         private void MergePathfindingPaths()
         {
-            //DebugGrid.DebugGridAsImage(new Vector2Int(DebugEndNode.x, DebugEndNode.y), DebugNodes, 4);
+            DebugGrid.DebugGridAsImage(new Vector2Int(DebugEndNode.x, DebugEndNode.y), DebugNodes, 4);
             float start = Time.realtimeSinceStartup;
             //Debug.Log($"Merging pathfinding paths for {Name} with {PathfindingValue.Points.Count} points");
             Vector2 firstPoint = PathfindingValue.Points.Take(25).OrderBy((p) => DistanceToPoint(p)).Take(10).OrderBy((p) => GetRotatedAngleToPoint(p)).First();

@@ -49,7 +49,7 @@ namespace Assets.Scripts.Entities
                 Ship ship = collidingThing.GetComponent<Ship>();
                 if (NearbyShips.Contains(ship))
                 {
-                    //Debug.Log($"It looks like {ship.Name} was already nearby and hit {Name}");
+                    Debug.Log($"It looks like {ship.Name} was already nearby and hit {Name}");
                     //ship.Kill(null);
                 }
                 else

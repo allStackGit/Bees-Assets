@@ -972,10 +972,10 @@ namespace Assets.Scripts.Level
                         Vector2Int converted = ConvertToMapCoordinates(point);
                         points.Add(new int[] { converted.x, converted.y });
                     }
-                    else
-                    {
-                        Debug.Log($"{point} is in the bounds of {obstacle.Name} but does not overlap the collider");
-                    }
+                    //else
+                    //{
+                    //    Debug.Log($"{point} is in the bounds of {obstacle.Name} but does not overlap the collider");
+                    //}
                 }
             }
             return points.ToArray();
@@ -995,6 +995,7 @@ namespace Assets.Scripts.Level
         public void UpdateMap(List<CollisionAsteroid> collisionAsteroids)
         {
             float start = Time.realtimeSinceStartup;
+            List<MapNode> changedNodes = new List<MapNode>();
             //Debug.Log($"Updating map");
 
             if (collisionAsteroids.Count > 0) // there are asteroids within range of the ship that asked for the map to be updated
@@ -1007,6 +1008,7 @@ namespace Assets.Scripts.Level
                         if (point[0] >= 0 && point[0] < _grid.Width && point[1] >= 0 && point[1] < _grid.Height)
                         {
                             _grid.Nodes[point[0]][point[1]].Clearance = _grid.Nodes[point[0]][point[1]].OriginalClearance; // set its old position to the original clearance
+                            changedNodes.Add(_grid.Nodes[point[0]][point[1]]);
                         }
                     }
 
@@ -1020,12 +1022,14 @@ namespace Assets.Scripts.Level
                             {
                                 //Debug.Log($"Valid indexes: {point[0]}, {point[1]}");
                                 _grid.Nodes[point[0]][point[1]].Clearance = 0; // set its new position to unwalkable space
+                                changedNodes.Add(_grid.Nodes[point[0]][point[1]]);
                             }
                         }
                     }
                 });
             }
 
+            // [note] might not use this because static obstacles might be indestructable
             else // the ship sent an empty list which means there were no mobile obstacles within range but we should still update the map if need be for static obstacles
             {
                 List<int> toRemove = new List<int>(); // contains indexes of ObstaclesToUpdate that have been updated and can be removed from the list
@@ -1064,6 +1068,14 @@ namespace Assets.Scripts.Level
                 {
                     NeedsToBeUpdated = false;
                 }
+            }
+
+            for (int i = 0; i < ConfigData.MaxThreads; i++)
+            {
+                changedNodes.ForEach((changedNode) =>
+                {
+                    GridNodes[i][changedNode.x][changedNode.y].Clearance = changedNode.Clearance;
+                });
             }
 
             float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
@@ -1556,7 +1568,7 @@ namespace Assets.Scripts.Level
                     BTMakeDestinationList(EndNodes[index], BTPath);
                     Totals[index].Stop();
                     GetNodes[index].Stop();
-                    //Debug.Log($"Finished background finding path #{index}. ({BTPath.Points.Count}) Loops: ({BTLoops}) startup time: {BTStartupTime}ms, getNode Time: {GetNodes[index].Elapsed.TotalMilliseconds}ms, neighborLoop Time: {NeighborLoops[index].Elapsed.TotalMilliseconds}ms, Total: {(Totals[index].Elapsed.TotalMilliseconds)}ms");
+                    Debug.Log($"Finished background finding path #{index}. ({BTPath.Points.Count}) Loops: ({BTLoops}) startup time: {BTStartupTime}ms, getNode Time: {GetNodes[index].Elapsed.TotalMilliseconds}ms, neighborLoop Time: {NeighborLoops[index].Elapsed.TotalMilliseconds}ms, Total: {(Totals[index].Elapsed.TotalMilliseconds)}ms");
                     Ships[index].PathfindingValue = BTPath;
                     Ships[index].PathfindingThreadComplete = true;
 
