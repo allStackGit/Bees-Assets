@@ -2988,6 +2988,22 @@ PrefabInstance:
       propertyPath: 'ObstaclePrefabs.Array.data[8]'
       value: 
       objectReference: {fileID: 7829129030894184550, guid: 2da399e79018bc3479c512c6dce51077, type: 3}
+    - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
+      propertyPath: CollisionAsteroidPrefabs.Array.size
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
+      propertyPath: 'CollisionAsteroidPrefabs.Array.data[0]'
+      value: 
+      objectReference: {fileID: 226534545502904114, guid: c56c01c11c9ad6a4aa3c7694969bdc5b, type: 3}
+    - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
+      propertyPath: 'CollisionAsteroidPrefabs.Array.data[1]'
+      value: 
+      objectReference: {fileID: 439529657869320101, guid: fd259f1b80ec2cb4ab265509be0d9310, type: 3}
+    - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
+      propertyPath: 'CollisionAsteroidPrefabs.Array.data[2]'
+      value: 
+      objectReference: {fileID: 4975317520758011166, guid: d4c09c3b30a0df240804e7d2ae0ce4f1, type: 3}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []

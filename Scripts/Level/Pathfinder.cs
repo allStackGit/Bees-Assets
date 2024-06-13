@@ -938,7 +938,12 @@ namespace Assets.Scripts.Level
         /// <param name="obstacle"></param>
         public int[][] GetObstaclePoints(Obstacle obstacle)
         {
-            Collider2D collider = obstacle.Collider;
+            Collider2D collider = obstacle.ProximityCollider;
+
+            if (collider == null)
+            {
+                collider = obstacle.Collider;
+            }
 
             Vector2 position = obstacle.GetPosition();
             Vector2 bounds = collider.bounds.size;

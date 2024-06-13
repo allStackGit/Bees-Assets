@@ -18,7 +18,7 @@ namespace Assets.Scripts.Entities
         public new void Setup(LevelStage level, int id)
         {
             base.Setup(level, id);
-            Speed = Utilities.RandomInt(Level.AsteroidMaxSpeed);
+            Speed = Utilities.RandomInt(Level.AsteroidMaxSpeed)+2;
 
             // starting right (+) or left (-)
             Vector2 randomPosition = new Vector2(Utilities.RandomSign() * (Level.HalfMapWidth + 100), (Utilities.RandomSign() * (Utilities.RandomInt(Level.HalfMapHeight))));
