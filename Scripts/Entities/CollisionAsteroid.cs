@@ -11,6 +11,7 @@ namespace Assets.Scripts.Entities
         public Rigidbody2D Body;
         public int Speed;
         public HashSet<Ship> NearbyShips = new HashSet<Ship>();
+        public HashSet<Ship> TouchingShips = new HashSet<Ship>();
         public HashSet<Obstacle> NearbyObstacles = new HashSet<Obstacle>();
         public Obstacle CollisionObstacle;
         // Use this for initialization
@@ -50,6 +51,7 @@ namespace Assets.Scripts.Entities
                 if (NearbyShips.Contains(ship))
                 {
                     Debug.Log($"It looks like {ship.Name} was already nearby and hit {Name}");
+                    TouchingShips.Add(ship);
                     //ship.Kill(null);
                 }
                 else
@@ -85,14 +87,16 @@ namespace Assets.Scripts.Entities
             if (collidingThing.CompareTag("Ship"))
             {
                 Ship ship = collidingThing.GetComponent<Ship>();
-                if (NearbyShips.Contains(ship))
+                if (TouchingShips.Contains(ship))
+                {
+                    Debug.Log($"{ship.Name} is no longer touching {Name}");
+                    TouchingShips.Remove(ship);
+                }
+                else if (NearbyShips.Contains(ship))
                 {
                     NearbyShips.Remove(ship);
-                }
-                else
-                {
                     ship.LeftNearbyAsteroid(this);
-                    //Debug.Log($"{ship.Name} left {Name}");
+                    Debug.Log($"{ship.Name} left {Name}");
                 }
 
 

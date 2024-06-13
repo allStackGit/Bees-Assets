@@ -49,6 +49,7 @@ namespace Assets.Scripts.Entities.Ships
         public Brain Brain = null;
         public Queue<Vector2> DestinationQueue = new Queue<Vector2>();
         public List<CollisionAsteroid> NearbyAsteroids = new List<CollisionAsteroid>();
+        public List<CollisionAsteroid> PreviousNearbyAsteroids = new List<CollisionAsteroid>();
         public List<Turret> Turrets = new List<Turret>();
         public float RotationSpeed;
         public bool HasVision;
@@ -509,10 +510,9 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         public void FoundNearbyAsteroid(CollisionAsteroid asteroid)
         {
             NearbyAsteroids.Add(asteroid);
-            Level.Pathfinder.NeedsToBeUpdated = true;
             if (IsFollowingPath)
             {
-                Debug.Log($"There's an asteroid {asteroid.Name} nearby on our path {Name}");
+                //Debug.Log($"There's an asteroid {asteroid.Name} nearby on our path {Name}");
                 // If we're following a pathfinder path, recalculate the path because we're near an asteroid
                 MoveToPoint(FinalDestination);
                 InvokeRepeating(nameof(NearbyAsteroidDoubleCheck), 1f, 1f);
@@ -527,7 +527,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             if (IsFollowingPath && NearbyAsteroids.Count > 0)
             {
                 //Debug.Log($"There are still {NearbyAsteroids.Count} asteroids near {Name}, double checking the pathfinding");
-                Level.Pathfinder.NeedsToBeUpdated = true;
                 MoveToPoint(FinalDestination);
             }
             else
@@ -550,21 +549,26 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         private void MergePathfindingPaths()
         {
             DebugGrid.DebugGridAsImage(new Vector2Int(DebugEndNode.x, DebugEndNode.y), DebugNodes, 4);
-            float start = Time.realtimeSinceStartup;
-            //Debug.Log($"Merging pathfinding paths for {Name} with {PathfindingValue.Points.Count} points");
-            Vector2 firstPoint = PathfindingValue.Points.Take(25).OrderBy((p) => DistanceToPoint(p)).Take(10).OrderBy((p) => GetRotatedAngleToPoint(p)).First();
-
-            //Debug.Log($"First point is {firstPoint}");
-            DestinationQueue.Clear();
-            for (int i = PathfindingValue.Points.IndexOf(firstPoint); i < PathfindingValue.Points.Count; i++)
+            if (PathfindingValue != null)
             {
-                DestinationQueue.Enqueue(PathfindingValue.Points[i]);
+                float start = Time.realtimeSinceStartup;
+                //Debug.Log($"Merging pathfinding paths for {Name} with {PathfindingValue.Points.Count} points");
+                Vector2 firstPoint = PathfindingValue.Points.Take(25).OrderBy((p) => DistanceToPoint(p)).Take(10).OrderBy((p) => GetRotatedAngleToPoint(p)).First();
+
+                //Debug.Log($"First point is {firstPoint}");
+                DestinationQueue.Clear();
+                for (int i = PathfindingValue.Points.IndexOf(firstPoint); i < PathfindingValue.Points.Count; i++)
+                {
+                    DestinationQueue.Enqueue(PathfindingValue.Points[i]);
+                }
+                FinalDestination = DestinationQueue.Last();
+                TargetCoordinates = DestinationQueue.Dequeue();
+                IsFollowingPath = true;
+                HasTargetCoordinates = true;
+                PathfindingValue = null;
+                Debug.Log($"Merged full path to destination in {(Time.realtimeSinceStartup - start) * 1000}ms");
             }
-            FinalDestination = DestinationQueue.Last();
-            TargetCoordinates = DestinationQueue.Dequeue();
-            IsFollowingPath = true;
-            HasTargetCoordinates = true;
-            //Debug.Log($"Merged full path to destination in {(Time.realtimeSinceStartup - start) * 1000}ms");
+
         }
         private void FindShortestPath(Vector2 destination, Action callback)
         {
@@ -577,10 +581,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
             if (Utilities.HasObstaclesInTheWay(startPosition, destination))
             {
-                if (Level.Pathfinder.NeedsToBeUpdated)
-                {
-                    Level.Pathfinder.UpdateMap(NearbyAsteroids);
-                }
 
                 convertedStart = Level.Pathfinder.ConvertToMapCoordinates(startPosition);
                 convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);

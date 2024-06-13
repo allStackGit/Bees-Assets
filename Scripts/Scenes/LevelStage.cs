@@ -356,7 +356,6 @@ namespace Assets.Scripts.Scenes
 
             Invoke(nameof(SpawnAsteroid), Utilities.RandomInt(AsteroidSpawnRate));
             Pathfinder.AddObstacle(asteroid);
-            Pathfinder.NeedsToBeUpdated = true;
         }
         private void UpdateDebugVariables()
         {

@@ -56,7 +56,6 @@ namespace Assets.Scripts.Level
         /// A list of arrays of obstacle points. Each array of points belongs to an obstacle and each point (a two int array) is an x index and a y index on the Map array
         /// </summary>
         public List<int[][]> ObstaclePoints = new List<int[][]>();
-        public bool NeedsToBeUpdated;
         public bool HasMovingObstacles;
 
         public Pathfinder(LevelStage level)
@@ -894,6 +893,7 @@ namespace Assets.Scripts.Level
                             MapNode original = _grid.Nodes[x][y];
                             MapNode node = new MapNode(x, y, _grid, nodeCount++);
                             node.Clearance = original.Clearance;
+                            node.OriginalClearance = original.Clearance;
                             node.CostToHere = int.MaxValue;
                             node.TotalCost = int.MaxValue;
                             node.PreviousNode = MapNode.NullNode;
@@ -910,8 +910,6 @@ namespace Assets.Scripts.Level
             //Level.StartCoroutine(CalculateClearance());
             //Level.StartCoroutine(CalculateSquares());
 
-            NeedsToBeUpdated = false;
-
         }
         /// <summary>
         /// adds the index to Obstacles to Update 
@@ -920,7 +918,6 @@ namespace Assets.Scripts.Level
         public void AddToUpdateList(int id)
         {
             ObstaclesToUpdate.Add(id);
-            NeedsToBeUpdated = true;
             //Debug.Log($"Setting #{id} to be updated");
         }
         public void AddObstacle(Obstacle obstacle)
@@ -932,7 +929,6 @@ namespace Assets.Scripts.Level
             {
                 HasMovingObstacles = true;
             }
-            NeedsToBeUpdated = true;
             //Debug.Log($"Adding {obstacle.Name} to Map");
         }
 
@@ -942,15 +938,10 @@ namespace Assets.Scripts.Level
         /// <param name="obstacle"></param>
         public int[][] GetObstaclePoints(Obstacle obstacle)
         {
-            Collider2D collider = obstacle.ProximityCollider;
-            if (collider == null)
-            {
-                collider = obstacle.Collider;
-            }
+            Collider2D collider = obstacle.Collider;
 
             Vector2 position = obstacle.GetPosition();
             Vector2 bounds = collider.bounds.size;
-
 
 
             int width = (int)Math.Ceiling(bounds.x);
@@ -992,94 +983,104 @@ namespace Assets.Scripts.Level
         /// 
         /// Scenario 3. A ship is moving on a preexisting route when an obstacle comes within its range. It passes that obstacle to the Pathfinder and the Pathfinder updates that obstacle and the ship finds a new path.
         /// </summary>
-        public void UpdateMap(List<CollisionAsteroid> collisionAsteroids)
+        public void UpdateMap(List<CollisionAsteroid> previousAsteroids, List<CollisionAsteroid> collisionAsteroids, MapNode[][] nodes)
         {
-            float start = Time.realtimeSinceStartup;
-            List<MapNode> changedNodes = new List<MapNode>();
+            //float start = Time.realtimeSinceStartup;
             //Debug.Log($"Updating map");
 
-            if (collisionAsteroids.Count > 0) // there are asteroids within range of the ship that asked for the map to be updated
+            if (previousAsteroids.Count > 0) // there are asteroids within range of the ship that asked for the map to be updated
             {
-                collisionAsteroids.ForEach((asteroid) =>
+                //Debug.Log($"Looping through collision asteroids");
+                previousAsteroids.ForEach((asteroid) =>
                 {
-                    //Debug.Log($"Updating the position of {asteroid.Name} on the pathfinding map");
+                    //Debug.Log($"Clearing the position of {asteroid.Name} on the pathfinding map");
                     foreach (int[] point in ObstaclePoints[asteroid.Id])
                     {
                         if (point[0] >= 0 && point[0] < _grid.Width && point[1] >= 0 && point[1] < _grid.Height)
                         {
-                            _grid.Nodes[point[0]][point[1]].Clearance = _grid.Nodes[point[0]][point[1]].OriginalClearance; // set its old position to the original clearance
-                            changedNodes.Add(_grid.Nodes[point[0]][point[1]]);
+                            nodes[point[0]][point[1]].Clearance = nodes[point[0]][point[1]].OriginalClearance; // set its old position to the original clearance
                         }
                     }
+                });
+            }
+
+            if (collisionAsteroids.Count > 0) // there are asteroids within range of the ship that asked for the map to be updated
+            {
+                //Debug.Log($"Looping through collision asteroids");
+                collisionAsteroids.ForEach((asteroid) =>
+                {
+                    //Debug.Log($"Clearing the position of {asteroid.Name} on the pathfinding map");
+                    //foreach (int[] point in ObstaclePoints[asteroid.Id])
+                    //{
+                    //    if (point[0] >= 0 && point[0] < _grid.Width && point[1] >= 0 && point[1] < _grid.Height)
+                    //    {
+                    //        nodes[point[0]][point[1]].Clearance = nodes[point[0]][point[1]].OriginalClearance; // set its old position to the original clearance
+                    //    }
+                    //}
 
                     if (asteroid != null)
                     {
                         // Get the new points
+                        //Debug.Log($"Updating the position of {asteroid.Name} on the pathfinding map");
                         ObstaclePoints[asteroid.Id] = GetObstaclePoints(asteroid);
+                        //Debug.Log($"Got obstacle points for {asteroid}");
                         foreach (int[] point in ObstaclePoints[asteroid.Id])
                         {
                             if (point[0] >= 0 && point[0] < _grid.Width && point[1] >= 0 && point[1] < _grid.Height)
                             {
                                 //Debug.Log($"Valid indexes: {point[0]}, {point[1]}");
-                                _grid.Nodes[point[0]][point[1]].Clearance = 0; // set its new position to unwalkable space
-                                changedNodes.Add(_grid.Nodes[point[0]][point[1]]);
+                                nodes[point[0]][point[1]].Clearance = 0; // set its new position to unwalkable space
                             }
                         }
                     }
                 });
             }
+            //else // the ship sent an empty list which means there were no mobile obstacles within range but we should still update the map if need be for
+            //     // static obstacles and reset the points of obstacles that are gone now
+            //{
+            //    List<int> toRemove = new List<int>(); // contains indexes of ObstaclesToUpdate that have been updated and can be removed from the list
 
-            // [note] might not use this because static obstacles might be indestructable
-            else // the ship sent an empty list which means there were no mobile obstacles within range but we should still update the map if need be for static obstacles
-            {
-                List<int> toRemove = new List<int>(); // contains indexes of ObstaclesToUpdate that have been updated and can be removed from the list
+            //    for (int i = 0; i < ObstaclesToUpdate.Count; i++)
+            //    {
 
-                for (int i = 0; i < ObstaclesToUpdate.Count; i++)
-                {
+            //        int obstacleIndex = ObstaclesToUpdate[i];
+            //        Obstacle obstacle = Obstacles[obstacleIndex];
 
-                    int obstacleIndex = ObstaclesToUpdate[i];
-                    Obstacle obstacle = Obstacles[obstacleIndex];
+            //        if (obstacle == null || obstacle.IsMobile) // obstacle is dead
+            //        {
+            //            foreach (int[] point in ObstaclePoints[obstacleIndex])
+            //            {
+            //                try
+            //                {
+            //                    nodes[point[0]][point[1]].Clearance = nodes[point[0]][point[1]].OriginalClearance; // set its old position to the original clearance
+            //                }
+            //                catch (Exception e)
+            //                {
+            //                    Debug.Log($"Had an error with index points {point[0]}, {point[1]} on nodes {nodes}");
+            //                    throw e;
+            //                }
+            //            }
+            //            toRemove.Add(obstacleIndex);
+            //        }
+            //    }
 
-                    if (obstacle == null) // obstacle is dead
-                    {
-                        foreach (int[] point in ObstaclePoints[obstacleIndex])
-                        {
-                            try
-                            {
-                                _grid.Nodes[point[0]][point[1]].Clearance = _grid.Nodes[point[0]][point[1]].OriginalClearance; // set its old position to the original clearance
-                            }
-                            catch (Exception e)
-                            {
-                                Debug.Log($"Had an error with index points {point[0]}, {point[1]} on _grid.Nodes {_grid.Nodes}");
-                                throw e;
-                            }
-                        }
-                        toRemove.Add(obstacleIndex);
-                    }
-                }
+            //    toRemove.ForEach((obstacleIndex) =>
+            //    {
+            //        ObstaclesToUpdate.Remove(obstacleIndex);
+            //    });
 
-                toRemove.ForEach((obstacleIndex) =>
-                {
-                    ObstaclesToUpdate.Remove(obstacleIndex);
-                });
+            //}
 
+            //for (int i = 0; i < ConfigData.MaxThreads; i++)
+            //{
+            //    changedNodes.ForEach((changedNode) =>
+            //    {
+            //        GridNodes[i][changedNode.x][changedNode.y].Clearance = changedNode.Clearance;
+            //    });
+            //}
 
-                if (ObstaclesToUpdate.Count == 0)
-                {
-                    NeedsToBeUpdated = false;
-                }
-            }
-
-            for (int i = 0; i < ConfigData.MaxThreads; i++)
-            {
-                changedNodes.ForEach((changedNode) =>
-                {
-                    GridNodes[i][changedNode.x][changedNode.y].Clearance = changedNode.Clearance;
-                });
-            }
-
-            float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
-            Debug.Log($"UpdateMap() took {end} ms to complete.");
+            //float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
+            //Debug.Log($"UpdateMap() took {end} ms to complete.");
 
         }
         float num, num2;
@@ -1455,6 +1456,7 @@ namespace Assets.Scripts.Level
         public SW.Stopwatch[] Totals = new SW.Stopwatch[ConfigData.MaxThreads];
         public SW.Stopwatch[] NeighborLoops = new SW.Stopwatch[ConfigData.MaxThreads];
         public SW.Stopwatch[] GetNodes = new SW.Stopwatch[ConfigData.MaxThreads];
+        public SW.Stopwatch[] UpdateMapTime = new SW.Stopwatch[ConfigData.MaxThreads];
         public MapNode[] StartNodes = new MapNode[ConfigData.MaxThreads];
         public MapNode[] EndNodes = new MapNode[ConfigData.MaxThreads];
         public int[] Clearances = new int[ConfigData.MaxThreads];
@@ -1488,6 +1490,8 @@ namespace Assets.Scripts.Level
             Totals[index] = SW.Stopwatch.StartNew();
             NeighborLoops[index] = SW.Stopwatch.StartNew();
             GetNodes[index] = SW.Stopwatch.StartNew();
+
+
             int BTLoops = 0;
             int BTTempCostToHere;
             
@@ -1505,12 +1509,14 @@ namespace Assets.Scripts.Level
 
                 }
             }
+
+
             //Debug.Log($"Finished grid loops BT #{index}");
             StartNodes[index] = GridNodes[index][StartNodes[index].x][StartNodes[index].y];
             EndNodes[index] = GridNodes[index][EndNodes[index].x][EndNodes[index].y];
 
-            //Debug.Log($"BTS: {BTStartNode}");
-            //Debug.Log($"BTE: {BTEndNode}");
+            //Debug.Log($"BTS: {StartNodes[index]}");
+            //Debug.Log($"BTE: {EndNodes[index]}");
 
 
             if (EndNodes[index].Clearance < Clearances[index])
@@ -1568,7 +1574,8 @@ namespace Assets.Scripts.Level
                     BTMakeDestinationList(EndNodes[index], BTPath);
                     Totals[index].Stop();
                     GetNodes[index].Stop();
-                    Debug.Log($"Finished background finding path #{index}. ({BTPath.Points.Count}) Loops: ({BTLoops}) startup time: {BTStartupTime}ms, getNode Time: {GetNodes[index].Elapsed.TotalMilliseconds}ms, neighborLoop Time: {NeighborLoops[index].Elapsed.TotalMilliseconds}ms, Total: {(Totals[index].Elapsed.TotalMilliseconds)}ms");
+                    Debug.Log($"Finished background finding path #{index}. ({BTPath.Points.Count}) Loops: ({BTLoops}) startup time: {BTStartupTime}ms, getNode Time: {GetNodes[index].Elapsed.TotalMilliseconds}ms, " +
+                        $"neighborLoop Time: {NeighborLoops[index].Elapsed.TotalMilliseconds}ms, Update Map Time: {UpdateMapTime[index].Elapsed.TotalMilliseconds}ms Total: {(Totals[index].Elapsed.TotalMilliseconds)}ms");
                     Ships[index].PathfindingValue = BTPath;
                     Ships[index].PathfindingThreadComplete = true;
 
@@ -1630,6 +1637,10 @@ namespace Assets.Scripts.Level
             {
                 Debug.Log($"No more nodes to check #{index}.  checkedNodes: {BTCheckedNodes.Count} / {_grid.TotalNodes} / {_grid.ClearanceMap.Count}  CurrentNode: {BTCurrentNode},");
             }
+            Ships[index].DebugGrid = _grid;
+            Ships[index].DebugNodes = GridNodes[index];
+            Ships[index].DebugEndNode = EndNodes[index];
+            Ships[index].PathfindingThreadComplete = true;
             IsThreadActive[index] = false;
         }
 
@@ -1681,6 +1692,15 @@ namespace Assets.Scripts.Level
             {
                 if (!IsThreadActive[i])
                 {
+                    if (Level.ActivateCollisionAsteroids)
+                    {
+                        UpdateMapTime[i] = SW.Stopwatch.StartNew();
+                        //Debug.Log("Before updating map");
+                        UpdateMap(ship.PreviousNearbyAsteroids, ship.NearbyAsteroids, GridNodes[i]);
+                        ship.PreviousNearbyAsteroids = ship.NearbyAsteroids.ToList();
+                        //Debug.Log("After updating map");
+                        UpdateMapTime[i].Stop();
+                    }
                     IsThreadActive[i] = true;
                     Task task = new Task(() =>
                     {
@@ -1703,6 +1723,8 @@ namespace Assets.Scripts.Level
             {
                 PathsWaiting.Add(new PathWaiting(ship, startNode, endNode, maximumClearance));
             }
+
+            Debug.Log($"Finished starting path in {(Time.realtimeSinceStartup - start) * 1000} ms");
 
             callback(null);
             yield break;
