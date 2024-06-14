@@ -68,6 +68,9 @@ namespace Assets.Scripts.Scenes
         public int AsteroidMaxSpeed;
         public List<GameObject> EmptyObstacleList = new List<GameObject>();
         public List<GameObject> MazePrefabs = new List<GameObject>();
+        public List<GameObject> ThreePathsPrefabs = new List<GameObject>();
+        public List<GameObject> ForestPrefabs = new List<GameObject>();
+        public int ChosenObstaclesIndex;
         public List<GameObject> MiningAsteroidPrefabs = new List<GameObject>();
         public List<GameObject> CollisionAsteroidPrefabs = new List<GameObject>();
 
@@ -125,17 +128,22 @@ namespace Assets.Scripts.Scenes
 
                 _obstacleLists = new Dictionary<int, List<GameObject>>()
                 {
-                    {0, MazePrefabs }
+                    // If this list changes the indexes need to all be accurate since the files are loaded based off of the indexes
+                    {0, EmptyObstacleList }, // it's important to have this here so we can load the "open space" pathfinding file for when there's no obstacles except asteroids
+                    {1, MazePrefabs },
+                    {2, ThreePathsPrefabs },
+                    {3, ForestPrefabs }
                 };
 
-                if (Utilities.RandomInt(2) == 1)
+                if (Utilities.RandomInt(2) == 0)
                 {
                     HasObstacles = true;
                     Debug.Log($"The map has obstacles");
 
-                    _chosenObstacles = _obstacleLists.GetValueOrDefault(Utilities.RandomInt(_obstacleLists.Count));
+                    ChosenObstaclesIndex = Utilities.RandomInt(_obstacleLists.Count - 1) + 1;
+                    _chosenObstacles = _obstacleLists.GetValueOrDefault(ChosenObstaclesIndex);
 
-                    if (Utilities.RandomInt(4) == 1)
+                    if (Utilities.RandomInt(4) == 0)
                     {
                         ActivateCollisionAsteroids = true;
                         Debug.Log($"The map has obstacles and asteroids as well");
@@ -147,10 +155,11 @@ namespace Assets.Scripts.Scenes
                 }
                 else
                 {
-                    if (Utilities.RandomInt(2) == 1)
+                    if (Utilities.RandomInt(2) == 0)
                     {
                         HasObstacles = true;
                         _chosenObstacles = EmptyObstacleList;
+                        ChosenObstaclesIndex = 0;
                         ActivateCollisionAsteroids = true;
                         Debug.Log($"The map has asteroids");
                     }
@@ -161,7 +170,7 @@ namespace Assets.Scripts.Scenes
                     }
                 }
 
-                if (Utilities.RandomInt(2) == 1)
+                if (Utilities.RandomInt(2) == 0)
                 {
                     ActivateFogOfWar = true;
                     Debug.Log($"The map has fog of war");

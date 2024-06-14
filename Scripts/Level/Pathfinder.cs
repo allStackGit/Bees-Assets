@@ -623,13 +623,13 @@ namespace Assets.Scripts.Level
 
         }
 
-        public void SaveClearanceMap(string version = "")
+        public void SaveClearanceMap()
         {
             string json = "[";            
             _grid.ClearanceMap.ToList().ForEach((node) => json += $"{node.ToJson()}, ");
             json = json.Remove(json.Length - 2);
             json += "]";
-            string path = $"{ConfigData.GetBasePath()}/ClearanceMap{version}.json";
+            string path = $"{ConfigData.GetBasePath()}/ClearanceMap_{Level.ChosenObstaclesIndex}.json";
             File.WriteAllText(path, json);
         }
         public IEnumerator SavePathCache(string version = "")
@@ -708,7 +708,7 @@ namespace Assets.Scripts.Level
         {
             float start = Time.realtimeSinceStartup;
             string contents = "";
-            StreamReader fileStream = new StreamReader($"{ConfigData.GetBasePath()}/ClearanceMap.json");
+            StreamReader fileStream = new StreamReader($"{ConfigData.GetBasePath()}/ClearanceMap_{Level.ChosenObstaclesIndex}.json");
             int loops = 0;
 
             while (!fileStream.EndOfStream)
@@ -921,10 +921,8 @@ namespace Assets.Scripts.Level
 
                 float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
                 Debug.Log($"Initialized map in {end} ms");
-                //Level.StartCoroutine(BakeMap());
             }));
             //Level.StartCoroutine(CalculateClearance());
-            //Level.StartCoroutine(CalculateSquares());
 
         }
         /// <summary>
