@@ -96,7 +96,7 @@ namespace Assets.Scripts.Entities
                 {
                     NearbyShips.Remove(ship);
                     ship.LeftNearbyAsteroid(this);
-                    Debug.Log($"{ship.Name} left {Name}");
+                    //Debug.Log($"{ship.Name} left {Name}");
                 }
 
 

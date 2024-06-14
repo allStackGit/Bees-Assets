@@ -63,6 +63,8 @@ namespace Assets.Scripts.Entities.Ships
         public volatile Pathfinder.Grid DebugGrid;
         public volatile Pathfinder.MapNode[][] DebugNodes;
         public volatile Pathfinder.MapNode DebugEndNode;
+        public volatile Pathfinder.MapNode DebugStartNode;
+        public volatile bool PrintDebugImage;
 
 
 
@@ -548,8 +550,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         Vector2 startPosition;
         private void MergePathfindingPaths()
         {
-            DebugGrid.DebugGridAsImage(new Vector2Int(DebugEndNode.x, DebugEndNode.y), DebugNodes, 4);
-            if (PathfindingValue != null)
+            if (PrintDebugImage)
+            {
+                DebugGrid.DebugGridAsImage(new Vector2Int(DebugStartNode.x, DebugStartNode.y), new Vector2Int(DebugEndNode.x, DebugEndNode.y), DebugNodes, 4, this);
+            }
+            if (PathfindingValue != null && PathfindingValue.Points.Count > 0)
             {
                 float start = Time.realtimeSinceStartup;
                 //Debug.Log($"Merging pathfinding paths for {Name} with {PathfindingValue.Points.Count} points");
@@ -566,7 +571,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 IsFollowingPath = true;
                 HasTargetCoordinates = true;
                 PathfindingValue = null;
-                Debug.Log($"Merged full path to destination in {(Time.realtimeSinceStartup - start) * 1000}ms");
+                //Debug.Log($"Merged full path to destination in {(Time.realtimeSinceStartup - start) * 1000}ms");
             }
 
         }
@@ -680,7 +685,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             }
             else
             {
-                Debug.Log("There is straight line to the destination");
+                //Debug.Log("There is straight line to the destination");
                 DestinationQueue.Enqueue(destination);
                 callback();
             }

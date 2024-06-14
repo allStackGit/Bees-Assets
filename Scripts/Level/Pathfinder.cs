@@ -819,6 +819,7 @@ namespace Assets.Scripts.Level
         public void InitializeMap()
         {
             float start = Time.realtimeSinceStartup;
+            ObstaclePoints = new List<int[][]>();
             //Debug.Log($"Loading pathfinder map at {Scale}x");
             // initialize everything as open space
             _grid = new Grid(Width, Height, this);
@@ -899,6 +900,17 @@ namespace Assets.Scripts.Level
                             node.PreviousNode = MapNode.NullNode;
                             GridNodes[i][x][y] = node;
 
+                        }
+                    }
+                }
+
+                for (int i = 0; i < ConfigData.MaxThreads; i++)
+                {
+                    for (int x = 0; x < _grid.Width; x++)
+                    {
+                        for (int y = 0; y < _grid.Height; y++)
+                        {
+                            GridNodes[i][x][y].GetImmediateNeighbors(GridNodes[i]);
                         }
                     }
                 }
@@ -1409,7 +1421,7 @@ namespace Assets.Scripts.Level
             }
             if (loops == 100) // [debug]
             {
-                Debug.LogError($"The loop broke after 100 loops trying to find a walkable point near {endNode.Vector} starting from {startNode.Vector}");
+                Debug.Log($"The loop broke after 100 loops trying to find a walkable point near {endNode.Vector} starting from {startNode.Vector}");
             }
             return null;
 
@@ -1526,14 +1538,16 @@ namespace Assets.Scripts.Level
 
             if (EndNodes[index].Clearance < Clearances[index])
             {
+                //Debug.Log($"The end ({EndNodes[index]}) isn't walkable space");
                 EndNodes[index] = BTFindNearestWalkablePoint(StartNodes[index], EndNodes[index], Clearances[index], GridNodes[index]);
+                //Debug.Log($"Found new end point that is walkable: {EndNodes[index]}");
             }
 
             if (StartNodes[index].Clearance < Clearances[index])
             {
                 //Debug.Log($"The start ({startNode.Vector}) isn't walkable space");
                 StartNodes[index] = BTFindNearestWalkablePoint(EndNodes[index], StartNodes[index], Clearances[index], GridNodes[index]);
-                //Debug.Log($"Found new start point that is walkable: {startNode.Vector}");
+                //Debug.Log($"Found new start point that is walkable: {StartNodes[index]}");
             }
             //Debug.Log($"Starting at {startNode}");
             Path BTPath = new Path(StartNodes[index].x, StartNodes[index].y, EndNodes[index].x, EndNodes[index].y);
@@ -1579,14 +1593,15 @@ namespace Assets.Scripts.Level
                     BTMakeDestinationList(EndNodes[index], BTPath);
                     Totals[index].Stop();
                     GetNodes[index].Stop();
-                    Debug.Log($"Finished background finding path #{index}. ({BTPath.Points.Count}) Loops: ({BTLoops}) startup time: {BTStartupTime}ms, getNode Time: {GetNodes[index].Elapsed.TotalMilliseconds}ms, " +
-                        $"neighborLoop Time: {NeighborLoops[index].Elapsed.TotalMilliseconds}ms, Update Map Time: {UpdateMapTime[index].Elapsed.TotalMilliseconds}ms Total: {(Totals[index].Elapsed.TotalMilliseconds)}ms");
+                    //Debug.Log($"Finished background finding path #{index}. ({BTPath.Points.Count}) Loops: ({BTLoops}) startup time: {BTStartupTime}ms, getNode Time: {GetNodes[index].Elapsed.TotalMilliseconds}ms, " +
+                    //    $"neighborLoop Time: {NeighborLoops[index].Elapsed.TotalMilliseconds}ms, Update Map Time: {UpdateMapTime[index].Elapsed.TotalMilliseconds}ms Total: {(Totals[index].Elapsed.TotalMilliseconds)}ms");
                     Ships[index].PathfindingValue = BTPath;
                     Ships[index].PathfindingThreadComplete = true;
 
                     Ships[index].DebugGrid = _grid;
                     Ships[index].DebugNodes = GridNodes[index];
                     Ships[index].DebugEndNode = EndNodes[index];
+                    Ships[index].PrintDebugImage = false;
                     IsThreadActive[index] = false;
                     return;
                 }
@@ -1600,12 +1615,12 @@ namespace Assets.Scripts.Level
                 GetNodes[index].Stop();
                 NeighborLoops[index].Start();
 
-                BTCurrentNode.GetImmediateNeighbors(GridNodes[index]).ForEach((neighbor) =>
+                BTCurrentNode.ImmediateNeighbors.ForEach((neighbor) =>
                 {
                     if (!BTCheckedNodes.Contains(neighbor))
                     {
                         //Debug.Log($"Neighbor: {neighbor}");
-                        if (neighbor.Clearance > Clearances[index]) // < maximum clearance                 == 0
+                        if (neighbor.Clearance >= Clearances[index]) // < maximum clearance                 == 0
                         {
                             //Debug.Log($"Passed clearance");
                             BTTempCostToHere = BTCurrentNode.CostToHere + BTCalculateDistance(BTCurrentNode, neighbor);
@@ -1640,12 +1655,14 @@ namespace Assets.Scripts.Level
             }
             else if (BTUncheckedNodes.Count == 0)
             {
-                Debug.Log($"No more nodes to check #{index}.  checkedNodes: {BTCheckedNodes.Count} / {_grid.TotalNodes} / {_grid.ClearanceMap.Count}  CurrentNode: {BTCurrentNode},");
+                Debug.Log($"No more nodes to check #{index} Clearance: {Clearances[index]}.  checkedNodes: {BTCheckedNodes.Count} / {_grid.TotalNodes}  CurrentNode: {BTCurrentNode},");
             }
             Ships[index].DebugGrid = _grid;
             Ships[index].DebugNodes = GridNodes[index];
             Ships[index].DebugEndNode = EndNodes[index];
+            Ships[index].DebugStartNode = StartNodes[index];
             Ships[index].PathfindingThreadComplete = true;
+            Ships[index].PrintDebugImage = true;
             IsThreadActive[index] = false;
         }
 
@@ -1729,7 +1746,7 @@ namespace Assets.Scripts.Level
                 PathsWaiting.Add(new PathWaiting(ship, startNode, endNode, maximumClearance));
             }
 
-            Debug.Log($"Finished starting path in {(Time.realtimeSinceStartup - start) * 1000} ms");
+            //Debug.Log($"Finished starting path in {(Time.realtimeSinceStartup - start) * 1000} ms");
 
             callback(null);
             yield break;
@@ -1868,7 +1885,7 @@ namespace Assets.Scripts.Level
                     //Debug.Log($"Found the end node ({loops} loops) as a child of another node {currentNode}");
                     total = Time.realtimeSinceStartup - start;
                     Debug.Log($"Finished finding path. Loops: ({loops}) startup time: {startupTime}ms, getNode Time: {getNode * 1000}ms, neighborLoop Time: {neighborLoop * 1000}ms, Total: {(total * 1000)}ms");
-                    _grid.DebugGridAsImage(new Vector2Int(endNode.x, endNode.y), _grid.Nodes, 4);
+                    //_grid.DebugGridAsImage(new Vector2Int(endNode.x, endNode.y), _grid.Nodes, 4);
                     //Debug.Log($" == {MapNode.equalsCalls}");
                     callback(path);
                     yield break;
@@ -2013,7 +2030,7 @@ namespace Assets.Scripts.Level
                 //}
                 return Nodes[x][y];
             }
-            public void DebugGridAsImage(Vector2Int lastNode, MapNode[][] nodes, int scale = 2)
+            public void DebugGridAsImage(Vector2Int firstNode, Vector2Int lastNode, MapNode[][] nodes, int scale, Ship ship)
             {
                 Texture2D texture = new Texture2D(Width * scale, Height * scale, TextureFormat.RGB24, false);
                 //Color[] pixels = texture.GetPixels();
@@ -2061,6 +2078,14 @@ namespace Assets.Scripts.Level
                     }
                 }
 
+                for (int v = 0; v < scale; v++)
+                {
+                    for (int h = 0; h < scale; h++)
+                    {
+                        texture.SetPixel((firstNode.x * scale) + h, (Height * scale) - ((firstNode.y * scale) + (1 - v)), ConfigData.GetUIColor("good")); // last pixel
+                    }
+                }
+
                 //texture.SetPixel(lastNode.x, Height * 2 - (lastNode.y + 1), ConfigData.GetUIColor("medium"));
                 //texture.SetPixel(lastNode.x + 1, Height * 2 - (lastNode.y + 1), ConfigData.GetUIColor("medium"));
                 //texture.SetPixel(lastNode.x, Height * 2 - lastNode.y, ConfigData.GetUIColor("medium"));
@@ -2070,7 +2095,7 @@ namespace Assets.Scripts.Level
                 //System.Array.Reverse(pixels, 0, pixels.Length);
                 //texture.SetPixels(pixels);
                 texture.Apply();
-                string path = $"{ConfigData.GetBasePath()}/{Utilities.Hash()}.png";
+                string path = $"{ConfigData.GetBasePath()}/{ship.ShipType}_{ship.Id}_{Utilities.Hash()}.png";
                 File.WriteAllBytes(path, texture.EncodeToPNG());
             }
             public void PrintGridImage(int scale = 2)

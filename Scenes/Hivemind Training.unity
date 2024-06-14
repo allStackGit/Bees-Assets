@@ -357,7 +357,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4663795359462759434, guid: 929d42fea79c0df49b9d1f3207816001, type: 3}
       propertyPath: m_LocalPosition.y
-      value: -105
+      value: -115
       objectReference: {fileID: 0}
     - target: {fileID: 4663795359462759434, guid: 929d42fea79c0df49b9d1f3207816001, type: 3}
       propertyPath: m_LocalPosition.z
@@ -2188,7 +2188,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4663795359462759434, guid: 2fe548c35102d6f46a0f174d1f4bb934, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 105
+      value: 115
       objectReference: {fileID: 0}
     - target: {fileID: 4663795359462759434, guid: 2fe548c35102d6f46a0f174d1f4bb934, type: 3}
       propertyPath: m_LocalPosition.z
@@ -2254,7 +2254,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4663795359462759434, guid: 4f6de868898ba7048ba6530a598f5701, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 105
+      value: 115
       objectReference: {fileID: 0}
     - target: {fileID: 4663795359462759434, guid: 4f6de868898ba7048ba6530a598f5701, type: 3}
       propertyPath: m_LocalPosition.z
@@ -2317,7 +2317,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4376674089401883439, guid: eb9a18ed48b9d68499a456e549060fdd, type: 3}
       propertyPath: m_LocalPosition.y
-      value: -160
+      value: -190
       objectReference: {fileID: 0}
     - target: {fileID: 4376674089401883439, guid: eb9a18ed48b9d68499a456e549060fdd, type: 3}
       propertyPath: m_LocalPosition.z
@@ -2874,7 +2874,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: ActivateHiveMind
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: MiniMapContainer
@@ -2898,7 +2898,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: AIStartingPosition.y
-      value: 185
+      value: 215
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: UseFullyRandomSquads
@@ -6304,7 +6304,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4376674089401883439, guid: e857b359fbc486d4185cba8d6b937759, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 160
+      value: 190
       objectReference: {fileID: 0}
     - target: {fileID: 4376674089401883439, guid: e857b359fbc486d4185cba8d6b937759, type: 3}
       propertyPath: m_LocalPosition.z
@@ -7176,7 +7176,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4663795359462759434, guid: bfbe492ea5555cb4b98fd35b549ce976, type: 3}
       propertyPath: m_LocalPosition.y
-      value: -105
+      value: -115
       objectReference: {fileID: 0}
     - target: {fileID: 4663795359462759434, guid: bfbe492ea5555cb4b98fd35b549ce976, type: 3}
       propertyPath: m_LocalPosition.z
