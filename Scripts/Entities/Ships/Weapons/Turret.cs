@@ -84,7 +84,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
             else
             {
-                if (ShouldFire)
+                if (ShouldFire && !Utilities.HasObstaclesInTheWay(GetPosition(), TargetShip.GetPosition()))
                 {
                     //Debug.Log($"Aiming {Piece.name}");
                     TargetPoint = GetTargetPoint(TargetShip);

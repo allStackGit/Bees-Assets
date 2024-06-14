@@ -61,6 +61,7 @@ namespace Assets.Scripts.Level
             OriginalSquadCounts = new int[] { 0, 0 };
             HivemindShips = new Dictionary<long, HashSet<Ship>>[] { new Dictionary<long, HashSet<Ship>>(), new Dictionary<long, HashSet<Ship>>() };
             VisionCache = new HashSet<Ship>[] { new HashSet<Ship>(), new HashSet<Ship>() };
+            IdCount = 0;
         }
 
         public void AddSpottedShip(Ship ship, Ship spotter)

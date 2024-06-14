@@ -2901,12 +2901,20 @@ PrefabInstance:
       value: 215
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
+      propertyPath: HasRandomizedOptions
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: UseFullyRandomSquads
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: DoesUserHaveController
       value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
+      propertyPath: MazePrefabs.Array.size
+      value: 9
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: UserStartingPosition.x
@@ -2920,6 +2928,42 @@ PrefabInstance:
       propertyPath: DefaultCameraPosition.y
       value: -185
       objectReference: {fileID: 0}
+    - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
+      propertyPath: 'MazePrefabs.Array.data[0]'
+      value: 
+      objectReference: {fileID: 8059139168506411835, guid: e857b359fbc486d4185cba8d6b937759, type: 3}
+    - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
+      propertyPath: 'MazePrefabs.Array.data[1]'
+      value: 
+      objectReference: {fileID: 1541488032990901482, guid: 095f24154a018d64aa49ce129959b442, type: 3}
+    - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
+      propertyPath: 'MazePrefabs.Array.data[2]'
+      value: 
+      objectReference: {fileID: 1428732423466843166, guid: 2fe548c35102d6f46a0f174d1f4bb934, type: 3}
+    - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
+      propertyPath: 'MazePrefabs.Array.data[3]'
+      value: 
+      objectReference: {fileID: 1428732423466843166, guid: 4f6de868898ba7048ba6530a598f5701, type: 3}
+    - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
+      propertyPath: 'MazePrefabs.Array.data[4]'
+      value: 
+      objectReference: {fileID: 1428732423466843166, guid: 929d42fea79c0df49b9d1f3207816001, type: 3}
+    - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
+      propertyPath: 'MazePrefabs.Array.data[5]'
+      value: 
+      objectReference: {fileID: 1428732423466843166, guid: bfbe492ea5555cb4b98fd35b549ce976, type: 3}
+    - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
+      propertyPath: 'MazePrefabs.Array.data[6]'
+      value: 
+      objectReference: {fileID: 8059139168506411835, guid: eb9a18ed48b9d68499a456e549060fdd, type: 3}
+    - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
+      propertyPath: 'MazePrefabs.Array.data[7]'
+      value: 
+      objectReference: {fileID: 7829129030894184550, guid: c39cef0f8a986f04391469448c9edaf4, type: 3}
+    - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
+      propertyPath: 'MazePrefabs.Array.data[8]'
+      value: 
+      objectReference: {fileID: 7829129030894184550, guid: 2da399e79018bc3479c512c6dce51077, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: OverrideStrats.Array.size
       value: 0
@@ -2990,7 +3034,7 @@ PrefabInstance:
       objectReference: {fileID: 7829129030894184550, guid: 2da399e79018bc3479c512c6dce51077, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: CollisionAsteroidPrefabs.Array.size
-      value: 3
+      value: 4
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: 'CollisionAsteroidPrefabs.Array.data[0]'
@@ -3004,6 +3048,10 @@ PrefabInstance:
       propertyPath: 'CollisionAsteroidPrefabs.Array.data[2]'
       value: 
       objectReference: {fileID: 4975317520758011166, guid: d4c09c3b30a0df240804e7d2ae0ce4f1, type: 3}
+    - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
+      propertyPath: 'CollisionAsteroidPrefabs.Array.data[3]'
+      value: 
+      objectReference: {fileID: 2899863341814993073, guid: 795ef7f673ee4ad41bd8f30c805518eb, type: 3}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []

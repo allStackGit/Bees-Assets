@@ -37,7 +37,7 @@ namespace Assets.Scripts.Scenes
         public bool ReplaceDeadShips;
         public bool ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, UseSemiRandomSquads, UseFullyRandomSquads, UseFullyRandomEnemySquads, RecordStats, 
             DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateAudio, ActivateLoadingShipsMidLevel, UseMouseScrolling, IsDebugging, 
-            MakeEnemyCeaseFire, UnlockCamera;
+            MakeEnemyCeaseFire, UnlockCamera, HasRandomizedOptions;
         public int OverrideTimeScale, OverrideUserSide, GeneratedSquadCountOverride, InitialCommandDelay, TimeoutTime;
         public List<string> OverrideStrats = new List<string> { "Aggressive", "Random" };
         public GameObject UIManager, SelectionBox, MiniMapContainer, FogOfWar;
@@ -66,7 +66,8 @@ namespace Assets.Scripts.Scenes
         /// Sets the upper bounds for how fast an asteroid can move
         /// </summary>
         public int AsteroidMaxSpeed;
-        public List<GameObject> ObstaclePrefabs = new List<GameObject>();
+        public List<GameObject> EmptyObstacleList = new List<GameObject>();
+        public List<GameObject> MazePrefabs = new List<GameObject>();
         public List<GameObject> MiningAsteroidPrefabs = new List<GameObject>();
         public List<GameObject> CollisionAsteroidPrefabs = new List<GameObject>();
 
@@ -106,14 +107,79 @@ namespace Assets.Scripts.Scenes
         public List<string> __PastCommands;
         public List<string> __CachedPaths;
 
+        private List<GameObject> _chosenObstacles;
+        private Dictionary<int, List<GameObject>> _obstacleLists;
+
         new void Start()
         {
             //Debug.Log($"Start level scene");
             Name = "Level";
             base.Start();
         }
+
+        private void RandomizeOptions()
+        {
+            if (HasRandomizedOptions)
+            {
+                Debug.Log($"Randomizing options...");
+
+                _obstacleLists = new Dictionary<int, List<GameObject>>()
+                {
+                    {0, MazePrefabs }
+                };
+
+                if (Utilities.RandomInt(2) == 1)
+                {
+                    HasObstacles = true;
+                    Debug.Log($"The map has obstacles");
+
+                    _chosenObstacles = _obstacleLists.GetValueOrDefault(Utilities.RandomInt(_obstacleLists.Count));
+
+                    if (Utilities.RandomInt(4) == 1)
+                    {
+                        ActivateCollisionAsteroids = true;
+                        Debug.Log($"The map has obstacles and asteroids as well");
+                    }
+                    else
+                    {
+                        ActivateCollisionAsteroids = false;
+                    }
+                }
+                else
+                {
+                    if (Utilities.RandomInt(2) == 1)
+                    {
+                        HasObstacles = true;
+                        _chosenObstacles = EmptyObstacleList;
+                        ActivateCollisionAsteroids = true;
+                        Debug.Log($"The map has asteroids");
+                    }
+                    else
+                    {
+                        ActivateCollisionAsteroids = false;
+                        HasObstacles = false;
+                    }
+                }
+
+                if (Utilities.RandomInt(2) == 1)
+                {
+                    ActivateFogOfWar = true;
+                    Debug.Log($"The map has fog of war");
+                }
+                else
+                {
+                    ActivateFogOfWar = false;
+                }
+            }
+            else
+            {
+                Debug.Log($"The map does not have randomized options");
+            }
+
+        }
         private void Setup()
         {
+            RandomizeOptions();
             //Debug.Log($"Setup scene");
             if (OverrideTimeScale == 0)
             {
@@ -314,7 +380,7 @@ namespace Assets.Scripts.Scenes
         private void SpawnObstacles()
         {
             GameState state = GetState();
-            ObstaclePrefabs.ForEach((prefab) =>
+            _chosenObstacles.ForEach((prefab) =>
             {
                 Vector2 position = prefab.transform.position;
                 GameObject instance = Instantiate(prefab);
@@ -733,16 +799,25 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
                 Invoke(nameof(TimeOut), TimeoutTime);
             }
             //Debug.Log("Cleared timeout");
-
+            RandomizeOptions();
 
             if (HasObstacles)
             {
                 SpawnObstacles();
                 Pathfinder = new Pathfinder(this);
+
             }
             if (ActivateMining)
             {
                 SpawnMiningAsteroids();
+            }
+            if (ActivateFogOfWar && HasPlayer)
+            {
+                FogOfWar.SetActive(true);
+            }
+            else
+            {
+                FogOfWar.SetActive(false);
             }
 
             if (ActivateLoadingShipsMidLevel)

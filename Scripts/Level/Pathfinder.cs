@@ -819,7 +819,6 @@ namespace Assets.Scripts.Level
         public void InitializeMap()
         {
             float start = Time.realtimeSinceStartup;
-            ObstaclePoints = new List<int[][]>();
             //Debug.Log($"Loading pathfinder map at {Scale}x");
             // initialize everything as open space
             _grid = new Grid(Width, Height, this);
@@ -906,6 +905,11 @@ namespace Assets.Scripts.Level
 
                 for (int i = 0; i < ConfigData.MaxThreads; i++)
                 {
+
+                    // initalize list of previous asteroids
+                    PreviousAsteroids[i] = new List<int>();
+
+                    // Get neighbors for each node
                     for (int x = 0; x < _grid.Width; x++)
                     {
                         for (int y = 0; y < _grid.Height; y++)
@@ -1000,104 +1004,45 @@ namespace Assets.Scripts.Level
         /// 
         /// Scenario 3. A ship is moving on a preexisting route when an obstacle comes within its range. It passes that obstacle to the Pathfinder and the Pathfinder updates that obstacle and the ship finds a new path.
         /// </summary>
-        public void UpdateMap(List<CollisionAsteroid> previousAsteroids, List<CollisionAsteroid> collisionAsteroids, MapNode[][] nodes)
+        public void UpdateMap(int thread, List<CollisionAsteroid> collisionAsteroids)
         {
             //float start = Time.realtimeSinceStartup;
             //Debug.Log($"Updating map");
 
-            if (previousAsteroids.Count > 0) // there are asteroids within range of the ship that asked for the map to be updated
+            PreviousAsteroids[thread].ForEach((asteroidId) =>
             {
-                //Debug.Log($"Looping through collision asteroids");
-                previousAsteroids.ForEach((asteroid) =>
+                //Debug.Log($"Clearing the position of {asteroid.Name} on the pathfinding map");
+                foreach (int[] point in ObstaclePoints[asteroidId])
                 {
-                    //Debug.Log($"Clearing the position of {asteroid.Name} on the pathfinding map");
+                    if (point[0] >= 0 && point[0] < _grid.Width && point[1] >= 0 && point[1] < _grid.Height)
+                    {
+                        GridNodes[thread][point[0]][point[1]].Clearance = GridNodes[thread][point[0]][point[1]].OriginalClearance; // set its old position to the original clearance
+                    }
+                }
+            });
+
+            PreviousAsteroids[thread].Clear();
+
+            collisionAsteroids.ForEach((asteroid) =>
+            {
+
+                if (asteroid != null)
+                {
+                    // Get the new points
+                    //Debug.Log($"Updating the position of {asteroid.Name} on the pathfinding map");
+                    ObstaclePoints[asteroid.Id] = GetObstaclePoints(asteroid);
+                    //Debug.Log($"Got obstacle points for {asteroid}");
                     foreach (int[] point in ObstaclePoints[asteroid.Id])
                     {
                         if (point[0] >= 0 && point[0] < _grid.Width && point[1] >= 0 && point[1] < _grid.Height)
                         {
-                            nodes[point[0]][point[1]].Clearance = nodes[point[0]][point[1]].OriginalClearance; // set its old position to the original clearance
+                            //Debug.Log($"Valid indexes: {point[0]}, {point[1]}");
+                            GridNodes[thread][point[0]][point[1]].Clearance = 0; // set its new position to unwalkable space
                         }
                     }
-                });
-            }
-
-            if (collisionAsteroids.Count > 0) // there are asteroids within range of the ship that asked for the map to be updated
-            {
-                //Debug.Log($"Looping through collision asteroids");
-                collisionAsteroids.ForEach((asteroid) =>
-                {
-                    //Debug.Log($"Clearing the position of {asteroid.Name} on the pathfinding map");
-                    //foreach (int[] point in ObstaclePoints[asteroid.Id])
-                    //{
-                    //    if (point[0] >= 0 && point[0] < _grid.Width && point[1] >= 0 && point[1] < _grid.Height)
-                    //    {
-                    //        nodes[point[0]][point[1]].Clearance = nodes[point[0]][point[1]].OriginalClearance; // set its old position to the original clearance
-                    //    }
-                    //}
-
-                    if (asteroid != null)
-                    {
-                        // Get the new points
-                        //Debug.Log($"Updating the position of {asteroid.Name} on the pathfinding map");
-                        ObstaclePoints[asteroid.Id] = GetObstaclePoints(asteroid);
-                        //Debug.Log($"Got obstacle points for {asteroid}");
-                        foreach (int[] point in ObstaclePoints[asteroid.Id])
-                        {
-                            if (point[0] >= 0 && point[0] < _grid.Width && point[1] >= 0 && point[1] < _grid.Height)
-                            {
-                                //Debug.Log($"Valid indexes: {point[0]}, {point[1]}");
-                                nodes[point[0]][point[1]].Clearance = 0; // set its new position to unwalkable space
-                            }
-                        }
-                    }
-                });
-            }
-            //else // the ship sent an empty list which means there were no mobile obstacles within range but we should still update the map if need be for
-            //     // static obstacles and reset the points of obstacles that are gone now
-            //{
-            //    List<int> toRemove = new List<int>(); // contains indexes of ObstaclesToUpdate that have been updated and can be removed from the list
-
-            //    for (int i = 0; i < ObstaclesToUpdate.Count; i++)
-            //    {
-
-            //        int obstacleIndex = ObstaclesToUpdate[i];
-            //        Obstacle obstacle = Obstacles[obstacleIndex];
-
-            //        if (obstacle == null || obstacle.IsMobile) // obstacle is dead
-            //        {
-            //            foreach (int[] point in ObstaclePoints[obstacleIndex])
-            //            {
-            //                try
-            //                {
-            //                    nodes[point[0]][point[1]].Clearance = nodes[point[0]][point[1]].OriginalClearance; // set its old position to the original clearance
-            //                }
-            //                catch (Exception e)
-            //                {
-            //                    Debug.Log($"Had an error with index points {point[0]}, {point[1]} on nodes {nodes}");
-            //                    throw e;
-            //                }
-            //            }
-            //            toRemove.Add(obstacleIndex);
-            //        }
-            //    }
-
-            //    toRemove.ForEach((obstacleIndex) =>
-            //    {
-            //        ObstaclesToUpdate.Remove(obstacleIndex);
-            //    });
-
-            //}
-
-            //for (int i = 0; i < ConfigData.MaxThreads; i++)
-            //{
-            //    changedNodes.ForEach((changedNode) =>
-            //    {
-            //        GridNodes[i][changedNode.x][changedNode.y].Clearance = changedNode.Clearance;
-            //    });
-            //}
-
-            //float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
-            //Debug.Log($"UpdateMap() took {end} ms to complete.");
+                    PreviousAsteroids[thread].Add(asteroid.Id);
+                }
+            });
 
         }
         float num, num2;
@@ -1467,6 +1412,7 @@ namespace Assets.Scripts.Level
         public List<PathWaiting> PathsWaitingToRemove = new List<PathWaiting>();
         public Thread[] Threads = new Thread[ConfigData.MaxThreads];
         public bool[] IsThreadActive = new bool[ConfigData.MaxThreads];
+        public List<int>[] PreviousAsteroids = new List<int>[ConfigData.MaxThreads];
         //public int ThreadsStarted = -1;
         //public int ThreadIndex;
         //public int Thread => ThreadsStarted % ConfigData.MaxThreads;
@@ -1718,8 +1664,7 @@ namespace Assets.Scripts.Level
                     {
                         UpdateMapTime[i] = SW.Stopwatch.StartNew();
                         //Debug.Log("Before updating map");
-                        UpdateMap(ship.PreviousNearbyAsteroids, ship.NearbyAsteroids, GridNodes[i]);
-                        ship.PreviousNearbyAsteroids = ship.NearbyAsteroids.ToList();
+                        UpdateMap(i, ship.NearbyAsteroids.ToList());
                         //Debug.Log("After updating map");
                         UpdateMapTime[i].Stop();
                     }

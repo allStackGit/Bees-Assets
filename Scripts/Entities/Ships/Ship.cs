@@ -49,7 +49,6 @@ namespace Assets.Scripts.Entities.Ships
         public Brain Brain = null;
         public Queue<Vector2> DestinationQueue = new Queue<Vector2>();
         public List<CollisionAsteroid> NearbyAsteroids = new List<CollisionAsteroid>();
-        public List<CollisionAsteroid> PreviousNearbyAsteroids = new List<CollisionAsteroid>();
         public List<Turret> Turrets = new List<Turret>();
         public float RotationSpeed;
         public bool HasVision;
