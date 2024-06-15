@@ -376,8 +376,11 @@ namespace Assets.Scripts.Scenes
                 float width = ships[0].GetHalfWidth();
                 float height = ships[0].GetHalfHeight();
                 int clearance = (width > height ? Mathf.CeilToInt(width) : Mathf.CeilToInt(height)) + 4; // 4 for padding
-                ShipClearances.Add(shipType, clearance);
-                
+                if (!ShipClearances.ContainsKey(shipType))
+                {
+                    ShipClearances.Add(shipType, clearance);
+                }
+
                 if (clearance > MaximumClearance)
                 {
                     MaximumClearance = clearance;

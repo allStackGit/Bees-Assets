@@ -143,6 +143,10 @@ namespace Assets.Scripts.Level
                             {
                                 type = ConfigData.Configuration.VisibleHumanShipTypes.ElementAt(Random.Range(0, ConfigData.Configuration.VisibleHumanShipTypes.Count));
                             }
+                            while (Level.HasObstacles && side == ConfigData.Configuration.BeeSide && type == "Queen")
+                            {
+                                type = ConfigData.Configuration.VisibleBeeShipTypes.ElementAt(Random.Range(0, ConfigData.Configuration.VisibleBeeShipTypes.Count));
+                            }
                             int squadId = Utilities.GetNegativeSavedSquadId();
                             SavedSquad savedSquad = new SavedSquad(squadId, side, $"{type}s #{squadId}", Vector2.zero, false, false,
                                 ConfigData.StartingSettings.DefaultShootingStrategy, ConfigData.UnsetColor, null);
