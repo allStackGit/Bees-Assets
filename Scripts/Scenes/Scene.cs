@@ -36,6 +36,7 @@ namespace Assets.Scripts.Scenes
         // Start is called before the first frame update
         protected void Start()
         {
+            ConfigData.MaxThreads = SystemInfo.processorCount - 1;
             //Debug.Log($"Starting {Name} scene");
             ConfigData.Scenes.Add(this);
             

@@ -183,7 +183,7 @@ namespace Assets.Scripts.Level
                 {
                     adjustment *= 1.2f;
                 }
-                else if (ship.ShipType == "Barge" || ship.ShipType == "Fire Ship")
+                else if (ship.ShipType == "Barge" || ship.ShipType == "Fire Ship" || ship.ShipType == "Warp Gate")
                 {
                     adjustment *= new Vector2(1.4f, 1);
                 }

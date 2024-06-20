@@ -13,7 +13,7 @@ OcclusionCullingSettings:
 --- !u!104 &2
 RenderSettings:
   m_ObjectHideFlags: 0
-  serializedVersion: 9
+  serializedVersion: 10
   m_Fog: 0
   m_FogColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
   m_FogMode: 3
@@ -44,7 +44,6 @@ RenderSettings:
 LightmapSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 12
-  m_GIWorkflowMode: 1
   m_GISettings:
     serializedVersion: 2
     m_BounceScale: 1
@@ -67,9 +66,6 @@ LightmapSettings:
     m_LightmapParameters: {fileID: 0}
     m_LightmapsBakeMode: 1
     m_TextureCompression: 1
-    m_FinalGather: 0
-    m_FinalGatherFiltering: 1
-    m_FinalGatherRayCount: 256
     m_ReflectionCompression: 2
     m_MixedBakeMode: 2
     m_BakeBackend: 1
@@ -1685,6 +1681,10 @@ PrefabInstance:
       value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 6558558757127172484, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
+      propertyPath: m_SizeDelta.x
+      value: 112
+      objectReference: {fileID: 0}
+    - target: {fileID: 6558558757127172484, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_LocalPosition.z
       value: 1
       objectReference: {fileID: 0}
@@ -2257,7 +2257,7 @@ PrefabInstance:
     - target: {fileID: 1109014343575341394, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_Sprite
       value: 
-      objectReference: {fileID: 21300000, guid: d4e246a598aabb94f8f7d79e62a0e90e, type: 3}
+      objectReference: {fileID: 21300000, guid: 14f4d00d7d052d44d9cadf895b3b1b8d, type: 3}
     - target: {fileID: 2470922290977067781, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_Padding.m_Left
       value: 5
@@ -2425,6 +2425,10 @@ PrefabInstance:
     - target: {fileID: 6558558757127172484, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_AnchorMin.y
       value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6558558757127172484, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
+      propertyPath: m_SizeDelta.x
+      value: 64
       objectReference: {fileID: 0}
     - target: {fileID: 6558558757127172484, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_AnchoredPosition.x
@@ -3328,7 +3332,7 @@ PrefabInstance:
     - target: {fileID: 1109014343575341394, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_Sprite
       value: 
-      objectReference: {fileID: 21300000, guid: 31edbc0ed33e33a47be2a49a66b267ec, type: 3}
+      objectReference: {fileID: -1837898833515144292, guid: d536597f08fa24340a28d210f27febf2, type: 3}
     - target: {fileID: 2470922290977067781, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_Padding.m_Left
       value: 5
@@ -3771,7 +3775,7 @@ PrefabInstance:
     - target: {fileID: 191410528261708819, guid: ab06642a9f613714bbc702b13ca82f1f, type: 3}
       propertyPath: m_Sprite
       value: 
-      objectReference: {fileID: 21300000, guid: 31edbc0ed33e33a47be2a49a66b267ec, type: 3}
+      objectReference: {fileID: -1837898833515144292, guid: d536597f08fa24340a28d210f27febf2, type: 3}
     - target: {fileID: 6546966112793727268, guid: ab06642a9f613714bbc702b13ca82f1f, type: 3}
       propertyPath: m_Delegates.Array.data[0].callback.m_PersistentCalls.m_Calls.Array.data[0].m_Mode
       value: 2
@@ -6267,7 +6271,7 @@ PrefabInstance:
     - target: {fileID: 191410528261708819, guid: ab06642a9f613714bbc702b13ca82f1f, type: 3}
       propertyPath: m_Sprite
       value: 
-      objectReference: {fileID: 21300000, guid: 8115e0a5ebbc6f44d9711dda4c56a415, type: 3}
+      objectReference: {fileID: 21300000, guid: 5db9059f49409824795cd80bbf0fd991, type: 3}
     - target: {fileID: 6546966112793727268, guid: ab06642a9f613714bbc702b13ca82f1f, type: 3}
       propertyPath: m_Delegates.Array.data[0].callback.m_PersistentCalls.m_Calls.Array.data[0].m_Mode
       value: 2
@@ -7644,12 +7648,12 @@ MonoBehaviour:
   m_RequiresColorTexture: 0
   m_Version: 2
   m_TaaSettings:
-    quality: 3
-    frameInfluence: 0.1
-    jitterScale: 1
-    mipBias: 0
-    varianceClampScale: 0.9
-    contrastAdaptiveSharpening: 0
+    m_Quality: 3
+    m_FrameInfluence: 0.1
+    m_JitterScale: 1
+    m_MipBias: 0
+    m_VarianceClampScale: 0.9
+    m_ContrastAdaptiveSharpening: 0
 --- !u!1001 &694266583
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -16091,7 +16095,7 @@ MonoBehaviour:
   CruiserSprite: {fileID: 21300000, guid: 4d8d12e8bab75924aac22692692865d4, type: 3}
   DreadnoughtSprite: {fileID: 21300000, guid: 9c7747c0ffc435e418024d989475bd92, type: 3}
   DroneSprite: {fileID: 21300000, guid: 3a8e6cfd758ae60488a53d1e909e0abe, type: 3}
-  FactorySprite: {fileID: 21300000, guid: d4e246a598aabb94f8f7d79e62a0e90e, type: 3}
+  FactorySprite: {fileID: 21300000, guid: 14f4d00d7d052d44d9cadf895b3b1b8d, type: 3}
   FireShipSprite: {fileID: 21300000, guid: c2d50367ba7668e428d971aed684feb2, type: 3}
   FlagshipSprite: {fileID: 21300000, guid: 4ffefbee413778f40943ae6240ca6071, type: 3}
   FrigateSprite: {fileID: 21300000, guid: 17fa141b5d31d844586a21634ca349a5, type: 3}
@@ -16105,7 +16109,7 @@ MonoBehaviour:
   HoneybeeSprite: {fileID: 21300000, guid: 456c9777ece630b47aeddb40a0513ae5, type: 3}
   HornetSprite: {fileID: 21300000, guid: 7dd6c3f58403611428645dcd4dc55e87, type: 3}
   LeafcutterSprite: {fileID: 21300000, guid: f15f08e19969a7b428bd29e7af8b36c6, type: 3}
-  QueenSprite: {fileID: 21300000, guid: 31edbc0ed33e33a47be2a49a66b267ec, type: 3}
+  QueenSprite: {fileID: -1837898833515144292, guid: d536597f08fa24340a28d210f27febf2, type: 3}
   WaspSprite: {fileID: 21300000, guid: 63fea424b9851784f9f2bbb0ff3120dc, type: 3}
   YellowJacketSprite: {fileID: 21300000, guid: 7d3c88d90f6e83e4e8ea37fcd9b6e3ce, type: 3}
   DragCanvas: {fileID: 1320965603}
@@ -19974,7 +19978,7 @@ PrefabInstance:
     - target: {fileID: 1109014343575341394, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_Sprite
       value: 
-      objectReference: {fileID: 21300000, guid: 8115e0a5ebbc6f44d9711dda4c56a415, type: 3}
+      objectReference: {fileID: 21300000, guid: 5db9059f49409824795cd80bbf0fd991, type: 3}
     - target: {fileID: 2470922290977067781, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_Padding.m_Left
       value: 5
@@ -20142,6 +20146,10 @@ PrefabInstance:
     - target: {fileID: 6558558757127172484, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_AnchorMin.y
       value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6558558757127172484, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
+      propertyPath: m_SizeDelta.x
+      value: 64
       objectReference: {fileID: 0}
     - target: {fileID: 6558558757127172484, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_LocalPosition.z
@@ -22204,6 +22212,10 @@ PrefabInstance:
       propertyPath: m_IsActive
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 4252014784592242578, guid: ba8e735e9f2a5b542916479f7ec91750, type: 3}
+      propertyPath: m_Sprite
+      value: 
+      objectReference: {fileID: 21300000, guid: 14f4d00d7d052d44d9cadf895b3b1b8d, type: 3}
     - target: {fileID: 4364105250747505693, guid: ba8e735e9f2a5b542916479f7ec91750, type: 3}
       propertyPath: m_Delegates.Array.data[0].callback.m_PersistentCalls.m_Calls.Array.data[0].m_Mode
       value: 2

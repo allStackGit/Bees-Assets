@@ -15,6 +15,7 @@ namespace Assets.Scripts.Entities.Projectiles
         private bool _isHarmless; // After a few frames, the explosion is no longer damaging and becomes harmless to whoever hits it
         private HashSet<Ship> _shipsHit = new HashSet<Ship>();
         private HashSet<Obstacle> _obstaclesHit = new HashSet<Obstacle>();
+        public CircleCollider2D CircleCollider;
 
         public override void ContactTarget(Ship target)
         {
@@ -54,7 +55,10 @@ namespace Assets.Scripts.Entities.Projectiles
             _isHarmless = true;
             //Debug.Log($"{Name} is now harmless");
         }
-
+        public void SetColliderSize(int size)
+        {
+            CircleCollider.radius = size;
+        }
         protected override void FixedUpdate()
         {
             if (!Level.IsPaused)

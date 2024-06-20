@@ -20,18 +20,23 @@ namespace Assets.Scripts
         public AudioSource WaspLoop;
         public AudioSource HumanLoop;
 
-        public AudioSource LightCannonSound;  
+        public AudioSource LightCannonSound;
+        public AudioSource LightCannonSound2;
+        public AudioSource SmallCannonSound;
+        public AudioSource SmallCannonSound2;
+        public AudioSource BigCannonSound;
+        public AudioSource BigCannonSound2;
 
         public Dictionary<string, AudioSource> BeesIntros = new Dictionary<string, AudioSource>();
         public Dictionary<string, AudioSource> BeesLoops = new Dictionary<string, AudioSource>();
-        public Dictionary<string, AudioSource> WeaponSounds = new Dictionary<string, AudioSource>();
+        public Dictionary<string, AudioSource[]> WeaponSounds = new Dictionary<string, AudioSource[]>();
         public List<AudioSource> Loops = new List<AudioSource>();
         public List<AudioSource> Intros = new List<AudioSource>();
 
         public float IntroLength;
         public bool IntroEnded;
 
-        public void Setup()
+        public void Setup(bool playMusic)
         {
             // Setup audio [make audio controller]
             BeesLoops.Add("Carpenter Bee", CarpenterBeeLoop);
@@ -58,7 +63,9 @@ namespace Assets.Scripts
             Loops.Add(WaspLoop);
             Loops.Add(HumanLoop);
 
-            WeaponSounds.Add("Light Cannon", LightCannonSound);
+            WeaponSounds.Add("Light Cannon", new AudioSource[] { LightCannonSound, LightCannonSound2 });
+            WeaponSounds.Add("Turret", new AudioSource[] { SmallCannonSound, SmallCannonSound2 });
+            WeaponSounds.Add("Full Ship Turret", new AudioSource[] { BigCannonSound, BigCannonSound2 });
 
             //mute bee intros
             MuteSource(CarpenterBeeIntro);
@@ -66,12 +73,7 @@ namespace Assets.Scripts
             MuteSource(HornetIntro);
             MuteSource(WaspIntro);
 
-            // play intros
-            PlayIntro(LocationIntro);
-            PlayIntro(CarpenterBeeIntro);
-            PlayIntro(HoneybeeIntro);
-            PlayIntro(HornetIntro);
-            PlayIntro(WaspIntro);
+
 
 
             // mute bee loops
@@ -80,15 +82,28 @@ namespace Assets.Scripts
             MuteSource(HornetLoop);
             MuteSource(WaspLoop);
 
-            // play loops
-            PlayLoop(IntroLength, LocationLoop);
-            PlayLoop(IntroLength, CarpenterBeeLoop);
-            PlayLoop(IntroLength, HoneybeeLoop);
-            PlayLoop(IntroLength, HornetLoop);
-            PlayLoop(IntroLength, WaspLoop);
-            PlayLoop(IntroLength, HumanLoop);
-            //StartCoroutine(nameof(EndIntro), IntroLength);
-            Invoke(nameof(EndIntro), IntroLength);
+            if (playMusic)
+            {
+                // play intros
+                PlayIntro(LocationIntro);
+                PlayIntro(CarpenterBeeIntro);
+                PlayIntro(HoneybeeIntro);
+                PlayIntro(HornetIntro);
+                PlayIntro(WaspIntro);
+
+                // play loops
+                PlayLoop(IntroLength, LocationLoop);
+                PlayLoop(IntroLength, CarpenterBeeLoop);
+                PlayLoop(IntroLength, HoneybeeLoop);
+                PlayLoop(IntroLength, HornetLoop);
+                PlayLoop(IntroLength, WaspLoop);
+                PlayLoop(IntroLength, HumanLoop);
+
+                StartCoroutine(nameof(EndIntro), IntroLength);
+                Invoke(nameof(EndIntro), IntroLength);
+            }
+
+
 
         }
 

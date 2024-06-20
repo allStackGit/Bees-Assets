@@ -37,7 +37,7 @@ namespace Assets.Scripts.Scenes
         public bool ReplaceDeadShips;
         public bool ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, UseSemiRandomSquads, UseFullyRandomSquads, UseFullyRandomEnemySquads, RecordStats, 
             DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateAudio, ActivateLoadingShipsMidLevel, UseMouseScrolling, IsDebugging, 
-            MakeEnemyCeaseFire, UnlockCamera, HasRandomizedOptions;
+            MakeEnemyCeaseFire, UnlockCamera, HasRandomizedOptions, PlayMusic;
         public int OverrideTimeScale, OverrideUserSide, GeneratedSquadCountOverride, InitialCommandDelay, TimeoutTime;
         public List<string> OverrideStrats = new List<string> { "Aggressive", "Random" };
         public GameObject UIManager, SelectionBox, MiniMapContainer, FogOfWar;
@@ -261,7 +261,7 @@ namespace Assets.Scripts.Scenes
                 }
                 if (ActivateAudio && Audio != null)
                 {
-                    Audio.Setup();
+                    Audio.Setup(PlayMusic);
                 }
 
             }
@@ -313,6 +313,7 @@ namespace Assets.Scripts.Scenes
 
             if (HasObstacles)
             {
+                _chosenObstacles = new List<GameObject>();
                 SpawnObstacles();
                 Pathfinder = new Pathfinder(this);
             }

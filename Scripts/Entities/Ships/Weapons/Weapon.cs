@@ -58,7 +58,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             if (!Level.IsTrainingHiveMind && !Level.IsTrainingNueralNetwork && Level.Audio.WeaponSounds.ContainsKey(Type))
             {
                 HasSoundEffect = true;
-                SoundEffect = Instantiate(Level.Audio.WeaponSounds[Type]);
+                SoundEffect = Instantiate(Level.Audio.WeaponSounds[Type][Utilities.RandomInt(Level.Audio.WeaponSounds[Type].Length)]);
                 SoundEffect.transform.parent = piece.transform;
                 SoundEffect.transform.localPosition = Vector2.zero;
 

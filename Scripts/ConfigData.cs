@@ -74,25 +74,24 @@ namespace Assets.Scripts
         public static float PlusUltra = Tiny * 8f;
         public static float BigChungus = Tiny * 32f;
 
-        public static Vector2 TwoThirdsToSquare = new Vector2(1.5f, 1);
         public static readonly Dictionary<string, Vector2> ShipSizes = new Dictionary<string, Vector2>() {
             { "Barge",          new Vector2(760, 360)},
             { "Carrier",        new Vector2(460, 560)},
             { "Cruiser",        new Vector2(320, 360)},
             { "Dreadnought",    new Vector2(320, 420)},
             { "Drone",          new Vector2(160, 160)},
-            { "Factory",        new Vector2(427, 567)},
+            { "Factory",        new Vector2(640, 640)},
             { "Fire Ship",      new Vector2(760, 360)},
             { "Flagship",       new Vector2(640, 760)},
             { "Frigate",        new Vector2(240, 240)},
             { "Gunship",        new Vector2(240, 240)}, 
             { "Scout",          new Vector2(200, 160)},
             { "Striker",        new Vector2(160, 160)},
-            { "Warp Gate",      new Vector2(427, 567)},
+            { "Warp Gate",      new Vector2(1120, 640)},
 
             { "Beehive",        Vector2.zero },
             { "Bumblebee",      new Vector2(680, 480)},
-            { "Carpenter Bee",  new Vector2(427, 567)},
+            { "Carpenter Bee",  new Vector2(640, 640)},
             { "Honeybee",       new Vector2(160, 160)},
             { "Hornet",         new Vector2(160, 160)},
             { "Leafcutter",     new Vector2(320, 320)},
@@ -112,7 +111,7 @@ namespace Assets.Scripts
             { "Frigate",        Small},
             { "Gunship",        Small},
             { "Scout",          Tiny},
-            { "Striker",          Tiny},
+            { "Striker",        Tiny},
             { "Warp Gate",      Huge},
 
             { "Beehive",        0 },
@@ -131,14 +130,14 @@ namespace Assets.Scripts
             { "Cruiser", new Color[] {new Color(0.184f, 0.569f, 0.380f, 1), new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.196f, 0.6f, 0.4f, 1) } },
             { "Dreadnought", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1)  } },
             { "Drone", new Color[] {new Color(.729f, .729f, .729f, 1) } },
-            { "Factory", new Color[] {UnsetColor } },
+            { "Factory", new Color[] { new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.196f, 0.6f, 0.4f, 1) } },
             { "Fire Ship", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.235f, 0.753f, 0.498f, 1) } },
             { "Flagship", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
             { "Frigate", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
             { "Gunship", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
             { "Scout", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
             { "Striker", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
-            { "Warp Gate", new Color[] {UnsetColor } },
+            { "Warp Gate", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
 
             // Set the bees to the unset color because none of their colors will change ... Unless the player is the bees?
             { "Beehive",        new Color[] {UnsetColor } },
@@ -172,7 +171,7 @@ namespace Assets.Scripts
         public static Scene SocketManager;
         public static HashSet<long> UsedHashes = new HashSet<long>();
         public static WaitForEndOfFrame WaitForEndOfFrame = new WaitForEndOfFrame();
-        public static int MaxThreads = SystemInfo.processorCount - 1;
+        public static int MaxThreads;
 
 
 
@@ -191,7 +190,7 @@ namespace Assets.Scripts
         /// <summary>
         /// The minimum offset between ships in the squad maker in UI world units.
         /// </summary>
-        public static Vector2 ShipOffset = new Vector2(15, 15);
+        public static Vector2 ShipOffset = new Vector2(20, 20);
         /// <summary>
         /// The distance from the axis before trying to snap the ship into place
         /// </summary>

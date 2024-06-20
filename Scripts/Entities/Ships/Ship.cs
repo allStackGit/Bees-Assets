@@ -248,7 +248,7 @@ namespace Assets.Scripts.Entities.Ships
             {
                 string weaponType = shipStats.WeaponTypes[i];
                 Weapon weapon = null;
-                if (weaponType == "Turret" || weaponType == "Light Cannon")
+                if (weaponType == "Turret" || weaponType == "Light Cannon" || weaponType == "Rocket Turret")
                 {
                     weapon = gameObject.AddComponent<Turret>();
                 }

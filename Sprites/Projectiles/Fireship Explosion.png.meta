@@ -1,0 +1,1597 @@
+fileFormatVersion: 2
+guid: e0f83b9251bcd5e4db0f0770dd4d2eec
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: 3524893151926779551
+    second: massive_explosion_1024_box_0
+  - first:
+      213: -6377897125038473112
+    second: massive_explosion_1024_box_1
+  - first:
+      213: 7260279379808395619
+    second: massive_explosion_1024_box_2
+  - first:
+      213: 7429011899668305058
+    second: massive_explosion_1024_box_3
+  - first:
+      213: 5424759368958347185
+    second: massive_explosion_1024_box_4
+  - first:
+      213: 2134776310629034034
+    second: massive_explosion_1024_box_5
+  - first:
+      213: -5596106205257143815
+    second: massive_explosion_1024_box_6
+  - first:
+      213: -8850801771167135790
+    second: massive_explosion_1024_box_7
+  - first:
+      213: 8453731167420100850
+    second: massive_explosion_1024_box_8
+  - first:
+      213: -5551699996032386032
+    second: massive_explosion_1024_box_9
+  - first:
+      213: 2592558018843779536
+    second: massive_explosion_1024_box_10
+  - first:
+      213: 6629618497550226818
+    second: massive_explosion_1024_box_11
+  - first:
+      213: -4554596844253815840
+    second: massive_explosion_1024_box_12
+  - first:
+      213: -1227032310012194404
+    second: massive_explosion_1024_box_13
+  - first:
+      213: -2583283911060907542
+    second: massive_explosion_1024_box_14
+  - first:
+      213: 5547913828724587095
+    second: massive_explosion_1024_box_15
+  - first:
+      213: 1834954532938984991
+    second: massive_explosion_1024_box_16
+  - first:
+      213: 1657988395533517523
+    second: massive_explosion_1024_box_17
+  - first:
+      213: -4896554698695946852
+    second: massive_explosion_1024_box_18
+  - first:
+      213: 7023964277588129972
+    second: massive_explosion_1024_box_19
+  - first:
+      213: -5820416841835764705
+    second: massive_explosion_1024_box_20
+  - first:
+      213: -1876246178704372535
+    second: massive_explosion_1024_box_21
+  - first:
+      213: -2620899807670517140
+    second: massive_explosion_1024_box_22
+  - first:
+      213: 3898357217317572691
+    second: massive_explosion_1024_box_23
+  - first:
+      213: 1509793214350438750
+    second: massive_explosion_1024_box_24
+  - first:
+      213: -5385977481697765256
+    second: massive_explosion_1024_box_25
+  - first:
+      213: -1676495751720579339
+    second: massive_explosion_1024_box_26
+  - first:
+      213: 4568543281607261767
+    second: massive_explosion_1024_box_27
+  - first:
+      213: -6196202797723328861
+    second: massive_explosion_1024_box_28
+  - first:
+      213: -5735793497966217437
+    second: massive_explosion_1024_box_29
+  - first:
+      213: -5380938087525953147
+    second: massive_explosion_1024_box_30
+  - first:
+      213: 8885986632550529057
+    second: massive_explosion_1024_box_31
+  - first:
+      213: 2555215504411339798
+    second: massive_explosion_1024_box_32
+  - first:
+      213: -3487539130335134535
+    second: massive_explosion_1024_box_33
+  - first:
+      213: -2642246456012719238
+    second: massive_explosion_1024_box_34
+  - first:
+      213: 998561596334533481
+    second: massive_explosion_1024_box_35
+  - first:
+      213: 3838664592679029422
+    second: massive_explosion_1024_box_36
+  - first:
+      213: 7211036855794614985
+    second: massive_explosion_1024_box_37
+  - first:
+      213: 8836352362531059121
+    second: massive_explosion_1024_box_38
+  - first:
+      213: -671176798417091622
+    second: massive_explosion_1024_box_39
+  - first:
+      213: -4877391420429761193
+    second: massive_explosion_1024_box_40
+  - first:
+      213: -6548266407839144307
+    second: massive_explosion_1024_box_41
+  - first:
+      213: 1335886568583562332
+    second: massive_explosion_1024_box_42
+  - first:
+      213: 4797192280101149899
+    second: massive_explosion_1024_box_43
+  - first:
+      213: 6030134618871394324
+    second: massive_explosion_1024_box_44
+  - first:
+      213: -3188000654165539459
+    second: massive_explosion_1024_box_45
+  - first:
+      213: 5362422422114227589
+    second: massive_explosion_1024_box_46
+  - first:
+      213: 7444541342808081950
+    second: massive_explosion_1024_box_47
+  - first:
+      213: 3285043371177800082
+    second: massive_explosion_1024_box_48
+  - first:
+      213: 6843795877996182215
+    second: massive_explosion_1024_box_49
+  - first:
+      213: 6847887034605222695
+    second: massive_explosion_1024_box_50
+  - first:
+      213: -1614251230430109546
+    second: massive_explosion_1024_box_51
+  - first:
+      213: 3132985846125175086
+    second: massive_explosion_1024_box_52
+  - first:
+      213: -4066587003713786263
+    second: massive_explosion_1024_box_53
+  - first:
+      213: 6476733796425040188
+    second: massive_explosion_1024_box_54
+  - first:
+      213: 1844863016683672025
+    second: massive_explosion_1024_box_55
+  - first:
+      213: -3944416978382080776
+    second: massive_explosion_1024_box_56
+  - first:
+      213: 5182243489694565289
+    second: massive_explosion_1024_box_57
+  - first:
+      213: -4976457265364092866
+    second: massive_explosion_1024_box_58
+  - first:
+      213: -696049241630691671
+    second: massive_explosion_1024_box_59
+  - first:
+      213: 7493010222285098672
+    second: massive_explosion_1024_box_60
+  - first:
+      213: 3086779795256461704
+    second: massive_explosion_1024_box_61
+  - first:
+      213: 2707345103423107053
+    second: massive_explosion_1024_box_62
+  - first:
+      213: -1528510034522492043
+    second: massive_explosion_1024_box_63
+  - first:
+      213: -2648146874654851856
+    second: massive_explosion_1024_box_64
+  - first:
+      213: -1215898603180319057
+    second: massive_explosion_1024_box_65
+  - first:
+      213: -7458205128853844906
+    second: massive_explosion_1024_box_66
+  - first:
+      213: -4398815841394658973
+    second: massive_explosion_1024_box_67
+  - first:
+      213: -7073653109784154252
+    second: massive_explosion_1024_box_68
+  - first:
+      213: 2130842474272869171
+    second: massive_explosion_1024_box_69
+  - first:
+      213: 4971481167210779487
+    second: massive_explosion_1024_box_70
+  - first:
+      213: 3513789201356523713
+    second: massive_explosion_1024_box_71
+  - first:
+      213: -5181054370324045732
+    second: massive_explosion_1024_box_72
+  - first:
+      213: 8193795308150036959
+    second: massive_explosion_1024_box_73
+  - first:
+      213: 4731354950771975778
+    second: massive_explosion_1024_box_74
+  - first:
+      213: -7091848183055214798
+    second: massive_explosion_1024_box_75
+  - first:
+      213: -8761636501080133837
+    second: massive_explosion_1024_box_76
+  - first:
+      213: 9084577905346087905
+    second: massive_explosion_1024_box_77
+  - first:
+      213: 3233348002605845462
+    second: massive_explosion_1024_box_78
+  - first:
+      213: -8264788693874865075
+    second: massive_explosion_1024_box_79
+  - first:
+      213: -1276785250022571689
+    second: massive_explosion_1024_box_80
+  - first:
+      213: 5981324952419781641
+    second: massive_explosion_1024_box_81
+  - first:
+      213: -192770960115795165
+    second: massive_explosion_1024_box_82
+  - first:
+      213: 5891106591454341681
+    second: massive_explosion_1024_box_83
+  - first:
+      213: -8055526428491695075
+    second: massive_explosion_1024_box_84
+  - first:
+      213: 630353341633350811
+    second: massive_explosion_1024_box_85
+  - first:
+      213: -3259471445393639341
+    second: massive_explosion_1024_box_86
+  - first:
+      213: -7877090953574239260
+    second: massive_explosion_1024_box_87
+  - first:
+      213: -7566682117830197358
+    second: massive_explosion_1024_box_88
+  - first:
+      213: 6451693177030652480
+    second: massive_explosion_1024_box_89
+  - first:
+      213: 2241606899191139789
+    second: massive_explosion_1024_box_90
+  - first:
+      213: 2127745067418265548
+    second: massive_explosion_1024_box_91
+  - first:
+      213: -1457639140888561530
+    second: massive_explosion_1024_box_92
+  - first:
+      213: -7875839218947844084
+    second: massive_explosion_1024_box_93
+  - first:
+      213: 1561868588546387203
+    second: massive_explosion_1024_box_94
+  - first:
+      213: 8099589514359659534
+    second: massive_explosion_1024_box_95
+  - first:
+      213: -8888532358436177574
+    second: massive_explosion_1024_box_96
+  - first:
+      213: 2409082403027971484
+    second: massive_explosion_1024_box_97
+  - first:
+      213: 5075353517111700824
+    second: massive_explosion_1024_box_98
+  - first:
+      213: 7062978725038480055
+    second: massive_explosion_1024_box_99
+  - first:
+      213: 2588722745172175759
+    second: massive_explosion_1024_box_100
+  - first:
+      213: 4489661494557390177
+    second: massive_explosion_1024_box_101
+  - first:
+      213: 6296424155195897337
+    second: massive_explosion_1024_box_102
+  - first:
+      213: 8259180265735297516
+    second: massive_explosion_1024_box_103
+  - first:
+      213: -459124720361120074
+    second: massive_explosion_1024_box_104
+  - first:
+      213: -3830709160433888995
+    second: massive_explosion_1024_box_105
+  - first:
+      213: 8997959959744768979
+    second: massive_explosion_1024_box_106
+  - first:
+      213: -3969792835923207367
+    second: massive_explosion_1024_box_107
+  - first:
+      213: -9145573258854539653
+    second: massive_explosion_1024_box_108
+  - first:
+      213: -7128193682060090822
+    second: massive_explosion_1024_box_109
+  - first:
+      213: 6560641840757641943
+    second: massive_explosion_1024_box_110
+  - first:
+      213: 9005059177060757900
+    second: massive_explosion_1024_box_111
+  - first:
+      213: 8943860177151463083
+    second: massive_explosion_1024_box_112
+  - first:
+      213: 8278808897053425414
+    second: massive_explosion_1024_box_113
+  - first:
+      213: -6346356023845600099
+    second: massive_explosion_1024_box_114
+  - first:
+      213: 3179231532554346166
+    second: massive_explosion_1024_box_115
+  - first:
+      213: 4071728575532862472
+    second: massive_explosion_1024_box_116
+  - first:
+      213: -6404856583829836775
+    second: massive_explosion_1024_box_117
+  - first:
+      213: -8315395174330533182
+    second: massive_explosion_1024_box_118
+  - first:
+      213: -4705160269118303471
+    second: massive_explosion_1024_box_119
+  - first:
+      213: 1351018647952378916
+    second: massive_explosion_1024_box_120
+  - first:
+      213: -1430193950219323991
+    second: massive_explosion_1024_box_121
+  - first:
+      213: 4667002737741221411
+    second: massive_explosion_1024_box_122
+  - first:
+      213: -6815296563961899287
+    second: massive_explosion_1024_box_123
+  - first:
+      213: -4041621183281740119
+    second: massive_explosion_1024_box_124
+  - first:
+      213: 4578805818286171081
+    second: massive_explosion_1024_box_125
+  - first:
+      213: -7913508680834537443
+    second: massive_explosion_1024_box_126
+  - first:
+      213: -2847534823814772739
+    second: massive_explosion_1024_box_127
+  - first:
+      213: -7816093430130857236
+    second: massive_explosion_1024_box_128
+  - first:
+      213: 5902514132280091441
+    second: massive_explosion_1024_box_129
+  - first:
+      213: 3633160916264101293
+    second: massive_explosion_1024_box_130
+  - first:
+      213: 7999272484136951723
+    second: massive_explosion_1024_box_131
+  - first:
+      213: 9055336114809688219
+    second: massive_explosion_1024_box_132
+  - first:
+      213: 928965335454902757
+    second: massive_explosion_1024_box_133
+  - first:
+      213: 5826028153652755305
+    second: massive_explosion_1024_box_134
+  - first:
+      213: 8387938709851349015
+    second: massive_explosion_1024_box_135
+  - first:
+      213: -9089084584536155206
+    second: massive_explosion_1024_box_136
+  - first:
+      213: -1524346355218082715
+    second: massive_explosion_1024_box_137
+  - first:
+      213: -1124415788869952207
+    second: massive_explosion_1024_box_138
+  - first:
+      213: 5056665384651682637
+    second: massive_explosion_1024_box_139
+  - first:
+      213: -1101184290723661714
+    second: massive_explosion_1024_box_140
+  - first:
+      213: 2931398818798697438
+    second: massive_explosion_1024_box_141
+  - first:
+      213: 6474709013049080511
+    second: massive_explosion_1024_box_142
+  - first:
+      213: 754761214987210306
+    second: massive_explosion_1024_box_143
+  - first:
+      213: -4962968164213948459
+    second: massive_explosion_1024_box_144
+  - first:
+      213: 2152204254074048477
+    second: massive_explosion_1024_box_145
+  - first:
+      213: 1301091111806543303
+    second: massive_explosion_1024_box_146
+  - first:
+      213: -5384497559285798047
+    second: massive_explosion_1024_box_147
+  - first:
+      213: -1072189389468763467
+    second: massive_explosion_1024_box_148
+  - first:
+      213: -4172845008841228044
+    second: massive_explosion_1024_box_149
+  - first:
+      213: -1087681437806089895
+    second: massive_explosion_1024_box_150
+  - first:
+      213: 4634459416415872857
+    second: massive_explosion_1024_box_151
+  - first:
+      213: -6291629608609939380
+    second: massive_explosion_1024_box_152
+  - first:
+      213: -2412406996671518645
+    second: massive_explosion_1024_box_153
+  - first:
+      213: -6568360666559004057
+    second: massive_explosion_1024_box_154
+  - first:
+      213: -2039456834378109588
+    second: massive_explosion_1024_box_155
+  - first:
+      213: 3593857645381553981
+    second: massive_explosion_1024_box_156
+  - first:
+      213: 3181252774759548102
+    second: massive_explosion_1024_box_157
+  - first:
+      213: -3203475760109330552
+    second: massive_explosion_1024_box_158
+  - first:
+      213: -7664112367466736345
+    second: massive_explosion_1024_box_159
+  - first:
+      213: -3902960002815387619
+    second: massive_explosion_1024_box_160
+  - first:
+      213: -4182879880150308314
+    second: massive_explosion_1024_box_161
+  - first:
+      213: -2280593650667413241
+    second: massive_explosion_1024_box_162
+  - first:
+      213: -4962582080030992526
+    second: massive_explosion_1024_box_163
+  - first:
+      213: -3479002136183434190
+    second: massive_explosion_1024_box_164
+  - first:
+      213: 4270773254800698965
+    second: massive_explosion_1024_box_165
+  - first:
+      213: -6950077206037630013
+    second: massive_explosion_1024_box_166
+  - first:
+      213: -6204263086715501455
+    second: massive_explosion_1024_box_167
+  - first:
+      213: -3367230874510172103
+    second: massive_explosion_1024_box_168
+  - first:
+      213: 6105283281039508361
+    second: massive_explosion_1024_box_169
+  - first:
+      213: -2578344317070505107
+    second: massive_explosion_1024_box_170
+  - first:
+      213: -9118471849439510297
+    second: massive_explosion_1024_box_171
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 8
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: Fireship Explosion_0
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 5120
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: d502f31477619fa4d8a9a9b14da7d449
+      internalID: -1603407765
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_1
+      rect:
+        serializedVersion: 2
+        x: 1024
+        y: 5120
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 580fa68953135a8439ce3ecee4755cc6
+      internalID: 730734021
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_2
+      rect:
+        serializedVersion: 2
+        x: 2048
+        y: 5120
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 6aeac955f58ebeb43a47b4bb459f10db
+      internalID: -590976366
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_3
+      rect:
+        serializedVersion: 2
+        x: 3072
+        y: 5120
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: c4636a2125b330342b0f6f25e685261c
+      internalID: 967944410
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_4
+      rect:
+        serializedVersion: 2
+        x: 4096
+        y: 5120
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 7e5db73ae57924644aa3b3d5950325e5
+      internalID: 396649880
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_5
+      rect:
+        serializedVersion: 2
+        x: 5120
+        y: 5120
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: ad4ef3016a64990438a3a353946c9d5b
+      internalID: -920523342
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_6
+      rect:
+        serializedVersion: 2
+        x: 6144
+        y: 5120
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: f05fae2fbb4202f44bdd40bdc58d06d6
+      internalID: 1268345184
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_7
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 4096
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 13104ef95db4bce499e0a1841bd9938b
+      internalID: 1433780844
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_8
+      rect:
+        serializedVersion: 2
+        x: 1024
+        y: 4096
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 01fefcf1109b0af449e848e5c70e9bae
+      internalID: -170294263
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_9
+      rect:
+        serializedVersion: 2
+        x: 2048
+        y: 4096
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: af79c6ddbd7199d4fb14e49f919d2027
+      internalID: -377459845
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_10
+      rect:
+        serializedVersion: 2
+        x: 3072
+        y: 4096
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 055795eb124b8ba43b43e5af353a1d9d
+      internalID: 1587294117
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_11
+      rect:
+        serializedVersion: 2
+        x: 4096
+        y: 4096
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: de32aff9c5c36b642b1328112fad225d
+      internalID: 1667884021
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_12
+      rect:
+        serializedVersion: 2
+        x: 5120
+        y: 4096
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: a0b75b62a3b4fd345a1c8abd2d7de812
+      internalID: -886190965
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_13
+      rect:
+        serializedVersion: 2
+        x: 6144
+        y: 4096
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 25d9d92440b812c4e9eca99440cacea0
+      internalID: 1835461164
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_14
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 3072
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 75283f774224eed46b7387b78a89ef1c
+      internalID: -1411830759
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_15
+      rect:
+        serializedVersion: 2
+        x: 1024
+        y: 3072
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 427a2c8a29ec07d46a8360dfb7c0957b
+      internalID: 1955017331
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_16
+      rect:
+        serializedVersion: 2
+        x: 2048
+        y: 3072
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 3da42e8bea5e1ec4d9c6478f45432b0d
+      internalID: 1826798508
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_17
+      rect:
+        serializedVersion: 2
+        x: 3072
+        y: 3072
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 2efa35ae7e84de148b9b03415502a20d
+      internalID: 147482648
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_18
+      rect:
+        serializedVersion: 2
+        x: 4096
+        y: 3072
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: e1cc1dc04aa67ea4ab096329a9fd7529
+      internalID: 1141304218
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_19
+      rect:
+        serializedVersion: 2
+        x: 5120
+        y: 3072
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 19d0f729f14f6114e93f4affc6842f25
+      internalID: 1007955736
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_20
+      rect:
+        serializedVersion: 2
+        x: 6144
+        y: 3072
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 20c075aee50576f4dae6eeadac8e771c
+      internalID: -1003847089
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_21
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 2048
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 53b12ab8832fc9b419ce7bc1dfc1acb2
+      internalID: 1910722537
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_22
+      rect:
+        serializedVersion: 2
+        x: 1024
+        y: 2048
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: cc17bc5b94b00e24eac29caf03a0f854
+      internalID: 1740268931
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_23
+      rect:
+        serializedVersion: 2
+        x: 2048
+        y: 2048
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 73dac8db9647e4a43a34d1edfb43ab15
+      internalID: 244171642
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_24
+      rect:
+        serializedVersion: 2
+        x: 3072
+        y: 2048
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 15670cd515f65584daa5dc8f9a775e92
+      internalID: 724676628
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_25
+      rect:
+        serializedVersion: 2
+        x: 4096
+        y: 2048
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: c8813810470880547808bf110b8146c2
+      internalID: -1254867021
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_26
+      rect:
+        serializedVersion: 2
+        x: 5120
+        y: 2048
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: d693220bf012ff9458eed4eb924e63fa
+      internalID: -19943194
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_27
+      rect:
+        serializedVersion: 2
+        x: 6144
+        y: 2048
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: b0fff3f7d10ba51469e8c0eda3e534cd
+      internalID: -2049449098
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_28
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 1024
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 40793f65cede394448b0c5108f00d7de
+      internalID: -1096352332
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_29
+      rect:
+        serializedVersion: 2
+        x: 1024
+        y: 1024
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 5f9658739fc15974fa890d241a918fd4
+      internalID: 2003303738
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_30
+      rect:
+        serializedVersion: 2
+        x: 2048
+        y: 1024
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 42b334f7dc952ec4b900765ee107df5b
+      internalID: -2869544
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_31
+      rect:
+        serializedVersion: 2
+        x: 3072
+        y: 1024
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 6db45fc952858514fb4324a127655ef0
+      internalID: 287433714
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_32
+      rect:
+        serializedVersion: 2
+        x: 4096
+        y: 1024
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: aaddb54877282624d9f8b1ea3c5f224e
+      internalID: -825155937
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_33
+      rect:
+        serializedVersion: 2
+        x: 5120
+        y: 1024
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: a000c708c9655dc4c893e26f5f793979
+      internalID: -663812489
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_34
+      rect:
+        serializedVersion: 2
+        x: 6144
+        y: 1024
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 81168a4e8217a154596484e20ad993e7
+      internalID: 814738849
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_35
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 0
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 4831568ac3ec7e24ea85c1c59b854f67
+      internalID: -1622283465
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_36
+      rect:
+        serializedVersion: 2
+        x: 1024
+        y: 0
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: df51c8481afdf3642a833160a0472c49
+      internalID: 621208568
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_37
+      rect:
+        serializedVersion: 2
+        x: 2048
+        y: 0
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 1a619b85119ad1845880f1a7cba1daf1
+      internalID: 629882953
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_38
+      rect:
+        serializedVersion: 2
+        x: 3072
+        y: 0
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 6d5bbfe7357f69b4894978737be56c4b
+      internalID: -1660650934
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_39
+      rect:
+        serializedVersion: 2
+        x: 4096
+        y: 0
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: edc226a87ba86be4eafcd87a188225ab
+      internalID: 1220012534
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_40
+      rect:
+        serializedVersion: 2
+        x: 5120
+        y: 0
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 5bef502cb9b4f9a499c998282809dec7
+      internalID: -862902403
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Fireship Explosion_41
+      rect:
+        serializedVersion: 2
+        x: 6144
+        y: 0
+        width: 1024
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 5b63df89aa96537478a5d2f969940a73
+      internalID: -2108514322
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 878ed36f175fd7441beb95ce3e435d91
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    nameFileIdTable:
+      Fireship Explosion_0: -1603407765
+      Fireship Explosion_1: 730734021
+      Fireship Explosion_10: 1587294117
+      Fireship Explosion_11: 1667884021
+      Fireship Explosion_12: -886190965
+      Fireship Explosion_13: 1835461164
+      Fireship Explosion_14: -1411830759
+      Fireship Explosion_15: 1955017331
+      Fireship Explosion_16: 1826798508
+      Fireship Explosion_17: 147482648
+      Fireship Explosion_18: 1141304218
+      Fireship Explosion_19: 1007955736
+      Fireship Explosion_2: -590976366
+      Fireship Explosion_20: -1003847089
+      Fireship Explosion_21: 1910722537
+      Fireship Explosion_22: 1740268931
+      Fireship Explosion_23: 244171642
+      Fireship Explosion_24: 724676628
+      Fireship Explosion_25: -1254867021
+      Fireship Explosion_26: -19943194
+      Fireship Explosion_27: -2049449098
+      Fireship Explosion_28: -1096352332
+      Fireship Explosion_29: 2003303738
+      Fireship Explosion_3: 967944410
+      Fireship Explosion_30: -2869544
+      Fireship Explosion_31: 287433714
+      Fireship Explosion_32: -825155937
+      Fireship Explosion_33: -663812489
+      Fireship Explosion_34: 814738849
+      Fireship Explosion_35: -1622283465
+      Fireship Explosion_36: 621208568
+      Fireship Explosion_37: 629882953
+      Fireship Explosion_38: -1660650934
+      Fireship Explosion_39: 1220012534
+      Fireship Explosion_4: 396649880
+      Fireship Explosion_40: -862902403
+      Fireship Explosion_41: -2108514322
+      Fireship Explosion_5: -920523342
+      Fireship Explosion_6: 1268345184
+      Fireship Explosion_7: 1433780844
+      Fireship Explosion_8: -170294263
+      Fireship Explosion_9: -377459845
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
