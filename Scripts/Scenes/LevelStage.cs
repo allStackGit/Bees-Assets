@@ -35,10 +35,10 @@ namespace Assets.Scripts.Scenes
         /// Determines whether or not FleetShips get marked as dead when ships die. If this is turned off, stats will still record properly but ships won't die off and be replaced
         /// </summary>
         public bool ReplaceDeadShips;
-        public bool ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, UseSemiRandomSquads, UseFullyRandomSquads, UseFullyRandomEnemySquads, RecordStats, 
+        public bool IsCalculatingClearance, ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, UseSemiRandomSquads, UseFullyRandomSquads, UseFullyRandomEnemySquads, RecordStats, 
             DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateAudio, ActivateLoadingShipsMidLevel, UseMouseScrolling, IsDebugging, 
             MakeEnemyCeaseFire, UnlockCamera, HasRandomizedOptions, PlayMusic;
-        public int OverrideTimeScale, OverrideUserSide, GeneratedSquadCountOverride, InitialCommandDelay, TimeoutTime;
+        public int OverrideTimeScale, OverrideMapIndex, OverrideUserSide, GeneratedSquadCountOverride, InitialCommandDelay, TimeoutTime;
         public List<string> OverrideStrats = new List<string> { "Aggressive", "Random" };
         public GameObject UIManager, SelectionBox, MiniMapContainer, FogOfWar;
         public AudioController Audio;
@@ -122,11 +122,57 @@ namespace Assets.Scripts.Scenes
 
         private void RandomizeOptions()
         {
-            if (HasRandomizedOptions)
-            {
-                Debug.Log($"Randomizing options...");
+            Debug.Log($"Randomizing options...");
 
-                _obstacleLists = new Dictionary<int, List<GameObject>>()
+            if (Utilities.RandomInt(1) == 0)
+            {
+                HasObstacles = true;
+                Debug.Log($"The map has obstacles");
+
+                ChosenObstaclesIndex = 1; // Utilities.RandomInt(_obstacleLists.Count - 1) + 1;
+                _chosenObstacles = _obstacleLists.GetValueOrDefault(ChosenObstaclesIndex);
+
+                if (Utilities.RandomInt(4) == 0)
+                {
+                    ActivateCollisionAsteroids = true;
+                    Debug.Log($"The map has obstacles and asteroids as well");
+                }
+                else
+                {
+                    ActivateCollisionAsteroids = false;
+                }
+            }
+            else
+            {
+                if (Utilities.RandomInt(2) == 0)
+                {
+                    HasObstacles = true;
+                    _chosenObstacles = EmptyObstacleList;
+                    ChosenObstaclesIndex = 0;
+                    ActivateCollisionAsteroids = true;
+                    Debug.Log($"The map has asteroids");
+                }
+                else
+                {
+                    ActivateCollisionAsteroids = false;
+                    HasObstacles = false;
+                }
+            }
+
+            if (Utilities.RandomInt(2) == 0)
+            {
+                //ActivateFogOfWar = true;
+                Debug.Log($"The map has fog of war");
+            }
+            else
+            {
+                ActivateFogOfWar = false;
+            }
+
+        }
+        private void Setup()
+        {
+            _obstacleLists = new Dictionary<int, List<GameObject>>()
                 {
                     // If this list changes the indexes need to all be accurate since the files are loaded based off of the indexes
                     {0, EmptyObstacleList }, // it's important to have this here so we can load the "open space" pathfinding file for when there's no obstacles except asteroids
@@ -134,61 +180,15 @@ namespace Assets.Scripts.Scenes
                     {2, ThreePathsPrefabs },
                     {3, ForestPrefabs }
                 };
-
-                if (Utilities.RandomInt(2) == 0)
-                {
-                    HasObstacles = true;
-                    Debug.Log($"The map has obstacles");
-
-                    ChosenObstaclesIndex = Utilities.RandomInt(_obstacleLists.Count - 1) + 1;
-                    _chosenObstacles = _obstacleLists.GetValueOrDefault(ChosenObstaclesIndex);
-
-                    if (Utilities.RandomInt(4) == 0)
-                    {
-                        ActivateCollisionAsteroids = true;
-                        Debug.Log($"The map has obstacles and asteroids as well");
-                    }
-                    else
-                    {
-                        ActivateCollisionAsteroids = false;
-                    }
-                }
-                else
-                {
-                    if (Utilities.RandomInt(2) == 0)
-                    {
-                        HasObstacles = true;
-                        _chosenObstacles = EmptyObstacleList;
-                        ChosenObstaclesIndex = 0;
-                        ActivateCollisionAsteroids = true;
-                        Debug.Log($"The map has asteroids");
-                    }
-                    else
-                    {
-                        ActivateCollisionAsteroids = false;
-                        HasObstacles = false;
-                    }
-                }
-
-                if (Utilities.RandomInt(2) == 0)
-                {
-                    ActivateFogOfWar = true;
-                    Debug.Log($"The map has fog of war");
-                }
-                else
-                {
-                    ActivateFogOfWar = false;
-                }
+            if (HasRandomizedOptions)
+            {
+                RandomizeOptions();
             }
             else
             {
                 Debug.Log($"The map does not have randomized options");
+                _chosenObstacles = _obstacleLists.GetValueOrDefault(OverrideMapIndex);
             }
-
-        }
-        private void Setup()
-        {
-            RandomizeOptions();
             //Debug.Log($"Setup scene");
             if (OverrideTimeScale == 0)
             {
@@ -313,7 +313,6 @@ namespace Assets.Scripts.Scenes
 
             if (HasObstacles)
             {
-                _chosenObstacles = new List<GameObject>();
                 SpawnObstacles();
                 Pathfinder = new Pathfinder(this);
             }
@@ -812,7 +811,10 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
                 Invoke(nameof(TimeOut), TimeoutTime);
             }
             //Debug.Log("Cleared timeout");
-            RandomizeOptions();
+            if (HasRandomizedOptions)
+            {
+                RandomizeOptions();
+            }
 
             if (HasObstacles)
             {
