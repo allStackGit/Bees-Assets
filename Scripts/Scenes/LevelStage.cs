@@ -430,7 +430,7 @@ namespace Assets.Scripts.Scenes
             instance.transform.localPosition = position;
             CollisionAsteroid asteroid = instance.GetComponent<CollisionAsteroid>();
             state.AddObstacle(asteroid);
-            asteroid.Setup(this, state.GetObstacles().Count);
+            asteroid.Setup(this, state.GetId());
 
             Invoke(nameof(SpawnAsteroid), Utilities.RandomInt(AsteroidSpawnRate));
             Pathfinder.AddObstacle(asteroid);

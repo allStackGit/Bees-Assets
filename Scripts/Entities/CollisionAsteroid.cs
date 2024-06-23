@@ -52,7 +52,7 @@ namespace Assets.Scripts.Entities
                 {
                     Debug.Log($"It looks like {ship.Name} was already nearby and hit {Name}");
                     TouchingShips.Add(ship);
-                    ship.Kill(null);
+                    //ship.Kill(null);
                 }
                 else
                 {
