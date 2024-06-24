@@ -124,12 +124,12 @@ namespace Assets.Scripts.Scenes
         {
             Debug.Log($"Randomizing options...");
 
-            if (Utilities.RandomInt(1) == 0)
+            if (Utilities.RandomInt(2) == 0)
             {
                 HasObstacles = true;
                 Debug.Log($"The map has obstacles");
 
-                ChosenObstaclesIndex = 1; // Utilities.RandomInt(_obstacleLists.Count - 1) + 1;
+                ChosenObstaclesIndex = Utilities.RandomInt(_obstacleLists.Count - 1) + 1;
                 _chosenObstacles = _obstacleLists.GetValueOrDefault(ChosenObstaclesIndex);
 
                 if (Utilities.RandomInt(4) == 0)
@@ -187,7 +187,8 @@ namespace Assets.Scripts.Scenes
             else
             {
                 Debug.Log($"The map does not have randomized options");
-                _chosenObstacles = _obstacleLists.GetValueOrDefault(OverrideMapIndex);
+                ChosenObstaclesIndex = OverrideMapIndex;
+                _chosenObstacles = _obstacleLists.GetValueOrDefault(ChosenObstaclesIndex);
             }
             //Debug.Log($"Setup scene");
             if (OverrideTimeScale == 0)
@@ -433,7 +434,7 @@ namespace Assets.Scripts.Scenes
             asteroid.Setup(this, state.GetId());
 
             Invoke(nameof(SpawnAsteroid), Utilities.RandomInt(AsteroidSpawnRate));
-            Pathfinder.AddObstacle(asteroid);
+            asteroid.MapPointsIndex = Pathfinder.AddObstacle(asteroid);
         }
         private void UpdateDebugVariables()
         {

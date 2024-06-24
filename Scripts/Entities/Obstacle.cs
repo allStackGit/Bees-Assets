@@ -9,6 +9,10 @@ namespace Assets.Scripts.Entities
     public class Obstacle : MonoBehaviour
     {
         public int Health, InitialHealth, Id;
+        /// <summary>
+        /// The index of the obstacle in the list of obstacle points for the pathfinding map
+        /// </summary>
+        public int MapPointsIndex;
         public string Name;
         public bool IsMobile, IsMapBorder, HasEnteredMap, IsDead, IsMiningAsteroid;
         public LevelStage Level;

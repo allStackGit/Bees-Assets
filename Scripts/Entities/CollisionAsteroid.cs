@@ -9,7 +9,7 @@ namespace Assets.Scripts.Entities
     public class CollisionAsteroid : Obstacle
     {
         public Rigidbody2D Body;
-        public int Speed;
+        public int Speed; 
         public HashSet<Ship> NearbyShips = new HashSet<Ship>();
         public HashSet<Ship> TouchingShips = new HashSet<Ship>();
         public HashSet<Obstacle> NearbyObstacles = new HashSet<Obstacle>();

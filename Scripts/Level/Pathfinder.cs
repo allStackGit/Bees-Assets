@@ -293,12 +293,12 @@ namespace Assets.Scripts.Level
                 //Debug.Log($"Found {obstacleObject.name}: {obstacle}");
 
                 obstacle.Setup(Level, state.GetId());
-                AddObstacle(obstacle);
-                ObstaclePoints[obstacle.Id] = GetObstaclePoints(obstacle);
+                obstacle.MapPointsIndex = AddObstacle(obstacle);
+                ObstaclePoints[obstacle.MapPointsIndex] = GetObstaclePoints(obstacle);
 
                 //Debug.Log($"The first point on {obstacle.Name} is ({ObstaclePoints[obstacle.Id][0][0]}, {ObstaclePoints[obstacle.Id][0][1]}) on the map");
 
-                foreach (int[] point in ObstaclePoints[obstacle.Id])
+                foreach (int[] point in ObstaclePoints[obstacle.MapPointsIndex])
                 {
                     if (point[0] >= 0 && point[0] < _grid.Width && point[1] >= 0 && point[1] < _grid.Height)
                     {
@@ -377,7 +377,7 @@ namespace Assets.Scripts.Level
             ObstaclesToUpdate.Add(id);
             //Debug.Log($"Setting #{id} to be updated");
         }
-        public void AddObstacle(Obstacle obstacle)
+        public int AddObstacle(Obstacle obstacle)
         {
             Obstacles.Add(obstacle);
             ObstaclePoints.Add(new int[][] { });
@@ -387,6 +387,7 @@ namespace Assets.Scripts.Level
                 HasMovingObstacles = true;
             }
             //Debug.Log($"Adding {obstacle.Name} to Map");
+            return Obstacles.Count - 1;
         }
 
         /// <summary>
@@ -471,9 +472,9 @@ namespace Assets.Scripts.Level
                 {
                     // Get the new points
                     //Debug.Log($"Updating the position of {asteroid.Name} on the pathfinding map");
-                    ObstaclePoints[asteroid.Id] = GetObstaclePoints(asteroid);
+                    ObstaclePoints[asteroid.MapPointsIndex] = GetObstaclePoints(asteroid);
                     //Debug.Log($"Got obstacle points for {asteroid}");
-                    foreach (int[] point in ObstaclePoints[asteroid.Id])
+                    foreach (int[] point in ObstaclePoints[asteroid.MapPointsIndex])
                     {
                         if (point[0] >= 0 && point[0] < _grid.Width && point[1] >= 0 && point[1] < _grid.Height)
                         {
@@ -481,7 +482,7 @@ namespace Assets.Scripts.Level
                             GridNodes[thread][point[0]][point[1]].Clearance = 0; // set its new position to unwalkable space
                         }
                     }
-                    PreviousAsteroids[thread].Add(asteroid.Id);
+                    PreviousAsteroids[thread].Add(asteroid.MapPointsIndex);
                 }
             });
 
@@ -690,13 +691,23 @@ namespace Assets.Scripts.Level
                 Clearance = clearance;
             }
         }
+
+        public void OrderPrintDebugImage(int index)
+        {
+            Ships[index].DebugGrid = _grid;
+            Ships[index].DebugNodes = GridNodes[index];
+            Ships[index].DebugEndNode = EndNodes[index];
+            Ships[index].DebugStartNode = StartNodes[index];
+            Ships[index].PrintDebugImage = true;
+            IsThreadActive[index] = false;
+        }
         public void BTFindPath(int index)
         {
             //Debug.Log($"_Started BT {ThreadsStarted} % {ConfigData.MaxThreads} : #{index}|{Thread}|{(ThreadsStarted % ConfigData.MaxThreads)} ");
             //Debug.Log($"_Started BT #{index}");
             //minimumClearance = 1;
             //maximumClearance = 1;
-            //Debug.Log($"Trying to find a path with clearance ({minimumClearance} - {maximumClearance}) from ({startX}, {startY}) to ({endX}, {endY})");
+            //Debug.Log($"Trying to find a path for #{index} from ({StartNodes[index].x}, {StartNodes[index].y}) to ({EndNodes[index].x}, {EndNodes[index].y})");
             Totals[index] = SW.Stopwatch.StartNew();
             NeighborLoops[index] = SW.Stopwatch.StartNew();
             GetNodes[index] = SW.Stopwatch.StartNew();
@@ -722,13 +733,13 @@ namespace Assets.Scripts.Level
 
 
             //Debug.Log($"Finished grid loops BT #{index}");
-            StartNodes[index] = GridNodes[index][StartNodes[index].x][StartNodes[index].y];
-            EndNodes[index] = GridNodes[index][EndNodes[index].x][EndNodes[index].y];
+
 
             //Debug.Log($"BTS: {StartNodes[index]}");
             //Debug.Log($"BTE: {EndNodes[index]}");
 
-
+            //OrderPrintDebugImage(index);
+            //return;
             if (EndNodes[index].Clearance < Clearances[index])
             {
                 //Debug.Log($"The end ({EndNodes[index]}) isn't walkable space");
@@ -790,12 +801,9 @@ namespace Assets.Scripts.Level
                     //    $"neighborLoop Time: {NeighborLoops[index].Elapsed.TotalMilliseconds}ms, Update Map Time: {UpdateMapTime[index].Elapsed.TotalMilliseconds}ms Total: {(Totals[index].Elapsed.TotalMilliseconds)}ms");
                     Ships[index].PathfindingValue = BTPath;
                     Ships[index].PathfindingThreadComplete = true;
-
-                    Ships[index].DebugGrid = _grid;
-                    Ships[index].DebugNodes = GridNodes[index];
-                    Ships[index].DebugEndNode = EndNodes[index];
-                    Ships[index].PrintDebugImage = false;
                     IsThreadActive[index] = false;
+
+                    //OrderPrintDebugImage(index);
                     return;
                 }
                 BTUncheckedNodes.Remove(BTCurrentNode);
@@ -850,13 +858,11 @@ namespace Assets.Scripts.Level
             {
                 Debug.Log($"No more nodes to check #{index} Clearance: {Clearances[index]}.  checkedNodes: {BTCheckedNodes.Count} / {_grid.TotalNodes}  CurrentNode: {BTCurrentNode},");
             }
-            Ships[index].DebugGrid = _grid;
-            Ships[index].DebugNodes = GridNodes[index];
-            Ships[index].DebugEndNode = EndNodes[index];
-            Ships[index].DebugStartNode = StartNodes[index];
             Ships[index].PathfindingThreadComplete = true;
-            Ships[index].PrintDebugImage = false;
             IsThreadActive[index] = false;
+            //OrderPrintDebugImage(index);
+            return;
+
         }
 
         private MapNode startNode, endNode;
@@ -865,6 +871,7 @@ namespace Assets.Scripts.Level
 
             startNode = _grid.Nodes[startX][startY];
             endNode = _grid.Nodes[endX][endY];
+            //Debug.Log($"Finding path for ? from {startNode.x}, {startNode.y} to {endNode.x}, {endNode.y}");
 
             bool startedTask = false;
             PathsWaiting = PathsWaiting.Where((p) => p.Ship != ship).ToList(); // remove all queued pathfinding for this ship
@@ -872,7 +879,7 @@ namespace Assets.Scripts.Level
             {
                 if (!IsThreadActive[i])
                 {
-                    if (Level.ActivateCollisionAsteroids)
+                    if (Level.ActivateCollisionAsteroids && ship.NearbyAsteroids.Count > 0)
                     {
                         UpdateMapTime[i] = SW.Stopwatch.StartNew();
                         //Debug.Log("Before updating map");
@@ -881,10 +888,13 @@ namespace Assets.Scripts.Level
                         UpdateMapTime[i].Stop();
                     }
                     IsThreadActive[i] = true;
+                    //Debug.Log($"Pre starting Finding path for #{i} from {startNode.x}, {startNode.y} to {endNode.x}, {endNode.y}");
+                    StartNodes[i] = GridNodes[i][startNode.x][startNode.y];
+                    EndNodes[i] = GridNodes[i][endNode.x][endNode.y];
                     Task task = new Task(() =>
                     {
-                        StartNodes[i] = startNode;
-                        EndNodes[i] = endNode;
+                        //Debug.Log($"Starting Finding path for #{i} from {startNode.x}, {startNode.y} to  {endNode.x}, {endNode.y}");
+
                         Clearances[i] = maximumClearance;
                         Ships[i] = ship;
                         BTFindPath(i);

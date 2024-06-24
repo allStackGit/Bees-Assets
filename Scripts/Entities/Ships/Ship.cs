@@ -436,15 +436,20 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 StopMoving("Got a new destination");
                 if (Level.HasObstacles)
                 {
-                    FindShortestPath(destination);
+                    startPosition = GetPosition();
+                    DestinationQueue.Clear();
+                    if (Utilities.HasObstaclesInTheWay(startPosition, destination))
+                    {
+                        convertedStart = Level.Pathfinder.ConvertToMapCoordinates(startPosition);
+                        convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
+                        Level.Pathfinder.FindPath(this, convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance());
+                        return;
+                    }
 
                 }
-                else
-                {
-                    IsFollowingPath = false;
-                    TargetCoordinates = destination;
-                    HasTargetCoordinates = true;
-                }
+                IsFollowingPath = false;
+                TargetCoordinates = destination;
+                HasTargetCoordinates = true;
             }
             
         }
@@ -538,29 +543,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 //Debug.Log($"Merged full path to destination in {(Time.realtimeSinceStartup - start) * 1000}ms");
             }
 
-        }
-        private void FindShortestPath(Vector2 destination)
-        {
-            
-            DestinationQueue.Clear();
-            startPosition = GetPosition();
-
-            //Debug.Log($"Finding shortest path from {startPosition} to {destination} for {Name}");
-
-            if (Utilities.HasObstaclesInTheWay(startPosition, destination))
-            {
-
-                convertedStart = Level.Pathfinder.ConvertToMapCoordinates(startPosition);
-                convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
-                Level.Pathfinder.FindPath(this, convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance());
-
-            }
-            else
-            {
-                //Debug.Log("There is straight line to the destination");
-                DestinationQueue.Enqueue(destination);
-            }
-            
         }
 
 
