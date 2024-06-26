@@ -124,7 +124,7 @@ namespace Assets.Scripts.Scenes
         {
             Debug.Log($"Randomizing options...");
 
-            if (Utilities.RandomInt(2) == 0)
+            if (Utilities.CoinToss())
             {
                 HasObstacles = true;
                 Debug.Log($"The map has obstacles");
@@ -144,7 +144,7 @@ namespace Assets.Scripts.Scenes
             }
             else
             {
-                if (Utilities.RandomInt(2) == 0)
+                if (Utilities.CoinToss())
                 {
                     HasObstacles = true;
                     _chosenObstacles = EmptyObstacleList;
@@ -159,7 +159,7 @@ namespace Assets.Scripts.Scenes
                 }
             }
 
-            if (Utilities.RandomInt(2) == 0)
+            if (Utilities.CoinToss())
             {
                 //ActivateFogOfWar = true;
                 Debug.Log($"The map has fog of war");

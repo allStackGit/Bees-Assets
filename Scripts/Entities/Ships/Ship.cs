@@ -428,7 +428,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
 
         // movement methods
-        public void MoveToPoint(Vector2 destination)
+        public void MoveToPoint(Vector2 destination, bool foundObstacle = false)
         {
             if (!CannotChangeMovementOrders)
             {
@@ -438,7 +438,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 {
                     startPosition = GetPosition();
                     DestinationQueue.Clear();
-                    if (Utilities.HasObstaclesInTheWay(startPosition, destination))
+                    if (foundObstacle || Utilities.HasObstaclesInTheWay(startPosition, destination))
                     {
                         convertedStart = Level.Pathfinder.ConvertToMapCoordinates(startPosition);
                         convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
@@ -447,6 +447,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     }
 
                 }
+                //Debug.Log($"No obstacles in the way for {Name}");
                 IsFollowingPath = false;
                 TargetCoordinates = destination;
                 HasTargetCoordinates = true;
@@ -481,12 +482,17 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         public void FoundNearbyAsteroid(CollisionAsteroid asteroid)
         {
             NearbyAsteroids.Add(asteroid);
+            //Debug.Log($"There's an asteroid {asteroid.Name} nearby on our path: {Name}");
+
             if (IsFollowingPath)
             {
-                //Debug.Log($"There's an asteroid {asteroid.Name} nearby on our path {Name}");
                 // If we're following a pathfinder path, recalculate the path because we're near an asteroid
                 MoveToPoint(FinalDestination);
-                InvokeRepeating(nameof(NearbyAsteroidDoubleCheck), 1f, 1f);
+                //InvokeRepeating(nameof(NearbyAsteroidDoubleCheck), 1f, 1f);
+            }
+            else if (HasTargetCoordinates)
+            {
+                MoveToPoint(TargetCoordinates, true);
             }
         }
 

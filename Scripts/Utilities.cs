@@ -120,6 +120,10 @@ namespace Assets.Scripts
             //Debug.Log($"Random sign: {(r > 0 ? 1 : -1)}");
             return RandomInt(2) > 0 ? 1 : -1;
         }
+        /// <summary>
+        /// Returns a random boolean value
+        /// </summary>
+        /// <returns></returns>
         public static bool CoinToss()
         {
             return RandomInt(2) == 0;

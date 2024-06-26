@@ -89,7 +89,7 @@ namespace Assets.Scripts.Entities
                 Ship ship = collidingThing.GetComponent<Ship>();
                 if (TouchingShips.Contains(ship))
                 {
-                    Debug.Log($"{ship.Name} is no longer touching {Name}");
+                    //Debug.Log($"{ship.Name} is no longer touching {Name}");
                     TouchingShips.Remove(ship);
                 }
                 else if (NearbyShips.Contains(ship))

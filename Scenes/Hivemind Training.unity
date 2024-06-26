@@ -2724,6 +2724,10 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
+      propertyPath: AsteroidSpawnRate
+      value: 5
+      objectReference: {fileID: 0}
+    - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: OverrideTimeScale
       value: 0
       objectReference: {fileID: 0}
