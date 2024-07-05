@@ -100,13 +100,13 @@ namespace Assets.Scripts.Level
             
         }
        
-        public void CalculateClearance(MapNode[][] nodes, bool isSubSection)
+        public void CalculateClearance(MapNode[][] nodes, int startX, int endX, int startY, int endY, bool isSubSection)
         {
             float start = Time.realtimeSinceStartup;
             int totalLoopCount = 0;
             int minY, minX, maxY, maxX, boundsX, boundsY = 0;
-            int height = nodes[0].Length;
-            int width = nodes.Length;
+            int height = _grid.Height;
+            int width = _grid.Width;
 
             bool hasHitObstacle;
             MapNode currentNode;
@@ -114,12 +114,12 @@ namespace Assets.Scripts.Level
 
             //Debug.Log($"Node subsection is {width} wide and {height} tall");
 
-            for (int y = 0; y < height; y++)
+            for (int y = startY; y < endY; y++)
             {
-                for (int x = 0; x < width; x++)
+                for (int x = startX; x < endX; x++)
                 {
                     currentNode = nodes[x][y];
-                   
+                    //Debug.Log($"CN: ({x}, {y}) => ({currentNode.x}, {currentNode.y})");
                     if (currentNode.Clearance > 0)
                     {
                         currentNode.Clearance = 1;
@@ -230,66 +230,6 @@ namespace Assets.Scripts.Level
             }
             //Level.StartCoroutine(CalculateSquares());
         }
-
-        public void SaveClearanceMap()
-        {
-            string json = "[";            
-            _grid.NodeSet.ToList().ForEach((node) => json += $"{node.ToJson()}, ");
-            json = json.Remove(json.Length - 2);
-            json += "]";
-            string path = $"{ConfigData.GetBasePath()}/ClearanceMap_{Level.ChosenObstaclesIndex}.json";
-            File.WriteAllText(path, json);
-        }
-        public IEnumerator LoadClearanceMap(Action callback)
-        {
-            float start = Time.realtimeSinceStartup;
-            string contents = "";
-            StreamReader fileStream = new StreamReader($"{ConfigData.GetBasePath()}/ClearanceMap_{Level.ChosenObstaclesIndex}.json");
-            int loops = 0;
-
-            while (!fileStream.EndOfStream)
-            {
-                loops++;
-                string line = fileStream.ReadLine();
-                contents += line;
-                if (loops % 1000 == 0)
-                {
-                    yield return ConfigData.WaitForEndOfFrame;
-                }
-            }
-
-            fileStream.Close();
-            List<dynamic> nodes = Utilities.JArrayToList((JArray)JsonConvert.DeserializeObject(contents));
-
-            foreach (dynamic node in nodes)
-            {
-                loops++;
-                MapNode mapNode = _grid.Nodes[(int)node.x][(int)node.y];
-                
-                //mapNode.ContainerNode = _grid.Nodes[(int)node.CN.x][(int)node.CN.y];
-                mapNode.Clearance = (int)node.OC;
-                mapNode.OriginalClearance = mapNode.Clearance;
-
-                List<dynamic> neighbors = Utilities.JArrayToList(node.N);
-                //List<dynamic> immediateNeighbors = Utilities.JArrayToList(node.IN);
-
-
-                neighbors.ForEach((neighbor) =>
-                {
-                    MapNode mapNeighbor = _grid.Nodes[(int)neighbor.x][(int)neighbor.y];
-                    mapNode.Neighbors.Add(mapNeighbor);
-                });
-
-                if (loops % 100 == 0)
-                {
-                    yield return ConfigData.WaitForEndOfFrame;
-                }
-            }
-            //_grid.PrintPermanantNodesImage();
-            float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
-            Debug.Log($"Loaded clearance map in {end} ms");
-            callback();
-        }
         public void InitializeMap()
         {
             float start = Time.realtimeSinceStartup;
@@ -328,7 +268,7 @@ namespace Assets.Scripts.Level
                 }
             }
 
-            CalculateClearance(_grid.Nodes, false);
+            CalculateClearance(_grid.Nodes, 0, _grid.Width, 0, _grid.Height, false);
 
             for (int i = 0; i < ConfigData.MaxThreads; i++)
             {
@@ -436,20 +376,20 @@ namespace Assets.Scripts.Level
                         {
                             if (yDirection < 0) // copy down
                             {
-                                point.y -= height;
+                                point.y -= height/2;
                             }
                             else if (yDirection > 0) // copy up
                             {
-                                point.y += height;
+                                point.y += height/2;
                             }
 
                             if (xDirection < 0) // copy left
                             {
-                                point.x -= width;
+                                point.x -= width/2;
                             }
                             else if (yDirection > 0) // copy right
                             {
-                                point.x += width;
+                                point.x += width/2;
                             }
 
                             converted = ConvertToMapCoordinates(point);
@@ -494,10 +434,24 @@ namespace Assets.Scripts.Level
                 }
             });
 
-            PreviousAsteroids[thread].Clear();
-
-            collisionAsteroids.ForEach((asteroid) =>
+            if (PreviousAsteroids[thread].Count > 0)
             {
+                CalculateClearance(GridNodes[thread], 0, _grid.Width, 0, _grid.Height, true);
+                PreviousAsteroids[thread].Clear();
+
+            }
+
+            MapNode[][] subsection = GridNodes[thread];
+            CollisionAsteroid asteroid;
+            int sectionSize = 20;
+            int startX = 0;
+            int startY = 0;
+            int endX = _grid.Width;
+            int endY = _grid.Height;
+
+            for (int i = 0; i < collisionAsteroids.Count; i++)
+            {
+                asteroid = collisionAsteroids[i];
 
                 if (asteroid != null)
                 {
@@ -509,69 +463,54 @@ namespace Assets.Scripts.Level
                     //ObstaclePoints[asteroid.MapPointsIndex] = GetObstaclePoints(asteroid, 0, 0);
 
                     //Debug.Log($"Got obstacle points for {asteroid}");
-                    //int leastY = int.MaxValue;
-                    //int leastX = int.MaxValue;
-                    //int mostX = int.MinValue;
-                    //int mostY = int.MinValue;
+                    int leastY = int.MaxValue;
+                    int leastX = int.MaxValue;
+                    int mostX = int.MinValue;
+                    int mostY = int.MinValue;
                     foreach (int[] point in ObstaclePoints[asteroid.MapPointsIndex])
                     {
                         if (point[0] >= 0 && point[0] < _grid.Width && point[1] >= 0 && point[1] < _grid.Height)
                         {
                             //Debug.Log($"Valid indexes: {point[0]}, {point[1]}");
                             GridNodes[thread][point[0]][point[1]].Clearance = 0; // set its new position to unwalkable space
-                            //if (point[0] < leastX)
-                            //{
-                            //    leastX = point[0];
-                            //}
-                            //else if (point[0] > mostX)
-                            //{
-                            //    mostX = point[0];
-                            //}
+                            if (point[0] < leastX)
+                            {
+                                leastX = point[0];
+                            }
+                            else if (point[0] > mostX)
+                            {
+                                mostX = point[0];
+                            }
 
-                            //if (point[1] < leastY)
-                            //{
-                            //    leastY = point[1];
-                            //}
-                            //else if (point[1] > mostY)
-                            //{
-                            //    mostY = point[1];
-                            //}
+                            if (point[1] < leastY)
+                            {
+                                leastY = point[1];
+                            }
+                            else if (point[1] > mostY)
+                            {
+                                mostY = point[1];
+                            }
+
                         }
                     }
                     PreviousAsteroids[thread].Add(asteroid.MapPointsIndex);
+                    startX = Math.Min(leastX - sectionSize, _grid.Width - 1);
+                    startY = Math.Min(leastY - sectionSize, _grid.Height - 1);
+                    endX = Math.Min(mostX + sectionSize, _grid.Width - 1);
+                    endY = Math.Min(mostY + sectionSize, _grid.Height - 1);
 
-                    //MapNode[][] subsection = GrabSubsection(GridNodes[thread], Math.Clamp(leastX - 50, 0, _grid.Width - 1), Math.Clamp(leastY - 50, 0, _grid.Height - 1), 
-                    //    Math.Clamp(mostX + 50, 0, _grid.Width - 1), Math.Clamp(mostY + 50, 0, _grid.Height - 1));
-                    //Level.StartCoroutine(CalculateClearance(subsection, true));
+                    CalculateClearance(GridNodes[thread], startX, endX, startY, endY, true);
+
                 }
-            });
+            }
 
-            CalculateClearance(GridNodes[thread], true);
+            //CalculateClearance(GridNodes[thread], true);
 
             float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
             Debug.Log($"Updated map in {end} ms");
 
         }
 
-        public MapNode[][] GrabSubsection(MapNode[][] section, int startX, int startY, int endX, int endY)
-        {
-            MapNode[][] subsection = new MapNode[endX-startX][];
-
-            for (int x = 0; x < subsection.Length; x++)
-            {
-                subsection[x] = section[startX + x].Take(endY - startY).ToArray();
-            }
-            return subsection;
-        }
-
-
-        private int CalculateDistance(MapNode a, MapNode b)
-        {
-            int xDistance = Mathf.Abs(a.x - b.x);
-            int yDistance = Mathf.Abs(a.y - b.y);
-            return DIAGONAL_COST * Mathf.Min(xDistance, yDistance) + HORIZONTAL_COST * Mathf.Abs(xDistance - yDistance);
-
-        }
         public MapNode FindNearestWalkablePoint(MapNode startNode, MapNode endNode, int minimumClearance, MapNode[][] nodes)
         {
 
@@ -817,18 +756,18 @@ namespace Assets.Scripts.Level
 
             //OrderPrintDebugImage(index);
             //return;
-            if (EndNodes[index].OriginalClearance < Clearances[index])
+            if (EndNodes[index].Clearance < Clearances[index])
             {
                 //Debug.Log($"The end ({EndNodes[index]}) isn't walkable space");
                 EndNodes[index] = FindNearestWalkablePoint(StartNodes[index], EndNodes[index], Clearances[index], GridNodes[index]);
                 //Debug.Log($"Found new end point that is walkable: {EndNodes[index]}");
             }
 
-            if (StartNodes[index].OriginalClearance < Clearances[index])
+            if (StartNodes[index].Clearance < Clearances[index])
             {
-                //Debug.Log($"The start ({startNode.Vector}) isn't walkable space");
+                Debug.Log($"The start ({startNode.Vector}) isn't walkable space");
                 StartNodes[index] = FindNearestWalkablePoint(EndNodes[index], StartNodes[index], Clearances[index], GridNodes[index]);
-                //Debug.Log($"Found new start point that is walkable: {StartNodes[index]}");
+                Debug.Log($"Found new start point that is walkable: {StartNodes[index]}");
             }
             //Debug.Log($"Starting at {startNode}");
             Path BTPath = new Path(StartNodes[index].x, StartNodes[index].y, EndNodes[index].x, EndNodes[index].y);
@@ -841,7 +780,7 @@ namespace Assets.Scripts.Level
             //Debug.Log($"Initialized vars BT #{index}");
 
             StartNodes[index].CostToHere = 0;
-            StartNodes[index].HueristicCost = CalculateDistance(StartNodes[index], EndNodes[index]);
+            StartNodes[index].HueristicCost = MapNode.CalculateDistance(StartNodes[index], EndNodes[index]);
             StartNodes[index].CalculateTotalCost();
             //Debug.Log($"Initialized startnode BT #{index}");
             //if (startNode.ContainerNode != startNode)
@@ -901,13 +840,13 @@ namespace Assets.Scripts.Level
                         if (neighbor.Clearance >= Clearances[index]) // < maximum clearance                 == 0
                         {
                             //Debug.Log($"Passed clearance");
-                            BTTempCostToHere = BTCurrentNode.CostToHere + CalculateDistance(BTCurrentNode, neighbor);
+                            BTTempCostToHere = BTCurrentNode.CostToHere + MapNode.CalculateDistance(BTCurrentNode, neighbor);
                             if (BTTempCostToHere < neighbor.CostToHere)
                             {
                                 //Debug.Log($"Lower Cost");
                                 neighbor.PreviousNode = BTCurrentNode;
                                 neighbor.CostToHere = BTTempCostToHere;
-                                neighbor.HueristicCost = CalculateDistance(neighbor, EndNodes[index]);
+                                neighbor.HueristicCost = MapNode.CalculateDistance(neighbor, EndNodes[index]);
                                 neighbor.CalculateTotalCost();
                                 //UncheckedNodes.Add(neighbor);
                                 if (!BTUncheckedNodesSet.Contains(neighbor))
@@ -937,7 +876,7 @@ namespace Assets.Scripts.Level
             }
             Ships[index].PathfindingThreadComplete = true;
             IsThreadActive[index] = false;
-            //OrderPrintDebugImage(index);
+            OrderPrintDebugImage(index);
             return;
 
         }
@@ -1116,8 +1055,6 @@ namespace Assets.Scripts.Level
                 File.WriteAllBytes(path, texture.EncodeToPNG());
             }
         }
-
-
         public class MapNode : IComparable<MapNode>
         {
             public static MapNode NullNode = new MapNode(-1, -1, null, -1);
@@ -1163,6 +1100,18 @@ namespace Assets.Scripts.Level
                 OriginalClearance = Clearance;
                 //Id = x >= y ? x * x + x + y : x + y * y;  // Szudzik's function
             }
+            public int DistanceTo(MapNode node)
+            {
+                return CalculateDistance(this, node);
+            }
+            public static int CalculateDistance(MapNode a, MapNode b)
+            {
+                int xDistance = Mathf.Abs(a.x - b.x);
+                int yDistance = Mathf.Abs(a.y - b.y);
+                return DIAGONAL_COST * Mathf.Min(xDistance, yDistance) + HORIZONTAL_COST * Mathf.Abs(xDistance - yDistance);
+
+            }
+
             public List<MapNode> GetNeighbors(MapNode[][] nodes)
             {
 

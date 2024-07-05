@@ -446,6 +446,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                         return;
                     }
 
+                    //convertedStart = Level.Pathfinder.ConvertToMapCoordinates(startPosition);
+                    //convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
+                    //Level.Pathfinder.FindPath(this, convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance());
+
                 }
                 //Debug.Log($"No obstacles in the way for {Name}");
                 IsFollowingPath = false;
@@ -482,7 +486,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         public void FoundNearbyAsteroid(CollisionAsteroid asteroid)
         {
             NearbyAsteroids.Add(asteroid);
-            //Debug.Log($"There's an asteroid {asteroid.Name} nearby on our path: {Name}");
+            Debug.Log($"There's an asteroid {asteroid.Name} nearby on our path: {Name}");
 
             if (IsFollowingPath)
             {
