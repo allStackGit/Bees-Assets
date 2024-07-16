@@ -16,7 +16,7 @@ namespace Assets.Scripts.Entities
         public string Name;
         public bool IsMobile, IsMapBorder, HasEnteredMap, IsDead, IsMiningAsteroid;
         public LevelStage Level;
-        public Collider2D Collider, ProximityCollider;
+        public Collider2D Collider, ProximityCollider, ClearanceMappingCollider;
 
         public void Setup(LevelStage level, int id)
         {

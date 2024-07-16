@@ -118,7 +118,14 @@ namespace Assets.Scripts.Level
             {
                 for (int x = startX; x < endX; x++)
                 {
-                    currentNode = nodes[x][y];
+                    try
+                    {
+                        currentNode = nodes[x][y];
+                    }catch (Exception e)
+                    {
+                        Debug.Log($"startX: {startX}, startY: {startY}, endX: {endX}, endY: {endY}, x: {x}, y: {y}, width: {_grid.Width}, height: {_grid.Height} ");
+                        throw e;
+                    }
                     //Debug.Log($"CN: ({x}, {y}) => ({currentNode.x}, {currentNode.y})");
                     if (currentNode.Clearance > 0)
                     {
@@ -339,9 +346,9 @@ namespace Assets.Scripts.Level
         /// Gets all the points on an obstacle in the game and converts them to an array of points in the pathfinding map
         /// </summary>
         /// <param name="obstacle"></param>
-        public int[][] GetObstaclePoints(Obstacle obstacle, float xDirection, float yDirection)
+        public int[][] GetObstaclePoints(Obstacle obstacle, float xVelocity, float yVelocity)
         {
-            Collider2D collider = obstacle.ProximityCollider;
+            Collider2D collider = obstacle.ClearanceMappingCollider;
 
             if (collider == null)
             {
@@ -372,25 +379,29 @@ namespace Assets.Scripts.Level
                         Vector2Int converted = ConvertToMapCoordinates(point);
                         points.Add(new int[] { converted.x, converted.y });
 
-                        if (yDirection != 0 || xDirection != 0)
+                        if (yVelocity != 0 || xVelocity != 0)
                         {
-                            if (yDirection < 0) // copy down
-                            {
-                                point.y -= height/2;
-                            }
-                            else if (yDirection > 0) // copy up
-                            {
-                                point.y += height/2;
-                            }
+                            //if (yDirection < 0) // copy down
+                            //{
+                            //    point.y = height/2;
+                            //}
+                            //else if (yDirection > 0) // copy up
+                            //{
+                            //    point.y += height/2;
+                            //}
 
-                            if (xDirection < 0) // copy left
-                            {
-                                point.x -= width/2;
-                            }
-                            else if (yDirection > 0) // copy right
-                            {
-                                point.x += width/2;
-                            }
+                            //if (xDirection < 0) // copy left
+                            //{
+                            //    point.x -= width/2;
+                            //}
+                            //else if (yDirection > 0) // copy right
+                            //{
+                            //    point.x += width/2;
+                            //}
+
+                            point.y += (int)Math.Round(yVelocity * 2);
+                            point.x += (int)Math.Round(xVelocity * 2);
+
 
                             converted = ConvertToMapCoordinates(point);
                             points.Add(new int[] { converted.x, converted.y });
@@ -420,6 +431,17 @@ namespace Assets.Scripts.Level
         public void UpdateMap(int thread, List<CollisionAsteroid> collisionAsteroids)
         {
             float start = Time.realtimeSinceStartup;
+            MapNode[][] subsection = GridNodes[thread];
+            CollisionAsteroid asteroid;
+            int leastY = int.MaxValue;
+            int leastX = int.MaxValue;
+            int mostX = int.MinValue;
+            int mostY = int.MinValue;
+            int sectionSize = 20;
+            int startX = 0;
+            int startY = 0;
+            int endX = _grid.Width;
+            int endY = _grid.Height;
             //Debug.Log($"Updating map");
 
             PreviousAsteroids[thread].ForEach((asteroidId) =>
@@ -430,24 +452,37 @@ namespace Assets.Scripts.Level
                     if (point[0] >= 0 && point[0] < _grid.Width && point[1] >= 0 && point[1] < _grid.Height)
                     {
                         GridNodes[thread][point[0]][point[1]].Clearance = GridNodes[thread][point[0]][point[1]].OriginalClearance; // set its old position to the original clearance
+
+                        if (point[0] < leastX)
+                        {
+                            leastX = point[0];
+                        }
+                        else if (point[0] > mostX)
+                        {
+                            mostX = point[0];
+                        }
+
+                        if (point[1] < leastY)
+                        {
+                            leastY = point[1];
+                        }
+                        else if (point[1] > mostY)
+                        {
+                            mostY = point[1];
+                        }
                     }
                 }
+
+                startX = Math.Min(leastX - sectionSize, _grid.Width - 1);
+                startY = Math.Min(leastY - sectionSize, _grid.Height - 1);
+                endX = Math.Min(mostX + sectionSize, _grid.Width - 1);
+                endY = Math.Min(mostY + sectionSize, _grid.Height - 1);
+
+                CalculateClearance(GridNodes[thread], startX, endX, startY, endY, true);
+                Debug.Log($"Calculated clearance around #{asteroidId}");
             });
 
-            if (PreviousAsteroids[thread].Count > 0)
-            {
-                CalculateClearance(GridNodes[thread], 0, _grid.Width, 0, _grid.Height, true);
-                PreviousAsteroids[thread].Clear();
-
-            }
-
-            MapNode[][] subsection = GridNodes[thread];
-            CollisionAsteroid asteroid;
-            int sectionSize = 20;
-            int startX = 0;
-            int startY = 0;
-            int endX = _grid.Width;
-            int endY = _grid.Height;
+            PreviousAsteroids[thread].Clear();
 
             for (int i = 0; i < collisionAsteroids.Count; i++)
             {
@@ -463,10 +498,7 @@ namespace Assets.Scripts.Level
                     //ObstaclePoints[asteroid.MapPointsIndex] = GetObstaclePoints(asteroid, 0, 0);
 
                     //Debug.Log($"Got obstacle points for {asteroid}");
-                    int leastY = int.MaxValue;
-                    int leastX = int.MaxValue;
-                    int mostX = int.MinValue;
-                    int mostY = int.MinValue;
+
                     foreach (int[] point in ObstaclePoints[asteroid.MapPointsIndex])
                     {
                         if (point[0] >= 0 && point[0] < _grid.Width && point[1] >= 0 && point[1] < _grid.Height)
@@ -500,6 +532,7 @@ namespace Assets.Scripts.Level
                     endY = Math.Min(mostY + sectionSize, _grid.Height - 1);
 
                     CalculateClearance(GridNodes[thread], startX, endX, startY, endY, true);
+                    Debug.Log($"Calculated clearance around {asteroid.Name}");
 
                 }
             }
@@ -758,7 +791,7 @@ namespace Assets.Scripts.Level
             //return;
             if (EndNodes[index].Clearance < Clearances[index])
             {
-                //Debug.Log($"The end ({EndNodes[index]}) isn't walkable space");
+                Debug.Log($"The end ({EndNodes[index].Vector}) isn't walkable space");
                 EndNodes[index] = FindNearestWalkablePoint(StartNodes[index], EndNodes[index], Clearances[index], GridNodes[index]);
                 //Debug.Log($"Found new end point that is walkable: {EndNodes[index]}");
             }

@@ -438,12 +438,33 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 {
                     startPosition = GetPosition();
                     DestinationQueue.Clear();
-                    if (foundObstacle || Utilities.HasObstaclesInTheWay(startPosition, destination))
+                   
+
+                    if (foundObstacle)
                     {
+
                         convertedStart = Level.Pathfinder.ConvertToMapCoordinates(startPosition);
                         convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
                         Level.Pathfinder.FindPath(this, convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance());
                         return;
+                    }
+                    else
+                    {
+                        Collider2D obstacleCollider = Physics2D.Linecast(startPosition, destination, ConfigData.ObstaclesLayerMask).collider;
+                        if (obstacleCollider != null)
+                        {
+                            Obstacle obstacle = obstacleCollider.GetComponent<Obstacle>();
+                            if (obstacle.IsMobile)
+                            {
+                                NearbyAsteroids.Add((CollisionAsteroid)obstacle);
+                            }
+
+                            convertedStart = Level.Pathfinder.ConvertToMapCoordinates(startPosition);
+                            convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
+                            Level.Pathfinder.FindPath(this, convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance());
+                            return;
+                        }
+
                     }
 
                     //convertedStart = Level.Pathfinder.ConvertToMapCoordinates(startPosition);
@@ -491,7 +512,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             if (IsFollowingPath)
             {
                 // If we're following a pathfinder path, recalculate the path because we're near an asteroid
-                MoveToPoint(FinalDestination);
+                MoveToPoint(FinalDestination, true);
                 //InvokeRepeating(nameof(NearbyAsteroidDoubleCheck), 1f, 1f);
             }
             else if (HasTargetCoordinates)
