@@ -507,7 +507,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         public void FoundNearbyAsteroid(CollisionAsteroid asteroid)
         {
             NearbyAsteroids.Add(asteroid);
-            Debug.Log($"There's an asteroid {asteroid.Name} nearby on our path: {Name}");
+            //Debug.Log($"There's an asteroid {asteroid.Name} nearby on our path: {Name}");
 
             if (IsFollowingPath)
             {
