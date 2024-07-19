@@ -14,7 +14,7 @@ GameObject:
   - component: {fileID: 4957464698650094020}
   - component: {fileID: 8245500864331014551}
   - component: {fileID: 3521588021444551020}
-  m_Layer: 10
+  m_Layer: 18
   m_Name: Larger Human Laser Shot
   m_TagString: Projectile
   m_Icon: {fileID: 0}
@@ -53,6 +53,9 @@ SpriteRenderer:
   m_ReflectionProbeUsage: 1
   m_RayTracingMode: 0
   m_RayTraceProcedural: 0
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
+  m_SmallMeshCulling: 1
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
@@ -75,7 +78,7 @@ SpriteRenderer:
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: -467856233
-  m_SortingLayer: 21
+  m_SortingLayer: 24
   m_SortingOrder: 0
   m_Sprite: {fileID: -1181546095, guid: 64351100334fd65458abda1ef6273706, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -90,7 +93,7 @@ SpriteRenderer:
   m_SpriteSortPoint: 0
 --- !u!95 &3188221303955587550
 Animator:
-  serializedVersion: 5
+  serializedVersion: 7
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
@@ -104,6 +107,7 @@ Animator:
   m_ApplyRootMotion: 0
   m_LinearVelocityBlending: 0
   m_StabilizeFeet: 0
+  m_AnimatePhysics: 0
   m_WarningMessage: 
   m_HasTransformHierarchy: 1
   m_AllowConstantClipSamplingOptimization: 1
@@ -125,9 +129,10 @@ MonoBehaviour:
   Age: 0
   Level: {fileID: 0}
   Side: 0
+  Collider: {fileID: 0}
   Body: {fileID: 0}
-  Range: 0
   Power: 0
+  Range: 0
   Speed: 80
   Shooter: {fileID: 0}
   Target: {fileID: 0}
@@ -136,9 +141,9 @@ MonoBehaviour:
   Angle: 0
   ExplosionAnimationPrefab: {fileID: 3345242948093166458, guid: a51cc23e10b7b7a4fa653e3920fa7f16, type: 3}
   Explosion: {fileID: 0}
-  ShipsToIgnore: []
   Name: 
   HasExplosion: 0
+  HasSetMovement: 0
 --- !u!61 &8245500864331014551
 BoxCollider2D:
   m_ObjectHideFlags: 0
@@ -147,6 +152,7 @@ BoxCollider2D:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 3911271517188601395}
   m_Enabled: 1
+  serializedVersion: 3
   m_Density: 1
   m_Material: {fileID: 0}
   m_IncludeLayers:
@@ -170,7 +176,8 @@ BoxCollider2D:
     m_Bits: 4294967295
   m_IsTrigger: 1
   m_UsedByEffector: 0
-  m_UsedByComposite: 0
+  m_CompositeOperation: 0
+  m_CompositeOrder: 0
   m_Offset: {x: 0, y: 0}
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -181,7 +188,6 @@ BoxCollider2D:
     drawMode: 0
     adaptiveTiling: 0
   m_AutoTiling: 0
-  serializedVersion: 2
   m_Size: {x: 1, y: 1}
   m_EdgeRadius: 0
 --- !u!50 &3521588021444551020

@@ -450,10 +450,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     }
                     else
                     {
-                        Collider2D obstacleCollider = Physics2D.Linecast(startPosition, destination, ConfigData.ObstaclesLayerMask).collider;
+                        Collider2D obstacleCollider = GetObstaclesInPath(destination);
                         if (obstacleCollider != null)
                         {
                             Obstacle obstacle = obstacleCollider.GetComponent<Obstacle>();
+                            Debug.Log($"{obstacle.Name} is in the way of {Name}");
                             if (obstacle.IsMobile)
                             {
                                 NearbyAsteroids.Add((CollisionAsteroid)obstacle);
@@ -463,6 +464,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                             convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
                             Level.Pathfinder.FindPath(this, convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance());
                             return;
+                        }
+                        else
+                        {
+                            Debug.Log($"Direct path from {GetPosition()} to {destination}");
                         }
 
                     }
@@ -582,9 +587,9 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         /// </summary>
         private void CheckForDirectPath()
         {
-            if (!Utilities.HasObstaclesInTheWay(GetPosition(), FinalDestination))
+            if (!HasObstaclesInPath(FinalDestination))
             {
-                //Debug.Log($"Found a direct path for {Name} to {FinalDestination}");
+                Debug.Log($"Found a direct path for {Name} to {FinalDestination}");
                 TargetCoordinates = FinalDestination;
                 IsFollowingPath = false;
                 DestinationQueue.Clear();
@@ -1096,6 +1101,70 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
 
         /* Range and distance methods */
+        static public RaycastHit2D BoxCast(Vector2 origin, Vector2 size, float angle, Vector2 direction, float distance, int mask)
+        {
+
+            RaycastHit2D hit = Physics2D.BoxCast(origin, size, angle, direction, distance, mask);
+
+            //Setting up the points to draw the cast
+            Vector2 p1, p2, p3, p4, p5, p6, p7, p8;
+            float w = size.x * 0.5f;
+            float h = size.y * 0.5f;
+            p1 = new Vector2(-w, h);
+            p2 = new Vector2(w, h);
+            p3 = new Vector2(w, -h);
+            p4 = new Vector2(-w, -h);
+
+            Quaternion q = Quaternion.AngleAxis(angle, new Vector3(0, 0, 1));
+            p1 = q * p1;
+            p2 = q * p2;
+            p3 = q * p3;
+            p4 = q * p4;
+
+            p1 += origin;
+            p2 += origin;
+            p3 += origin;
+            p4 += origin;
+
+            Vector2 realDistance = direction.normalized * distance;
+            p5 = p1 + realDistance;
+            p6 = p2 + realDistance;
+            p7 = p3 + realDistance;
+            p8 = p4 + realDistance;
+
+            //Drawing the cast
+            Color castColor = hit ? Color.red : Color.green;
+            Debug.DrawLine(p1, p2, castColor, 15);
+            Debug.DrawLine(p2, p3, castColor, 15);
+            Debug.DrawLine(p3, p4, castColor, 15);
+            Debug.DrawLine(p4, p1, castColor, 15);
+
+            Debug.DrawLine(p5, p6, castColor, 15);
+            Debug.DrawLine(p6, p7, castColor, 15);
+            Debug.DrawLine(p7, p8, castColor, 15);
+            Debug.DrawLine(p8, p5, castColor, 15);
+
+            Debug.DrawLine(p1, p5, Color.grey, 15);
+            Debug.DrawLine(p2, p6, Color.grey, 15);
+            Debug.DrawLine(p3, p7, Color.grey, 15);
+            Debug.DrawLine(p4, p8, Color.grey, 15);
+            if (hit)
+            {
+                Debug.DrawLine(hit.point, hit.point + hit.normal.normalized * 0.2f, Color.yellow);
+            }
+
+            return hit;
+        }
+        public bool HasObstaclesInPath(Vector2 destination)
+        {
+            return GetObstaclesInPath(destination) != null;
+        }
+        public Collider2D GetObstaclesInPath(Vector2 destination)
+        {
+            //Debug.DrawLine(GetPosition(), destination, Color.red, 5);
+            //return Physics2D.BoxCast(GetPosition(), GetSize(), GetRotation(), Body.velocity, DistanceToPoint(destination), ConfigData.ObstaclesLayerMask).collider;
+            return BoxCast(GetPosition(), GetSize(), GetRotation(), Body.velocity, DistanceToPoint(destination), ConfigData.ObstaclesLayerMask).collider;
+        }
         public bool IsShipWithinRange(Ship ship)
         {
             return Weapons.Any((w) => w.IsShipWithinRange(ship));
@@ -1118,6 +1187,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         public bool AreAllSquadShipsWithinRange(Squad squad)
         {
             return squad.GetShips().All((ship) => IsShipWithinRange(ship));
+        }
+        public Vector2 GetSize()
+        {
+            return _size;
         }
         public float GetWidth()
         {

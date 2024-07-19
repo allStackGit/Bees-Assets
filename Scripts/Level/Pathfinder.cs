@@ -477,10 +477,10 @@ namespace Assets.Scripts.Level
                     //Debug.Log($"Nearby asteroid {asteroid.Name} is moving in {asteroid.Body.velocity} direction");
                     // Get the new points
                     //Debug.Log($"Updating the position of {asteroid.Name} on the pathfinding map");
-                    float obstaclePoints = Time.realtimeSinceStartup;
+                    //float obstaclePoints = Time.realtimeSinceStartup;
                     ObstaclePoints[asteroid.MapPointsIndex] = GetObstaclePoints(asteroid, asteroid.Body.velocity.x, asteroid.Body.velocity.y);
-                    float obstaclePointsEnd = (Time.realtimeSinceStartup - obstaclePoints) * 1000; // seconds to milliseconds
-                    Debug.Log($"Updated obstacle points in {obstaclePointsEnd} ms");
+                    //float obstaclePointsEnd = (Time.realtimeSinceStartup - obstaclePoints) * 1000; // seconds to milliseconds
+                    //Debug.Log($"Updated obstacle points in {obstaclePointsEnd} ms");
                     //ObstaclePoints[asteroid.MapPointsIndex] = GetObstaclePoints(asteroid, 0, 0);
 
                     //Debug.Log($"Got obstacle points for {asteroid}");

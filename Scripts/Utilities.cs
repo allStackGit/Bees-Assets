@@ -525,6 +525,10 @@ namespace Assets.Scripts
         {
             return Physics2D.Linecast(start, end, ConfigData.ObstaclesLayerMask).collider != null;
         }
+        public static Collider2D GetObstaclesInTheWay(Vector2 start, Vector2 end)
+        {
+            return Physics2D.Linecast(start, end, ConfigData.ObstaclesLayerMask).collider;
+        }
 
         /// <summary>
         /// Linecasts from start to end to check for any obstacles in the path. Returns true if there are obstacles or obstacle proximity ranges in the way
