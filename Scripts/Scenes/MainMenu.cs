@@ -6,7 +6,7 @@ using UnityEngine.SceneManagement;
 using Assets.Scripts;
 using System.Collections.Generic;
 using TMPro;
-using Assets.Scripts.Settings;
+using Assets.Scripts.Settings; 
 using System.Linq;
 
 namespace Assets.Scripts.Scenes

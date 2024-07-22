@@ -20,7 +20,6 @@ using System.Reflection.Emit;
 using Unity.Mathematics;
 using System.IO;
 using NUnit;
-using static UnityEngine.Rendering.ProbeAdjustmentVolume;
 using System.Threading;
 
 namespace Assets.Scripts.Entities.Ships
@@ -1150,7 +1149,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             Debug.DrawLine(p4, p8, Color.grey, 15);
             if (hit)
             {
-                Debug.DrawLine(hit.point, hit.point + hit.normal.normalized * 0.2f, Color.yellow);
+                Debug.DrawLine(hit.point, hit.point + hit.normal.normalized * 0.2f, Color.yellow, 15);
             }
 
             return hit;

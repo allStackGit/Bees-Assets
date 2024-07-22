@@ -132,7 +132,8 @@ TextureImporter:
     edges: []
     weights: []
     secondaryTextures: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      Scout_0_916839237_0: -1531977907476742658
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 
