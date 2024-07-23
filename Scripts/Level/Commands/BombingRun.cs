@@ -76,8 +76,8 @@ namespace Assets.Scripts.Level.Commands
                 //Debug.Log($"Target ship: {bomb.TargetShip}");
                 //Debug.Log("--------------------");
             }
-
-            InvokeRepeating(nameof(Timer), ConfigData.CommandTimerFrequency, ConfigData.CommandTimerFrequency);
+            CommandFrequency = 1;
+            InvokeRepeating(nameof(Timer), .1f, CommandFrequency);
 
         }
         private bool CheckIfStrikersAreDefenseless()

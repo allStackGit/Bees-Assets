@@ -66,6 +66,13 @@ namespace Assets.Scripts.Level
         {
             if (PathsWaiting.Count > 0)
             {
+                Debug.Log($"There are {PathsWaiting.Count} paths waiting");
+                string threads = "Threads: ";
+                for (int i = 0; i < ConfigData.MaxThreads; i++)
+                {
+                    threads += $"#{i}: {IsThreadActive[i]} | ";
+                }
+                Debug.Log(threads);
                 PathsWaiting.ForEach((p) =>
                 {
                     for (int i = 0; i < ConfigData.MaxThreads; i++)
@@ -845,7 +852,7 @@ namespace Assets.Scripts.Level
                     Ships[index].PathfindingThreadComplete = true;
                     IsThreadActive[index] = false;
 
-                    OrderPrintDebugImage(index);
+                    //OrderPrintDebugImage(index);
                     return;
                 }
                 BTUncheckedNodes.Remove(BTCurrentNode);
@@ -902,7 +909,7 @@ namespace Assets.Scripts.Level
             }
             Ships[index].PathfindingThreadComplete = true;
             IsThreadActive[index] = false;
-            OrderPrintDebugImage(index);
+            //OrderPrintDebugImage(index);
             return;
 
         }
@@ -911,8 +918,20 @@ namespace Assets.Scripts.Level
         public void FindPath(Ship ship, int startX, int startY, int endX, int endY, int maximumClearance)
         {
 
+            //try
+            //{
+            //    startNode = _grid.Nodes[startX][startY];
+            //    endNode = _grid.Nodes[endX][endY];
+            //}
+            //catch (Exception e)
+            //{
+            //    Debug.Log($"startX: {startX}, startY: {startY}, endX: {endX}, endY: {endY}, width: {_grid.Width}, height: {_grid.Height} ");
+            //    throw e;
+            //}
+
             startNode = _grid.Nodes[startX][startY];
             endNode = _grid.Nodes[endX][endY];
+
             //Debug.Log($"Finding path for ? from {startNode.x}, {startNode.y} to {endNode.x}, {endNode.y}");
 
             bool startedTask = false;

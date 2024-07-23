@@ -23,7 +23,8 @@ namespace Assets.Scripts.Level.Commands
         public Strategy Strategy = null;
         public MatchupStrategy MatchupStrategy = null;
         public ShootingStrategy ShootingStrategy = null;
-        public bool IsAttacking;
+        public bool IsAttacking, IsCloseToTarget;
+        public float CommandFrequency = 3;
         public Queue<Ship> OriginalQueue;
         public Queue<Ship> TargetingQueue;
 

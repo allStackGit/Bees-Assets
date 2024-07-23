@@ -449,11 +449,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     }
                     else
                     {
-                        Collider2D obstacleCollider = GetObstaclesInPath(destination);
+                        Collider2D obstacleCollider = GetObstacleInPath(destination);
                         if (obstacleCollider != null)
                         {
                             Obstacle obstacle = obstacleCollider.GetComponent<Obstacle>();
-                            Debug.Log($"{obstacle.Name} is in the way of {Name}");
+                            //Debug.Log($"{obstacle.Name} is in the way of {Name}");
                             if (obstacle.IsMobile)
                             {
                                 NearbyAsteroids.Add((CollisionAsteroid)obstacle);
@@ -464,10 +464,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                             Level.Pathfinder.FindPath(this, convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance());
                             return;
                         }
-                        else
-                        {
-                            Debug.Log($"Direct path from {GetPosition()} to {destination}");
-                        }
+                        //else
+                        //{
+                        //    Debug.Log($"Direct path for {Name} to {destination}");
+                        //}
 
                     }
 
@@ -586,7 +586,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         /// </summary>
         private void CheckForDirectPath()
         {
-            if (!HasObstaclesInPath(FinalDestination))
+            if (!HasObstacleInPath(FinalDestination))
             {
                 Debug.Log($"Found a direct path for {Name} to {FinalDestination}");
                 TargetCoordinates = FinalDestination;
@@ -1100,7 +1100,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
 
         /* Range and distance methods */
-        static public RaycastHit2D BoxCast(Vector2 origin, Vector2 size, float angle, Vector2 direction, float distance, int mask)
+        static public RaycastHit2D BoxCastDebug(Vector2 origin, Vector2 size, float angle, Vector2 direction, float distance, int mask)
         {
 
             RaycastHit2D hit = Physics2D.BoxCast(origin, size, angle, direction, distance, mask);
@@ -1154,15 +1154,15 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
             return hit;
         }
-        public bool HasObstaclesInPath(Vector2 destination)
+        public bool HasObstacleInPath(Vector2 destination)
         {
-            return GetObstaclesInPath(destination) != null;
+            return GetObstacleInPath(destination) != null;
         }
-        public Collider2D GetObstaclesInPath(Vector2 destination)
+        public Collider2D GetObstacleInPath(Vector2 destination)
         {
-            //Debug.DrawLine(GetPosition(), destination, Color.red, 5);
-            //return Physics2D.BoxCast(GetPosition(), GetSize(), GetRotation(), Body.velocity, DistanceToPoint(destination), ConfigData.ObstaclesLayerMask).collider;
-            return BoxCast(GetPosition(), GetSize(), GetRotation(), Body.velocity, DistanceToPoint(destination), ConfigData.ObstaclesLayerMask).collider;
+            //Debug.Log($"Angle: {GetDegreesTowardsPoint(destination)}, direction: {-DirectionToPoint(destination)}, distance: {DistanceToPoint(destination)}");
+            //return BoxCastDebug(GetPosition(), GetSize()*1.2f, GetDegreesTowardsPoint(destination), -DirectionToPoint(destination), DistanceToPoint(destination), ConfigData.ObstaclesLayerMask).collider;
+            return Physics2D.BoxCast(GetPosition(), GetSize() * 1.2f, GetDegreesTowardsPoint(destination), -DirectionToPoint(destination), DistanceToPoint(destination), ConfigData.ObstaclesLayerMask).collider;
         }
         public bool IsShipWithinRange(Ship ship)
         {

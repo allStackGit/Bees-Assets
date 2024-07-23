@@ -17,7 +17,7 @@ namespace Assets.Scripts.Level.Commands
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
             IsAttacking = true;
             PrepareDamageToSendEntries();
-            InvokeRepeating(nameof(Timer), ConfigData.CommandTimerFrequency, ConfigData.CommandTimerFrequency);
+            InvokeRepeating(nameof(Timer), .1f, CommandFrequency);
         }
         private void Timer()
         {

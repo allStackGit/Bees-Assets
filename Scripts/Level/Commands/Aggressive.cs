@@ -7,7 +7,8 @@ namespace Assets.Scripts.Level.Commands
 {
     public class Aggressive : Command
     {
-
+        public bool IsComfortablyWithinRange;
+        public int ConsecutiveTimesWithinRange = 0;
         /// <summary>
         ///  Sends the squad towards the enemy and follows them, attacking until one squad is dead
         /// </summary>
@@ -23,7 +24,7 @@ namespace Assets.Scripts.Level.Commands
             {
                 IsAttacking = true;
                 PrepareDamageToSendEntries();
-                InvokeRepeating(nameof(Timer), ConfigData.CommandTimerFrequency, ConfigData.CommandTimerFrequency);
+                InvokeRepeating(nameof(Timer), .1f, CommandFrequency);
             }
             
         }
@@ -34,15 +35,40 @@ namespace Assets.Scripts.Level.Commands
                 if (Enemy != null && !Enemy.IsDead)
                 {
                     Squad.Status = $"Targeting enemy squad #{Enemy.SquadNumber}";
-                    if (!Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(Enemy)) // check if all of their squad ships are within range of all of our squad ships
+                    if (!IsComfortablyWithinRange) // check if all of their squad ships are comfortably within range of all of our squad ships
                     {
+                        if (Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(Enemy))
+                        {
+                            ConsecutiveTimesWithinRange++;
+                            if (ConsecutiveTimesWithinRange == 3)
+                            {
+                                ConsecutiveTimesWithinRange = 0;
+                                IsComfortablyWithinRange = true;
+                            }
+                        }
+                        else
+                        {
+                            ConsecutiveTimesWithinRange = 0;
+                        }
                         //Debug.Log($"Enemy: {Enemy.Name} IsDead: {Enemy.IsDead}");
                         //SetAndMove(Enemy.GetPosition());
                         MoveTowardsEnemies();
+                        if (!IsCloseToTarget && Squad.DistanceToPoint(Enemy.GetPosition()) < Squad.MaxRange * 2)
+                        {
+                            Debug.Log($"{Squad.Name} is close to {Enemy.Name}");
+                            CancelInvoke(nameof(Timer));
+                            CommandFrequency = .25f;
+                            IsCloseToTarget = true;
+                            InvokeRepeating(nameof(Timer), CommandFrequency, CommandFrequency);
+                        }
+                    }
+                    else if (Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(Enemy))
+                    {
+                        Debug.Log($"All ships are comfortably within range, we don't need to move.");
                     }
                     else
                     {
-                        //Debug.Log($"All ships are within range, we don't need to move.");
+                        IsComfortablyWithinRange = false;
                     }
                 }
                 else
