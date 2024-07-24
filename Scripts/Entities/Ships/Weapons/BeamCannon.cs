@@ -23,7 +23,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 {
                     TargetShip = LaserBeamTarget;
                 }
-                if (TargetShip != null && !CeaseFire)
+                if (ShouldFire && !Utilities.HasObstaclesInTheWay(GetPosition(), TargetShip.GetPosition()))
                 {
                     //Debug.Log($"Aiming {Piece.name} at {TargetShip.Name}");
                     TargetPoint = GetTargetPoint(TargetShip);

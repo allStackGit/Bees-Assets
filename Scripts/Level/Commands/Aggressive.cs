@@ -39,6 +39,7 @@ namespace Assets.Scripts.Level.Commands
                     {
                         if (Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(Enemy))
                         {
+                            // Keep track of how many times all of the ships have been within range so we don't stop moving towards the enemy until we've been within range for a little bit at least
                             ConsecutiveTimesWithinRange++;
                             if (ConsecutiveTimesWithinRange == 3)
                             {
@@ -53,6 +54,8 @@ namespace Assets.Scripts.Level.Commands
                         //Debug.Log($"Enemy: {Enemy.Name} IsDead: {Enemy.IsDead}");
                         //SetAndMove(Enemy.GetPosition());
                         MoveTowardsEnemies();
+
+                        // Once we get close to the target we speed up the timer so we get more up to date information
                         if (!IsCloseToTarget && Squad.DistanceToPoint(Enemy.GetPosition()) < Squad.MaxRange * 2)
                         {
                             Debug.Log($"{Squad.Name} is close to {Enemy.Name}");
@@ -62,7 +65,7 @@ namespace Assets.Scripts.Level.Commands
                             InvokeRepeating(nameof(Timer), CommandFrequency, CommandFrequency);
                         }
                     }
-                    else if (Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(Enemy))
+                    else if (Squad.MaxRange >= 45 && Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(Enemy))
                     {
                         Debug.Log($"All ships are comfortably within range, we don't need to move.");
                     }

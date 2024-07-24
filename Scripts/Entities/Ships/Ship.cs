@@ -78,6 +78,9 @@ namespace Assets.Scripts.Entities.Ships
         public bool HasTargetShips => TargetShips.Count > 0;
         public bool IsUserControlled => Side == ConfigData.Configuration.UserSide && Level.HasPlayer;
         public bool IsHiveMindControlled => Side == ConfigData.Configuration.AISide || (Side == ConfigData.Configuration.UserSide && !Level.HasPlayer);
+        /// <summary>
+        /// Whether or not the ship has target coordinates. If it does, it hasn't reached the destination
+        /// </summary>
         public bool HasReachedDestination => !HasTargetCoordinates;
         public bool IsMoving => Body.velocity != Vector2.zero;
         public bool IsCarrierShip => ShipType == "Striker" || ShipType == "Drone";
@@ -453,7 +456,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                         if (obstacleCollider != null)
                         {
                             Obstacle obstacle = obstacleCollider.GetComponent<Obstacle>();
-                            //Debug.Log($"{obstacle.Name} is in the way of {Name}");
+                            Debug.Log($"{obstacle.Name} is in the way of {Name}");
                             if (obstacle.IsMobile)
                             {
                                 NearbyAsteroids.Add((CollisionAsteroid)obstacle);
@@ -464,10 +467,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                             Level.Pathfinder.FindPath(this, convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance());
                             return;
                         }
-                        //else
-                        //{
-                        //    Debug.Log($"Direct path for {Name} to {destination}");
-                        //}
+                        else
+                        {
+                            Debug.Log($"Direct path for {Name} to {destination}");
+                        }
 
                     }
 
@@ -476,7 +479,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     //Level.Pathfinder.FindPath(this, convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance());
 
                 }
-                //Debug.Log($"No obstacles in the way for {Name}");
+                Debug.Log($"No obstacles in the way for {Name}");
                 IsFollowingPath = false;
                 TargetCoordinates = destination;
                 HasTargetCoordinates = true;
@@ -562,20 +565,21 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             {
                 float start = Time.realtimeSinceStartup;
                 //Debug.Log($"Merging pathfinding paths for {Name} with {PathfindingValue.Points.Count} points");
-                Vector2 firstPoint = PathfindingValue.Points.Take(25).OrderBy((p) => DistanceToPoint(p)).Take(10).OrderBy((p) => GetRotatedAngleToPoint(p)).First();
+                //Vector2 firstPoint = PathfindingValue.Points.Take(25).OrderBy((p) => DistanceToPoint(p)).Take(10).OrderBy((p) => GetRotatedAngleToPoint(p)).First();
 
                 //Debug.Log($"First point is {firstPoint}");
-                DestinationQueue.Clear();
-                for (int i = PathfindingValue.Points.IndexOf(firstPoint); i < PathfindingValue.Points.Count; i++)
-                {
-                    DestinationQueue.Enqueue(PathfindingValue.Points[i]);
-                }
+                //DestinationQueue.Clear();
+                //for (int i = PathfindingValue.Points.IndexOf(firstPoint); i < PathfindingValue.Points.Count; i++)
+                //{
+                //    DestinationQueue.Enqueue(PathfindingValue.Points[i]);
+                //}
+                DestinationQueue = new Queue<Vector2>(PathfindingValue.Points);
                 FinalDestination = DestinationQueue.Last();
                 TargetCoordinates = DestinationQueue.Dequeue();
                 IsFollowingPath = true;
                 HasTargetCoordinates = true;
                 PathfindingValue = null;
-                //Debug.Log($"Merged full path to destination in {(Time.realtimeSinceStartup - start) * 1000}ms");
+                Debug.Log($"Merged full path to destination in {(Time.realtimeSinceStartup - start) * 1000}ms");
             }
 
         }

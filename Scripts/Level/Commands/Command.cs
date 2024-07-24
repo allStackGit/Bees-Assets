@@ -37,6 +37,7 @@ namespace Assets.Scripts.Level.Commands
         public bool HasEnemy => Enemy != null;
         public string Type => HasStrategy ? Strategy.Name : "Uninitialized";
         public bool IsFinalized, IsStored, IsHiveMindCommand;
+        public bool HasDestination => _destinations.Count > 0;
         public LevelStage Level => Squad.Level;
         public int Side => Squad.Side;
 

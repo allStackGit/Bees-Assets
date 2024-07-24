@@ -67,42 +67,92 @@ namespace Assets.Scripts.Level
             if (PathsWaiting.Count > 0)
             {
                 Debug.Log($"There are {PathsWaiting.Count} paths waiting");
-                string threads = "Threads: ";
-                for (int i = 0; i < ConfigData.MaxThreads; i++)
+                //string threads = "Threads: ";
+                //for (int i = 0; i < ConfigData.MaxThreads; i++)
+                //{
+                //    threads += $"#{i}: {IsThreadActive[i]} | ";
+                //}
+                //Debug.Log(threads);
+
+
+                //PathsWaiting.ForEach((p) =>
+                //{
+                //    for (int i = 0; i < ConfigData.MaxThreads; i++)
+                //    {
+                //        if (!IsThreadActive[i])
+                //        {
+                //            IsThreadActive[i] = true;
+                //            Task task = new Task(() =>
+                //            {
+                //                StartNodes[i] = p.Start;
+                //                EndNodes[i] = p.End;
+                //                Clearances[i] = p.Clearance;
+                //                Ships[i] = p.Ship;
+                //                BTFindPath(i);
+                //            });
+                //            //Debug.Log($"Queued Started BT {ThreadsStarted} % {ConfigData.MaxThreads} : #{i}|{Thread}|{(ThreadsStarted % ConfigData.MaxThreads)} ");
+                //            //Debug.Log($"Queued Started BT #{i}");
+                //            task.Start();
+                //            //ThreadsStarted++;
+                //            PathsWaitingToRemove.Add(p);
+                //            break;
+                //        }
+                //    }
+
+                //});
+                //PathsWaitingToRemove.ForEach((p) =>
+                //{
+                //    PathsWaiting.Remove(p);
+                //});
+                //PathsWaitingToRemove.Clear();
+
+                for (int i = 0; i < ConfigData.MaxThreads && PathsWaiting.Count > 0; i++)
                 {
-                    threads += $"#{i}: {IsThreadActive[i]} | ";
-                }
-                Debug.Log(threads);
-                PathsWaiting.ForEach((p) =>
-                {
-                    for (int i = 0; i < ConfigData.MaxThreads; i++)
+                    if (!IsThreadActive[i])
                     {
-                        if (!IsThreadActive[i])
+                        PathWaiting p = PathsWaiting.Dequeue();
+                        // if this ship has already had a more recent path worked on, remove this path
+                        while (ShipsToDequeue.Contains(p.Ship))
                         {
-                            IsThreadActive[i] = true;
-                            Task task = new Task(() =>
+                            ShipsToDequeue.Remove(p.Ship);
+                            ShipsQueued.Remove(p.Ship);
+                            if (PathsWaiting.Count > 0)
                             {
-                                StartNodes[i] = p.Start;
-                                EndNodes[i] = p.End;
-                                Clearances[i] = p.Clearance;
-                                Ships[i] = p.Ship;
-                                BTFindPath(i);
-                            });
-                            //Debug.Log($"Queued Started BT {ThreadsStarted} % {ConfigData.MaxThreads} : #{i}|{Thread}|{(ThreadsStarted % ConfigData.MaxThreads)} ");
-                            //Debug.Log($"Queued Started BT #{i}");
-                            task.Start();
-                            //ThreadsStarted++;
-                            PathsWaitingToRemove.Add(p);
-                            break;
+                                p = PathsWaiting.Dequeue();
+                            }
+                            else
+                            {
+                                return;
+                            }
                         }
+
+
+                        IsThreadActive[i] = true;
+                        Task task = new Task(() =>
+                        {
+                            StartNodes[i] = GridNodes[i][p.Start.x][p.Start.y];
+                            EndNodes[i] = GridNodes[i][p.End.x][p.End.y];
+                            Clearances[i] = p.Clearance;
+                            Ships[i] = p.Ship;
+                            BTFindPath(i);
+                        });
+
+                        IsThreadActive[i] = true;
+                        //Debug.Log($"Pre starting Finding path for #{i} from {startNode.x}, {startNode.y} to {endNode.x}, {endNode.y}");
+
+
+                        //Debug.Log($"Queued Started BT #{i}");
+                        task.Start();
+                        Debug.Log($"Thread #{i} Queued Started {p.Ship.Name} after waiting {(Time.realtimeSinceStartup - p.StartTime) * 1000}ms on the queue");
+
+                        //ThreadsStarted++;
+                        //PathsWaitingToRemove.Add(p);
+                        ShipsQueued.Remove(p.Ship);
+                        //break;
                     }
-                    
-                });
-                PathsWaitingToRemove.ForEach((p) =>
-                {
-                    PathsWaiting.Remove(p);
-                });
-                PathsWaitingToRemove.Clear();
+                }
+
+                Debug.Log($"There are NOW {PathsWaiting.Count} paths waiting");
             }
             
         }
@@ -534,13 +584,13 @@ namespace Assets.Scripts.Level
             }
             if (totalAsteroids >= 3)
             {
-                Debug.Log($"Calculated full clearance");
+                //Debug.Log($"Calculated full clearance");
                 CalculateClearance(GridNodes[thread], 0, _grid.Width, 0, _grid.Height, true);
             }
             //CalculateClearance(GridNodes[thread], true);
 
             float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
-            Debug.Log($"Updated map in {end} ms");
+            //Debug.Log($"Updated map in {end} ms");
 
         }
 
@@ -705,8 +755,16 @@ namespace Assets.Scripts.Level
             return cheapest;
         }
 
-        public List<PathWaiting> PathsWaiting = new List<PathWaiting>();
+        public Queue<PathWaiting> PathsWaiting = new Queue<PathWaiting>();
         public List<PathWaiting> PathsWaitingToRemove = new List<PathWaiting>();
+        /// <summary>
+        /// Keeps track of ships that have paths waiting on the queue
+        /// </summary>
+        public HashSet<Ship> ShipsQueued = new HashSet<Ship>();
+        /// <summary>
+        /// Keeps track of ships that did not go onto the queue but were worked on immediately. If those same ships are on the queue the path shouldn't be worked on
+        /// </summary>
+        public HashSet<Ship> ShipsToDequeue = new HashSet<Ship>();
         public Thread[] Threads = new Thread[ConfigData.MaxThreads];
         public bool[] IsThreadActive = new bool[ConfigData.MaxThreads];
         public List<int>[] PreviousAsteroids = new List<int>[ConfigData.MaxThreads];
@@ -731,6 +789,7 @@ namespace Assets.Scripts.Level
             public MapNode Start;
             public MapNode End;
             public int Clearance;
+            public float StartTime = Time.realtimeSinceStartup;
 
             public PathWaiting(Ship ship, MapNode start, MapNode end, int clearance)
             {
@@ -852,7 +911,7 @@ namespace Assets.Scripts.Level
                     Ships[index].PathfindingThreadComplete = true;
                     IsThreadActive[index] = false;
 
-                    //OrderPrintDebugImage(index);
+                    OrderPrintDebugImage(index);
                     return;
                 }
                 BTUncheckedNodes.Remove(BTCurrentNode);
@@ -905,11 +964,13 @@ namespace Assets.Scripts.Level
             }
             else if (BTUncheckedNodes.Count == 0)
             {
-                Debug.Log($"No more nodes to check #{index} Clearance: {Clearances[index]}.  checkedNodes: {BTCheckedNodes.Count} / {_grid.TotalNodes}  CurrentNode: {BTCurrentNode},");
+                Debug.Log($"No more nodes to check for ship: {Ships[index].Name} index: #{index} Clearance: {Clearances[index]}.  checkedNodes: {BTCheckedNodes.Count} / {_grid.TotalNodes}  CurrentNode: {BTCurrentNode},");
             }
             Ships[index].PathfindingThreadComplete = true;
             IsThreadActive[index] = false;
-            //OrderPrintDebugImage(index);
+
+
+            OrderPrintDebugImage(index);
             return;
 
         }
@@ -935,7 +996,6 @@ namespace Assets.Scripts.Level
             //Debug.Log($"Finding path for ? from {startNode.x}, {startNode.y} to {endNode.x}, {endNode.y}");
 
             bool startedTask = false;
-            PathsWaiting = PathsWaiting.Where((p) => p.Ship != ship).ToList(); // remove all queued pathfinding for this ship
             for (int i = 0; i < ConfigData.MaxThreads; i++)
             {
                 if (!IsThreadActive[i])
@@ -964,6 +1024,10 @@ namespace Assets.Scripts.Level
                     //Debug.Log($"Standard Started #{i}");
                     task.Start();
                     startedTask = true;
+                    if (ShipsQueued.Contains(ship))
+                    {
+                        ShipsToDequeue.Add(ship);
+                    }
                     //ThreadsStarted++;
                     //PathsWaitingToRemove.Add(p);
                     break;
@@ -971,8 +1035,13 @@ namespace Assets.Scripts.Level
             }
             if (!startedTask)
             {
-                PathsWaiting.Add(new PathWaiting(ship, startNode, endNode, maximumClearance));
+                if (!ShipsQueued.Contains(ship))
+                {
+                    PathsWaiting.Enqueue(new PathWaiting(ship, startNode, endNode, maximumClearance));
+                    ShipsQueued.Add(ship);
+                }
             }
+
 
         }
 

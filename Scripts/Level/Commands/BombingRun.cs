@@ -10,6 +10,7 @@ namespace Assets.Scripts.Level.Commands
 {
     public class BombingRun : Command
     {
+
         /// <summary>
         /// Only available to Yellow Jackets, Fireships, and Strikers. Sends all ships straight onto the ships of the squad and back to the carrier if applicable
         /// </summary>
@@ -28,22 +29,24 @@ namespace Assets.Scripts.Level.Commands
                 return;
             }
 
+            // this piece of code seems to make the squad move to it's current location for no particular reason
+
             // check if squad has reached destination and if so, cancel the timer and start over again for the next destination
-            Vector2 destination = GetDestination();
-            if (Squad.HasReachedDestination)
-            {
-                RemoveDestination(destination);
-                AddDestination(destination);
-            }
-            destination = GetDestination();
-            Squad.Move(destination);
+            //Vector2 destination = GetDestination();
+            //if (HasDestination && Squad.HasReachedDestination)
+            //{
+            //    RemoveDestination(destination);
+            //    AddDestination(destination);
+            //}
+            //destination = GetDestination();
+            //Squad.Move(destination);
+
+            // Setup status and damage
             IsAttacking = true;
-
-
-            // loop through all the ships in the bombing squad
             Squad.Status = $"Starting bombing run against {Enemy.Name}";
             PrepareDamageToSendEntries();
 
+            // loop through all the ships in the bombing squad
             List<Ship> ships = Squad.GetShips();
             foreach (Ship ship in ships)
             {
@@ -75,9 +78,13 @@ namespace Assets.Scripts.Level.Commands
                 //}
                 //Debug.Log($"Target ship: {bomb.TargetShip}");
                 //Debug.Log("--------------------");
+                ship.MoveToPoint(ship.TargetShips.First().GetPosition()); // Move to the primary target ship
             }
-            CommandFrequency = 1;
-            InvokeRepeating(nameof(Timer), .1f, CommandFrequency);
+            //if (Squad.DistanceToPoint(Enemy.GetPosition()) < 45)
+            //{
+            //    CommandFrequency = .5f;
+            //}
+            //InvokeRepeating(nameof(Timer), .1f, CommandFrequency);
 
         }
         private bool CheckIfStrikersAreDefenseless()
@@ -121,7 +128,7 @@ namespace Assets.Scripts.Level.Commands
         }
         private void SendShipToTarget(Ship ship)
         {
-            ship.MoveToPoint(ship.TargetShips.First().GetPosition()); // Move to the primary target ship
+            //ship.MoveToPoint(ship.TargetShips.First().GetPosition()); // Move to the primary target ship
         }
         private bool HaveAllShipsFinished(List<Ship> ships)
         {
@@ -145,14 +152,16 @@ namespace Assets.Scripts.Level.Commands
             });
         }
 
+        private int _timerLoops;
         private void Timer()
         {
             if (!Squad.IsDead)
             {
+                _timerLoops++;
                 //Debug.Log("Bombing timer");
                 Squad.Status = $"In the middle of bombing run against {Enemy.Name}";
                 List<Ship> ships = Squad.GetShips();
-                List<FireShip> fireShipsToDetonate = new List<FireShip>();
+                List<long> fireShipsToDetonate = new List<long>();
                 ships.ForEach((ship) =>
                 {
                     if (ShouldShipPursueTarget(ship))
@@ -162,7 +171,8 @@ namespace Assets.Scripts.Level.Commands
                         if (Squad.IsHiveMindControlled && ship.ShipType == "Fire Ship" && ship.DistanceToPoint(ship.TargetCoordinates) < (ConfigData.FireShipExplosionSize - 5))
                         {
                             // if you're a fire ship and within detonation distance of your target, detonate
-                            fireShipsToDetonate.Add((FireShip)ship);
+                            Debug.Log($"{ship.Name} is hivemind controlled and on a bombing run and near its target coordinates and so it's going to detonate. ");
+                            fireShipsToDetonate.Add(ship.Id);
                         }
                     }
                     else // if you don't have target ships or all of them are dead
@@ -185,16 +195,18 @@ namespace Assets.Scripts.Level.Commands
                     }
                 });
 
-                fireShipsToDetonate.ForEach((fireShip) =>
-                {
-                    fireShip.Detonate();
-                });
-                //for (int i = 0; i < ships.Count; i++)
+                //fireShipsToDetonate.ForEach((fireShip) =>
                 //{
-                //    Ship ship = ships[i];
-                    
-                //}
-                
+                //    fireShip.Detonate();
+                //});
+
+                //
+                for (int i = 0; i < fireShipsToDetonate.Count; i++)
+                {
+                    ((FireShip)Level.GetState().GetShipById(fireShipsToDetonate[i])).Detonate();
+
+                }
+
 
                 if (HaveAllShipsFinished(ships))
                 {
@@ -213,6 +225,19 @@ namespace Assets.Scripts.Level.Commands
                             }
                         }
                     }
+                }
+
+                if (!IsCloseToTarget && _timerLoops % 4 == 0 && !Enemy.IsDead)
+                {
+                    if (Squad.DistanceToPoint(Enemy.GetPosition()) < 45)
+                    {
+                        Debug.Log($"{Squad.Name} is on a bombing run and close to {Enemy.Name}");
+                        CancelInvoke(nameof(Timer));
+                        CommandFrequency = .5f;
+                        IsCloseToTarget = true;
+                        InvokeRepeating(nameof(Timer), CommandFrequency, CommandFrequency);
+                    }
+
                 }
             }
             

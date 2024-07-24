@@ -161,7 +161,7 @@ namespace Assets.Scripts.Scenes
 
             if (Utilities.CoinToss())
             {
-                //ActivateFogOfWar = true;
+                ActivateFogOfWar = true;
                 Debug.Log($"The map has fog of war");
             }
             else

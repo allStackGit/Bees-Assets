@@ -72,7 +72,11 @@ namespace Assets.Scripts.Level
         /// Is this squad is selected by the user?
         /// </summary>
         public bool IsSelected => Level.GetState().GetSelectedSquads().Any((squad) => Equals(squad));
+        /// <summary>
+        /// Whether or not the squad's ships have target coordinates. If they do, it hasn't reached the destination
+        /// </summary>
         public bool HasReachedDestination => GetShips().All((s) => s.HasReachedDestination);
+        public bool HasDestination => GetShips().Any((s) => s.HasTargetCoordinates);
         public bool HasColor => Color != ConfigData.UnsetColor;
         public bool HasBrain => GetShips().All((s) => s.HasBrain);
         /// <summary>
@@ -263,7 +267,7 @@ namespace Assets.Scripts.Level
             {
                 Level.Menus.ActionBox.HighlightSelectedButtons();
             }
-            float start = Time.realtimeSinceStartup;
+            //float start = Time.realtimeSinceStartup;
             List<Ship> ships = GetShips();
             foreach (Ship ship in ships)
             {
@@ -271,7 +275,7 @@ namespace Assets.Scripts.Level
                 //float y = Mathf.Clamp((destination.y + ship.OffsetFromCenter.y), Level.MinY, Level.MaxY);
                 ship.MoveToPoint(destination + ship.OffsetFromCenter);
             }
-            float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
+            //float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
             //Debug.Log($"It took {Math.Round(end, 2)} ms to set {Name} moving. The average was {Math.Round(end / ships.Count, 2)}ms");
 
         }

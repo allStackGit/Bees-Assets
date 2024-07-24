@@ -21,7 +21,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 {
                     TargetPoint = Level.InputManager.GetMousePosition();
                 }
-                else if (ShouldFire)
+                else if (ShouldFire && !Utilities.HasObstaclesInTheWay(GetPosition(), TargetShip.GetPosition()))
                 {
                     TargetPoint = GetTargetPoint(TargetShip);
                 }
