@@ -127,9 +127,9 @@ namespace Assets.Scripts.Scenes
             if (Utilities.CoinToss())
             {
                 HasObstacles = true;
-                Debug.Log($"The map has obstacles");
+                //Debug.Log($"The map has obstacles");
 
-                ChosenObstaclesIndex = Utilities.RandomInt(_obstacleLists.Count - 1) + 1;
+                ChosenObstaclesIndex = 0; // Utilities.RandomInt(_obstacleLists.Count - 1) + 1;
                 _chosenObstacles = _obstacleLists.GetValueOrDefault(ChosenObstaclesIndex);
 
                 if (Utilities.RandomInt(4) == 0)

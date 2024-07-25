@@ -590,7 +590,7 @@ namespace Assets.Scripts.Level
             //CalculateClearance(GridNodes[thread], true);
 
             float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
-            //Debug.Log($"Updated map in {end} ms");
+            Debug.Log($"Updated map in {end} ms");
 
         }
 
@@ -911,7 +911,7 @@ namespace Assets.Scripts.Level
                     Ships[index].PathfindingThreadComplete = true;
                     IsThreadActive[index] = false;
 
-                    OrderPrintDebugImage(index);
+                    //OrderPrintDebugImage(index);
                     return;
                 }
                 BTUncheckedNodes.Remove(BTCurrentNode);
@@ -970,7 +970,7 @@ namespace Assets.Scripts.Level
             IsThreadActive[index] = false;
 
 
-            OrderPrintDebugImage(index);
+            //OrderPrintDebugImage(index);
             return;
 
         }

@@ -78,13 +78,13 @@ namespace Assets.Scripts.Level.Commands
                 //}
                 //Debug.Log($"Target ship: {bomb.TargetShip}");
                 //Debug.Log("--------------------");
-                ship.MoveToPoint(ship.TargetShips.First().GetPosition()); // Move to the primary target ship
+                //ship.MoveToPoint(ship.TargetShips.First().GetPosition()); // Move to the primary target ship
             }
-            //if (Squad.DistanceToPoint(Enemy.GetPosition()) < 45)
-            //{
-            //    CommandFrequency = .5f;
-            //}
-            //InvokeRepeating(nameof(Timer), .1f, CommandFrequency);
+            if (Squad.DistanceToPoint(Enemy.GetPosition()) < 45)
+            {
+                CommandFrequency = .5f;
+            }
+            InvokeRepeating(nameof(Timer), .1f, CommandFrequency);
 
         }
         private bool CheckIfStrikersAreDefenseless()
@@ -128,7 +128,7 @@ namespace Assets.Scripts.Level.Commands
         }
         private void SendShipToTarget(Ship ship)
         {
-            //ship.MoveToPoint(ship.TargetShips.First().GetPosition()); // Move to the primary target ship
+            ship.MoveToPoint(ship.TargetShips.First().GetPosition()); // Move to the primary target ship
         }
         private bool HaveAllShipsFinished(List<Ship> ships)
         {

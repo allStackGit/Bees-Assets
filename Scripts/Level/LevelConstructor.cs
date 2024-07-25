@@ -107,12 +107,12 @@ namespace Assets.Scripts.Level
             {
                 List<SavedSquad> preloadSquads = new List<SavedSquad>();
                 List<SavedSquad> midLevelSquads = new List<SavedSquad>();
-                if (Level.UseSemiRandomSquads)
+                if (Level.UseSemiRandomSquads && (side != ConfigData.Configuration.AISide || !Level.UseFullyRandomEnemySquads))
                 {
 
                     List<List<int>> indexes = new List<List<int>>();
-                    indexes.Add(new List<int> {}); // bee indexes
-                    indexes.Add(new List<int> {}); // human indexes
+                    indexes.Add(new List<int> {16, 41, 42, 43, 44, 45}); // bee indexes
+                    indexes.Add(new List<int> {34, 35, 36, 37, 38, 39, 40}); // human indexes
 
                     for (int option = 0; option < 2; option++)
                     {
@@ -172,12 +172,7 @@ namespace Assets.Scripts.Level
                         ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 8),  // human squad // 1 Gunship, #8
                         ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 9),  // human squad // 1 Scout, #9
                         //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 10),  // human squad // 1 Warp Gate, #10
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 19),  // human squad // New ships with colors, #19
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 20),  // human squad // Line of gunships, #20
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 22),  // human squad // Line of barges, #22
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 27),  // human squad // Line of dreadnoughts, #27
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 28),  // human squad // Two dreadnoughts, #28
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 29),  // human squad // Warp gate with gunships, #29
+
 
 
                         //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 11),  // bee squad // 1 Bumblebee #11

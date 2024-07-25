@@ -456,7 +456,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                         if (obstacleCollider != null)
                         {
                             Obstacle obstacle = obstacleCollider.GetComponent<Obstacle>();
-                            Debug.Log($"{obstacle.Name} is in the way of {Name}");
+                            //Debug.Log($"{obstacle.Name} is in the way of {Name}");
                             if (obstacle.IsMobile)
                             {
                                 NearbyAsteroids.Add((CollisionAsteroid)obstacle);
@@ -469,7 +469,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                         }
                         else
                         {
-                            Debug.Log($"Direct path for {Name} to {destination}");
+                            //Debug.Log($"Direct path for {Name} to {destination}");
                         }
 
                     }
@@ -479,7 +479,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     //Level.Pathfinder.FindPath(this, convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance());
 
                 }
-                Debug.Log($"No obstacles in the way for {Name}");
+                //Debug.Log($"No obstacles in the way for {Name}");
                 IsFollowingPath = false;
                 TargetCoordinates = destination;
                 HasTargetCoordinates = true;
@@ -579,7 +579,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 IsFollowingPath = true;
                 HasTargetCoordinates = true;
                 PathfindingValue = null;
-                Debug.Log($"Merged full path to destination in {(Time.realtimeSinceStartup - start) * 1000}ms");
+                //Debug.Log($"Merged full path to destination in {(Time.realtimeSinceStartup - start) * 1000}ms");
             }
 
         }

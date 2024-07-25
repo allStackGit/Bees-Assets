@@ -58,7 +58,7 @@ namespace Assets.Scripts.Level.Commands
                         // Once we get close to the target we speed up the timer so we get more up to date information
                         if (!IsCloseToTarget && Squad.DistanceToPoint(Enemy.GetPosition()) < Squad.MaxRange * 2)
                         {
-                            Debug.Log($"{Squad.Name} is close to {Enemy.Name}");
+                            //Debug.Log($"{Squad.Name} is close to {Enemy.Name}");
                             CancelInvoke(nameof(Timer));
                             CommandFrequency = .25f;
                             IsCloseToTarget = true;
@@ -67,7 +67,7 @@ namespace Assets.Scripts.Level.Commands
                     }
                     else if (Squad.MaxRange >= 45 && Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(Enemy))
                     {
-                        Debug.Log($"All ships are comfortably within range, we don't need to move.");
+                        //Debug.Log($"All ships are comfortably within range, we don't need to move.");
                     }
                     else
                     {
