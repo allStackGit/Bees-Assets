@@ -123,6 +123,7 @@ namespace Assets.Scripts.Entities.Ships
         public string __TargetEnemy;
         public List<string> __DamageStatuses;
         public List<string> __CommandTargetingQueue;
+        public List<string> __NearbyAsteroids;
         public float __CurrentSpeed;
 
 
@@ -165,6 +166,7 @@ namespace Assets.Scripts.Entities.Ships
             }
             __CommandTargetingQueue = Squad.HasCommand && Squad.Command.HasEnemy ? Squad.Command.TargetingQueue.Select((ship) =>  ship.Name).ToList() : new List<string>();
             __CurrentSpeed = _currentSpeed;
+            __NearbyAsteroids = NearbyAsteroids.Select((a) => a.Name).ToList();
             //AverageReward = AverageRewardSum / Actions;
             //AverageRandomReward = AverageRandomRewardSum / RandomActions;
             //AverageLearnedReward = AverageLearnedRewardSum / LearnedActions;

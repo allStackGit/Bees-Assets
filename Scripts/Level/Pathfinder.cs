@@ -128,6 +128,13 @@ namespace Assets.Scripts.Level
 
 
                         IsThreadActive[i] = true;
+
+                        if (Level.ActivateCollisionAsteroids)
+                        {
+                            UpdateMapTime[i] = SW.Stopwatch.StartNew();
+                            UpdateMap(i, p.Ship);
+                            UpdateMapTime[i].Stop();
+                        }
                         Task task = new Task(() =>
                         {
                             StartNodes[i] = GridNodes[i][p.Start.x][p.Start.y];
@@ -156,33 +163,35 @@ namespace Assets.Scripts.Level
             }
             
         }
-       
-        public void CalculateClearance(MapNode[][] nodes, int startX, int endX, int startY, int endY, bool isSubSection)
-        {
-            float start = Time.realtimeSinceStartup;
-            int totalLoopCount = 0;
-            int minY, minX, maxY, maxX, boundsX, boundsY = 0;
-            int height = _grid.Height;
-            int width = _grid.Width;
 
-            bool hasHitObstacle;
-            MapNode currentNode;
-            MapNode loopNode;
+        //int totalLoopCount = 0;
+        int minY, minX, maxY, maxX, boundsX, boundsY, x, y = 0;
+        bool hasHitObstacle;
+        MapNode currentNode;
+        MapNode loopNode;
+        public void CalculateClearance(MapNode[][] nodes, int startX, int endX, int startY, int endY, int maxClearance, bool isSubSection)
+        {
+            //float start = Time.realtimeSinceStartup;
+
+
+
 
             //Debug.Log($"Node subsection is {width} wide and {height} tall");
 
-            for (int y = startY; y < endY; y++)
+            for (y = startY; y < endY; y++)
             {
-                for (int x = startX; x < endX; x++)
+                for (x = startX; x < endX; x++)
                 {
-                    try
-                    {
-                        currentNode = nodes[x][y];
-                    }catch (Exception e)
-                    {
-                        Debug.Log($"startX: {startX}, startY: {startY}, endX: {endX}, endY: {endY}, x: {x}, y: {y}, width: {_grid.Width}, height: {_grid.Height} ");
-                        throw e;
-                    }
+                    //try
+                    //{
+                    //    currentNode = nodes[x][y];
+                    //}catch (Exception e)
+                    //{
+                    //    Debug.Log($"startX: {startX}, startY: {startY}, endX: {endX}, endY: {endY}, x: {x}, y: {y}, width: {_grid.Width}, height: {_grid.Height} ");
+                    //    throw e;
+                    //}
+
+                    currentNode = nodes[x][y];
                     //Debug.Log($"CN: ({x}, {y}) => ({currentNode.x}, {currentNode.y})");
                     if (currentNode.Clearance > 0)
                     {
@@ -192,13 +201,13 @@ namespace Assets.Scripts.Level
                         minX = currentNode.x - currentNode.Clearance;
                         maxY = currentNode.y + currentNode.Clearance;
                         maxX = currentNode.x + currentNode.Clearance;
-                        while (!hasHitObstacle && maxX < width && maxY < height && minX >= 0 && minY >= 0)
+                        while (!hasHitObstacle && /*currentNode.Clearance < maxClearance &&*/ maxX < _grid.Width && maxY < _grid.Height && minX >= 0 && minY >= 0)
                         {
                             // bottom border
                             //Debug.Log($"Checking clearance ({currentNode.Clearance+1}) for {currentNode.Index}: minX: {minX}, maxX: {maxX}, minY: {minY}, maxY: {maxY}");
                             for (boundsX = minX; boundsX <= maxX; boundsX++)
                             {
-                                totalLoopCount++;
+                                //totalLoopCount++;
                                 //loopNode = _grid.GetNode(boundsX, maxY);
                                 loopNode = nodes[boundsX][maxY];
 
@@ -217,7 +226,7 @@ namespace Assets.Scripts.Level
                             {
                                 for (boundsX = minX; boundsX <= maxX; boundsX++)
                                 {
-                                    totalLoopCount++;
+                                    //totalLoopCount++;
                                     //loopNode = _grid.GetNode(boundsX, minY);
                                     loopNode = nodes[boundsX][minY];
                                     //Debug.Log($"Checking {loopNode.Index} as a child of {currentNode}");
@@ -234,7 +243,7 @@ namespace Assets.Scripts.Level
                                 {
                                     for (boundsY = maxY - 1; boundsY > minY; boundsY--)
                                     {
-                                        totalLoopCount++;
+                                        //totalLoopCount++;
                                         //loopNode = _grid.GetNode(maxX, boundsY);
                                         loopNode = nodes[maxX][boundsY];
                                         //Debug.Log($"Checking {loopNode.Index} as a child of {currentNode}");
@@ -251,7 +260,7 @@ namespace Assets.Scripts.Level
                                     {
                                         for (boundsY = maxY - 1; boundsY > minY; boundsY--)
                                         {
-                                            totalLoopCount++;
+                                            //totalLoopCount++;
                                             //loopNode = _grid.GetNode(minX, boundsY);
                                             loopNode = nodes[minX][boundsY];
                                             //Debug.Log($"Checking {loopNode.Index} as a child of {currentNode}");
@@ -286,12 +295,12 @@ namespace Assets.Scripts.Level
                 //    yield return ConfigData.WaitForEndOfFrame;
                 //}
             }
-            if (!isSubSection)
-            {
-                float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
-                //SaveClearanceMap();
-                Debug.Log($"calculateClearance() took {end} ms to complete. There were {totalLoopCount} loops measuring clearance");
-            }
+            //if (!isSubSection)
+            //{
+            //    float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
+            //    //SaveClearanceMap();
+            //    Debug.Log($"calculateClearance() took {end} ms to complete. There were {totalLoopCount} loops measuring clearance");
+            //}
             //Level.StartCoroutine(CalculateSquares());
         }
         public void InitializeMap()
@@ -332,7 +341,7 @@ namespace Assets.Scripts.Level
                 }
             }
 
-            CalculateClearance(_grid.Nodes, 0, _grid.Width, 0, _grid.Height, false);
+            CalculateClearance(_grid.Nodes, 0, _grid.Width, 0, _grid.Height, int.MaxValue, false);
 
             for (int i = 0; i < ConfigData.MaxThreads; i++)
             {
@@ -464,10 +473,11 @@ namespace Assets.Scripts.Level
         /// 
         /// Scenario 3. A ship is moving on a preexisting route when an obstacle comes within its range. It passes that obstacle to the Pathfinder and the Pathfinder updates that obstacle and the ship finds a new path.
         /// </summary>
-        public void UpdateMap(int thread, List<CollisionAsteroid> collisionAsteroids)
+        public void UpdateMap(int thread, Ship ship)
         {
             float start = Time.realtimeSinceStartup;
             CollisionAsteroid asteroid;
+            List<CollisionAsteroid> collisionAsteroids = ship.NearbyAsteroids; // is the ToList() necessary?
             int leastY = int.MaxValue;
             int leastX = int.MaxValue;
             int mostX = int.MinValue;
@@ -478,54 +488,57 @@ namespace Assets.Scripts.Level
             int endX;
             int endY;
             int totalAsteroids = PreviousAsteroids[thread].Count + collisionAsteroids.Count;
+            int fullClearanceThreshold = 3;
             //Debug.Log($"Updating map");
 
-            if (totalAsteroids < 3)
-            {
-                PreviousAsteroids[thread].ForEach((asteroidId) =>
-                {
-                    //Debug.Log($"Clearing the position of {asteroid.Name} on the pathfinding map");
-                    foreach (int[] point in ObstaclePoints[asteroidId])
-                    {
-                        if (point[0] >= 0 && point[0] < _grid.Width && point[1] >= 0 && point[1] < _grid.Height)
-                        {
-                            GridNodes[thread][point[0]][point[1]].Clearance = GridNodes[thread][point[0]][point[1]].OriginalClearance; // set its old position to the original clearance
-
-                            if (point[0] < leastX)
-                            {
-                                leastX = point[0];
-                            }
-                            else if (point[0] > mostX)
-                            {
-                                mostX = point[0];
-                            }
-
-                            if (point[1] < leastY)
-                            {
-                                leastY = point[1];
-                            }
-                            else if (point[1] > mostY)
-                            {
-                                mostY = point[1];
-                            }
-                        }
-                    }
-
-                    startX = Math.Clamp(leastX - sectionSize, 0, _grid.Width - 1);
-                    startY = Math.Clamp(leastY - sectionSize, 0, _grid.Height - 1);
-                    endX = Math.Clamp(mostX + sectionSize, 0, _grid.Width - 1);
-                    endY = Math.Clamp(mostY + sectionSize, 0, _grid.Height - 1);
-
-                    CalculateClearance(GridNodes[thread], startX, endX, startY, endY, true);
-                    //Debug.Log($"Calculated clearance around #{asteroidId}");
-                });
-            }
             
 
+            PreviousAsteroids[thread].ForEach((asteroidId) =>
+            {
+                float asteroidTime = Time.realtimeSinceStartup;
+                //Debug.Log($"Clearing the position of {asteroid.Name} on the pathfinding map");
+                foreach (int[] point in ObstaclePoints[asteroidId])
+                {
+                    if (point[0] >= 0 && point[0] < _grid.Width && point[1] >= 0 && point[1] < _grid.Height)
+                    {
+                        GridNodes[thread][point[0]][point[1]].Clearance = GridNodes[thread][point[0]][point[1]].OriginalClearance; // set its old position to the original clearance
+
+                        if (point[0] < leastX)
+                        {
+                            leastX = point[0];
+                        }
+                        else if (point[0] > mostX)
+                        {
+                            mostX = point[0];
+                        }
+
+                        if (point[1] < leastY)
+                        {
+                            leastY = point[1];
+                        }
+                        else if (point[1] > mostY)
+                        {
+                            mostY = point[1];
+                        }
+                    }
+                }
+
+                startX = Math.Clamp(leastX - sectionSize, 0, _grid.Width - 1);
+                startY = Math.Clamp(leastY - sectionSize, 0, _grid.Height - 1);
+                endX = Math.Clamp(mostX + sectionSize, 0, _grid.Width - 1);
+                endY = Math.Clamp(mostY + sectionSize, 0, _grid.Height - 1);
+
+                if (totalAsteroids < fullClearanceThreshold)
+                {
+                    CalculateClearance(GridNodes[thread], startX, endX, startY, endY, Clearances[thread], true);
+                    Debug.Log($"Calculated clearance around asteroid #{asteroidId} in {(Time.realtimeSinceStartup - asteroidTime) * 1000}ms");
+                }
+            });
             PreviousAsteroids[thread].Clear();
 
             for (int i = 0; i < collisionAsteroids.Count; i++)
             {
+                float asteroidTime = Time.realtimeSinceStartup;
                 asteroid = collisionAsteroids[i];
 
                 if (asteroid != null)
@@ -537,7 +550,7 @@ namespace Assets.Scripts.Level
                     //float obstaclePoints = Time.realtimeSinceStartup;
                     ObstaclePoints[asteroid.MapPointsIndex] = GetObstaclePoints(asteroid, asteroid.Body.velocity.x, asteroid.Body.velocity.y);
                     //float obstaclePointsEnd = (Time.realtimeSinceStartup - obstaclePoints) * 1000; // seconds to milliseconds
-                    //Debug.Log($"Updated obstacle points in {obstaclePointsEnd} ms");
+                    //Debug.Log($"Updated obstacle points in {obstaclePointsEnd} ms"); // takes less than a millisecond
                     //ObstaclePoints[asteroid.MapPointsIndex] = GetObstaclePoints(asteroid, 0, 0);
 
                     //Debug.Log($"Got obstacle points for {asteroid}");
@@ -574,18 +587,21 @@ namespace Assets.Scripts.Level
                     endX = Math.Clamp(mostX + sectionSize, 0, _grid.Width - 1);
                     endY = Math.Clamp(mostY + sectionSize, 0, _grid.Height - 1);
 
-                    if (totalAsteroids < 3)
+                    if (totalAsteroids < fullClearanceThreshold)
                     {
-                        CalculateClearance(GridNodes[thread], startX, endX, startY, endY, true);
+                        CalculateClearance(GridNodes[thread], startX, endX, startY, endY, Clearances[thread], true);
+                        Debug.Log($"Set obstacle points and possibly calculated clearance around {asteroid.Name} in {(Time.realtimeSinceStartup - asteroidTime) * 1000}ms");
+
                     }
-                    //Debug.Log($"Calculated clearance around {asteroid.Name}");
 
                 }
             }
-            if (totalAsteroids >= 3)
+            if (totalAsteroids >= fullClearanceThreshold)
             {
-                //Debug.Log($"Calculated full clearance");
-                CalculateClearance(GridNodes[thread], 0, _grid.Width, 0, _grid.Height, true);
+                float fullCalcTime = Time.realtimeSinceStartup;
+                CalculateClearance(GridNodes[thread], 0, _grid.Width, 0, _grid.Height, Clearances[thread], true);
+                Debug.Log($"Calculated full clearance in {(Time.realtimeSinceStartup - fullCalcTime) * 1000}ms");
+
             }
             //CalculateClearance(GridNodes[thread], true);
 
@@ -911,7 +927,7 @@ namespace Assets.Scripts.Level
                     Ships[index].PathfindingThreadComplete = true;
                     IsThreadActive[index] = false;
 
-                    //OrderPrintDebugImage(index);
+                    OrderPrintDebugImage(index);
                     return;
                 }
                 BTUncheckedNodes.Remove(BTCurrentNode);
@@ -970,7 +986,7 @@ namespace Assets.Scripts.Level
             IsThreadActive[index] = false;
 
 
-            //OrderPrintDebugImage(index);
+            OrderPrintDebugImage(index);
             return;
 
         }
@@ -1003,9 +1019,7 @@ namespace Assets.Scripts.Level
                     if (Level.ActivateCollisionAsteroids)
                     {
                         UpdateMapTime[i] = SW.Stopwatch.StartNew();
-                        //Debug.Log("Before updating map");
-                        UpdateMap(i, ship.NearbyAsteroids.ToList());
-                        //Debug.Log("After updating map");
+                        UpdateMap(i, ship);
                         UpdateMapTime[i].Stop();
                     }
                     IsThreadActive[i] = true;
