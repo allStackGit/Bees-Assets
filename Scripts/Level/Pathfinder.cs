@@ -131,6 +131,7 @@ namespace Assets.Scripts.Level
 
                         if (Level.ActivateCollisionAsteroids)
                         {
+                            Clearances[i] = p.Clearance;
                             UpdateMapTime[i] = SW.Stopwatch.StartNew();
                             UpdateMap(i, p.Ship);
                             UpdateMapTime[i].Stop();
@@ -139,7 +140,6 @@ namespace Assets.Scripts.Level
                         {
                             StartNodes[i] = GridNodes[i][p.Start.x][p.Start.y];
                             EndNodes[i] = GridNodes[i][p.End.x][p.End.y];
-                            Clearances[i] = p.Clearance;
                             Ships[i] = p.Ship;
                             BTFindPath(i);
                         });
@@ -176,7 +176,7 @@ namespace Assets.Scripts.Level
 
 
 
-            //Debug.Log($"Node subsection is {width} wide and {height} tall");
+            //Debug.Log($"Calculating clearance up to {maxClearance}");
 
             for (y = startY; y < endY; y++)
             {
@@ -201,7 +201,7 @@ namespace Assets.Scripts.Level
                         minX = currentNode.x - currentNode.Clearance;
                         maxY = currentNode.y + currentNode.Clearance;
                         maxX = currentNode.x + currentNode.Clearance;
-                        while (!hasHitObstacle && /*currentNode.Clearance < maxClearance &&*/ maxX < _grid.Width && maxY < _grid.Height && minX >= 0 && minY >= 0)
+                        while (!hasHitObstacle && currentNode.Clearance < maxClearance && maxX < _grid.Width && maxY < _grid.Height && minX >= 0 && minY >= 0)
                         {
                             // bottom border
                             //Debug.Log($"Checking clearance ({currentNode.Clearance+1}) for {currentNode.Index}: minX: {minX}, maxX: {maxX}, minY: {minY}, maxY: {maxY}");
@@ -531,7 +531,7 @@ namespace Assets.Scripts.Level
                 if (totalAsteroids < fullClearanceThreshold)
                 {
                     CalculateClearance(GridNodes[thread], startX, endX, startY, endY, Clearances[thread], true);
-                    Debug.Log($"Calculated clearance around asteroid #{asteroidId} in {(Time.realtimeSinceStartup - asteroidTime) * 1000}ms");
+                    //Debug.Log($"Calculated clearance around asteroid #{asteroidId} in {(Time.realtimeSinceStartup - asteroidTime) * 1000}ms");
                 }
             });
             PreviousAsteroids[thread].Clear();
@@ -590,7 +590,7 @@ namespace Assets.Scripts.Level
                     if (totalAsteroids < fullClearanceThreshold)
                     {
                         CalculateClearance(GridNodes[thread], startX, endX, startY, endY, Clearances[thread], true);
-                        Debug.Log($"Set obstacle points and possibly calculated clearance around {asteroid.Name} in {(Time.realtimeSinceStartup - asteroidTime) * 1000}ms");
+                        //Debug.Log($"Set obstacle points and possibly calculated clearance around {asteroid.Name} in {(Time.realtimeSinceStartup - asteroidTime) * 1000}ms");
 
                     }
 
@@ -828,7 +828,7 @@ namespace Assets.Scripts.Level
         public void BTFindPath(int index)
         {
             //Debug.Log($"_Started BT {ThreadsStarted} % {ConfigData.MaxThreads} : #{index}|{Thread}|{(ThreadsStarted % ConfigData.MaxThreads)} ");
-            //Debug.Log($"_Started BT #{index}");
+            Debug.Log($"_Started BT #{index} : {Ships[index].Name}");
             //minimumClearance = 1;
             //maximumClearance = 1;
             //Debug.Log($"Trying to find a path for #{index} from ({StartNodes[index].x}, {StartNodes[index].y}) to ({EndNodes[index].x}, {EndNodes[index].y})");
@@ -866,7 +866,7 @@ namespace Assets.Scripts.Level
             //return;
             if (EndNodes[index].Clearance < Clearances[index])
             {
-                //Debug.Log($"The end ({EndNodes[index].Vector}) isn't walkable space");
+                Debug.Log($"The end ({EndNodes[index].Vector}) for #{index} : {Ships[index].Name} isn't walkable space");
                 EndNodes[index] = FindNearestWalkablePoint(StartNodes[index], EndNodes[index], Clearances[index], GridNodes[index]);
                 //Debug.Log($"Found new end point that is walkable: {EndNodes[index]}");
             }
@@ -918,16 +918,17 @@ namespace Assets.Scripts.Level
 
                 if (BTCurrentNode == EndNodes[index])
                 {
+                    Debug.Log($"Finished background finding path #{index}:{Ships[index].Name}.");
                     MakeDestinationList(EndNodes[index], BTPath);
                     Totals[index].Stop();
                     GetNodes[index].Stop();
-                    //Debug.Log($"Finished background finding path #{index}. ({BTPath.Points.Count}) Loops: ({BTLoops}) startup time: {BTStartupTime}ms, getNode Time: {GetNodes[index].Elapsed.TotalMilliseconds}ms, " +
-                    //    $"neighborLoop Time: {NeighborLoops[index].Elapsed.TotalMilliseconds}ms, Update Map Time: {UpdateMapTime[index].Elapsed.TotalMilliseconds}ms Total: {(Totals[index].Elapsed.TotalMilliseconds)}ms");
+                    Debug.Log($"Finished background finding path and destination list for #{index}:{Ships[index].Name}. ({BTPath.Points.Count}) Loops: ({BTLoops}) startup time: {BTStartupTime}ms, getNode Time: {GetNodes[index].Elapsed.TotalMilliseconds}ms, " +
+                        $"neighborLoop Time: {NeighborLoops[index].Elapsed.TotalMilliseconds}ms, Update Map Time: {UpdateMapTime[index].Elapsed.TotalMilliseconds}ms Total: {(Totals[index].Elapsed.TotalMilliseconds)}ms");
                     Ships[index].PathfindingValue = BTPath;
                     Ships[index].PathfindingThreadComplete = true;
                     IsThreadActive[index] = false;
 
-                    OrderPrintDebugImage(index);
+                    //OrderPrintDebugImage(index);
                     return;
                 }
                 BTUncheckedNodes.Remove(BTCurrentNode);
@@ -1018,6 +1019,7 @@ namespace Assets.Scripts.Level
                 {
                     if (Level.ActivateCollisionAsteroids)
                     {
+                        Clearances[i] = maximumClearance;
                         UpdateMapTime[i] = SW.Stopwatch.StartNew();
                         UpdateMap(i, ship);
                         UpdateMapTime[i].Stop();
@@ -1030,7 +1032,6 @@ namespace Assets.Scripts.Level
                     {
                         //Debug.Log($"Starting Finding path for #{i} from {startNode.x}, {startNode.y} to  {endNode.x}, {endNode.y}");
 
-                        Clearances[i] = maximumClearance;
                         Ships[i] = ship;
                         BTFindPath(i);
                     });
@@ -1136,6 +1137,10 @@ namespace Assets.Scripts.Level
                     {
                         node = nodes[ x/ scale][y / scale];
                         Color color = new Color(node.Clearance / 50.0f, node.Clearance / 50.0f, node.Clearance / 50.0f); // has not been checked
+                        if (node.Clearance >= ship.GetClearance())
+                        {
+                            color = Color.green;
+                        }
 
                         if (node.Clearance == 0) // obstacle
                         {

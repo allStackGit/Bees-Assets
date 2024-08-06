@@ -2724,7 +2724,7 @@ PrefabInstance:
       objectReference: {fileID: 945456054}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: OverrideMapIndex
-      value: 0
+      value: 2
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: OverrideUserSide
@@ -2732,7 +2732,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: AsteroidSpawnRate
-      value: 10
+      value: 5
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: OverrideTimeScale
