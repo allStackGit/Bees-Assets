@@ -459,15 +459,19 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                         {
                             Obstacle obstacle = obstacleCollider.GetComponent<Obstacle>();
                             //Debug.Log($"{obstacle.Name} is in the way of {Name}");
-                            if (obstacle.IsMobile)
+                            if (!obstacle.IsMobile)
                             {
-                                NearbyAsteroids.Add((CollisionAsteroid)obstacle);
+                                //CollisionAsteroid asteroid = (CollisionAsteroid)obstacle;
+                                //if (!NearbyAsteroids.Contains(asteroid)){
+                                //    NearbyAsteroids.Add(asteroid);
+                                //}
+                                convertedStart = Level.Pathfinder.ConvertToMapCoordinates(startPosition);
+                                convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
+                                Level.Pathfinder.FindPath(this, convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance());
+                                return;
                             }
 
-                            convertedStart = Level.Pathfinder.ConvertToMapCoordinates(startPosition);
-                            convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
-                            Level.Pathfinder.FindPath(this, convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance());
-                            return;
+                            
                         }
                         else
                         {
@@ -515,7 +519,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         /// <param name="asteroid"></param>
         public void FoundNearbyAsteroid(CollisionAsteroid asteroid)
         {
-            NearbyAsteroids.Add(asteroid);
+            if (!NearbyAsteroids.Contains(asteroid))
+            {
+                NearbyAsteroids.Add(asteroid);
+            }
             //Debug.Log($"There's an asteroid {asteroid.Name} nearby on our path: {Name}");
 
             if (IsFollowingPath)
@@ -565,7 +572,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             }
             if (PathfindingValue != null && PathfindingValue.Points.Count > 0)
             {
-                float start = Time.realtimeSinceStartup;
+                //float start = Time.realtimeSinceStartup;
                 //Debug.Log($"Merging pathfinding paths for {Name} with {PathfindingValue.Points.Count} points");
                 //Vector2 firstPoint = PathfindingValue.Points.Take(25).OrderBy((p) => DistanceToPoint(p)).Take(10).OrderBy((p) => GetRotatedAngleToPoint(p)).First();
 

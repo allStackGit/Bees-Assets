@@ -12,6 +12,7 @@ using System.Threading;
 using SW = System.Diagnostics;
 using UnityEngine;
 using System.Threading.Tasks;
+using NUnit.Framework;
 
 namespace Assets.Scripts.Level
 {
@@ -41,10 +42,6 @@ namespace Assets.Scripts.Level
         public LevelStage Level;
         public List<Obstacle> Obstacles = new List<Obstacle>();
         /// <summary>
-        /// A list of indexes of obstacles that need to be updated next time the map updates
-        /// </summary>
-        public List<int> ObstaclesToUpdate = new List<int>();
-        /// <summary>
         /// A list of arrays of obstacle points. Each array of points belongs to an obstacle and each point (a two int array) is an x index and a y index on the Map array
         /// </summary>
         public List<int[][]> ObstaclePoints = new List<int[][]>();
@@ -66,45 +63,7 @@ namespace Assets.Scripts.Level
         {
             if (PathsWaiting.Count > 0)
             {
-                //Debug.Log($"There are {PathsWaiting.Count} paths waiting at {Time.realtimeSinceStartup}");
-                //string threads = "Threads: ";
-                //for (int i = 0; i < ConfigData.MaxThreads; i++)
-                //{
-                //    threads += $"#{i}: {IsThreadActive[i]} | ";
-                //}
-                //Debug.Log(threads);
-
-
-                //PathsWaiting.ForEach((p) =>
-                //{
-                //    for (int i = 0; i < ConfigData.MaxThreads; i++)
-                //    {
-                //        if (!IsThreadActive[i])
-                //        {
-                //            IsThreadActive[i] = true;
-                //            Task task = new Task(() =>
-                //            {
-                //                StartNodes[i] = p.Start;
-                //                EndNodes[i] = p.End;
-                //                Clearances[i] = p.Clearance;
-                //                Ships[i] = p.Ship;
-                //                BTFindPath(i);
-                //            });
-                //            //Debug.Log($"Queued Started BT {ThreadsStarted} % {ConfigData.MaxThreads} : #{i}|{Thread}|{(ThreadsStarted % ConfigData.MaxThreads)} ");
-                //            //Debug.Log($"Queued Started BT #{i}");
-                //            task.Start();
-                //            //ThreadsStarted++;
-                //            PathsWaitingToRemove.Add(p);
-                //            break;
-                //        }
-                //    }
-
-                //});
-                //PathsWaitingToRemove.ForEach((p) =>
-                //{
-                //    PathsWaiting.Remove(p);
-                //});
-                //PathsWaitingToRemove.Clear();
+               
 
                 for (int i = 0; i < ConfigData.MaxThreads && PathsWaiting.Count > 0; i++)
                 {
@@ -142,19 +101,6 @@ namespace Assets.Scripts.Level
                         EndNodes[i] = GridNodes[i][p.End.x][p.End.y];
                         Ships[i] = p.Ship;
 
-                        //Task.Run(() =>
-                        //{
-                        //    Debug.Log($"Queued running #{i} for {p.Ship.Name}");
-
-                        //    BTFindPath(i);
-
-                        //    Debug.Log($"Called BTFindPath({i}) #{i} for {p.Ship.Name}");
-                        //}).Wait();
-
-
-                        //Debug.Log($"Pre starting Finding path for #{i} from {startNode.x}, {startNode.y} to {endNode.x}, {endNode.y}");
-
-
                         //Debug.Log($"Queued Started BT #{i}");
 
                         //Debug.Log($"Queued running #{i} for {p.Ship.Name}");
@@ -163,7 +109,7 @@ namespace Assets.Scripts.Level
 
                         //Debug.Log($"Called BTFindPath({i}) #{i} for {p.Ship.Name}");
 
-                        Debug.Log($"Thread #{i} Queued Started {p.Ship.Name} after waiting {(Time.realtimeSinceStartup - p.StartTime) * 1000}ms on the queue");
+                        //Debug.Log($"Thread #{i} Queued Started {p.Ship.Name} after waiting {(Time.realtimeSinceStartup - p.StartTime) * 1000}ms on the queue");
 
                         //ThreadsStarted++;
                         //PathsWaitingToRemove.Add(p);
@@ -399,15 +345,6 @@ namespace Assets.Scripts.Level
 
 
         }
-        /// <summary>
-        /// adds the index to Obstacles to Update 
-        /// </summary>
-        /// <param name="id"></param>
-        public void AddToUpdateList(int id)
-        {
-            ObstaclesToUpdate.Add(id);
-            //Debug.Log($"Setting #{id} to be updated");
-        }
         public int AddObstacle(Obstacle obstacle)
         {
             Obstacles.Add(obstacle);
@@ -490,7 +427,7 @@ namespace Assets.Scripts.Level
         {
             float start = Time.realtimeSinceStartup;
             CollisionAsteroid asteroid;
-            List<CollisionAsteroid> collisionAsteroids = ship.NearbyAsteroids; // is the ToList() necessary?
+            List<CollisionAsteroid> collisionAsteroids = ship.NearbyAsteroids; // is the ToList() necessary? // only if we use a HashSet
             int leastY = int.MaxValue;
             int leastX = int.MaxValue;
             int mostX = int.MinValue;
@@ -613,13 +550,15 @@ namespace Assets.Scripts.Level
             {
                 float fullCalcTime = Time.realtimeSinceStartup;
                 CalculateClearance(GridNodes[thread], 0, _grid.Width, 0, _grid.Height, Clearances[thread], true);
-                //Debug.Log($"Calculated full clearance in {(Time.realtimeSinceStartup - fullCalcTime) * 1000}ms");
+                Debug.Log($"Calculated full clearance in {(Time.realtimeSinceStartup - fullCalcTime) * 1000}ms");
 
             }
             //CalculateClearance(GridNodes[thread], true);
 
             float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
-            //Debug.Log($"Updated map in {end} ms");
+            Debug.Log($"Updated map with {PreviousAsteroids[thread].Count} previous asteroids and {collisionAsteroids.Count} collision asteroids in {end} ms\n" +
+                $"Previous asteroids: {string.Join(",", PreviousAsteroids[thread])} \n" +
+                $"Collision asteroids: {string.Join(",", collisionAsteroids.Select((a) => $"#{a.Id}"))}");
 
         }
 
@@ -943,7 +882,7 @@ namespace Assets.Scripts.Level
                         Ships[index].PathfindingThreadComplete = true;
                         IsThreadActive[index] = false;
 
-                        //OrderPrintDebugImage(index);
+                        OrderPrintDebugImage(index);
                         return;
                     }
                     BTUncheckedNodes.Remove(BTCurrentNode);

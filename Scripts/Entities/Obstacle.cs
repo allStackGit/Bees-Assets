@@ -32,7 +32,6 @@ namespace Assets.Scripts.Entities
         {
             //Debug.Log($"Killing {Name}");
             IsDead = true;
-            Level.Pathfinder.AddToUpdateList(Id);
             Level.GetState().RemoveObstacle(this);
             Destroy(gameObject);
         }

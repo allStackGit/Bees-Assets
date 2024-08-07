@@ -2,6 +2,7 @@
 using Assets.Scripts.Scenes;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Entities
@@ -52,7 +53,11 @@ namespace Assets.Scripts.Entities
                 {
                     //Debug.Log($"It looks like {ship.Name} was already nearby and hit {Name}");
                     TouchingShips.Add(ship);
-                    ship.Kill(null);
+                    if (ship.Side != ConfigData.Configuration.BeeSide) // [alert] [test] this is so that the level isn't ended by bees being hit by asteroids during testing
+                    {
+                        ship.Kill(null);
+                        NearbyShips.Remove(ship);
+                    }
                 }
                 else
                 {
@@ -69,7 +74,7 @@ namespace Assets.Scripts.Entities
                     //Debug.Log($"It looks like {ship.Name} was already nearby and hit {Name}");
                     //ship.Kill(null);
                     CollisionObstacle = obstacle;
-                    Invoke(nameof(DelayedCollision), 1);
+                    //Invoke(nameof(DelayedCollision), 1);
                 }
                 else if (obstacle.IsMobile && obstacle.HasEnteredMap)
                 {
@@ -119,6 +124,15 @@ namespace Assets.Scripts.Entities
                 Kill();
             }
 
+        }
+
+        public override void Kill()
+        {
+            NearbyShips.ToList().ForEach((ship) =>
+            {
+                ship.LeftNearbyAsteroid(this);
+            });
+            base.Kill();
         }
     }
 }
