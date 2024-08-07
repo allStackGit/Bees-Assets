@@ -529,6 +529,7 @@ namespace Assets.Scripts.Scenes
                             InputManager.Update();
                             if (HasObstacles)
                             {
+                                //Debug.Log($"Calling path finder update again");
                                 Pathfinder.Update();
                             }
 

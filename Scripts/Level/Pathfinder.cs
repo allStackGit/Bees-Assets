@@ -62,11 +62,11 @@ namespace Assets.Scripts.Level
             InitializeMap();
 
         }
-        public async void Update()
+        public void Update()
         {
             if (PathsWaiting.Count > 0)
             {
-                Debug.Log($"There are {PathsWaiting.Count} paths waiting at {Time.realtimeSinceStartup}");
+                //Debug.Log($"There are {PathsWaiting.Count} paths waiting at {Time.realtimeSinceStartup}");
                 //string threads = "Threads: ";
                 //for (int i = 0; i < ConfigData.MaxThreads; i++)
                 //{
@@ -108,7 +108,7 @@ namespace Assets.Scripts.Level
 
                 for (int i = 0; i < ConfigData.MaxThreads && PathsWaiting.Count > 0; i++)
                 {
-                    Debug.Log($"Checking thread #{i} : {IsThreadActive[i]}, Pathswaiting: {PathsWaiting.Count}");
+                    //Debug.Log($"Checking thread #{i} : {IsThreadActive[i]}, Pathswaiting: {PathsWaiting.Count}");
                     if (!IsThreadActive[i])
                     {
                         PathWaiting p = PathsWaiting.Dequeue();
@@ -142,18 +142,26 @@ namespace Assets.Scripts.Level
                         EndNodes[i] = GridNodes[i][p.End.x][p.End.y];
                         Ships[i] = p.Ship;
 
-                        await Task.Run(() =>
-                        {
-                            Debug.Log($"Queued running #{i} for {p.Ship.Name}");
+                        //Task.Run(() =>
+                        //{
+                        //    Debug.Log($"Queued running #{i} for {p.Ship.Name}");
 
-                            BTFindPath(i);
-                        });
+                        //    BTFindPath(i);
+
+                        //    Debug.Log($"Called BTFindPath({i}) #{i} for {p.Ship.Name}");
+                        //}).Wait();
 
 
                         //Debug.Log($"Pre starting Finding path for #{i} from {startNode.x}, {startNode.y} to {endNode.x}, {endNode.y}");
 
 
                         //Debug.Log($"Queued Started BT #{i}");
+
+                        //Debug.Log($"Queued running #{i} for {p.Ship.Name}");
+
+                        BTFindPath(i);
+
+                        //Debug.Log($"Called BTFindPath({i}) #{i} for {p.Ship.Name}");
 
                         Debug.Log($"Thread #{i} Queued Started {p.Ship.Name} after waiting {(Time.realtimeSinceStartup - p.StartTime) * 1000}ms on the queue");
 
@@ -164,7 +172,7 @@ namespace Assets.Scripts.Level
                     }
                 }
 
-                Debug.Log($"There are NOW {PathsWaiting.Count} paths waiting at {Time.realtimeSinceStartup}");
+                //Debug.Log($"There are NOW {PathsWaiting.Count} paths waiting at {Time.realtimeSinceStartup}");
             }
             
         }
@@ -835,7 +843,7 @@ namespace Assets.Scripts.Level
             await Task.Run(() =>
             {
                 //Debug.Log($"_Started BT {ThreadsStarted} % {ConfigData.MaxThreads} : #{index}|{Thread}|{(ThreadsStarted % ConfigData.MaxThreads)} ");
-                Debug.Log($"_Started BT #{index} : {Ships[index].Name}");
+                //Debug.Log($"_Started BT #{index} : {Ships[index].Name}");
                 //minimumClearance = 1;
                 //maximumClearance = 1;
                 //Debug.Log($"Trying to find a path for #{index} from ({StartNodes[index].x}, {StartNodes[index].y}) to ({EndNodes[index].x}, {EndNodes[index].y})");
@@ -929,8 +937,8 @@ namespace Assets.Scripts.Level
                         MakeDestinationList(EndNodes[index], BTPath);
                         Totals[index].Stop();
                         GetNodes[index].Stop();
-                        Debug.Log($"Finished background finding path and destination list for #{index}:{Ships[index].Name}. ({BTPath.Points.Count}) Loops: ({BTLoops}) startup time: {BTStartupTime}ms, getNode Time: {GetNodes[index].Elapsed.TotalMilliseconds}ms, " +
-                            $"neighborLoop Time: {NeighborLoops[index].Elapsed.TotalMilliseconds}ms, Update Map Time: {UpdateMapTime[index].Elapsed.TotalMilliseconds}ms Total: {(Totals[index].Elapsed.TotalMilliseconds)}ms");
+                        //Debug.Log($"Finished background finding path and destination list for #{index}:{Ships[index].Name}. ({BTPath.Points.Count}) Loops: ({BTLoops}) startup time: {BTStartupTime}ms, getNode Time: {GetNodes[index].Elapsed.TotalMilliseconds}ms, " +
+                            //$"neighborLoop Time: {NeighborLoops[index].Elapsed.TotalMilliseconds}ms, Update Map Time: {UpdateMapTime[index].Elapsed.TotalMilliseconds}ms Total: {(Totals[index].Elapsed.TotalMilliseconds)}ms");
                         Ships[index].PathfindingValue = BTPath;
                         Ships[index].PathfindingThreadComplete = true;
                         IsThreadActive[index] = false;
@@ -1001,7 +1009,7 @@ namespace Assets.Scripts.Level
         }
 
         private MapNode startNode, endNode;
-        public async void FindPath(Ship ship, int startX, int startY, int endX, int endY, int maximumClearance)
+        public void FindPath(Ship ship, int startX, int startY, int endX, int endY, int maximumClearance)
         {
 
             //try
@@ -1038,10 +1046,7 @@ namespace Assets.Scripts.Level
                     EndNodes[i] = GridNodes[i][endNode.x][endNode.y];
                     Ships[i] = ship;
 
-                    await Task.Run(async () =>
-                    {
-                        await BTFindPath(i);
-                    });
+                    BTFindPath(i);
                     //Debug.Log($"Standard Started BT {ThreadsStarted} % {ConfigData.MaxThreads} : #{i}|{Thread}|{(ThreadsStarted % ConfigData.MaxThreads)} ");
                     //Debug.Log($"Standard Started #{i}");
                     startedTask = true;

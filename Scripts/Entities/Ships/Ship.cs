@@ -209,7 +209,7 @@ namespace Assets.Scripts.Entities.Ships
             Health = shipStats.Health;
             OriginalHealth = Health;
 
-            Name = $"{ShipType} - #{Id}";
+            Name = $"{ShipType} #{Id}";
             gameObject.name = Name;
             _healthBarFiller = HealthBar.transform.GetChild(0);
             _healthBarFillerSprite = HealthBar.transform.GetChild(0).GetComponent<SpriteRenderer>();
