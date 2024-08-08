@@ -88,10 +88,10 @@ namespace Assets.Scripts.Level
 
 
                         IsThreadActive[i] = true;
+                        Clearances[i] = p.Clearance;
 
                         if (Level.ActivateCollisionAsteroids)
                         {
-                            Clearances[i] = p.Clearance;
                             UpdateMapTime[i] = SW.Stopwatch.StartNew();
                             UpdateMap(i, p.Ship);
                             UpdateMapTime[i].Stop();
@@ -556,9 +556,9 @@ namespace Assets.Scripts.Level
             //CalculateClearance(GridNodes[thread], true);
 
             float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
-            Debug.Log($"Updated map with {PreviousAsteroids[thread].Count} previous asteroids and {collisionAsteroids.Count} collision asteroids in {end} ms\n" +
-                $"Previous asteroids: {string.Join(",", PreviousAsteroids[thread])} \n" +
-                $"Collision asteroids: {string.Join(",", collisionAsteroids.Select((a) => $"#{a.Id}"))}");
+            //Debug.Log($"Updated map with {PreviousAsteroids[thread].Count} previous asteroids and {collisionAsteroids.Count} collision asteroids in {end} ms\n" +
+            //    $"Previous asteroids: {string.Join(",", PreviousAsteroids[thread])} \n" +
+            //    $"Collision asteroids: {string.Join(",", collisionAsteroids.Select((a) => $"#{a.Id}"))}");
 
         }
 
@@ -966,15 +966,16 @@ namespace Assets.Scripts.Level
             endNode = _grid.Nodes[endX][endY];
 
             //Debug.Log($"Finding path for ? from {startNode.x}, {startNode.y} to {endNode.x}, {endNode.y}");
+            //Debug.Log($"Finding a path for {ship.Name} with clearance {maximumClearance}");
 
             bool startedTask = false;
             for (int i = 0; i < ConfigData.MaxThreads; i++)
             {
                 if (!IsThreadActive[i])
                 {
+                    Clearances[i] = maximumClearance;
                     if (Level.ActivateCollisionAsteroids)
                     {
-                        Clearances[i] = maximumClearance;
                         UpdateMapTime[i] = SW.Stopwatch.StartNew();
                         UpdateMap(i, ship);
                         UpdateMapTime[i].Stop();

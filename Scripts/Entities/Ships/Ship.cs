@@ -1117,6 +1117,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         {
 
             RaycastHit2D hit = Physics2D.BoxCast(origin, size, angle, direction, distance, mask);
+            Debug.Log($"{hit}, {hit.collider}, {hit.transform}");
 
             //Setting up the points to draw the cast
             Vector2 p1, p2, p3, p4, p5, p6, p7, p8;

@@ -19,7 +19,8 @@ namespace Assets.Scripts.Level.Commands
             Vector2 position = Squad.GetPosition();
             Vector2 randomCoordinates = Utilities.RandomCoordinate(Level, position, Vector2.one * ConfigData.Configuration.AIRandomMovementMaxDistance, Vector2.one * 10);
             SetAndMove(randomCoordinates);
-            InvokeRepeating(nameof(Timer), ConfigData.CommandTimerFrequency, 5);
+            CommandFrequency = 5;
+            InvokeRepeating(nameof(Timer), ConfigData.CommandTimerFrequency, CommandFrequency);
             Invoke(nameof(EndCommand), ConfigData.Configuration.AISquadPatrolTime);
 
 
