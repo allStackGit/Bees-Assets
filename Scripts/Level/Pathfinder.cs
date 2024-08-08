@@ -132,10 +132,16 @@ namespace Assets.Scripts.Level
         {
             //float start = Time.realtimeSinceStartup;
 
-
-
-
-            //Debug.Log($"Calculating clearance up to {maxClearance}");
+            if (isSubSection)
+            {
+                Debug.Log($"Calculating clearance up to {maxClearance}");
+                while (maxClearance % _scale > 0) // round the maxClearance up to the nearest multiple of _scale (e.g. round 13 to 16 if the _scale is 4)
+                {
+                    maxClearance++;
+                }
+                Debug.Log($"Calculating clearance up to rounded {maxClearance}");
+            }
+            
 
             for (y = startY; y < endY; y++)
             {
@@ -556,9 +562,9 @@ namespace Assets.Scripts.Level
             //CalculateClearance(GridNodes[thread], true);
 
             float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
-            //Debug.Log($"Updated map with {PreviousAsteroids[thread].Count} previous asteroids and {collisionAsteroids.Count} collision asteroids in {end} ms\n" +
-            //    $"Previous asteroids: {string.Join(",", PreviousAsteroids[thread])} \n" +
-            //    $"Collision asteroids: {string.Join(",", collisionAsteroids.Select((a) => $"#{a.Id}"))}");
+            Debug.Log($"Updated map with {PreviousAsteroids[thread].Count} previous asteroids and {collisionAsteroids.Count} collision asteroids in {end} ms\n" +
+                $"Previous asteroids: {string.Join(",", PreviousAsteroids[thread])} \n" +
+                $"Collision asteroids: {string.Join(",", collisionAsteroids.Select((a) => $"#{a.Id}"))}");
 
         }
 
@@ -1087,7 +1093,8 @@ namespace Assets.Scripts.Level
                     for (int x = 0; x < Width * scale; x += scale)
                     {
                         node = nodes[ x/ scale][y / scale];
-                        Color color = new Color(node.Clearance / 50.0f, node.Clearance / 50.0f, node.Clearance / 50.0f); // has not been checked
+                        float darkness = 25.0f;
+                        Color color = new Color(node.Clearance / darkness, node.Clearance / darkness, node.Clearance / darkness); // has not been checked
                         if (node.Clearance >= ship.GetClearance())
                         {
                             color = Color.green;

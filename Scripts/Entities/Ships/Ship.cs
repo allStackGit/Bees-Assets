@@ -475,7 +475,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                         }
                         else
                         {
-                            //Debug.Log($"Direct path for {Name} to {destination}");
+                            Debug.Log($"Direct path for {Name} to {destination}");
                         }
 
                     }
