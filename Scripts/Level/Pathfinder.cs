@@ -37,7 +37,7 @@ namespace Assets.Scripts.Level
         /// How much scaled down the pathfinding map is compared to the real map. Smaller size increases speed but decreases precision. Obstacles must be 
         /// at least as large on both axis as this number and even then, sometimes rotated obstacles aren't detected correctly
         /// </summary>
-        private int _scale = 4;
+        public int Scale = 4;
         public int Width, Height, HalfWidth, HalfHeight;
         public LevelStage Level;
         public List<Obstacle> Obstacles = new List<Obstacle>();
@@ -50,10 +50,10 @@ namespace Assets.Scripts.Level
         public Pathfinder(LevelStage level)
         {
             Level = level;
-            Width = (int)Math.Ceiling((double)Level.MapWidth / _scale);
-            Height = (int)Math.Ceiling((double)Level.MapHeight / _scale);
-            HalfWidth = (int)Math.Ceiling((double)Level.HalfMapWidth / _scale);
-            HalfHeight = (int)Math.Ceiling((double)Level.HalfMapHeight / _scale);
+            Width = (int)Math.Ceiling((double)Level.MapWidth / Scale);
+            Height = (int)Math.Ceiling((double)Level.MapHeight / Scale);
+            HalfWidth = (int)Math.Ceiling((double)Level.HalfMapWidth / Scale);
+            HalfHeight = (int)Math.Ceiling((double)Level.HalfMapHeight / Scale);
 
             //Level.StartCoroutine(InitializeMap());
             InitializeMap();
@@ -124,43 +124,70 @@ namespace Assets.Scripts.Level
         }
 
         //int totalLoopCount = 0;
-        int minY, minX, maxY, maxX, boundsX, boundsY, x, y = 0;
+        int minY, minX, maxY, maxX, boundsX, boundsY, x, y, yMovement = 0;
         bool hasHitObstacle;
-        MapNode currentNode;
-        MapNode loopNode;
+        MapNode currentNode, loopNode, previousNode;
         public void CalculateClearance(MapNode[][] nodes, int startX, int endX, int startY, int endY, int maxClearance, bool isSubSection)
         {
             //float start = Time.realtimeSinceStartup;
-
-            if (isSubSection)
-            {
-                Debug.Log($"Calculating clearance up to {maxClearance}");
-                while (maxClearance % _scale > 0) // round the maxClearance up to the nearest multiple of _scale (e.g. round 13 to 16 if the _scale is 4)
-                {
-                    maxClearance++;
-                }
-                Debug.Log($"Calculating clearance up to rounded {maxClearance}");
-            }
             
 
             for (y = startY; y < endY; y++)
             {
+                yMovement = 1;
                 for (x = startX; x < endX; x++)
                 {
                     //try
                     //{
                     //    currentNode = nodes[x][y];
-                    //}catch (Exception e)
+                    //}
+                    //catch (Exception e)
                     //{
                     //    Debug.Log($"startX: {startX}, startY: {startY}, endX: {endX}, endY: {endY}, x: {x}, y: {y}, width: {_grid.Width}, height: {_grid.Height} ");
                     //    throw e;
                     //}
-
+                    previousNode = currentNode;
                     currentNode = nodes[x][y];
                     //Debug.Log($"CN: ({x}, {y}) => ({currentNode.x}, {currentNode.y})");
                     if (currentNode.Clearance > 0)
                     {
-                        currentNode.Clearance = 1;
+                        // if this isn't the first node of the row and the previous node had clearance, then we know we've moved to the right and as long as the entire right side is clear,
+                        // we have at least as much clearance as the previous node
+                        if (yMovement == 0 && previousNode.Clearance > 0 && x + 1 < endX)
+                        {
+                            for (boundsY = (previousNode.y + previousNode.Clearance); boundsY > (previousNode.y - previousNode.Clearance); boundsY--)
+                            {
+                                //totalLoopCount++;
+                                //loopNode = _grid.GetNode(maxX, boundsY);
+                                loopNode = nodes[currentNode.x + 1][boundsY];
+                                //try
+                                //{
+                                //    loopNode = nodes[currentNode.x + 1][boundsY];
+                                //}
+                                //catch (Exception e)
+                                //{
+                                //    Debug.Log($"startX: {startX}, startY: {startY}, endX: {endX}, endY: {endY}, x: {currentNode.x + 1}, y: {boundsY}, " +
+                                //        $"clearance: {previousNode.Clearance}, node: ({previousNode.x}, {previousNode.y})");
+                                //    throw e;
+                                //}
+                                //Debug.Log($"Checking {loopNode.Index} as a child of {currentNode}");
+                                if (loopNode.Clearance == 0)
+                                {
+                                    hasHitObstacle = true;
+                                    //Debug.Log($"{currentNode.Index} Has hit obstacle {loopNode.Index}");
+                                    break;
+                                }
+                                currentNode.Clearance++;
+                            }
+                            //if (!hasHitObstacle)
+                            //{
+                            //    currentNode.Clearance = previousNode.Clearance;
+                            //}
+                        }
+                        else
+                        {
+                            currentNode.Clearance = 1;
+                        }
                         hasHitObstacle = false;
                         minY = currentNode.y - currentNode.Clearance;
                         minX = currentNode.x - currentNode.Clearance;
@@ -239,7 +266,7 @@ namespace Assets.Scripts.Level
 
                                         if (!hasHitObstacle)
                                         {
-                                            currentNode.Clearance += _scale;
+                                            currentNode.Clearance++;
                                             maxY++;
                                             maxX++;
                                             minY--;
@@ -253,13 +280,15 @@ namespace Assets.Scripts.Level
                         {
                             currentNode.OriginalClearance = currentNode.Clearance;
                         }
-                    }
-                }
+                    } // end of current node calculation
+                } // end of x loop
+                yMovement = 0;
+
                 //if (!isSubSection)
                 //{
                 //    yield return ConfigData.WaitForEndOfFrame;
                 //}
-            }
+            } // end of y loop
             //if (!isSubSection)
             //{
             //    float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
@@ -391,9 +420,9 @@ namespace Assets.Scripts.Level
 
             List<int[]> points = new List<int[]>();
 
-            for (int x = startX; x < startX + width; x += _scale) // go across the bounds, left to right (increasing)
+            for (int x = startX; x < startX + width; x += Scale) // go across the bounds, left to right (increasing)
             {
-                for (int y = startY; y > startY - height; y -= _scale)
+                for (int y = startY; y > startY - height; y -= Scale)
                 {
                     Vector2Int point = new Vector2Int(x, y);
                     if (collider.OverlapPoint(point))
@@ -1028,7 +1057,7 @@ namespace Assets.Scripts.Level
         }
         public Vector2Int ConvertToMapCoordinates(Vector2 coords)
         {
-            return new Vector2Int((int) Math.Round(Level.MapWidth - (Level.HalfMapWidth - coords.x)), (int)Math.Round(Level.MapHeight - (Level.HalfMapHeight + coords.y))) / _scale;
+            return new Vector2Int((int) Math.Round(Level.MapWidth - (Level.HalfMapWidth - coords.x)), (int)Math.Round(Level.MapHeight - (Level.HalfMapHeight + coords.y))) / Scale;
         }
         public Vector2 ConvertToLevelCoordinates(Vector2Int coords)
         {
@@ -1036,11 +1065,11 @@ namespace Assets.Scripts.Level
         }
         public Vector2 ConvertToLevelCoordinates(int x, int y)
         {
-            return new Vector2(-HalfWidth + x, HalfHeight - y) * _scale;
+            return new Vector2(-HalfWidth + x, HalfHeight - y) * Scale;
         }
         public Vector2Int ConvertToLevelCoordinatesInt(int x, int y)
         {
-            return new Vector2Int(-HalfWidth + x, HalfHeight - y) * _scale;
+            return new Vector2Int(-HalfWidth + x, HalfHeight - y) * Scale;
         }
 
 
@@ -1093,7 +1122,7 @@ namespace Assets.Scripts.Level
                     for (int x = 0; x < Width * scale; x += scale)
                     {
                         node = nodes[ x/ scale][y / scale];
-                        float darkness = 25.0f;
+                        float darkness = 5.0f;
                         Color color = new Color(node.Clearance / darkness, node.Clearance / darkness, node.Clearance / darkness); // has not been checked
                         if (node.Clearance >= ship.GetClearance())
                         {

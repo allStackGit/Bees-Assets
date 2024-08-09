@@ -374,18 +374,28 @@ namespace Assets.Scripts.Scenes
             while (ships.Count > 0)
             {
                 string shipType = ships[0].ShipType;
-                float width = ships[0].GetHalfWidth();
-                float height = ships[0].GetHalfHeight();
-                int clearance = (width > height ? Mathf.CeilToInt(width) : Mathf.CeilToInt(height)) + 4; // 4 for padding
+
                 if (!ShipClearances.ContainsKey(shipType))
                 {
+                    float width = ships[0].GetHalfWidth();
+                    float height = ships[0].GetHalfHeight();
+                    int clearance = (width > height ? Mathf.CeilToInt(width) : Mathf.CeilToInt(height)) + 4; // 4 for padding
+
+                    while (clearance % Pathfinder.Scale > 0) // round the clearance up to the nearest multiple of Scale (e.g. round 13 to 16 if the Scale is 4)
+                    {
+                        clearance++;
+                    }
+                    clearance /= Pathfinder.Scale;
+
                     ShipClearances.Add(shipType, clearance);
+
+                    if (clearance > MaximumClearance)
+                    {
+                        MaximumClearance = clearance;
+                    }
                 }
 
-                if (clearance > MaximumClearance)
-                {
-                    MaximumClearance = clearance;
-                }
+
 
                 ships = ships.Where((s) => s.ShipType != shipType).ToList();
             }
