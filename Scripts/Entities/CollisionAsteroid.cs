@@ -77,7 +77,7 @@ namespace Assets.Scripts.Entities
                     //Debug.Log($"It looks like {ship.Name} was already nearby and hit {Name}");
                     //ship.Kill(null);
                     CollisionObstacle = obstacle;
-                    Invoke(nameof(DelayedCollision), 1);
+                    //Invoke(nameof(DelayedCollision), 1);
                 }
                 else if (obstacle.IsMobile && obstacle.HasEnteredMap)
                 {

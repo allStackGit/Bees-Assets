@@ -124,14 +124,16 @@ namespace Assets.Scripts.Level
         }
 
         //int totalLoopCount = 0;
-        int minY, minX, maxY, maxX, boundsX, boundsY, x, y, yMovement = 0;
+        int minY, minX, maxY, maxX, boundsX, boundsY, x, y, yMovement, nextX = 0;
         bool hasHitObstacle;
         MapNode currentNode, loopNode, previousNode;
+        int loopsSaved = 0;
         public void CalculateClearance(MapNode[][] nodes, int startX, int endX, int startY, int endY, int maxClearance, bool isSubSection)
         {
+            //loopsSaved = 0;
             //float start = Time.realtimeSinceStartup;
-            
 
+            Debug.Log($"Trying to calculate clearance for section ({startX}, {startY}) to ({endX}, {endY}) and max clearance of {maxClearance}");
             for (y = startY; y < endY; y++)
             {
                 yMovement = 1;
@@ -151,48 +153,66 @@ namespace Assets.Scripts.Level
                     //Debug.Log($"CN: ({x}, {y}) => ({currentNode.x}, {currentNode.y})");
                     if (currentNode.Clearance > 0)
                     {
+                        currentNode.Clearance = 1;
                         // if this isn't the first node of the row and the previous node had clearance, then we know we've moved to the right and as long as the entire right side is clear,
                         // we have at least as much clearance as the previous node
-                        if (yMovement == 0 && previousNode.Clearance > 0 && x + 1 < endX)
+                        if (yMovement == 0 && previousNode.Clearance > 1 && x + 1 < endX)
                         {
-                            for (boundsY = (previousNode.y + previousNode.Clearance); boundsY > (previousNode.y - previousNode.Clearance); boundsY--)
+                            //Debug.Log($"Found a candidate for side expansion: {previousNode}");
+                            hasHitObstacle = false;
+                            for (boundsY = (previousNode.y + (previousNode.Clearance - 1)); boundsY > (previousNode.y - previousNode.Clearance); boundsY--)
                             {
+                                //Debug.Log($"Checking side point ({currentNode.x + (previousNode.Clearance - 1)}, {boundsY})");
                                 //totalLoopCount++;
                                 //loopNode = _grid.GetNode(maxX, boundsY);
-                                loopNode = nodes[currentNode.x + 1][boundsY];
-                                //try
-                                //{
-                                //    loopNode = nodes[currentNode.x + 1][boundsY];
-                                //}
-                                //catch (Exception e)
-                                //{
-                                //    Debug.Log($"startX: {startX}, startY: {startY}, endX: {endX}, endY: {endY}, x: {currentNode.x + 1}, y: {boundsY}, " +
-                                //        $"clearance: {previousNode.Clearance}, node: ({previousNode.x}, {previousNode.y})");
-                                //    throw e;
-                                //}
-                                //Debug.Log($"Checking {loopNode.Index} as a child of {currentNode}");
-                                if (loopNode.Clearance == 0)
+                                //loopNode = nodes[currentNode.x + 1][boundsY];
+                                nextX = currentNode.x + (previousNode.Clearance - 1);
+                                if (nextX < _grid.Width)
+                                {
+                                    loopNode = nodes[nextX][boundsY];
+                                    //try
+                                    //{
+                                    //    loopNode = nodes[nextX][boundsY];
+                                    //}
+                                    //catch (Exception e)
+                                    //{
+                                    //    Debug.Log($"startX: {startX}, startY: {startY}, endX: {endX}, endY: {endY}, x: {currentNode.x} (+ {(previousNode.Clearance - 1)}), y: {boundsY}, " +
+                                    //        $"clearance: {previousNode.Clearance}, node: ({previousNode.x}, {previousNode.y})");
+                                    //    throw e;
+                                    //}
+                                    //Debug.Log($"Checking {loopNode.Index} as a child of {currentNode}");
+                                    if (loopNode.Clearance == 0)
+                                    {
+                                        hasHitObstacle = true;
+                                        currentNode.Clearance = previousNode.Clearance - 1;
+                                        //Debug.Log($"{currentNode.Index} Has hit obstacle {loopNode.Index}");
+                                        break;
+                                    }
+                                }
+                                else
                                 {
                                     hasHitObstacle = true;
-                                    //Debug.Log($"{currentNode.Index} Has hit obstacle {loopNode.Index}");
+                                    currentNode.Clearance = previousNode.Clearance - 1;
                                     break;
                                 }
-                                currentNode.Clearance++;
+
                             }
-                            //if (!hasHitObstacle)
-                            //{
-                            //    currentNode.Clearance = previousNode.Clearance;
-                            //}
+                            if (!hasHitObstacle)
+                            {
+                                currentNode.Clearance = previousNode.Clearance;
+                            }
                         }
-                        else
-                        {
-                            currentNode.Clearance = 1;
-                        }
+
+                        //currentNode.Clearance = 1;
                         hasHitObstacle = false;
                         minY = currentNode.y - currentNode.Clearance;
                         minX = currentNode.x - currentNode.Clearance;
                         maxY = currentNode.y + currentNode.Clearance;
                         maxX = currentNode.x + currentNode.Clearance;
+                        //if (!hasHitObstacle && maxX < _grid.Width && maxY < _grid.Height && minX >= 0 && minY >= 0 && currentNode.Clearance >= maxClearance)
+                        //{
+                        //    loopsSaved++;
+                        //}
                         while (!hasHitObstacle && currentNode.Clearance < maxClearance && maxX < _grid.Width && maxY < _grid.Height && minX >= 0 && minY >= 0)
                         {
                             // bottom border
@@ -281,8 +301,8 @@ namespace Assets.Scripts.Level
                             currentNode.OriginalClearance = currentNode.Clearance;
                         }
                     } // end of current node calculation
+                    yMovement = 0;
                 } // end of x loop
-                yMovement = 0;
 
                 //if (!isSubSection)
                 //{
@@ -296,6 +316,7 @@ namespace Assets.Scripts.Level
             //    Debug.Log($"calculateClearance() took {end} ms to complete. There were {totalLoopCount} loops measuring clearance");
             //}
             //Level.StartCoroutine(CalculateSquares());
+            //Debug.Log($"Saved {loopsSaved} loops while calculating clearance");
         }
         public void InitializeMap()
         {
@@ -473,7 +494,7 @@ namespace Assets.Scripts.Level
             int endX;
             int endY;
             int totalAsteroids = PreviousAsteroids[thread].Count + collisionAsteroids.Count;
-            int fullClearanceThreshold = 3;
+            int fullClearanceThreshold = 1; // 3
             //Debug.Log($"Updating map");
 
             
@@ -575,6 +596,7 @@ namespace Assets.Scripts.Level
                     if (totalAsteroids < fullClearanceThreshold)
                     {
                         CalculateClearance(GridNodes[thread], startX, endX, startY, endY, Clearances[thread], true);
+                        //CalculateClearance(GridNodes[thread], 0, _grid.Width, 0, _grid.Height, Clearances[thread], true);
                         //Debug.Log($"Set obstacle points and possibly calculated clearance around {asteroid.Name} in {(Time.realtimeSinceStartup - asteroidTime) * 1000}ms");
 
                     }
@@ -915,6 +937,7 @@ namespace Assets.Scripts.Level
                             //$"neighborLoop Time: {NeighborLoops[index].Elapsed.TotalMilliseconds}ms, Update Map Time: {UpdateMapTime[index].Elapsed.TotalMilliseconds}ms Total: {(Totals[index].Elapsed.TotalMilliseconds)}ms");
                         Ships[index].PathfindingValue = BTPath;
                         Ships[index].PathfindingThreadComplete = true;
+                        Ships[index].DebugThread = index;
                         IsThreadActive[index] = false;
 
                         OrderPrintDebugImage(index);
@@ -973,6 +996,7 @@ namespace Assets.Scripts.Level
                     Debug.Log($"No more nodes to check for ship: {Ships[index].Name} index: #{index} Clearance: {Clearances[index]}.  checkedNodes: {BTCheckedNodes.Count} / {_grid.TotalNodes}  CurrentNode: {BTCurrentNode},");
                 }
                 Ships[index].PathfindingThreadComplete = true;
+                Ships[index].DebugThread = index;
                 IsThreadActive[index] = false;
 
 
@@ -1008,6 +1032,7 @@ namespace Assets.Scripts.Level
             {
                 if (!IsThreadActive[i])
                 {
+                    IsThreadActive[i] = true;
                     Clearances[i] = maximumClearance;
                     if (Level.ActivateCollisionAsteroids)
                     {
@@ -1015,7 +1040,6 @@ namespace Assets.Scripts.Level
                         UpdateMap(i, ship);
                         UpdateMapTime[i].Stop();
                     }
-                    IsThreadActive[i] = true;
                     //Debug.Log($"Pre starting Finding path for #{i} from {startNode.x}, {startNode.y} to {endNode.x}, {endNode.y}");
                     StartNodes[i] = GridNodes[i][startNode.x][startNode.y];
                     EndNodes[i] = GridNodes[i][endNode.x][endNode.y];
@@ -1171,7 +1195,7 @@ namespace Assets.Scripts.Level
                 }
 
                 texture.Apply();
-                string path = $"{ConfigData.GetBasePath()}/{ship.ShipType}_{ship.Id}_{Utilities.Hash()}.png";
+                string path = $"{ConfigData.GetBasePath()}/{ship.ShipType}_CL{ship.GetClearance()}_T{ship.DebugThread}_{Utilities.Hash()}.png";
                 File.WriteAllBytes(path, texture.EncodeToPNG());
             }
         }

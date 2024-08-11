@@ -127,7 +127,7 @@ namespace Assets.Scripts.Level
             {
                 InvokeRepeating(nameof(CheckChase), 5, 1);
             }
-            if (Side == ConfigData.Configuration.AISide && Level.MakeEnemyCeaseFire)
+            if (Level.FullCeaseFire || Side == ConfigData.Configuration.AISide && Level.MakeEnemyCeaseFire)
             {
                 CeaseFire = true;
             }

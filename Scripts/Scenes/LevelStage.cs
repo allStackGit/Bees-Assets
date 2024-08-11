@@ -37,7 +37,7 @@ namespace Assets.Scripts.Scenes
         public bool ReplaceDeadShips;
         public bool ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, UseSemiRandomSquads, UseFullyRandomSquads, UseFullyRandomEnemySquads, RecordStats, 
             DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateAudio, ActivateLoadingShipsMidLevel, UseMouseScrolling, IsDebugging, 
-            MakeEnemyCeaseFire, UnlockCamera, HasRandomizedOptions, PlayMusic;
+            MakeEnemyCeaseFire, FullCeaseFire, UnlockCamera, HasRandomizedOptions, PlayMusic;
         public int OverrideTimeScale, OverrideMapIndex, OverrideUserSide, GeneratedSquadCountOverride, InitialCommandDelay, TimeoutTime;
         public List<string> OverrideStrats = new List<string> { "Aggressive", "Random" };
         public GameObject UIManager, SelectionBox, MiniMapContainer, FogOfWar;
@@ -379,7 +379,7 @@ namespace Assets.Scripts.Scenes
                 {
                     float width = ships[0].GetHalfWidth();
                     float height = ships[0].GetHalfHeight();
-                    int clearance = (width > height ? Mathf.CeilToInt(width) : Mathf.CeilToInt(height)) + 4; // 4 for padding
+                    int clearance = (width > height ? Mathf.CeilToInt(width) : Mathf.CeilToInt(height)) + Pathfinder.Scale; // +Scale for padding
 
                     while (clearance % Pathfinder.Scale > 0) // round the clearance up to the nearest multiple of Scale (e.g. round 13 to 16 if the Scale is 4)
                     {

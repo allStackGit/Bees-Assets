@@ -62,6 +62,7 @@ namespace Assets.Scripts.Entities.Ships
         public volatile Pathfinder.MapNode[][] DebugNodes;
         public volatile Pathfinder.MapNode DebugEndNode;
         public volatile Pathfinder.MapNode DebugStartNode;
+        public volatile int DebugThread;
         public volatile bool PrintDebugImage;
 
 
