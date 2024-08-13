@@ -58,11 +58,11 @@ namespace Assets.Scripts.Entities.Ships
         public PolygonCollider2D ShipCollider;
         public volatile bool PathfindingThreadComplete;
         public volatile Pathfinder.Path PathfindingValue;
+        public volatile int PathfindingThread;
         public volatile Pathfinder.Grid DebugGrid;
         public volatile Pathfinder.MapNode[][] DebugNodes;
         public volatile Pathfinder.MapNode DebugEndNode;
         public volatile Pathfinder.MapNode DebugStartNode;
-        public volatile int DebugThread;
         public volatile bool PrintDebugImage;
 
 
@@ -591,6 +591,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 PathfindingValue = null;
                 //Debug.Log($"Merged full path to destination in {(Time.realtimeSinceStartup - start) * 1000}ms");
             }
+            Level.Pathfinder.IsThreadActive[PathfindingThread] = false;
 
         }
 
