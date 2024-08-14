@@ -437,7 +437,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             if (!CannotChangeMovementOrders)
             {
                 destination = Level.ForceBounds(destination);
-                StopMoving("Got a new destination");
                 if (Level.HasObstacles)
                 {
                     startPosition = GetPosition();
@@ -449,11 +448,17 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
                         convertedStart = Level.Pathfinder.ConvertToMapCoordinates(startPosition);
                         convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
+                        StopMoving("Got a new destination");
                         Level.Pathfinder.FindPath(this, convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance());
                         return;
                     }
                     else
                     {
+                        if (Vector2.Distance(destination, TargetCoordinates) < ConfigData.CloseEnoughCoordinateVariance)
+                        {
+                            Debug.Log($"The difference between our new destination and old destination for {Name} is {Vector2.Distance(destination, TargetCoordinates)} so there's no need to generate new pathfinding about it");
+                            return;
+                        }
                         Collider2D obstacleCollider = GetObstacleInPath(destination);
                         if (obstacleCollider != null)
                         {
@@ -467,6 +472,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                                 //}
                                 convertedStart = Level.Pathfinder.ConvertToMapCoordinates(startPosition);
                                 convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
+                                StopMoving("Got a new destination");
+
                                 Level.Pathfinder.FindPath(this, convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance());
                                 return;
                             }
@@ -486,8 +493,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
                 }
                 //Debug.Log($"No obstacles in the way for {Name}");
+                StopMoving("Got a new destination");
                 IsFollowingPath = false;
                 TargetCoordinates = destination;
+                FinalDestination = TargetCoordinates;
                 HasTargetCoordinates = true;
             }
             
@@ -525,16 +534,9 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             }
             //Debug.Log($"There's an asteroid {asteroid.Name} nearby on our path: {Name}");
 
-            if (IsFollowingPath)
-            {
-                // If we're following a pathfinder path, recalculate the path because we're near an asteroid
-                MoveToPoint(FinalDestination, true);
-                InvokeRepeating(nameof(NearbyAsteroidDoubleCheck), 1f, 1f);
-            }
-            else if (HasTargetCoordinates)
-            {
-                MoveToPoint(TargetCoordinates, true);
-            }
+            // If we're following a pathfinder path, recalculate the path because we're near an asteroid
+            MoveToPoint(FinalDestination, true);
+            InvokeRepeating(nameof(NearbyAsteroidDoubleCheck), 1f, 1f);
         }
 
         /// <summary>
@@ -542,7 +544,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         /// </summary>
         public void NearbyAsteroidDoubleCheck()
         {
-            if (IsFollowingPath && NearbyAsteroids.Count > 0)
+            if (NearbyAsteroids.Count > 0)
             {
                 //Debug.Log($"There are still {NearbyAsteroids.Count} asteroids near {Name}, double checking the pathfinding");
                 MoveToPoint(FinalDestination);

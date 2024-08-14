@@ -2748,7 +2748,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: MakeEnemyCeaseFire
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: UseSemiRandomSquads
@@ -2844,7 +2844,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: ActivateCollisionAsteroids
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: ObstaclePrefabs.Array.size

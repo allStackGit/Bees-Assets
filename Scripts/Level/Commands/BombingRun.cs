@@ -80,10 +80,7 @@ namespace Assets.Scripts.Level.Commands
                 //Debug.Log("--------------------");
                 //ship.MoveToPoint(ship.TargetShips.First().GetPosition()); // Move to the primary target ship
             }
-            if (Squad.DistanceToPoint(Enemy.GetPosition()) < 45)
-            {
-                CommandFrequency = .5f;
-            }
+            CommandFrequency = 2;
             InvokeRepeating(nameof(Timer), .1f, CommandFrequency);
 
         }
@@ -195,12 +192,7 @@ namespace Assets.Scripts.Level.Commands
                     }
                 });
 
-                //fireShipsToDetonate.ForEach((fireShip) =>
-                //{
-                //    fireShip.Detonate();
-                //});
-
-                //
+                // This is necessary to prevent modifying the list when the fire ship(s) is killed
                 for (int i = 0; i < fireShipsToDetonate.Count; i++)
                 {
                     ((FireShip)Level.GetState().GetShipById(fireShipsToDetonate[i])).Detonate();
@@ -227,17 +219,25 @@ namespace Assets.Scripts.Level.Commands
                     }
                 }
 
-                if (!IsCloseToTarget && _timerLoops % 4 == 0 && !Enemy.IsDead)
+                if (!IsCloseToTarget && !Enemy.IsDead)
                 {
                     if (Squad.DistanceToPoint(Enemy.GetPosition()) < 45)
                     {
                         Debug.Log($"{Squad.Name} is on a bombing run and close to {Enemy.Name}");
                         CancelInvoke(nameof(Timer));
-                        CommandFrequency = .5f;
+                        CommandFrequency = .25f;
                         IsCloseToTarget = true;
                         InvokeRepeating(nameof(Timer), CommandFrequency, CommandFrequency);
                     }
 
+                }
+                else if (IsCloseToTarget && !Enemy.IsDead && _timerLoops % 4 == 0 && Squad.DistanceToPoint(Enemy.GetPosition()) > 90)
+                {
+                    Debug.Log($"{Squad.Name} is on a bombing run and no longer close to {Enemy.Name}");
+                    CancelInvoke(nameof(Timer));
+                    CommandFrequency = 2f;
+                    IsCloseToTarget = false;
+                    InvokeRepeating(nameof(Timer), CommandFrequency, CommandFrequency);
                 }
             }
             

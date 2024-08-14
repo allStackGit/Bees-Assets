@@ -358,7 +358,7 @@ namespace Assets.Scripts.Scenes
             float end = (Time.realtimeSinceStartup - StartTime) * 1000; // seconds to milliseconds
             if (IsDebugging)
             {
-                //InvokeRepeating(nameof(UpdateDebugVariables), 2, 2);
+                InvokeRepeating(nameof(UpdateDebugVariables), 1, 1);
             }
             if (ActivateLoadingShipsMidLevel)
             {
