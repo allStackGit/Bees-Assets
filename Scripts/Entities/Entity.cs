@@ -42,6 +42,11 @@ namespace Assets.Scripts.Entities
         {
             return AngleToPoint(entity.GetPosition());
         }
+        /// <summary>
+        /// Calculates the angle to a point in radians
+        /// </summary>
+        /// <param name="point"></param>
+        /// <returns></returns>
         public float AngleToPoint(Vector2 point) 
         {
             return Utilities.AngleBetweenPoints(GetPosition(), point);
@@ -54,6 +59,11 @@ namespace Assets.Scripts.Entities
         {
             transform.eulerAngles = new Vector3(0, 0, GetDegreesTowardsPoint(point));
         }
+        /// <summary>
+        /// Gets the angle (0-360) in degrees
+        /// </summary>
+        /// <param name="point"></param>
+        /// <returns></returns>
         public float GetDegreesTowardsPoint(Vector2 point)
         {
             float radians = AngleToPoint(point);

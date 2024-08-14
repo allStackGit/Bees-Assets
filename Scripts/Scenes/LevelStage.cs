@@ -315,6 +315,7 @@ namespace Assets.Scripts.Scenes
             if (HasObstacles)
             {
                 SpawnObstacles();
+                //InvokeRepeating(nameof(SetLocationHistory), .5f, .5f);
                 Pathfinder = new Pathfinder(this);
             }
             if (ActivateMining)
@@ -379,15 +380,24 @@ namespace Assets.Scripts.Scenes
                 {
                     float width = ships[0].GetHalfWidth();
                     float height = ships[0].GetHalfHeight();
-                    int clearance = (width > height ? Mathf.CeilToInt(width) : Mathf.CeilToInt(height)) + Pathfinder.Scale; // +Scale for padding
+                    int clearance = (width > height ? Mathf.CeilToInt(width) : Mathf.CeilToInt(height));
 
                     while (clearance % Pathfinder.Scale > 0) // round the clearance up to the nearest multiple of Scale (e.g. round 13 to 16 if the Scale is 4)
                     {
                         clearance++;
                     }
                     clearance /= Pathfinder.Scale;
+                    clearance += 2; // + 2 for padding
 
                     ShipClearances.Add(shipType, clearance);
+                    ships.ForEach((s) =>
+                    {
+                        if (s.ShipType == shipType)
+                        {
+                            s.Clearance = clearance;
+                        }
+
+                    });
 
                     if (clearance > MaximumClearance)
                     {
@@ -831,6 +841,8 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
             if (HasObstacles)
             {
                 CancelInvoke(nameof(SpawnAsteroid));
+                //CancelInvoke(nameof(SetLocationHistory));
+                //InvokeRepeating(nameof(SetLocationHistory), .5f, .5f);
                 SpawnObstacles();
                 Pathfinder = new Pathfinder(this);
 
@@ -1031,8 +1043,6 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
             }
             Invoke(nameof(GetHiveMindCommands), .25f);
         }
-
-
 
         public Vector2 GetPosition()
         {

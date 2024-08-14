@@ -37,7 +37,7 @@ namespace Assets.Scripts.Level
         /// How much scaled down the pathfinding map is compared to the real map. Smaller size increases speed but decreases precision. Obstacles must be 
         /// at least as large on both axis as this number and even then, sometimes rotated obstacles aren't detected correctly
         /// </summary>
-        public int Scale = 4;
+        public const int Scale = 4;
         public int Width, Height, HalfWidth, HalfHeight;
         public LevelStage Level;
         public bool HasMovingObstacles;
@@ -482,8 +482,8 @@ namespace Assets.Scripts.Level
                         if (yVelocity != 0 || xVelocity != 0)
                         {
 
-                            point.y += (int)Math.Round(yVelocity * 2);
-                            point.x += (int)Math.Round(xVelocity * 2);
+                            point.y += (int)Math.Round(yVelocity * 2.5f);
+                            point.x += (int)Math.Round(xVelocity * 2.5f);
 
 
                             converted = ConvertToMapCoordinates(point);
@@ -635,128 +635,81 @@ namespace Assets.Scripts.Level
                 $"Collision asteroids: {string.Join(",", collisionAsteroids.Select((a) => $"#{a.Id}"))}");
 
         }
-        public MapNode FindNearestWalkablePoint(MapNode startNode, MapNode endNode, int minimumClearance, MapNode[][] nodes)
+        public MapNode FindNearestWalkablePoint(MapNode startNode, MapNode endNode, int minimumClearance, MapNode[][] nodes, int index)
         {
 
             int loops = 0;
-            int baseInterval = 1;
-            int yInterval = -1; // N
-            int xInterval = 1; // E
+            MapNode n = nodes[startNode.x][startNode.y - 1];
+            MapNode ne = nodes[startNode.x + 1][startNode.y - 1];
+            MapNode e = nodes[startNode.x + 1][startNode.y];
+            MapNode se = nodes[startNode.x + 1][startNode.y + 1];
+            MapNode s = nodes[startNode.x][startNode.y + 1];
+            MapNode sw = nodes[startNode.x - 1][startNode.y + 1];
+            MapNode w = nodes[startNode.x - 1][startNode.y];
+            MapNode nw = nodes[startNode.x - 1][startNode.y - 1];
 
-            /*
-            Find the direction from start node to end node (N, NE, E, SE, S, SW, W, NW)
-            Find the first walkable point in that same direction
-            Find the first walkable point in the opposite direction (from end to start)
-            Return the point closest to the original end point
-             */
-
-
-            if (startNode.x < endNode.x && startNode.y < endNode.y)
-            {
-                //direction = 2; // SE
-                xInterval = 1 * baseInterval;
-            }
-            else if (startNode.x > endNode.x && startNode.y < endNode.y)
-            {
-                //direction = 4; // SW
-                yInterval = 1 * baseInterval;
-                xInterval = -1 * baseInterval;
-            }
-            else if (startNode.x > endNode.x && startNode.y > endNode.y)
-            {
-                //direction = 6; // NW
-                yInterval = -1 * baseInterval;
-                xInterval = -1 * baseInterval;
-            }
-            else if (startNode.x == endNode.x && startNode.y > endNode.y)
-            {
-                //direction = 7; // N
-                yInterval = -1 * baseInterval;
-                xInterval = 0;
-            }
-            else if (startNode.x < endNode.x && startNode.y == endNode.y)
-            {
-                //direction = 1; // E
-                yInterval = 0;
-                xInterval = 1 * baseInterval;
-            }
-            else if (startNode.x == endNode.x && startNode.y < endNode.y)
-            {
-                //direction = 3; // S
-                yInterval = 1 * baseInterval;
-                xInterval = 0;
-            }
-            else if (startNode.x > endNode.x && startNode.y == endNode.y)
-            {
-                //direction = 5; // W
-                yInterval = 0;
-                xInterval = -1 * baseInterval;
-            }
-
-            //oppositeDirection = (direction + 4) % 8;
-
-            //Debug.Log($"startNode: {startNode.Vector}, endNode: {endNode.Vector} index direction: {direction}, opposite index direction: {oppositeDirection}");
-            MapNode directionNode = nodes[endNode.x + xInterval][endNode.y + yInterval];
-            MapNode oppositeDirectionNode = nodes[endNode.x - xInterval][endNode.y - yInterval];
-
-            while (loops < 200)
+            while (loops < 100)
             {
                 loops++;
-                //Debug.Log($"Moving in directions {direction}, and {oppositeDirection} and checking points {directionNode.Vector} and {oppositeDirectionNode.Vector}");
-                if (directionNode.Clearance >= minimumClearance)
+
+                if (n.Clearance >= minimumClearance)
                 {
-                    return directionNode;
+                    return n;
+                }
+                if (ne.Clearance >= minimumClearance)
+                {
+                    return ne;
+                }
+                if (e.Clearance >= minimumClearance)
+                {
+                    return e;
+                }
+                if (se.Clearance >= minimumClearance)
+                {
+                    return se;
+                }
+                if (s.Clearance >= minimumClearance)
+                {
+                    return s;
+                }
+                if (sw.Clearance >= minimumClearance)
+                {
+                    return sw;
+                }
+                if (w.Clearance >= minimumClearance)
+                {
+                    return w;
+                }
+                if (nw.Clearance >= minimumClearance)
+                {
+                    return nw;
                 }
 
-                if (oppositeDirectionNode.Clearance >= minimumClearance)
-                {
-                    return oppositeDirectionNode;
-                }
+                Ships[index].DebugWalkablePointNodes.Add(n);
+                Ships[index].DebugWalkablePointNodes.Add(ne);
+                Ships[index].DebugWalkablePointNodes.Add(e);
+                Ships[index].DebugWalkablePointNodes.Add(se);
+                Ships[index].DebugWalkablePointNodes.Add(s);
+                Ships[index].DebugWalkablePointNodes.Add(sw);
+                Ships[index].DebugWalkablePointNodes.Add(w);
+                Ships[index].DebugWalkablePointNodes.Add(nw);
 
-                int yIncrease = directionNode.y + yInterval;
-                int xIncrease = directionNode.x + xInterval;
-                int yDecrease = oppositeDirectionNode.y - yInterval;
-                int xDecrease = oppositeDirectionNode.x - xInterval;
-                if (yIncrease > _grid.Height - 1)
-                {
-                    yIncrease = _grid.Height - 1;
-                }
-                else if (yIncrease < 0)
-                {
-                    yIncrease = 0;
-                }
-                if (xIncrease > _grid.Width - 1)
-                {
-                    xIncrease = _grid.Width - 1;
-                }
-                else if (xIncrease < 0)
-                {
-                    xIncrease = 0;
-                }
-                if (yDecrease < 0)
-                {
-                    yDecrease = 0;
-                }
-                else if (yDecrease > _grid.Height - 1)
-                {
-                    yDecrease = _grid.Height - 1;
-                }
-                if (xDecrease < 0)
-                {
-                    xDecrease = 0;
-                }
-                else if (xDecrease > _grid.Width - 1)
-                {
-                    xDecrease = _grid.Width - 1;
-                }
-                directionNode = nodes[xIncrease][yIncrease];
-                oppositeDirectionNode = nodes[xDecrease][yDecrease];
+                n = nodes[n.x][Math.Clamp(n.y - 1, 0, _grid.Height)];
+                ne = nodes[Mathf.Clamp(ne.x + 1, 0, _grid.Width)][Math.Clamp(ne.y - 1, 0, _grid.Height)];
+                e = nodes[Mathf.Clamp(e.x + 1, 0, _grid.Width)][e.y];
+                se = nodes[Mathf.Clamp(se.x + 1, 0, _grid.Width)][Math.Clamp(se.y + 1, 0, _grid.Height)];
+                s = nodes[s.x][Math.Clamp(s.y + 1, 0, _grid.Height)];
+                sw = nodes[Mathf.Clamp(sw.x - 1, 0, _grid.Width)][Math.Clamp(sw.y + 1, 0, _grid.Height)];
+                w = nodes[Mathf.Clamp(w.x - 1, 0, _grid.Width)][w.y];
+                nw = nodes[Mathf.Clamp(nw.x - 1, 0, _grid.Width)][Math.Clamp(nw.y - 1, 0, _grid.Height)];
+
             }
-            if (loops == 200) // [debug]
+
+            if (loops == 100) // [debug]
             {
-                Debug.Log($"The loop broke after 200 loops trying to find a walkable point near {endNode.Vector} starting from {startNode.Vector}");
+                Debug.Log($"The loop broke after 100 loops trying to find a walkable point near {endNode.Vector} starting from {startNode.Vector}");
             }
-            return endNode;
+            return startNode;
 
         }
         private void MakeDestinationList(MapNode BTEndNode, Path BTPath)
@@ -889,19 +842,41 @@ namespace Assets.Scripts.Level
 
                 //OrderPrintDebugImage(index);
                 //return;
+                Ships[index].DebugOriginalEndNode = EndNodes[index];
+                Ships[index].DebugOriginalStartNode = StartNodes[index];
                 if (EndNodes[index].Clearance < Clearances[index])
                 {
                     //Debug.Log($"The end ({EndNodes[index].Vector}) for #{index} : {Ships[index].Name} isn't walkable space");
-                    EndNodes[index] = FindNearestWalkablePoint(StartNodes[index], EndNodes[index], Clearances[index], GridNodes[index]);
+                    EndNodes[index] = FindNearestWalkablePoint(EndNodes[index], StartNodes[index], Clearances[index], GridNodes[index], index);
                     //Debug.Log($"Found new end point that is walkable: {EndNodes[index]}");
                 }
                 Debug.Log($"Found end point for #{index}:{Ships[index].Name}");
                 if (StartNodes[index].Clearance < Clearances[index])
                 {
-                    //Debug.Log($"The start ({startNode.Vector}) isn't walkable space");
-                    StartNodes[index] = FindNearestWalkablePoint(EndNodes[index], StartNodes[index], Clearances[index], GridNodes[index]);
-                    //Debug.Log($"Found new start point that is walkable: {StartNodes[index]}");
+                    //int startNodeLoops = 0;
+                    //Stack<Vector2> pastLocations = new Stack<Vector2>(Ships[index].PastLocations.Reverse());
+                    //while (StartNodes[index].Clearance < Clearances[index] && pastLocations.Count > 0)
+                    //{
+                    //    Debug.Log($"[Location History] {startNodeLoops}: for #{index}:{Ships[index].Name} StartNode at {StartNodes[index].Vector} doesn't have enough clearance, looking through past locations for a good start node");
+                    //    Vector2Int pastLocation = Level.Pathfinder.ConvertToMapCoordinates(pastLocations.Pop());
+                    //    StartNodes[index] = GridNodes[index][pastLocation.x][pastLocation.y];
+                    //    startNodeLoops++;
+                   
+                    //}
+                    //if (pastLocations.Count == 0)
+                    //{
+                    //    Debug.Log($"[Location History] Ran out of past locations for #{index}:{Ships[index].Name} at {StartNodes[index].Vector}");
+
+                    //}
+                    //else
+                    //{
+                    //    Debug.Log($"[Location History] Found a valid start point for #{index}:{Ships[index].Name} at {StartNodes[index].Vector}");
+
+                    //}
+
+                    StartNodes[index] = FindNearestWalkablePoint(StartNodes[index], EndNodes[index], Clearances[index], GridNodes[index], index);
                 }
+                
                 Debug.Log($"Starting at {StartNodes[index]} for #{index}:{Ships[index].Name}");
                 Path BTPath = new Path(StartNodes[index].x, StartNodes[index].y, EndNodes[index].x, EndNodes[index].y);
 
@@ -1053,7 +1028,7 @@ namespace Assets.Scripts.Level
                 }
                 else
                 {
-                    if (Totals[thread].ElapsedMilliseconds > 1000)
+                    if (Totals[thread] != null && Totals[thread].ElapsedMilliseconds > 1000)
                     {
                         Debug.Log($"Thread #{thread}:{Ships[thread].Name} has been running for {Totals[thread].ElapsedMilliseconds}ms");
                     }
@@ -1144,6 +1119,11 @@ namespace Assets.Scripts.Level
                             color = Color.cyan;
                         }
 
+                        if (ship.DebugWalkablePointNodes.Contains(node))
+                        {
+                            color = new Color(.94f, .59f, .29f, 1); // orange
+                        }
+
 
                         for (int v = 0; v < scale; v++)
                         {
@@ -1169,6 +1149,22 @@ namespace Assets.Scripts.Level
                     for (int h = 0; h < scale; h++)
                     {
                         texture.SetPixel((lastNode.x * scale) + h, (Height * scale) - ((lastNode.y * scale) + (1 - v)), Color.blue); // last pixel
+                    }
+                }
+
+                for (int v = 0; v < scale; v++)
+                {
+                    for (int h = 0; h < scale; h++)
+                    {
+                        texture.SetPixel((ship.DebugOriginalStartNode.x * scale) + h, (Height * scale) - ((ship.DebugOriginalStartNode.y * scale) + (1 - v)), Color.magenta); // original first pixel
+                    }
+                }
+
+                for (int v = 0; v < scale; v++)
+                {
+                    for (int h = 0; h < scale; h++)
+                    {
+                        texture.SetPixel((ship.DebugOriginalEndNode.x * scale) + h, (Height * scale) - ((ship.DebugOriginalEndNode.y * scale) + (1 - v)), Color.white); // original last pixel
                     }
                 }
 

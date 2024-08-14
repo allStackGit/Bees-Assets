@@ -144,6 +144,11 @@ namespace Assets.Scripts.Level
         {
             return _obstacles;
         }
+        /// <summary>
+        /// Gets all the ships on the level or for a certain side if specified
+        /// </summary>
+        /// <param name="side"></param>
+        /// <returns></returns>
         public List<Ship> GetShips(int side = 0)
         {
             return side switch

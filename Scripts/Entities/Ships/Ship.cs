@@ -27,7 +27,7 @@ namespace Assets.Scripts.Entities.Ships
     public class Ship : Entity
     {
         public bool ShowDebug;
-        public int Health, MaxHealth, OriginalHealth, OriginalTsv, Sight, AdditionalTsv;
+        public int Health, MaxHealth, OriginalHealth, OriginalTsv, Sight, AdditionalTsv, Clearance;
         public float ProjectileValue, Speed, SpecialFirePower;
         public GameObject ShipExplosion, HealthBar, MiniMapIcon;
         public Vector2 TargetCoordinates, FinalDestination, OffsetFromCenter; // the coordinates of where the ship should go, and it's offset from the center of the squad
@@ -49,6 +49,7 @@ namespace Assets.Scripts.Entities.Ships
         public Queue<Vector2> DestinationQueue = new Queue<Vector2>();
         public List<CollisionAsteroid> NearbyAsteroids = new List<CollisionAsteroid>();
         public List<Turret> Turrets = new List<Turret>();
+        //public Stack<Vector2> PastLocations = new Stack<Vector2>();
         public float RotationSpeed;
         public bool HasVision;
         /// <summary>
@@ -62,7 +63,10 @@ namespace Assets.Scripts.Entities.Ships
         public volatile Pathfinder.Grid DebugGrid;
         public volatile Pathfinder.MapNode[][] DebugNodes;
         public volatile Pathfinder.MapNode DebugEndNode;
+        public volatile Pathfinder.MapNode DebugOriginalEndNode;
         public volatile Pathfinder.MapNode DebugStartNode;
+        public volatile Pathfinder.MapNode DebugOriginalStartNode;
+        public volatile HashSet<Pathfinder.MapNode> DebugWalkablePointNodes = new HashSet<Pathfinder.MapNode>();
         public volatile bool PrintDebugImage;
 
 
@@ -109,24 +113,14 @@ namespace Assets.Scripts.Entities.Ships
 
 
         // Test variables
-        public List<string> __PastCommands = new List<string>();
-        public List<string> __BannedStrats = new List<string>();
-        public string __Strategy, __Squad, __SquadStatus, __CommandStatus, __LastStopReason;
+        public string __Strategy, __Squad, __SquadStatus, __CommandStatus, __LastStopReason, __Enemy, __TargetEnemy;
         public Vector2 __CommandDestination, __Velocity, __TargetCoordinates;
-        public float __Firepower, __DamagePerSecond;
+        public float __Firepower, __DamagePerSecond, __CurrentSpeed, __DegreesToTargetCoordinates, __DistanceToTargetCoordinates, __TurningRadius;
         public long __Tsv, __CommandTsv;
-        public List<Ship> __TargetShips;
-        public List<Ship> __SquadShips;
-        public List<string> __ShipsWithinRange;
-        public bool __HasReachedDestination;
-        public bool __SquadHasReachedDestination;
-        public string __Enemy;
-        public string __TargetEnemy;
-        public List<string> __DamageStatuses;
-        public List<string> __CommandTargetingQueue;
-        public List<string> __NearbyAsteroids;
-        public float __CurrentSpeed;
-
+        public bool __HasReachedDestination, __SquadHasReachedDestination;
+        public List<Ship> __TargetShips, __SquadShips;
+        public List<string> __ShipsWithinRange, __PastCommands, __BannedStrats, __DamageStatuses, __CommandTargetingQueue, __NearbyAsteroids;
+        //public List<Vector2> __PastLocations;
 
 
         // Neural network
@@ -168,6 +162,10 @@ namespace Assets.Scripts.Entities.Ships
             __CommandTargetingQueue = Squad.HasCommand && Squad.Command.HasEnemy ? Squad.Command.TargetingQueue.Select((ship) =>  ship.Name).ToList() : new List<string>();
             __CurrentSpeed = _currentSpeed;
             __NearbyAsteroids = NearbyAsteroids.Select((a) => a.Name).ToList();
+            __DegreesToTargetCoordinates = GetDegreesTowardsPoint(TargetCoordinates);
+            __DistanceToTargetCoordinates = DistanceToPoint(TargetCoordinates);
+            __TurningRadius = ConfigData.ShipTurningRadius;
+            //__PastLocations = PastLocations.ToList();
             //AverageReward = AverageRewardSum / Actions;
             //AverageRandomReward = AverageRandomRewardSum / RandomActions;
             //AverageLearnedReward = AverageLearnedRewardSum / LearnedActions;
@@ -209,6 +207,7 @@ namespace Assets.Scripts.Entities.Ships
             ShipStatBlock shipStats = ConfigData.GetShipInfo(fleetShip.Type);
             Health = shipStats.Health;
             OriginalHealth = Health;
+            Clearance = Level.ShipClearances.GetValueOrDefault(ShipType);
 
             Name = $"{ShipType} #{Id}";
             gameObject.name = Name;
@@ -530,7 +529,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             {
                 // If we're following a pathfinder path, recalculate the path because we're near an asteroid
                 MoveToPoint(FinalDestination, true);
-                //InvokeRepeating(nameof(NearbyAsteroidDoubleCheck), 1f, 1f);
+                InvokeRepeating(nameof(NearbyAsteroidDoubleCheck), 1f, 1f);
             }
             else if (HasTargetCoordinates)
             {
@@ -589,6 +588,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 IsFollowingPath = true;
                 HasTargetCoordinates = true;
                 PathfindingValue = null;
+                DebugWalkablePointNodes.Clear();
                 //Debug.Log($"Merged full path to destination in {(Time.realtimeSinceStartup - start) * 1000}ms");
             }
             Level.Pathfinder.IsThreadActive[PathfindingThread] = false;
@@ -772,15 +772,16 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
         /// <summary>
         /// Checks if a ship is close enough to its target coordinates
-        // [note] if GetHeight() is used then the ships don't endlessly circle but the larger ships stop noticably before their destination and it's hard to move them precisely
-        // If CloseEnoughCoordinateVariance is used, the ships move close to the destination but they tend to endlessly circle if they are moved to a nearby destination inside of their
-        // turning radius
+        /// [note] if GetHeight() is used then the ships don't endlessly circle but the larger ships stop noticably before their destination and it's hard to move them precisely
+        /// If CloseEnoughCoordinateVariance is used, the ships move close to the destination but they tend to endlessly circle if they are moved to a nearby destination inside of their
+        /// turning radius
         /// </summary>
         /// <param name="distance"></param>
         /// <returns></returns>
         private bool IsCloseEnoughToTargetCoordinates(float distance)
         {
-            return (distance < Mathf.Clamp(GetHeight(), 0, 5) && !Squad.HasEnemy) || (distance < ConfigData.CloseEnoughCoordinateVariance && !(Squad.HasCommand && Squad.Command.Type == "Bombing Run"));
+            //return (distance < Clearance && !Squad.HasEnemy) || (distance < ConfigData.CloseEnoughCoordinateVariance && !(Squad.HasCommand && Squad.Command.Type == "Bombing Run"));
+            return distance < ConfigData.ShipTurningRadius;
         }
         public void StopMoving(string reason)
         {
@@ -1265,7 +1266,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         }
         public int GetClearance()
         {
-            int clearance = Level.ShipClearances.GetValueOrDefault(ShipType);
+            int clearance = Clearance; 
             if (clearance == 0)
             {
                 Level.CalculateShipClearances();

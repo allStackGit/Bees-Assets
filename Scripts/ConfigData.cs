@@ -160,13 +160,14 @@ namespace Assets.Scripts
         public static Socket Socket = Test ? new Socket(TestPort, TestServerHostname, UseWebSocketSharp) : new Socket(DevelopmentPort, DevelopmentServerHostname, UseWebSocketSharp);
         public static readonly List<int> InitialVisibleShips = Enumerable.Range(0, 2900).ToList(); // // [alert] [server] Starting ships should be pulled from server
         public static bool FirstTimePlaying = true; // [alert] should be linked to whether a user has actually played before   
-        public static float CloseEnoughCoordinateVariance = 1.5f; // world units
+        public const float CloseEnoughCoordinateVariance = 1.5f; // world units
         /// <summary>
         /// Offset in world units from the front of a ship when aiming at the front of a ship
         /// </summary>
-        public static float OffsetFromFront = .25f;
+        public const float OffsetFromFront = .25f;
         public const float FireShipExplosionSize = 64;
         public const float CommandTimerFrequency = .1f;
+        public static float ShipTurningRadius; 
         public static List<Scene> Scenes = new List<Scene>();
         public static Scene SocketManager;
         public static HashSet<long> UsedHashes = new HashSet<long>();

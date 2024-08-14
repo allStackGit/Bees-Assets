@@ -53,14 +53,14 @@ namespace Assets.Scripts.Entities
                 {
                     //Debug.Log($"It looks like {ship.Name} was already nearby and hit {Name}");
                     TouchingShips.Add(ship);
-                    if (ship.Side != ConfigData.Configuration.AISide) // [alert] [test] this is so that the level isn't ended by the AI being hit by asteroids during testing
-                    {
-                        //ship.Kill(null);
-                        //NearbyShips.Remove(ship);
-                    }
+                    //if (ship.Side != ConfigData.Configuration.AISide) // [alert] [test] this is so that the level isn't ended by the AI being hit by asteroids during testing
+                    //{
+                    //    ship.Kill(null);
+                    //    NearbyShips.Remove(ship);
+                    //}
 
-                    //ship.Kill(null);
-                    //NearbyShips.Remove(ship);
+                    ship.Kill(null);
+                    NearbyShips.Remove(ship);
                 }
                 else
                 {
@@ -77,7 +77,7 @@ namespace Assets.Scripts.Entities
                     //Debug.Log($"It looks like {ship.Name} was already nearby and hit {Name}");
                     //ship.Kill(null);
                     CollisionObstacle = obstacle;
-                    //Invoke(nameof(DelayedCollision), 1);
+                    Invoke(nameof(DelayedCollision), 1);
                 }
                 else if (obstacle.IsMobile && obstacle.HasEnteredMap)
                 {

@@ -154,6 +154,12 @@ namespace Assets.Scripts
             return (float) _rnd.NextDouble() * max;
         }
 
+        /// <summary>
+        /// Calculates the angle between two points in radians
+        /// </summary>
+        /// <param name="a"></param>
+        /// <param name="b"></param>
+        /// <returns></returns>
         public static float AngleBetweenPoints(Vector2 a, Vector2 b)
         {
             return (Mathf.Atan2(a.x - b.x, a.y - b.y));
@@ -363,7 +369,7 @@ namespace Assets.Scripts
             //Debug.Log($"Difference in angles {difference}, {(difference > closeEnough ? "counter-clockwise" : "clockwise")}");
             if (difference > 3)
             {
-                entity.transform.Rotate(new Vector3(0, 0, 1 * Time.fixedDeltaTime * rotationSpeed * 1));
+                entity.transform.Rotate(new Vector3(0, 0, 1 * Time.fixedDeltaTime * rotationSpeed));
                 return false;
             }
             else if (difference <  -3)

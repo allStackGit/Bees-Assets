@@ -5,7 +5,7 @@ using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-
+using UnityEngine;
 
 namespace Assets.Scripts.Settings
 {
@@ -197,6 +197,8 @@ namespace Assets.Scripts.Settings
             VisibleShipTypes = new HashSet<string>(VisibleHumanShipTypes.Union(VisibleBeeShipTypes));
             InvisibleShipTypes = new HashSet<string>(InvisibleHumanShipTypes.Union(VisibleBeeShipTypes));
             AllShipTypes = new HashSet<string>(InvisibleBeeShipTypes.Union(VisibleShipTypes).Union(InvisibleShipTypes));
+
+            ConfigData.ShipTurningRadius = (360.0f / RotationMultiplier) / (2 * Mathf.PI);
 
         }
     }
