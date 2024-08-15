@@ -18,7 +18,7 @@ namespace Assets.Scripts.Level.Commands
     {
         public long Age, Tsv;      
         public long OutcomeId = 0; 
-        public Squad Enemy, Squad;
+        public Squad EnemySquad, Squad;
         public string Matchup, FinalizationCause;
         public Strategy Strategy = null;
         public MatchupStrategy MatchupStrategy = null;
@@ -34,7 +34,7 @@ namespace Assets.Scripts.Level.Commands
         public bool HasStrategy => Strategy != null;
         public bool HasShootingStrategy => ShootingStrategy != null;
         public bool HasSquad => Squad != null;
-        public bool HasEnemy => Enemy != null;
+        public bool HasEnemy => EnemySquad != null;
         public string Type => HasStrategy ? Strategy.Name : "Uninitialized";
         public bool IsFinalized, IsStored, IsHiveMindCommand;
         public bool HasDestination => _destinations.Count > 0;
@@ -45,11 +45,11 @@ namespace Assets.Scripts.Level.Commands
         public void Setup(Squad squad, bool isHiveMindCommand, Squad enemy, string matchup)
         {
             Squad = squad;
-            Enemy = enemy;
+            EnemySquad = enemy;
             Matchup = matchup;
             IsHiveMindCommand = isHiveMindCommand;
 
-            if (Enemy != null)
+            if (EnemySquad != null)
             {
                 OriginalQueue = new Queue<Ship>(MakeTargetingQueue());
                 TargetingQueue = new Queue<Ship>(OriginalQueue);
@@ -95,8 +95,8 @@ namespace Assets.Scripts.Level.Commands
         {
             Squad.GetShips().ForEach((ship) =>
             {
-                ship.MoveToPoint(ship.GetTargetEnemy().GetPosition());
-                
+                ship.MoveToPoint(ship.SetAndGetTargetEnemy().GetPosition());
+
             });
         }
         public void StandStill()
@@ -111,7 +111,7 @@ namespace Assets.Scripts.Level.Commands
 
         public virtual void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy)
         {
-            if (noEnemy || Enemy != null)
+            if (noEnemy || EnemySquad != null)
             {
                 Strategy = strategy;
                 ShootingStrategy = shootingStrategy;
@@ -138,7 +138,7 @@ namespace Assets.Scripts.Level.Commands
         public List<Ship> MakeTargetingQueue()
         {
 
-            List<Ship> queue = Enemy.GetShips();
+            List<Ship> queue = EnemySquad.GetShips();
             string strategy = Squad.GetShootingStrategy();
             if (strategy != null)
             {
@@ -230,9 +230,9 @@ namespace Assets.Scripts.Level.Commands
 
                     }
                 }
-                else if (Enemy != null)
+                else if (EnemySquad != null)
                 {
-                    ships = Enemy.GetShips();
+                    ships = EnemySquad.GetShips();
                 }
                 foreach (Ship ship in ships)
                 {
@@ -281,7 +281,7 @@ namespace Assets.Scripts.Level.Commands
 
             Squad.GetShips().ForEach((ship) =>
             {
-                ship.TargetEnemy = null;
+                ship.TargetEnemyShip = null;
 
             });
             Squad.IsRetreating = false;
@@ -317,9 +317,9 @@ namespace Assets.Scripts.Level.Commands
 
                     StoredCommand squadCommand = Squad.PastCommands.FirstOrDefault(c => c.OutcomeId == OutcomeId);
                     squadCommand.Age = Age;
-                    if (Enemy != null)
+                    if (EnemySquad != null)
                     {
-                        squadCommand.Enemy = Enemy.Name;
+                        squadCommand.Enemy = EnemySquad.Name;
                     }
                     else
                     {

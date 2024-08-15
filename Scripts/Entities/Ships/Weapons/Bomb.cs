@@ -14,7 +14,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             List<Ship> queue = new List<Ship>();
             if (Ship.Squad.HasEnemy && Ship.Squad.IsAttacking)
             {
-                List<Ship> enemyShips = Ship.Squad.Command.Enemy.GetShips().ToList(); // The ToList() is necessary to prevent alteration to the enemy ships
+                List<Ship> enemyShips = Ship.Squad.Command.EnemySquad.GetShips().ToList(); // The ToList() is necessary to prevent alteration to the enemy ships
                 if (enemyShips.Count > 0)
                 {
                     //Debug.Log($"Enemy squad {Ship.Squad.Command.Enemy.Name} has {enemyShips.Count} ships");
@@ -30,7 +30,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 //Debug.Log($"Either the Squad has no enemy: {Ship.Squad.HasEnemy} or the squad is not attacking: {Ship.Squad.IsAttacking}");
             }
-            if (CachedShootingStrategy == Ship.ShootingStrategy && queue.Count == CachedTargetingQueue.Count && !CachedTargetingQueue.Contains(null))
+            if (!HasCachedChanged && CachedShootingStrategy == Ship.ShootingStrategy)
             {
                 //Debug.Log("Using cached queue");
                 IsUsingCachedTargetingQueue = true;

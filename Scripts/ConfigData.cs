@@ -164,7 +164,7 @@ namespace Assets.Scripts
         /// <summary>
         /// Offset in world units from the front of a ship when aiming at the front of a ship
         /// </summary>
-        public const float OffsetFromFront = .25f;
+        public const float OffsetFromFront = .35f;
         public const float FireShipExplosionSize = 64;
         public const float CommandTimerFrequency = .1f;
         public static float ShipTurningRadius; 

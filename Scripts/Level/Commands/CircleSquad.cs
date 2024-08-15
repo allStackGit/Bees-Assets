@@ -23,32 +23,32 @@ namespace Assets.Scripts.Level.Commands
         {
             if (!Squad.IsDead)
             {
-                if (Enemy != null && !Enemy.IsDead)
+                if (EnemySquad != null && !EnemySquad.IsDead)
                 {
-                    Squad.Status = $"Moving to circle enemy squad #{Enemy.SquadNumber}";
+                    Squad.Status = $"Moving to circle enemy squad #{EnemySquad.SquadNumber}";
                     Vector2 squadPosition = Squad.GetPosition();
-                    if (!_gotToEnemy && !Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(Enemy))
+                    if (!_gotToEnemy && !Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
                     {
                         //Debug.Log($"{Squad.Name} is trying to get to a good circling position against {Enemy.Name}");
-                        Squad.Status = $"Trying to get to a good circling position against {Enemy.Name}";
-                        SetAndMove(Enemy.GetPosition());
+                        Squad.Status = $"Trying to get to a good circling position against {EnemySquad.Name}";
+                        SetAndMove(EnemySquad.GetPosition());
                         //MoveTowardsEnemies();
                     }
                     else
                     {
                         if (!_hasSetIdealDistance)
                         {
-                            _idealDistance = Enemy.DistanceToPoint(squadPosition) * .97f;
-                            _angle = Enemy.AngleToPoint(squadPosition) - (Mathf.PI * .5f);
+                            _idealDistance = EnemySquad.DistanceToPoint(squadPosition) * .97f;
+                            _angle = EnemySquad.AngleToPoint(squadPosition) - (Mathf.PI * .5f);
                             _hasSetIdealDistance = true;
                         }
 
                         _gotToEnemy = true;
-                        float angle = Enemy.AngleToPoint(squadPosition);
+                        float angle = EnemySquad.AngleToPoint(squadPosition);
 
                         _angle = angle + (.06f * Mathf.PI);
                         //Debug.Log($"{Squad.Name} is circling enemy squad # {Enemy.Name} at {_idealDistance} away");
-                        Squad.Status = $"Circling enemy squad # {Enemy.Name} at {_idealDistance} away";
+                        Squad.Status = $"Circling enemy squad # {EnemySquad.Name} at {_idealDistance} away";
                         NewCircleSpot();
                     }
                 }
@@ -64,7 +64,7 @@ namespace Assets.Scripts.Level.Commands
         }
         private void NewCircleSpot()
         {
-            Vector2 destination = Enemy.CirclePoint(_angle, _idealDistance);
+            Vector2 destination = EnemySquad.CirclePoint(_angle, _idealDistance);
             //Debug.Log($"Current Position: {Squad.GetPosition()}, Next Destination: {destination}");
             SetAndMove(destination);
         }

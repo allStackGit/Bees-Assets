@@ -15,17 +15,17 @@ namespace Assets.Scripts.Level.Commands
         public override void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy)
         {
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
-            if (Enemy != null && !Enemy.IsDead)
+            if (EnemySquad != null && !EnemySquad.IsDead)
             {
                 IsAttacking = true;
 
                 PrepareDamageToSendEntries();
                 Vector2 position = Squad.GetPosition();
-                Vector2 enemyPosition = Enemy.GetPosition();
+                Vector2 enemyPosition = EnemySquad.GetPosition();
                 float distance = Squad.DistanceToPoint(enemyPosition);
-                _returnPoint = distance > Enemy.MaxRange && distance < 50 ?
+                _returnPoint = distance > EnemySquad.MaxRange && distance < 50 ?
                     Utilities.RandomCoordinate(Level, position, Vector2.one * 10, Vector2.zero) :
-                    Utilities.RandomCoordinate(Level, enemyPosition, Vector2.one * (Enemy.MaxRange + 20), Vector2.one * Enemy.MaxRange);
+                    Utilities.RandomCoordinate(Level, enemyPosition, Vector2.one * (EnemySquad.MaxRange + 20), Vector2.one * EnemySquad.MaxRange);
 
                 _hasReachedDestination = false;
                 InvokeRepeating(nameof(Timer), ConfigData.CommandTimerFrequency, ConfigData.CommandTimerFrequency);
@@ -36,12 +36,12 @@ namespace Assets.Scripts.Level.Commands
         {
             if (!Squad.IsDead)
             {
-                if (Enemy != null && !Enemy.IsDead)
+                if (EnemySquad != null && !EnemySquad.IsDead)
                 {
 
-                    if (!_hasReachedDestination && !Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(Enemy))
+                    if (!_hasReachedDestination && !Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
                     {
-                        Squad.Status = $"Targeting enemy squad #{Enemy.SquadNumber} for In and Out";
+                        Squad.Status = $"Targeting enemy squad #{EnemySquad.SquadNumber} for In and Out";
                         //Debug.Log($"Enemy: {Enemy.Name} IsDead: {Enemy.IsDead}");
                         //SetAndMove(Enemy.GetPosition());
                         MoveTowardsEnemies();
@@ -49,7 +49,7 @@ namespace Assets.Scripts.Level.Commands
                     else if (!Squad.HasReachedDestination)
                     {
                         Squad.IsRetreating = true;
-                        Squad.Status = $"Retreating away from enemy squad #{Enemy.SquadNumber} for In and Out";
+                        Squad.Status = $"Retreating away from enemy squad #{EnemySquad.SquadNumber} for In and Out";
                         _hasReachedDestination = true;
                         SetAndMove(_returnPoint);
                         _returnPoint = GetDestination();

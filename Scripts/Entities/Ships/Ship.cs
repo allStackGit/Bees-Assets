@@ -27,8 +27,8 @@ namespace Assets.Scripts.Entities.Ships
     public class Ship : Entity
     {
         public bool ShowDebug;
-        public int Health, MaxHealth, OriginalHealth, OriginalTsv, Sight, AdditionalTsv, Clearance;
-        public float ProjectileValue, Speed, SpecialFirePower;
+        public int Health, MaxHealth, OriginalHealth, OriginalTsv, Sight, AdditionalTsv, Clearance, MaxRange, HalfMaxRange;
+        public float ProjectileValue, Speed, SpecialFirePower, CurrentSpeed;
         public GameObject ShipExplosion, HealthBar, MiniMapIcon;
         public Vector2 TargetCoordinates, FinalDestination, OffsetFromCenter; // the coordinates of where the ship should go, and it's offset from the center of the squad
         public Squad Squad;
@@ -55,8 +55,12 @@ namespace Assets.Scripts.Entities.Ships
         /// <summary>
         /// The ship that this ship is following after in order to target it. The primary enemy ship.
         /// </summary>
-        public Ship TargetEnemy;
+        public Ship TargetEnemyShip;
+        public bool IsCloseEnoughToTargetEnemy;
         public PolygonCollider2D ShipCollider;
+
+
+
         public volatile bool PathfindingThreadComplete;
         public volatile Pathfinder.Path PathfindingValue;
         public volatile int PathfindingThread;
@@ -75,7 +79,6 @@ namespace Assets.Scripts.Entities.Ships
         // [tsv-calculation] [note]
         public float Firepower => HasWeapons ? Weapons.Sum(w => w.Firepower) : SpecialFirePower;
         public float DamagePerSecond => Turrets.Sum(t => t.DamagePerSecond);
-        public int MaxRange => HasWeapons ? Weapons.Max((w) => w.Range) : 0;
         public int Tsv => Utilities.CalculateTsv(this);
         public string ShipTypeLetter => Utilities.ConvertShipNameToType(ShipType);
         public double Seconds => GetLifeTime();
@@ -99,14 +102,16 @@ namespace Assets.Scripts.Entities.Ships
             return list;
         }).ToList() : new List<Ship>();
         public bool HasCommand => Squad.HasCommand;
-        public bool HasTargetEnemy => TargetEnemy != null  && !TargetEnemy.IsDead;
+        /// <summary>
+        /// Means the a ship has a command, that command has live enemies, and this ship is following after and targeting one of those enemies
+        /// </summary>
+        public bool HasTargetEnemyShip => TargetEnemyShip != null  && !TargetEnemyShip.IsDead;
 
 
         protected bool aimedAtTarget;
 
 
         private bool _combatTimer;
-        private float _currentSpeed;
         private Transform _healthBarFiller;
         private SpriteRenderer _healthBarFillerSprite;
         private Vector2 _size;
@@ -134,7 +139,7 @@ namespace Assets.Scripts.Entities.Ships
         protected virtual void UpdateDebugProperties()
         {
             __Strategy = $"{Squad?.Command?.Strategy?.Name} - {Squad?.Command?.OutcomeId}";
-            __Enemy =  Squad.HasEnemy ? Squad.Command.Enemy.Name : "-";
+            __Enemy =  Squad.HasEnemy ? Squad.Command.EnemySquad.Name : "-";
             __TargetShips = TargetShips;
             __ShipsWithinRange = ShipsWithinRange.Select((ship) => ship.Name).ToList();
             __Squad = Squad.Name;
@@ -155,12 +160,12 @@ namespace Assets.Scripts.Entities.Ships
             __SquadShips = Squad.GetShips();
             __BannedStrats = Squad.BannedStrats.ToList();
             __DamageStatuses = Squad.DamageSentToEnemyShipsBySquad.Select((ds) => $"{ds.TotalDamageSentToShip} damage sent to {ds.Ship.Name} against {ds.Health} health. Current health: {ds.Ship.Health}").ToList();
-            if (TargetEnemy != null && !TargetEnemy.IsDead)
+            if (HasTargetEnemyShip)
             {
-                __TargetEnemy = $"Targeting {TargetEnemy.Name} in {TargetEnemy.Squad.Name} at {TargetEnemy.GetPosition()}";
+                __TargetEnemy = $"Targeting {TargetEnemyShip.Name} in {TargetEnemyShip.Squad.Name} at {TargetEnemyShip.GetPosition()}";
             }
             __CommandTargetingQueue = Squad.HasCommand && Squad.Command.HasEnemy ? Squad.Command.TargetingQueue.Select((ship) =>  ship.Name).ToList() : new List<string>();
-            __CurrentSpeed = _currentSpeed;
+            __CurrentSpeed = CurrentSpeed;
             __NearbyAsteroids = NearbyAsteroids.Select((a) => a.Name).ToList();
             __DegreesToTargetCoordinates = GetDegreesTowardsPoint(TargetCoordinates);
             __DistanceToTargetCoordinates = DistanceToPoint(TargetCoordinates);
@@ -326,6 +331,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             Sight = shipStats.Sight;
             Speed = shipStats.Speed;
             RotationSpeed = Speed * ConfigData.Configuration.RotationMultiplier;
+            MaxRange = HasWeapons ? Weapons.Max((w) => w.Range) : 0;
+            HalfMaxRange = MaxRange / 2;
 
 
 
@@ -456,7 +463,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     {
                         if (Vector2.Distance(destination, TargetCoordinates) < ConfigData.CloseEnoughCoordinateVariance)
                         {
-                            Debug.Log($"The difference between our new destination and old destination for {Name} is {Vector2.Distance(destination, TargetCoordinates)} so there's no need to generate new pathfinding about it");
+                            //Debug.Log($"The difference between our new destination and old destination for {Name} is {Vector2.Distance(destination, TargetCoordinates)} so there's no need to generate new pathfinding about it");
                             return;
                         }
                         Collider2D obstacleCollider = GetObstacleInPath(destination);
@@ -685,7 +692,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         }
         public void SetMovementVelocity()
         {
-            float maxSpeed = _currentSpeed;
+            float maxSpeed = CurrentSpeed;
 
             // Set the velocity of the ship
             float rotation;
@@ -737,19 +744,45 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
             //if any of the target ship(s) if your weapons are not dead and are within range
             else if (
-                Squad.IsAttacking && HasTargetShips && // Squad must be attacking and have ships that its weapons are targeting
+                HasTargetEnemyShip &&
                 !(Squad.HasCommand && (Squad.Command.Type == "Circle" || Squad.Command.Type == "Right Swipe" ||  Squad.Command.Type == "Left Swipe") ||
                 Squad.Command.Type == "In and Out") &&  // Squad must either not have a command or not have a command of a certain type
-                TargetShips.Any((ship) => ship != null && (!HasTargetEnemy || TargetEnemy.Equals(ship)) && IsShipWithinRange(ship)) // Ship must have target ships within range and they must be the target enemy or there must not be a target enemy 
+
+                //TargetShips.Any((ship) => ship != null && (!HasTargetEnemy || TargetEnemy.Equals(ship)) && IsShipWithinRange(ship)) // Ship must have target ships within range and they must be the target enemy or there must not be a target enemy 
+
+                IsShipWithinRange(TargetEnemyShip) // Ship must have all enemy ships within range
                 )
             {
-                //Debug.Log("We are outside of range of the target ship and we can still hit it but we are close to being within its range");
-                if (!Squad.IsAttacking || !Squad.Command.Enemy.IsMoving)
-                {
+                // If we're not attacking or the enemy isn't moving, or all of the enemy ships are within this ship's range
+                //if (!Squad.IsAttacking || !Squad.Command.Enemy.IsMoving)
+                //{
 
+                //    EndDestination($"A target ship is within our range");
+                //    //SetCurrentSpeed(Squad.Command.Enemy.MaxSpeed);
+                //}
+                //else
+                //{
+                //    SetCurrentSpeed(Squad.Command.Enemy.MaxSpeed);
+                //}
+                IsCloseEnoughToTargetEnemy = true;
+                //EndDestination($"A target ship is within our range");
+                SetCurrentSpeed(TargetEnemyShip.CurrentSpeed);
+                if (Level.FixedUpdates % 10 == 0 && DistanceTo(TargetEnemyShip) < HalfMaxRange)
+                {
                     EndDestination($"A target ship is within our range");
                 }
+                return;
             }
+            IsCloseEnoughToTargetEnemy = false;
+            if (Squad.IsMatchingSpeed)
+            {
+                SetCurrentSpeed(Squad.CurrentSpeed);
+            }
+            else
+            {
+                SetCurrentSpeed(Speed);
+            }
+
 
         }
 
@@ -765,6 +798,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 TargetCoordinates = DestinationQueue.Dequeue();
                 //Debug.Log($"There are more target coordinates, not ending movement: {TargetCoordinates}");
             }
+            //else if (HasTargetEnemy)
+            //{
+            //    TargetCoordinates = TargetEnemy.GetPosition();
+            //}
             else
             {
                 StopMoving(reason);
@@ -783,7 +820,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         private bool IsCloseEnoughToTargetCoordinates(float distance)
         {
             //return (distance < Clearance && !Squad.HasEnemy) || (distance < ConfigData.CloseEnoughCoordinateVariance && !(Squad.HasCommand && Squad.Command.Type == "Bombing Run"));
-            return distance < ConfigData.ShipTurningRadius;
+            return (distance < ConfigData.ShipTurningRadius && !(Squad.HasCommand && Squad.Command.Type == "Bombing Run"));
         }
         public void StopMoving(string reason)
         {
@@ -836,7 +873,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             {
                 maxSpeed = Speed;
             }
-            _currentSpeed = math.min(speed, maxSpeed);
+            CurrentSpeed = math.min(speed, maxSpeed);
         }
 
 
@@ -1030,6 +1067,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     if (killer != null)
                     {
                         killer.LastKilled = Time.frameCount;
+                        killer.IsCloseEnoughToTargetEnemy = false;
                         LogKillerStats(killer);
                     }
                     LogKilledStats();
@@ -1070,29 +1108,33 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 Destroy(gameObject);
             }
         }
-        public Ship GetTargetEnemy()
+        /// <summary>
+        /// Returns the target enemy ship for this ship. The Target enemy ship will be the first in the targeting queue for this ship's squad's command
+        /// </summary>
+        /// <returns></returns>
+        public Ship SetAndGetTargetEnemy()
         {
             int loop = 0;
-            while (!HasTargetEnemy && loop < 10) // [note] the loop check should be removed if no longer needed
+            while (!HasTargetEnemyShip && loop < 10) // [note] the loop check should be removed if no longer needed
             {
                 loop++;
                 try
                 {
                     if (Squad.Command.TargetingQueue.Count == 0)
                     {
-                        if (Squad.Command.Enemy.IsGrowingSquad)
+                        if (Squad.Command.EnemySquad.IsGrowingSquad)
                         {
                             Squad.Command.OriginalQueue = new Queue<Ship>(Squad.Command.MakeTargetingQueue());
                         }
                         Squad.Command.TargetingQueue = new Queue<Ship>(Squad.Command.OriginalQueue);
                     }
-                    TargetEnemy = Squad.Command.TargetingQueue.Dequeue();
+                    TargetEnemyShip = Squad.Command.TargetingQueue.Dequeue();
                 }catch(Exception e)
                 {
                     Debug.Log($"Squad: {Squad}");
                     Debug.Log($"Command: {Squad?.Command}"); // command is null
                     Debug.Log($"TargetingQueue: {Squad?.Command?.TargetingQueue}");
-                    Debug.Log($"Enemy: {Squad?.Command?.Enemy?.Name}");
+                    Debug.Log($"Enemy: {Squad?.Command?.EnemySquad?.Name}");
                     Debug.Log($"Make Targeting Queue: {Squad?.Command?.MakeTargetingQueue()}");
                     throw e;
                 }
@@ -1106,11 +1148,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 Debug.Log($"Squad: {Squad}");
                 Debug.Log($"Command: {Squad?.Command}"); 
                 Debug.Log($"TargetingQueue: {Squad?.Command?.TargetingQueue}");
-                Debug.Log($"Enemy: {Squad?.Command?.Enemy?.Name}");
+                Debug.Log($"Enemy: {Squad?.Command?.EnemySquad?.Name}");
                 Debug.Log($"Make Targeting Queue: {Squad?.Command?.MakeTargetingQueue()}");
                 Debug.Log($"Hit loop limit for getTargetEnemy()");
             }
-            return TargetEnemy;
+            return TargetEnemyShip;
 
         }
 

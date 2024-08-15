@@ -29,7 +29,7 @@ namespace Assets.Scripts.Level.Commands
 
 
             // loop through all the ships in the bombing squad
-            Squad.Status = $"Starting charging run against {Enemy.Name}";
+            Squad.Status = $"Starting charging run against {EnemySquad.Name}";
             PrepareDamageToSendEntries();
 
             List<Ship> ships = Squad.GetShips();
@@ -124,7 +124,7 @@ namespace Assets.Scripts.Level.Commands
             if (!Squad.IsDead)
             {
                 //Debug.Log("Bombing timer");
-                Squad.Status = $"In the middle of charging run against {Enemy.Name}";
+                Squad.Status = $"In the middle of charging run against {EnemySquad.Name}";
                 List<Barge> ships = Squad.GetShips().Select((ship) => (Barge)ship).ToList();
                 ships.ForEach((ship) =>
                 {

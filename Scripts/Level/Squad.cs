@@ -279,13 +279,6 @@ namespace Assets.Scripts.Level
             //Debug.Log($"It took {Math.Round(end, 2)} ms to set {Name} moving. The average was {Math.Round(end / ships.Count, 2)}ms");
 
         }
-        public void StopMoving(string reason)
-        {
-            GetShips().ForEach((ship) =>
-            {
-                ship.StopMoving(reason);
-            });
-        }
         public void MatchSpeed(float speed = 0)
         {
             IsMatchingSpeed = true;
@@ -413,7 +406,7 @@ namespace Assets.Scripts.Level
         {
             if (Command != null)
             {
-                return Command.Enemy;
+                return Command.EnemySquad;
             }
             else
             {

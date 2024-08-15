@@ -2836,7 +2836,7 @@ PrefabInstance:
       objectReference: {fileID: 7326860766664323640, guid: 17bf89bc91bbb5d4e8f81054255c1aab, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: OverrideStrats.Array.size
-      value: 2
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: UseFullyRandomEnemySquads

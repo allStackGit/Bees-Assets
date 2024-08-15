@@ -17,17 +17,17 @@ namespace Assets.Scripts.Level.Commands
 
 
 
-            if (Enemy != null && !Enemy.IsDead)
+            if (EnemySquad != null && !EnemySquad.IsDead)
             {
-                Vector2 enemyPosition = Enemy.GetPosition();
+                Vector2 enemyPosition = EnemySquad.GetPosition();
                 double distance = Squad.DistanceToPoint(enemyPosition);
-                double idealDistance = Enemy.MaxRange * 1.5;
+                double idealDistance = EnemySquad.MaxRange * 1.5;
 
                 if (distance < idealDistance)
                 {
                     float angle = Squad.AngleToPoint(enemyPosition);
                     Squad.IsRetreating = true;
-                    Squad.Status = $"Retreating away from {Enemy.Name}";
+                    Squad.Status = $"Retreating away from {EnemySquad.Name}";
                     Vector2 position = Squad.GetPosition();
                     _retreatPoint = new Vector2((float)(Mathf.Sin(angle) * (idealDistance - distance) + position.x), (float)(Mathf.Cos(angle) * (idealDistance - distance) + position.y));
                     SetAndMove(_retreatPoint);

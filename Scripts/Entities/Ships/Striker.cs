@@ -134,7 +134,7 @@ namespace Assets.Scripts.Entities.Ships
             Invoke(nameof(CompleteRun), .5f);
 
         }
-        private void CompleteRun()
+        public void CompleteRun()
         {
             HasCompletedRun = true;
             SetIndicatorColor();

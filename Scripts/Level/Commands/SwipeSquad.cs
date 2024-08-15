@@ -25,11 +25,11 @@ namespace Assets.Scripts.Level.Commands
         {
             if (!Squad.IsDead)
             {
-                if (Enemy != null && !Enemy.IsDead)
+                if (EnemySquad != null && !EnemySquad.IsDead)
                 {
-                    Squad.Status = $"Targeting enemy squad {Enemy.Name} #{Enemy.Id} with {Strategy.Name}";
+                    Squad.Status = $"Targeting enemy squad {EnemySquad.Name} #{EnemySquad.Id} with {Strategy.Name}";
 
-                    if (!_gotToEnemy && !Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(Enemy)) // if we haven't reached the enemy yet
+                    if (!_gotToEnemy && !Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad)) // if we haven't reached the enemy yet
                     {
                         //Debug.Log($"Enemy: {Enemy.Name} IsDead: {Enemy.IsDead}");
                         //SetAndMove(Enemy.GetPosition());
@@ -41,8 +41,8 @@ namespace Assets.Scripts.Level.Commands
                         _gotToEnemy = true;
                         //SetFinalize("Reached the enemy");
                         //return;
-                        Squad.Status = $"Using {Strategy.Name} against enemy squad {Enemy.Name} #{Enemy.Id}";
-                        Vector2 enemyPosition = Enemy.GetPosition();
+                        Squad.Status = $"Using {Strategy.Name} against enemy squad {EnemySquad.Name} #{EnemySquad.Id}";
+                        Vector2 enemyPosition = EnemySquad.GetPosition();
                         float angle = Squad.AngleToPoint(enemyPosition);
 
                         if (Strategy.Name == "Right Swipe")
@@ -68,7 +68,7 @@ namespace Assets.Scripts.Level.Commands
 
 
 
-                        float distance = Enemy.MaxRange * 1.5f;
+                        float distance = EnemySquad.MaxRange * 1.5f;
                         if (distance < Squad.MaxRange - 2)
                         {
                             distance = Squad.MaxRange - 2;

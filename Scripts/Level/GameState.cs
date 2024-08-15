@@ -292,9 +292,9 @@ namespace Assets.Scripts.Level
             List<Squad> targetedSquads = new List<Squad>();
             _squads.Where((s) => s.Side == side).ToList().ForEach((s) =>
             {
-                if (s.Command != null && s.Command.Enemy != null)
+                if (s.Command != null && s.Command.EnemySquad != null)
                 {
-                    targetedSquads.Add(s.Command.Enemy);
+                    targetedSquads.Add(s.Command.EnemySquad);
                 }
             });
             return targetedSquads;

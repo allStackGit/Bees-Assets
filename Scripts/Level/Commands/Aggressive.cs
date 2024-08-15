@@ -32,12 +32,12 @@ namespace Assets.Scripts.Level.Commands
         {
             if (!Squad.IsDead)
             {
-                if (Enemy != null && !Enemy.IsDead)
+                if (EnemySquad != null && !EnemySquad.IsDead)
                 {
-                    Squad.Status = $"Targeting enemy squad #{Enemy.SquadNumber}";
+                    Squad.Status = $"Targeting enemy squad #{EnemySquad.SquadNumber}";
                     if (!IsComfortablyWithinRange) // check if all of their squad ships are comfortably within range of all of our squad ships
                     {
-                        if (Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(Enemy))
+                        if (Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
                         {
                             // Keep track of how many times all of the ships have been within range so we don't stop moving towards the enemy until we've been within range for a little bit at least
                             ConsecutiveTimesWithinRange++;
@@ -56,7 +56,7 @@ namespace Assets.Scripts.Level.Commands
                         MoveTowardsEnemies();
 
                         // Once we get close to the target we speed up the timer so we get more up to date information
-                        if (!IsCloseToTarget && Squad.DistanceToPoint(Enemy.GetPosition()) < Squad.MaxRange * 2)
+                        if (!IsCloseToTarget && Squad.DistanceToPoint(EnemySquad.GetPosition()) < Squad.MaxRange * 2)
                         {
                             //Debug.Log($"{Squad.Name} is close to {Enemy.Name}");
                             CancelInvoke(nameof(Timer));
@@ -65,7 +65,7 @@ namespace Assets.Scripts.Level.Commands
                             InvokeRepeating(nameof(Timer), CommandFrequency, CommandFrequency);
                         }
                     }
-                    else if (Squad.MaxRange >= 45 && Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(Enemy))
+                    else if (Squad.MaxRange >= 45 && Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
                     {
                         //Debug.Log($"All ships are comfortably within range, we don't need to move.");
                     }

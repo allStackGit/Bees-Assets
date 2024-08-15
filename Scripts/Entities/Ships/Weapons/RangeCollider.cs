@@ -30,6 +30,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 Ship ship = collidingThing.GetComponent<Ship>();
                 Weapon.ShipsWithinRange.Add(ship);
+                Weapon.HasCachedChanged = true;
 
                 //if (Weapon.Ship.IsHiveMindControlled && Weapon.Ship.HasCommand)
                 //{
@@ -44,13 +45,16 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
 
         }
-        protected virtual void OnTriggerExit2D(Collider2D collider)
+        ///
+        protected virtual void OnTriggerExit2D(Collider2D collider) // This is triggered by ships dying too 
         {
             GameObject collidingThing = collider.gameObject;
             if (collidingThing.CompareTag("Ship"))
             {
                 Ship ship = collidingThing.GetComponent<Ship>();
+                //Debug.Log($"{ship.Name} is no longer in {Weapon.Ship.Name} range");
                 Weapon.ShipsWithinRange.Remove(ship);
+                Weapon.HasCachedChanged = true;
 
                 //if (Weapon.Ship.IsHiveMindControlled)
                 //{

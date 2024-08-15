@@ -18,7 +18,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public List<Ship> CachedTargetingQueue = new List<Ship>();
         public HashSet<Ship> ShipsWithinRange = new HashSet<Ship>();
         public string CachedShootingStrategy, Name, Type;
-        public bool IsUsingCachedTargetingQueue, HasRangeCircle, HasRangeCollider, HasSoundEffect;
+        public bool IsUsingCachedTargetingQueue, HasCachedChanged, HasRangeCircle, HasRangeCollider, HasSoundEffect;
         public AudioSource SoundEffect;
         public float Firepower => Utilities.CalculateFirepower(Power, Range, RateOfFire, RotationRate, ProjectileValue, SpecialFirepower);
         public bool CeaseFire => Ship.Squad.CeaseFire;
@@ -217,10 +217,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             if (Ship.Squad.HasEnemy && Ship.Squad.IsAttacking)
             {
-                IEnumerable<Ship> enemies = ShipsWithinRange.Where((s) => s.Squad == Ship.Squad.Command.Enemy);
-                if (enemies.Any())
+                List<Ship> enemies = ShipsWithinRange.Where((s) => s.Squad == Ship.Squad.Command.EnemySquad).ToList();
+                if (enemies.Count > 0)
                 {
-                    return enemies.ToList();
+                    return enemies;
                 }
                 return ShipsWithinRange.ToList();
                 //return Ship.Squad.Command.Enemy.GetShips().Where((s) => IsShipWithinRange(s)).ToList();
@@ -235,20 +235,21 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             List<Ship> queue;
             if (disregardRange)
             {
-                queue = Squad.Command.Enemy.GetShips();
+                queue = Squad.Command.EnemySquad.GetShips();
             }
             else
             {
                 queue = GetEnemyShipsWithinRange();
             }
-            __ShipsWithinRange = queue.ToList();
-            if (CachedShootingStrategy == Ship.ShootingStrategy && queue.Count == CachedTargetingQueue.Count && !CachedTargetingQueue.Contains(null))
+            __ShipsWithinRange = queue.ToList(); // [debug]
+            if (!HasCachedChanged && CachedShootingStrategy == Ship.ShootingStrategy)
             {
                 IsUsingCachedTargetingQueue = true;
                 return CachedTargetingQueue;
             }
             IsUsingCachedTargetingQueue = false;
-            return queue.Where((s) => s != null && !s.IsDead).ToList();
+            return queue;
+            //return queue.Where((s) => s != null && !s.IsDead).ToList();
         }
         public void ClearTargets()
         {
@@ -263,6 +264,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             string strategy = Ship.ShootingStrategy;
             CachedShootingStrategy = strategy;
             CachedTargetingQueue = queue;
+            HasCachedChanged = false;
             if (strategy != null && !IsUsingCachedTargetingQueue)
             {
                 //Debug.Log($"Making targeting queue for {Ship.Name}. The squad is using {Squad.GetShootingStrategy()}");

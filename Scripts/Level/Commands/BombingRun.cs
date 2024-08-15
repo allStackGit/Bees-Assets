@@ -43,7 +43,7 @@ namespace Assets.Scripts.Level.Commands
 
             // Setup status and damage
             IsAttacking = true;
-            Squad.Status = $"Starting bombing run against {Enemy.Name}";
+            Squad.Status = $"Starting bombing run against {EnemySquad.Name}";
             PrepareDamageToSendEntries();
 
             // loop through all the ships in the bombing squad
@@ -72,6 +72,7 @@ namespace Assets.Scripts.Level.Commands
                     Squad.DamageSentToEnemyShipsBySquad.Clear();
                     loops++;
                 }
+                ship.SetAndGetTargetEnemy();
                 //if (loops == 10)
                 //{
                 //    Debug.Log($"Looped 10 times while trying to dtermine a target ship for {bomb.Name}");
@@ -109,7 +110,7 @@ namespace Assets.Scripts.Level.Commands
         }
         private bool ShouldShipPursueTarget(Ship ship)
         {
-            if (ship.HasTargetShips && ship.TargetShips.Any((ship) => ship != null)) // if the ship has target ships and they're not all dead
+            if (ship.HasTargetEnemyShip) // if the ship has target ships and they're not all dead
             {
                 if (ship.ShipType == "Striker")
                 {
@@ -125,7 +126,7 @@ namespace Assets.Scripts.Level.Commands
         }
         private void SendShipToTarget(Ship ship)
         {
-            ship.MoveToPoint(ship.TargetShips.First().GetPosition()); // Move to the primary target ship
+            ship.MoveToPoint(ship.SetAndGetTargetEnemy().GetPosition()); // Move to the primary target ship
         }
         private bool HaveAllShipsFinished(List<Ship> ships)
         {
@@ -156,7 +157,7 @@ namespace Assets.Scripts.Level.Commands
             {
                 _timerLoops++;
                 //Debug.Log("Bombing timer");
-                Squad.Status = $"In the middle of bombing run against {Enemy.Name}";
+                Squad.Status = $"In the middle of bombing run against {EnemySquad.Name}";
                 List<Ship> ships = Squad.GetShips();
                 List<long> fireShipsToDetonate = new List<long>();
                 ships.ForEach((ship) =>
@@ -177,7 +178,7 @@ namespace Assets.Scripts.Level.Commands
                         if (ship.ShipType == "Striker")
                         {
                             Striker striker = (Striker)ship;
-                            striker.HasCompletedRun = true;
+                            striker.CompleteRun();
                         }
                         else if (ship.ShipType == "Yellow Jacket")
                         {
@@ -219,11 +220,11 @@ namespace Assets.Scripts.Level.Commands
                     }
                 }
 
-                if (!IsCloseToTarget && !Enemy.IsDead)
+                if (!IsCloseToTarget && !EnemySquad.IsDead)
                 {
-                    if (Squad.DistanceToPoint(Enemy.GetPosition()) < 45)
+                    if (Squad.DistanceToPoint(EnemySquad.GetPosition()) < 45)
                     {
-                        Debug.Log($"{Squad.Name} is on a bombing run and close to {Enemy.Name}");
+                        Debug.Log($"{Squad.Name} is on a bombing run and close to {EnemySquad.Name}");
                         CancelInvoke(nameof(Timer));
                         CommandFrequency = .25f;
                         IsCloseToTarget = true;
@@ -231,9 +232,9 @@ namespace Assets.Scripts.Level.Commands
                     }
 
                 }
-                else if (IsCloseToTarget && !Enemy.IsDead && _timerLoops % 4 == 0 && Squad.DistanceToPoint(Enemy.GetPosition()) > 90)
+                else if (IsCloseToTarget && !EnemySquad.IsDead && _timerLoops % 4 == 0 && Squad.DistanceToPoint(EnemySquad.GetPosition()) > 90)
                 {
-                    Debug.Log($"{Squad.Name} is on a bombing run and no longer close to {Enemy.Name}");
+                    Debug.Log($"{Squad.Name} is on a bombing run and no longer close to {EnemySquad.Name}");
                     CancelInvoke(nameof(Timer));
                     CommandFrequency = 2f;
                     IsCloseToTarget = false;
