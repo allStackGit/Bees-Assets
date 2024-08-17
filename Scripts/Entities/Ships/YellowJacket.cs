@@ -24,7 +24,7 @@ namespace Assets.Scripts.Entities.Ships
                     Level.Selector.SelectShip(this);
                 }
             }
-            else if (collidingThing.CompareTag("Ship") && ShipCollider.IsTouching(collider))
+            else if (collidingThing.CompareTag("Ship") && Collider.IsTouching(collider))
             {
                 TouchingShip = collidingThing.GetComponent<Ship>();
                 //Debug.Log($"Striker collided with a ship!" +
@@ -32,7 +32,7 @@ namespace Assets.Scripts.Entities.Ships
                 //    $"{Squad}, " +
                 //    $"{TargetShip}");
 
-                if (TouchingShip != null && TouchingShip.Side != Side && Squad.HasCommand && HasTargetShips && TargetShips.Contains(TouchingShip))
+                if (TouchingShip != null && TouchingShip.Side != Side && Squad.HasCommand && HasWeaponsTargetShips && WeaponsTargetShips.Contains(TouchingShip))
                 {
                     //Debug.Log("Collided with our target ship!");
                     ContactedShip = TouchingShip;

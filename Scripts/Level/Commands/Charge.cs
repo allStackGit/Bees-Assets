@@ -51,7 +51,7 @@ namespace Assets.Scripts.Level.Commands
         {
             Bomb bomb = (Bomb)ship.Weapons.First();
             int loops = 0;
-            while (!bomb.DetermineTargetShip(bomb.MakeTargetingQueue(true), true) && loops < 10)
+            while (!bomb.DetermineTargetShip(bomb.MakeSortedTargetingList(true), true) && loops < 10)
             {
                 Squad.DamageSentToEnemyShipsBySquad.Clear();
                 loops++;
@@ -59,7 +59,7 @@ namespace Assets.Scripts.Level.Commands
         }
         private void SendShipToTarget(Ship ship)
         {
-            ship.MoveToDirectionOfPoint(ship.TargetShips.First().GetPosition()); // Move to the primary target ship
+            ship.MoveToDirectionOfPoint(ship.SetAndGetTargetEnemy().GetPosition()); // Move to the primary target ship
         }
         private bool HaveAllShipsFinished(List<Barge> ships)
         {
@@ -70,19 +70,19 @@ namespace Assets.Scripts.Level.Commands
         }
         private bool ShouldShipPursueTarget(Barge ship)
         {
-            return !ship.HasStartedCharging && !ship.HasCompletedRun && ship.HasTargetShips && ship.TargetShips.Any((targetShip) => targetShip != null);
+            return !ship.HasStartedCharging && !ship.HasCompletedRun && ship.HasTargetEnemyShipToFollow;
         }
 
         private bool HasTargetsWithinChargingRange(Ship ship)
         {
-            return ship.HasTargetShips && ship.TargetShips.Any((targetShip) => targetShip != null &&  ship.ShipsWithinRange.Contains(targetShip) && Utilities.IsRotatedTowards(ship.gameObject, ship.GetDegreesTowardsPoint(targetShip.GetPosition())));
+            return ship.HasWeaponsTargetShips && ship.WeaponsTargetShips.Any((targetShip) => targetShip != null &&  ship.ShipsWithinRange.Contains(targetShip) && Utilities.IsRotatedTowards(ship.gameObject, ship.GetDegreesTowardsPoint(targetShip.GetPosition())));
         }
 
 
 
         public IEnumerator ChargeTarget(Barge barge)
         {
-            Ship target = barge.TargetShips.First();
+            Ship target = barge.WeaponsTargetShips.First();
             barge.OriginalPower = barge.Charge.Power;
 
             barge.StopMoving("Pausing to build up steam before charging");
@@ -143,7 +143,7 @@ namespace Assets.Scripts.Level.Commands
                         {
                             SendShipToTarget(ship);
                         }
-                    }else if (!ship.HasTargetShips)
+                    }else if (!ship.HasWeaponsTargetShips)
                     {
                         GetTargetShip(ship);
                     }

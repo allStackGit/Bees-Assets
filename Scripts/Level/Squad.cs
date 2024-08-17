@@ -869,6 +869,11 @@ namespace Assets.Scripts.Level
         {
             return _ships;
         }
+        /// <summary>
+        /// Finds the damage status entry for this ship in the squads list or creates it if it doesn't exist
+        /// </summary>
+        /// <param name="potentialTargetShip"></param>
+        /// <returns></returns>
         public ShipDamageStatus GetShipDamageStatus(Ship potentialTargetShip)
         {
             List<ShipDamageStatus> damageSentToEnemyShipsBySquad = DamageSentToEnemyShipsBySquad;

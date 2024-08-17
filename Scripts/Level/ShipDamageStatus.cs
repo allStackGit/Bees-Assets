@@ -9,6 +9,7 @@ namespace Assets.Scripts.Level
     /// Basic class that keeps track of the initial health of a ship 
     /// and the damage sent towards the ship by enemy projectiles.
     /// The damage sent does not necessarily match damage received
+    /// due to missed projectiles
     /// </summary>
     public class ShipDamageStatus
     {

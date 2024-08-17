@@ -53,11 +53,10 @@ namespace Assets.Scripts.Entities.Ships
         public float RotationSpeed;
         public bool HasVision;
         /// <summary>
-        /// The ship that this ship is following after in order to target it. The primary enemy ship.
+        /// The ship that this ship is following after in order to target it. The primary enemy ship. This is NOT necessarily the ship that this ship is firing at. The weapon(s) have that information
         /// </summary>
-        public Ship TargetEnemyShip;
-        public bool IsCloseEnoughToTargetEnemy;
-        public PolygonCollider2D ShipCollider;
+        public Ship TargetEnemyShipToFollow;
+        public bool IsCloseEnoughToTargetEnemyShipToFollow;
 
 
 
@@ -83,7 +82,10 @@ namespace Assets.Scripts.Entities.Ships
         public string ShipTypeLetter => Utilities.ConvertShipNameToType(ShipType);
         public double Seconds => GetLifeTime();
         public bool HasWeapons => Weapons.Count > 0;
-        public bool HasTargetShips => TargetShips.Count > 0;
+        /// <summary>
+        /// Does this ship have ship(s) that it's weapon(s) are targeting?
+        /// </summary>
+        public bool HasWeaponsTargetShips => WeaponsTargetShips.Count > 0;
         public bool IsUserControlled => Side == ConfigData.Configuration.UserSide && Level.HasPlayer;
         public bool IsHiveMindControlled => Side == ConfigData.Configuration.AISide || (Side == ConfigData.Configuration.UserSide && !Level.HasPlayer);
         /// <summary>
@@ -96,19 +98,19 @@ namespace Assets.Scripts.Entities.Ships
         /// <summary>
         /// A list of all the ships that this ship's weapons are targeting
         /// </summary>
-        public List<Ship> TargetShips => HasWeapons ? Weapons.Select((w) => w.TargetShip).Where((s) => s != null).ToList() : new List<Ship>();
+        public List<Ship> WeaponsTargetShips => HasWeapons ? Weapons.Select((w) => w.TargetShip).Where((s) => s != null).ToList() : new List<Ship>();
+        /// <summary>
+        /// A list of all the ships that are within range of this ship's weapon(s)
+        /// </summary>
         public List<Ship> ShipsWithinRange => HasWeapons ? Weapons.Select((w) => w.ShipsWithinRange).Aggregate(new HashSet<Ship>(), (list, current) => {
             list.UnionWith(current);
             return list;
         }).ToList() : new List<Ship>();
         public bool HasCommand => Squad.HasCommand;
         /// <summary>
-        /// Means the a ship has a command, that command has live enemies, and this ship is following after and targeting one of those enemies
+        /// Means the a ship has a command, that command has live enemies, and this ship is following after one of those enemies. This is seperate from the ship(s) that this ship's weapon(s) are targeting
         /// </summary>
-        public bool HasTargetEnemyShip => TargetEnemyShip != null  && !TargetEnemyShip.IsDead;
-
-
-        protected bool aimedAtTarget;
+        public bool HasTargetEnemyShipToFollow => TargetEnemyShipToFollow != null  && !TargetEnemyShipToFollow.IsDead;
 
 
         private bool _combatTimer;
@@ -118,13 +120,13 @@ namespace Assets.Scripts.Entities.Ships
 
 
         // Test variables
-        public string __Strategy, __Squad, __SquadStatus, __CommandStatus, __LastStopReason, __Enemy, __TargetEnemy;
+        public string __Strategy, __Squad, __SquadStatus, __CommandStatus, __LastStopReason, __EnemySquad, __TargetEnemyShipToFollow;
         public Vector2 __CommandDestination, __Velocity, __TargetCoordinates;
         public float __Firepower, __DamagePerSecond, __CurrentSpeed, __DegreesToTargetCoordinates, __DistanceToTargetCoordinates, __TurningRadius;
         public long __Tsv, __CommandTsv;
         public bool __HasReachedDestination, __SquadHasReachedDestination;
-        public List<Ship> __TargetShips, __SquadShips;
-        public List<string> __ShipsWithinRange, __PastCommands, __BannedStrats, __DamageStatuses, __CommandTargetingQueue, __NearbyAsteroids;
+        public List<Ship> __WeaponTargetShips, __SquadShips;
+        public List<string> __ShipsWithinRangeOfWeapons, __PastCommands, __BannedStrats, __DamageStatuses, __CommandTargetingQueue, __NearbyAsteroids;
         //public List<Vector2> __PastLocations;
 
 
@@ -139,9 +141,9 @@ namespace Assets.Scripts.Entities.Ships
         protected virtual void UpdateDebugProperties()
         {
             __Strategy = $"{Squad?.Command?.Strategy?.Name} - {Squad?.Command?.OutcomeId}";
-            __Enemy =  Squad.HasEnemy ? Squad.Command.EnemySquad.Name : "-";
-            __TargetShips = TargetShips;
-            __ShipsWithinRange = ShipsWithinRange.Select((ship) => ship.Name).ToList();
+            __EnemySquad =  Squad.HasEnemy ? Squad.Command.EnemySquad.Name : "-";
+            __WeaponTargetShips = WeaponsTargetShips;
+            __ShipsWithinRangeOfWeapons = ShipsWithinRange.Select((ship) => ship.Name).ToList();
             __Squad = Squad.Name;
             __SquadStatus = Squad.Status;
             //__CommandStatus = Squad.HasCommand ? Squad.Comd.Status : "-";
@@ -160,10 +162,7 @@ namespace Assets.Scripts.Entities.Ships
             __SquadShips = Squad.GetShips();
             __BannedStrats = Squad.BannedStrats.ToList();
             __DamageStatuses = Squad.DamageSentToEnemyShipsBySquad.Select((ds) => $"{ds.TotalDamageSentToShip} damage sent to {ds.Ship.Name} against {ds.Health} health. Current health: {ds.Ship.Health}").ToList();
-            if (HasTargetEnemyShip)
-            {
-                __TargetEnemy = $"Targeting {TargetEnemyShip.Name} in {TargetEnemyShip.Squad.Name} at {TargetEnemyShip.GetPosition()}";
-            }
+            __TargetEnemyShipToFollow = HasTargetEnemyShipToFollow ? $"Following {TargetEnemyShipToFollow.Name} at {TargetEnemyShipToFollow.GetPosition()}" : "None";
             __CommandTargetingQueue = Squad.HasCommand && Squad.Command.HasEnemy ? Squad.Command.TargetingQueue.Select((ship) =>  ship.Name).ToList() : new List<string>();
             __CurrentSpeed = CurrentSpeed;
             __NearbyAsteroids = NearbyAsteroids.Select((a) => a.Name).ToList();
@@ -508,7 +507,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             }
             
         }
-
         public void MoveToDirectionOfPoint(Vector2 directionPoint)
         {
             directionPoint = Level.ForceBounds(directionPoint);
@@ -528,7 +526,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             }
 
         }
-
         /// <summary>
         /// This is triggered by the asteroid when the ship gets within its proximity collider
         /// </summary>
@@ -545,7 +542,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             MoveToPoint(FinalDestination, true);
             InvokeRepeating(nameof(NearbyAsteroidDoubleCheck), 1f, 1f);
         }
-
         /// <summary>
         /// Called on a delay from FoundNearbyAsteroid to check the pathfinding again in hopes of avoiding running into the asteroid's new position shortly after detecting it
         /// </summary>
@@ -565,12 +561,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         {
             NearbyAsteroids.Remove(asteroid);
         }
-
         /// <summary>
         /// Uses pathfinding (if necessary) to find the shortest path to the destination
         /// </summary>
         /// <param name="destination"></param>
-
         Vector2Int convertedStart, convertedDestination;
         Vector2 startPosition;
         private void MergePathfindingPaths()
@@ -603,8 +597,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             Level.Pathfinder.IsThreadActive[PathfindingThread] = false;
 
         }
-
-
         /// <summary>
         /// Periodically called while following a pathfinding path. Checks to see if there are any obstacles in the way and if not, cuts off the destination queue and takes a direct path
         /// </summary>
@@ -744,13 +736,13 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
             //if any of the target ship(s) if your weapons are not dead and are within range
             else if (
-                HasTargetEnemyShip &&
+                HasTargetEnemyShipToFollow &&
                 !(Squad.HasCommand && (Squad.Command.Type == "Circle" || Squad.Command.Type == "Right Swipe" ||  Squad.Command.Type == "Left Swipe") ||
                 Squad.Command.Type == "In and Out") &&  // Squad must either not have a command or not have a command of a certain type
 
                 //TargetShips.Any((ship) => ship != null && (!HasTargetEnemy || TargetEnemy.Equals(ship)) && IsShipWithinRange(ship)) // Ship must have target ships within range and they must be the target enemy or there must not be a target enemy 
 
-                IsShipWithinRange(TargetEnemyShip) // Ship must have all enemy ships within range
+                IsShipWithinRange(TargetEnemyShipToFollow) // Ship must be in range of the enemy ship that it's following
                 )
             {
                 // If we're not attacking or the enemy isn't moving, or all of the enemy ships are within this ship's range
@@ -764,16 +756,16 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 //{
                 //    SetCurrentSpeed(Squad.Command.Enemy.MaxSpeed);
                 //}
-                IsCloseEnoughToTargetEnemy = true;
+                IsCloseEnoughToTargetEnemyShipToFollow = true;
                 //EndDestination($"A target ship is within our range");
-                SetCurrentSpeed(TargetEnemyShip.CurrentSpeed);
-                if (Level.FixedUpdates % 10 == 0 && DistanceTo(TargetEnemyShip) < HalfMaxRange)
+                SetCurrentSpeed(TargetEnemyShipToFollow.CurrentSpeed);
+                if (Level.FixedUpdates % 10 == 0 && DistanceTo(TargetEnemyShipToFollow) < HalfMaxRange)
                 {
                     EndDestination($"A target ship is within our range");
                 }
                 return;
             }
-            IsCloseEnoughToTargetEnemy = false;
+            IsCloseEnoughToTargetEnemyShipToFollow = false;
             if (Squad.IsMatchingSpeed)
             {
                 SetCurrentSpeed(Squad.CurrentSpeed);
@@ -785,8 +777,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
 
         }
-
-
         /// <summary>
         /// Either stops the ship or sets it on course to the next destination
         /// </summary>
@@ -807,20 +797,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 StopMoving(reason);
             }
         }
-
-
-        /// <summary>
-        /// Checks if a ship is close enough to its target coordinates
-        /// [note] if GetHeight() is used then the ships don't endlessly circle but the larger ships stop noticably before their destination and it's hard to move them precisely
-        /// If CloseEnoughCoordinateVariance is used, the ships move close to the destination but they tend to endlessly circle if they are moved to a nearby destination inside of their
-        /// turning radius
-        /// </summary>
-        /// <param name="distance"></param>
-        /// <returns></returns>
         private bool IsCloseEnoughToTargetCoordinates(float distance)
         {
-            //return (distance < Clearance && !Squad.HasEnemy) || (distance < ConfigData.CloseEnoughCoordinateVariance && !(Squad.HasCommand && Squad.Command.Type == "Bombing Run"));
-            return (distance < ConfigData.ShipTurningRadius && !(Squad.HasCommand && Squad.Command.Type == "Bombing Run"));
+            // if the distance to the point is less than the turning radius and this isn't a bombing ship that's right next to it's target
+            return (distance < ConfigData.ShipTurningRadius && !(!IsFollowingPath && Squad.HasCommand && HasTargetEnemyShipToFollow && Squad.Command.Type == "Bombing Run"));
         }
         public void StopMoving(string reason)
         {
@@ -1067,7 +1047,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     if (killer != null)
                     {
                         killer.LastKilled = Time.frameCount;
-                        killer.IsCloseEnoughToTargetEnemy = false;
+                        killer.IsCloseEnoughToTargetEnemyShipToFollow = false;
                         LogKillerStats(killer);
                     }
                     LogKilledStats();
@@ -1109,36 +1089,45 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             }
         }
         /// <summary>
-        /// Returns the target enemy ship for this ship. The Target enemy ship will be the first in the targeting queue for this ship's squad's command
+        /// Returns the target enemy ship to follow for this ship. The Target enemy ship will be the first in the targeting queue for this ship's squad's command. This is different from which ship its weapons are targeting
         /// </summary>
         /// <returns></returns>
         public Ship SetAndGetTargetEnemy()
         {
             int loop = 0;
-            while (!HasTargetEnemyShip && loop < 10) // [note] the loop check should be removed if no longer needed
+            while (!HasTargetEnemyShipToFollow && loop < 10) // [note] the loop check should be removed if no longer needed
             {
                 loop++;
-                try
+                //try
+                //{
+                //    if (Squad.Command.TargetingQueue.Count == 0)
+                //    {
+                //        if (Squad.Command.EnemySquad.IsGrowingSquad)
+                //        {
+                //            Squad.Command.OriginalQueue = new Queue<Ship>(Squad.Command.MakeTargetingQueue());
+                //        }
+                //        Squad.Command.TargetingQueue = new Queue<Ship>(Squad.Command.OriginalQueue);
+                //    }
+                //    TargetEnemyShipToFollow = Squad.Command.TargetingQueue.Dequeue();
+                //}catch(Exception e)
+                //{
+                //    Debug.Log($"Squad: {Squad}");
+                //    Debug.Log($"Command: {Squad?.Command}"); // command is null
+                //    Debug.Log($"TargetingQueue: {Squad?.Command?.TargetingQueue}");
+                //    Debug.Log($"Enemy: {Squad?.Command?.EnemySquad?.Name}");
+                //    Debug.Log($"Make Targeting Queue: {Squad?.Command?.MakeTargetingQueue()}");
+                //    throw e;
+                //}
+
+                if (Squad.Command.TargetingQueue.Count == 0)
                 {
-                    if (Squad.Command.TargetingQueue.Count == 0)
+                    if (Squad.Command.EnemySquad.IsGrowingSquad)
                     {
-                        if (Squad.Command.EnemySquad.IsGrowingSquad)
-                        {
-                            Squad.Command.OriginalQueue = new Queue<Ship>(Squad.Command.MakeTargetingQueue());
-                        }
-                        Squad.Command.TargetingQueue = new Queue<Ship>(Squad.Command.OriginalQueue);
+                        Squad.Command.OriginalQueue = new Queue<Ship>(Squad.Command.MakeTargetingQueue());
                     }
-                    TargetEnemyShip = Squad.Command.TargetingQueue.Dequeue();
-                }catch(Exception e)
-                {
-                    Debug.Log($"Squad: {Squad}");
-                    Debug.Log($"Command: {Squad?.Command}"); // command is null
-                    Debug.Log($"TargetingQueue: {Squad?.Command?.TargetingQueue}");
-                    Debug.Log($"Enemy: {Squad?.Command?.EnemySquad?.Name}");
-                    Debug.Log($"Make Targeting Queue: {Squad?.Command?.MakeTargetingQueue()}");
-                    throw e;
+                    Squad.Command.TargetingQueue = new Queue<Ship>(Squad.Command.OriginalQueue);
                 }
-                
+                TargetEnemyShipToFollow = Squad.Command.TargetingQueue.Dequeue();
 
 
                 //Debug.Log($"{Name} doesn't have target ships so it's moving towards the target ship in the squad, {TargetEnemy.Name}");
@@ -1149,10 +1138,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 Debug.Log($"Command: {Squad?.Command}"); 
                 Debug.Log($"TargetingQueue: {Squad?.Command?.TargetingQueue}");
                 Debug.Log($"Enemy: {Squad?.Command?.EnemySquad?.Name}");
-                Debug.Log($"Make Targeting Queue: {Squad?.Command?.MakeTargetingQueue()}");
+                //Debug.Log($"Make Targeting Queue: {Squad?.Command?.MakeTargetingQueue()}");
                 Debug.Log($"Hit loop limit for getTargetEnemy()");
             }
-            return TargetEnemyShip;
+            return TargetEnemyShipToFollow;
 
         }
 

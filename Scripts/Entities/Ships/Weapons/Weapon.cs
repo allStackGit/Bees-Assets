@@ -90,13 +90,13 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         }
 
 
-        // Shooting methods
+        // Targeting methods
         protected virtual void SetTargetShip(Ship targetShip)
         {
             //Debug.Log("Setting target ship");
             TargetShip = targetShip;
         }
-        /// <summary>Goes through the list of ships in the targeting queue and sets the weapon to attack whichever ship is first valid</summary>
+        /// <summary>Goes through the list of ships in the sorted targeting list and sets the weapon to attack whichever ship is first valid</summary>
         public bool DetermineTargetShip(List<Ship> ships, bool useShipStatus)
         {
             //Debug.Log($"Determining Target ship with {FleetShip.Name}!");
@@ -125,7 +125,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                             }
                             //else
                             //{
-                            //    Debug.Log($"{Ship.Name} cannot fire at {potentialTargetShip.Name} because {shipDamageStatus.totalDamageSentToShip} >= {shipDamageStatus.health}");
+                            //    Debug.Log($"{Ship.Name} cannot fire at {potentialTargetShip.Name} because {shipDamageStatus.TotalDamageSentToShip} >= {shipDamageStatus.Health}");
                             //}
                         }
                         else
@@ -166,7 +166,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             return IsShipWithinRange(potentialTargetShip);
         }
-        /// <summary> Called every 1/3 Rate of Fire. Sends the targeting queue to DetermineTargetShip. 
+        /// <summary> Called every 1/3 Rate of Fire. Makes and sends the sorted targeting list to DetermineTargetShip. 
         /// Every time this method is called, a target ship should be selected if there is one available </summary>
         public void Targeting()
         {
@@ -177,7 +177,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 if (Ship.IsUserControlled) // user controlled fire sequence
                 {
-                    List<Ship> queue = MakeTargetingQueue(false);
+                    List<Ship> queue = MakeSortedTargetingList(false);
                     if (!DetermineTargetShip(queue, true))
                     {
                         DetermineTargetShip(queue, false);
@@ -187,7 +187,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 {
                     if ((Ship.HasCommand || Ship.HasBrain) && !Squad.IsRetreating) // if you've got a command, and you're not retreating
                     {
-                        List<Ship> queue = MakeTargetingQueue(false);
+                        List<Ship> queue = MakeSortedTargetingList(false);
                         if (!DetermineTargetShip(queue, true))
                         {
                             DetermineTargetShip(queue, false);
@@ -230,6 +230,11 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 return ShipsWithinRange.ToList();
             }
         }
+        /// <summary>
+        /// Gets all the ships that this weapon could potentially target. Either the ships within range or the ships in the enemy squad regardless of range
+        /// </summary>
+        /// <param name="disregardRange"></param>
+        /// <returns></returns>
         protected virtual List<Ship> GetPotentialEnemyTargetShips(bool disregardRange)
         {
             List<Ship> queue;
@@ -251,13 +256,17 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             return queue;
             //return queue.Where((s) => s != null && !s.IsDead).ToList();
         }
+        /// <summary>
+        /// Clears the targeting cache and the target ship. Marks the cache as changed
+        /// </summary>
         public void ClearTargets()
         {
             TargetShip = null;
             CachedTargetingQueue.Clear();
+            HasCachedChanged = true;
         }
         /// <summary>Sorts the potential target ships according to the shooting strategy. Uses a cached queue </summary>
-        public List<Ship> MakeTargetingQueue(bool disregardRange)
+        public List<Ship> MakeSortedTargetingList(bool disregardRange)
         {
             
             List<Ship> queue = GetPotentialEnemyTargetShips(disregardRange);
@@ -379,10 +388,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public Vector2 GetPosition()
         {
             return Ship.Level.Map.transform.InverseTransformPoint(Piece.transform.position);
-        }
-        public Vector2 GetLocalPosition()
-        {
-            return Piece.transform.localPosition;
         }
         public float GetRotation()
         {

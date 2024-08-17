@@ -25,7 +25,13 @@ namespace Assets.Scripts.Level.Commands
         public ShootingStrategy ShootingStrategy = null;
         public bool IsAttacking, IsCloseToTarget;
         public float CommandFrequency = 3;
+        /// <summary>
+        /// The targeting queue, unmodified from when it was generated, only regenerated when a new ship is added to the enemy squad
+        /// </summary>
         public Queue<Ship> OriginalQueue;
+        /// <summary>
+        /// The list of ships (in order) that this squad's ships should follow after, modified each time a ship takes an enemy ship off the queue and follows it
+        /// </summary>
         public Queue<Ship> TargetingQueue;
 
 
@@ -281,7 +287,7 @@ namespace Assets.Scripts.Level.Commands
 
             Squad.GetShips().ForEach((ship) =>
             {
-                ship.TargetEnemyShip = null;
+                ship.TargetEnemyShipToFollow = null;
 
             });
             Squad.IsRetreating = false;

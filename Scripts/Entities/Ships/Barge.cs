@@ -39,7 +39,7 @@ namespace Assets.Scripts.Entities.Ships
                     Level.Selector.SelectShip(this);
                 }
             }
-            else if (collidingThing.CompareTag("Ship") && ShipCollider.IsTouching(collider))
+            else if (collidingThing.CompareTag("Ship") && Collider.IsTouching(collider))
             {
                 Ship hit = collidingThing.GetComponent<Ship>();
 

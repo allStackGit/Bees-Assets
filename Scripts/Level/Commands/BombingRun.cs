@@ -67,17 +67,17 @@ namespace Assets.Scripts.Level.Commands
                 // loop through all the ships in the target squad
                 Bomb bomb = (Bomb)ship.Weapons.First();
                 int loops = 0;
-                while (!bomb.DetermineTargetShip(bomb.MakeTargetingQueue(true), true) && loops < 10)
+                while (!bomb.DetermineTargetShip(bomb.MakeSortedTargetingList(true), true) && loops < 10)
                 {
                     Squad.DamageSentToEnemyShipsBySquad.Clear();
                     loops++;
                 }
-                ship.SetAndGetTargetEnemy();
-                //if (loops == 10)
-                //{
-                //    Debug.Log($"Looped 10 times while trying to dtermine a target ship for {bomb.Name}");
-                //}
-                //Debug.Log($"Target ship: {bomb.TargetShip}");
+                ship.TargetEnemyShipToFollow = bomb.TargetShip;
+                if (loops == 10)
+                {
+                    Debug.Log($"Looped 10 times while trying to determine a target ship for {bomb.Name}");
+                }
+                //Debug.Log($"{ship.Name} Target ship: {bomb.TargetShip}");
                 //Debug.Log("--------------------");
                 //ship.MoveToPoint(ship.TargetShips.First().GetPosition()); // Move to the primary target ship
             }
@@ -92,7 +92,7 @@ namespace Assets.Scripts.Level.Commands
                 if (Squad.GetShips().All((s) =>
                 {
                     Striker striker = ((Striker)s);
-                    return !striker.AreBombsReady && striker.Carrier == null;
+                    return !striker.IsBombReady && striker.Carrier == null;
                 }))
                 {
                     Squad.BannedStrats.Add("Aggressive");
@@ -110,12 +110,12 @@ namespace Assets.Scripts.Level.Commands
         }
         private bool ShouldShipPursueTarget(Ship ship)
         {
-            if (ship.HasTargetEnemyShip) // if the ship has target ships and they're not all dead
+            if (ship.HasTargetEnemyShipToFollow) // if the ship has target ships and they're not all dead
             {
                 if (ship.ShipType == "Striker")
                 {
                     Striker striker = (Striker)ship;
-                    return !striker.HasDroppedBomb; // if it's a striker and it has dropped bombs then it shouldn't pursue;
+                    return striker.IsBombReady; // if it's a striker and its bombs are ready
                 }
                 else
                 {
@@ -126,7 +126,7 @@ namespace Assets.Scripts.Level.Commands
         }
         private void SendShipToTarget(Ship ship)
         {
-            ship.MoveToPoint(ship.SetAndGetTargetEnemy().GetPosition()); // Move to the primary target ship
+            ship.MoveToPoint(ship.TargetEnemyShipToFollow.GetPosition()); // Move to the primary target ship
         }
         private bool HaveAllShipsFinished(List<Ship> ships)
         {
@@ -175,10 +175,11 @@ namespace Assets.Scripts.Level.Commands
                     }
                     else // if you don't have target ships or all of them are dead
                     {
+                        Debug.Log($"{ship.Name} should not pursure its target ({ship.TargetEnemyShipToFollow}) and so it's going back to its carrier");
                         if (ship.ShipType == "Striker")
                         {
                             Striker striker = (Striker)ship;
-                            striker.CompleteRun();
+                            //striker.CompleteRun();
                         }
                         else if (ship.ShipType == "Yellow Jacket")
                         {

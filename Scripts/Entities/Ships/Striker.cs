@@ -11,7 +11,19 @@ namespace Assets.Scripts.Entities.Ships
 {
     public class Striker : CarrierShip
     {
-        public bool AreBombsReady, HasDroppedBomb, HasCompletedRun, HasReturnedToCarrier;
+        /// <summary>
+        /// If the striker's bomb is loaded and ready, if not, this means it has dropped it and must return to the carrier before pursuing another target
+        /// </summary>
+        public bool IsBombReady;
+        /// <summary>
+        /// Has the striker either dropped its bomb on its target it, or doesn't have a bomb and is going back to the carrier
+        /// </summary>
+        public bool HasCompletedRun;
+        /// <summary>
+        /// Has the striker dropped its bomb on its target
+        /// </summary>
+        public bool HasDroppedBomb;
+        public bool HasReturnedToCarrier;
         public GameObject BombSprite, LoadedIndicator, CarriedBomb;
         //public Vector2 IndicatorOffset;
         private SpriteRenderer _indicatorSprite;
@@ -38,7 +50,7 @@ namespace Assets.Scripts.Entities.Ships
                     Level.Selector.SelectShip(this);
                 }
             }
-            else if (collidingThing.CompareTag("Ship") && ShipCollider.IsTouching(collider))
+            else if (collidingThing.CompareTag("Ship") && Collider.IsTouching(collider))
             {
                 TouchingShip = collidingThing.GetComponent<Ship>();
                 //Debug.Log($"Striker collided with a ship!" +
@@ -46,9 +58,9 @@ namespace Assets.Scripts.Entities.Ships
                 //    $"{Squad}, " +
                 //    $"{TargetShips.First()}");
 
-                if (TouchingShip.Side != Side && Squad.HasCommand && HasTargetShips && TargetShips.Contains(TouchingShip) && AreBombsReady)
+                if (TouchingShip.Side != Side && Squad.HasCommand && HasWeaponsTargetShips && WeaponsTargetShips.Contains(TouchingShip) && IsBombReady)
                 {
-                    //Debug.Log($"Collided with our target {TouchingShip.Name}, {collidingThing.name}!");
+                    Debug.Log($"Collided with our target {TouchingShip.Name}!");
                     ContactedShip = TouchingShip;
                     DropBomb();
 
@@ -59,7 +71,7 @@ namespace Assets.Scripts.Entities.Ships
         protected override void OnTriggerExit2D(Collider2D collider)
         {
             GameObject collidingThing = collider.gameObject;
-            if (TouchingShip != null  && collidingThing.CompareTag("Ship") && ShipCollider.IsTouching(collider))
+            if (TouchingShip != null  && collidingThing.CompareTag("Ship") && Collider.IsTouching(collider))
             {
                 Ship ship = collidingThing.GetComponent<Ship>();
                 if (ship.Equals(TouchingShip))
@@ -74,7 +86,7 @@ namespace Assets.Scripts.Entities.Ships
         public void TryToDropBombs()
         {
             //Debug.Log($"Trying to drop bombs with {Name}");
-            if (TouchingShip != null && TouchingShip.Side != Side && AreBombsReady)
+            if (TouchingShip != null && TouchingShip.Side != Side && IsBombReady)
             {
                 ContactedShip = TouchingShip;
                 DropBomb();
@@ -85,7 +97,7 @@ namespace Assets.Scripts.Entities.Ships
         }
         private void CheckCarrierReload()
         {
-            if (HasCarrier && DistanceTo(Carrier) < 15 && !AreBombsReady)
+            if (HasCarrier && DistanceTo(Carrier) < 15 && !IsBombReady)
             {
                 SetBombsReadyStatus(true);
                 SetIndicatorColor();
@@ -93,15 +105,15 @@ namespace Assets.Scripts.Entities.Ships
         }
         public void SetBombsReadyStatus(bool status)
         {
-            if (AreBombsReady != status)
+            if (IsBombReady != status)
             {
-                AreBombsReady = status;
+                IsBombReady = status;
                 SetIndicatorColor();
             }
         }
         public void SetIndicatorColor()
-        {
-            if (AreBombsReady)
+        { 
+            if (IsBombReady)
             {
                 _indicatorSprite.color = ConfigData.GetUIColor("striker-loaded-indicator");
                 CarriedBomb.SetActive(true);
@@ -116,7 +128,7 @@ namespace Assets.Scripts.Entities.Ships
         }
         private void DropBomb()
         {
-            //Debug.Log($"Striker #{Id} is dropping bombs");
+            Debug.Log($"Striker #{Id} is dropping bombs");
             CarriedBomb.SetActive(false);
             HasDroppedBomb = true;
             SetBombsReadyStatus(false);
@@ -137,12 +149,14 @@ namespace Assets.Scripts.Entities.Ships
         public void CompleteRun()
         {
             HasCompletedRun = true;
+            TargetEnemyShipToFollow = null;
             SetIndicatorColor();
 
         }
         public void ReturnToCarrierIfNecessary()
         {
-            if (!HasReturnedToCarrier && (!AreBombsReady || HasCompletedRun))
+            // If you haven't returned to the carrier and you've either dropped your bombs or don't have them
+            if (!HasReturnedToCarrier && (!IsBombReady || HasCompletedRun))
             {
                 // send any bomber that is't loaded to its carrier
                 //Debug.Log($"Sending {striker.Id} back to its carrier");
@@ -152,14 +166,13 @@ namespace Assets.Scripts.Entities.Ships
                     //Vector2 targetPoint = Level.ForceBounds(destination + OffsetFromCenter);
                     float distance = DistanceToPoint(destination);
 
-                    if (distance < ConfigData.CloseEnoughCoordinateVariance * 3)
+                    if (distance < ConfigData.ShipTurningRadius * 2)
                     {
                         SetBombsReadyStatus(true);
                         if (HasCompletedRun)
                         {
+                            //Debug.Log($"{Name} has returned to carrier and is moving towards {destination} which is ");
                             HasReturnedToCarrier = true;
-                            ClearTargets();
-
                         }
                     }
                     else
