@@ -42,16 +42,19 @@ namespace Assets.Scripts.Entities.Ships
         /// A ship can be killed at some point of the frame and still exist until the end of the frame. Check this to see if a ship is dead but not yet destroyed.
         /// </summary>
         public bool IsDead;
-        public bool HasBrain, IsMinionShip, HasTargetCoordinates, IsMiningShip, IsWarpGate, HasTargetDirection;
+        public bool HasBrain, IsMinionShip, HasTargetCoordinates, IsMiningShip, IsWarpGate, HasTargetDirection, HasVision, HasProximityCollider;
         public List<Weapon> Weapons;
         public List<GameObject> ProjectilePrefabs, WeaponPrefabs, ColoredPrefabs;
         public Brain Brain = null;
         public Queue<Vector2> DestinationQueue = new Queue<Vector2>();
         public List<CollisionAsteroid> NearbyAsteroids = new List<CollisionAsteroid>();
         public List<Turret> Turrets = new List<Turret>();
+        /// <summary>
+        /// Used to detect other ships near this ship if this ship doesn't have a ranged weapon. Used on Strikers, Fire Barges, and Yellow Jackets to detect when they're near targets
+        /// </summary>
+        public ShipProximityCollider ProximityCollider;
         //public Stack<Vector2> PastLocations = new Stack<Vector2>();
         public float RotationSpeed;
-        public bool HasVision;
         /// <summary>
         /// The ship that this ship is following after in order to target it. The primary enemy ship. This is NOT necessarily the ship that this ship is firing at. The weapon(s) have that information
         /// </summary>
@@ -125,7 +128,7 @@ namespace Assets.Scripts.Entities.Ships
         public float __Firepower, __DamagePerSecond, __CurrentSpeed, __DegreesToTargetCoordinates, __DistanceToTargetCoordinates, __TurningRadius;
         public long __Tsv, __CommandTsv;
         public bool __HasReachedDestination, __SquadHasReachedDestination;
-        public List<Ship> __WeaponTargetShips, __SquadShips;
+        public List<Ship> __WeaponTargetShips, __SquadShips, __NearbyShips;
         public List<string> __ShipsWithinRangeOfWeapons, __PastCommands, __BannedStrats, __DamageStatuses, __CommandTargetingQueue, __NearbyAsteroids;
         //public List<Vector2> __PastLocations;
 
@@ -169,6 +172,7 @@ namespace Assets.Scripts.Entities.Ships
             __DegreesToTargetCoordinates = GetDegreesTowardsPoint(TargetCoordinates);
             __DistanceToTargetCoordinates = DistanceToPoint(TargetCoordinates);
             __TurningRadius = ConfigData.ShipTurningRadius;
+            __NearbyShips = HasProximityCollider ? ProximityCollider.NearbyShips.ToList() : new List<Ship>();
             //__PastLocations = PastLocations.ToList();
             //AverageReward = AverageRewardSum / Actions;
             //AverageRandomReward = AverageRandomRewardSum / RandomActions;
@@ -195,6 +199,7 @@ namespace Assets.Scripts.Entities.Ships
             Body = GetComponent<Rigidbody2D>();
             Collider = GetComponent<Collider2D>();
             Transform brain = transform.Find("Brain");
+
             MaxHealth = FleetShip.MaxHealth;
             if (brain != null && Level.ActivateBrains)
             {
@@ -326,6 +331,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
             Turrets = Weapons.Where((w) => w is Turret).ToList().ConvertAll((w) => (Turret)w);
 
+
             AdditionalTsv = shipStats.AdditionalTsv;
             Sight = shipStats.Sight;
             Speed = shipStats.Speed;
@@ -334,6 +340,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             HalfMaxRange = MaxRange / 2;
 
 
+            if (ProximityCollider != null)
+            {
+                ProximityCollider.Setup(this, Sight);
+                HasProximityCollider = true;
+            }
 
 
 
@@ -797,10 +808,14 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 StopMoving(reason);
             }
         }
+        /// <summary>
+        /// if the distance to the point is less than the turning radius and this isn't a bombing ship that's right next to it's target
+        /// </summary>
+        /// <param name="distance"></param>
+        /// <returns></returns>
         private bool IsCloseEnoughToTargetCoordinates(float distance)
         {
-            // if the distance to the point is less than the turning radius and this isn't a bombing ship that's right next to it's target
-            return (distance < ConfigData.ShipTurningRadius && !(!IsFollowingPath && Squad.HasCommand && HasTargetEnemyShipToFollow && Squad.Command.Type == "Bombing Run"));
+            return (distance < ConfigData.ShipTurningRadius && !(!IsFollowingPath && HasTargetEnemyShipToFollow && ProximityCollider.NearbyShips.Contains(TargetEnemyShipToFollow)));
         }
         public void StopMoving(string reason)
         {

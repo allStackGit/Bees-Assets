@@ -39,6 +39,7 @@ Transform:
   - {fileID: 1000750152605894096}
   - {fileID: 8704097238695063792}
   - {fileID: 6128068608638193213}
+  - {fileID: 8751539705137053016}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!212 &2518675752222090673
@@ -118,9 +119,13 @@ MonoBehaviour:
   OriginalTsv: 0
   Sight: 0
   AdditionalTsv: 0
+  Clearance: 0
+  MaxRange: 0
+  HalfMaxRange: 0
   ProjectileValue: 0
   Speed: 0
   SpecialFirePower: 0
+  CurrentSpeed: 0
   ShipExplosion: {fileID: 1876865744220396715, guid: 1f58b7947f208d944b8669f2e51a9a52, type: 3}
   HealthBar: {fileID: 1390509230172763800}
   MiniMapIcon: {fileID: 5131106989116123935}
@@ -145,6 +150,8 @@ MonoBehaviour:
   IsMiningShip: 0
   IsWarpGate: 0
   HasTargetDirection: 0
+  HasVision: 0
+  HasProximityCollider: 0
   Weapons: []
   ProjectilePrefabs:
   - {fileID: 0}
@@ -154,34 +161,42 @@ MonoBehaviour:
   Brain: {fileID: 0}
   NearbyAsteroids: []
   Turrets: []
+  ProximityCollider: {fileID: 2867984486639359691}
   RotationSpeed: 0
-  HasVision: 0
-  TargetEnemy: {fileID: 0}
-  ShipCollider: {fileID: 657987285933729593}
-  __PastCommands: []
-  __BannedStrats: []
+  TargetEnemyShipToFollow: {fileID: 0}
+  IsCloseEnoughToTargetEnemyShipToFollow: 0
+  PathfindingThreadComplete: 0
+  PathfindingThread: 0
+  PrintDebugImage: 0
   __Strategy: 
   __Squad: 
   __SquadStatus: 
   __CommandStatus: 
   __LastStopReason: 
+  __EnemySquad: 
+  __TargetEnemyShipToFollow: 
   __CommandDestination: {x: 0, y: 0}
   __Velocity: {x: 0, y: 0}
   __TargetCoordinates: {x: 0, y: 0}
   __Firepower: 0
   __DamagePerSecond: 0
+  __CurrentSpeed: 0
+  __DegreesToTargetCoordinates: 0
+  __DistanceToTargetCoordinates: 0
+  __TurningRadius: 0
   __Tsv: 0
   __CommandTsv: 0
-  __TargetShips: []
-  __SquadShips: []
-  __ShipsWithinRange: []
   __HasReachedDestination: 0
   __SquadHasReachedDestination: 0
-  __Enemy: 
-  __TargetEnemy: 
+  __WeaponTargetShips: []
+  __SquadShips: []
+  __NearbyShips: []
+  __ShipsWithinRangeOfWeapons: []
+  __PastCommands: []
+  __BannedStrats: []
   __DamageStatuses: []
   __CommandTargetingQueue: []
-  __CurrentSpeed: 0
+  __NearbyAsteroids: []
   Direction: 0
   ShouldDetonate: 0
   RLShootingStrategy: 
@@ -653,6 +668,79 @@ Transform:
 GameObject:
   m_CorrespondingSourceObject: {fileID: 6047554868817048550, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
   m_PrefabInstance: {fileID: 4657056110323123582}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1001 &5819914225979147878
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 2518675752222090672}
+    m_Modifications:
+    - target: {fileID: 3006095412329282366, guid: 3bb012907a6c8bc49809691acd0d0adc, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3006095412329282366, guid: 3bb012907a6c8bc49809691acd0d0adc, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3006095412329282366, guid: 3bb012907a6c8bc49809691acd0d0adc, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3006095412329282366, guid: 3bb012907a6c8bc49809691acd0d0adc, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3006095412329282366, guid: 3bb012907a6c8bc49809691acd0d0adc, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3006095412329282366, guid: 3bb012907a6c8bc49809691acd0d0adc, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3006095412329282366, guid: 3bb012907a6c8bc49809691acd0d0adc, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3006095412329282366, guid: 3bb012907a6c8bc49809691acd0d0adc, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3006095412329282366, guid: 3bb012907a6c8bc49809691acd0d0adc, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3006095412329282366, guid: 3bb012907a6c8bc49809691acd0d0adc, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7908384552572958469, guid: 3bb012907a6c8bc49809691acd0d0adc, type: 3}
+      propertyPath: m_Name
+      value: Bee Proximity Collider
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 3bb012907a6c8bc49809691acd0d0adc, type: 3}
+--- !u!114 &2867984486639359691 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 8577489860871491757, guid: 3bb012907a6c8bc49809691acd0d0adc, type: 3}
+  m_PrefabInstance: {fileID: 5819914225979147878}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 466dc5d84d510f746b6a52c9b8235010, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!4 &8751539705137053016 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 3006095412329282366, guid: 3bb012907a6c8bc49809691acd0d0adc, type: 3}
+  m_PrefabInstance: {fileID: 5819914225979147878}
   m_PrefabAsset: {fileID: 0}
 --- !u!1001 &8754338898917073555
 PrefabInstance:

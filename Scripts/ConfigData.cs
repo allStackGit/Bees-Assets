@@ -167,6 +167,7 @@ namespace Assets.Scripts
         public const float OffsetFromFront = .35f;
         public const float FireShipExplosionSize = 64;
         public const float CommandTimerFrequency = .1f;
+        public const float RefillDistanceToCarrier = 10;
         public static float ShipTurningRadius; 
         public static List<Scene> Scenes = new List<Scene>();
         public static Scene SocketManager;

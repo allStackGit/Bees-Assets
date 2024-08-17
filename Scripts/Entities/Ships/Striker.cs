@@ -2,6 +2,7 @@
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships.Weapons;
+using Assets.Scripts.Level.Commands;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -16,7 +17,7 @@ namespace Assets.Scripts.Entities.Ships
         /// </summary>
         public bool IsBombReady;
         /// <summary>
-        /// Has the striker either dropped its bomb on its target it, or doesn't have a bomb and is going back to the carrier
+        /// Has the striker either dropped its bomb on its target it, or doesn't have a bomb and is going back to the carrier, or the whole target squad is dead
         /// </summary>
         public bool HasCompletedRun;
         /// <summary>
@@ -60,7 +61,7 @@ namespace Assets.Scripts.Entities.Ships
 
                 if (TouchingShip.Side != Side && Squad.HasCommand && HasWeaponsTargetShips && WeaponsTargetShips.Contains(TouchingShip) && IsBombReady)
                 {
-                    Debug.Log($"Collided with our target {TouchingShip.Name}!");
+                    //Debug.Log($"Collided with our target {TouchingShip.Name}!");
                     ContactedShip = TouchingShip;
                     DropBomb();
 
@@ -103,6 +104,10 @@ namespace Assets.Scripts.Entities.Ships
                 SetIndicatorColor();
             }
         }
+        /// <summary>
+        /// Sets the status of the bomb (loaded or not) and sets the indicator accordingly
+        /// </summary>
+        /// <param name="status"></param>
         public void SetBombsReadyStatus(bool status)
         {
             if (IsBombReady != status)
@@ -128,7 +133,7 @@ namespace Assets.Scripts.Entities.Ships
         }
         private void DropBomb()
         {
-            Debug.Log($"Striker #{Id} is dropping bombs");
+            //Debug.Log($"Striker #{Id} is dropping bombs");
             CarriedBomb.SetActive(false);
             HasDroppedBomb = true;
             SetBombsReadyStatus(false);
@@ -143,7 +148,7 @@ namespace Assets.Scripts.Entities.Ships
             StrikerBomb bomb = (StrikerBomb)instance.GetComponent(typeof(StrikerBomb));
             bomb.Setup(Bomb.Power, this, ContactedShip);
 
-            Invoke(nameof(CompleteRun), .5f);
+            CompleteRun();
 
         }
         public void CompleteRun()
@@ -166,13 +171,16 @@ namespace Assets.Scripts.Entities.Ships
                     //Vector2 targetPoint = Level.ForceBounds(destination + OffsetFromCenter);
                     float distance = DistanceToPoint(destination);
 
-                    if (distance < ConfigData.ShipTurningRadius * 2)
+                    if (distance < ConfigData.RefillDistanceToCarrier || DistanceTo(Carrier) < ConfigData.RefillDistanceToCarrier)
                     {
+                        //Debug.Log($"{Name} has returned to carrier and is moving towards {destination}");
                         SetBombsReadyStatus(true);
                         if (HasCompletedRun)
                         {
-                            //Debug.Log($"{Name} has returned to carrier and is moving towards {destination} which is ");
                             HasReturnedToCarrier = true;
+                        }else if (HasTargetEnemyShipToFollow)
+                        {
+                            ((BombingRun)Squad.Command).SendShipToTarget(this);
                         }
                     }
                     else
