@@ -806,7 +806,7 @@ namespace Assets.Scripts.Level
         {
             await Task.Run(() =>
             {
-                //Debug.Log($"_Started BT #{index}:{Ships[index].Name} at {StartNodes[index].Vector} to {EndNodes[index].Vector} (Level coords)");
+                Debug.Log($"_Started BT #{index}:{Ships[index].Name} at {StartNodes[index].Vector} to {EndNodes[index].Vector} (Level coords)");
                 //minimumClearance = 1;
                 //maximumClearance = 1;
                 //Debug.Log($"Trying to find a path for #{index} from ({StartNodes[index].x}, {StartNodes[index].y}) to ({EndNodes[index].x}, {EndNodes[index].y})");
@@ -850,7 +850,7 @@ namespace Assets.Scripts.Level
                     EndNodes[index] = FindNearestWalkablePoint(EndNodes[index], StartNodes[index], Clearances[index], GridNodes[index], index);
                     //Debug.Log($"Found new end point that is walkable: {EndNodes[index]}");
                 }
-                //Debug.Log($"Found end point for #{index}:{Ships[index].Name}");
+                Debug.Log($"Found end point for #{index}:{Ships[index].Name}");
                 if (StartNodes[index].Clearance < Clearances[index])
                 {
                     //int startNodeLoops = 0;
@@ -877,7 +877,7 @@ namespace Assets.Scripts.Level
                     StartNodes[index] = FindNearestWalkablePoint(StartNodes[index], EndNodes[index], Clearances[index], GridNodes[index], index);
                 }
                 
-                //Debug.Log($"Starting at {StartNodes[index]} for #{index}:{Ships[index].Name}");
+                Debug.Log($"Starting at {StartNodes[index]} for #{index}:{Ships[index].Name}");
                 Path BTPath = new Path(StartNodes[index].x, StartNodes[index].y, EndNodes[index].x, EndNodes[index].y);
 
                 List<MapNode> BTUncheckedNodes = new List<MapNode>() { StartNodes[index] };
@@ -928,7 +928,7 @@ namespace Assets.Scripts.Level
                         Ships[index].PathfindingThreadComplete = true;
                         //IsThreadActive[index] = false; //[alert] must be uncommented when not testing
 
-                        //OrderPrintDebugImage(index);
+                        OrderPrintDebugImage(index);
                         return;
                     }
                     BTUncheckedNodes.Remove(BTCurrentNode);

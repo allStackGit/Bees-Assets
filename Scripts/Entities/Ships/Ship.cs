@@ -937,7 +937,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         public static void LogDamage(int power, Ship shooter, Ship target) // [damage-method] [note]
         {
             int targetOldTSV = target.Tsv;
-            target.Health -= power;
+            if (!shooter.Level.MakeShotsHarmless)
+            {
+                target.Health -= power;
+
+            }
 
             if (target.Health < 0)
             {

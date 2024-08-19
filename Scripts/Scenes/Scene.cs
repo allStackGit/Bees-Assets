@@ -28,6 +28,9 @@ namespace Assets.Scripts.Scenes
 
 
         public List<string> __PastServerRequests;
+        /// <summary>
+        /// The average time a request takes to complete in ms
+        /// </summary>
         public float __AverageRequestTime;
         public List<long> __UsedHashes;
         public int __Updates = 0;
@@ -84,7 +87,8 @@ namespace Assets.Scripts.Scenes
             if (ConfigData.__PastServerRequests.Count > 0)
             {
                 __UsedHashes = ConfigData.UsedHashes.ToList();
-                __PastServerRequests = ConfigData.__PastServerRequests.Select((r) => $"Request #{r.Hash} ({r.Type}) on queue for {r.TimeOnQueue}ms with {r.Resends} resends.").ToList();
+                __PastServerRequests = ConfigData.__PastServerRequests.Select((r) => $"Request #{r.Hash} ({r.Type}) on queue for {r.TimeOnQueue * 1000}ms with {r.Resends} resends.").ToList();
+                __AverageRequestTime = (ConfigData.__PastServerRequests.Sum((r) => r.TimeOnQueue) / ConfigData.__PastServerRequests.Count) * 1000;
                 //__Updates = Time.frameCount;
             }
 

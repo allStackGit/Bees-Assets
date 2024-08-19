@@ -151,7 +151,7 @@ namespace Assets.Scripts
             { "Yellow Jacket",  new Color[] {UnsetColor } },
         };
 
-        public static HashSet<string> CommandTypes = new HashSet<string> { "Aggressive", "Defensive", "Random", "Circle", "Right Swipe", "Left Swipe", "Closest Friendly",
+        public static readonly HashSet<string> CommandTypes = new HashSet<string> { "Aggressive", "Defensive", "Random", "Circle", "Right Swipe", "Left Swipe", "Closest Friendly",
         "In and Out", "Patrol", "Guard", "Scouting", "Mining", "Full Retreat" };
 
         public static int SquadMakerSide;

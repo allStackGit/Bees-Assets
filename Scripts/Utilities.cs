@@ -336,7 +336,18 @@ namespace Assets.Scripts
 
             return rotatedVector;
         }
-
+        /// <summary>
+        /// Finds the point on a circle between the position given, the angle, and the radius (distance) given
+        /// </summary>
+        /// <param name="angle"></param>
+        /// <param name="distance"></param>
+        /// <returns></returns>
+        public static Vector2 CirclePoint(float angle, float distance, Vector2 position)
+        {
+            angle *= -1;
+            angle -= Mathf.PI * .5f;
+            return new Vector2((position.x + (Mathf.Cos(angle) * distance)), (position.y + (Mathf.Sin(angle) * distance)));
+        }
         public static Vector2Int RotateIntPointAroundPoint(Vector2Int pivot, Vector2Int rotatedPoint, float radians)
         {
 

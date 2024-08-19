@@ -34,7 +34,7 @@ namespace Assets.Scripts.Level
             IsStored = command.IsStored;
             IsHiveMindCommand = command.IsHiveMindCommand;
 
-            Enemy = command.EnemySquad != null ? command.EnemySquad.name : null;
+            Enemy = command.EnemySquad != null ? command.EnemySquad.Name : "Null";
             Squad = command.Squad.Name;
 
             // these are important for sending the results of these strategies back tot he Hive Mind server

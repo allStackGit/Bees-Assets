@@ -37,7 +37,7 @@ namespace Assets.Scripts.Scenes
         public bool ReplaceDeadShips;
         public bool ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, UseSemiRandomSquads, UseFullyRandomSquads, UseFullyRandomEnemySquads, RecordStats, 
             DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateAudio, ActivateLoadingShipsMidLevel, UseMouseScrolling, IsDebugging, 
-            MakeEnemyCeaseFire, FullCeaseFire, UnlockCamera, HasRandomizedOptions, PlayMusic;
+            MakeEnemyCeaseFire, FullCeaseFire, MakeShotsHarmless, UnlockCamera, HasRandomizedOptions, PlayMusic;
         public int OverrideTimeScale, OverrideMapIndex, OverrideUserSide, GeneratedSquadCountOverride, InitialCommandDelay, TimeoutTime;
         public List<string> OverrideStrats = new List<string> { "Aggressive", "Random" };
         public GameObject UIManager, SelectionBox, MiniMapContainer, FogOfWar;
@@ -104,11 +104,9 @@ namespace Assets.Scripts.Scenes
         public bool DidUserWin => WinningSide == ConfigData.Configuration.UserSide;
         public bool IsPaused => GetState().IsPaused;
 
-        //public List<string> __CachedPaths;
         public List<string> __BeeHivemindShips;
         public List<string> __HumanHivemindShips;
         public List<string> __PastCommands;
-        public List<string> __CachedPaths;
 
         private List<GameObject> _chosenObstacles;
         private Dictionary<int, List<GameObject>> _obstacleLists;
@@ -458,13 +456,9 @@ namespace Assets.Scripts.Scenes
         }
         private void UpdateDebugVariables()
         {
-            if (Pathfinder != null)
-            {
-                __CachedPaths = Pathfinder.PathCache.Select((p) => p.ToString()).ToList();
-            }
             __BeeHivemindShips = GetState().GetShipsVisibleToHiveMind(ConfigData.Configuration.BeeSide).Select(s => s.ToString()).ToList();
             __HumanHivemindShips = GetState().GetShipsVisibleToHiveMind(ConfigData.Configuration.HumanSide).Select(s => s.ToString()).ToList();
-            __PastCommands = GetState().GetPastCommands().Select((c) => $"Command #{c.OutcomeId} - {c.Strategy.Name} for Squad {c.Squad} with {c.Tsv} TSV").ToList();
+            __PastCommands = GetState().GetPastCommands().Select((c) => $"Command #{c.OutcomeId} - {c.Strategy.Name} for Squad {c.Squad} against [{c.Enemy}] with {c.Tsv} TSV").ToList();
         }
         private void SetTriggers()
         {

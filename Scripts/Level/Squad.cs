@@ -525,6 +525,12 @@ namespace Assets.Scripts.Level
             {
                 BannedStrats.UnionWith(ConfigData.CommandTypes);
                 BannedStrats = BannedStrats.Except(Level.OverrideStrats).ToHashSet();
+
+                if (Level.OverrideStrats.Contains("Scouting") && Level.GetState().GetShipsVisibleToHiveMind(Side).Count > 0)
+                {
+                    Level.OverrideStrats.Remove("Scouting");
+                    BannedStrats.Add("Scouting");
+                }
             }
             HashSet<string> banned = BannedStrats.ToHashSet(); // the ToHashSet is important to prevent modification of the original set
 
@@ -960,6 +966,15 @@ namespace Assets.Scripts.Level
         {
             return GetShips().All((s) => s.AreAllSquadShipsWithinRange(squad));
         }
+        /// <summary>
+        /// Checks if every ship is this squad has at least one ship of the other squad within range
+        /// </summary>
+        /// <param name="squad"></param>
+        /// <returns></returns>
+        public bool AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(Squad squad)
+        {
+            return GetShips().All((s) => s.IsAnySquadShipWithinRange(squad));
+        }
         public bool IsWithinRangeOfAnyShipInEnemySquad()
         {
             Squad enemy = GetEnemy();
@@ -1027,6 +1042,12 @@ namespace Assets.Scripts.Level
         {
             return Utilities.AngleBetweenPoints(GetPosition(), point);
         }
+        /// <summary>
+        /// Finds the point on a circle between the squad's current position, the angle, and the radius (distance) given
+        /// </summary>
+        /// <param name="angle"></param>
+        /// <param name="distance"></param>
+        /// <returns></returns>
         public Vector2 CirclePoint(float angle, float distance)
         {
             angle *= -1;
@@ -1034,6 +1055,7 @@ namespace Assets.Scripts.Level
             Vector2 position = GetPosition();
             return new Vector2((position.x + (Mathf.Cos(angle) * distance)), (position.y + (Mathf.Sin(angle) * distance)));
         }
+
 
 
         // UI Methods

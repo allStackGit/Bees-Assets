@@ -10,6 +10,9 @@ namespace Assets.Scripts.Server
         public string Type;
         public int Status = 0;
         public float StartTime = Time.unscaledTime;
+        /// <summary>
+        /// The amount of time this request has existed uncompleted in seconds
+        /// </summary>
         public float TimeOnQueue = 0; // s
         public int MaxTimeOnQueue; // s
         public int Resends = 0;
