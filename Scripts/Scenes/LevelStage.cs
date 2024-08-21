@@ -125,9 +125,9 @@ namespace Assets.Scripts.Scenes
             if (Utilities.CoinToss())
             {
                 HasObstacles = true;
-                //Debug.Log($"The map has obstacles");
+                Debug.Log($"The map has obstacles");
 
-                ChosenObstaclesIndex = 0; // Utilities.RandomInt(_obstacleLists.Count - 1) + 1;
+                ChosenObstaclesIndex = Utilities.RandomInt(_obstacleLists.Count - 1) + 1;
                 _chosenObstacles = _obstacleLists.GetValueOrDefault(ChosenObstaclesIndex);
 
                 if (Utilities.RandomInt(4) == 0)
@@ -138,6 +138,7 @@ namespace Assets.Scripts.Scenes
                 else
                 {
                     ActivateCollisionAsteroids = false;
+                    Debug.Log($"The map has obstacles and not asteroids");
                 }
             }
             else
@@ -154,6 +155,7 @@ namespace Assets.Scripts.Scenes
                 {
                     ActivateCollisionAsteroids = false;
                     HasObstacles = false;
+                    Debug.Log($"The map does not have asteroids");
                 }
             }
 
@@ -165,6 +167,29 @@ namespace Assets.Scripts.Scenes
             else
             {
                 ActivateFogOfWar = false;
+                Debug.Log($"The map does not have fog of war");
+            }
+
+            if (Utilities.CoinToss())
+            {
+                ActivateMining = true;
+                Debug.Log($"The map has mining");
+            }
+            else
+            {
+                ActivateMining = false;
+                Debug.Log($"The map does not have mining");
+            }
+
+            if (Utilities.CoinToss())
+            {
+                ActivateLoadingShipsMidLevel = true;
+                Debug.Log($"The map has ships loading midlevel");
+            }
+            else
+            {
+                ActivateLoadingShipsMidLevel = false;
+                Debug.Log($"The map does not have ships loading midlevel");
             }
 
         }

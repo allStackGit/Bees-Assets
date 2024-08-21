@@ -42,7 +42,7 @@ namespace Assets.Scripts.Entities
             Body.angularVelocity = Speed * Utilities.RandomFloat(1);
         }
 
-        private void OnTriggerEnter2D(Collider2D collider)
+        protected override void OnTriggerEnter2D(Collider2D collider)
         {
             //Debug.Log($"{Name} collided");
             GameObject collidingThing = collider.gameObject;

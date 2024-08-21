@@ -40,5 +40,27 @@ namespace Assets.Scripts.Entities
         {
             return transform.localPosition;
         }
+
+        protected virtual void OnTriggerEnter2D(Collider2D collider)
+        {
+            GameObject collidingThing = collider.gameObject;
+            if (collidingThing.CompareTag("Ship"))
+            {
+                Ship ship = collidingThing.GetComponent<Ship>();
+                Debug.Log($"{Name} was hit by {ship.Name}");
+                if (ship.ShipType == "Barge")
+                {
+                    Barge barge = ((Barge)ship);
+                    if (barge.IsCharging)
+                    {
+                        ship.Kill(null);
+                        return;
+                    }
+                }
+
+                ship.LogDamage((int)(ship.MaxHealth * .2f)); // 20% of ship health
+            }
+
+        }
     }
 }

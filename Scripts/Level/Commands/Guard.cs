@@ -46,7 +46,7 @@ namespace Assets.Scripts.Level.Commands
                     Invoke(nameof(FinishGuardingCommand), ConfigData.Configuration.AISquadGuardTime);
 
                 }
-                InvokeRepeating(nameof(Timer), ConfigData.CommandTimerFrequency, ConfigData.CommandTimerFrequency);
+                InvokeRepeating(nameof(Timer), 0, CommandFrequency);
             }
             else
             {
@@ -61,7 +61,7 @@ namespace Assets.Scripts.Level.Commands
             // determine initial destination based on other guarding squads
             if (!Squad.IsDead)
             {
-                if (_guardedSquad != null && !_guardedSquad.IsDead)
+                if (!_guardedSquad.IsDead)
                 {
                     Vector2 position = _guardedSquad.GetCenterPoint();
                     int offset = 4;

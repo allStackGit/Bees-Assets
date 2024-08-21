@@ -44,7 +44,7 @@ namespace Assets.Scripts.Level.Commands
                 GetTargetShip(ship);
             }
 
-            InvokeRepeating(nameof(Timer), .1f, ConfigData.CommandTimerFrequency);
+            InvokeRepeating(nameof(Timer), 0, CommandFrequency);
 
         }
         private void GetTargetShip(Ship ship)
@@ -56,7 +56,12 @@ namespace Assets.Scripts.Level.Commands
                 Squad.DamageSentToEnemyShipsBySquad.Clear();
                 loops++;
             }
-        }
+            ship.TargetEnemyShipToFollow = bomb.TargetShip;
+            if (loops == 10)
+            {
+                Debug.Log($"Looped 10 times while trying to determine a target ship for {bomb.Name}");
+            }
+        } 
         private void SendShipToTarget(Ship ship)
         {
             ship.MoveToDirectionOfPoint(ship.SetAndGetTargetEnemy().GetPosition()); // Move to the primary target ship
@@ -86,13 +91,13 @@ namespace Assets.Scripts.Level.Commands
             barge.OriginalPower = barge.Charge.Power;
 
             barge.StopMoving("Pausing to build up steam before charging");
-            //Debug.Log($"{barge.Name} is about to charge {target.Name}");
+            Debug.Log($"{barge.Name} is about to charge {target.Name}");
 
             yield return new WaitForSeconds(2);
 
             if (!barge.IsDead && target != null && !target.IsDead)
             {
-                //Debug.Log($"Charging!");
+                Debug.Log($"Charging!");
                 barge.IsCharging = true;
                 barge.SetCurrentSpeed(80, 80);
                 barge.MoveToDirectionOfPoint(target.GetPosition());

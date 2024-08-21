@@ -24,7 +24,7 @@ namespace Assets.Scripts.Level.Commands
             {
                 IsAttacking = true;
                 PrepareDamageToSendEntries();
-                InvokeRepeating(nameof(Timer), .1f, CommandFrequency);
+                InvokeRepeating(nameof(Timer), 0, CommandFrequency);
             }
             
         }

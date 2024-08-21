@@ -635,7 +635,7 @@ namespace Assets.Scripts.Level
             //    $"Collision asteroids: {string.Join(",", collisionAsteroids.Select((a) => $"#{a.Id}"))}");
 
         }
-        public MapNode FindNearestWalkablePoint(MapNode startNode, MapNode endNode, int minimumClearance, MapNode[][] nodes, int index)
+        public MapNode FindNearestWalkablePoint(MapNode startNode, MapNode endNode, int minimumClearance, MapNode[][] nodes, int threadIndex)
         {
 
             int loops = 0;
@@ -650,6 +650,7 @@ namespace Assets.Scripts.Level
 
             while (loops < 100)
             {
+                Debug.Log($"Trying to find NWP for #{threadIndex}:{Ships[threadIndex].Name} and on loop #{loops}");
                 loops++;
 
                 if (n.Clearance >= minimumClearance)
@@ -685,14 +686,14 @@ namespace Assets.Scripts.Level
                     return nw;
                 }
 
-                Ships[index].DebugWalkablePointNodes.Add(n);
-                Ships[index].DebugWalkablePointNodes.Add(ne);
-                Ships[index].DebugWalkablePointNodes.Add(e);
-                Ships[index].DebugWalkablePointNodes.Add(se);
-                Ships[index].DebugWalkablePointNodes.Add(s);
-                Ships[index].DebugWalkablePointNodes.Add(sw);
-                Ships[index].DebugWalkablePointNodes.Add(w);
-                Ships[index].DebugWalkablePointNodes.Add(nw);
+                Ships[threadIndex].DebugWalkablePointNodes.Add(n);
+                Ships[threadIndex].DebugWalkablePointNodes.Add(ne);
+                Ships[threadIndex].DebugWalkablePointNodes.Add(e);
+                Ships[threadIndex].DebugWalkablePointNodes.Add(se);
+                Ships[threadIndex].DebugWalkablePointNodes.Add(s);
+                Ships[threadIndex].DebugWalkablePointNodes.Add(sw);
+                Ships[threadIndex].DebugWalkablePointNodes.Add(w);
+                Ships[threadIndex].DebugWalkablePointNodes.Add(nw);
 
                 n = nodes[n.x][Math.Clamp(n.y - 1, 0, _grid.Height)];
                 ne = nodes[Mathf.Clamp(ne.x + 1, 0, _grid.Width)][Math.Clamp(ne.y - 1, 0, _grid.Height)];
@@ -707,7 +708,7 @@ namespace Assets.Scripts.Level
 
             if (loops == 100) // [debug]
             {
-                Debug.Log($"The loop broke after 100 loops trying to find a walkable point near {endNode.Vector} starting from {startNode.Vector}");
+                Debug.Log($"The loop for #{threadIndex}:{Ships[threadIndex].Name} broke after 100 loops trying to find a walkable point near {endNode.Vector} starting from {startNode.Vector}");
             }
             return startNode;
 
@@ -802,17 +803,17 @@ namespace Assets.Scripts.Level
             Ships[index].PrintDebugImage = true;
             Ships[index].PathfindingThread = index;
         }
-        public async Task BTFindPath(int index)
+        public async Task BTFindPath(int threadIndex)
         {
             await Task.Run(() =>
             {
-                Debug.Log($"_Started BT #{index}:{Ships[index].Name} at {StartNodes[index].Vector} to {EndNodes[index].Vector} (Level coords)");
+                Debug.Log($"_Started BT #{threadIndex}:{Ships[threadIndex].Name} at {StartNodes[threadIndex].Vector} to {EndNodes[threadIndex].Vector} (Level coords)");
                 //minimumClearance = 1;
                 //maximumClearance = 1;
                 //Debug.Log($"Trying to find a path for #{index} from ({StartNodes[index].x}, {StartNodes[index].y}) to ({EndNodes[index].x}, {EndNodes[index].y})");
-                Totals[index] = SW.Stopwatch.StartNew();
-                NeighborLoops[index] = SW.Stopwatch.StartNew();
-                GetNodes[index] = SW.Stopwatch.StartNew();
+                Totals[threadIndex] = SW.Stopwatch.StartNew();
+                NeighborLoops[threadIndex] = SW.Stopwatch.StartNew();
+                GetNodes[threadIndex] = SW.Stopwatch.StartNew();
 
 
                 int BTLoops = 0;
@@ -823,18 +824,18 @@ namespace Assets.Scripts.Level
                 {
                     for (int y = 0; y < _grid.Height; y++)
                     {
-                        GridNodes[index][x][y].CostToHere = int.MaxValue;
-                        GridNodes[index][x][y].TotalCost = int.MaxValue;
-                        GridNodes[index][x][y].PreviousNode = MapNode.NullNode;
+                        GridNodes[threadIndex][x][y].CostToHere = int.MaxValue;
+                        GridNodes[threadIndex][x][y].TotalCost = int.MaxValue;
+                        GridNodes[threadIndex][x][y].PreviousNode = MapNode.NullNode;
 
-                        GridNodes[index][x][y].HasBeenChecked = false;
-                        GridNodes[index][x][y].IsPartOfPath = false;
+                        GridNodes[threadIndex][x][y].HasBeenChecked = false;
+                        GridNodes[threadIndex][x][y].IsPartOfPath = false;
 
                     }
                 }
 
 
-                //Debug.Log($"Finished grid loops BT for #{index}:{Ships[index].Name}");
+                Debug.Log($"Finished grid loops BT for #{threadIndex}:{Ships[threadIndex].Name}");
 
 
                 //Debug.Log($"BTS: {StartNodes[index]}");
@@ -842,16 +843,16 @@ namespace Assets.Scripts.Level
 
                 //OrderPrintDebugImage(index);
                 //return;
-                Ships[index].DebugOriginalEndNode = EndNodes[index];
-                Ships[index].DebugOriginalStartNode = StartNodes[index];
-                if (EndNodes[index].Clearance < Clearances[index])
+                Ships[threadIndex].DebugOriginalEndNode = EndNodes[threadIndex];
+                Ships[threadIndex].DebugOriginalStartNode = StartNodes[threadIndex];
+                if (EndNodes[threadIndex].Clearance < Clearances[threadIndex])
                 {
-                    //Debug.Log($"The end ({EndNodes[index].Vector}) for #{index} : {Ships[index].Name} isn't walkable space");
-                    EndNodes[index] = FindNearestWalkablePoint(EndNodes[index], StartNodes[index], Clearances[index], GridNodes[index], index);
-                    //Debug.Log($"Found new end point that is walkable: {EndNodes[index]}");
+                    Debug.Log($"The end ({EndNodes[threadIndex].Vector}) for #{threadIndex}:{Ships[threadIndex].Name} isn't walkable space");
+                    EndNodes[threadIndex] = FindNearestWalkablePoint(EndNodes[threadIndex], StartNodes[threadIndex], Clearances[threadIndex], GridNodes[threadIndex], threadIndex);
+                    Debug.Log($"Found new end point that is walkable: {EndNodes[threadIndex].Vector}");
                 }
-                Debug.Log($"Found end point for #{index}:{Ships[index].Name}");
-                if (StartNodes[index].Clearance < Clearances[index])
+                Debug.Log($"Found end point for #{threadIndex}:{Ships[threadIndex].Name}");
+                if (StartNodes[threadIndex].Clearance < Clearances[threadIndex])
                 {
                     //int startNodeLoops = 0;
                     //Stack<Vector2> pastLocations = new Stack<Vector2>(Ships[index].PastLocations.Reverse());
@@ -874,22 +875,22 @@ namespace Assets.Scripts.Level
 
                     //}
 
-                    StartNodes[index] = FindNearestWalkablePoint(StartNodes[index], EndNodes[index], Clearances[index], GridNodes[index], index);
+                    StartNodes[threadIndex] = FindNearestWalkablePoint(StartNodes[threadIndex], EndNodes[threadIndex], Clearances[threadIndex], GridNodes[threadIndex], threadIndex);
                 }
                 
-                Debug.Log($"Starting at {StartNodes[index]} for #{index}:{Ships[index].Name}");
-                Path BTPath = new Path(StartNodes[index].x, StartNodes[index].y, EndNodes[index].x, EndNodes[index].y);
+                Debug.Log($"Starting at {StartNodes[threadIndex].Index} for #{threadIndex}:{Ships[threadIndex].Name}");
+                Path BTPath = new Path(StartNodes[threadIndex].x, StartNodes[threadIndex].y, EndNodes[threadIndex].x, EndNodes[threadIndex].y);
 
-                List<MapNode> BTUncheckedNodes = new List<MapNode>() { StartNodes[index] };
-                HashSet<MapNode> BTUncheckedNodesSet = new HashSet<MapNode> { StartNodes[index] };
+                List<MapNode> BTUncheckedNodes = new List<MapNode>() { StartNodes[threadIndex] };
+                HashSet<MapNode> BTUncheckedNodesSet = new HashSet<MapNode> { StartNodes[threadIndex] };
                 //SortedNodes = new SortedDictionary<int, MapNode> { { startNode.SortingId, startNode }  };
                 HashSet<MapNode> BTCheckedNodes = new HashSet<MapNode>();
 
                 //Debug.Log($"Initialized vars BT #{index}");
 
-                StartNodes[index].CostToHere = 0;
-                StartNodes[index].HueristicCost = MapNode.CalculateDistance(StartNodes[index], EndNodes[index]);
-                StartNodes[index].CalculateTotalCost();
+                StartNodes[threadIndex].CostToHere = 0;
+                StartNodes[threadIndex].HueristicCost = MapNode.CalculateDistance(StartNodes[threadIndex], EndNodes[threadIndex]);
+                StartNodes[threadIndex].CalculateTotalCost();
                 //Debug.Log($"Initialized startnode BT #{index}");
                 //if (startNode.ContainerNode != startNode)
                 //{
@@ -897,15 +898,15 @@ namespace Assets.Scripts.Level
                 //}
 
                 //loops = 0;
-                MapNode BTPreviousNode = StartNodes[index];
+                MapNode BTPreviousNode = StartNodes[threadIndex];
                 //Debug.Log($"Initialized previous BT #{index}");
-                double BTStartupTime = Totals[index].Elapsed.TotalMilliseconds;
+                double BTStartupTime = Totals[threadIndex].Elapsed.TotalMilliseconds;
                 //Debug.Log($"Startup time took: {BTStartupTime} ms");
                 //Debug.Log($"Startnode: {startNode}, queueLoops: {queueLoops}, clearanceMapList: {_grid.ClearanceMapList.Count}");
                 MapNode BTCurrentNode = MapNode.NullNode;
-                while (BTUncheckedNodes.Count > 0 && Totals[index].Elapsed.TotalSeconds < TimeLimit)
+                while (BTUncheckedNodes.Count > 0 && Totals[threadIndex].Elapsed.TotalSeconds < TimeLimit)
                 {
-                    GetNodes[index].Start();
+                    GetNodes[threadIndex].Start();
                     BTLoops++;
                     //if (BTLoops % 100 == 0)
                     //{
@@ -916,19 +917,19 @@ namespace Assets.Scripts.Level
 
                     BTPreviousNode = BTCurrentNode;
 
-                    if (BTCurrentNode == EndNodes[index])
+                    if (BTCurrentNode == EndNodes[threadIndex])
                     {
                         //Debug.Log($"Finished background finding path #{index}:{Ships[index].Name}.");
-                        MakeDestinationList(EndNodes[index], BTPath);
-                        Totals[index].Stop();
-                        GetNodes[index].Stop();
+                        MakeDestinationList(EndNodes[threadIndex], BTPath);
+                        Totals[threadIndex].Stop();
+                        GetNodes[threadIndex].Stop();
                         //Debug.Log($"Finished background finding path and destination list for #{index}:{Ships[index].Name}. ({BTPath.Points.Count}) Loops: ({BTLoops}) startup time: {BTStartupTime}ms, getNode Time: {GetNodes[index].Elapsed.TotalMilliseconds}ms, " +
                             //$"neighborLoop Time: {NeighborLoops[index].Elapsed.TotalMilliseconds}ms, Update Map Time: {UpdateMapTime[index].Elapsed.TotalMilliseconds}ms Total: {(Totals[index].Elapsed.TotalMilliseconds)}ms");
-                        Ships[index].PathfindingValue = BTPath;
-                        Ships[index].PathfindingThreadComplete = true;
-                        //IsThreadActive[index] = false; //[alert] must be uncommented when not testing
+                        Ships[threadIndex].PathfindingValue = BTPath;
+                        Ships[threadIndex].PathfindingThreadComplete = true;
+                        IsThreadActive[threadIndex] = false; //[alert] must be uncommented when not testing
 
-                        OrderPrintDebugImage(index);
+                        OrderPrintDebugImage(threadIndex);
                         return;
                     }
                     BTUncheckedNodes.Remove(BTCurrentNode);
@@ -938,15 +939,15 @@ namespace Assets.Scripts.Level
                     BTCurrentNode.HasBeenChecked = true;
 
                     //Debug.Log($"Getting neighbors for {currentNode}");
-                    GetNodes[index].Stop();
-                    NeighborLoops[index].Start();
+                    GetNodes[threadIndex].Stop();
+                    NeighborLoops[threadIndex].Start();
 
                     BTCurrentNode.Neighbors.ForEach((neighbor) =>
                     {
                         if (!BTCheckedNodes.Contains(neighbor))
                         {
                             //Debug.Log($"Neighbor: {neighbor}");
-                            if (neighbor.Clearance >= Clearances[index]) // < maximum clearance                 == 0
+                            if (neighbor.Clearance >= Clearances[threadIndex]) // < maximum clearance                 == 0
                             {
                                 //Debug.Log($"Passed clearance");
                                 BTTempCostToHere = BTCurrentNode.CostToHere + MapNode.CalculateDistance(BTCurrentNode, neighbor);
@@ -955,7 +956,7 @@ namespace Assets.Scripts.Level
                                     //Debug.Log($"Lower Cost");
                                     neighbor.PreviousNode = BTCurrentNode;
                                     neighbor.CostToHere = BTTempCostToHere;
-                                    neighbor.HueristicCost = MapNode.CalculateDistance(neighbor, EndNodes[index]);
+                                    neighbor.HueristicCost = MapNode.CalculateDistance(neighbor, EndNodes[threadIndex]);
                                     neighbor.CalculateTotalCost();
                                     //UncheckedNodes.Add(neighbor);
                                     if (!BTUncheckedNodesSet.Contains(neighbor))
@@ -970,24 +971,24 @@ namespace Assets.Scripts.Level
                         }
                     });
 
-                    NeighborLoops[index].Stop();
+                    NeighborLoops[threadIndex].Stop();
 
                 }
 
 
-                if (Totals[index].Elapsed.TotalSeconds > TimeLimit)
+                if (Totals[threadIndex].Elapsed.TotalSeconds > TimeLimit)
                 {
-                    Debug.Log($"Ran out of time while trying to find a path #{index}");
+                    Debug.Log($"Ran out of time while trying to find a path #{threadIndex}");
                 }
                 else if (BTUncheckedNodes.Count == 0)
                 {
-                    Debug.Log($"No more nodes to check for ship: {Ships[index].Name} index: #{index} Clearance: {Clearances[index]}.  checkedNodes: {BTCheckedNodes.Count} / {_grid.TotalNodes}  CurrentNode: {BTCurrentNode},");
+                    Debug.Log($"No more nodes to check for ship: {Ships[threadIndex].Name} Thread: #{threadIndex} Clearance: {Clearances[threadIndex]}.  checkedNodes: {BTCheckedNodes.Count} / {_grid.TotalNodes}  CurrentNode: {BTCurrentNode},");
                 }
-                Ships[index].PathfindingThreadComplete = true;
-                //IsThreadActive[index] = false; //[alert] must be uncommented when not testing
+                Ships[threadIndex].PathfindingThreadComplete = true;
+                IsThreadActive[threadIndex] = false; //[alert] must be uncommented when not testing
 
 
-                OrderPrintDebugImage(index);
+                OrderPrintDebugImage(threadIndex);
             });
             
 

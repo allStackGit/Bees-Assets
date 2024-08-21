@@ -185,7 +185,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 }
                 else
                 {
-                    if ((Ship.HasCommand || Ship.HasBrain) && !Squad.IsRetreating) // if you've got a command, and you're not retreating
+                    if ((Ship.HasCommand || Ship.HasBrain)) // if you've got a command, and you're not retreating
                     {
                         List<Ship> queue = MakeSortedTargetingList(false);
                         if (!DetermineTargetShip(queue, true))
@@ -200,11 +200,11 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                             //Debug.Log($"{Ship.Name} is not firing {Piece.name} because it is AI controlled and it doesn't have a command");
                             __NotShootingReason = $"{Ship.Name} is not firing {Piece.name} because it is AI controlled and it doesn't have a command";
                         }
-                        else if (Squad.IsRetreating)
-                        {
-                            //Debug.Log($"{Ship.Name} is not firing {Piece.name} because it is AI controlled and it's retreating");
-                            __NotShootingReason = $"{Ship.Name} is not firing {Piece.name} because it is AI controlled and it's retreating";
-                        }
+                        //else if (Squad.IsRetreating)
+                        //{
+                        //    //Debug.Log($"{Ship.Name} is not firing {Piece.name} because it is AI controlled and it's retreating");
+                        //    __NotShootingReason = $"{Ship.Name} is not firing {Piece.name} because it is AI controlled and it's retreating";
+                        //}
                     }
                 }
             }

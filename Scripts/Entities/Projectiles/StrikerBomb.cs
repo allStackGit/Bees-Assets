@@ -21,7 +21,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
         private void Explode()
         {
-            Ship.LogDamage(Power, Striker, ContactedShip);
+            Ship.LogAttackingDamage(Power, Striker, ContactedShip);
             GameObject explosion = Instantiate(Explosion, transform.position, Quaternion.identity);
             explosion.transform.parent = ContactedShip.transform;
             Destroy(gameObject);

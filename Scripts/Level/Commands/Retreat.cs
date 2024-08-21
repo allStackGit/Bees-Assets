@@ -15,23 +15,21 @@ namespace Assets.Scripts.Level.Commands
         {
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
 
-
-
             if (EnemySquad != null && !EnemySquad.IsDead)
             {
                 Vector2 enemyPosition = EnemySquad.GetPosition();
                 double distance = Squad.DistanceToPoint(enemyPosition);
-                double idealDistance = EnemySquad.MaxRange * 1.5;
+                double idealDistance = EnemySquad.MaxRange * 2;
 
                 if (distance < idealDistance)
                 {
                     float angle = Squad.AngleToPoint(enemyPosition);
-                    Squad.IsRetreating = true;
+                    //Squad.IsRetreating = true;
                     Squad.Status = $"Retreating away from {EnemySquad.Name}";
                     Vector2 position = Squad.GetPosition();
                     _retreatPoint = new Vector2((float)(Mathf.Sin(angle) * (idealDistance - distance) + position.x), (float)(Mathf.Cos(angle) * (idealDistance - distance) + position.y));
                     SetAndMove(_retreatPoint);
-                    InvokeRepeating(nameof(Timer), ConfigData.CommandTimerFrequency, ConfigData.CommandTimerFrequency);
+                    InvokeRepeating(nameof(Timer), 0, CommandFrequency);
                 }
                 else
                 {

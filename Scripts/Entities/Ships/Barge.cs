@@ -55,8 +55,8 @@ namespace Assets.Scripts.Entities.Ships
         public void HitShip(Ship ship)
         {
             int damage = math.min(Charge.Power, ship.Health);
-            LogDamage(damage, this, ship);
-            LogDamage((int)(damage * .75f), ship, this);
+            LogAttackingDamage(damage, this, ship);
+            LogAttackingDamage((int)(damage * .75f), ship, this);
             Charge.Power -= damage;
             //Debug.Log($"{Name} hit {ship.Name} and did {damage} damage");
 
@@ -118,21 +118,9 @@ namespace Assets.Scripts.Entities.Ships
                 StopMoving($"Finished charging");
                 Charge.Power = OriginalPower;
 
-                int oldTsv = Tsv;
-                Health -= math.min(200, Health);
+                LogDamage(200);
 
-
-                int tsvChange = Tsv - oldTsv;
-                FleetShip.DamageReceived += -tsvChange;
-                Squad.SavedSquad.Stats.DamageReceived += -tsvChange;
-
-                if (Squad.HasCommand)
-                {
-                    Squad.Command.Tsv += tsvChange; // subtract the TSV from the target
-                }
-                UpdateHealthBar();
-
-                //Debug.Log($"Finished charging");
+                Debug.Log($"Stopped charging");
             }
 
         }
@@ -141,7 +129,7 @@ namespace Assets.Scripts.Entities.Ships
         {
             if (!IsDead)
             {
-                //Debug.Log($"Finished cool down");
+                Debug.Log($"Finished cool down");
                 HasStartedCharging = false;
                 SetCurrentSpeed(Speed);
                 HasCompletedRun = true;

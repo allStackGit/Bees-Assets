@@ -129,7 +129,7 @@ namespace Assets.Scripts.Entities.Ships
         public long __Tsv, __CommandTsv;
         public bool __HasReachedDestination, __SquadHasReachedDestination;
         public List<Ship> __WeaponTargetShips, __SquadShips, __NearbyShips;
-        public List<string> __ShipsWithinRangeOfWeapons, __PastCommands, __BannedStrats, __DamageStatuses, __CommandTargetingQueue, __NearbyAsteroids;
+        public List<string> __ShipsWithinRangeOfWeapons, __PastCommands, __BannedStrats, __DamageStatuses, __CommandTargetingQueue, __NearbyAsteroids, __HivemindShips;
         //public List<Vector2> __PastLocations;
 
 
@@ -173,6 +173,7 @@ namespace Assets.Scripts.Entities.Ships
             __DistanceToTargetCoordinates = DistanceToPoint(TargetCoordinates);
             __TurningRadius = ConfigData.ShipTurningRadius;
             __NearbyShips = HasProximityCollider ? ProximityCollider.NearbyShips.ToList() : new List<Ship>();
+            __HivemindShips = Level.GetState().GetShipsVisibleToHiveMind(Side).Select(s => s.ToString()).ToList();
             //__PastLocations = PastLocations.ToList();
             //AverageReward = AverageRewardSum / Actions;
             //AverageRandomReward = AverageRandomRewardSum / RandomActions;
@@ -605,8 +606,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 DebugWalkablePointNodes.Clear();
                 //Debug.Log($"Merged full path to destination in {(Time.realtimeSinceStartup - start) * 1000}ms");
             }
-            Level.Pathfinder.IsThreadActive[PathfindingThread] = false;
-
         }
         /// <summary>
         /// Periodically called while following a pathfinding path. Checks to see if there are any obstacles in the way and if not, cuts off the destination queue and takes a direct path
@@ -717,15 +716,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             float degrees = GetRotation() - 180;
             float angle = degrees * Mathf.Deg2Rad;
 
-            Vector2 velocity = new Vector2((maxSpeed * Mathf.Sin(angle)), (-1 * maxSpeed * Mathf.Cos(angle)));
 
-
-            if (Squad.IsRetreating)
-            {
-                velocity *= 1.5f;
-            }
-
-            Body.velocity = velocity;
+            Body.velocity = new Vector2((maxSpeed * Mathf.Sin(angle)), (-1 * maxSpeed * Mathf.Cos(angle)));
         }
         private void MoveInDirection()
         {
@@ -815,7 +807,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         /// <returns></returns>
         private bool IsCloseEnoughToTargetCoordinates(float distance)
         {
-            return (distance < ConfigData.ShipTurningRadius && !(!IsFollowingPath && HasTargetEnemyShipToFollow && ProximityCollider.NearbyShips.Contains(TargetEnemyShipToFollow)));
+            return distance < ConfigData.ShipTurningRadius && !(!IsFollowingPath && HasTargetEnemyShipToFollow && HasCommand && Squad.Command.Type == "Bombing Run" && ProximityCollider.NearbyShips.Contains(TargetEnemyShipToFollow));
         }
         public void StopMoving(string reason)
         {
@@ -934,37 +926,56 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             //    StopMoving("Hit obstacle");
             //}
         }
-        public static void LogDamage(int power, Ship shooter, Ship target) // [damage-method] [note]
+        /// <summary>
+        /// Notes the change in health and TSV and updates the health bar for any kind of non-attacking damage the ship takes. See LogAttackingDamage() for attacking damage
+        /// </summary>
+        public void LogDamage(int damage)  // [damage-method] [note]
         {
+            int oldTsv = Tsv;
+            Health -= math.min(damage, Health);
+
+
+            int tsvChange = Tsv - oldTsv;
+            FleetShip.DamageReceived += -tsvChange;
+            Squad.SavedSquad.Stats.DamageReceived += -tsvChange;
+
+            if (Squad.HasCommand)
+            {
+                Squad.Command.Tsv += tsvChange; // subtract the TSV from the target
+            }
+            if (Health == 0)
+            {
+                Kill(null);
+            }
+            else
+            {
+                UpdateHealthBar();
+            }
+        }
+        /// <summary>
+        /// Logs damage to a ship from being attacked by another ship. See LogDamage() for non-attacking damage
+        /// </summary>
+        /// <param name="power"></param>
+        /// <param name="shooter"></param>
+        /// <param name="target"></param>
+        public static void LogAttackingDamage(int power, Ship shooter, Ship target) // [damage-method] [note]
+        {
+            if (shooter.Level.MakeShotsHarmless)
+            {
+                power = 0;
+            }
+
             int targetOldTSV = target.Tsv;
-            if (!shooter.Level.MakeShotsHarmless)
-            {
-                target.Health -= power;
 
-            }
-
-            if (target.Health < 0)
-            {
-                target.Health = 0;
-            }
+            target.Health -= math.min(power, target.Health);
 
 
             int targetTSVChange = target.Tsv - targetOldTSV; // this is a negative number since being hit by a projectile should induce a loss of TSV
             LogHitStats(shooter, shooter.Squad, target, target.Squad,targetTSVChange);
 
-            // each hit, add the negative TSV to the target's command and subtract the negative TSV from the shooter's command
-
-            if (shooter.Squad.Command != null)
-            {
-                shooter.Squad.Command.Tsv += -1 * targetTSVChange; // add the TSV to the shooter
-            }
-            if (target.Squad.Command != null)
-            {
-                target.Squad.Command.Tsv += targetTSVChange; // subtract the TSV from the target
-            }
 
             ShipDamageStatus status = shooter.Squad.GetShipDamageStatus(target);
-            if (target.Health <= 0)
+            if (target.Health == 0)
             {
                 target.Kill(shooter);
                 shooter.Squad.DamageSentToEnemyShipsBySquad.Remove(status);
@@ -979,17 +990,32 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
             
         }
+        /// <summary>
+        /// Logs the stats to the fleet ships, saved squads, and commands of the shooter and the target 
+        /// </summary>
+        /// <param name="shooter"></param>
+        /// <param name="shooterSquad"></param>
+        /// <param name="target"></param>
+        /// <param name="targetSquad"></param>
+        /// <param name="tsvChange"></param>
+        /// <param name="isFireShipSelfHit"></param>
         protected static void LogHitStats(Ship shooter, Squad shooterSquad, Ship target, Squad targetSquad, int tsvChange, bool isFireShipSelfHit = false) // [stats-method] [note]
         {
             if (shooter != null)
             {
                 shooter.FleetShip.DamageDone += -tsvChange;
                 shooter.Squad.SavedSquad.Stats.DamageDone += -tsvChange;
+
+                if (shooterSquad.HasCommand)
+                {
+                    shooterSquad.Command.Tsv += -tsvChange; // add the TSV (it's negative) to the shooter
+                }
             }
             else if (shooterSquad != null)
             {
                 //Debug.Log($"There was {tsvChange} damage done against {target.Name} but the shooter is null. The shooter squad got stats though.");
                 shooterSquad.SavedSquad.Stats.DamageDone += -tsvChange;
+
             }
             else
             {
@@ -1000,6 +1026,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             {
                 target.FleetShip.DamageReceived += -tsvChange;
                 target.Squad.SavedSquad.Stats.DamageReceived += -tsvChange;
+
+                if (targetSquad.HasCommand)
+                {
+                    targetSquad.Command.Tsv += tsvChange; // subtract the TSV (it's negative) from the target
+                }
 
                 if (target.Level.IsTrainingNueralNetwork)
                 {

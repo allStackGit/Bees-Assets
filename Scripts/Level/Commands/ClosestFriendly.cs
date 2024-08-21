@@ -19,7 +19,7 @@ namespace Assets.Scripts.Level.Commands
 
             //_parameters.setTimer = false;
             _closestFriendlySquad = Squad.GetClosestValidFriendlySquad();
-            InvokeRepeating(nameof(Timer), ConfigData.CommandTimerFrequency, ConfigData.CommandTimerFrequency);
+            InvokeRepeating(nameof(Timer), CommandFrequency, CommandFrequency);
             Invoke(nameof(FinishFollowing), ConfigData.Configuration.AISquadFollowingTime);
 
 

@@ -89,7 +89,7 @@ namespace Assets.Scripts.Entities.Projectiles
                     if (!_isHarmless && !HasHitShip(ship)) // if it's an explosion it should do damage but not if it's already contacted the ship
                     {
                         ContactTarget(ship);
-                        Ship.LogDamage(Power, Shooter, ship);
+                        Ship.LogAttackingDamage(Power, Shooter, ship);
                     }
 
                 }

@@ -175,7 +175,7 @@ namespace Assets.Scripts.Entities.Projectiles
                 {
                     int originalPower = Power;
                     ContactTarget(ship);
-                    Ship.LogDamage(originalPower, Shooter, ship);
+                    Ship.LogAttackingDamage(originalPower, Shooter, ship);
                 }
             }
 

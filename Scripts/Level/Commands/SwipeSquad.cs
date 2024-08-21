@@ -19,7 +19,7 @@ namespace Assets.Scripts.Level.Commands
 
             IsAttacking = true;
             PrepareDamageToSendEntries();
-            InvokeRepeating(nameof(Timer), ConfigData.CommandTimerFrequency, ConfigData.CommandTimerFrequency);
+            InvokeRepeating(nameof(Timer), 0, CommandFrequency);
         }
         private void Timer()
         {
@@ -29,7 +29,7 @@ namespace Assets.Scripts.Level.Commands
                 {
                     Squad.Status = $"Targeting enemy squad {EnemySquad.Name} #{EnemySquad.Id} with {Strategy.Name}";
 
-                    if (!_gotToEnemy && !Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad)) // if we haven't reached the enemy yet
+                    if (!_gotToEnemy && !Squad.AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad)) // if we haven't reached the enemy yet
                     {
                         //Debug.Log($"Enemy: {Enemy.Name} IsDead: {Enemy.IsDead}");
                         //SetAndMove(Enemy.GetPosition());
@@ -68,7 +68,7 @@ namespace Assets.Scripts.Level.Commands
 
 
 
-                        float distance = EnemySquad.MaxRange * 1.5f;
+                        float distance = EnemySquad.MaxRange * 2f;
                         if (distance < Squad.MaxRange - 2)
                         {
                             distance = Squad.MaxRange - 2;

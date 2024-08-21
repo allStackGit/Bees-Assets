@@ -24,7 +24,7 @@ namespace Assets.Scripts.Level.Commands
                 TargetAstroid = asteroid;
                 base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
                 PrepareDamageToSendEntries("closest");
-                InvokeRepeating(nameof(MoveToAsteroid), .1f, 1);
+                InvokeRepeating(nameof(MoveToAsteroid), 0, CommandFrequency);
                 if (IsHiveMindCommand)
                 {
                     Invoke(nameof(EndCommand), 300); // 5 minutes
@@ -56,7 +56,7 @@ namespace Assets.Scripts.Level.Commands
             ShipsMining.Add(ship);
             if (ShipsMining.Count == 1)
             {
-                InvokeRepeating(nameof(Mine), .1f, 3);
+                InvokeRepeating(nameof(Mine), 0, 3);
             }
             if (MiningShips.All((s) => s == null || s.IsDead || ShipsMining.Contains(s)))
             {

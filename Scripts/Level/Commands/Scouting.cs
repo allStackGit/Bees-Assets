@@ -17,10 +17,10 @@ namespace Assets.Scripts.Level.Commands
 
             PrepareDamageToSendEntries("closest");
             Vector2 position = Squad.GetPosition();
-            Vector2 randomCoordinates = Utilities.RandomCoordinate(Level, position, Vector2.one * ConfigData.Configuration.AIRandomMovementMaxDistance, Vector2.one * 10);
+            Vector2 randomCoordinates = Utilities.RandomCoordinate(Level, position, Vector2.one * ConfigData.Configuration.AIRandomMovementMaxDistance, Vector2.one * Squad.MaxSight);
             SetAndMove(randomCoordinates);
             CommandFrequency = 5;
-            InvokeRepeating(nameof(Timer), ConfigData.CommandTimerFrequency, CommandFrequency);
+            InvokeRepeating(nameof(Timer), 0, CommandFrequency);
             Invoke(nameof(EndCommand), ConfigData.Configuration.AISquadPatrolTime);
 
 

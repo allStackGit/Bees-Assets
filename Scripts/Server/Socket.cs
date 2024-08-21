@@ -451,6 +451,7 @@ namespace Assets.Scripts.Server
                 LevelStage level = standingRequest.Level;
                 level.HandledRequests.Add(standingRequest.Hash);
                 GameState state = level.GetState();
+                string commandType = commandResponse.Name;
                 //Debug.Log($"strategic command response");
                 //Debug.Log(squad.damageSentToEnemyShipsBySquad);
                 if (squad != null && !state.GameOver && !squad.IsDead)
@@ -461,16 +462,18 @@ namespace Assets.Scripts.Server
                     //{
                     //    Debug.LogError($"{squad.Name} was given banned strat {commandResponse.Name} #{commandResponse.Hash}, isCached? {commandResponse.IsCached}");
                     //}
-                    switch (commandResponse.Name)
+                    switch (commandType)
                     {
                         case "Aggressive":
                             if (squad.HasOnlyBombers)
                             {
                                 command = squad.gameObject.AddComponent<BombingRun>();
+                                commandType = "Bombing Run";
                             }
                             else if (squad.HasOnlyBarges)
                             {
                                 command = squad.gameObject.AddComponent<Charge>();
+                                commandType = "Charge";
                             }
                             else
                             {
@@ -490,10 +493,12 @@ namespace Assets.Scripts.Server
                             if (squad.HasOnlyBombers)
                             {
                                 command = squad.gameObject.AddComponent<BombingRun>();
+                                commandType = "Bombing Run";
                             }
                             else if (squad.HasOnlyBarges)
                             {
                                 command = squad.gameObject.AddComponent<Charge>();
+                                commandType = "Charge";
                             }
                             else
                             {
@@ -506,10 +511,12 @@ namespace Assets.Scripts.Server
                             if (squad.HasOnlyBombers)
                             {
                                 command = squad.gameObject.AddComponent<BombingRun>();
+                                commandType = "Bombing Run";
                             }
                             else if (squad.HasOnlyBarges)
                             {
                                 command = squad.gameObject.AddComponent<Charge>();
+                                commandType = "Charge";
                             }
                             else
                             {
@@ -525,10 +532,12 @@ namespace Assets.Scripts.Server
                             if (squad.HasOnlyBombers)
                             {
                                 command = squad.gameObject.AddComponent<BombingRun>();
+                                commandType = "Bombing Run";
                             }
                             else if (squad.HasOnlyBarges)
                             {
                                 command = squad.gameObject.AddComponent<Charge>();
+                                commandType = "Charge";
                             }
                             else
                             {
@@ -564,35 +573,35 @@ namespace Assets.Scripts.Server
                     squad.Command = command;
                     squad.Command.MatchupStrategy = squad.MatchupStrategy;
 
-                    Strategy strategy = new Strategy(squad.Command, commandResponse.Name, commandResponse.MatchupString, commandResponse.MatchupId, commandResponse.OutcomeId);
+                    Strategy strategy = new Strategy(squad.Command, commandType, commandResponse.MatchupString, commandResponse.MatchupId, commandResponse.OutcomeId);
                     ShootingStrategy shootingStrategy = new ShootingStrategy(squad.Command, commandResponse.ShootingStrategyName, commandResponse.ShootingStrategyMatchupString, commandResponse.ShootingStrategyMatchupId, commandResponse.ShootingStrategyOutcomeId);
                     
-                    if (commandResponse.Name == "Patrol")
+                    if (commandType == "Patrol")
                     {
                         //Debug.Log("Got a patrol");
                         ((Patrol)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true, Vector2.zero, Vector2.zero);
                     }
-                    else if (commandResponse.Name == "Guard")
+                    else if (commandType == "Guard")
                     {
                         ((Guard)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true, null);
                     }
-                    else if (commandResponse.Name == "Closest Friendly")
+                    else if (commandType == "Closest Friendly")
                     {
                         ((ClosestFriendly)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true);
                     }
-                    else if (commandResponse.Name == "Random")
+                    else if (commandType == "Random")
                     {
                         ((MoveToRandom)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true);
                     }
-                    else if (commandResponse.Name == "Scouting")
+                    else if (commandType == "Scouting")
                     {
                         ((Scouting)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true);
                     }
-                    else if (commandResponse.Name == "Mining")
+                    else if (commandType == "Mining")
                     {
                         ((Mining)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true, squad.GetNearestMiningAsteroid());
                     }
-                    else if (commandResponse.Name == "Full Retreat")
+                    else if (commandType == "Full Retreat")
                     {
                         Vector2 position = squad.GetPosition();
                         WarpGate warpGate = (WarpGate) state.GetHumanShips().Where((s) => s.IsWarpGate).OrderBy((s) => s.DistanceToPoint(position)).FirstOrDefault();

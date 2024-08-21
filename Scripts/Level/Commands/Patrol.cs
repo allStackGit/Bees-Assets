@@ -31,7 +31,7 @@ namespace Assets.Scripts.Level.Commands
             AddDestination(bottomRight);
             AddDestination(bottomLeft);
 
-            InvokeRepeating(nameof(Timer), ConfigData.CommandTimerFrequency, ConfigData.CommandTimerFrequency);
+            InvokeRepeating(nameof(Timer), 0, CommandFrequency);
 
         }
         private void Timer()

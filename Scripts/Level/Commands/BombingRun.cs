@@ -67,7 +67,7 @@ namespace Assets.Scripts.Level.Commands
                 GetTarget(ship);
             }
             CommandFrequency = 2;
-            InvokeRepeating(nameof(Timer), .1f, CommandFrequency);
+            InvokeRepeating(nameof(Timer), 0, CommandFrequency);
 
         }
         /// <summary>

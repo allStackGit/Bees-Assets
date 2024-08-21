@@ -31,7 +31,7 @@ namespace Assets.Scripts.Level
         public Color SquadBoxColor;
         public SavedSquad SavedSquad;
         public GameObject SquadBox;
-        public bool HasMovedBox, IsMatchingSpeed, CeaseFire, IsRetreating, HasAddedShips, IsShowingRanges, IsGrowingSquad;
+        public bool HasMovedBox, IsMatchingSpeed, CeaseFire, HasAddedShips, IsShowingRanges, IsGrowingSquad;
         /// <summary>
         /// A squad can be dead for one frame before it is destroyed. It's important to check for the death of a squad on anything run by a timer outside of the squad object
         /// </summary>
@@ -47,6 +47,7 @@ namespace Assets.Scripts.Level
         public int Health => GetShips().Sum(s => s.Health);
         public float Firepower => GetShips().Sum(s => s.Firepower);
         public int MaxRange => GetShips().Max(s => s.MaxRange);
+        public int MaxSight => GetShips().Max(s => s.Sight);
         public float TotalSpeed => GetShips().Sum(s => s.Speed);
         public float MaxSpeed => GetShips().Max(s => s.Speed);
         public int Tsv => GetShips().Sum(s => s.Tsv);
@@ -528,7 +529,6 @@ namespace Assets.Scripts.Level
 
                 if (Level.OverrideStrats.Contains("Scouting") && Level.GetState().GetShipsVisibleToHiveMind(Side).Count > 0)
                 {
-                    Level.OverrideStrats.Remove("Scouting");
                     BannedStrats.Add("Scouting");
                 }
             }

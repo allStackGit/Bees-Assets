@@ -14,7 +14,7 @@ public class FullRetreat : Command
             TargetWarpGate = warpgate;
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
             PrepareDamageToSendEntries("closest");
-            InvokeRepeating(nameof(MoveToWarpGate), .1f, 1);
+            InvokeRepeating(nameof(MoveToWarpGate), 0, CommandFrequency);
         }
         else
         {

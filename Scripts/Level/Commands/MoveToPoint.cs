@@ -6,7 +6,7 @@ namespace Assets.Scripts.Level.Commands
     public class MoveToPoint : Command
     {
         /*
-        Sends the squad towards a random spot on the map
+        Sends the squad towards a random spot on the map. Currently unused.
          */
 
         public void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy, Vector2 destination)
@@ -17,7 +17,7 @@ namespace Assets.Scripts.Level.Commands
             {
                 PrepareDamageToSendEntries("closest");
                 SetAndMove(destination);
-                InvokeRepeating(nameof(Timer), ConfigData.CommandTimerFrequency, ConfigData.CommandTimerFrequency);
+                InvokeRepeating(nameof(Timer), CommandFrequency, CommandFrequency);
             }
             else
             {

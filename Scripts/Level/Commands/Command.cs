@@ -290,7 +290,7 @@ namespace Assets.Scripts.Level.Commands
                 ship.TargetEnemyShipToFollow = null;
 
             });
-            Squad.IsRetreating = false;
+            //Squad.IsRetreating = false;
             Squad.Status = "idle";
             if (Squad.IsChasing())
             {
