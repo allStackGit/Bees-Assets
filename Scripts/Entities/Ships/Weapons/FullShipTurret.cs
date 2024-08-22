@@ -4,9 +4,9 @@ using UnityEngine;
 namespace Assets.Scripts.Entities.Ships.Weapons
 {
     /// <summary>
-    /// This is for turrets that don't rotate independently of the ship they're on, such as the flagship main cannon. Behaves just like a regular turret but the ship itself moves
+    /// This is for laserbuilder turrets that don't rotate independently of the ship they're on, such as the flagship main cannon. Behaves just like a regular turret but the ship itself moves
     /// </summary>
-    public class FullShipTurret : Turret
+    public class FullShipTurret : LaserBuilder
     {
 
         protected override void Aim()
@@ -25,7 +25,15 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 {
                     TargetPoint = GetTargetPoint(TargetShip);
                 }
-                AimedAtTarget = Utilities.IsRotatedTowards(Piece, GetDegreesTowardsPoint(TargetPoint));
+                IsAimedAtTarget = Utilities.IsRotatedTowards(Piece, GetDegreesTowardsPoint(TargetPoint));
+                if (!IsAimedAtTarget)
+                {
+                    LaserBuilderAnimation.SetActive(false);
+                }
+                else
+                {
+                    LaserBuilderAnimation.SetActive(true);
+                }
             }
 
         }

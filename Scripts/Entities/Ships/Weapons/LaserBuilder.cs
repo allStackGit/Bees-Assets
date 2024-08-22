@@ -9,7 +9,7 @@ namespace Assets.Scripts.Entities.Ships
 {
     public class LaserBuilder : Turret
     {
-        private bool _readyForFiring;
+        public bool IsReadyForFiring;
         public SpriteRenderer Pupil;
         public LaserBuilderControl LaserBuilderControl;
         public GameObject LaserBuilderAnimation;
@@ -24,13 +24,13 @@ namespace Assets.Scripts.Entities.Ships
         }
         protected override void SendProjectile() // [projectile-method] [note] this doesn't actually send the projectile because we need to wait for the animation to finish
         {
-            _readyForFiring = true;
+            IsReadyForFiring = true;
             //Debug.Log($"{Name} send projectile called");
 
         }
         public void ActuallyShoot() // [projectile-method] [note] this actually sends the projectile once the animation is finished
         {
-            if (_readyForFiring && (HasTargetShip || IsFiringManually))
+            if (IsReadyForFiring && (HasTargetShip || IsFiringManually) && IsAimedAtTarget)
             {
                 //Debug.Log($"{Name} animation finished, sending projectile, deactivating animation");
                 base.SendProjectile();
@@ -51,7 +51,7 @@ namespace Assets.Scripts.Entities.Ships
         {
             //Debug.Log("Leafcutter aiming");
             base.Aim();
-            if ((!HasTargetShip || CeaseFire) && !IsFiringManually)
+            if ((!HasTargetShip || CeaseFire || !IsAimedAtTarget) && !IsFiringManually)
             {
                 //Debug.Log($"{Name} has no TargetShip, deactivating animation");
                 LaserBuilderAnimation.SetActive(false);

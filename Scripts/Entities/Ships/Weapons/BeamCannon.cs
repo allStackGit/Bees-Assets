@@ -15,7 +15,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             if (IsFiringManually)
             {
                 TargetPoint = Level.InputManager.GetMousePosition();
-                AimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                IsAimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
             }
             else
             {
@@ -27,7 +27,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 {
                     //Debug.Log($"Aiming {Piece.name} at {TargetShip.Name}");
                     TargetPoint = GetTargetPoint(TargetShip);
-                    AimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                    IsAimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
 
                 }
                 else
@@ -35,7 +35,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     if (!IsFiringLaserBeam)
                     {
                         //Debug.Log($"TargetShip is null, rotating back");
-                        AimedAtTarget = false;
+                        IsAimedAtTarget = false;
                         Utilities.TimedRotation(Piece, Ship.GetRotation(), RotationRate);
                     }
 

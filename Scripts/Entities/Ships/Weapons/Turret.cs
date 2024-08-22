@@ -11,7 +11,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 {
     public class Turret : Weapon
     {
-        public bool FireAtFrontOfShip, AimedAtTarget;
+        public bool ShouldFireAtFrontOfShip, IsAimedAtTarget;
         /// <summary>
         /// Whether or not the ship is being controlled by a user to fire towards a particular point on the map
         /// </summary>
@@ -27,7 +27,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             GameObject projectilePrefab, bool fireAtFrontOfShip, float rotationRate)
         {
             base.Setup(ship, type, range, power, 0, rateOfFire, projectileValue, piece, projectilePrefab);
-            FireAtFrontOfShip = fireAtFrontOfShip;
+            ShouldFireAtFrontOfShip = fireAtFrontOfShip;
             PassesPerFire = 3;
             TargetingRate = RateOfFire / PassesPerFire;
             RotationRate = rotationRate;
@@ -80,7 +80,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             if (IsFiringManually)
             {
                 TargetPoint = Level.InputManager.GetMousePosition();
-                AimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                IsAimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
             }
             else
             {
@@ -88,12 +88,12 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 {
                     //Debug.Log($"Aiming {Piece.name}");
                     TargetPoint = GetTargetPoint(TargetShip);
-                    AimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                    IsAimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
 
                 }
                 else
                 {
-                    AimedAtTarget = false;
+                    IsAimedAtTarget = false;
                     if (!HasShipsWithinRange || CeaseFire)
                     {
                         //Debug.Log($"{Name} has no ships to fire at, returning to default aim");
@@ -125,7 +125,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         protected Vector2 GetTargetPoint(Ship ship)
         {
             Vector2 targetPoint = ship.GetPosition();
-            if (FireAtFrontOfShip)
+            if (ShouldFireAtFrontOfShip)
             {
                 Vector2 frontOfShip = targetPoint + new Vector2(0, ship.GetHalfHeight() - ConfigData.OffsetFromFront);
                 targetPoint = Utilities.RotatePointAroundPoint(targetPoint, frontOfShip, ship.GetRotation() * Mathf.Deg2Rad);
@@ -204,7 +204,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             //Debug.Log($"{Name} trying to fire");
             if (IsFiringManually)
             {
-                if (AimedAtTarget)
+                if (IsAimedAtTarget)
                 {
                     FireAtPoint();
                 }
@@ -213,7 +213,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 if (ShouldFire)
                 {
-                    if (AimedAtTarget)
+                    if (IsAimedAtTarget)
                     {
                         Fire();
                     }

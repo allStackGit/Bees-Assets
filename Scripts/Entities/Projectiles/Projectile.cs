@@ -71,6 +71,7 @@ namespace Assets.Scripts.Entities.Projectiles
                 Explosion = Instantiate(ExplosionAnimationPrefab, Vector2.zero, Quaternion.identity);
                 Explosion.transform.parent = Level.Map.transform;
                 Explosion.transform.localPosition = GetPosition();
+                Explosion.transform.eulerAngles = new Vector3(0, 0, Weapon.GetLocalRotation());
             }
             Kill();
         }
