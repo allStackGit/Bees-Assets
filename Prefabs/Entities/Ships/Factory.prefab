@@ -583,7 +583,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6816985616580362458, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
       propertyPath: m_IsActive
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -593,11 +593,6 @@ PrefabInstance:
       insertIndex: -1
       addedObject: {fileID: 6514744015842366433}
   m_SourcePrefab: {fileID: 100100000, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
---- !u!95 &592617283206699840 stripped
-Animator:
-  m_CorrespondingSourceObject: {fileID: 3945804149284103428, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
-  m_PrefabInstance: {fileID: 4538266888385183300}
-  m_PrefabAsset: {fileID: 0}
 --- !u!4 &2633378955535754799 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 1905178246923622507, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
@@ -626,19 +621,14 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   SpriteRenderer: {fileID: 3973429476835806603}
-  Animator: {fileID: 592617283206699840}
   Ship: {fileID: 6639458257436875518}
   AnimationSpriteToRecolor: {fileID: 133110120, guid: ad7cd14d465132d4bac615c7c4626be7, type: 3}
   CurrentSprite: {fileID: 0}
-  NamePrefix: factory_anim
-  PreviousSpriteName: 
   RecoloredSprites: []
   ShouldSwapSprite: 0
   SpriteRows: 6
   SpriteColumns: 9
   SpriteIndex: 0
-  FramesChange: 0
-  StartTime: 0
 --- !u!1001 &6119731394242768119
 PrefabInstance:
   m_ObjectHideFlags: 0

@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 
@@ -17,44 +18,72 @@ namespace Assets.Scripts.Entities.Ships
         public void RecolorAnimationSprites()
         {
             RecoloredSprites = new Sprite[SpriteRows * SpriteColumns];
-            Color[] colors = ConfigData.ChangeableShipColors.GetValueOrDefault(Ship.ShipType);
-            int[] changeablePixels = Utilities.SetChangablePixelsForImage(colors, AnimationSpriteToRecolor);
-
-            Texture2D sourceTexture = AnimationSpriteToRecolor.texture;
-            Color[] pixels = sourceTexture.GetPixels();
-
-
-            for (int i = 0; i < changeablePixels.Length; i++)
+            bool hasLoadedCachedSprites = false;
+            if (Ship.FleetShip.HasCachedSprite)
             {
-                pixels[changeablePixels[i]] = Ship.Squad.Color;
-            }
-            Texture2D changedTexture = new Texture2D(sourceTexture.width, sourceTexture.height);
-
-            changedTexture.SetPixels(pixels);
-            changedTexture.Apply(true);
-
-            int count = 0;
-            int widthPerUnit = sourceTexture.width / SpriteColumns;
-            int heightPerUnit = sourceTexture.height / SpriteRows;
-
-            //Debug.Log($"Each sprite is {widthPerUnit} wide and {heightPerUnit} tall for a total width of {widthPerUnit * SpriteColumns} and total height of {heightPerUnit * SpriteRows}");
-
-            for (int y = 0; y < SpriteRows; y++)
-            {
-                for (int x = 0; x < SpriteColumns; x++)
+                hasLoadedCachedSprites = true;
+                for (int i = 0; i < RecoloredSprites.Length && hasLoadedCachedSprites; i++)
                 {
-                    RecoloredSprites[count] = Sprite.Create(changedTexture, new Rect(widthPerUnit * x, (sourceTexture.height - heightPerUnit * y) - heightPerUnit, widthPerUnit, heightPerUnit), Vector2.one / 2, ConfigData.PixelsPerUnit);
-                    //RecoloredSprites[count].name = $"{NamePrefix}_C_{count}";
+                    RecoloredSprites[i] = Ship.FleetShip.LoadCachedSprite(i, ConfigData.ShipSizes[Ship.ShipType]);
+                    if (RecoloredSprites[i] == null)
+                    {
+                        hasLoadedCachedSprites = false;
+                    }
 
-                    //string path = $"{ConfigData.GetBasePath()}/debug/{RecoloredSprites[count].name}.png";
-                    //Texture2D export = new Texture2D(widthPerUnit, heightPerUnit);
-                    //export.SetPixels(RecoloredSprites[count].texture.GetPixels(widthPerUnit * x, (sourceTexture.height - heightPerUnit * y) - heightPerUnit, widthPerUnit, heightPerUnit));
-                    //export.Apply();
-                    //File.WriteAllBytes(path, export.EncodeToPNG());
-                    count++;
                 }
-
+               
             }
+
+
+            if (!hasLoadedCachedSprites)
+            {
+                Color[] colors = ConfigData.ChangeableShipColors.GetValueOrDefault(Ship.ShipType);
+                int[] changeablePixels = Utilities.SetChangablePixelsForImage(colors, AnimationSpriteToRecolor);
+
+                Texture2D sourceTexture = AnimationSpriteToRecolor.texture;
+                Color[] pixels = sourceTexture.GetPixels();
+
+
+                for (int i = 0; i < changeablePixels.Length; i++)
+                {
+                    pixels[changeablePixels[i]] = Ship.Squad.Color;
+                }
+                Texture2D changedTexture = new Texture2D(sourceTexture.width, sourceTexture.height);
+
+                changedTexture.SetPixels(pixels);
+                changedTexture.Apply(true);
+
+                int count = 0;
+                Vector2Int size = ConfigData.ShipSizes[Ship.ShipType];
+                //Debug.Log($"Each sprite is {widthPerUnit} wide and {heightPerUnit} tall for a total width of {widthPerUnit * SpriteColumns} and total height of {heightPerUnit * SpriteRows}");
+
+                for (int y = 0; y < SpriteRows; y++)
+                {
+                    for (int x = 0; x < SpriteColumns; x++)
+                    {
+                        RecoloredSprites[count] = Sprite.Create(changedTexture, new Rect(size.x * x, (sourceTexture.height - size.y * y) - size.y, size.x, size.y), ConfigData.HalfSize, ConfigData.PixelsPerUnit);
+                        //RecoloredSprites[count].name = $"{NamePrefix}_C_{count}";
+
+                        bool hasCachedSprite = false;
+                        try
+                        {
+                            Ship.FleetShip.SaveSpriteToCache(count, RecoloredSprites[count].texture.GetPixels(size.x * x, (sourceTexture.height - size.y * y) - size.y, size.x, size.y), size);
+                            hasCachedSprite = true;
+                        }catch(Exception e)
+                        {
+                            Debug.Log($"Error while trying to save cached sprites: {e}");
+                        }
+                        if (count == 0 && hasCachedSprite)
+                        {
+                            Ship.FleetShip.HasCachedSprite = true;
+                            ConfigData.AllShips.SaveFleetData();
+                        }
+                        count++;
+                    }
+
+                }
+            }
+            
 
             //Animator.runtimeAnimatorController.animationClips[0]
         }

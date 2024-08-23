@@ -13,7 +13,7 @@ OcclusionCullingSettings:
 --- !u!104 &2
 RenderSettings:
   m_ObjectHideFlags: 0
-  serializedVersion: 10
+  serializedVersion: 9
   m_Fog: 0
   m_FogColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
   m_FogMode: 3
@@ -38,12 +38,12 @@ RenderSettings:
   m_ReflectionIntensity: 1
   m_CustomReflection: {fileID: 0}
   m_Sun: {fileID: 0}
-  m_IndirectSpecularColor: {r: 0, g: 0, b: 0, a: 1}
   m_UseRadianceAmbientProbe: 0
 --- !u!157 &3
 LightmapSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 12
+  m_GIWorkflowMode: 1
   m_GISettings:
     serializedVersion: 2
     m_BounceScale: 1
@@ -66,6 +66,9 @@ LightmapSettings:
     m_LightmapParameters: {fileID: 0}
     m_LightmapsBakeMode: 1
     m_TextureCompression: 1
+    m_FinalGather: 0
+    m_FinalGatherFiltering: 1
+    m_FinalGatherRayCount: 256
     m_ReflectionCompression: 2
     m_MixedBakeMode: 2
     m_BakeBackend: 1
@@ -16112,6 +16115,18 @@ MonoBehaviour:
   QueenSprite: {fileID: -1837898833515144292, guid: d536597f08fa24340a28d210f27febf2, type: 3}
   WaspSprite: {fileID: 21300000, guid: 63fea424b9851784f9f2bbb0ff3120dc, type: 3}
   YellowJacketSprite: {fileID: 21300000, guid: 7d3c88d90f6e83e4e8ea37fcd9b6e3ce, type: 3}
+  BargeGameSprite: {fileID: 21300000, guid: 6fa64241b9a6f9c4f941a8f38449fa2c, type: 3}
+  CarrierGameSprite: {fileID: 21300000, guid: d345c41298bdcde4c81806f290b71b13, type: 3}
+  CruiserGameSprite: {fileID: 21300000, guid: e7fb5631d08227448bd1191172718349, type: 3}
+  CruiserCannonGameSprite: {fileID: 21300000, guid: 7f06402aeed0869408c38f2ae04432a1, type: 3}
+  DreadnoughtGameSprite: {fileID: 21300000, guid: 9d1da2457f17a044aaafc79785166d43, type: 3}
+  FactoryGameSprite: {fileID: 21300000, guid: 14f4d00d7d052d44d9cadf895b3b1b8d, type: 3}
+  FireShipGameSprite: {fileID: 21300000, guid: c2d50367ba7668e428d971aed684feb2, type: 3}
+  FlagshipGameSprite: {fileID: 21300000, guid: 4ffefbee413778f40943ae6240ca6071, type: 3}
+  FrigateGameSprite: {fileID: 21300000, guid: 98a7996dce48e4e458fafc0e7a3d5f94, type: 3}
+  GunshipGameSprite: {fileID: 21300000, guid: 8ef5bc21746b9bc4f9254b84f7ab4ece, type: 3}
+  ScoutGameSprite: {fileID: 21300000, guid: 775173d4a1edb6c4ea54dfa4ae144930, type: 3}
+  WarpGateGameSprite: {fileID: 21300000, guid: 0aa980f13ad03b241a711695b2681ced, type: 3}
   DragCanvas: {fileID: 1320965603}
   TooltipOffset: {x: 18, y: 2.5}
   ShipStatsBoxOffset: {x: 30, y: 20}

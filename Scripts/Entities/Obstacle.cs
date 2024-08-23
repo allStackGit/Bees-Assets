@@ -44,7 +44,7 @@ namespace Assets.Scripts.Entities
         protected virtual void OnTriggerEnter2D(Collider2D collider)
         {
             GameObject collidingThing = collider.gameObject;
-            if (collidingThing.CompareTag("Ship"))
+            if (!IsMapBorder && collidingThing.CompareTag("Ship"))
             {
                 Ship ship = collidingThing.GetComponent<Ship>();
                 Debug.Log($"{Name} was hit by {ship.Name}");

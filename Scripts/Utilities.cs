@@ -496,8 +496,8 @@ namespace Assets.Scripts
         }
         public static int CalculateCarrierAdditionalTsv()
         {
-            FleetShip striker = new FleetShip(-1, ConfigData.Configuration.HumanSide, "", "Striker", false, false, 0, 0, 0, 0, 0, 0, 0);
-            FleetShip drone = new FleetShip(-1, ConfigData.Configuration.HumanSide, "", "Drone", false, false, 0, 0, 0, 0, 0, 0, 0);
+            FleetShip striker = new FleetShip(-1, ConfigData.Configuration.HumanSide, "", "Striker", false, false, false, 0, 0, 0, 0, 0, 0, 0);
+            FleetShip drone = new FleetShip(-1, ConfigData.Configuration.HumanSide, "", "Drone", false, false, false, 0, 0, 0, 0, 0, 0, 0);
 
             return ((striker.GetTsv() * ConfigData.Configuration.CarrierCarryStrikerMax) * ConfigData.Configuration.CarrierSquadCount) + ((drone.GetTsv() * ConfigData.Configuration.CarrierCarryDroneMax) * ConfigData.Configuration.CarrierSquadCount);
         }

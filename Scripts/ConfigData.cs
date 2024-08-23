@@ -52,6 +52,7 @@ namespace Assets.Scripts
         // 7 = new NN training version
         public const int Version = 6; // [alert] should be increased when released
         public const string BaseFolder = "SaveData";
+        public const string CacheFolder = "SpriteCache";
         public const string PortraitFolder = "Sprites/People";
 
         // constant filenames
@@ -74,30 +75,30 @@ namespace Assets.Scripts
         public static float PlusUltra = Tiny * 8f;
         public static float BigChungus = Tiny * 32f;
 
-        public static readonly Dictionary<string, Vector2> ShipSizes = new Dictionary<string, Vector2>() {
-            { "Barge",          new Vector2(760, 360)},
-            { "Carrier",        new Vector2(460, 560)},
-            { "Cruiser",        new Vector2(320, 360)},
-            { "Dreadnought",    new Vector2(320, 420)},
-            { "Drone",          new Vector2(160, 160)},
-            { "Factory",        new Vector2(640, 640)},
-            { "Fire Ship",      new Vector2(760, 360)},
-            { "Flagship",       new Vector2(640, 760)},
-            { "Frigate",        new Vector2(240, 240)},
-            { "Gunship",        new Vector2(240, 240)}, 
-            { "Scout",          new Vector2(200, 160)},
-            { "Striker",        new Vector2(160, 160)},
-            { "Warp Gate",      new Vector2(1120, 640)},
+        public static readonly Dictionary<string, Vector2Int> ShipSizes = new Dictionary<string, Vector2Int>() {
+            { "Barge",          new Vector2Int(760, 360)},
+            { "Carrier",        new Vector2Int(480, 560)},
+            { "Cruiser",        new Vector2Int(320, 360)},
+            { "Dreadnought",    new Vector2Int(320, 420)},
+            { "Drone",          new Vector2Int(160, 160)},
+            { "Factory",        new Vector2Int(640, 640)},
+            { "Fire Ship",      new Vector2Int(760, 360)},
+            { "Flagship",       new Vector2Int(640, 760)},
+            { "Frigate",        new Vector2Int(240, 240)},
+            { "Gunship",        new Vector2Int(240, 240)}, 
+            { "Scout",          new Vector2Int(200, 160)},
+            { "Striker",        new Vector2Int(160, 160)},
+            { "Warp Gate",      new Vector2Int(1120, 640)},
 
-            { "Beehive",        Vector2.zero },
-            { "Bumblebee",      new Vector2(680, 480)},
-            { "Carpenter Bee",  new Vector2(640, 640)},
-            { "Honeybee",       new Vector2(160, 160)},
-            { "Hornet",         new Vector2(160, 160)},
-            { "Leafcutter",     new Vector2(320, 320)},
-            { "Queen",          new Vector2(1600, 1280)},
-            { "Wasp",           new Vector2(240, 240)},
-            { "Yellow Jacket",  new Vector2(160, 160)},
+            { "Beehive",        Vector2Int.zero },
+            { "Bumblebee",      new Vector2Int(680, 480)},
+            { "Carpenter Bee",  new Vector2Int(640, 640)},
+            { "Honeybee",       new Vector2Int(160, 160)},
+            { "Hornet",         new Vector2Int(160, 160)},
+            { "Leafcutter",     new Vector2Int(320, 320)},
+            { "Queen",          new Vector2Int(1600, 1280)},
+            { "Wasp",           new Vector2Int(240, 240)},
+            { "Yellow Jacket",  new Vector2Int(160, 160)},
         };
         public static readonly Dictionary<string, float> ShipSizeFactor = new Dictionary<string, float>() {
             { "Barge",          Huge},
@@ -167,6 +168,7 @@ namespace Assets.Scripts
         public const float OffsetFromFront = .35f;
         public const float FireShipExplosionSize = 64;
         public const float RefillDistanceToCarrier = 10;
+        public static Vector2 HalfSize = new Vector2(.5f, .5f);
         public const int MiningRate = 750;
         public static float ShipTurningRadius; 
         public static List<Scene> Scenes = new List<Scene>();
@@ -408,6 +410,35 @@ namespace Assets.Scripts
 #if UNITY_EDITOR
             string path = Application.dataPath + $"/{BaseFolder}/";
             string path1 = Application.dataPath + $"/{BaseFolder}";
+            if (!Directory.Exists(path1)) Directory.CreateDirectory(path1);
+            if (!Directory.Exists(path)) Directory.CreateDirectory(path);
+            return path;
+#elif UNITY_ANDROID
+                    string path = Application.persistentDataPath + $"/{BaseFolder}/";
+                    string path1 = Application.persistentDataPath + $"/{BaseFolder}";
+                    if (!Directory.Exists(path1)) Directory.CreateDirectory(path1);
+                    if (!Directory.Exists(path)) Directory.CreateDirectory(path);
+                    return path;
+#elif UNITY_IPHONE
+                    string path = Application.persistentDataPath + $"/{BaseFolder}/";
+                    string path1 = Application.persistentDataPath + $"/{BaseFolder}";
+                    if (!Directory.Exists(path1)) Directory.CreateDirectory(path1);
+                    if (!Directory.Exists(path)) Directory.CreateDirectory(path);
+                    return path;
+#else
+                    string path = Application.dataPath + $"/{BaseFolder}/";
+                    string path1 = Application.dataPath + $"/{BaseFolder}";
+                    if (!Directory.Exists(path1)) Directory.CreateDirectory(path1);
+                    if (!Directory.Exists(path)) Directory.CreateDirectory(path);
+                    return path;
+#endif
+        }
+
+        public static string GetCachePath()
+        {
+#if UNITY_EDITOR
+            string path = Application.dataPath + $"/{CacheFolder}/";
+            string path1 = Application.dataPath + $"/{CacheFolder}";
             if (!Directory.Exists(path1)) Directory.CreateDirectory(path1);
             if (!Directory.Exists(path)) Directory.CreateDirectory(path);
             return path;

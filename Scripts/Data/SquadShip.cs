@@ -37,7 +37,7 @@ namespace Assets.Scripts.Data
                 else
                 {
                     //Debug.LogWarning($"A null fleetship was asked for with id #{FleetId}. This was probably a randomly created fleetship.");
-                    return new FleetShip(FleetId, _squad.Side, $"{ShipType} - #{FleetId}", ShipType, true, false, 0, 0, 0, 0, 0, 0, 0);
+                    return new FleetShip(FleetId, _squad.Side, $"{ShipType} - #{FleetId}", ShipType, false, true, false, 0, 0, 0, 0, 0, 0, 0);
                 }
             }
             else
@@ -50,7 +50,7 @@ namespace Assets.Scripts.Data
                 else
                 {
                     //Debug.LogWarning($"A null fleetship was asked for with id #{FleetId}. This was probably a randomly created fleetship.");
-                    return new FleetShip(FleetId, _squad.Side, $"{ShipType} - #{FleetId}", ShipType, true, false, 0, 0, 0, 0, 0, 0, 0);
+                    return new FleetShip(FleetId, _squad.Side, $"{ShipType} - #{FleetId}", ShipType, false, true, false, 0, 0, 0, 0, 0, 0, 0);
                 }
             }
             

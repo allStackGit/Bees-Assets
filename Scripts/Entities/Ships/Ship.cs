@@ -36,7 +36,7 @@ namespace Assets.Scripts.Entities.Ships
         public long LastKilled;
         public FleetShip FleetShip = null;
         public string ShipType, Name;
-        public bool FireAtFrontOfShip, InCombat, IsFollowingPath, CannotChangeMovementOrders;
+        public bool FireAtFrontOfShip, InCombat, IsFollowingPath, CannotChangeMovementOrders, IsSpawnedShip;
         public Vision Vision;
         /// <summary>
         /// A ship can be killed at some point of the frame and still exist until the end of the frame. Check this to see if a ship is dead but not yet destroyed.
@@ -218,6 +218,11 @@ namespace Assets.Scripts.Entities.Ships
                 RLSide = Side / 2;
                 RLHealth = Health / MaxHealth;
                 RLShipType = (float)Utilities.ShipTypeToInt[ShipTypeLetter] / Utilities.ShipNamesAndTypes.Count;
+            }
+
+            if (FleetShip.Id < 0)
+            {
+                IsSpawnedShip = true;
             }
 
             ShipStatBlock shipStats = ConfigData.GetShipInfo(fleetShip.Type);
@@ -444,18 +449,59 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             if (Squad.HasCustomColor)
             {
                 //Debug.Log("Setting sprite for ship");
+                float start = Time.realtimeSinceStartup;
+                string status = "Loading";
                 ColoredPrefabs.Add(gameObject);
                 Color[] colors = ConfigData.ChangeableShipColors.GetValueOrDefault(ShipType);
+                int index = 0;
                 ColoredPrefabs.ForEach((prefab) =>
                 {
-                    Sprite shipIcon = prefab.GetComponent<SpriteRenderer>().sprite;
-                    int[] changeablePixels = Utilities.SetChangablePixelsForImage(colors, shipIcon);
-                    prefab.GetComponent<SpriteRenderer>().sprite = Utilities.SetImageColor(Squad.Color, shipIcon, changeablePixels);
+                    Sprite prefabSprite = prefab.GetComponent<SpriteRenderer>().sprite;
+                    Vector2Int size = new Vector2Int(prefabSprite.texture.width, prefabSprite.texture.height);
+                    Sprite loadedSprite;
+                    bool hasLoadedSprite = false;
+                    if (FleetShip.HasCachedSprite)
+                    {
+                        loadedSprite = FleetShip.LoadCachedSprite(index, size);
+                        if (loadedSprite != null)
+                        {
+                            prefab.GetComponent<SpriteRenderer>().sprite = loadedSprite;
+                            hasLoadedSprite = true;
+                        }
+                    }
+                    if (!hasLoadedSprite)
+                    {
+                        status = "Drawing";
+                        Sprite shipIcon = prefabSprite;
+                        int[] changeablePixels = Utilities.SetChangablePixelsForImage(colors, shipIcon);
+                        Sprite recolored = Utilities.SetImageColor(Squad.Color, shipIcon, changeablePixels);
+                        prefab.GetComponent<SpriteRenderer>().sprite = recolored;
 
-                    string path = $"{ConfigData.GetBasePath()}/debug/{Name}.png";
-                    File.WriteAllBytes(path, prefab.GetComponent<SpriteRenderer>().sprite.texture.EncodeToPNG());
+                        if (!IsSpawnedShip)
+                        {
+                            status += " and saving";
+                            bool hasCachedSprite = false;
+                            try
+                            {
+                                FleetShip.SaveSpriteToCache(index, recolored.texture.GetPixels(), size);
+                                hasCachedSprite = true;
+                            }
+                            catch (Exception e)
+                            {
+                                Debug.Log($"Error while trying to save cached sprites for {FleetShip.Name}: {e}");
+                            }
+                            if (index == 0 && hasCachedSprite)
+                            {
+                                FleetShip.HasCachedSprite = true;
+                                ConfigData.AllShips.SaveFleetData();
+                            }
+                        }
+
+                    }
+                    index++;
                 });
-               
+
+                Debug.Log($"{status} sprites for {FleetShip.Name} took {(Time.realtimeSinceStartup - start)*1000}ms");
             }
         }
 

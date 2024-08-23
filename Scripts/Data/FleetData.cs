@@ -48,7 +48,7 @@ namespace Assets.Scripts.Data
                     {
                         isVisible = true;
                     }
-                    AddShipToFleet(new FleetShip(id, side, $"{shipType} #{id}", shipType, isVisible, false, 0, 0, 0, 0, 0, 0, 0));
+                    AddShipToFleet(new FleetShip(id, side, $"{shipType} #{id}", shipType, false, isVisible, false, 0, 0, 0, 0, 0, 0, 0));
                     id++;
                 }
             });
@@ -62,7 +62,11 @@ namespace Assets.Scripts.Data
         {
             jsonShips.ForEach((ship) =>
             {
-                AddShipToFleet(new FleetShip((int) ship.Id, (int) ship.Side, (string) ship.Name, (string) ship.Type, (bool) ship.IsVisibleToUser, (bool) ship.IsDead, (int) ship.ShotsFired,
+                if (ship.HasCachedSprite == null) // [alert] this is just here to account for old data that doesn't have this filled in yet
+                {
+                    ship.HasCachedSprite = "false";
+                }
+                AddShipToFleet(new FleetShip((int) ship.Id, (int) ship.Side, (string) ship.Name, (string) ship.Type, (bool) ship.HasCachedSprite, (bool) ship.IsVisibleToUser, (bool) ship.IsDead, (int) ship.ShotsFired,
                     (int) ship.DamageDone, (int) ship.DamageReceived, (int) ship.Kills, (int) ship.BattlesFought, (int) ship.BattlesWon, (int)ship.MineralsMined));
             });
         }

@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using UnityEngine;
 
@@ -11,7 +12,7 @@ namespace Assets.Scripts.Data
     {
         public int Id, Side;
         public string Name, Type;
-        public bool IsVisibleToUser, IsDead;
+        public bool IsVisibleToUser, IsDead, HasCachedSprite;
         public int ShotsFired, DamageDone, DamageReceived, Kills, BattlesFought, BattlesWon, MineralsMined, MineralsMinedThisLevel;
         public int BattlesLost => BattlesFought - BattlesWon;
 
@@ -23,12 +24,13 @@ namespace Assets.Scripts.Data
        
         public float Firepower => GetFirepower();
 
-        public FleetShip(int id, int side, string name, string type, bool isVisibleToUser, bool isDead, int shotsFired, int damageDone, int damageReceived, int kills, int battlesFought, int battlesWon, int mineralsMined)
+        public FleetShip(int id, int side, string name, string type, bool hasCachedSprite, bool isVisibleToUser, bool isDead, int shotsFired, int damageDone, int damageReceived, int kills, int battlesFought, int battlesWon, int mineralsMined)
         {
             Id = id;
             Side = side;
             Name = name;
             Type = type;
+            HasCachedSprite = hasCachedSprite;
             IsVisibleToUser = isVisibleToUser;
             IsDead = isDead;
             ShotsFired = shotsFired;
@@ -38,9 +40,35 @@ namespace Assets.Scripts.Data
             BattlesFought = battlesFought;
             BattlesWon = battlesWon;
             MineralsMined = mineralsMined;
+
             GetStats();
         }
         
+        public Sprite LoadCachedSprite(int index, Vector2Int size)
+        {
+            try
+            {
+                byte[] bytes = File.ReadAllBytes($"{ConfigData.GetCachePath()}/{Name}_{index}.png");
+                Texture2D texture = new Texture2D(size.x, size.y);
+                //texture.filterMode = FilterMode.Trilinear;
+                texture.LoadImage(bytes);
+                return Sprite.Create(texture, new Rect(0, 0, size.x, size.y), ConfigData.HalfSize, ConfigData.PixelsPerUnit);
+            }
+            catch (Exception e)
+            {
+                //Debug.Log($"Error while trying to load cached sprites: {e}");
+                return null;
+            }
+        }
+
+        public void SaveSpriteToCache(int index, Color[] pixels, Vector2Int size)
+        {
+            string path = $"{ConfigData.GetCachePath()}/{Name}_{index}.png";
+            Texture2D export = new Texture2D(size.x, size.y);
+            export.SetPixels(pixels);
+            export.Apply();
+            File.WriteAllBytes(path, export.EncodeToPNG());
+        }
         private void GetStats() // [tsv-calculation]
         {
             ShipStatBlock shipInfo = ConfigData.GetShipInfo(Type);
