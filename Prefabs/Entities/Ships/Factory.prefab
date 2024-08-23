@@ -36,6 +36,7 @@ Transform:
   - {fileID: 8176013163886005881}
   - {fileID: 4986995596194650240}
   - {fileID: 1069900024882800300}
+  - {fileID: 2633378955535754799}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!212 &2518675752222090673
@@ -55,9 +56,6 @@ SpriteRenderer:
   m_ReflectionProbeUsage: 1
   m_RayTracingMode: 0
   m_RayTraceProcedural: 0
-  m_RayTracingAccelStructBuildFlagsOverride: 0
-  m_RayTracingAccelStructBuildFlags: 1
-  m_SmallMeshCulling: 1
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
@@ -118,12 +116,17 @@ MonoBehaviour:
   OriginalTsv: 0
   Sight: 0
   AdditionalTsv: 0
+  Clearance: 0
+  MaxRange: 0
+  HalfMaxRange: 0
   ProjectileValue: 0
   Speed: 0
   SpecialFirePower: 0
+  CurrentSpeed: 0
   ShipExplosion: {fileID: 1876865744220396715, guid: 1f58b7947f208d944b8669f2e51a9a52, type: 3}
   HealthBar: {fileID: 7545895268169910673}
   MiniMapIcon: {fileID: 502349875739347533}
+  ShipAnimation: {fileID: 6945084972237979294}
   TargetCoordinates: {x: 0, y: 0}
   FinalDestination: {x: 0, y: 0}
   OffsetFromCenter: {x: 0, y: 0}
@@ -145,6 +148,9 @@ MonoBehaviour:
   IsMiningShip: 0
   IsWarpGate: 0
   HasTargetDirection: 0
+  HasVision: 0
+  HasProximityCollider: 0
+  HasShipAnimation: 0
   Weapons: []
   ProjectilePrefabs:
   - {fileID: 3911271517188601395, guid: 3da77696d01a3ea46b81fbca2a24e25d, type: 3}
@@ -154,36 +160,44 @@ MonoBehaviour:
   Brain: {fileID: 0}
   NearbyAsteroids: []
   Turrets: []
+  ProximityCollider: {fileID: 0}
+  ShipAnimationController: {fileID: 6514744015842366433}
   RotationSpeed: 0
-  HasVision: 0
-  TargetEnemy: {fileID: 0}
-  ShipCollider: {fileID: 7223834970426240026}
+  TargetEnemyShipToFollow: {fileID: 0}
+  IsCloseEnoughToTargetEnemyShipToFollow: 0
   PathfindingThreadComplete: 0
+  PathfindingThread: 0
   PrintDebugImage: 0
-  __PastCommands: []
-  __BannedStrats: []
   __Strategy: 
   __Squad: 
   __SquadStatus: 
   __CommandStatus: 
   __LastStopReason: 
+  __EnemySquad: 
+  __TargetEnemyShipToFollow: 
   __CommandDestination: {x: 0, y: 0}
   __Velocity: {x: 0, y: 0}
   __TargetCoordinates: {x: 0, y: 0}
   __Firepower: 0
   __DamagePerSecond: 0
+  __CurrentSpeed: 0
+  __DegreesToTargetCoordinates: 0
+  __DistanceToTargetCoordinates: 0
+  __TurningRadius: 0
   __Tsv: 0
   __CommandTsv: 0
-  __TargetShips: []
-  __SquadShips: []
-  __ShipsWithinRange: []
   __HasReachedDestination: 0
   __SquadHasReachedDestination: 0
-  __Enemy: 
-  __TargetEnemy: 
+  __WeaponTargetShips: []
+  __SquadShips: []
+  __NearbyShips: []
+  __ShipsWithinRangeOfWeapons: []
+  __PastCommands: []
+  __BannedStrats: []
   __DamageStatuses: []
   __CommandTargetingQueue: []
-  __CurrentSpeed: 0
+  __NearbyAsteroids: []
+  __HivemindShips: []
   Direction: 0
   ShouldDetonate: 0
   RLShootingStrategy: 
@@ -225,7 +239,6 @@ PolygonCollider2D:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2518675752222090675}
   m_Enabled: 1
-  serializedVersion: 3
   m_Density: 1
   m_Material: {fileID: 0}
   m_IncludeLayers:
@@ -249,8 +262,7 @@ PolygonCollider2D:
     m_Bits: 4294967295
   m_IsTrigger: 1
   m_UsedByEffector: 0
-  m_CompositeOperation: 0
-  m_CompositeOrder: 0
+  m_UsedByComposite: 0
   m_Offset: {x: 0, y: 0}
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -440,7 +452,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5341925016214729742, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_LocalPosition.y
-      value: -8
+      value: -9
       objectReference: {fileID: 0}
     - target: {fileID: 5341925016214729742, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_LocalPosition.z
@@ -505,6 +517,128 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 5341925016214729742, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
   m_PrefabInstance: {fileID: 4275425506592537207}
   m_PrefabAsset: {fileID: 0}
+--- !u!1001 &4538266888385183300
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 2518675752222090672}
+    m_Modifications:
+    - target: {fileID: 711389237945103311, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
+      propertyPath: m_SortingLayer
+      value: 7
+      objectReference: {fileID: 0}
+    - target: {fileID: 711389237945103311, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
+      propertyPath: m_SortingOrder
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 711389237945103311, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
+      propertyPath: m_SortingLayerID
+      value: -1489320777
+      objectReference: {fileID: 0}
+    - target: {fileID: 1905178246923622507, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1905178246923622507, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1905178246923622507, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1905178246923622507, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 1905178246923622507, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1905178246923622507, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1905178246923622507, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1905178246923622507, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1905178246923622507, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1905178246923622507, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6816985616580362458, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
+      propertyPath: m_Name
+      value: Factory Mining Animation
+      objectReference: {fileID: 0}
+    - target: {fileID: 6816985616580362458, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
+      propertyPath: m_IsActive
+      value: 1
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 6816985616580362458, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 6514744015842366433}
+  m_SourcePrefab: {fileID: 100100000, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
+--- !u!95 &592617283206699840 stripped
+Animator:
+  m_CorrespondingSourceObject: {fileID: 3945804149284103428, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
+  m_PrefabInstance: {fileID: 4538266888385183300}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &2633378955535754799 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 1905178246923622507, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
+  m_PrefabInstance: {fileID: 4538266888385183300}
+  m_PrefabAsset: {fileID: 0}
+--- !u!212 &3973429476835806603 stripped
+SpriteRenderer:
+  m_CorrespondingSourceObject: {fileID: 711389237945103311, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
+  m_PrefabInstance: {fileID: 4538266888385183300}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1 &6945084972237979294 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 6816985616580362458, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
+  m_PrefabInstance: {fileID: 4538266888385183300}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &6514744015842366433
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6945084972237979294}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 916b3015dbafec240b42e568be287247, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  SpriteRenderer: {fileID: 3973429476835806603}
+  Animator: {fileID: 592617283206699840}
+  Ship: {fileID: 6639458257436875518}
+  AnimationSpriteToRecolor: {fileID: 133110120, guid: ad7cd14d465132d4bac615c7c4626be7, type: 3}
+  CurrentSprite: {fileID: 0}
+  NamePrefix: factory_anim
+  PreviousSpriteName: 
+  RecoloredSprites: []
+  ShouldSwapSprite: 0
+  SpriteRows: 6
+  SpriteColumns: 9
+  SpriteIndex: 0
+  FramesChange: 0
+  StartTime: 0
 --- !u!1001 &6119731394242768119
 PrefabInstance:
   m_ObjectHideFlags: 0

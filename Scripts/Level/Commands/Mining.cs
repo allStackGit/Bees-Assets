@@ -13,9 +13,9 @@ namespace Assets.Scripts.Level.Commands
     public class Mining : Command
     {
         public MiningAsteroid TargetAstroid;
-        public int MiningRate = 750;
         public List<Ship> MiningShips;
         public List<Ship> ShipsMining = new List<Ship>();
+
         public void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy, MiningAsteroid asteroid)
         {
             if (asteroid != null)
@@ -24,6 +24,15 @@ namespace Assets.Scripts.Level.Commands
                 TargetAstroid = asteroid;
                 base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
                 PrepareDamageToSendEntries("closest");
+
+                // Check if any ships are already on the asteroid
+                Squad.GetShips().ForEach((ship) =>
+                {
+                    if (ship.Collider.IsTouching(TargetAstroid.Collider))
+                    {
+                        FoundAsteroid(ship);
+                    }
+                });
                 InvokeRepeating(nameof(MoveToAsteroid), 0, CommandFrequency);
                 if (IsHiveMindCommand)
                 {
@@ -54,6 +63,10 @@ namespace Assets.Scripts.Level.Commands
         public void FoundAsteroid(Ship ship)
         {
             ShipsMining.Add(ship);
+            if (ship.HasShipAnimation)
+            {
+                ship.ShipAnimation.SetActive(true);
+            }
             if (ShipsMining.Count == 1)
             {
                 InvokeRepeating(nameof(Mine), 0, 3);
@@ -75,7 +88,7 @@ namespace Assets.Scripts.Level.Commands
             if (ShipsMining.Count > 0)
             {
                 //Debug.Log($"There are {ShipsMining.Count} ships mining for {Squad.Name}");
-                int miningRate = MiningRate * ShipsMining.Count;
+                int miningRate = ConfigData.MiningRate * ShipsMining.Count;
                 int amountMined = miningRate;
                 if (TargetAstroid.Health < miningRate)
                 {
@@ -105,6 +118,13 @@ namespace Assets.Scripts.Level.Commands
             {
                 TargetAstroid.SquadsMining.Remove(Squad);
             }
+            Squad.GetShips().ForEach((ship) =>
+            {
+                if (ship.HasShipAnimation)
+                {
+                    ship.ShipAnimation.SetActive(false);
+                }
+            });
             base.SetFinalize(cause);
         }
         public void EndCommand()

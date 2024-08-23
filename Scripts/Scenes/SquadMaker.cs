@@ -672,7 +672,7 @@ namespace Assets.Scripts.Scenes
 
 
             // change the color of the icon
-            if (savedSquad.Color != ConfigData.UnsetColor)
+            if (savedSquad.HasCustomColor)
             {
                 //Debug.Log($"Setting changable pixels for {savedSquad.Name}");
                 UnityEngine.UI.Image squadIconImage = squadIconContainer.transform.GetChild(0).GetComponent<UnityEngine.UI.Image>();
@@ -711,7 +711,7 @@ namespace Assets.Scripts.Scenes
 
 
             // change the color of the icon
-            if (chosenSquad.Color != ConfigData.UnsetColor)
+            if (chosenSquad.HasCustomColor)
             {
                 //Debug.Log($"Setting changable pixels for {savedSquad.Name}");
                 UnityEngine.UI.Image squadIconImage = squadIconContainer.transform.GetChild(0).GetComponent<UnityEngine.UI.Image>();
@@ -759,7 +759,7 @@ namespace Assets.Scripts.Scenes
             //squadIconImage.transform.localScale = new Vector3(.1f, .1f, 0);
 
             // change the color of the icon
-            if (savedSquad.Color != ConfigData.UnsetColor)
+            if (savedSquad.HasCustomColor)
             {
                 int[] changeablePixels = Utilities.SetChangablePixelsForImage(ConfigData.ChangeableShipColors.GetValueOrDefault(shipType), squadIconImage.sprite);
                 squadIconImage.sprite = Utilities.SetImageColor(savedSquad.Color, squadIconImage.sprite, changeablePixels);

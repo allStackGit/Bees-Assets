@@ -18,7 +18,7 @@ namespace Assets.Scripts.Data
         public string Name;
         public Color Color;
         public Vector2 StartingPosition;
-        public bool CeaseFire, IsMatchingSpeed, HasBeenSavedToStorage;
+        public bool CeaseFire, IsMatchingSpeed, HasBeenSavedToStorage, HasCustomColor;
         public string ChosenShootingStrategy = ConfigData.StartingSettings.DefaultShootingStrategy;
         public SquadStatBlock Stats;
         private List<SquadShip> _ships = new List<SquadShip>();
@@ -50,6 +50,10 @@ namespace Assets.Scripts.Data
             if (Id > -1)
             {
                 HasBeenSavedToStorage = true;
+            }
+            if (Color != ConfigData.UnsetColor)
+            {
+                HasCustomColor = true;
             }
         }
 

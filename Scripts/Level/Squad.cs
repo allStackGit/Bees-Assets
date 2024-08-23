@@ -31,7 +31,7 @@ namespace Assets.Scripts.Level
         public Color SquadBoxColor;
         public SavedSquad SavedSquad;
         public GameObject SquadBox;
-        public bool HasMovedBox, IsMatchingSpeed, CeaseFire, HasAddedShips, IsShowingRanges, IsGrowingSquad;
+        public bool HasMovedBox, IsMatchingSpeed, CeaseFire, HasAddedShips, IsShowingRanges, IsGrowingSquad, HasCustomColor;
         /// <summary>
         /// A squad can be dead for one frame before it is destroyed. It's important to check for the death of a squad on anything run by a timer outside of the squad object
         /// </summary>
@@ -78,7 +78,6 @@ namespace Assets.Scripts.Level
         /// </summary>
         public bool HasReachedDestination => GetShips().All((s) => s.HasReachedDestination);
         public bool HasDestination => GetShips().Any((s) => s.HasTargetCoordinates);
-        public bool HasColor => Color != ConfigData.UnsetColor;
         public bool HasBrain => GetShips().All((s) => s.HasBrain);
         /// <summary>
         /// A squad is in combat if any of its ships are in combat. This is used for Matchup strategies that target squads that are in combat.
@@ -104,6 +103,17 @@ namespace Assets.Scripts.Level
             CeaseFire = ceaseFire;
             SetShootingStrategy(shootingStrategy);
             SetOpponent();
+
+            if (Color != ConfigData.UnsetColor)
+            {
+                HasCustomColor = true;
+                SquadBoxColor = new Color(Color.r, Color.g, Color.b, ConfigData.GetUIColor("squadbox-default-color").a);
+            }
+            else
+            {
+                SquadBoxColor = ConfigData.GetUIColor("squadbox-default-color");
+            }
+
             if (IsHiveMindControlled)
             {
                 AddToCommandList();
@@ -113,15 +123,6 @@ namespace Assets.Scripts.Level
                 //Debug.Log($"Squad: {Name}, Side: {Side}, HiveMindControlled: {IsHiveMindControlled}, Has Brain: {HasBrain}");
             }
 
-            if (HasColor)
-            {
-                //Debug.Log($"SDC: {ConfigData.GetUIColor("squadbox-default-color").a}");
-                SquadBoxColor = new Color(Color.r, Color.g, Color.b, ConfigData.GetUIColor("squadbox-default-color").a);
-            }
-            else
-            {
-                SquadBoxColor = ConfigData.GetUIColor("squadbox-default-color");
-            }
             transform.parent = Level.Map.transform;
 
             if (IsUserControlled)
@@ -1068,7 +1069,7 @@ namespace Assets.Scripts.Level
                 SquadBox.SetActive(true);
                 SquadBox.transform.localPosition = GetCenterPoint();
                 SquadBox.transform.localScale = new Vector3(GetWidth() + 1, GetHeight() + 1, 0);
-                if (HasColor)
+                if (HasCustomColor)
                 {
                     Utilities.SetUIColor(SquadBox, SquadBoxColor);
 

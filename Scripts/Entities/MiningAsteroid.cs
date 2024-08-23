@@ -10,25 +10,36 @@ namespace Assets.Scripts.Entities
     public class MiningAsteroid : Obstacle
     {
         public List<Squad> SquadsMining = new List<Squad>();
-        private void OnTriggerEnter2D(Collider2D collider)
+        protected override void OnTriggerEnter2D(Collider2D collider)
+        {
+            MiningCollision(collider);
+        }
+
+        public void MiningCollision(Collider2D collider)
         {
             //Debug.Log($"{Name} collided");
             GameObject collidingThing = collider.gameObject;
             if (collidingThing.CompareTag("Ship"))
             {
                 Ship ship = collidingThing.GetComponent<Ship>();
-                if (ship.IsMiningShip && ship.Squad?.Command?.Strategy.Name == "Mining" && ((Mining)ship.Squad?.Command).TargetAstroid == this)
+                if (ship.IsMiningShip && ship.Squad?.Command?.Strategy.Name == "Mining")
                 {
-                    //Debug.Log($"{ship.Name} is mining {Name}");
-                    if (!SquadsMining.Contains(ship.Squad))
+                    Mining command = ((Mining)ship.Squad?.Command);
+
+                    if (!command.ShipsMining.Contains(ship) && command.TargetAstroid == this)
                     {
-                        SquadsMining.Add(ship.Squad);
+                        //Debug.Log($"{ship.Name} is mining {Name}");
+                        if (!SquadsMining.Contains(ship.Squad))
+                        {
+                            SquadsMining.Add(ship.Squad);
+
+                        }
+                        command.FoundAsteroid(ship);
 
                     }
-                    ((Mining)ship.Squad?.Command).FoundAsteroid(ship);
+
                 }
             }
-            
         }
 
         public override void Kill()
@@ -36,9 +47,9 @@ namespace Assets.Scripts.Entities
             IsDead = true;
             SquadsMining.ForEach((squad) =>
             {
-                if (squad != null)
+                if (squad != null && squad.HasCommand)
                 {
-                    squad?.Command.SetFinalize("Mining asteroid was destroyed");
+                    squad.Command.SetFinalize("Mining asteroid was destroyed");
 
                 }
             });

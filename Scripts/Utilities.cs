@@ -293,24 +293,23 @@ namespace Assets.Scripts
             return indexes.ToArray();
         }
 
-        public static Sprite SetImageColor(Color color, Sprite sprite, int[] changablePixels)
+        public static Sprite SetImageColor(Color color, Sprite sprite, int[] changeablePixels)
         {
 
             Texture2D sourceTexture = sprite.texture;
-            Vector2 dimensions = new Vector2(sourceTexture.width, sourceTexture.height);
             Color[] pixels = sourceTexture.GetPixels();
 
 
-            for (int i = 0; i < changablePixels.Length; i++)
+            for (int i = 0; i < changeablePixels.Length; i++)
             {
-                pixels[changablePixels[i]] = color;
+                pixels[changeablePixels[i]] = color;
             }
             Texture2D changedTexture = new Texture2D(sourceTexture.width, sourceTexture.height);
 
             changedTexture.SetPixels(pixels);
             changedTexture.Apply(true);
             //Debug.Log($"width: {dimensions.x}, height: {dimensions.y}");
-            return Sprite.Create(changedTexture, new Rect(0, 0, sourceTexture.width, sourceTexture.height), (dimensions / dimensions) / 2, ConfigData.PixelsPerUnit);
+            return Sprite.Create(changedTexture, new Rect(0, 0, sourceTexture.width, sourceTexture.height), Vector2.one / 2, ConfigData.PixelsPerUnit);
         }
 
         public static Vector2 ForceBounds(float x, float y, float MaxX, float MaxY, float MinX, float MinY)

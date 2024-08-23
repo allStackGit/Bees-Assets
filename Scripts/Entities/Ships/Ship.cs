@@ -29,7 +29,7 @@ namespace Assets.Scripts.Entities.Ships
         public bool ShowDebug;
         public int Health, MaxHealth, OriginalHealth, OriginalTsv, Sight, AdditionalTsv, Clearance, MaxRange, HalfMaxRange;
         public float ProjectileValue, Speed, SpecialFirePower, CurrentSpeed;
-        public GameObject ShipExplosion, HealthBar, MiniMapIcon;
+        public GameObject ShipExplosion, HealthBar, MiniMapIcon, ShipAnimation;
         public Vector2 TargetCoordinates, FinalDestination, OffsetFromCenter; // the coordinates of where the ship should go, and it's offset from the center of the squad
         public Squad Squad;
         public float DefaultAngle, TargetDirection;
@@ -42,7 +42,7 @@ namespace Assets.Scripts.Entities.Ships
         /// A ship can be killed at some point of the frame and still exist until the end of the frame. Check this to see if a ship is dead but not yet destroyed.
         /// </summary>
         public bool IsDead;
-        public bool HasBrain, IsMinionShip, HasTargetCoordinates, IsMiningShip, IsWarpGate, HasTargetDirection, HasVision, HasProximityCollider;
+        public bool HasBrain, IsMinionShip, HasTargetCoordinates, IsMiningShip, IsWarpGate, HasTargetDirection, HasVision, HasProximityCollider, HasShipAnimation;
         public List<Weapon> Weapons;
         public List<GameObject> ProjectilePrefabs, WeaponPrefabs, ColoredPrefabs;
         public Brain Brain = null;
@@ -53,6 +53,10 @@ namespace Assets.Scripts.Entities.Ships
         /// Used to detect other ships near this ship if this ship doesn't have a ranged weapon. Used on Strikers, Fire Barges, and Yellow Jackets to detect when they're near targets
         /// </summary>
         public ShipProximityCollider ProximityCollider;
+        /// <summary>
+        /// Controls the animation and recoloring of sprites if the ship has an animation
+        /// </summary>
+        public ShipAnimationController ShipAnimationController;
         //public Stack<Vector2> PastLocations = new Stack<Vector2>();
         public float RotationSpeed;
         /// <summary>
@@ -174,6 +178,8 @@ namespace Assets.Scripts.Entities.Ships
             __TurningRadius = ConfigData.ShipTurningRadius;
             __NearbyShips = HasProximityCollider ? ProximityCollider.NearbyShips.ToList() : new List<Ship>();
             __HivemindShips = Level.GetState().GetShipsVisibleToHiveMind(Side).Select(s => s.ToString()).ToList();
+
+
             //__PastLocations = PastLocations.ToList();
             //AverageReward = AverageRewardSum / Actions;
             //AverageRandomReward = AverageRandomRewardSum / RandomActions;
@@ -224,7 +230,7 @@ namespace Assets.Scripts.Entities.Ships
             _healthBarFiller = HealthBar.transform.GetChild(0);
             _healthBarFillerSprite = HealthBar.transform.GetChild(0).GetComponent<SpriteRenderer>();
 
-            if (squad.Color != ConfigData.UnsetColor)
+            if (squad.HasCustomColor)
             {
                 Utilities.SetUIColor(MiniMapIcon, squad.Color);
             }
@@ -346,6 +352,14 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 ProximityCollider.Setup(this, Sight);
                 HasProximityCollider = true;
             }
+            if (ShipAnimation != null && !Level.IsTrainingHiveMind && !Level.IsTrainingNueralNetwork)
+            {
+                HasShipAnimation = true;
+                if (Squad.HasCustomColor)
+                {
+                    ShipAnimationController.RecolorAnimationSprites();
+                }
+            }
 
 
 
@@ -427,7 +441,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         public void SetColor()
         {
             // set the color
-            if (Squad.Color != ConfigData.UnsetColor)
+            if (Squad.HasCustomColor)
             {
                 //Debug.Log("Setting sprite for ship");
                 ColoredPrefabs.Add(gameObject);
@@ -437,10 +451,14 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     Sprite shipIcon = prefab.GetComponent<SpriteRenderer>().sprite;
                     int[] changeablePixels = Utilities.SetChangablePixelsForImage(colors, shipIcon);
                     prefab.GetComponent<SpriteRenderer>().sprite = Utilities.SetImageColor(Squad.Color, shipIcon, changeablePixels);
+
+                    string path = $"{ConfigData.GetBasePath()}/debug/{Name}.png";
+                    File.WriteAllBytes(path, prefab.GetComponent<SpriteRenderer>().sprite.texture.EncodeToPNG());
                 });
                
             }
         }
+
         public void SetSquadName()
         {
             // Set the name of the ships with the Squad name
@@ -694,7 +712,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         }
         public void SetMovementVelocity()
         {
-            float maxSpeed = CurrentSpeed;
+            float maxSpeed = Level.IsDebugging ? CurrentSpeed * Level.SpeedMultiplier : CurrentSpeed;
 
             // Set the velocity of the ship
             float rotation;

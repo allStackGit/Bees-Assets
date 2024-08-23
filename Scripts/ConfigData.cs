@@ -167,6 +167,7 @@ namespace Assets.Scripts
         public const float OffsetFromFront = .35f;
         public const float FireShipExplosionSize = 64;
         public const float RefillDistanceToCarrier = 10;
+        public const int MiningRate = 750;
         public static float ShipTurningRadius; 
         public static List<Scene> Scenes = new List<Scene>();
         public static Scene SocketManager;
@@ -181,7 +182,7 @@ namespace Assets.Scripts
 
         public static int ScreenWidth = Screen.width;
         public static int ScreenHeight = Screen.height;
-        public static int PixelsPerUnit = 40;
+        public const int PixelsPerUnit = 40;
         /// <summary>
         /// How much padding to put on the edges of the map and stop units from moving there.
         /// </summary>
