@@ -24,7 +24,7 @@ namespace Assets.Scripts.Entities.Ships
                 hasLoadedCachedSprites = true;
                 for (int i = 0; i < RecoloredSprites.Length && hasLoadedCachedSprites; i++)
                 {
-                    RecoloredSprites[i] = Ship.FleetShip.LoadCachedSprite(i, ConfigData.ShipSizes[Ship.ShipType]);
+                    RecoloredSprites[i] = Ship.FleetShip.LoadCachedSprite(i+1, ConfigData.ShipSizes[Ship.ShipType]); // skips the first sprite because that's the base sprite
                     if (RecoloredSprites[i] == null)
                     {
                         hasLoadedCachedSprites = false;

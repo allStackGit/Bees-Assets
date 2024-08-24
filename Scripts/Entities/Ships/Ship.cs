@@ -451,7 +451,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 //Debug.Log("Setting sprite for ship");
                 float start = Time.realtimeSinceStartup;
                 string status = "Loading";
-                ColoredPrefabs.Add(gameObject);
+                ColoredPrefabs.Insert(0, gameObject);
                 Color[] colors = ConfigData.ChangeableShipColors.GetValueOrDefault(ShipType);
                 int index = 0;
                 ColoredPrefabs.ForEach((prefab) =>
