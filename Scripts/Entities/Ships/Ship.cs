@@ -476,27 +476,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                         int[] changeablePixels = Utilities.SetChangablePixelsForImage(colors, shipIcon);
                         Sprite recolored = Utilities.SetImageColor(Squad.Color, shipIcon, changeablePixels);
                         prefab.GetComponent<SpriteRenderer>().sprite = recolored;
-
-                        if (!IsSpawnedShip)
-                        {
-                            status += " and saving";
-                            bool hasCachedSprite = false;
-                            try
-                            {
-                                FleetShip.SaveSpriteToCache(index, recolored.texture.GetPixels(), size);
-                                hasCachedSprite = true;
-                            }
-                            catch (Exception e)
-                            {
-                                Debug.Log($"Error while trying to save cached sprites for {FleetShip.Name}: {e}");
-                            }
-                            if (index == 0 && hasCachedSprite)
-                            {
-                                FleetShip.HasCachedSprite = true;
-                                ConfigData.AllShips.SaveFleetData();
-                            }
-                        }
-
                     }
                     index++;
                 });

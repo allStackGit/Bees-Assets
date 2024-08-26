@@ -67,7 +67,7 @@ namespace Assets.Scripts.Data
             Texture2D export = new Texture2D(size.x, size.y);
             export.SetPixels(pixels);
             export.Apply();
-            File.WriteAllBytes(path, export.EncodeToPNG());
+            File.WriteAllBytesAsync(path, export.EncodeToPNG());
         }
         private void GetStats() // [tsv-calculation]
         {

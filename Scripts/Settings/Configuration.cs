@@ -54,10 +54,12 @@ namespace Assets.Scripts.Settings
         public string NoChosenSquadsAlertTitle;
         public string ChoosingUnsavedSquadAlertTitle;
         public string ChoosingDeadSquadAlertTitle;
+        public string SquadSavingStatusAlertTitle;
         public string OverCapacityAlert;
         public string NoChosenSquadsAlert;
         public string ChoosingUnsavedSquadAlert;
         public string ChoosingDeadSquadAlert;
+        public string SquadSavingStatusAlert;
 
 
         // [alert] Should probably be based off of user progress at some point
@@ -128,10 +130,13 @@ namespace Assets.Scripts.Settings
             NoChosenSquadsAlertTitle = (string)so.NoChosenSquadsAlertTitle;
             ChoosingUnsavedSquadAlertTitle = (string)so.ChoosingUnsavedSquadAlertTitle;
             ChoosingDeadSquadAlertTitle = (string)so.ChoosingDeadSquadAlertTitle;
+            SquadSavingStatusAlertTitle = (string)so.SquadSavingStatusAlertTitle;
             OverCapacityAlert = (string)so.OverCapacityAlert;
             NoChosenSquadsAlert = (string)so.NoChosenSquadsAlert;
             ChoosingUnsavedSquadAlert = (string)so.ChoosingUnsavedSquadAlert;
             ChoosingDeadSquadAlert = (string)so.ChoosingDeadSquadAlert;
+            SquadSavingStatusAlert = (string)so.SquadSavingStatusAlert;
+
 
             if (MaxSquadWidth == -1)
             {

@@ -58,7 +58,7 @@ namespace Assets.Scripts.Scenes
             SquadShipCount, SquadShipCountLabel, SquadColorLabel, SquadColorPickerButton, NextButton, StartButton, OpposingForceLabel, OpposingForcePresetDropdown;
 
         public Dialogue DeleteSquadConfirmation, ClearSquadConfirmation, LoadSquadConfirmation, ChooseSquadConfirmation, UnchooseSquadConfirmation, OverCapacityAlert, NoChosenSquadsAlert,
-            ChoosingUnsavedSquadAlert, ChoosingDeadSquadAlert, GoBackConfirmation;
+            ChoosingUnsavedSquadAlert, ChoosingDeadSquadAlert, GoBackConfirmation, SquadSavingStatus;
 
         public Sprite
             BargeSprite, CarrierSprite, CruiserSprite, DreadnoughtSprite, DroneSprite, FactorySprite, FireShipSprite, FlagshipSprite, FrigateSprite,
@@ -69,7 +69,7 @@ namespace Assets.Scripts.Scenes
 
         public Sprite
             BargeGameSprite, CarrierGameSprite, CruiserGameSprite, CruiserCannonGameSprite, DreadnoughtGameSprite, FactoryGameSprite, FactoryAnimationSprite, FireShipGameSprite, FlagshipGameSprite, FrigateGameSprite,
-            GunshipGameSprite, ScoutGameSprite, WarpGateGameSprite, WarpGateAnimationSprite;
+            GunshipGameSprite, ScoutGameSprite, WarpGateGameSprite, WarpGateAnimationSprite, WarpGateAnimationLoopSprite;
 
         public Canvas DragCanvas;
         public Vector2 TooltipOffset, ShipStatsBoxOffset, ScreenScaleFactor, ReferenceScreenSize;
@@ -197,6 +197,9 @@ namespace Assets.Scripts.Scenes
             ChoosingDeadSquadAlert = new Alert(DialoguePrefab, ConfigData.Configuration.ChoosingDeadSquadAlertTitle, ConfigData.Configuration.ChoosingDeadSquadAlert,
                ConfigData.Configuration.OK);
 
+            SquadSavingStatus = new Dialogue(DialoguePrefab, ConfigData.Configuration.SquadSavingStatusAlertTitle, ConfigData.Configuration.SquadSavingStatusAlert,
+               new List<string>(), new List<UnityAction>());
+
             // setup for Bees and Humans
             if (Side == ConfigData.Configuration.BeeSide)
             {
@@ -231,7 +234,7 @@ namespace Assets.Scripts.Scenes
             _shipPartSprites["Gunship"] = new List<Sprite> { GunshipGameSprite };
             _shipPartSprites["Scout"] = new List<Sprite> { ScoutGameSprite };
             //_shipPartSprites["Striker"] = new List<Sprite> { StrikerGameSprite }; // no striker because we won't be caching sprites for carrier ships
-            _shipPartSprites["Warp Gate"] = new List<Sprite> { WarpGateGameSprite, WarpGateAnimationSprite };
+            _shipPartSprites["Warp Gate"] = new List<Sprite> { WarpGateGameSprite, WarpGateAnimationSprite, WarpGateAnimationLoopSprite };
             
             // No bee sprites because those don't change colors
 
@@ -1029,7 +1032,8 @@ namespace Assets.Scripts.Scenes
             AddSavedSquadToList(ConfigData.AllShips.GetSavedSquads().Last());
 
             ConfigData.AllShips.SaveSquadData();
-            StartCoroutine(CacheSquadCustomSprites(true, (SavedSquad)_currentSquad.Clone()));
+            SquadSavingStatus.Show();
+            StartCoroutine(Utilities.CacheSquadCustomSprites((SavedSquad)_currentSquad.Clone(), _shipPartSprites, SquadSavingStatus));
             ClearUnsavedSquad();
 
 
@@ -1045,120 +1049,13 @@ namespace Assets.Scripts.Scenes
             savedSquads[replacementIndex] = (SavedSquad)_currentSquad.Clone();
 
             ConfigData.AllShips.SaveSquadData();
-            StartCoroutine(CacheSquadCustomSprites(oldSavedSquad.Color != _currentSquad.Color, (SavedSquad)_currentSquad.Clone()));
-            ClearUnsavedSquad();
-        }
-        public IEnumerator CacheSquadCustomSprites(bool newColor, SavedSquad squad)
-        {
-            float start = Time.realtimeSinceStartup;
-            if (squad.HasCustomColor)
+            if (oldSavedSquad.Color != _currentSquad.Color || oldSavedSquad.GetShips().Count != _currentSquad.GetShips().Count || 
+                oldSavedSquad.GetShips().Any((s) => _currentSquad.GetShip(s.GetFleetShip().Id) == null))
             {
-                Debug.Log($"Saving custom color ({squad.Color}) sprites for {squad.Name}");
-
-                List<SquadShip> squadShips = squad.GetShips();
-                for (int i = 0; i < squadShips.Count; i++)
-                {
-                    SquadShip squadShip = squadShips[i];
-                    if (!squadShip.GetFleetShip().HasCachedSprite || newColor)
-                    {
-                        Color[] colors = ConfigData.ChangeableShipColors.GetValueOrDefault(squadShip.ShipType);
-                        int index = 0;
-
-                        List<Sprite> sprites = _shipPartSprites[squadShip.ShipType];
-
-                        for (int j = 0; j < sprites.Count; j++)
-                        {
-                            Sprite sprite = sprites[j];
-
-                            if ((squadShip.ShipType == "Factory" || squadShip.ShipType == "Warp Gate") && index > 0)
-                            {
-                                yield return ConfigData.WaitForEndOfFrame;
-                                int[] changeablePixels = Utilities.SetChangablePixelsForImage(colors, sprite);
-
-                                Texture2D sourceTexture = sprite.texture;
-                                Color[] pixels = sourceTexture.GetPixels();
-
-
-                                for (int p = 0; p < changeablePixels.Length; p++)
-                                {
-                                    pixels[changeablePixels[p]] = squad.Color;
-                                }
-                                Texture2D changedTexture = new Texture2D(sourceTexture.width, sourceTexture.height);
-
-                                changedTexture.SetPixels(pixels);
-                                yield return ConfigData.WaitForEndOfFrame;
-                                changedTexture.Apply(true);
-
-                                Vector2Int size = ConfigData.ShipSizes[squadShip.ShipType];
-                                int spriteRows = sourceTexture.height / size.y;
-                                int spriteColumns = sourceTexture.width / size.x;
-                                //Debug.Log($"Each sprite is {widthPerUnit} wide and {heightPerUnit} tall for a total width of {widthPerUnit * SpriteColumns} and total height of {heightPerUnit * SpriteRows}");
-
-                                for (int y = 0; y < spriteRows; y++)
-                                {
-                                    for (int x = 0; x < spriteColumns; x++)
-                                    {
-                                        Sprite recolored = Sprite.Create(changedTexture, new Rect(size.x * x, (sourceTexture.height - size.y * y) - size.y, size.x, size.y), ConfigData.HalfSize, ConfigData.PixelsPerUnit);
-                                        //RecoloredSprites[count].name = $"{NamePrefix}_C_{count}";
-
-                                        bool hasCachedSprite = false;
-                                        try
-                                        {
-                                            squadShip.GetFleetShip().SaveSpriteToCache(index, recolored.texture.GetPixels(size.x * x, (sourceTexture.height - size.y * y) - size.y, size.x, size.y), size);
-                                            hasCachedSprite = true;
-                                        }
-                                        catch (Exception e)
-                                        {
-                                            Debug.Log($"Error while trying to save cached sprites: {e}");
-                                        }
-                                        if (index == 0 && hasCachedSprite)
-                                        {
-                                            squadShip.GetFleetShip().HasCachedSprite = true;
-                                        }
-                                        index++;
-                                        yield return ConfigData.WaitForEndOfFrame;
-                                    }
-
-                                }
-                            }
-                            else
-                            {
-                                Vector2Int size = new Vector2Int(sprite.texture.width, sprite.texture.height);
-
-                                int[] changeablePixels = Utilities.SetChangablePixelsForImage(colors, sprite);
-                                yield return ConfigData.WaitForEndOfFrame;
-                                Sprite recolored = Utilities.SetImageColor(squad.Color, sprite, changeablePixels);
-                                yield return ConfigData.WaitForEndOfFrame;
-                                bool hasCachedSprite = false;
-                                try
-                                {
-                                    squadShip.GetFleetShip().SaveSpriteToCache(index, recolored.texture.GetPixels(), size);
-                                    hasCachedSprite = true;
-                                }
-                                catch (Exception e)
-                                {
-                                    Debug.Log($"Error while trying to save cached sprites for {squadShip.GetFleetShip().Name}: {e}");
-                                }
-                                if (index == 0 && hasCachedSprite)
-                                {
-                                    squadShip.GetFleetShip().HasCachedSprite = true;
-                                }
-
-                                index++;
-                                yield return ConfigData.WaitForEndOfFrame;
-                            }
-                            yield return ConfigData.WaitForEndOfFrame;
-                        }
-
-                    }
-                    yield return ConfigData.WaitForEndOfFrame;
-                }
-
-                ConfigData.AllShips.SaveFleetData();
+                SquadSavingStatus.Show();
+                StartCoroutine(Utilities.CacheSquadCustomSprites((SavedSquad)_currentSquad.Clone(), _shipPartSprites, SquadSavingStatus));
             }
-
-            Debug.Log($"Drawing and saving sprites for {squad.Name} took {(Time.realtimeSinceStartup - start)}s");
-
+            ClearUnsavedSquad();
         }
         public void LoadSquad()
         {

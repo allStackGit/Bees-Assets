@@ -140,6 +140,7 @@ MonoBehaviour:
   InCombat: 0
   IsFollowingPath: 0
   CannotChangeMovementOrders: 0
+  IsSpawnedShip: 0
   Vision: {fileID: 4240275595467896158}
   IsDead: 0
   HasBrain: 0
@@ -529,14 +530,6 @@ PrefabInstance:
       propertyPath: m_SortingLayer
       value: 7
       objectReference: {fileID: 0}
-    - target: {fileID: 711389237945103311, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
-      propertyPath: m_SortingOrder
-      value: 2
-      objectReference: {fileID: 0}
-    - target: {fileID: 711389237945103311, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
-      propertyPath: m_SortingLayerID
-      value: -1489320777
-      objectReference: {fileID: 0}
     - target: {fileID: 1905178246923622507, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0
@@ -585,34 +578,28 @@ PrefabInstance:
       propertyPath: m_IsActive
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 7246903793567100325, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
+      propertyPath: Ship
+      value: 
+      objectReference: {fileID: 6639458257436875518}
+    - target: {fileID: 7246903793567100325, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
+      propertyPath: TotalSprites
+      value: 54
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents:
-    - targetCorrespondingSourceObject: {fileID: 6816985616580362458, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
-      insertIndex: -1
-      addedObject: {fileID: 6514744015842366433}
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
 --- !u!4 &2633378955535754799 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 1905178246923622507, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
   m_PrefabInstance: {fileID: 4538266888385183300}
   m_PrefabAsset: {fileID: 0}
---- !u!212 &3973429476835806603 stripped
-SpriteRenderer:
-  m_CorrespondingSourceObject: {fileID: 711389237945103311, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
-  m_PrefabInstance: {fileID: 4538266888385183300}
-  m_PrefabAsset: {fileID: 0}
---- !u!1 &6945084972237979294 stripped
-GameObject:
-  m_CorrespondingSourceObject: {fileID: 6816985616580362458, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
-  m_PrefabInstance: {fileID: 4538266888385183300}
-  m_PrefabAsset: {fileID: 0}
---- !u!114 &6514744015842366433
+--- !u!114 &6514744015842366433 stripped
 MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
+  m_CorrespondingSourceObject: {fileID: 7246903793567100325, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
+  m_PrefabInstance: {fileID: 4538266888385183300}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 6945084972237979294}
   m_Enabled: 1
@@ -620,15 +607,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 916b3015dbafec240b42e568be287247, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  SpriteRenderer: {fileID: 3973429476835806603}
-  Ship: {fileID: 6639458257436875518}
-  AnimationSpriteToRecolor: {fileID: 133110120, guid: ad7cd14d465132d4bac615c7c4626be7, type: 3}
-  CurrentSprite: {fileID: 0}
-  RecoloredSprites: []
-  ShouldSwapSprite: 0
-  SpriteRows: 6
-  SpriteColumns: 9
-  SpriteIndex: 0
+--- !u!1 &6945084972237979294 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 6816985616580362458, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
+  m_PrefabInstance: {fileID: 4538266888385183300}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &6119731394242768119
 PrefabInstance:
   m_ObjectHideFlags: 0

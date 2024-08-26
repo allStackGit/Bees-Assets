@@ -3,6 +3,7 @@ using Assets.Scripts.Data;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Scenes;
+using Assets.Scripts.UI_Components;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections;
@@ -291,6 +292,120 @@ namespace Assets.Scripts
 
 
             return indexes.ToArray();
+        }
+
+        public static IEnumerator CacheSquadCustomSprites(SavedSquad squad, Dictionary<string, List<Sprite>> shipPartSprites, Dialogue dialogue = null)
+        {
+            float start = Time.realtimeSinceStartup;
+            if (squad.HasCustomColor)
+            {
+                Debug.Log($"Saving custom color ({squad.Color}) sprites for {squad.Name}");
+
+                List<SquadShip> squadShips = squad.GetShips();
+                for (int i = 0; i < squadShips.Count; i++)
+                {
+                    SquadShip squadShip = squadShips[i];
+
+                    Color[] colors = ConfigData.ChangeableShipColors.GetValueOrDefault(squadShip.ShipType);
+                    int index = 0;
+
+                    List<Sprite> sprites = shipPartSprites[squadShip.ShipType];
+                    for (int j = 0; j < sprites.Count; j++)
+                    {
+                        Sprite sprite = sprites[j];
+                        //Debug.Log($"The current sprite is {sprite.name} which is {j} / {shipPartSprites[squadShip.ShipType].Count} for {squadShip.ShipType}");
+
+
+                        if ((squadShip.ShipType == "Factory" || squadShip.ShipType == "Warp Gate") && index > 0)
+                        {
+                            int[] changeablePixels = SetChangablePixelsForImage(colors, sprite);
+                            yield return ConfigData.WaitForEndOfFrame;
+                            Texture2D sourceTexture = sprite.texture;
+                            Color[] pixels = sourceTexture.GetPixels();
+                            yield return ConfigData.WaitForEndOfFrame;
+                            for (int p = 0; p < changeablePixels.Length; p++)
+                            {
+                                pixels[changeablePixels[p]] = squad.Color;
+                            }
+                            Texture2D changedTexture = new Texture2D(sourceTexture.width, sourceTexture.height);
+                            yield return ConfigData.WaitForEndOfFrame;
+                            changedTexture.SetPixels(pixels);
+                            //yield return ConfigData.WaitForEndOfFrame;
+                            //changedTexture.Apply(true);
+                            //yield return ConfigData.WaitForEndOfFrame;
+
+                            Vector2Int size = ConfigData.ShipSizes[squadShip.ShipType];
+                            int spriteRows = sourceTexture.height / size.y;
+                            int spriteColumns = sourceTexture.width / size.x;
+                            //Debug.Log($"Each sprite is {size.x} wide and {size.y} tall for a total width of {size.x * spriteColumns} and total height of {size.y * spriteRows} with a source " +
+                                //$"texture size of {sourceTexture.width} x {sourceTexture.height}");
+
+                            for (int y = 0; y < spriteRows; y++)
+                            {
+                                for (int x = 0; x < spriteColumns; x++)
+                                {
+                                    Sprite recolored = Sprite.Create(changedTexture, new Rect(size.x * x, (sourceTexture.height - size.y * y) - size.y, size.x, size.y), ConfigData.HalfSize, ConfigData.PixelsPerUnit);
+                                    //RecoloredSprites[count].name = $"{NamePrefix}_C_{count}";
+                                    yield return ConfigData.WaitForEndOfFrame;
+                                    bool hasCachedSprite = false;
+                                    try
+                                    {
+                                        squadShip.GetFleetShip().SaveSpriteToCache(index, recolored.texture.GetPixels(size.x * x, (sourceTexture.height - size.y * y) - size.y, size.x, size.y), size);
+                                        hasCachedSprite = true;
+                                    }
+                                    catch (Exception e)
+                                    {
+                                        Debug.Log($"Error while trying to save cached sprites: {e}");
+                                    }
+                                    if (index == 0 && hasCachedSprite)
+                                    {
+                                        squadShip.GetFleetShip().HasCachedSprite = true;
+                                    }
+                                    index++;
+                                    yield return ConfigData.WaitForEndOfFrame;
+                                }
+
+                            }
+                        }
+                        else
+                        {
+                            Vector2Int size = new Vector2Int(sprite.texture.width, sprite.texture.height);
+
+                            int[] changeablePixels = Utilities.SetChangablePixelsForImage(colors, sprite);
+                            yield return ConfigData.WaitForEndOfFrame;
+                            Sprite recolored = Utilities.SetImageColor(squad.Color, sprite, changeablePixels);
+                            yield return ConfigData.WaitForEndOfFrame;
+                            bool hasCachedSprite = false;
+                            try
+                            {
+                                squadShip.GetFleetShip().SaveSpriteToCache(index, recolored.texture.GetPixels(), size);
+                                hasCachedSprite = true;
+                            }
+                            catch (Exception e)
+                            {
+                                Debug.Log($"Error while trying to save cached sprites for {squadShip.GetFleetShip().Name}: {e}");
+                            }
+                            if (index == 0 && hasCachedSprite)
+                            {
+                                squadShip.GetFleetShip().HasCachedSprite = true;
+                            }
+                            index++;
+                            yield return ConfigData.WaitForEndOfFrame;
+                        }
+                        yield return ConfigData.WaitForEndOfFrame;
+                    }
+
+                    yield return ConfigData.WaitForEndOfFrame;
+                }
+                yield return ConfigData.WaitForEndOfFrame;
+                ConfigData.AllShips.SaveFleetData();
+            }
+
+            Debug.Log($"Drawing and saving sprites for {squad.Name} took {(Time.realtimeSinceStartup - start)}s");
+            if (dialogue != null)
+            {
+                dialogue.Hide();
+            }
         }
 
         public static Sprite SetImageColor(Color color, Sprite sprite, int[] changeablePixels)
