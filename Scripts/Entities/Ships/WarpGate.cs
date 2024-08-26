@@ -1,4 +1,5 @@
 ﻿using Assets.Scripts.Level;
+using System.Collections.Generic;
 using System.Linq;
 
 using UnityEngine;
@@ -7,6 +8,9 @@ namespace Assets.Scripts.Entities.Ships
 {
     public class WarpGate : Ship
     {
+
+        public HashSet<Ship> ShipsWarpingHere = new HashSet<Ship>();
+
         public void OnTriggerEnter2D(Collider2D collider)
         {
             if (collider.gameObject.CompareTag("Ship"))

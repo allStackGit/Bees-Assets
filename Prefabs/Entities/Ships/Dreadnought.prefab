@@ -58,9 +58,6 @@ SpriteRenderer:
   m_ReflectionProbeUsage: 1
   m_RayTracingMode: 0
   m_RayTraceProcedural: 0
-  m_RayTracingAccelStructBuildFlagsOverride: 0
-  m_RayTracingAccelStructBuildFlags: 1
-  m_SmallMeshCulling: 1
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
@@ -121,12 +118,17 @@ MonoBehaviour:
   OriginalTsv: 0
   Sight: 0
   AdditionalTsv: 0
+  Clearance: 0
+  MaxRange: 0
+  HalfMaxRange: 0
   ProjectileValue: 0
   Speed: 0
   SpecialFirePower: 0
+  CurrentSpeed: 0
   ShipExplosion: {fileID: 1876865744220396715, guid: 1f58b7947f208d944b8669f2e51a9a52, type: 3}
   HealthBar: {fileID: 4465200139623341389}
   MiniMapIcon: {fileID: 6871297314355346790}
+  ShipAnimation: {fileID: 0}
   TargetCoordinates: {x: 0, y: 0}
   FinalDestination: {x: 0, y: 0}
   OffsetFromCenter: {x: 0, y: 0}
@@ -140,6 +142,7 @@ MonoBehaviour:
   InCombat: 0
   IsFollowingPath: 0
   CannotChangeMovementOrders: 0
+  IsSpawnedShip: 0
   Vision: {fileID: 7932026909937350217}
   IsDead: 0
   HasBrain: 0
@@ -148,43 +151,57 @@ MonoBehaviour:
   IsMiningShip: 0
   IsWarpGate: 0
   HasTargetDirection: 0
+  HasVision: 0
+  HasProximityCollider: 0
+  HasShipAnimation: 0
   Weapons: []
   ProjectilePrefabs:
-  - {fileID: 6428638681076635372, guid: c5d2fa5f5d52d0d4b855fdc29fca6e90, type: 3}
+  - {fileID: 3911271517188601395, guid: 3da77696d01a3ea46b81fbca2a24e25d, type: 3}
   WeaponPrefabs:
   - {fileID: 7126564882376213843}
   ColoredPrefabs: []
   Brain: {fileID: 0}
   NearbyAsteroids: []
   Turrets: []
+  ProximityCollider: {fileID: 0}
+  ShipAnimationController: {fileID: 0}
   RotationSpeed: 0
-  HasVision: 0
-  TargetEnemy: {fileID: 0}
-  ShipCollider: {fileID: 3900632696964081159}
-  __PastCommands: []
-  __BannedStrats: []
+  TargetEnemyShipToFollow: {fileID: 0}
+  IsCloseEnoughToTargetEnemyShipToFollow: 0
+  PathfindingThreadComplete: 0
+  PathfindingThread: 0
+  PrintDebugImage: 0
   __Strategy: 
   __Squad: 
   __SquadStatus: 
   __CommandStatus: 
   __LastStopReason: 
+  __EnemySquad: 
+  __TargetEnemyShipToFollow: 
   __CommandDestination: {x: 0, y: 0}
   __Velocity: {x: 0, y: 0}
   __TargetCoordinates: {x: 0, y: 0}
   __Firepower: 0
   __DamagePerSecond: 0
+  __CurrentSpeed: 0
+  __DegreesToTargetCoordinates: 0
+  __DistanceToTargetCoordinates: 0
+  __TurningRadius: 0
   __Tsv: 0
   __CommandTsv: 0
-  __TargetShips: []
-  __SquadShips: []
-  __ShipsWithinRange: []
   __HasReachedDestination: 0
   __SquadHasReachedDestination: 0
-  __Enemy: 
-  __TargetEnemy: 
+  __WeaponTargetShips: []
+  __SquadShips: []
+  __NearbyShips: []
+  __ShipsWarpingHere: []
+  __ShipsWithinRangeOfWeapons: []
+  __PastCommands: []
+  __BannedStrats: []
   __DamageStatuses: []
   __CommandTargetingQueue: []
-  __CurrentSpeed: 0
+  __NearbyAsteroids: []
+  __HivemindShips: []
   Direction: 0
   ShouldDetonate: 0
   RLShootingStrategy: 
@@ -226,7 +243,6 @@ PolygonCollider2D:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 4765992002712767473}
   m_Enabled: 1
-  serializedVersion: 3
   m_Density: 1
   m_Material: {fileID: 0}
   m_IncludeLayers:
@@ -250,8 +266,7 @@ PolygonCollider2D:
     m_Bits: 4294967295
   m_IsTrigger: 1
   m_UsedByEffector: 0
-  m_CompositeOperation: 0
-  m_CompositeOrder: 0
+  m_UsedByComposite: 0
   m_Offset: {x: 0, y: 0}
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}

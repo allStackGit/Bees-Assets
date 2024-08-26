@@ -46,7 +46,7 @@ namespace Assets.Scripts.Entities.Projectiles
                 if (!obstacle.IsMapBorder)
                 {
                     //Debug.Log($"{Name} hit {obstacle.Name}");
-                    DamageObstacle(obstacle);
+                    //DamageObstacle(obstacle);
                 }
                 Kill();
 

@@ -650,7 +650,7 @@ namespace Assets.Scripts.Level
 
             while (loops < 100)
             {
-                Debug.Log($"Trying to find NWP for #{threadIndex}:{Ships[threadIndex].Name} and on loop #{loops}");
+                //Debug.Log($"Trying to find NWP for #{threadIndex}:{Ships[threadIndex].Name} and on loop #{loops}");
                 loops++;
 
                 if (n.Clearance >= minimumClearance)

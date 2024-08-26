@@ -132,7 +132,7 @@ namespace Assets.Scripts.Entities.Ships
         public float __Firepower, __DamagePerSecond, __CurrentSpeed, __DegreesToTargetCoordinates, __DistanceToTargetCoordinates, __TurningRadius;
         public long __Tsv, __CommandTsv;
         public bool __HasReachedDestination, __SquadHasReachedDestination;
-        public List<Ship> __WeaponTargetShips, __SquadShips, __NearbyShips;
+        public List<Ship> __WeaponTargetShips, __SquadShips, __NearbyShips, __ShipsWarpingHere;
         public List<string> __ShipsWithinRangeOfWeapons, __PastCommands, __BannedStrats, __DamageStatuses, __CommandTargetingQueue, __NearbyAsteroids, __HivemindShips;
         //public List<Vector2> __PastLocations;
 
@@ -178,6 +178,11 @@ namespace Assets.Scripts.Entities.Ships
             __TurningRadius = ConfigData.ShipTurningRadius;
             __NearbyShips = HasProximityCollider ? ProximityCollider.NearbyShips.ToList() : new List<Ship>();
             __HivemindShips = Level.GetState().GetShipsVisibleToHiveMind(Side).Select(s => s.ToString()).ToList();
+
+            if (ShipType == "Warp Gate")
+            {
+                __ShipsWarpingHere = ((WarpGate)this).ShipsWarpingHere.ToList();
+            }
 
 
             //__PastLocations = PastLocations.ToList();

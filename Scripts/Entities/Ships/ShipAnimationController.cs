@@ -11,9 +11,9 @@ namespace Assets.Scripts.Entities.Ships
         public Ship Ship;
         public Sprite CurrentSprite;
         public Sprite[] RecoloredSprites;
-        public bool ShouldSwapSprite;
+        public bool ShouldSwapSprite, UseSecondaryLoop, IsReadyToWarp;
 
-        public int TotalSprites, SpriteIndex;
+        public int TotalSprites, SpriteIndex, ModuloIndex, SkipSprites;
 
         public void RecolorAnimationSprites()
         {
@@ -31,8 +31,18 @@ namespace Assets.Scripts.Entities.Ships
         {
             if (ShouldSwapSprite)
             {
+                int index;
+                if (UseSecondaryLoop)
+                {
+                    index = (SpriteIndex % ModuloIndex) + SkipSprites;
+                }
+                else
+                {
+                    index = SpriteIndex % RecoloredSprites.Length;
+                }
+                //Debug.Log($"Recolored index: {index}");
                 //Debug.Log($"Trying to swap {SpriteRenderer.sprite.name} with {RecoloredSprites[SpriteIndex % RecoloredSprites.Length].name} {FramesChange} over {timeDifference}s at {fps} fps");
-                SpriteRenderer.sprite = RecoloredSprites[SpriteIndex % RecoloredSprites.Length];
+                SpriteRenderer.sprite = RecoloredSprites[index];
                 CurrentSprite = SpriteRenderer.sprite;
                 SpriteIndex++;
                 ShouldSwapSprite = false;
@@ -52,6 +62,17 @@ namespace Assets.Scripts.Entities.Ships
             {
                 ShouldSwapSprite = true;
             }
+        }
+
+        /// <summary>
+        /// This changes the animation by making it skip a certain number of sprites and loop a different number of sprites, effectively creating a new loop from a subset of sprites
+        /// </summary>
+        /// <param name="moduloIndex"></param>
+        /// <param name="skipSprites"></param>
+        public void ChangeSpriteLoop()
+        {
+            UseSecondaryLoop = true;
+            IsReadyToWarp = true;
         }
     }
 }

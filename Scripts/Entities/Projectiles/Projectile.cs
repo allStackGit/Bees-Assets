@@ -71,7 +71,7 @@ namespace Assets.Scripts.Entities.Projectiles
                 Explosion = Instantiate(ExplosionAnimationPrefab, Vector2.zero, Quaternion.identity);
                 Explosion.transform.parent = Level.Map.transform;
                 Explosion.transform.localPosition = GetPosition();
-                Explosion.transform.eulerAngles = new Vector3(0, 0, Weapon.GetLocalRotation());
+                Explosion.transform.eulerAngles = transform.eulerAngles - new Vector3(0, 0, 180);
             }
             Kill();
         }
@@ -83,7 +83,7 @@ namespace Assets.Scripts.Entities.Projectiles
                 if (!obstacle.IsMapBorder)
                 {
                     //Debug.Log($"{Name} hit {obstacle.Name}");
-                    DamageObstacle(obstacle);
+                    //DamageObstacle(obstacle);
                     KillSequence();
                 }
                 else
@@ -96,11 +96,11 @@ namespace Assets.Scripts.Entities.Projectiles
 
         public void DamageObstacle(Obstacle obstacle)
         {
-            //obstacle.Health -= Power;
-            //if (obstacle.Health <= 0)
-            //{
-            //    obstacle.Kill();
-            //}
+            obstacle.Health -= Power;
+            if (obstacle.Health <= 0)
+            {
+                obstacle.Kill();
+            }
 
         }
         

@@ -624,7 +624,10 @@ namespace Assets.Scripts.Level
         {
             Level.GetState().GetSelectedSquads().ForEach((squad) =>
             {
-                squad.UserFullRetreat(warpGate);
+                if (squad.GetShips().Any((s) => s.ShipType != "Warp Gate"))
+                {
+                    squad.UserFullRetreat(warpGate);
+                }
             });
         }
         private bool CheckForSelectingPatrolArea()

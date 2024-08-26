@@ -18,6 +18,8 @@ namespace Assets.Scripts.Entities
         public LevelStage Level;
         public Collider2D Collider, ProximityCollider, ClearanceMappingCollider;
 
+        private int _frameCollisions = 0;
+
         public void Setup(LevelStage level, int id)
         {
             Level = level;
@@ -41,26 +43,44 @@ namespace Assets.Scripts.Entities
             return transform.localPosition;
         }
 
-        protected virtual void OnTriggerEnter2D(Collider2D collider)
+        public void ShipCollision(Ship ship)
+        {
+            Debug.Log($"{Name} was hit by {ship.Name}");
+            if (ship.ShipType == "Barge")
+            {
+                Barge barge = ((Barge)ship);
+                if (barge.IsCharging)
+                {
+                    ship.Kill(null);
+                    return;
+                }
+            }
+
+            ship.LogDamage((int)(ship.MaxHealth * .2f)); // 20% of ship health
+        }
+
+        public void Collision(Collider2D collider)
         {
             GameObject collidingThing = collider.gameObject;
             if (!IsMapBorder && collidingThing.CompareTag("Ship"))
             {
                 Ship ship = collidingThing.GetComponent<Ship>();
-                Debug.Log($"{Name} was hit by {ship.Name}");
-                if (ship.ShipType == "Barge")
-                {
-                    Barge barge = ((Barge)ship);
-                    if (barge.IsCharging)
-                    {
-                        ship.Kill(null);
-                        return;
-                    }
-                }
-
-                ship.LogDamage((int)(ship.MaxHealth * .2f)); // 20% of ship health
+                ShipCollision(ship);
             }
+        }
 
+        protected virtual void OnTriggerEnter2D(Collider2D collider)
+        {
+            Collision(collider);
+        }
+        protected virtual void OnTriggerStay2D(Collider2D collider)
+        {
+            _frameCollisions++;
+            if (_frameCollisions == 50)
+            {
+                Collision(collider);
+                _frameCollisions = 0;
+            }
         }
     }
 }

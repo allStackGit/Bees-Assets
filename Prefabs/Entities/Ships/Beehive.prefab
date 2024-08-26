@@ -11,8 +11,8 @@ GameObject:
   - component: {fileID: 2518675752222090672}
   - component: {fileID: 2518675752222090673}
   - component: {fileID: 3738288260826810766}
-  - component: {fileID: 2518675752222090674}
   - component: {fileID: 9209194230390332424}
+  - component: {fileID: 2779061522766282275}
   m_Layer: 11
   m_Name: Beehive
   m_TagString: Ship
@@ -27,6 +27,7 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2518675752222090675}
+  serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
@@ -35,7 +36,6 @@ Transform:
   - {fileID: 7412423521736282135}
   - {fileID: 5631643433104327245}
   m_Father: {fileID: 0}
-  m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!212 &2518675752222090673
 SpriteRenderer:
@@ -75,8 +75,8 @@ SpriteRenderer:
   m_AutoUVMaxDistance: 0.5
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
-  m_SortingLayerID: 1055962891
-  m_SortingLayer: 2
+  m_SortingLayerID: 1028057417
+  m_SortingLayer: 5
   m_SortingOrder: 1
   m_Sprite: {fileID: 21300000, guid: 34cecbf7c2bb9b34dbc92c8933717d8e, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -105,80 +105,103 @@ MonoBehaviour:
   Age: 0
   Level: {fileID: 0}
   Side: 0
+  Collider: {fileID: 0}
   Body: {fileID: 0}
+  ShowDebug: 0
   Health: 0
+  MaxHealth: 0
   OriginalHealth: 0
   OriginalTsv: 0
   Sight: 0
   AdditionalTsv: 0
+  Clearance: 0
+  MaxRange: 0
+  HalfMaxRange: 0
   ProjectileValue: 0
   Speed: 0
   SpecialFirePower: 0
+  CurrentSpeed: 0
   ShipExplosion: {fileID: 1876865744220396715, guid: 1f58b7947f208d944b8669f2e51a9a52, type: 3}
   HealthBar: {fileID: 9156196862218278911}
   MiniMapIcon: {fileID: 1002744997698670720}
-  InCombat: 0
+  ShipAnimation: {fileID: 0}
   TargetCoordinates: {x: 0, y: 0}
+  FinalDestination: {x: 0, y: 0}
   OffsetFromCenter: {x: 0, y: 0}
   Squad: {fileID: 0}
   DefaultAngle: 0
+  TargetDirection: 0
   LastKilled: 0
   ShipType: 
+  Name: 
   FireAtFrontOfShip: 0
+  InCombat: 0
+  IsFollowingPath: 0
+  CannotChangeMovementOrders: 0
+  IsSpawnedShip: 0
+  Vision: {fileID: 0}
+  IsDead: 0
+  HasBrain: 0
+  IsMinionShip: 0
+  HasTargetCoordinates: 0
+  IsMiningShip: 0
+  IsWarpGate: 0
+  HasTargetDirection: 0
+  HasVision: 0
+  HasProximityCollider: 0
+  HasShipAnimation: 0
   Weapons: []
   ProjectilePrefabs: []
   WeaponPrefabs: []
+  ColoredPrefabs: []
   Brain: {fileID: 0}
-  HasBrain: 0
-  __PastCommands: []
+  NearbyAsteroids: []
+  Turrets: []
+  ProximityCollider: {fileID: 0}
+  ShipAnimationController: {fileID: 0}
+  RotationSpeed: 0
+  TargetEnemyShipToFollow: {fileID: 0}
+  IsCloseEnoughToTargetEnemyShipToFollow: 0
+  PathfindingThreadComplete: 0
+  PathfindingThread: 0
+  PrintDebugImage: 0
   __Strategy: 
   __Squad: 
   __SquadStatus: 
   __CommandStatus: 
   __LastStopReason: 
+  __EnemySquad: 
+  __TargetEnemyShipToFollow: 
   __CommandDestination: {x: 0, y: 0}
   __Velocity: {x: 0, y: 0}
   __TargetCoordinates: {x: 0, y: 0}
   __Firepower: 0
   __DamagePerSecond: 0
+  __CurrentSpeed: 0
+  __DegreesToTargetCoordinates: 0
+  __DistanceToTargetCoordinates: 0
+  __TurningRadius: 0
   __Tsv: 0
   __CommandTsv: 0
-  __TargetShips: []
-  __SquadShips: []
   __HasReachedDestination: 0
   __SquadHasReachedDestination: 0
+  __WeaponTargetShips: []
+  __SquadShips: []
+  __NearbyShips: []
+  __ShipsWarpingHere: []
+  __ShipsWithinRangeOfWeapons: []
+  __PastCommands: []
+  __BannedStrats: []
+  __DamageStatuses: []
+  __CommandTargetingQueue: []
+  __NearbyAsteroids: []
+  __HivemindShips: []
   Direction: 0
   ShouldDetonate: 0
   RLShootingStrategy: 
   RLSide: 0
   RLHealth: 0
   RLShipType: 0
---- !u!61 &2518675752222090674
-BoxCollider2D:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2518675752222090675}
-  m_Enabled: 1
-  m_Density: 1
-  m_Material: {fileID: 0}
-  m_IsTrigger: 1
-  m_UsedByEffector: 0
-  m_UsedByComposite: 0
-  m_Offset: {x: 0, y: 0}
-  m_SpriteTilingProperty:
-    border: {x: 0, y: 0, z: 0, w: 0}
-    pivot: {x: 0.5, y: 0.5}
-    oldSize: {x: 4, y: 5.3333335}
-    newSize: {x: 2, y: 2.6666667}
-    adaptiveTilingThreshold: 0.5
-    drawMode: 0
-    adaptiveTiling: 0
-  m_AutoTiling: 0
-  serializedVersion: 2
-  m_Size: {x: 4, y: 5.3333335}
-  m_EdgeRadius: 0
 --- !u!50 &9209194230390332424
 Rigidbody2D:
   serializedVersion: 4
@@ -196,15 +219,73 @@ Rigidbody2D:
   m_AngularDrag: 0
   m_GravityScale: 0
   m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
   m_Interpolate: 0
   m_SleepingMode: 1
   m_CollisionDetection: 0
   m_Constraints: 0
+--- !u!60 &2779061522766282275
+PolygonCollider2D:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2518675752222090675}
+  m_Enabled: 1
+  m_Density: 1
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_ForceSendLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_ForceReceiveLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_ContactCaptureLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_CallbackLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_IsTrigger: 1
+  m_UsedByEffector: 0
+  m_UsedByComposite: 0
+  m_Offset: {x: 0, y: 0}
+  m_SpriteTilingProperty:
+    border: {x: 0, y: 0, z: 0, w: 0}
+    pivot: {x: 0.5, y: 0.5}
+    oldSize: {x: 34, y: 34}
+    newSize: {x: 2, y: 2.6666667}
+    adaptiveTilingThreshold: 0.5
+    drawMode: 0
+    adaptiveTiling: 0
+  m_AutoTiling: 0
+  m_Points:
+    m_Paths:
+    - - {x: -16.108244, y: -0.0156002045}
+      - {x: -8.027721, y: 13.98498}
+      - {x: 8.006115, y: 14.054574}
+      - {x: 16.1622, y: 0.122302055}
+      - {x: 8.092171, y: -14.111845}
+      - {x: -8.313777, y: -14.026251}
+  m_UseDelaunayMesh: 0
 --- !u!1001 &3241575321146172441
 PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2518675752222090672}
     m_Modifications:
     - target: {fileID: 1161264216370202031, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
@@ -216,12 +297,16 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 5341925016214729742, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 32
+      objectReference: {fileID: 0}
+    - target: {fileID: 5341925016214729742, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -4.5
+      value: -16
       objectReference: {fileID: 0}
     - target: {fileID: 5341925016214729742, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_LocalPosition.y
-      value: -7.5
+      value: -18
       objectReference: {fileID: 0}
     - target: {fileID: 5341925016214729742, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_LocalPosition.z
@@ -263,7 +348,18 @@ PrefabInstance:
       propertyPath: m_Layer
       value: 11
       objectReference: {fileID: 0}
+    - target: {fileID: 6507568151281305453, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
+      propertyPath: m_SortingLayer
+      value: 5
+      objectReference: {fileID: 0}
+    - target: {fileID: 6507568151281305453, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
+      propertyPath: m_SortingLayerID
+      value: 1028057417
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
 --- !u!4 &7412423521736282135 stripped
 Transform:
@@ -280,15 +376,32 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2518675752222090672}
     m_Modifications:
     - target: {fileID: 4488103413143062924, guid: a18de5f52d54f0e4aa2302fe335d976b, type: 3}
       propertyPath: m_Name
       value: Mini Map Hexagon
       objectReference: {fileID: 0}
+    - target: {fileID: 4488103413143062924, guid: a18de5f52d54f0e4aa2302fe335d976b, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 9044662742910573377, guid: a18de5f52d54f0e4aa2302fe335d976b, type: 3}
       propertyPath: m_RootOrder
       value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 9044662742910573377, guid: a18de5f52d54f0e4aa2302fe335d976b, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 32
+      objectReference: {fileID: 0}
+    - target: {fileID: 9044662742910573377, guid: a18de5f52d54f0e4aa2302fe335d976b, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 32
+      objectReference: {fileID: 0}
+    - target: {fileID: 9044662742910573377, guid: a18de5f52d54f0e4aa2302fe335d976b, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 9044662742910573377, guid: a18de5f52d54f0e4aa2302fe335d976b, type: 3}
       propertyPath: m_LocalPosition.x
@@ -330,7 +443,14 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 9044662742910573377, guid: a18de5f52d54f0e4aa2302fe335d976b, type: 3}
+      propertyPath: m_ConstrainProportionsScale
+      value: 1
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: a18de5f52d54f0e4aa2302fe335d976b, type: 3}
 --- !u!1 &1002744997698670720 stripped
 GameObject:

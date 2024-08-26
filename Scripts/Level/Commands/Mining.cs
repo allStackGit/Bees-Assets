@@ -112,12 +112,16 @@ namespace Assets.Scripts.Level.Commands
             }
 
         }
-        public override void SetFinalize(string cause)
+        public void CleanupAsteroid()
         {
             if (TargetAstroid != null && !TargetAstroid.IsDead)
             {
                 TargetAstroid.SquadsMining.Remove(Squad);
             }
+        }
+        public override void SetFinalize(string cause)
+        {
+            CleanupAsteroid();
             Squad.GetShips().ForEach((ship) =>
             {
                 if (ship.HasShipAnimation)

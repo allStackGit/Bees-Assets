@@ -318,6 +318,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Warp Gate Animation
       objectReference: {fileID: 0}
+    - target: {fileID: 2741387842634554846, guid: 6e5044801eacfbe4796e0552e595c46e, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 4678389990816726854, guid: 6e5044801eacfbe4796e0552e595c46e, type: 3}
       propertyPath: m_SortingLayer
       value: 5
@@ -392,8 +396,11 @@ MonoBehaviour:
   CurrentSprite: {fileID: 0}
   RecoloredSprites: []
   ShouldSwapSprite: 0
-  TotalSprites: 25
+  UseSecondaryLoop: 0
+  TotalSprites: 26
   SpriteIndex: 0
+  ModuloIndex: 5
+  SkipSprites: 21
 --- !u!212 &4729914865175263180 stripped
 SpriteRenderer:
   m_CorrespondingSourceObject: {fileID: 4678389990816726854, guid: 6e5044801eacfbe4796e0552e595c46e, type: 3}

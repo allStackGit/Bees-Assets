@@ -75,14 +75,14 @@ SpriteRenderer:
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: -467856233
-  m_SortingLayer: 3
+  m_SortingLayer: 24
   m_SortingOrder: 0
-  m_Sprite: {fileID: 1833999314, guid: 9e94a5fa861d3c84d9442c535aab01e5, type: 3}
+  m_Sprite: {fileID: 189823209, guid: 68eaee830d349554f97d5e9320fde692, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
-  m_Size: {x: 1, y: 1}
+  m_Size: {x: 1, y: 2}
   m_AdaptiveModeThreshold: 0.5
   m_SpriteTileMode: 0
   m_WasSpriteAssigned: 1
@@ -98,7 +98,7 @@ Animator:
   m_GameObject: {fileID: 2670737595383420918}
   m_Enabled: 1
   m_Avatar: {fileID: 0}
-  m_Controller: {fileID: 9100000, guid: e9d4ce101f8c55045b863aac350be595, type: 2}
+  m_Controller: {fileID: 9100000, guid: a3be42c725e2be648b13338ad3cb49a5, type: 2}
   m_CullingMode: 0
   m_UpdateMode: 0
   m_ApplyRootMotion: 0
@@ -145,14 +145,14 @@ BoxCollider2D:
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0.5, y: 0.5}
-    oldSize: {x: 1, y: 1}
-    newSize: {x: 1, y: 1}
+    oldSize: {x: 1, y: 2}
+    newSize: {x: 1, y: 2}
     adaptiveTilingThreshold: 0.5
     drawMode: 0
     adaptiveTiling: 0
   m_AutoTiling: 0
   serializedVersion: 2
-  m_Size: {x: 1, y: 1}
+  m_Size: {x: 1, y: 2}
   m_EdgeRadius: 0
 --- !u!50 &2118447634316657558
 Rigidbody2D:
@@ -197,17 +197,18 @@ MonoBehaviour:
   Age: 0
   Level: {fileID: 0}
   Side: 0
+  Collider: {fileID: 0}
   Body: {fileID: 0}
-  Range: 0
   Power: 0
+  Range: 0
   Speed: 100
   Shooter: {fileID: 0}
   Target: {fileID: 0}
   Weapon: {fileID: 0}
   StartingPosition: {x: 0, y: 0}
   Angle: 0
-  ExplosionAnimationPrefab: {fileID: 3345242948093166458, guid: 6a95d017bd6a082479c47468372db16d, type: 3}
+  ExplosionAnimationPrefab: {fileID: 3345242948093166458, guid: 8478bbbf7b61aca459a368062f5b3a8e, type: 3}
   Explosion: {fileID: 0}
-  ShipsToIgnore: []
   Name: 
   HasExplosion: 0
+  HasSetMovement: 0

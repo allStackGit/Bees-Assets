@@ -30,7 +30,7 @@ namespace Assets.Scripts.Entities.Projectiles
                 if (!obstacle.IsMapBorder && !HasHitObstacle(obstacle))
                 {
                     Debug.Log($"{Name} hit {obstacle.Name}");
-                    DamageObstacle(obstacle);
+                    //DamageObstacle(obstacle);
                 }
             }
         }

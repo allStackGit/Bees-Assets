@@ -12,7 +12,14 @@ public class FullRetreat : Command
         if (warpgate != null)
         {
             TargetWarpGate = warpgate;
+            TargetWarpGate.ShipAnimation.SetActive(true);
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
+
+            Squad.GetShips().ForEach((ship) =>
+            {
+                TargetWarpGate.ShipsWarpingHere.Add(ship);
+            });
+
             PrepareDamageToSendEntries("closest");
             InvokeRepeating(nameof(MoveToWarpGate), 0, CommandFrequency);
         }
@@ -25,7 +32,7 @@ public class FullRetreat : Command
 
     public void MoveToWarpGate()
     {
-        if (!Squad.IsDead && !TargetWarpGate.IsDead)
+        if (!Squad.IsDead && !TargetWarpGate.IsDead && TargetWarpGate.ShipAnimationController.IsReadyToWarp)
         {
             Vector2 targetPosition = TargetWarpGate.GetPosition();
             Squad.GetShips().ForEach((ship) =>
@@ -49,6 +56,44 @@ public class FullRetreat : Command
     public IEnumerator DelayedKill(Ship ship)
     {
         yield return new WaitForSeconds(2);
+        TargetWarpGate.ShipsWarpingHere.Remove(ship);
         ship.Kill(null, true);
+        if (TargetWarpGate.ShipsWarpingHere.Count == 0)
+        {
+            SetFinalize("All ships have warped");
+        }
+    }
+
+    public void CleanupWarpGate()
+    {
+        //Debug.Log($"Clenaing up warp gate: {TargetWarpGate}");
+        if (!Squad.IsDead)
+        {
+            Squad.GetShips().ForEach((ship) =>
+            {
+                TargetWarpGate.ShipsWarpingHere.Remove(ship);
+            });
+        }
+        else
+        {
+            TargetWarpGate.ShipsWarpingHere.RemoveWhere((s) =>
+            {
+                return s == null || s.IsDead;
+            });
+        }
+
+        if (TargetWarpGate != null && !TargetWarpGate.IsDead && TargetWarpGate.ShipsWarpingHere.Count == 0)
+        {
+            TargetWarpGate.ShipAnimation.SetActive(false);
+            TargetWarpGate.ShipAnimationController.UseSecondaryLoop = false;
+            TargetWarpGate.ShipAnimationController.IsReadyToWarp = false;
+            TargetWarpGate.ShipAnimationController.SpriteIndex = 0;
+        }
+    }
+    public override void SetFinalize(string cause)
+    {
+        //Debug.Log($"Finalizing full retreat command for {Squad.Name}");
+        CleanupWarpGate();
+        base.SetFinalize(cause);
     }
 }

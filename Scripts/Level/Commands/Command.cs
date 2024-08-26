@@ -264,6 +264,13 @@ namespace Assets.Scripts.Level.Commands
         }
         public void SquadKilled()
         {
+            if (Type == "Mining")
+            {
+                ((Mining)this).CleanupAsteroid();
+            }else if (Type == "Full Retreat")
+            {
+                ((FullRetreat)this).CleanupWarpGate();
+            }
             Finalize("This squad got killed");
         }
         private void Finalize(string cause)

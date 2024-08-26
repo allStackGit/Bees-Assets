@@ -170,7 +170,7 @@ namespace Assets.Scripts.Scenes
                 Debug.Log($"The map does not have fog of war");
             }
 
-            if (Utilities.CoinToss())
+            if (!HasObstacles && Utilities.CoinToss())
             {
                 ActivateMining = true;
                 Debug.Log($"The map has mining");

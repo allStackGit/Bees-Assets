@@ -3,7 +3,7 @@ using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Level;
 using System.Linq;
-
+using Unity.Mathematics;
 using UnityEngine;
 using static UnityEngine.GraphicsBuffer;
 
@@ -36,12 +36,7 @@ namespace Assets.Scripts.Entities.Ships
 
 
                     int oldTsv = Tsv;
-                    Health -= Bomb.Power;
-
-                    if (Health < 0)
-                    {
-                        Health = 0;
-                    }
+                    Health -= math.min(Bomb.Power, Health);
 
                     int tsvChange = Tsv - oldTsv; // this is a negative number since being hit by a projectile should induce a loss of TSV
                                                   //Debug.Log($"Calling hit stats with a fire ship explosion. The shooter and shooter squad are null but the fire ship and fire ship squad are the target");
