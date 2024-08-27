@@ -42,9 +42,10 @@ namespace Assets.Scripts.Entities.Ships
         /// A ship can be killed at some point of the frame and still exist until the end of the frame. Check this to see if a ship is dead but not yet destroyed.
         /// </summary>
         public bool IsDead;
-        public bool HasBrain, IsMinionShip, HasTargetCoordinates, IsMiningShip, IsWarpGate, HasTargetDirection, HasVision, HasProximityCollider, HasShipAnimation;
+        public bool HasBrain, IsMinionShip, HasTargetCoordinates, IsMiningShip, IsWarpGate, HasTargetDirection, HasVision, HasProximityCollider, HasShipAnimation, HasRocketFlares, 
+            HasLeftRocketFlares, HasCenterRocketFlares, HasRightRocketFlares;
         public List<Weapon> Weapons;
-        public List<GameObject> ProjectilePrefabs, WeaponPrefabs, ColoredPrefabs;
+        public List<GameObject> ProjectilePrefabs, WeaponPrefabs, ColoredPrefabs, LeftRocketFlares, CenterRocketFlares, RightRocketFlares;
         public Brain Brain = null;
         public Queue<Vector2> DestinationQueue = new Queue<Vector2>();
         public List<CollisionAsteroid> NearbyAsteroids = new List<CollisionAsteroid>();
@@ -362,13 +363,42 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 ProximityCollider.Setup(this, Sight);
                 HasProximityCollider = true;
             }
-            if (ShipAnimation != null && !Level.IsTrainingHiveMind && !Level.IsTrainingNueralNetwork)
+            if (ShipAnimation != null && !Level.IsTraining)
             {
                 HasShipAnimation = true;
                 if (Squad.HasCustomColor)
                 {
                     ShipAnimationController.RecolorAnimationSprites();
                 }
+            }
+
+            if (Side == ConfigData.Configuration.HumanSide && !Level.IsTraining)
+            {
+                if (LeftRocketFlares.Count > 0)
+                {
+                    HasLeftRocketFlares = true;
+                }
+                if (CenterRocketFlares.Count > 0)
+                {
+                    HasCenterRocketFlares = true;
+                }
+                if (RightRocketFlares.Count > 0)
+                {
+                    HasRightRocketFlares = true;
+                }
+
+                if (HasLeftRocketFlares || HasCenterRocketFlares || HasRightRocketFlares)
+                {
+                    HasRocketFlares = true;
+                }
+                else
+                {
+                    HasRocketFlares = false;
+                }
+            }
+            else
+            {
+                HasRocketFlares = false;
             }
 
 
@@ -410,7 +440,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             if (!Level.IsPaused)
             {
                 Move();
-                if (!Level.IsTrainingNueralNetwork && !Level.IsTrainingHiveMind)
+                if (!Level.IsTraining)
                 {
                     if (Side == ConfigData.Configuration.HumanSide && Level.HasPlayer && !Level.HasFoundAllBees && Level.Audio != null)
                     {
@@ -764,6 +794,36 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             float degrees = GetRotation() - 180;
             float angle = degrees * Mathf.Deg2Rad;
 
+            if (HasRocketFlares)
+            {
+                CenterRocketFlares.ForEach((flare) =>
+                {
+                    flare.SetActive(true);
+                });
+
+                //Debug.Log($"Degrees: {degrees}");
+                if (HasRightRocketFlares && HasLeftRocketFlares)
+                {
+                    if (degrees > 0)
+                    {
+                        //Debug.Log($"Moving to the right, activating left rocket flares");
+                        LeftRocketFlares.ForEach((flare) =>
+                        {
+                            flare.SetActive(true);
+                        });
+                    }
+                    else
+                    {
+                        //Debug.Log($"Moving to the left, activating right rocket flares");
+                        RightRocketFlares.ForEach((flare) =>
+                        {
+                            flare.SetActive(true);
+                        });
+                    }
+                }
+
+            }
+
 
             Body.velocity = new Vector2((maxSpeed * Mathf.Sin(angle)), (-1 * maxSpeed * Mathf.Cos(angle)));
         }
@@ -872,6 +932,25 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 IsFollowingPath = false;
                 DestinationQueue.Clear();
                 CancelInvoke(nameof(CheckForDirectPath));
+            }
+
+            if (HasRocketFlares)
+            {
+                CenterRocketFlares.ForEach((flare) =>
+                {
+                    flare.SetActive(false);
+                });
+
+                LeftRocketFlares.ForEach((flare) =>
+                {
+                    flare.SetActive(false);
+                });
+
+                RightRocketFlares.ForEach((flare) =>
+                {
+                    flare.SetActive(false);
+                });
+
             }
 
             //transform.position = TargetCoordinates;
@@ -1458,7 +1537,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         }
         protected void DropExplosionAnimation()
         {
-            if (!Level.IsTrainingNueralNetwork && !Level.IsTrainingHiveMind)
+            if (!Level.IsTraining)
             {
                 GameObject explosion = LevelStage.Instantiate(ShipExplosion, Vector2.zero, Quaternion.identity);
                 explosion.transform.localScale *= ConfigData.GetShipSizeFactor(ShipType);

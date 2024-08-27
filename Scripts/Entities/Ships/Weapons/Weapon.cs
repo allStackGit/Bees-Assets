@@ -55,7 +55,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             ProjectilePrefab = projectilePrefab;
             Name = $"{ship.Name}: {Piece.name}";
             Type = type;
-            if (!Level.IsTrainingHiveMind && !Level.IsTrainingNueralNetwork && Level.Audio.WeaponSounds.ContainsKey(Type))
+            if (!Level.IsTraining && Level.Audio.WeaponSounds.ContainsKey(Type))
             {
                 HasSoundEffect = true;
                 SoundEffect = Instantiate(Level.Audio.WeaponSounds[Type][Utilities.RandomInt(Level.Audio.WeaponSounds[Type].Length)]);

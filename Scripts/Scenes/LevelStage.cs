@@ -35,7 +35,7 @@ namespace Assets.Scripts.Scenes
         /// Determines whether or not FleetShips get marked as dead when ships die. If this is turned off, stats will still record properly but ships won't die off and be replaced
         /// </summary>
         public bool ReplaceDeadShips;
-        public bool ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, UseSemiRandomSquads, UseFullyRandomSquads, UseFullyRandomEnemySquads, RecordStats, 
+        public bool ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, IsTraining, UseSemiRandomSquads, UseFullyRandomSquads, UseFullyRandomEnemySquads, RecordStats, 
             DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateAudio, ActivateLoadingShipsMidLevel, UseMouseScrolling, IsDebugging, 
             MakeEnemyCeaseFire, FullCeaseFire, MakeShotsHarmless, UnlockCamera, HasRandomizedOptions, PlayMusic;
         public int OverrideTimeScale, OverrideMapIndex, OverrideUserSide, SpeedMultiplier, GeneratedSquadCountOverride, InitialCommandDelay, TimeoutTime;
@@ -195,6 +195,14 @@ namespace Assets.Scripts.Scenes
         }
         private void Setup()
         {
+            if (IsTrainingHiveMind || IsTrainingNueralNetwork)
+            {
+                IsTraining = true;
+            }
+            else
+            {
+                IsTraining = false;
+            }
             _obstacleLists = new Dictionary<int, List<GameObject>>()
                 {
                     // If this list changes the indexes need to all be accurate since the files are loaded based off of the indexes
@@ -261,7 +269,7 @@ namespace Assets.Scripts.Scenes
             _state.Setup(this);
 
             //ConfigData.SetupSceneManagement(SceneManagement.GetComponent<SceneManagement>());
-            if (!IsTrainingNueralNetwork && !IsTrainingHiveMind)
+            if (!IsTraining)
             {
                 MiniMapCamera.gameObject.SetActive(true);
 

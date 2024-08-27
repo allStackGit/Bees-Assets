@@ -123,7 +123,7 @@ namespace Assets.Scripts.Level.Commands
                 ShootingStrategy = shootingStrategy;
 
                 OutcomeId = commandOutcomeId;
-                if (!Level.IsTrainingHiveMind && !Level.IsTrainingNueralNetwork)
+                if (!Level.IsTraining)
                 {
                     Squad.PastCommands.Add(new StoredCommand(this));
                 }

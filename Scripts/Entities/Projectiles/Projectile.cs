@@ -66,7 +66,7 @@ namespace Assets.Scripts.Entities.Projectiles
         }
         public virtual void KillSequence()
         {
-            if (!Level.IsTrainingNueralNetwork && !Level.IsTrainingHiveMind && HasExplosion)
+            if (!Level.IsTraining && HasExplosion)
             {
                 Explosion = Instantiate(ExplosionAnimationPrefab, Vector2.zero, Quaternion.identity);
                 Explosion.transform.parent = Level.Map.transform;
