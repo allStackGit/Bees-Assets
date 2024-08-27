@@ -38,7 +38,6 @@ Transform:
   - {fileID: 708662893477763642}
   - {fileID: 5622476372722720813}
   - {fileID: 3935045332161855954}
-  - {fileID: 5406763854782731553}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!212 &4672471954231197360
@@ -58,9 +57,6 @@ SpriteRenderer:
   m_ReflectionProbeUsage: 1
   m_RayTracingMode: 0
   m_RayTraceProcedural: 0
-  m_RayTracingAccelStructBuildFlagsOverride: 0
-  m_RayTracingAccelStructBuildFlags: 1
-  m_SmallMeshCulling: 1
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
@@ -83,7 +79,7 @@ SpriteRenderer:
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: -1672541693
-  m_SortingLayer: 17
+  m_SortingLayer: 18
   m_SortingOrder: 1
   m_Sprite: {fileID: 21300000, guid: 8ef5bc21746b9bc4f9254b84f7ab4ece, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -121,12 +117,17 @@ MonoBehaviour:
   OriginalTsv: 0
   Sight: 0
   AdditionalTsv: 0
+  Clearance: 0
+  MaxRange: 0
+  HalfMaxRange: 0
   ProjectileValue: 0
   Speed: 0
   SpecialFirePower: 0
+  CurrentSpeed: 0
   ShipExplosion: {fileID: 1876865744220396715, guid: 1f58b7947f208d944b8669f2e51a9a52, type: 3}
   HealthBar: {fileID: 3179993197624593158}
   MiniMapIcon: {fileID: 4971123995003810503}
+  ShipAnimation: {fileID: 0}
   TargetCoordinates: {x: 0, y: 0}
   FinalDestination: {x: 0, y: 0}
   OffsetFromCenter: {x: 0, y: 0}
@@ -140,6 +141,7 @@ MonoBehaviour:
   InCombat: 0
   IsFollowingPath: 0
   CannotChangeMovementOrders: 0
+  IsSpawnedShip: 0
   Vision: {fileID: 188419691949855264}
   IsDead: 0
   HasBrain: 0
@@ -148,6 +150,9 @@ MonoBehaviour:
   IsMiningShip: 0
   IsWarpGate: 0
   HasTargetDirection: 0
+  HasVision: 0
+  HasProximityCollider: 0
+  HasShipAnimation: 0
   Weapons: []
   ProjectilePrefabs:
   - {fileID: 6428638681076635372, guid: c5d2fa5f5d52d0d4b855fdc29fca6e90, type: 3}
@@ -157,36 +162,45 @@ MonoBehaviour:
   Brain: {fileID: 0}
   NearbyAsteroids: []
   Turrets: []
+  ProximityCollider: {fileID: 0}
+  ShipAnimationController: {fileID: 0}
   RotationSpeed: 0
-  HasVision: 0
-  TargetEnemy: {fileID: 0}
-  ShipCollider: {fileID: 1059979342247218996}
+  TargetEnemyShipToFollow: {fileID: 0}
+  IsCloseEnoughToTargetEnemyShipToFollow: 0
   PathfindingThreadComplete: 0
+  PathfindingThread: 0
   PrintDebugImage: 0
-  __PastCommands: []
-  __BannedStrats: []
   __Strategy: 
   __Squad: 
   __SquadStatus: 
   __CommandStatus: 
   __LastStopReason: 
+  __EnemySquad: 
+  __TargetEnemyShipToFollow: 
   __CommandDestination: {x: 0, y: 0}
   __Velocity: {x: 0, y: 0}
   __TargetCoordinates: {x: 0, y: 0}
   __Firepower: 0
   __DamagePerSecond: 0
+  __CurrentSpeed: 0
+  __DegreesToTargetCoordinates: 0
+  __DistanceToTargetCoordinates: 0
+  __TurningRadius: 0
   __Tsv: 0
   __CommandTsv: 0
-  __TargetShips: []
-  __SquadShips: []
-  __ShipsWithinRange: []
   __HasReachedDestination: 0
   __SquadHasReachedDestination: 0
-  __Enemy: 
-  __TargetEnemy: 
+  __WeaponTargetShips: []
+  __SquadShips: []
+  __NearbyShips: []
+  __ShipsWarpingHere: []
+  __ShipsWithinRangeOfWeapons: []
+  __PastCommands: []
+  __BannedStrats: []
   __DamageStatuses: []
   __CommandTargetingQueue: []
-  __CurrentSpeed: 0
+  __NearbyAsteroids: []
+  __HivemindShips: []
   Direction: 0
   ShouldDetonate: 0
   RLShootingStrategy: 
@@ -228,7 +242,6 @@ PolygonCollider2D:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 4672471954231197362}
   m_Enabled: 1
-  serializedVersion: 3
   m_Density: 1
   m_Material: {fileID: 0}
   m_IncludeLayers:
@@ -252,8 +265,7 @@ PolygonCollider2D:
     m_Bits: 4294967295
   m_IsTrigger: 1
   m_UsedByEffector: 0
-  m_CompositeOperation: 0
-  m_CompositeOrder: 0
+  m_UsedByComposite: 0
   m_Offset: {x: 0, y: 0}
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -351,72 +363,6 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 2546671832864185319, guid: 0a1e261e9666884449e3015691601de4, type: 3}
   m_PrefabInstance: {fileID: 3063069724891070941}
   m_PrefabAsset: {fileID: 0}
---- !u!1001 &3198816172539505794
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 4672471954231197361}
-    m_Modifications:
-    - target: {fileID: 3290465960820845342, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_Radius
-      value: 3.5
-      objectReference: {fileID: 0}
-    - target: {fileID: 4512307069135507587, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_Name
-      value: Bumper
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: -0.486
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: e1501728744bb744286f4434dd1c925c, type: 3}
---- !u!4 &5406763854782731553 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-  m_PrefabInstance: {fileID: 3198816172539505794}
-  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &5113803216779633665
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -467,7 +413,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 1995127158016144050, guid: e40a922419a474542ab3b28d66298ab6, type: 3}
       propertyPath: m_SortingLayer
-      value: 17
+      value: 18
       objectReference: {fileID: 0}
     - target: {fileID: 1995127158016144050, guid: e40a922419a474542ab3b28d66298ab6, type: 3}
       propertyPath: m_SortingLayerID
@@ -479,7 +425,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8966059605661026080, guid: e40a922419a474542ab3b28d66298ab6, type: 3}
       propertyPath: m_SortingLayer
-      value: 17
+      value: 18
       objectReference: {fileID: 0}
     - target: {fileID: 8966059605661026080, guid: e40a922419a474542ab3b28d66298ab6, type: 3}
       propertyPath: m_SortingLayerID
@@ -670,7 +616,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4949212615178794145, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayer
-      value: 17
+      value: 18
       objectReference: {fileID: 0}
     - target: {fileID: 4949212615178794145, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayerID
@@ -734,7 +680,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6507568151281305453, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayer
-      value: 17
+      value: 18
       objectReference: {fileID: 0}
     - target: {fileID: 6507568151281305453, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayerID

@@ -478,7 +478,7 @@ namespace Assets.Scripts.Scenes
                 }
                 else // if not, set the label to inactive
                 {
-                    //Debug.Log($"There were no visible ships for {type}");
+                    Debug.Log($"There were no visible ships for {type}");
                     parent.gameObject.SetActive(false);
                 }
             });

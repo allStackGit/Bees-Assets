@@ -29,7 +29,10 @@ namespace Assets.Scripts.UIComponents
             _fleetShip = fleetShip;
             icon.name = gameObjectName;
             Id = id;
-            SetChangablePixels(ConfigData.ChangeableShipColors.GetValueOrDefault(fleetShip.Type));
+            if (fleetShip.Side == ConfigData.Configuration.HumanSide)
+            {
+                SetChangablePixels(ConfigData.ChangeableShipColors.GetValueOrDefault(fleetShip.Type));
+            }
             //Debugger.PrintList(_changeablePixels.ToList());
         }
 

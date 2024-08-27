@@ -67,13 +67,13 @@ namespace Assets.Scripts
 
 
 
-        public static float Tiny = 1; // this is the base size, equal to 4 World Units
-        public static float Small = Tiny * 1.5f; 
-        public static float Medium = Tiny * 2f;
-        public static float Large = Tiny * 3f;
-        public static float Huge = Tiny * 4f;
-        public static float PlusUltra = Tiny * 8f;
-        public static float BigChungus = Tiny * 32f;
+        public const float Tiny = 1; // this is the base size, equal to 4 World Units
+        public const float Small = Tiny * 1.5f; 
+        public const float Medium = Tiny * 2f;
+        public const float Large = Tiny * 3f;
+        public const float Huge = Tiny * 4f;
+        public const float Enormous = Tiny * 8f;
+        public const float Unfathomable = Tiny * 32f;
 
         public static readonly Dictionary<string, Vector2Int> ShipSizes = new Dictionary<string, Vector2Int>() {
             { "Barge",          new Vector2Int(760, 360)},
@@ -90,7 +90,7 @@ namespace Assets.Scripts
             { "Striker",        new Vector2Int(160, 160)},
             { "Warp Gate",      new Vector2Int(1120, 640)},
 
-            { "Beehive",        Vector2Int.zero },
+            { "Beehive",        new Vector2Int(1360, 1360)},
             { "Bumblebee",      new Vector2Int(680, 480)},
             { "Carpenter Bee",  new Vector2Int(640, 640)},
             { "Honeybee",       new Vector2Int(160, 160)},
@@ -115,13 +115,13 @@ namespace Assets.Scripts
             { "Striker",        Tiny},
             { "Warp Gate",      Huge},
 
-            { "Beehive",        0 },
+            { "Beehive",        Enormous},
             { "Bumblebee",      Large},
             { "Carpenter Bee",  Huge},
             { "Honeybee",       Tiny},
             { "Hornet",         Tiny},
             { "Leafcutter",     Medium},
-            { "Queen",          BigChungus},
+            { "Queen",          Unfathomable},
             { "Wasp",           Small},
             { "Yellow Jacket",  Tiny},
         };
@@ -157,9 +157,9 @@ namespace Assets.Scripts
 
         public static int SquadMakerSide;
 
-        public static bool UseWebSocketSharp = true; // Whether to use the "WebSocketSharp" implementation of WebSockets or use the "NativeWebSocket" implmentation
+        public const bool UseWebSocketSharp = true; // Whether to use the "WebSocketSharp" implementation of WebSockets or use the "NativeWebSocket" implmentation
         public static Socket Socket = Test ? new Socket(TestPort, TestServerHostname, UseWebSocketSharp) : new Socket(DevelopmentPort, DevelopmentServerHostname, UseWebSocketSharp);
-        public static readonly List<int> InitialVisibleShips = Enumerable.Range(0, 2900).ToList(); // // [alert] [server] Starting ships should be pulled from server
+        public static readonly List<int> InitialVisibleShips = Enumerable.Range(0, 3400).ToList(); // // [alert] [server] Starting ships should be pulled from server
         public static bool FirstTimePlaying = true; // [alert] should be linked to whether a user has actually played before   
         public const float CloseEnoughCoordinateVariance = 1.5f; // world units
         /// <summary>

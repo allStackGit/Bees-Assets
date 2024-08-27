@@ -37,7 +37,6 @@ Transform:
   - {fileID: 3530839542760790164}
   - {fileID: 7851412194700042508}
   - {fileID: 6284067991179466520}
-  - {fileID: 4468495041420999473}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!212 &731483193027966548
@@ -79,7 +78,7 @@ SpriteRenderer:
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: 1247325629
-  m_SortingLayer: 21
+  m_SortingLayer: 22
   m_SortingOrder: 0
   m_Sprite: {fileID: 21300000, guid: 456c9777ece630b47aeddb40a0513ae5, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -117,12 +116,17 @@ MonoBehaviour:
   OriginalTsv: 0
   Sight: 0
   AdditionalTsv: 0
+  Clearance: 0
+  MaxRange: 0
+  HalfMaxRange: 0
   ProjectileValue: 0
   Speed: 0
   SpecialFirePower: 0
+  CurrentSpeed: 0
   ShipExplosion: {fileID: 1876865744220396715, guid: 1f58b7947f208d944b8669f2e51a9a52, type: 3}
   HealthBar: {fileID: 1255180578373249434}
   MiniMapIcon: {fileID: 8272520175179369049}
+  ShipAnimation: {fileID: 0}
   TargetCoordinates: {x: 0, y: 0}
   FinalDestination: {x: 0, y: 0}
   OffsetFromCenter: {x: 0, y: 0}
@@ -136,6 +140,7 @@ MonoBehaviour:
   InCombat: 0
   IsFollowingPath: 0
   CannotChangeMovementOrders: 0
+  IsSpawnedShip: 0
   Vision: {fileID: 7148354848737101034}
   IsDead: 0
   HasBrain: 0
@@ -144,6 +149,9 @@ MonoBehaviour:
   IsMiningShip: 0
   IsWarpGate: 0
   HasTargetDirection: 0
+  HasVision: 0
+  HasProximityCollider: 0
+  HasShipAnimation: 0
   Weapons: []
   ProjectilePrefabs: []
   WeaponPrefabs: []
@@ -151,34 +159,45 @@ MonoBehaviour:
   Brain: {fileID: 0}
   NearbyAsteroids: []
   Turrets: []
+  ProximityCollider: {fileID: 0}
+  ShipAnimationController: {fileID: 0}
   RotationSpeed: 0
-  HasVision: 0
-  TargetEnemy: {fileID: 0}
-  ShipCollider: {fileID: 5638430987097987723}
-  __PastCommands: []
-  __BannedStrats: []
+  TargetEnemyShipToFollow: {fileID: 0}
+  IsCloseEnoughToTargetEnemyShipToFollow: 0
+  PathfindingThreadComplete: 0
+  PathfindingThread: 0
+  PrintDebugImage: 0
   __Strategy: 
   __Squad: 
   __SquadStatus: 
   __CommandStatus: 
   __LastStopReason: 
+  __EnemySquad: 
+  __TargetEnemyShipToFollow: 
   __CommandDestination: {x: 0, y: 0}
   __Velocity: {x: 0, y: 0}
   __TargetCoordinates: {x: 0, y: 0}
   __Firepower: 0
   __DamagePerSecond: 0
+  __CurrentSpeed: 0
+  __DegreesToTargetCoordinates: 0
+  __DistanceToTargetCoordinates: 0
+  __TurningRadius: 0
   __Tsv: 0
   __CommandTsv: 0
-  __TargetShips: []
-  __SquadShips: []
-  __ShipsWithinRange: []
   __HasReachedDestination: 0
   __SquadHasReachedDestination: 0
-  __Enemy: 
-  __TargetEnemy: 
+  __WeaponTargetShips: []
+  __SquadShips: []
+  __NearbyShips: []
+  __ShipsWarpingHere: []
+  __ShipsWithinRangeOfWeapons: []
+  __PastCommands: []
+  __BannedStrats: []
   __DamageStatuses: []
   __CommandTargetingQueue: []
-  __CurrentSpeed: 0
+  __NearbyAsteroids: []
+  __HivemindShips: []
   Direction: 0
   ShouldDetonate: 0
   RLShootingStrategy: 
@@ -358,7 +377,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4949212615178794145, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayer
-      value: 21
+      value: 22
       objectReference: {fileID: 0}
     - target: {fileID: 4949212615178794145, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayerID
@@ -422,7 +441,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6507568151281305453, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayer
-      value: 21
+      value: 22
       objectReference: {fileID: 0}
     - target: {fileID: 6507568151281305453, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayerID
@@ -603,70 +622,4 @@ PrefabInstance:
 Transform:
   m_CorrespondingSourceObject: {fileID: 2546671832864185319, guid: 3cef43755502536428d6888543b38fb4, type: 3}
   m_PrefabInstance: {fileID: 5738229418327341803}
-  m_PrefabAsset: {fileID: 0}
---- !u!1001 &6444543145735406226
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 731483193027966549}
-    m_Modifications:
-    - target: {fileID: 3290465960820845342, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_Radius
-      value: 2.2
-      objectReference: {fileID: 0}
-    - target: {fileID: 4512307069135507587, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_Name
-      value: Bumper
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: e1501728744bb744286f4434dd1c925c, type: 3}
---- !u!4 &4468495041420999473 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-  m_PrefabInstance: {fileID: 6444543145735406226}
   m_PrefabAsset: {fileID: 0}

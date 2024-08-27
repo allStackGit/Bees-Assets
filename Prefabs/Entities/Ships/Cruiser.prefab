@@ -38,7 +38,6 @@ Transform:
   - {fileID: 7350530835781752353}
   - {fileID: 7415632804066015131}
   - {fileID: 6244591951285871374}
-  - {fileID: 4611119245676851781}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!212 &2518675752222090673
@@ -118,12 +117,17 @@ MonoBehaviour:
   OriginalTsv: 0
   Sight: 0
   AdditionalTsv: 0
+  Clearance: 0
+  MaxRange: 0
+  HalfMaxRange: 0
   ProjectileValue: 0
   Speed: 0
   SpecialFirePower: 0
+  CurrentSpeed: 0
   ShipExplosion: {fileID: 1876865744220396715, guid: 1f58b7947f208d944b8669f2e51a9a52, type: 3}
   HealthBar: {fileID: 462731896760843757}
   MiniMapIcon: {fileID: 3209521085061096430}
+  ShipAnimation: {fileID: 0}
   TargetCoordinates: {x: 0, y: 0}
   FinalDestination: {x: 0, y: 0}
   OffsetFromCenter: {x: 0, y: 0}
@@ -137,6 +141,7 @@ MonoBehaviour:
   InCombat: 0
   IsFollowingPath: 0
   CannotChangeMovementOrders: 0
+  IsSpawnedShip: 0
   Vision: {fileID: 7109018993589317884}
   IsDead: 0
   HasBrain: 0
@@ -145,6 +150,9 @@ MonoBehaviour:
   IsMiningShip: 0
   IsWarpGate: 0
   HasTargetDirection: 0
+  HasVision: 0
+  HasProximityCollider: 0
+  HasShipAnimation: 0
   Weapons: []
   ProjectilePrefabs:
   - {fileID: 7501106849564186297, guid: 7e760e89d34f0d24c9681ff13db6a00a, type: 3}
@@ -155,34 +163,45 @@ MonoBehaviour:
   Brain: {fileID: 0}
   NearbyAsteroids: []
   Turrets: []
+  ProximityCollider: {fileID: 0}
+  ShipAnimationController: {fileID: 0}
   RotationSpeed: 0
-  HasVision: 0
-  TargetEnemy: {fileID: 0}
-  ShipCollider: {fileID: 8938707987628624116}
-  __PastCommands: []
-  __BannedStrats: []
+  TargetEnemyShipToFollow: {fileID: 0}
+  IsCloseEnoughToTargetEnemyShipToFollow: 0
+  PathfindingThreadComplete: 0
+  PathfindingThread: 0
+  PrintDebugImage: 0
   __Strategy: 
   __Squad: 
   __SquadStatus: 
   __CommandStatus: 
   __LastStopReason: 
+  __EnemySquad: 
+  __TargetEnemyShipToFollow: 
   __CommandDestination: {x: 0, y: 0}
   __Velocity: {x: 0, y: 0}
   __TargetCoordinates: {x: 0, y: 0}
   __Firepower: 0
   __DamagePerSecond: 0
+  __CurrentSpeed: 0
+  __DegreesToTargetCoordinates: 0
+  __DistanceToTargetCoordinates: 0
+  __TurningRadius: 0
   __Tsv: 0
   __CommandTsv: 0
-  __TargetShips: []
-  __SquadShips: []
-  __ShipsWithinRange: []
   __HasReachedDestination: 0
   __SquadHasReachedDestination: 0
-  __Enemy: 
-  __TargetEnemy: 
+  __WeaponTargetShips: []
+  __SquadShips: []
+  __NearbyShips: []
+  __ShipsWarpingHere: []
+  __ShipsWithinRangeOfWeapons: []
+  __PastCommands: []
+  __BannedStrats: []
   __DamageStatuses: []
   __CommandTargetingQueue: []
-  __CurrentSpeed: 0
+  __NearbyAsteroids: []
+  __HivemindShips: []
   Direction: 0
   ShouldDetonate: 0
   RLShootingStrategy: 
@@ -507,7 +526,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4006173252447011758, guid: 562230a51d2eca44e85658480eb67c56, type: 3}
       propertyPath: m_SortingLayer
-      value: 26
+      value: 27
       objectReference: {fileID: 0}
     - target: {fileID: 4006173252447011758, guid: 562230a51d2eca44e85658480eb67c56, type: 3}
       propertyPath: m_SortingLayerID
@@ -765,70 +784,4 @@ GameObject:
 Transform:
   m_CorrespondingSourceObject: {fileID: 5341925016214729742, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
   m_PrefabInstance: {fileID: 6162840919384657419}
-  m_PrefabAsset: {fileID: 0}
---- !u!1001 &6381928111344962534
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 2518675752222090672}
-    m_Modifications:
-    - target: {fileID: 3290465960820845342, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_Radius
-      value: 5.1
-      objectReference: {fileID: 0}
-    - target: {fileID: 4512307069135507587, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_Name
-      value: Bumper
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: -0.481
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: e1501728744bb744286f4434dd1c925c, type: 3}
---- !u!4 &4611119245676851781 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 7452565988693965219, guid: e1501728744bb744286f4434dd1c925c, type: 3}
-  m_PrefabInstance: {fileID: 6381928111344962534}
   m_PrefabAsset: {fileID: 0}
