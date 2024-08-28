@@ -1011,8 +1011,18 @@ namespace Assets.Scripts.Level
                         //UpdateMapTime[i].Stop();
                     }
                     //Debug.Log($"Pre starting Finding path for #{i} from {startNode.x}, {startNode.y} to {endNode.x}, {endNode.y}");
-                    StartNodes[thread] = GridNodes[thread][startX][startY];
-                    EndNodes[thread] = GridNodes[thread][endX][endY];
+                    try
+                    {
+                        StartNodes[thread] = GridNodes[thread][startX][startY];
+                        EndNodes[thread] = GridNodes[thread][endX][endY];
+
+                    }
+                    catch(Exception e)
+                    {
+                        Debug.Log($"Tried to start at ({startX}, {startY}) and end at ({endX}, {endY}) for {ship.Name}");
+                        throw e;
+                    }
+
                     Ships[thread] = ship;
 
                     BTFindPath(thread);

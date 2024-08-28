@@ -65,6 +65,18 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     }
                 }
 
+            }else if (Ship.ShipType == "Beacon" && Ship.MotherSquad.HasCommand){
+                Ship ship = collider.GetComponent<Ship>();
+                //Debug.Log($"{Ship.Name} from {Ship.Level.gameObject.name} just saw {ship.Name} and added them to hivemind vision");
+                if (!Ship.Level.GetState().VisionCache[Ship.Side - 1].Contains(ship))
+                {
+                    Ship.MotherSquad.Command.Tsv += (int)Math.Min(Math.Max(ship.Tsv * .05f, 50), 500);
+                    Ship.Level.GetState().HivemindShips[Ship.Side - 1][Ship.Id].Add(ship);
+                    if (Ship.MotherSquad.Command.Type == "Scouting")
+                    {
+                        ((Scouting)Ship.MotherSquad.Command).FoundShips();
+                    }
+                }
             }
 
         }

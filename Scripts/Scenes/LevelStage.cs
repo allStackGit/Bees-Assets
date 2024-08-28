@@ -56,7 +56,7 @@ namespace Assets.Scripts.Scenes
 
         public GameObject BargePrefab, BeehivePrefab, BumblebeePrefab, CarpenterBeePrefab, CarrierPrefab, CruiserPrefab, DreadnoughtPrefab, DronePrefab,
             FactoryPrefab, FireShipPrefab, FlagshipPrefab, FrigatePrefab, GunshipPrefab, HoneybeePrefab, HornetPrefab, LeafcutterPrefab, QueenPrefab,
-            ScoutPrefab, StrikerPrefab, WarpGatePrefab, WaspPrefab, YellowJacketPrefab, ValidPrefab, InvalidPrefab,
+            ScoutPrefab, StrikerPrefab, WarpGatePrefab, WaspPrefab, YellowJacketPrefab, BeaconPrefab, ValidPrefab, InvalidPrefab,
             Map, SquadBox;
         /// <summary>
         /// How frequently asteroids spawn in this level. Sets the upper bound in seconds of the randomly timed spawn
@@ -181,7 +181,7 @@ namespace Assets.Scripts.Scenes
                 Debug.Log($"The map does not have mining");
             }
 
-            if (Utilities.CoinToss())
+            if (!HasObstacles && Utilities.CoinToss())
             {
                 ActivateLoadingShipsMidLevel = true;
                 Debug.Log($"The map has ships loading midlevel");
@@ -495,7 +495,6 @@ namespace Assets.Scripts.Scenes
         }
         private void SetTriggers()
         {
-            CancelInvoke(nameof(CheckTriggers));
             Triggers.Clear();
 
             Triggers.Add(new Trigger(() =>
@@ -886,7 +885,7 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
             {
                 FogOfWar.SetActive(false);
             }
-
+            CancelInvoke(nameof(CheckTriggers));
             if (ActivateLoadingShipsMidLevel)
             {
                 SetTriggers();

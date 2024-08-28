@@ -60,7 +60,7 @@ namespace Assets.Scripts.Data
         public void SetupRandomShips(string squadType)
         {
             int shipCount = 10;
-            if ((new List<string> { "Queen", "Fire Ship", "Carrier", "Flagship", "Warp Gate" }).Contains(squadType))
+            if ((new List<string> { "Queen", "Fire Ship", "Carrier", "Flagship", "Warp Gate", "Beehive" }).Contains(squadType))
             {
                 shipCount = 1;
             }
@@ -82,7 +82,7 @@ namespace Assets.Scripts.Data
                 int id = Utilities.GetNegativeFleetshipId();
 
                 FleetShip fleetShip = new FleetShip(id, Side, $"{squadType} - #{id}", squadType, false, true, false, 0, 0, 0, 0, 0, 0, 0);
-                Vector2 offset = ConfigData.CarrierColumnFormationOffsets[shipIndex];
+                Vector2 offset = ConfigData.CarrierDoubleColumnFormationOffsets[shipIndex];
                 SquadShip squadShip = new SquadShip(fleetShip.Id, fleetShip.Type, offset, this);
                 AddShipToSquad(squadShip);
 

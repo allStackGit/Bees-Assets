@@ -46,6 +46,7 @@ namespace Assets.Scripts
             {"T", "Barge" },
             {"U", "Fire Ship" },
             {"V", "Warp Gate" },
+            {"W", "Beacon" },
         };
         public static readonly Dictionary<string, int> ShipTypeToInt = new Dictionary<string, int>()
         {
@@ -71,6 +72,7 @@ namespace Assets.Scripts
             {"T", 20 },
             {"U", 21 },
             {"V", 22 },
+            {"W", 23 },
         };
 
         private static readonly Random _rnd = new Random();

@@ -104,6 +104,7 @@ namespace Assets.Scripts.Level.Commands
                 case "Type T":
                 case "Type U":
                 case "Type V":
+                case "Type W":
                     string type = Name.Substring(5);
                     queue.Sort((a, b) =>
                     {

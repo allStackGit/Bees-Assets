@@ -14,7 +14,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public Ship Ship;
         public int Range;
         public CircleCollider2D Collider;
-        public HashSet<Ship> NearbyShips = new HashSet<Ship>();
+        public HashSet<Ship> NearbyEnemyShips = new HashSet<Ship>();
 
         public virtual void Setup(Ship ship, int range)
         {
@@ -28,7 +28,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             if (collidingThing.CompareTag("Ship"))
             {
                 Ship ship = collidingThing.GetComponent<Ship>();
-                NearbyShips.Add(ship);
+                if (ship.Side != Ship.Side)
+                {
+                    NearbyEnemyShips.Add(ship);
+                }
                 //Debug.Log($"{ship.Name} is nearby {Ship.Name}");
             }
 
@@ -39,7 +42,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             if (collidingThing.CompareTag("Ship"))
             {
                 Ship ship = collidingThing.GetComponent<Ship>();
-                NearbyShips.Remove(ship);
+                NearbyEnemyShips.Remove(ship);
                 //Debug.Log($"{ship.Name} is no longer nearby {Ship.Name}");
 
             }

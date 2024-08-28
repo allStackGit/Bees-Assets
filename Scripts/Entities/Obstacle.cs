@@ -62,7 +62,7 @@ namespace Assets.Scripts.Entities
         public void Collision(Collider2D collider)
         {
             GameObject collidingThing = collider.gameObject;
-            if (!IsMapBorder && collidingThing.CompareTag("Ship"))
+            if (!IsMapBorder && !IsMobile && collidingThing.CompareTag("Ship"))
             {
                 Ship ship = collidingThing.GetComponent<Ship>();
                 ShipCollision(ship);

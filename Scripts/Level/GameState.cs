@@ -343,7 +343,7 @@ namespace Assets.Scripts.Level
 
         public bool IsSideKilled(int side)
         {
-            return GetShips(side).Count == 0;
+            return GetShips(side).Count == 0 || !GetShips(side).Where((s) => s.IsMobile).Any();
         }
 
     }

@@ -16,13 +16,13 @@ namespace Assets.Scripts.Entities
 
         public Collider2D Collider;
         public Rigidbody2D Body;
-        protected virtual void Update()
-        {
-            if (!Level.IsPaused)
-            {
-                Age++;
-            }
-        }        
+        //protected virtual void Update() // [alert] [training] Should probably just remove this during training
+        //{
+        //    if (!Level.IsTraining && !Level.IsPaused)
+        //    {
+        //        Age++;
+        //    }
+        //}        
         public bool Equals(Entity entity)
         {
             return Id == entity.Id;
@@ -89,14 +89,6 @@ namespace Assets.Scripts.Entities
                 result += 360;
             }
             return result;
-        }
-        public Vector2 CirclePoint(float angle, float distance)
-        {
-            angle *= -1;
-            angle -= Mathf.PI * .5f;
-            Vector2 point = new Vector2((GetX() + (Mathf.Cos(angle) * distance)),
-                (GetY() + (Mathf.Sin(angle) * distance)));
-            return point;
         }
         public bool IsFriendly(Entity entity)
         {

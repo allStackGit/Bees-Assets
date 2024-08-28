@@ -149,8 +149,8 @@ namespace Assets.Scripts.Level.Commands
         {
             return Squad.GetShips().All((ship) =>
             {
-                return ship.ProximityCollider.NearbyShips.Contains(ship.TargetEnemyShipToFollow) || (ship.ShipType == "Striker" && ((Striker)ship).HasCompletedRun);
-            }) && Squad.GetShips().Any((ship) => ship.ProximityCollider.NearbyShips.Contains(ship.TargetEnemyShipToFollow));
+                return ship.ProximityCollider.NearbyEnemyShips.Contains(ship.TargetEnemyShipToFollow) || (ship.ShipType == "Striker" && ((Striker)ship).HasCompletedRun);
+            }) && Squad.GetShips().Any((ship) => ship.ProximityCollider.NearbyEnemyShips.Contains(ship.TargetEnemyShipToFollow));
         }
         /// <summary>
         /// Have all the ships dropped their bombs if they have them and then returned to their carrier if necessary
@@ -212,7 +212,7 @@ namespace Assets.Scripts.Level.Commands
                     {
 
                         SendShipToTarget(ship);
-                        if (Squad.IsHiveMindControlled && ship.ShipType == "Fire Ship" && ship.ProximityCollider.NearbyShips.Contains(ship.TargetEnemyShipToFollow))
+                        if (Squad.IsHiveMindControlled && ship.ShipType == "Fire Ship" && ship.ProximityCollider.NearbyEnemyShips.Contains(ship.TargetEnemyShipToFollow))
                         {
                             // if you're a fire ship and within detonation distance of your target, detonate
                             Debug.Log($"{ship.Name} is hivemind controlled and on a bombing run and near its target enemy and so it's going to detonate. ");

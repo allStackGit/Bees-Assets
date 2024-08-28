@@ -31,18 +31,23 @@ namespace Assets.Scripts.Entities.Ships
         public float ProjectileValue, Speed, SpecialFirePower, CurrentSpeed;
         public GameObject ShipExplosion, HealthBar, MiniMapIcon, ShipAnimation;
         public Vector2 TargetCoordinates, FinalDestination, OffsetFromCenter; // the coordinates of where the ship should go, and it's offset from the center of the squad
-        public Squad Squad;
+        public Squad Squad, MotherSquad;
         public float DefaultAngle, TargetDirection;
         public long LastKilled;
         public FleetShip FleetShip = null;
         public string ShipType, Name;
         public bool FireAtFrontOfShip, InCombat, IsFollowingPath, CannotChangeMovementOrders, IsSpawnedShip;
         public Vision Vision;
+        public SpriteRenderer SpriteRenderer;
         /// <summary>
         /// A ship can be killed at some point of the frame and still exist until the end of the frame. Check this to see if a ship is dead but not yet destroyed.
         /// </summary>
         public bool IsDead;
-        public bool HasBrain, IsMinionShip, HasTargetCoordinates, IsMiningShip, IsWarpGate, HasTargetDirection, HasVision, HasProximityCollider, HasShipAnimation, HasRocketFlares, 
+        /// <summary>
+        /// This has the same side as the user and the user has a controller
+        /// </summary>
+        public bool IsUserControlled;
+        public bool HasBrain, IsMobile, IsHiveMindControlled, IsMinionShip, HasTargetCoordinates, IsMiningShip, IsWarpGate, HasTargetDirection, HasVision, HasProximityCollider, HasShipAnimation, HasRocketFlares, 
             HasLeftRocketFlares, HasCenterRocketFlares, HasRightRocketFlares;
         public List<Weapon> Weapons;
         public List<GameObject> ProjectilePrefabs, WeaponPrefabs, ColoredPrefabs, LeftRocketFlares, CenterRocketFlares, RightRocketFlares;
@@ -88,14 +93,11 @@ namespace Assets.Scripts.Entities.Ships
         public float DamagePerSecond => Turrets.Sum(t => t.DamagePerSecond);
         public int Tsv => Utilities.CalculateTsv(this);
         public string ShipTypeLetter => Utilities.ConvertShipNameToType(ShipType);
-        public double Seconds => GetLifeTime();
         public bool HasWeapons => Weapons.Count > 0;
         /// <summary>
         /// Does this ship have ship(s) that it's weapon(s) are targeting?
         /// </summary>
         public bool HasWeaponsTargetShips => WeaponsTargetShips.Count > 0;
-        public bool IsUserControlled => Side == ConfigData.Configuration.UserSide && Level.HasPlayer;
-        public bool IsHiveMindControlled => Side == ConfigData.Configuration.AISide || (Side == ConfigData.Configuration.UserSide && !Level.HasPlayer);
         /// <summary>
         /// Whether or not the ship has target coordinates. If it does, it hasn't reached the destination
         /// </summary>
@@ -157,7 +159,10 @@ namespace Assets.Scripts.Entities.Ships
             //__CommandStatus = Squad.HasCommand ? Squad.Comd.Status : "-";
             __CommandDestination = Squad.HasCommand ? Squad.Command.GetDestination() : Vector2.zero;
             __TargetCoordinates = TargetCoordinates;
-            __Velocity = Body.velocity;
+            if (IsMobile)
+            {
+                __Velocity = Body.velocity;
+            }
             __Firepower = Firepower;
             __Tsv = Tsv;
             __DamagePerSecond = DamagePerSecond;
@@ -177,7 +182,7 @@ namespace Assets.Scripts.Entities.Ships
             __DegreesToTargetCoordinates = GetDegreesTowardsPoint(TargetCoordinates);
             __DistanceToTargetCoordinates = DistanceToPoint(TargetCoordinates);
             __TurningRadius = ConfigData.ShipTurningRadius;
-            __NearbyShips = HasProximityCollider ? ProximityCollider.NearbyShips.ToList() : new List<Ship>();
+            __NearbyShips = HasProximityCollider ? ProximityCollider.NearbyEnemyShips.ToList() : new List<Ship>();
             __HivemindShips = Level.GetState().GetShipsVisibleToHiveMind(Side).Select(s => s.ToString()).ToList();
 
             if (ShipType == "Warp Gate")
@@ -211,6 +216,14 @@ namespace Assets.Scripts.Entities.Ships
             OffsetFromCenter = offsetFromCenter;
             Body = GetComponent<Rigidbody2D>();
             Collider = GetComponent<Collider2D>();
+
+            IsUserControlled = Side == ConfigData.Configuration.UserSide && Level.HasPlayer;
+
+            if (!IsUserControlled)
+            {
+                IsHiveMindControlled = true;
+            }
+
             Transform brain = transform.Find("Brain");
 
             MaxHealth = FleetShip.MaxHealth;
@@ -357,6 +370,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             MaxRange = HasWeapons ? Weapons.Max((w) => w.Range) : 0;
             HalfMaxRange = MaxRange / 2;
 
+            if (Speed > 0)
+            {
+                IsMobile = true;
+            }
 
             if (ProximityCollider != null)
             {
@@ -478,7 +495,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 }
             }
         }
-        public void SetColor()
+        public virtual void SetColor()
         {
             // set the color
             if (Squad.HasCustomColor)
@@ -489,6 +506,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 ColoredPrefabs.Insert(0, gameObject);
                 Color[] colors = ConfigData.ChangeableShipColors.GetValueOrDefault(ShipType);
                 int index = 0;
+
                 ColoredPrefabs.ForEach((prefab) =>
                 {
                     Sprite prefabSprite = prefab.GetComponent<SpriteRenderer>().sprite;
@@ -591,7 +609,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 //Debug.Log($"No obstacles in the way for {Name}");
                 StopMoving("Got a new destination");
                 IsFollowingPath = false;
-                TargetCoordinates = destination;
+                SetTargetCoordinates(destination);
                 FinalDestination = TargetCoordinates;
                 HasTargetCoordinates = true;
             }
@@ -609,7 +627,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 StopMoving("Got a new destination");
 
                 IsFollowingPath = false;
-                TargetCoordinates = Vector2.zero;
+                SetTargetCoordinates(Vector2.zero);
                 HasTargetCoordinates = false;
                 HasTargetDirection = true;
                 TargetDirection = direction;
@@ -629,8 +647,12 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             //Debug.Log($"There's an asteroid {asteroid.Name} nearby on our path: {Name}");
 
             // If we're following a pathfinder path, recalculate the path because we're near an asteroid
-            MoveToPoint(FinalDestination, true);
-            InvokeRepeating(nameof(NearbyAsteroidDoubleCheck), 1f, 1f);
+            if (IsMobile)
+            {
+                MoveToPoint(FinalDestination, true);
+                InvokeRepeating(nameof(NearbyAsteroidDoubleCheck), 1f, 1f);
+            }
+
         }
         /// <summary>
         /// Called on a delay from FoundNearbyAsteroid to check the pathfinding again in hopes of avoiding running into the asteroid's new position shortly after detecting it
@@ -677,7 +699,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 //}
                 DestinationQueue = new Queue<Vector2>(PathfindingValue.Points);
                 FinalDestination = DestinationQueue.Last();
-                TargetCoordinates = DestinationQueue.Dequeue();
+                SetTargetCoordinates(DestinationQueue.Dequeue());
                 IsFollowingPath = true;
                 HasTargetCoordinates = true;
                 PathfindingValue = null;
@@ -693,10 +715,21 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             if (!HasObstacleInPath(FinalDestination))
             {
                 Debug.Log($"Found a direct path for {Name} to {FinalDestination}");
-                TargetCoordinates = FinalDestination;
+                SetTargetCoordinates(FinalDestination);
                 IsFollowingPath = false;
                 DestinationQueue.Clear();
                 CancelInvoke(nameof(CheckForDirectPath));
+            }
+        }
+        public void SetTargetCoordinates(Vector2 v)
+        {
+            if (IsMobile)
+            {
+                TargetCoordinates = v;
+            }
+            else
+            {
+                Debug.LogException(new Exception($"Tried to set target coordinates for imobile ship {Name}"));
             }
         }
         private void Move()
@@ -896,7 +929,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         {
             if (DestinationQueue.Count > 0)
             {
-                TargetCoordinates = DestinationQueue.Dequeue();
+                SetTargetCoordinates(DestinationQueue.Dequeue());
                 //Debug.Log($"There are more target coordinates, not ending movement: {TargetCoordinates}");
             }
             //else if (HasTargetEnemy)
@@ -915,46 +948,49 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         /// <returns></returns>
         private bool IsCloseEnoughToTargetCoordinates(float distance)
         {
-            return distance < ConfigData.ShipTurningRadius && !(!IsFollowingPath && HasTargetEnemyShipToFollow && HasCommand && Squad.Command.Type == "Bombing Run" && ProximityCollider.NearbyShips.Contains(TargetEnemyShipToFollow));
+            return distance < ConfigData.ShipTurningRadius && !(!IsFollowingPath && HasTargetEnemyShipToFollow && HasCommand && Squad.Command.Type == "Bombing Run" && ProximityCollider.NearbyEnemyShips.Contains(TargetEnemyShipToFollow));
         }
         public void StopMoving(string reason)
         {
-           
-            __LastStopReason = $"{Name} stopped at {GetPosition()} on the way to {TargetCoordinates} because of {reason} at {Age} ticks.";
-            //Debug.Log(__LastStopReason);
-            TargetCoordinates = Vector2.zero;
-            Body.velocity = Vector2.zero;
-            HasTargetCoordinates = false;
-            HasTargetDirection = false;
-            TargetDirection = 0;
-            if (IsFollowingPath)
+            if (IsMobile)
             {
-                IsFollowingPath = false;
-                DestinationQueue.Clear();
-                CancelInvoke(nameof(CheckForDirectPath));
+                __LastStopReason = $"{Name} stopped at {GetPosition()} on the way to {TargetCoordinates} because of {reason} at {Age} ticks.";
+                //Debug.Log(__LastStopReason);
+                SetTargetCoordinates(Vector2.zero);
+                Body.velocity = Vector2.zero;
+                HasTargetCoordinates = false;
+                HasTargetDirection = false;
+                TargetDirection = 0;
+                if (IsFollowingPath)
+                {
+                    IsFollowingPath = false;
+                    DestinationQueue.Clear();
+                    CancelInvoke(nameof(CheckForDirectPath));
+                }
+
+                if (HasRocketFlares)
+                {
+                    CenterRocketFlares.ForEach((flare) =>
+                    {
+                        flare.SetActive(false);
+                    });
+
+                    LeftRocketFlares.ForEach((flare) =>
+                    {
+                        flare.SetActive(false);
+                    });
+
+                    RightRocketFlares.ForEach((flare) =>
+                    {
+                        flare.SetActive(false);
+                    });
+
+                }
+
+                //transform.position = TargetCoordinates;
+                //SetToDefaultAngle();
             }
 
-            if (HasRocketFlares)
-            {
-                CenterRocketFlares.ForEach((flare) =>
-                {
-                    flare.SetActive(false);
-                });
-
-                LeftRocketFlares.ForEach((flare) =>
-                {
-                    flare.SetActive(false);
-                });
-
-                RightRocketFlares.ForEach((flare) =>
-                {
-                    flare.SetActive(false);
-                });
-
-            }
-
-            //transform.position = TargetCoordinates;
-            //SetToDefaultAngle();
         }
         public void SetToDefaultAngle()
         {

@@ -102,7 +102,6 @@ namespace Assets.Scripts.Entities.Ships
                 ship.IsMinionShip = true;
             }
             squad.AddShip(ship);
-            ship.SetColor();
             ship.FleetShip = FleetShip;
 
             Vector2 position = GetPosition();

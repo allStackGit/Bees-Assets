@@ -31,7 +31,7 @@ namespace Assets.Scripts.Level
         public Color SquadBoxColor;
         public SavedSquad SavedSquad;
         public GameObject SquadBox;
-        public bool HasMovedBox, IsMatchingSpeed, CeaseFire, HasAddedShips, IsShowingRanges, IsGrowingSquad, HasCustomColor;
+        public bool HasMovedBox, IsMatchingSpeed, IsImmobile, CeaseFire, HasAddedShips, IsShowingRanges, IsGrowingSquad, HasCustomColor;
         /// <summary>
         /// A squad can be dead for one frame before it is destroyed. It's important to check for the death of a squad on anything run by a timer outside of the squad object
         /// </summary>
@@ -113,8 +113,8 @@ namespace Assets.Scripts.Level
             {
                 SquadBoxColor = ConfigData.GetUIColor("squadbox-default-color");
             }
-
-            if (IsHiveMindControlled)
+            
+            if (IsHiveMindControlled && !IsImmobile)
             {
                 AddToCommandList();
             }
@@ -528,7 +528,7 @@ namespace Assets.Scripts.Level
                 BannedStrats.UnionWith(ConfigData.CommandTypes);
                 BannedStrats = BannedStrats.Except(Level.OverrideStrats).ToHashSet();
 
-                if (Level.OverrideStrats.Contains("Scouting") && Level.GetState().GetShipsVisibleToHiveMind(Side).Count > 0)
+                if (Level.OverrideStrats.Contains("Scouting") && Level.GetState().GetShipsVisibleToHiveMind(Side).Count > 0 && Level.OverrideStrats.Count > 1)
                 {
                     BannedStrats.Add("Scouting");
                 }

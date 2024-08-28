@@ -77,6 +77,7 @@ namespace Assets.Scripts
 
         public static readonly Dictionary<string, Vector2Int> ShipSizes = new Dictionary<string, Vector2Int>() {
             { "Barge",          new Vector2Int(760, 360)},
+            { "Beacon",         new Vector2Int(90, 80)},
             { "Carrier",        new Vector2Int(480, 560)},
             { "Cruiser",        new Vector2Int(320, 360)},
             { "Dreadnought",    new Vector2Int(320, 420)},
@@ -102,6 +103,7 @@ namespace Assets.Scripts
         };
         public static readonly Dictionary<string, float> ShipSizeFactor = new Dictionary<string, float>() {
             { "Barge",          Huge},
+            { "Beacon",          Tiny},
             { "Carrier",        Large},
             { "Cruiser",        Medium},
             { "Dreadnought",    Medium},
@@ -127,6 +129,7 @@ namespace Assets.Scripts
         };
         public static readonly Dictionary<string, Color[]> ChangeableShipColors = new Dictionary<string, Color[]>() {
             { "Barge", new Color[] {new Color(0.235f, 0.753f, 0.498f, 1), new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.196f, 0.6f, 0.4f, 1) } },
+            { "Beacon", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
             { "Carrier", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
             { "Cruiser", new Color[] {new Color(0.184f, 0.569f, 0.380f, 1), new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.196f, 0.6f, 0.4f, 1) } },
             { "Dreadnought", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1)  } },
@@ -168,6 +171,9 @@ namespace Assets.Scripts
         public const float OffsetFromFront = .35f;
         public const float FireShipExplosionSize = 64;
         public const float RefillDistanceToCarrier = 10;
+        public const int MinimumDelayPerBeacon = 10;
+        public const int BeaconUpdateFrequency = 5;
+        public const int MaxBeaconsDroppedPerScout = 5;
         public static Vector2 HalfSize = new Vector2(.5f, .5f);
         public const int MiningRate = 750;
         public static float ShipTurningRadius; 

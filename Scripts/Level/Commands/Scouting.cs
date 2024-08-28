@@ -1,6 +1,7 @@
 ﻿
 using Assets.Scripts.Entities.Ships;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Level.Commands
@@ -11,6 +12,7 @@ namespace Assets.Scripts.Level.Commands
         Sends the squad towards a random spot on the map in search of ships
          */
         private bool _foundShips;
+        List<Scout> Scouts = new List<Scout>();
         public override void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy)
         {
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
@@ -23,6 +25,21 @@ namespace Assets.Scripts.Level.Commands
             InvokeRepeating(nameof(Timer), 0, CommandFrequency);
             Invoke(nameof(EndCommand), ConfigData.Configuration.AISquadPatrolTime);
 
+            if (Squad.Side == ConfigData.Configuration.HumanSide)
+            {
+                Squad.GetShips().ForEach((ship) =>
+                {
+                    if (ship.ShipType == "Scout")
+                    {
+                        Scouts.Add((Scout)ship);
+                    }
+                });
+
+                if (Scouts.Count > 0)
+                {
+                    InvokeRepeating(nameof(DropScoutBeacons), ConfigData.MinimumDelayPerBeacon, ConfigData.MinimumDelayPerBeacon);
+                }
+            }
 
         }
         private void Timer()
@@ -36,6 +53,27 @@ namespace Assets.Scripts.Level.Commands
 
             }
 
+        }
+
+        public void DropScoutBeacons()
+        {
+            List<Scout> scoutsToRemove = new List<Scout>();
+            Scouts.ForEach((scout) =>
+            {
+                if (scout != null && !scout.IsDead)
+                {
+                    scout.DropBeacon();
+                }
+                else
+                {
+                    scoutsToRemove.Add(scout);
+                }
+            });
+
+            if (scoutsToRemove.Count > 0)
+            {
+                Scouts = Scouts.Except(scoutsToRemove).ToList();
+            }
         }
 
         public void FoundShips()
