@@ -21,7 +21,7 @@ namespace Assets.Scripts.Settings
         }
         protected override void ProcessData(string contents)
         {
-
+            //Debug.Log(contents);
             Utilities.JArrayToDynamicList((JArray)JsonConvert.DeserializeObject(contents)).ForEach((ship) =>
             {
 
@@ -32,7 +32,7 @@ namespace Assets.Scripts.Settings
                 List<float> rotationRates = Utilities.JArrayToList<float>(ship.RotationRates);
                 List<string> types = Utilities.JArrayToList<string>(ship.WeaponTypes);
 
-                ShipStatsList.Add((string)ship.ShipType, new ShipStatBlock((string)ship.ShipType, (string)ship.Description, (int)ship.Health,
+                ShipStatsList.Add((string)ship.ShipType, new ShipStatBlock((string)ship.ShipType, (string)ship.Description, (string)ship.CodexDescription, (int)ship.Health,
                     range, power, (int)ship.Sight, (int)ship.AdditionalTsv, ProjectileValue,
                     rateOfFire, rotationRates, (float)ship.Speed, types));
                  

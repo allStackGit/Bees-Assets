@@ -103,7 +103,7 @@ namespace Assets.Scripts
         };
         public static readonly Dictionary<string, float> ShipSizeFactor = new Dictionary<string, float>() {
             { "Barge",          Huge},
-            { "Beacon",          Tiny},
+            { "Beacon",         Tiny},
             { "Carrier",        Large},
             { "Cruiser",        Medium},
             { "Dreadnought",    Medium},
@@ -157,6 +157,8 @@ namespace Assets.Scripts
 
         public static readonly HashSet<string> CommandTypes = new HashSet<string> { "Aggressive", "Defensive", "Random", "Circle", "Right Swipe", "Left Swipe", "Closest Friendly",
         "In and Out", "Patrol", "Guard", "Scouting", "Mining", "Full Retreat" };
+
+        public static readonly HashSet<string> SpawnedOnlyShipTypes = new HashSet<string> {"Drone", "Striker", "Beacon"};
 
         public static int SquadMakerSide;
 
