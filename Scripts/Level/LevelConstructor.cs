@@ -135,8 +135,10 @@ namespace Assets.Scripts.Level
 
                     for (int option = 0; option < 2; option++)
                     {
+                        bool hasArmedSquads = false;
+                        int squadNumber = SquadNumber;
                         List<SavedSquad> squadsList = option == 0 ? preloadSquads : midLevelSquads;
-                        for (int i = 0; i < SquadNumber; i++)
+                        for (int i = 0; i < squadNumber; i++)
                         {
                             string type = ConfigData.Configuration.VisibleBeeShipTypes.ElementAt(Random.Range(0, ConfigData.Configuration.VisibleBeeShipTypes.Count));
                             if (side == ConfigData.Configuration.HumanSide)
@@ -152,6 +154,15 @@ namespace Assets.Scripts.Level
                                 ConfigData.StartingSettings.DefaultShootingStrategy, ConfigData.UnsetColor, null);
                             savedSquad.SetupRandomShips(type);
                             squadsList.Add(savedSquad);
+
+                            if (ConfigData.ArmedShipTypes.Contains(type))
+                            {
+                                hasArmedSquads = true;
+                            }
+                            if (i == squadNumber - 1 && !hasArmedSquads)
+                            {
+                                squadNumber++;
+                            }
                         }
                     }
                     

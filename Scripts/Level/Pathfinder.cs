@@ -74,12 +74,13 @@ namespace Assets.Scripts.Level
             {
                
 
-                for (int thread = 0; thread < ConfigData.MaxThreads && PathsWaiting.Count > 0; thread++)
+                for (int threadIndex = 0; threadIndex < ConfigData.MaxThreads && PathsWaiting.Count > 0; threadIndex++)
                 {
                     //Debug.Log($"Checking thread #{i} : {IsThreadActive[i]}, Pathswaiting: {PathsWaiting.Count}");
-                    if (!IsThreadActive[thread])
+                    if (!IsThreadActive[threadIndex])
                     {
                         PathWaiting p = PathsWaiting.Dequeue();
+
                         // if this ship has already had a more recent path worked on, remove this path
                         while (ShipsToDequeue.Contains(p.Ship))
                         {
@@ -95,48 +96,67 @@ namespace Assets.Scripts.Level
                             }
                         }
 
-
-                        IsThreadActive[thread] = true;
-                        Clearances[thread] = p.Clearance;
+                        p.Ship.IsPathfinding = true;
+                        IsThreadActive[threadIndex] = true;
+                        Clearances[threadIndex] = p.Clearance;
 
                         if (Level.ActivateCollisionAsteroids)
                         {
                             //UpdateMapTime[i] = SW.Stopwatch.StartNew();
-                            UpdateMap(thread, p.Ship);
+                            UpdateMap(threadIndex, p.Ship);
                             //UpdateMapTime[i].Stop();
                         }
-                        IsThreadActive[thread] = true;
-                        StartNodes[thread] = GridNodes[thread][p.StartX][p.StartY];
-                        EndNodes[thread] = GridNodes[thread][p.EndX][p.EndY];
-                        Ships[thread] = p.Ship;
+                        StartNodes[threadIndex] = GridNodes[threadIndex][p.StartX][p.StartY];
+                        EndNodes[threadIndex] = GridNodes[threadIndex][p.EndX][p.EndY];
+                        Ships[threadIndex] = p.Ship;
 
                         //Debug.Log($"Queued Started BT #{i}");
 
                         //Debug.Log($"Queued running #{i} for {p.Ship.Name}");
 
-                        BTFindPath(thread);
+                        BTFindPath(threadIndex);
 
                         //Debug.Log($"Called BTFindPath({i}) #{i} for {p.Ship.Name}");
 
-                        //Debug.Log($"Thread #{i} Queued Started {p.Ship.Name} after waiting {(Time.realtimeSinceStartup - p.StartTime) * 1000}ms on the queue");
+                        //Debug.Log($"Thread #{threadIndex}:{Ships[threadIndex].Name} Queued Started after waiting {(Time.realtimeSinceStartup - p.StartTime) * 1000}ms on the queue");
 
                         //ThreadsStarted++;
                         //PathsWaitingToRemove.Add(p);
                         ShipsQueued.Remove(p.Ship);
                         //break;
+
                     }
                     else
                     {
-                        if (Totals[thread].ElapsedMilliseconds > 1000)
+                        if (Totals[threadIndex] != null && Totals[threadIndex].ElapsedMilliseconds > 1000)
                         {
-                            Debug.Log($"Thread #{thread}:{Ships[thread].Name} has been running for {Totals[thread].ElapsedMilliseconds}ms");
+                            Debug.Log($"Thread #{threadIndex}:{Ships[threadIndex].Name} has been running for {Totals[threadIndex].ElapsedMilliseconds}ms");
                         }
                     }
                 }
 
                 //Debug.Log($"There are NOW {PathsWaiting.Count} paths waiting at {Time.realtimeSinceStartup}");
             }
-            
+
+            //for (int threadIndex = 0; threadIndex < ConfigData.MaxThreads; threadIndex++)
+            //{
+            //    if (Totals[threadIndex] != null && IsThreadActive[threadIndex] && Totals[threadIndex].ElapsedMilliseconds > 1000)
+            //    {
+            //        Debug.Log($"Thread #{threadIndex}:{Ships[threadIndex].Name} has been running for {Totals[threadIndex].ElapsedMilliseconds}ms");
+            //    }else if (Totals[threadIndex] == null)
+            //    {
+            //        Debug.Log($"Totals[{threadIndex}] is null");
+            //    }else if (!IsThreadActive[threadIndex])
+            //    {
+            //        Debug.Log($"Thread #{threadIndex} is empty");
+            //    }
+            //    else
+            //    {
+            //        Debug.Log($"Not enough time has elapsed for #{threadIndex}: {Totals[threadIndex].ElapsedMilliseconds}ms");
+            //    }
+            //}
+               
+
         }
 
         //int totalLoopCount = 0;
@@ -495,7 +515,7 @@ namespace Assets.Scripts.Level
             }
             return points.ToArray();
         }
-        public void UpdateMap(int thread, Ship ship)
+        public void UpdateMap(int threadIndex, Ship ship)
         {
             float start = Time.realtimeSinceStartup;
             CollisionAsteroid asteroid;
@@ -509,21 +529,21 @@ namespace Assets.Scripts.Level
             int startY;
             int endX;
             int endY;
-            int totalAsteroids = PreviousAsteroids[thread].Count + collisionAsteroids.Count;
+            int totalAsteroids = PreviousAsteroids[threadIndex].Count + collisionAsteroids.Count;
             int fullClearanceThreshold = 1; // 3
             //Debug.Log($"Updating map");
 
             
 
-            PreviousAsteroids[thread].ForEach((asteroidId) =>
+            PreviousAsteroids[threadIndex].ForEach((asteroidId) =>
             {
                 float asteroidTime = Time.realtimeSinceStartup;
                 //Debug.Log($"Clearing the position of {asteroid.Name} on the pathfinding map");
-                foreach (int[] point in ObstaclePoints[thread][asteroidId])
+                foreach (int[] point in ObstaclePoints[threadIndex][asteroidId])
                 {
                     if (point[0] >= 0 && point[0] < _grid.Width && point[1] >= 0 && point[1] < _grid.Height)
                     {
-                        GridNodes[thread][point[0]][point[1]].Clearance = GridNodes[thread][point[0]][point[1]].OriginalClearance; // set its old position to the original clearance
+                        GridNodes[threadIndex][point[0]][point[1]].Clearance = GridNodes[threadIndex][point[0]][point[1]].OriginalClearance; // set its old position to the original clearance
 
                         //if (point[0] < leastX)
                         //{
@@ -547,16 +567,16 @@ namespace Assets.Scripts.Level
 
                 if (totalAsteroids < fullClearanceThreshold)
                 {
-                    startX = Math.Clamp(leastX - sectionSize, 0, _grid.Width - 1);
-                    startY = Math.Clamp(leastY - sectionSize, 0, _grid.Height - 1);
-                    endX = Math.Clamp(mostX + sectionSize, 0, _grid.Width - 1);
-                    endY = Math.Clamp(mostY + sectionSize, 0, _grid.Height - 1);
+                    startX = Math.Clamp(leastX - sectionSize, 0, _grid.MaxX);
+                    startY = Math.Clamp(leastY - sectionSize, 0, _grid.MaxY);
+                    endX = Math.Clamp(mostX + sectionSize, 0, _grid.MaxX);
+                    endY = Math.Clamp(mostY + sectionSize, 0, _grid.MaxY);
 
-                    CalculateClearance(GridNodes[thread], startX, endX, startY, endY, Clearances[thread], true);
+                    CalculateClearance(GridNodes[threadIndex], startX, endX, startY, endY, Clearances[threadIndex], true);
                     //Debug.Log($"Calculated clearance around asteroid #{asteroidId} in {(Time.realtimeSinceStartup - asteroidTime) * 1000}ms");
                 }
             });
-            PreviousAsteroids[thread].Clear();
+            PreviousAsteroids[threadIndex].Clear();
 
             for (int i = 0; i < collisionAsteroids.Count; i++)
             {
@@ -570,19 +590,19 @@ namespace Assets.Scripts.Level
                     // Get the new points
                     //Debug.Log($"Updating the position of {asteroid.Name} on the pathfinding map");
                     //float obstaclePoints = Time.realtimeSinceStartup;
-                    ObstaclePoints[thread][asteroid.MapPointsIndex] = GetObstaclePoints(asteroid, asteroid.Body.velocity.x, asteroid.Body.velocity.y);
+                    ObstaclePoints[threadIndex][asteroid.MapPointsIndex] = GetObstaclePoints(asteroid, asteroid.Body.velocity.x, asteroid.Body.velocity.y);
                     //float obstaclePointsEnd = (Time.realtimeSinceStartup - obstaclePoints) * 1000; // seconds to milliseconds
                     //Debug.Log($"Updated obstacle points in {obstaclePointsEnd} ms"); // takes less than a millisecond
                     //ObstaclePoints[asteroid.MapPointsIndex] = GetObstaclePoints(asteroid, 0, 0);
 
                     //Debug.Log($"Got obstacle points for {asteroid}");
 
-                    foreach (int[] point in ObstaclePoints[thread][asteroid.MapPointsIndex])
+                    foreach (int[] point in ObstaclePoints[threadIndex][asteroid.MapPointsIndex])
                     {
                         if (point[0] >= 0 && point[0] < _grid.Width && point[1] >= 0 && point[1] < _grid.Height)
                         {
                             //Debug.Log($"Valid indexes: {point[0]}, {point[1]}");
-                            GridNodes[thread][point[0]][point[1]].Clearance = 0; // set its new position to unwalkable space
+                            GridNodes[threadIndex][point[0]][point[1]].Clearance = 0; // set its new position to unwalkable space
                             //if (point[0] < leastX)
                             //{
                             //    leastX = point[0];
@@ -603,16 +623,16 @@ namespace Assets.Scripts.Level
 
                         }
                     }
-                    PreviousAsteroids[thread].Add(asteroid.MapPointsIndex);
+                    PreviousAsteroids[threadIndex].Add(asteroid.MapPointsIndex);
 
 
                     if (totalAsteroids < fullClearanceThreshold)
                     {
-                        startX = Math.Clamp(leastX - sectionSize, 0, _grid.Width - 1);
-                        startY = Math.Clamp(leastY - sectionSize, 0, _grid.Height - 1);
-                        endX = Math.Clamp(mostX + sectionSize, 0, _grid.Width - 1);
-                        endY = Math.Clamp(mostY + sectionSize, 0, _grid.Height - 1);
-                        CalculateClearance(GridNodes[thread], startX, endX, startY, endY, Clearances[thread], true);
+                        startX = Math.Clamp(leastX - sectionSize, 0, _grid.MaxX);
+                        startY = Math.Clamp(leastY - sectionSize, 0, _grid.MaxY);
+                        endX = Math.Clamp(mostX + sectionSize, 0, _grid.MaxX);
+                        endY = Math.Clamp(mostY + sectionSize, 0, _grid.MaxY);
+                        CalculateClearance(GridNodes[threadIndex], startX, endX, startY, endY, Clearances[threadIndex], true);
                         //CalculateClearance(GridNodes[thread], 0, _grid.Width, 0, _grid.Height, Clearances[thread], true);
                         //Debug.Log($"Set obstacle points and possibly calculated clearance around {asteroid.Name} in {(Time.realtimeSinceStartup - asteroidTime) * 1000}ms");
 
@@ -623,8 +643,8 @@ namespace Assets.Scripts.Level
             if (totalAsteroids >= fullClearanceThreshold)
             {
                 float fullCalcTime = Time.realtimeSinceStartup;
-                CalculateClearance(GridNodes[thread], 0, _grid.Width, 0, _grid.Height, Clearances[thread], true);
-                Debug.Log($"Calculated full clearance in {(Time.realtimeSinceStartup - fullCalcTime) * 1000}ms");
+                CalculateClearance(GridNodes[threadIndex], 0, _grid.Width, 0, _grid.Height, Clearances[threadIndex], true);
+                //Debug.Log($"Calculated full clearance for #{threadIndex}:{Ships[threadIndex]?.Name} in {(Time.realtimeSinceStartup - fullCalcTime) * 1000}ms");
 
             }
             //CalculateClearance(GridNodes[thread], true);
@@ -635,23 +655,22 @@ namespace Assets.Scripts.Level
             //    $"Collision asteroids: {string.Join(",", collisionAsteroids.Select((a) => $"#{a.Id}"))}");
 
         }
-        public MapNode FindNearestWalkablePoint(MapNode startNode, MapNode endNode, int minimumClearance, MapNode[][] nodes, int threadIndex)
+        public MapNode FindNearestWalkablePoint(MapNode startNode, MapNode endNode, int minimumClearance, int threadIndex)
         {
 
             int loops = 0;
-            MapNode n = nodes[startNode.x][startNode.y - 1];
-            MapNode ne = nodes[startNode.x + 1][startNode.y - 1];
-            MapNode e = nodes[startNode.x + 1][startNode.y];
-            MapNode se = nodes[startNode.x + 1][startNode.y + 1];
-            MapNode s = nodes[startNode.x][startNode.y + 1];
-            MapNode sw = nodes[startNode.x - 1][startNode.y + 1];
-            MapNode w = nodes[startNode.x - 1][startNode.y];
-            MapNode nw = nodes[startNode.x - 1][startNode.y - 1];
+            MapNode n = GridNodes[threadIndex][startNode.x][Math.Clamp(startNode.y - 1, 0, _grid.MaxY)];
+            MapNode ne = GridNodes[threadIndex][Math.Clamp(startNode.x + 1, 0, _grid.MaxX)][Math.Clamp(startNode.y - 1, 0, _grid.MaxY)];
+            MapNode e = GridNodes[threadIndex][Math.Clamp(startNode.x + 1, 0, _grid.MaxX)][startNode.y];
+            MapNode se = GridNodes[threadIndex][Math.Clamp(startNode.x + 1, 0, _grid.MaxX)][Math.Clamp(startNode.y + 1, 0, _grid.MaxY)];
+            MapNode s = GridNodes[threadIndex][startNode.x][startNode.y + 1];
+            MapNode sw = GridNodes[threadIndex][Math.Clamp(startNode.x - 1, 0, _grid.MaxX)][Math.Clamp(startNode.y + 1, 0, _grid.MaxY)];
+            MapNode w = GridNodes[threadIndex][Math.Clamp(startNode.x - 1, 0, _grid.MaxX)][startNode.y];
+            MapNode nw = GridNodes[threadIndex][Math.Clamp(startNode.x - 1, 0, _grid.MaxX)][Math.Clamp(startNode.y - 1, 0, _grid.MaxY)];
 
             while (loops < 100)
             {
-                //Debug.Log($"Trying to find NWP for #{threadIndex}:{Ships[threadIndex].Name} and on loop #{loops}");
-                loops++;
+                //Debug.Log($"Trying to find NWP for #{threadIndex}:{Ships[threadIndex].Name} and on loop #{loops}. Loop started");
 
                 if (n.Clearance >= minimumClearance)
                 {
@@ -685,6 +704,7 @@ namespace Assets.Scripts.Level
                 {
                     return nw;
                 }
+                //Debug.Log($"Trying to find NWP for #{threadIndex}:{Ships[threadIndex].Name} and on loop #{loops}. Loop after returns");
 
                 Ships[threadIndex].DebugWalkablePointNodes.Add(n);
                 Ships[threadIndex].DebugWalkablePointNodes.Add(ne);
@@ -695,15 +715,35 @@ namespace Assets.Scripts.Level
                 Ships[threadIndex].DebugWalkablePointNodes.Add(w);
                 Ships[threadIndex].DebugWalkablePointNodes.Add(nw);
 
-                n = nodes[n.x][Math.Clamp(n.y - 1, 0, _grid.Height)];
-                ne = nodes[Mathf.Clamp(ne.x + 1, 0, _grid.Width)][Math.Clamp(ne.y - 1, 0, _grid.Height)];
-                e = nodes[Mathf.Clamp(e.x + 1, 0, _grid.Width)][e.y];
-                se = nodes[Mathf.Clamp(se.x + 1, 0, _grid.Width)][Math.Clamp(se.y + 1, 0, _grid.Height)];
-                s = nodes[s.x][Math.Clamp(s.y + 1, 0, _grid.Height)];
-                sw = nodes[Mathf.Clamp(sw.x - 1, 0, _grid.Width)][Math.Clamp(sw.y + 1, 0, _grid.Height)];
-                w = nodes[Mathf.Clamp(w.x - 1, 0, _grid.Width)][w.y];
-                nw = nodes[Mathf.Clamp(nw.x - 1, 0, _grid.Width)][Math.Clamp(nw.y - 1, 0, _grid.Height)];
 
+                //Debug.Log($"Trying to find NWP for #{threadIndex}:{Ships[threadIndex].Name} and on loop #{loops}. Loop after debug adds");
+
+                n = GridNodes[threadIndex][n.x][Math.Clamp(n.y - 1, 0, _grid.MaxY)];
+                //Debug.Log($"n: {n}");
+
+                ne = GridNodes[threadIndex][Mathf.Clamp(ne.x + 1, 0, _grid.MaxX)][Math.Clamp(ne.y - 1, 0, _grid.MaxY)];
+                //Debug.Log($"ne: {ne}");
+
+                e = GridNodes[threadIndex][Mathf.Clamp(e.x + 1, 0, _grid.MaxX)][e.y];
+                //Debug.Log($"e: {e}");
+
+                se = GridNodes[threadIndex][Mathf.Clamp(se.x + 1, 0, _grid.MaxX)][Math.Clamp(se.y + 1, 0, _grid.MaxY)];
+                //Debug.Log($"se: {se}");
+
+                s = GridNodes[threadIndex][s.x][Math.Clamp(s.y + 1, 0, _grid.MaxY)];
+                //Debug.Log($"s: {s}");
+
+                sw = GridNodes[threadIndex][Mathf.Clamp(sw.x - 1, 0, _grid.MaxX)][Math.Clamp(sw.y + 1, 0, _grid.MaxY)];
+                //Debug.Log($"sw: {sw}");
+
+                w = GridNodes[threadIndex][Mathf.Clamp(w.x - 1, 0, _grid.MaxX)][w.y];
+                //Debug.Log($"w: {w}");
+
+                nw = GridNodes[threadIndex][Mathf.Clamp(nw.x - 1, 0, _grid.MaxX)][Math.Clamp(nw.y - 1, 0, _grid.MaxY)];
+                //Debug.Log($"nw: {nw}");
+
+                //Debug.Log($"Trying to find NWP for #{threadIndex}:{Ships[threadIndex].Name} and on loop #{loops}. Loop ended");
+                loops++;
             }
 
             if (loops == 100) // [debug]
@@ -807,7 +847,7 @@ namespace Assets.Scripts.Level
         {
             await Task.Run(() =>
             {
-                Debug.Log($"_Started BT #{threadIndex}:{Ships[threadIndex].Name} at {StartNodes[threadIndex].Vector} to {EndNodes[threadIndex].Vector} (Level coords)");
+                //Debug.Log($"_Started BT #{threadIndex}:{Ships[threadIndex].Name} at {StartNodes[threadIndex].Vector} to {EndNodes[threadIndex].Vector} (Level coords)"); 
                 //minimumClearance = 1;
                 //maximumClearance = 1;
                 //Debug.Log($"Trying to find a path for #{index} from ({StartNodes[index].x}, {StartNodes[index].y}) to ({EndNodes[index].x}, {EndNodes[index].y})");
@@ -835,7 +875,7 @@ namespace Assets.Scripts.Level
                 }
 
 
-                Debug.Log($"Finished grid loops BT for #{threadIndex}:{Ships[threadIndex].Name}");
+                //Debug.Log($"Finished grid loops BT for #{threadIndex}:{Ships[threadIndex].Name}");
 
 
                 //Debug.Log($"BTS: {StartNodes[index]}");
@@ -847,11 +887,11 @@ namespace Assets.Scripts.Level
                 Ships[threadIndex].DebugOriginalStartNode = StartNodes[threadIndex];
                 if (EndNodes[threadIndex].Clearance < Clearances[threadIndex])
                 {
-                    Debug.Log($"The end ({EndNodes[threadIndex].Vector}) for #{threadIndex}:{Ships[threadIndex].Name} isn't walkable space");
-                    EndNodes[threadIndex] = FindNearestWalkablePoint(EndNodes[threadIndex], StartNodes[threadIndex], Clearances[threadIndex], GridNodes[threadIndex], threadIndex);
-                    Debug.Log($"Found new end point that is walkable: {EndNodes[threadIndex].Vector}");
+                    //Debug.Log($"The end ({EndNodes[threadIndex].Vector}) for #{threadIndex}:{Ships[threadIndex].Name} isn't walkable space");
+                    EndNodes[threadIndex] = FindNearestWalkablePoint(EndNodes[threadIndex], StartNodes[threadIndex], Clearances[threadIndex], threadIndex);
+                    //Debug.Log($"Found new end point that is walkable for #{threadIndex}:{Ships[threadIndex].Name}: {EndNodes[threadIndex].Vector}");
                 }
-                Debug.Log($"Found end point for #{threadIndex}:{Ships[threadIndex].Name}");
+                //Debug.Log($"Found end point for #{threadIndex}:{Ships[threadIndex].Name}");
                 if (StartNodes[threadIndex].Clearance < Clearances[threadIndex])
                 {
                     //int startNodeLoops = 0;
@@ -862,7 +902,7 @@ namespace Assets.Scripts.Level
                     //    Vector2Int pastLocation = Level.Pathfinder.ConvertToMapCoordinates(pastLocations.Pop());
                     //    StartNodes[index] = GridNodes[index][pastLocation.x][pastLocation.y];
                     //    startNodeLoops++;
-                   
+
                     //}
                     //if (pastLocations.Count == 0)
                     //{
@@ -874,11 +914,12 @@ namespace Assets.Scripts.Level
                     //    Debug.Log($"[Location History] Found a valid start point for #{index}:{Ships[index].Name} at {StartNodes[index].Vector}");
 
                     //}
-
-                    StartNodes[threadIndex] = FindNearestWalkablePoint(StartNodes[threadIndex], EndNodes[threadIndex], Clearances[threadIndex], GridNodes[threadIndex], threadIndex);
+                    //Debug.Log($"The start ({StartNodes[threadIndex].Vector}) for #{threadIndex}:{Ships[threadIndex].Name} isn't walkable space");
+                    StartNodes[threadIndex] = FindNearestWalkablePoint(StartNodes[threadIndex], EndNodes[threadIndex], Clearances[threadIndex], threadIndex);
+                    //Debug.Log($"Found new start point that is walkable for #{threadIndex}:{Ships[threadIndex].Name}: {StartNodes[threadIndex].Vector}");
                 }
                 
-                Debug.Log($"Starting at {StartNodes[threadIndex].Index} for #{threadIndex}:{Ships[threadIndex].Name}");
+                //Debug.Log($"Starting at {StartNodes[threadIndex].Index} for #{threadIndex}:{Ships[threadIndex].Name}");
                 Path BTPath = new Path(StartNodes[threadIndex].x, StartNodes[threadIndex].y, EndNodes[threadIndex].x, EndNodes[threadIndex].y);
 
                 List<MapNode> BTUncheckedNodes = new List<MapNode>() { StartNodes[threadIndex] };
@@ -904,8 +945,10 @@ namespace Assets.Scripts.Level
                 //Debug.Log($"Startup time took: {BTStartupTime} ms");
                 //Debug.Log($"Startnode: {startNode}, queueLoops: {queueLoops}, clearanceMapList: {_grid.ClearanceMapList.Count}");
                 MapNode BTCurrentNode = MapNode.NullNode;
+                //Debug.Log($"Starting at while loop for #{threadIndex}:{Ships[threadIndex].Name}");
                 while (BTUncheckedNodes.Count > 0 && Totals[threadIndex].Elapsed.TotalSeconds < TimeLimit)
                 {
+                    //Debug.Log($"Inside while loop for #{threadIndex}:{Ships[threadIndex].Name} and have taken {Totals[threadIndex].Elapsed.Milliseconds}ms");
                     GetNodes[threadIndex].Start();
                     BTLoops++;
                     //if (BTLoops % 100 == 0)
@@ -917,14 +960,17 @@ namespace Assets.Scripts.Level
 
                     BTPreviousNode = BTCurrentNode;
 
+                    //Debug.Log($"Starting end check for #{threadIndex}:{Ships[threadIndex].Name}");
                     if (BTCurrentNode == EndNodes[threadIndex])
                     {
                         //Debug.Log($"Finished background finding path #{index}:{Ships[index].Name}.");
                         MakeDestinationList(EndNodes[threadIndex], BTPath);
                         Totals[threadIndex].Stop();
                         GetNodes[threadIndex].Stop();
-                        //Debug.Log($"Finished background finding path and destination list for #{index}:{Ships[index].Name}. ({BTPath.Points.Count}) Loops: ({BTLoops}) startup time: {BTStartupTime}ms, getNode Time: {GetNodes[index].Elapsed.TotalMilliseconds}ms, " +
-                            //$"neighborLoop Time: {NeighborLoops[index].Elapsed.TotalMilliseconds}ms, Update Map Time: {UpdateMapTime[index].Elapsed.TotalMilliseconds}ms Total: {(Totals[index].Elapsed.TotalMilliseconds)}ms");
+                        //Debug.Log($"End point has been found for #{threadIndex}:{Ships[threadIndex].Name}");
+                        //Debug.Log($"Finished background finding path and destination list for #{threadIndex}:{Ships[threadIndex].Name} in {Totals[threadIndex].Elapsed.TotalMilliseconds}ms");
+                        //Debug.Log($"Finished background finding path and destination list for #{threadIndex}:{Ships[threadIndex].Name}. ({BTPath.Points.Count}) Loops: ({BTLoops}) startup time: {BTStartupTime}ms, getNode Time: {GetNodes[threadIndex].Elapsed.TotalMilliseconds}ms, " +
+                        //    $"neighborLoop Time: {NeighborLoops[threadIndex].Elapsed.TotalMilliseconds}ms, Update Map Time: {UpdateMapTime[threadIndex].Elapsed.TotalMilliseconds}ms Total: {(Totals[threadIndex].Elapsed.TotalMilliseconds)}ms");
                         Ships[threadIndex].PathfindingValue = BTPath;
                         Ships[threadIndex].PathfindingThreadComplete = true;
                         IsThreadActive[threadIndex] = false; //[alert] must be uncommented when not testing
@@ -939,6 +985,7 @@ namespace Assets.Scripts.Level
                     BTCurrentNode.HasBeenChecked = true;
 
                     //Debug.Log($"Getting neighbors for {currentNode}");
+                    //Debug.Log($"Starting at neighbor loop for #{threadIndex}:{Ships[threadIndex].Name}");
                     GetNodes[threadIndex].Stop();
                     NeighborLoops[threadIndex].Start();
 
@@ -975,7 +1022,6 @@ namespace Assets.Scripts.Level
 
                 }
 
-
                 if (Totals[threadIndex].Elapsed.TotalSeconds > TimeLimit)
                 {
                     Debug.Log($"Ran out of time while trying to find a path #{threadIndex}");
@@ -998,35 +1044,51 @@ namespace Assets.Scripts.Level
         {
 
             bool startedTask = false;
-            for (int thread = 0; thread < ConfigData.MaxThreads; thread++)
+            //bool foundShipsThread = false;
+
+            //for (int threadIndex = 0; threadIndex < ConfigData.MaxThreads; threadIndex++)
+            //{
+            //    if (Ships[threadIndex] == ship && IsThreadActive[threadIndex])
+            //    {
+            //        KillThread[threadIndex] = true;
+            //        foundShipsThread = true;
+            //        ship.MandatoryThread = threadIndex;
+            //    }
+            //}
+
+            for (int threadIndex = 0; threadIndex < ConfigData.MaxThreads; threadIndex++)
             {
-                if (!IsThreadActive[thread])
+                if (!IsThreadActive[threadIndex])
                 {
-                    IsThreadActive[thread] = true;
-                    Clearances[thread] = maximumClearance;
+                    ship.IsPathfinding = true;
+                    IsThreadActive[threadIndex] = true;
+                    Clearances[threadIndex] = maximumClearance;
                     if (Level.ActivateCollisionAsteroids)
                     {
-                        //UpdateMapTime[i] = SW.Stopwatch.StartNew();
-                        UpdateMap(thread, ship);
-                        //UpdateMapTime[i].Stop();
+                        UpdateMapTime[threadIndex] = SW.Stopwatch.StartNew();
+                        UpdateMap(threadIndex, ship);
+                        UpdateMapTime[threadIndex].Stop();
                     }
                     //Debug.Log($"Pre starting Finding path for #{i} from {startNode.x}, {startNode.y} to {endNode.x}, {endNode.y}");
-                    try
-                    {
-                        StartNodes[thread] = GridNodes[thread][startX][startY];
-                        EndNodes[thread] = GridNodes[thread][endX][endY];
+                    //try
+                    //{
+                    //    StartNodes[threadIndex] = GridNodes[threadIndex][startX][startY];
+                    //    EndNodes[threadIndex] = GridNodes[threadIndex][endX][endY];
 
-                    }
-                    catch(Exception e)
-                    {
-                        Debug.Log($"Tried to start at ({startX}, {startY}) and end at ({endX}, {endY}) for {ship.Name}");
-                        throw e;
-                    }
+                    //}
+                    //catch(Exception e)
+                    //{
+                    //    Debug.Log($"Tried to start at ({startX}, {startY}) and end at ({endX}, {endY}) for {ship.Name}");
+                    //    throw e;
+                    //}
 
-                    Ships[thread] = ship;
+                    StartNodes[threadIndex] = GridNodes[threadIndex][startX][startY];
+                    EndNodes[threadIndex] = GridNodes[threadIndex][endX][endY];
 
-                    BTFindPath(thread);
-                    //Debug.Log($"Standard Started BT {ThreadsStarted} % {ConfigData.MaxThreads} : #{i}|{Thread}|{(ThreadsStarted % ConfigData.MaxThreads)} ");
+                    Ships[threadIndex] = ship;
+
+                    BTFindPath(threadIndex);
+                    //Debug.Log($"Standard Started BT  #{threadIndex}:{Ships[threadIndex].Name} ");
                     //Debug.Log($"Standard Started #{i}");
                     startedTask = true;
                     if (ShipsQueued.Contains(ship))
@@ -1039,9 +1101,9 @@ namespace Assets.Scripts.Level
                 }
                 else
                 {
-                    if (Totals[thread] != null && Totals[thread].ElapsedMilliseconds > 1000)
+                    if (Totals[threadIndex] != null && Totals[threadIndex].ElapsedMilliseconds > 1000)
                     {
-                        Debug.Log($"Thread #{thread}:{Ships[thread].Name} has been running for {Totals[thread].ElapsedMilliseconds}ms");
+                        Debug.Log($"Thread #{threadIndex}:{Ships[threadIndex].Name} has been running for {Totals[threadIndex].ElapsedMilliseconds}ms");
                     }
                     //Debug.Log($"Thread #{i} has been running for {Totals[i].ElapsedMilliseconds}ms");
                 }
@@ -1067,8 +1129,11 @@ namespace Assets.Scripts.Level
         /// </summary>
         public class Grid
         {
-            public int Width;
-            public int Height;
+            public int Width, Height;
+            /// <summary>
+            /// The maximum x and y values that are valid indexes. One less than the height and width
+            /// </summary>
+            public int MaxX, MaxY;
             public int TotalNodes;
             public HashSet<MapNode> NodeSet = new HashSet<MapNode>();
             public MapNode[][] Nodes;
@@ -1078,6 +1143,8 @@ namespace Assets.Scripts.Level
             {
                 Width = width;
                 Height = height;
+                MaxX = Width - 1;
+                MaxY = Height - 1;
                 Pathfinder = pathfinder;
                 Nodes = new MapNode[width][];
 

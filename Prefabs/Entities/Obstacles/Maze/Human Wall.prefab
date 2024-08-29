@@ -18,7 +18,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &4376674089401883439
 Transform:
   m_ObjectHideFlags: 0
@@ -108,6 +108,7 @@ MonoBehaviour:
   HasEnteredMap: 0
   IsDead: 0
   IsMiningAsteroid: 0
+  IsRegularObstacle: 1
   Level: {fileID: 0}
   Collider: {fileID: 4279920608882366467}
   ProximityCollider: {fileID: 0}

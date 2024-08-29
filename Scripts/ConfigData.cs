@@ -159,6 +159,7 @@ namespace Assets.Scripts
         "In and Out", "Patrol", "Guard", "Scouting", "Mining", "Full Retreat" };
 
         public static readonly HashSet<string> SpawnedOnlyShipTypes = new HashSet<string> {"Drone", "Striker", "Beacon"};
+        public static readonly HashSet<string> ArmedShipTypes = new HashSet<string> { "Cruiser", "Dreadnought", "Flagship", "Frigate", "Gunship", "Bumblebee", "Hornet", "Leafcutter", "Queen", "Wasp" };
 
         public static int SquadMakerSide;
 
@@ -176,6 +177,7 @@ namespace Assets.Scripts
         public const int MinimumDelayPerBeacon = 10;
         public const int BeaconUpdateFrequency = 5;
         public const int MaxBeaconsDroppedPerScout = 5;
+        public const int MinimumClearance = 4;
         public static Vector2 HalfSize = new Vector2(.5f, .5f);
         public const int MiningRate = 750;
         public static float ShipTurningRadius; 

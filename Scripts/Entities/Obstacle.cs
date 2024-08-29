@@ -14,7 +14,7 @@ namespace Assets.Scripts.Entities
         /// </summary>
         public int MapPointsIndex;
         public string Name;
-        public bool IsMobile, IsMapBorder, HasEnteredMap, IsDead, IsMiningAsteroid;
+        public bool IsMobile, IsMapBorder, HasEnteredMap, IsDead, IsMiningAsteroid, IsRegularObstacle;
         public LevelStage Level;
         public Collider2D Collider, ProximityCollider, ClearanceMappingCollider;
 
@@ -45,7 +45,7 @@ namespace Assets.Scripts.Entities
 
         public void ShipCollision(Ship ship)
         {
-            Debug.Log($"{Name} was hit by {ship.Name}");
+            //Debug.Log($"{Name} was hit by {ship.Name}");
             if (ship.ShipType == "Barge")
             {
                 Barge barge = ((Barge)ship);
@@ -62,7 +62,7 @@ namespace Assets.Scripts.Entities
         public void Collision(Collider2D collider)
         {
             GameObject collidingThing = collider.gameObject;
-            if (!IsMapBorder && !IsMobile && collidingThing.CompareTag("Ship"))
+            if (collidingThing.CompareTag("Ship"))
             {
                 Ship ship = collidingThing.GetComponent<Ship>();
                 ShipCollision(ship);
@@ -71,16 +71,23 @@ namespace Assets.Scripts.Entities
 
         protected virtual void OnTriggerEnter2D(Collider2D collider)
         {
-            Collision(collider);
+            if (IsRegularObstacle)
+            {
+                Collision(collider);
+            }
         }
         protected virtual void OnTriggerStay2D(Collider2D collider)
         {
-            _frameCollisions++;
-            if (_frameCollisions == 50)
+            if (IsRegularObstacle)
             {
-                Collision(collider);
-                _frameCollisions = 0;
+                _frameCollisions++;
+                if (_frameCollisions == 50)
+                {
+                    Collision(collider);
+                    _frameCollisions = 0;
+                }
             }
+
         }
     }
 }

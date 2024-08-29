@@ -108,6 +108,7 @@ MonoBehaviour:
   HasEnteredMap: 0
   IsDead: 0
   IsMiningAsteroid: 0
+  IsRegularObstacle: 1
   Level: {fileID: 0}
   Collider: {fileID: 4040892279012526942}
   ProximityCollider: {fileID: 0}

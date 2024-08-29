@@ -73,7 +73,7 @@ namespace Assets.Scripts.Entities.Ships
 
 
 
-        public volatile bool PathfindingThreadComplete;
+        public volatile bool PathfindingThreadComplete, IsPathfinding;
         public volatile Pathfinder.Path PathfindingValue;
         public volatile int PathfindingThread;
         public volatile Pathfinder.Grid DebugGrid;
@@ -137,6 +137,7 @@ namespace Assets.Scripts.Entities.Ships
         public bool __HasReachedDestination, __SquadHasReachedDestination;
         public List<Ship> __WeaponTargetShips, __SquadShips, __NearbyShips, __ShipsWarpingHere;
         public List<string> __ShipsWithinRangeOfWeapons, __PastCommands, __BannedStrats, __DamageStatuses, __CommandTargetingQueue, __NearbyAsteroids, __HivemindShips;
+        public int __Clearance;
         //public List<Vector2> __PastLocations;
 
 
@@ -184,6 +185,7 @@ namespace Assets.Scripts.Entities.Ships
             __TurningRadius = ConfigData.ShipTurningRadius;
             __NearbyShips = HasProximityCollider ? ProximityCollider.NearbyEnemyShips.ToList() : new List<Ship>();
             __HivemindShips = Level.GetState().GetShipsVisibleToHiveMind(Side).Select(s => s.ToString()).ToList();
+            __Clearance = GetClearance();
 
             if (ShipType == "Warp Gate")
             {
@@ -453,6 +455,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             {
                 MergePathfindingPaths();
                 PathfindingThreadComplete = false;
+                IsPathfinding = false;
             }
             if (!Level.IsPaused)
             {
@@ -551,7 +554,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             if (!CannotChangeMovementOrders)
             {
                 destination = Level.ForceBounds(destination);
-                if (Level.HasObstacles)
+                if (Level.HasObstacles && IsInBounds())
                 {
                     startPosition = GetPosition();
                     DestinationQueue.Clear();
@@ -563,7 +566,14 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                         convertedStart = Level.Pathfinder.ConvertToMapCoordinates(startPosition);
                         convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
                         StopMoving("Got a new destination");
-                        Level.Pathfinder.FindPath(this, convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance());
+                        if (!IsPathfinding)
+                        {
+                            Level.Pathfinder.FindPath(this, convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance());
+                        }
+                        else
+                        {
+                            Debug.Log($"{Name} is already pathfinding on {PathfindingThread} so it can't pathfind right now");
+                        }
                         return;
                     }
                     else
@@ -588,7 +598,14 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                                 convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
                                 StopMoving("Got a new destination");
 
-                                Level.Pathfinder.FindPath(this, convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance());
+                                if (!IsPathfinding)
+                                {
+                                    Level.Pathfinder.FindPath(this, convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance());
+                                }
+                                else
+                                {
+                                    Debug.Log($"{Name} is already pathfinding on {PathfindingThread} so it can't pathfind right now");
+                                }
                                 return;
                             }
 
@@ -606,7 +623,15 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     //Level.Pathfinder.FindPath(this, convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance());
 
                 }
-                //Debug.Log($"No obstacles in the way for {Name}");
+                //else if (!IsInBounds())
+                //{
+                //    Debug.Log($"{Name} cannot pathfind because it's not in bounds");
+                //}
+                //else
+                //{
+                //    Debug.Log($"No obstacles in the way for {Name}");
+
+                //}
                 StopMoving("Got a new destination");
                 IsFollowingPath = false;
                 SetTargetCoordinates(destination);
@@ -723,14 +748,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         }
         public void SetTargetCoordinates(Vector2 v)
         {
-            if (IsMobile)
-            {
-                TargetCoordinates = v;
-            }
-            else
-            {
-                Debug.LogException(new Exception($"Tried to set target coordinates for imobile ship {Name}"));
-            }
+            TargetCoordinates = v;
         }
         private void Move()
         {
@@ -1519,6 +1537,14 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 clearance = Level.ShipClearances.GetValueOrDefault(ShipType);
             }
             return clearance;
+        }
+        /// <summary>
+        /// Whether or not the ship is in the bounds of the map
+        /// </summary>
+        /// <returns></returns>
+        public bool IsInBounds()
+        {
+            return GetPosition() == Level.ForceBounds(GetPosition());
         }
 
 

@@ -159,7 +159,7 @@ namespace Assets.Scripts.Scenes
                 }
             }
 
-            if (Utilities.CoinToss())
+            if (DoesUserHaveController && Utilities.CoinToss())
             {
                 ActivateFogOfWar = true;
                 Debug.Log($"The map has fog of war");
@@ -181,7 +181,7 @@ namespace Assets.Scripts.Scenes
                 Debug.Log($"The map does not have mining");
             }
 
-            if (!HasObstacles && Utilities.CoinToss())
+            if (Utilities.CoinToss())
             {
                 ActivateLoadingShipsMidLevel = true;
                 Debug.Log($"The map has ships loading midlevel");
@@ -418,7 +418,8 @@ namespace Assets.Scripts.Scenes
                         clearance++;
                     }
                     clearance /= Pathfinder.Scale;
-                    clearance += 2; // + 2 for padding
+                    clearance += 2; // 2 for padding
+                    clearance = Math.Max(clearance, ConfigData.MinimumClearance);
 
                     ShipClearances.Add(shipType, clearance);
                     ships.ForEach((s) =>
@@ -893,6 +894,8 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
             }
 
             ConfigData.SquadsChosenForLevel = ConfigData.SquadsChosenForLevel.Where((chosenSquad) => !MidLevelSquads[chosenSquad.Side - 1].Contains(chosenSquad)).ToList();
+            MidLevelSquads[ConfigData.Configuration.HumanSide-1].Clear();
+            MidLevelSquads[ConfigData.Configuration.BeeSide - 1].Clear();
             LevelConstructor.SetupShips();
 
 

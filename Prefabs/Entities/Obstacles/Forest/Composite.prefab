@@ -984,6 +984,10 @@ PrefabInstance:
       propertyPath: Collider
       value: 
       objectReference: {fileID: 6274348117036618027}
+    - target: {fileID: 1434779664846593793, guid: 9b7d23c0bb97d7544b78aa7cefbe67bc, type: 3}
+      propertyPath: IsRegularObstacle
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 1660300374660150809, guid: 9b7d23c0bb97d7544b78aa7cefbe67bc, type: 3}
       propertyPath: m_Size.x
       value: 15.966095
