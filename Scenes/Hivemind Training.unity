@@ -417,7 +417,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 2322509817334310926, guid: 2c69add7043f0224698172081a967d71, type: 3}
       propertyPath: m_AnchoredPosition.y
-      value: -1045
+      value: -975
       objectReference: {fileID: 0}
     - target: {fileID: 2322509817334310926, guid: 2c69add7043f0224698172081a967d71, type: 3}
       propertyPath: m_LocalEulerAnglesHint.x
@@ -1459,7 +1459,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 2322509817334310926, guid: 2c69add7043f0224698172081a967d71, type: 3}
       propertyPath: m_AnchoredPosition.y
-      value: -1115
+      value: -1045
       objectReference: {fileID: 0}
     - target: {fileID: 2322509817334310926, guid: 2c69add7043f0224698172081a967d71, type: 3}
       propertyPath: m_LocalEulerAnglesHint.x
@@ -1883,7 +1883,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!224 &417079593
 RectTransform:
   m_ObjectHideFlags: 0
@@ -1901,7 +1901,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 1920, y: -1150}
+  m_AnchoredPosition: {x: 1920, y: -1115}
   m_SizeDelta: {x: 320, y: 60}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &417079594
@@ -2666,7 +2666,7 @@ PrefabInstance:
       objectReference: {fileID: 519420031}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: PlayMusic
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: UIManager
@@ -2810,7 +2810,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: MazePrefabs.Array.size
-      value: 10
+      value: 7
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: UserStartingPosition.x
@@ -2826,44 +2826,44 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: ForestPrefabs.Array.size
-      value: 13
+      value: 12
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: MazePrefabs.Array.data[0]
       value: 
-      objectReference: {fileID: 8059139168506411835, guid: e857b359fbc486d4185cba8d6b937759, type: 3}
+      objectReference: {fileID: 1541488032990901482, guid: 095f24154a018d64aa49ce129959b442, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: MazePrefabs.Array.data[1]
       value: 
-      objectReference: {fileID: 1541488032990901482, guid: 095f24154a018d64aa49ce129959b442, type: 3}
+      objectReference: {fileID: 1428732423466843166, guid: 2fe548c35102d6f46a0f174d1f4bb934, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: MazePrefabs.Array.data[2]
       value: 
-      objectReference: {fileID: 1428732423466843166, guid: 2fe548c35102d6f46a0f174d1f4bb934, type: 3}
+      objectReference: {fileID: 1428732423466843166, guid: 4f6de868898ba7048ba6530a598f5701, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: MazePrefabs.Array.data[3]
       value: 
-      objectReference: {fileID: 1428732423466843166, guid: 4f6de868898ba7048ba6530a598f5701, type: 3}
+      objectReference: {fileID: 1428732423466843166, guid: 929d42fea79c0df49b9d1f3207816001, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: MazePrefabs.Array.data[4]
       value: 
-      objectReference: {fileID: 1428732423466843166, guid: 929d42fea79c0df49b9d1f3207816001, type: 3}
+      objectReference: {fileID: 1428732423466843166, guid: bfbe492ea5555cb4b98fd35b549ce976, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: MazePrefabs.Array.data[5]
       value: 
-      objectReference: {fileID: 1428732423466843166, guid: bfbe492ea5555cb4b98fd35b549ce976, type: 3}
+      objectReference: {fileID: 7829129030894184550, guid: c39cef0f8a986f04391469448c9edaf4, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: MazePrefabs.Array.data[6]
       value: 
-      objectReference: {fileID: 8059139168506411835, guid: eb9a18ed48b9d68499a456e549060fdd, type: 3}
+      objectReference: {fileID: 7829129030894184550, guid: 2da399e79018bc3479c512c6dce51077, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: MazePrefabs.Array.data[7]
       value: 
-      objectReference: {fileID: 7829129030894184550, guid: c39cef0f8a986f04391469448c9edaf4, type: 3}
+      objectReference: {fileID: 7326860766664323640, guid: 17bf89bc91bbb5d4e8f81054255c1aab, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: MazePrefabs.Array.data[8]
       value: 
-      objectReference: {fileID: 7829129030894184550, guid: 2da399e79018bc3479c512c6dce51077, type: 3}
+      objectReference: {fileID: 7326860766664323640, guid: 17bf89bc91bbb5d4e8f81054255c1aab, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: MazePrefabs.Array.data[9]
       value: 
@@ -2962,7 +2962,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: ThreePathsPrefabs.Array.size
-      value: 4
+      value: 3
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: ObstaclePrefabs.Array.data[0]
@@ -12085,7 +12085,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 2322509817334310926, guid: 2c69add7043f0224698172081a967d71, type: 3}
       propertyPath: m_AnchoredPosition.y
-      value: -975
+      value: -905
       objectReference: {fileID: 0}
     - target: {fileID: 2322509817334310926, guid: 2c69add7043f0224698172081a967d71, type: 3}
       propertyPath: m_LocalEulerAnglesHint.x
@@ -12398,7 +12398,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8675139255330635851, guid: 2c69add7043f0224698172081a967d71, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []

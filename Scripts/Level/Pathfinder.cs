@@ -842,6 +842,8 @@ namespace Assets.Scripts.Level
             Ships[index].DebugStartNode = StartNodes[index];
             Ships[index].PrintDebugImage = true;
             Ships[index].PathfindingThread = index;
+
+            _grid.DebugGridAsImage(StartNodes[index].Index, EndNodes[index].Index, GridNodes[index], 4, Ships[index]);
         }
         public async Task BTFindPath(int threadIndex)
         {
@@ -973,9 +975,9 @@ namespace Assets.Scripts.Level
                         //    $"neighborLoop Time: {NeighborLoops[threadIndex].Elapsed.TotalMilliseconds}ms, Update Map Time: {UpdateMapTime[threadIndex].Elapsed.TotalMilliseconds}ms Total: {(Totals[threadIndex].Elapsed.TotalMilliseconds)}ms");
                         Ships[threadIndex].PathfindingValue = BTPath;
                         Ships[threadIndex].PathfindingThreadComplete = true;
-                        IsThreadActive[threadIndex] = false; //[alert] must be uncommented when not testing
 
                         //OrderPrintDebugImage(threadIndex);
+                        IsThreadActive[threadIndex] = false; //[alert] must be uncommented when not testing
                         return;
                     }
                     BTUncheckedNodes.Remove(BTCurrentNode);
@@ -1031,10 +1033,11 @@ namespace Assets.Scripts.Level
                     Debug.Log($"No more nodes to check for ship: {Ships[threadIndex].Name} Thread: #{threadIndex} Clearance: {Clearances[threadIndex]}.  checkedNodes: {BTCheckedNodes.Count} / {_grid.TotalNodes}  CurrentNode: {BTCurrentNode},");
                 }
                 Ships[threadIndex].PathfindingThreadComplete = true;
-                IsThreadActive[threadIndex] = false; //[alert] must be uncommented when not testing
 
 
                 OrderPrintDebugImage(threadIndex);
+                IsThreadActive[threadIndex] = false; //[alert] must be uncommented when not testing
+
             });
             
 

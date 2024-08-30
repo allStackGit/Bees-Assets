@@ -16141,7 +16141,7 @@ MonoBehaviour:
   ScreenScaleFactor: {x: 0, y: 0}
   ReferenceScreenSize: {x: 3840, y: 2160}
   ActionBox: {fileID: 2027031817}
-  IsRandomizedOpposingSide: 0
+  IsRandomizedOpposingSide: 1
 --- !u!1 &1539631625 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 9023671316290259264, guid: ba8e735e9f2a5b542916479f7ec91750, type: 3}

@@ -38,7 +38,6 @@ RenderSettings:
   m_ReflectionIntensity: 1
   m_CustomReflection: {fileID: 0}
   m_Sun: {fileID: 0}
-  m_IndirectSpecularColor: {r: 0, g: 0, b: 0, a: 1}
   m_UseRadianceAmbientProbe: 0
 --- !u!157 &3
 LightmapSettings:
@@ -335,6 +334,7 @@ MonoBehaviour:
   MenuPanelBacker: {fileID: 842468278}
   Codex: {fileID: 1763582173}
   CodexBarge: {fileID: 1864056565}
+  CodexBeacon: {fileID: 961934297}
   CodexCarrier: {fileID: 1119508859}
   CodexCruiser: {fileID: 166339443}
   CodexDreadnought: {fileID: 880320682}
@@ -347,6 +347,7 @@ MonoBehaviour:
   CodexScout: {fileID: 612820482}
   CodexStriker: {fileID: 1446654127}
   CodexWarpGate: {fileID: 266076961}
+  CodexBeehive: {fileID: 961934296}
   CodexBumblebee: {fileID: 992983947}
   CodexCarpenterBee: {fileID: 908966872}
   CodexHoneybee: {fileID: 1969975699}
@@ -2949,6 +2950,16 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: bbe9c7f24d2564f4bb6678276fb4b65d, type: 3}
+--- !u!1 &961934296 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 1881662502627868854, guid: bbe9c7f24d2564f4bb6678276fb4b65d, type: 3}
+  m_PrefabInstance: {fileID: 961934295}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1 &961934297 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 7920141724278944161, guid: bbe9c7f24d2564f4bb6678276fb4b65d, type: 3}
+  m_PrefabInstance: {fileID: 961934295}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &992983947 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 3711585705697148533, guid: bbe9c7f24d2564f4bb6678276fb4b65d, type: 3}
@@ -3249,12 +3260,12 @@ MonoBehaviour:
   m_RequiresColorTexture: 0
   m_Version: 2
   m_TaaSettings:
-    quality: 3
-    frameInfluence: 0.1
-    jitterScale: 1
-    mipBias: 0
-    varianceClampScale: 0.9
-    contrastAdaptiveSharpening: 0
+    m_Quality: 3
+    m_FrameInfluence: 0.1
+    m_JitterScale: 1
+    m_MipBias: 0
+    m_VarianceClampScale: 0.9
+    m_ContrastAdaptiveSharpening: 0
 --- !u!1001 &1436276890
 PrefabInstance:
   m_ObjectHideFlags: 0

@@ -605,6 +605,16 @@ namespace Assets.Scripts.Scenes
                 //Debug.Log("LEVEL OVER!");
                 GameState state = GetState();
 
+                while (state.FireShipExplosions.Count > 0)
+                {
+                    GameObject explosion = state.FireShipExplosions[0];
+                    if (explosion != null)
+                    {
+                        Destroy(explosion);
+                    }
+                    state.FireShipExplosions.RemoveAt(0);
+                }
+
                 state.GetAllSquads().ForEach((squad) =>
                 {
                     if (squad.HasCommand)
@@ -923,7 +933,7 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
             GameState state = GetState();
             state.StoreCommands();
 
-            if (RecordStats)
+            if (RecordStats && !IsTraining)
             {
                 //for (int i = 0; i < ConfigData.SquadsChosenForLevel.Count; i++)
                 //{

@@ -455,7 +455,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             {
                 MergePathfindingPaths();
                 PathfindingThreadComplete = false;
-                IsPathfinding = false;
             }
             if (!Level.IsPaused)
             {
@@ -706,10 +705,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         Vector2 startPosition;
         private void MergePathfindingPaths()
         {
-            if (PrintDebugImage)
-            {
-                DebugGrid.DebugGridAsImage(new Vector2Int(DebugStartNode.x, DebugStartNode.y), new Vector2Int(DebugEndNode.x, DebugEndNode.y), DebugNodes, 4, this);
-            }
+            //if (PrintDebugImage)
+            //{
+            //    DebugGrid.DebugGridAsImage(new Vector2Int(DebugStartNode.x, DebugStartNode.y), new Vector2Int(DebugEndNode.x, DebugEndNode.y), DebugNodes, 4, this);
+            //}
             if (PathfindingValue != null && PathfindingValue.Points.Count > 0)
             {
                 //float start = Time.realtimeSinceStartup;
@@ -728,6 +727,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 IsFollowingPath = true;
                 HasTargetCoordinates = true;
                 PathfindingValue = null;
+                IsPathfinding = false;
                 DebugWalkablePointNodes.Clear();
                 //Debug.Log($"Merged full path to destination in {(Time.realtimeSinceStartup - start) * 1000}ms");
             }
@@ -1270,7 +1270,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 IsDead = true;
                 //Debug.Log($"Killing ship {Name} with size Factor {ConfigData.GetShipSizeFactor(ShipType)}");
                 GameState state = Level.GetState();
-
+                if (IsPathfinding)
+                {
+                    Debug.Log($"{Name} got killed while pathfinding on #{PathfindingThread}");
+                }
                 if (!endKill)
                 {
                     DropExplosionAnimation();
