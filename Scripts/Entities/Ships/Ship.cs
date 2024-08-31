@@ -673,7 +673,15 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             // If we're following a pathfinder path, recalculate the path because we're near an asteroid
             if (IsMobile)
             {
-                MoveToPoint(FinalDestination, true);
+                if (!IsFollowingPath && !HasTargetCoordinates)
+                {
+                    MoveToPoint(GetPosition(), true);
+                }
+                else
+                {
+                    MoveToPoint(FinalDestination, true);
+                }
+
                 InvokeRepeating(nameof(NearbyAsteroidDoubleCheck), 1f, 1f);
             }
 

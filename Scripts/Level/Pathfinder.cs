@@ -799,7 +799,6 @@ namespace Assets.Scripts.Level
         /// Keeps track of ships that did not go onto the queue but were worked on immediately. If those same ships are on the queue the path shouldn't be worked on
         /// </summary>
         public HashSet<Ship> ShipsToDequeue = new HashSet<Ship>();
-        public Thread[] Threads = new Thread[ConfigData.MaxThreads];
         public bool[] IsThreadActive = new bool[ConfigData.MaxThreads];
         public List<int>[] PreviousAsteroids = new List<int>[ConfigData.MaxThreads];
         /// <summary>
@@ -833,17 +832,6 @@ namespace Assets.Scripts.Level
                 EndY = endY;
                 Clearance = clearance;
             }
-        }
-        public void OrderPrintDebugImage(int index)
-        {
-            Ships[index].DebugGrid = _grid;
-            Ships[index].DebugNodes = GridNodes[index];
-            Ships[index].DebugEndNode = EndNodes[index];
-            Ships[index].DebugStartNode = StartNodes[index];
-            Ships[index].PrintDebugImage = true;
-            Ships[index].PathfindingThread = index;
-
-            _grid.DebugGridAsImage(StartNodes[index].Index, EndNodes[index].Index, GridNodes[index], 4, Ships[index]);
         }
         public async Task BTFindPath(int threadIndex)
         {
@@ -965,18 +953,16 @@ namespace Assets.Scripts.Level
                     //Debug.Log($"Starting end check for #{threadIndex}:{Ships[threadIndex].Name}");
                     if (BTCurrentNode == EndNodes[threadIndex])
                     {
-                        //Debug.Log($"Finished background finding path #{index}:{Ships[index].Name}.");
+                        //Debug.Log($"Finished background finding path for #{threadIndex}:{Ships[threadIndex].Name}.");
                         MakeDestinationList(EndNodes[threadIndex], BTPath);
-                        Totals[threadIndex].Stop();
+                        //Totals[threadIndex].Stop();
                         GetNodes[threadIndex].Stop();
                         //Debug.Log($"End point has been found for #{threadIndex}:{Ships[threadIndex].Name}");
-                        //Debug.Log($"Finished background finding path and destination list for #{threadIndex}:{Ships[threadIndex].Name} in {Totals[threadIndex].Elapsed.TotalMilliseconds}ms");
-                        //Debug.Log($"Finished background finding path and destination list for #{threadIndex}:{Ships[threadIndex].Name}. ({BTPath.Points.Count}) Loops: ({BTLoops}) startup time: {BTStartupTime}ms, getNode Time: {GetNodes[threadIndex].Elapsed.TotalMilliseconds}ms, " +
-                        //    $"neighborLoop Time: {NeighborLoops[threadIndex].Elapsed.TotalMilliseconds}ms, Update Map Time: {UpdateMapTime[threadIndex].Elapsed.TotalMilliseconds}ms Total: {(Totals[threadIndex].Elapsed.TotalMilliseconds)}ms");
-                        Ships[threadIndex].PathfindingValue = BTPath;
-                        Ships[threadIndex].PathfindingThreadComplete = true;
+                        Debug.Log($"Finished background finding path and destination list for #{threadIndex}:{Ships[threadIndex].Name} in {Totals[threadIndex].Elapsed.TotalMilliseconds}ms");
 
-                        //OrderPrintDebugImage(threadIndex);
+                        Ships[threadIndex].PathfindingValue = BTPath;
+
+                        Ships[threadIndex].PathfindingThreadComplete = true;
                         IsThreadActive[threadIndex] = false; //[alert] must be uncommented when not testing
                         return;
                     }
@@ -1033,13 +1019,34 @@ namespace Assets.Scripts.Level
                     Debug.Log($"No more nodes to check for ship: {Ships[threadIndex].Name} Thread: #{threadIndex} Clearance: {Clearances[threadIndex]}.  checkedNodes: {BTCheckedNodes.Count} / {_grid.TotalNodes}  CurrentNode: {BTCurrentNode},");
                 }
                 Ships[threadIndex].PathfindingThreadComplete = true;
-
-
-                OrderPrintDebugImage(threadIndex);
                 IsThreadActive[threadIndex] = false; //[alert] must be uncommented when not testing
 
+
+            }).ContinueWith((task) =>
+            {
+                //Debug.Log($"Has continued task for #{threadIndex}:{Ships[threadIndex].Name}");
+                if (task.IsFaulted)
+                {
+                    AggregateException aggregateException = task.Exception;
+                    foreach (Exception exception in aggregateException.InnerExceptions)
+                    {
+                        Debug.LogException(exception);
+                    }
+                }
+                else
+                {
+                    //Debug.Log($"No exceptions for #{threadIndex}:{Ships[threadIndex].Name}");
+                }
+
+                //Debug.Log($"Has continued to end of task for #{threadIndex}:{Ships[threadIndex].Name}");
             });
-            
+
+
+            //Totals[threadIndex].Stop();
+            //_grid.DebugGridAsImage(StartNodes[threadIndex].Index, EndNodes[threadIndex].Index, GridNodes[threadIndex], 4, Ships[threadIndex]);
+            //Ships[threadIndex].PathfindingThreadComplete = true;
+            //IsThreadActive[threadIndex] = false; //[alert] must be uncommented when not testing
+            //Debug.Log($"Finished background finding path and destination list and thread for #{threadIndex}:{Ships[threadIndex].Name}.  Total: {(Totals[threadIndex].Elapsed.TotalMilliseconds)}ms");
 
         }
 
@@ -1068,9 +1075,9 @@ namespace Assets.Scripts.Level
                     Clearances[threadIndex] = maximumClearance;
                     if (Level.ActivateCollisionAsteroids)
                     {
-                        UpdateMapTime[threadIndex] = SW.Stopwatch.StartNew();
+                        //UpdateMapTime[threadIndex] = SW.Stopwatch.StartNew();
                         UpdateMap(threadIndex, ship);
-                        UpdateMapTime[threadIndex].Stop();
+                        //UpdateMapTime[threadIndex].Stop();
                     }
                     //Debug.Log($"Pre starting Finding path for #{i} from {startNode.x}, {startNode.y} to {endNode.x}, {endNode.y}");
                     //try

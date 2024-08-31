@@ -38,7 +38,6 @@ RenderSettings:
   m_ReflectionIntensity: 1
   m_CustomReflection: {fileID: 0}
   m_Sun: {fileID: 0}
-  m_IndirectSpecularColor: {r: 0, g: 0, b: 0, a: 1}
   m_UseRadianceAmbientProbe: 0
 --- !u!157 &3
 LightmapSettings:
@@ -451,7 +450,7 @@ MonoBehaviour:
   m_BlockingObjects: 0
   m_BlockingMask:
     serializedVersion: 2
-    m_Bits: 2147483647
+    m_Bits: 4294967295
 --- !u!114 &1087221462
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -649,12 +648,12 @@ MonoBehaviour:
   m_RequiresColorTexture: 0
   m_Version: 2
   m_TaaSettings:
-    quality: 3
-    frameInfluence: 0.1
-    jitterScale: 1
-    mipBias: 0
-    varianceClampScale: 0.9
-    contrastAdaptiveSharpening: 0
+    m_Quality: 3
+    m_FrameInfluence: 0.1
+    m_JitterScale: 1
+    m_MipBias: 0
+    m_VarianceClampScale: 0.9
+    m_ContrastAdaptiveSharpening: 0
 --- !u!1001 &958930414250724933
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -891,11 +890,12 @@ MonoBehaviour:
   EventSystem: {fileID: 780873088}
   FinalizedScene: 0
   WatchServerRequests: 0
-  HasIndependentSocket: 0
+  IsSocketManager: 0
   TimeScale: 1
-  updates: 0
   __PastServerRequests: []
   __AverageRequestTime: 0
+  __UsedHashes: 
+  __Updates: 0
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

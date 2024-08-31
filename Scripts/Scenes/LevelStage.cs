@@ -104,9 +104,8 @@ namespace Assets.Scripts.Scenes
         public bool DidUserWin => WinningSide == ConfigData.Configuration.UserSide;
         public bool IsPaused => GetState().IsPaused;
 
-        public List<string> __BeeHivemindShips;
-        public List<string> __HumanHivemindShips;
-        public List<string> __PastCommands;
+        public List<string> __BeeHivemindShips, __HumanHivemindShips, __PastCommands, __PathfindingThreads;
+
 
         private List<GameObject> _chosenObstacles;
         private Dictionary<int, List<GameObject>> _obstacleLists;
@@ -149,13 +148,13 @@ namespace Assets.Scripts.Scenes
                     _chosenObstacles = EmptyObstacleList;
                     ChosenObstaclesIndex = 0;
                     ActivateCollisionAsteroids = true;
-                    Debug.Log($"The map has asteroids");
+                    Debug.Log($"The map has asteroids but not obstacles");
                 }
                 else
                 {
                     ActivateCollisionAsteroids = false;
                     HasObstacles = false;
-                    Debug.Log($"The map does not have asteroids");
+                    Debug.Log($"The map does not have asteroids or obstacles");
                 }
             }
 
@@ -493,6 +492,10 @@ namespace Assets.Scripts.Scenes
             __BeeHivemindShips = GetState().GetShipsVisibleToHiveMind(ConfigData.Configuration.BeeSide).Select(s => s.ToString()).ToList();
             __HumanHivemindShips = GetState().GetShipsVisibleToHiveMind(ConfigData.Configuration.HumanSide).Select(s => s.ToString()).ToList();
             __PastCommands = GetState().GetPastCommands().Select((c) => $"Command #{c.OutcomeId} - {c.Strategy.Name} for Squad {c.Squad} against [{c.Enemy}] with {c.Tsv} TSV").ToList();
+            if (Pathfinder != null)
+            {
+                __PathfindingThreads = Pathfinder.IsThreadActive.Select((s, i) => $"#{i} - {(s ? Pathfinder.Ships[i].Name : s)}").ToList();
+            }
         }
         private void SetTriggers()
         {
