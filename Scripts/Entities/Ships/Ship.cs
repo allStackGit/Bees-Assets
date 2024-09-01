@@ -1623,6 +1623,21 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 explosion.transform.localPosition = GetPosition();
             }
         }
+        public void ShowShipStats()
+        {
+            Debug.Log($"Showing ship stats for {Name}");
+        }
+        private void OnMouseEnter()
+        {
+            Debug.Log($"Mouse is over {Name}");
+            Invoke(nameof(ShowShipStats), 2);
+        }
+
+        private void OnMouseExit()
+        {
+            Debug.Log($"Mouse has left {Name}");
+            CancelInvoke(nameof(ShowShipStats));
+        }
 
 
     }

@@ -883,7 +883,7 @@ namespace Assets.Scripts.Scenes
         }
         private string ValidateInputString(string str)
         {
-            return Regex.Replace(str, @"[^a-zA-Z0-9\-\s!@#%&*_+=:']", "");
+            return Regex.Replace(str, @"[^a-zA-Z0-9\-\s!@#%&*_+=:'.]", "");
             //Debug.Log($"Unvalidated string: {name}, replaced string {valid}");
         }
 
