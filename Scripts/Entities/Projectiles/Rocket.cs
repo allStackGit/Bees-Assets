@@ -47,6 +47,7 @@ namespace Assets.Scripts.Entities.Projectiles
                 {
                     //Debug.Log($"{Name} hit {obstacle.Name}");
                     //DamageObstacle(obstacle);
+                    KillSequence();
                 }
                 Kill();
 

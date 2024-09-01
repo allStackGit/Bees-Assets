@@ -454,7 +454,7 @@ namespace Assets.Scripts.Level
 
             }
 
-            if (obstacle.IsMobile && !HasMovingObstacles)
+            if (obstacle.IsCollisionAsteroid && !HasMovingObstacles)
             {
                 HasMovingObstacles = true;
             }

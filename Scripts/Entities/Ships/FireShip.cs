@@ -60,8 +60,12 @@ namespace Assets.Scripts.Entities.Ships
                         }
                         Squad.SavedSquad.Stats.ShipsLost++;
                     }
-                }
 
+                    if (HasVision)
+                    {
+                        Vision.Kill(3);
+                    }
+                }
 
                 state.RemoveShip(this);
                 Squad.RemoveShip(this);

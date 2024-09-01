@@ -731,7 +731,7 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
                 }
                 else
                 {
-                    Invoke(nameof(SaveAndEnd), 2f);
+                    Invoke(nameof(SaveAndEnd), 5f);
 
                 }
             }

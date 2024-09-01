@@ -67,13 +67,13 @@ namespace Assets.Scripts
 
 
 
-        public const float Tiny = 1; // this is the base size, equal to 4 World Units
-        public const float Small = Tiny * 1.5f; 
-        public const float Medium = Tiny * 2f;
-        public const float Large = Tiny * 3f;
-        public const float Huge = Tiny * 4f;
-        public const float Enormous = Tiny * 8f;
-        public const float Unfathomable = Tiny * 32f;
+        public const int Tiny = 1; // this is the base size, equal to 4 World Units
+        public const float Small = 1.5f; 
+        public const int Medium = 2;
+        public const int Large = 3;
+        public const int Huge = 4;
+        public const int Enormous = 8;
+        public const int Unfathomable = 32;
 
         public static readonly Dictionary<string, Vector2Int> ShipSizes = new Dictionary<string, Vector2Int>() {
             { "Barge",          new Vector2Int(760, 360)},
@@ -172,12 +172,21 @@ namespace Assets.Scripts
         /// Offset in world units from the front of a ship when aiming at the front of a ship
         /// </summary>
         public const float OffsetFromFront = .35f;
-        public const float FireShipExplosionSize = 64;
+        public const int FireShipExplosionSize = 64;
         public const float RefillDistanceToCarrier = 10;
         public const int MinimumDelayPerBeacon = 10;
         public const int BeaconUpdateFrequency = 5;
         public const int MaxBeaconsDroppedPerScout = 5;
         public const int MinimumClearance = 4;
+        public const int MinimumAsteroidSpawnDistance = 100;
+        public const int MinimumAsteroidSpeed = 2;
+        public const int MinimumAsteroidAngularSpeedMultiplier = 5;
+        public const int CollisionAsteroidHealthIncrement = 250;
+        public const int CollisionAsteroidKillDelay = 1;
+        public const int MaximumTsvValueForSeeingAShip = 500;
+        public const int MinimumTsvValueForSeeingAShip = 50;
+        public const float TsvMultiplierForVision = .05f;
+        public const float VisionShrinkingMultiplier = .8f;
         public static Vector2 HalfSize = new Vector2(.5f, .5f);
         public const int MiningRate = 750;
         public static float ShipTurningRadius; 

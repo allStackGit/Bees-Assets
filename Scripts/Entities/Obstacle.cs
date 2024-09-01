@@ -8,13 +8,13 @@ namespace Assets.Scripts.Entities
 {
     public class Obstacle : MonoBehaviour
     {
-        public int Health, InitialHealth, Id;
+        public int Health, Id;
         /// <summary>
         /// The index of the obstacle in the list of obstacle points for the pathfinding map
         /// </summary>
         public int MapPointsIndex;
         public string Name;
-        public bool IsMobile, IsMapBorder, HasEnteredMap, IsDead, IsMiningAsteroid, IsRegularObstacle;
+        public bool IsCollisionAsteroid, IsMapBorder, HasEnteredMap, IsDead, IsMiningAsteroid, IsRegularObstacle;
         public LevelStage Level;
         public Collider2D Collider, ProximityCollider, ClearanceMappingCollider;
 
@@ -26,8 +26,6 @@ namespace Assets.Scripts.Entities
             Id = id;
             Name = $"{Name} #{Id}";
             gameObject.name = Name;
-            InitialHealth = Health;
-
 
         }
         public virtual void Kill()
@@ -43,7 +41,7 @@ namespace Assets.Scripts.Entities
             return transform.localPosition;
         }
 
-        public void ShipCollision(Ship ship)
+        public virtual void ShipCollision(Ship ship)
         {
             //Debug.Log($"{Name} was hit by {ship.Name}");
             if (ship.ShipType == "Barge")
@@ -51,7 +49,7 @@ namespace Assets.Scripts.Entities
                 Barge barge = ((Barge)ship);
                 if (barge.IsCharging)
                 {
-                    ship.Kill(null);
+                    ship.LogDamage(ship.Health); // kills the ship but logs the damage and tsv change first
                     return;
                 }
             }

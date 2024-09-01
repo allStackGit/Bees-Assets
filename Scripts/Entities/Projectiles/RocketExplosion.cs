@@ -30,6 +30,10 @@ namespace Assets.Scripts.Entities.Projectiles
                 if (!obstacle.IsMapBorder && !HasHitObstacle(obstacle))
                 {
                     Debug.Log($"{Name} hit {obstacle.Name}");
+                    if (obstacle.IsCollisionAsteroid)
+                    {
+                        DamageObstacle(obstacle);
+                    }
                     //DamageObstacle(obstacle);
                 }
             }
@@ -49,7 +53,19 @@ namespace Assets.Scripts.Entities.Projectiles
         {
             //Debug.Log("Killed off the rocket explosion");
             Destroy(gameObject);
+        } 
+        public void RemoveFireShip()
+        {
+            //if (Shooter.ShipType == "Fire Ship")
+            //{
+            //    if (Shooter.HasVision)
+            //    {
+            //        Shooter.Vision.Kill(1.25f);
+            //    }
+            //    //Destroy(Shooter.gameObject);
+            //}
         }
+
         public void SetHarmless()
         {
             _isHarmless = true;

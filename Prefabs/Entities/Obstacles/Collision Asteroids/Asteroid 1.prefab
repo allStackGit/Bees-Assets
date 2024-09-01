@@ -78,7 +78,7 @@ SpriteRenderer:
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: -807077399
   m_SortingLayer: 1
-  m_SortingOrder: 1
+  m_SortingOrder: 3
   m_Sprite: {fileID: 21300000, guid: fe2502e46d7c54b4b9590f7e0e3c398c, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
@@ -188,22 +188,24 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 92b5181fa95f92f45aadb7a7ac76a106, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  Health: 1000
+  Health: 0
   InitialHealth: 0
   Id: 0
   MapPointsIndex: 0
   Name: Collision Asteroid
-  IsMobile: 0
+  IsCollisionAsteroid: 1
   IsMapBorder: 0
   HasEnteredMap: 0
   IsDead: 0
   IsMiningAsteroid: 0
+  IsRegularObstacle: 0
   Level: {fileID: 0}
   Collider: {fileID: 3873131917324500913}
   ProximityCollider: {fileID: 6330246999587551277}
   ClearanceMappingCollider: {fileID: 4327743194160671326}
   Body: {fileID: 2812687852296569020}
   Speed: 0
+  SizeClass: 3
   CollisionObstacle: {fileID: 0}
 --- !u!1 &5206769835850001811
 GameObject:
@@ -458,7 +460,7 @@ SpriteRenderer:
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: -709313037
-  m_SortingLayer: 28
+  m_SortingLayer: 29
   m_SortingOrder: -1
   m_Sprite: {fileID: -1571012651542167539, guid: 215687feeab0b7445b4a1cd86c82c2e1, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}

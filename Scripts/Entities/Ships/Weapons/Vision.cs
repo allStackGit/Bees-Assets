@@ -21,6 +21,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             //Debug.Log($"{ship.Name} : {gameObject.name} Collider.radius: {Collider.radius}, Sight: {ship.Sight}");
             Ship = ship;
+            gameObject.name = $"{Ship.Name}'s Vision";
             if (Ship.IsHiveMindControlled)
             {
                 Collider = gameObject.AddComponent<CircleCollider2D>();
@@ -57,7 +58,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 //Debug.Log($"{Ship.Name} from {Ship.Level.gameObject.name} just saw {ship.Name} and added them to hivemind vision");
                 if (!Ship.Level.GetState().VisionCache[Ship.Side - 1].Contains(ship))
                 {
-                    Ship.Squad.Command.Tsv += (int)Math.Min(Math.Max(ship.Tsv * .05f, 50), 500);
+                    Ship.Squad.Command.Tsv += (int)Math.Min(Math.Max(ship.Tsv * ConfigData.TsvMultiplierForVision, ConfigData.MinimumTsvValueForSeeingAShip), ConfigData.MaximumTsvValueForSeeingAShip);
                     Ship.Level.GetState().HivemindShips[Ship.Side - 1][Ship.Id].Add(ship);
                     if (Ship.Squad.Command.Type == "Scouting")
                     {
@@ -70,7 +71,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 //Debug.Log($"{Ship.Name} from {Ship.Level.gameObject.name} just saw {ship.Name} and added them to hivemind vision");
                 if (!Ship.Level.GetState().VisionCache[Ship.Side - 1].Contains(ship))
                 {
-                    Ship.MotherSquad.Command.Tsv += (int)Math.Min(Math.Max(ship.Tsv * .05f, 50), 500);
+                    Ship.MotherSquad.Command.Tsv += (int)Math.Min(Math.Max(ship.Tsv * ConfigData.TsvMultiplierForVision, ConfigData.MinimumTsvValueForSeeingAShip), ConfigData.MaximumTsvValueForSeeingAShip);
                     Ship.Level.GetState().HivemindShips[Ship.Side - 1][Ship.Id].Add(ship);
                     if (Ship.MotherSquad.Command.Type == "Scouting")
                     {
@@ -79,6 +80,21 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 }
             }
 
+        }
+
+        public void Kill(float initialDelay)
+        {
+            transform.SetParent(Ship.Level.transform);
+            InvokeRepeating(nameof(ShrinkVision), initialDelay, .1f);
+        }
+
+        public void ShrinkVision()
+        {
+            transform.localScale *= ConfigData.VisionShrinkingMultiplier;
+            if (transform.localScale.x < 3)
+            {
+                Destroy(gameObject);
+            }
         }
 
         //protected virtual void OnTriggerExit2D(Collider2D collider)

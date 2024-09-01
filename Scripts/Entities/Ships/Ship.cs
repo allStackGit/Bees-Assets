@@ -28,7 +28,7 @@ namespace Assets.Scripts.Entities.Ships
     {
         public bool ShowDebug;
         public int Health, MaxHealth, OriginalHealth, OriginalTsv, Sight, AdditionalTsv, Clearance, MaxRange, HalfMaxRange;
-        public float ProjectileValue, Speed, SpecialFirePower, CurrentSpeed;
+        public float SizeClass, ProjectileValue, Speed, SpecialFirePower, CurrentSpeed;
         public GameObject ShipExplosion, HealthBar, MiniMapIcon, ShipAnimation;
         public Vector2 TargetCoordinates, FinalDestination, OffsetFromCenter; // the coordinates of where the ship should go, and it's offset from the center of the squad
         public Squad Squad, MotherSquad;
@@ -587,7 +587,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                         {
                             Obstacle obstacle = obstacleCollider.GetComponent<Obstacle>();
                             //Debug.Log($"{obstacle.Name} is in the way of {Name}");
-                            if (!obstacle.IsMobile)
+                            if (!obstacle.IsCollisionAsteroid)
                             {
                                 //CollisionAsteroid asteroid = (CollisionAsteroid)obstacle;
                                 //if (!NearbyAsteroids.Contains(asteroid)){
@@ -1293,6 +1293,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                         LogKillerStats(killer);
                     }
                     LogKilledStats();
+
+                    if (HasVision)
+                    {
+                        Vision.Kill(0);
+                    }
                 }
 
 

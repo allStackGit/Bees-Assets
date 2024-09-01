@@ -79,7 +79,7 @@ SpriteRenderer:
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: -1635513113
-  m_SortingLayer: 21
+  m_SortingLayer: 22
   m_SortingOrder: 0
   m_Sprite: {fileID: 21300000, guid: 775173d4a1edb6c4ea54dfa4ae144930, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -120,6 +120,7 @@ MonoBehaviour:
   Clearance: 0
   MaxRange: 0
   HalfMaxRange: 0
+  SizeClass: 1
   ProjectileValue: 0
   Speed: 0
   SpecialFirePower: 0
@@ -132,6 +133,7 @@ MonoBehaviour:
   FinalDestination: {x: 0, y: 0}
   OffsetFromCenter: {x: 0, y: 0}
   Squad: {fileID: 0}
+  MotherSquad: {fileID: 0}
   DefaultAngle: 0
   TargetDirection: 0
   LastKilled: 0
@@ -143,8 +145,12 @@ MonoBehaviour:
   CannotChangeMovementOrders: 0
   IsSpawnedShip: 0
   Vision: {fileID: 9184940670005006652}
+  SpriteRenderer: {fileID: 0}
   IsDead: 0
+  IsUserControlled: 0
   HasBrain: 0
+  IsMobile: 0
+  IsHiveMindControlled: 0
   IsMinionShip: 0
   HasTargetCoordinates: 0
   IsMiningShip: 0
@@ -174,6 +180,7 @@ MonoBehaviour:
   TargetEnemyShipToFollow: {fileID: 0}
   IsCloseEnoughToTargetEnemyShipToFollow: 0
   PathfindingThreadComplete: 0
+  IsPathfinding: 0
   PathfindingThread: 0
   PrintDebugImage: 0
   __Strategy: 
@@ -207,14 +214,17 @@ MonoBehaviour:
   __CommandTargetingQueue: []
   __NearbyAsteroids: []
   __HivemindShips: []
+  __Clearance: 0
   Direction: 0
   ShouldDetonate: 0
   RLShootingStrategy: 
   RLSide: 0
   RLHealth: 0
   RLShipType: 0
+  MinionType: Beacon
   TimeSinceLastBeaconDropped: 0
-  MinimumTimePerBeacon: 5
+  BeaconsDropped: 0
+  MinionSquads: []
 --- !u!50 &273038934896497789
 Rigidbody2D:
   serializedVersion: 4
@@ -623,7 +633,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4949212615178794145, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayer
-      value: 21
+      value: 22
       objectReference: {fileID: 0}
     - target: {fileID: 4949212615178794145, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayerID
@@ -695,7 +705,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6507568151281305453, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayer
-      value: 21
+      value: 22
       objectReference: {fileID: 0}
     - target: {fileID: 6507568151281305453, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayerID
