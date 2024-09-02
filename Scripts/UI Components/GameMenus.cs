@@ -12,6 +12,7 @@ using Assets.Scripts.Scenes;
 using Assets.Scripts.UI_Components;
 using UnityEngine.Events;
 using Assets.Scripts.Settings;
+using Assets.Scripts.Data;
 
 namespace Assets.Scripts.UIComponents
 {
@@ -19,11 +20,12 @@ namespace Assets.Scripts.UIComponents
     {
         public GameObject MenuContainer, LevelEndedDialogue, NoAliveShipsAlert, SquadActionBoxUI, VictoryLabel, DefeatLabel, MiniMapCloseButton, MiniMapOpenButton, HumanScore, BeeScore, Codex,
             CodexBarge, CodexBeacon, CodexCarrier, CodexCruiser, CodexDreadnought, CodexDrone, CodexFactory, CodexFireShip, CodexFlagship, CodexFrigate, CodexGunship, CodexScout, 
-            CodexStriker, CodexWarpGate, CodexBeehive, CodexBumblebee, CodexCarpenterBee, CodexHoneybee, CodexHornet, CodexLeafcutter, CodexQueen, CodexWasp, CodexYellowJacket;
+            CodexStriker, CodexWarpGate, CodexBeehive, CodexBumblebee, CodexCarpenterBee, CodexHoneybee, CodexHornet, CodexLeafcutter, CodexQueen, CodexWasp, CodexYellowJacket, ShipInfoBox;
         public Dictionary<string, GameObject> CodexShips;
         public SquadActionBox ActionBox;
         public LevelStage Level;
         public Dialogue ExitConfirmationDialogue;
+        public TMP_Text ShipInfoBoxTitle, ShipInfoBoxStats;
         public bool HoveringOverMiniMapButton;
         public bool IsSquadActionBoxOpen => ActionBox != null && SquadActionBoxUI.activeSelf;
         public bool HasSquadActionBox => Level.HasPlayer && ActionBox != null;
@@ -210,6 +212,21 @@ namespace Assets.Scripts.UIComponents
         {
             Level.EventSystem.SetSelectedGameObject(null);
         }
+        public void ShowShipStats(FleetShip ship)
+        {
+
+            ShipInfoBoxTitle.text = $"{ship.Name}";
+            ShipInfoBoxStats.text = $"Battles: {ship.BattlesFought.ToString("N0")}: {ship.BattlesWon}W - {ship.BattlesLost}L     (#{ConfigData.AllShips.GetShipRanking(ship, "Record")})\n" +
+                $"Shots Fired: {ship.ShotsFired.ToString("N0")}     (#{ConfigData.AllShips.GetShipRanking(ship, "ShotsFired")})\n" +
+                $"Damage Done: {ship.DamageDone.ToString("N0")}     (#{ConfigData.AllShips.GetShipRanking(ship, "DamageDone")})\n" +
+                $"Damage Received: {ship.DamageReceived.ToString("N0")}     (#{ConfigData.AllShips.GetShipRanking(ship, "DamageReceived")})\n" +
+                $"Kills: {ship.Kills.ToString("N0")}    (#{ConfigData.AllShips.GetShipRanking(ship, "Kills")})\n" +
+                $"{(ship.Type == "Carpenter Bee" || ship.Type == "Factory" ? $"Minerals Mined: {ship.MineralsMined.ToString("N0")}  (#{ConfigData.AllShips.GetShipRanking(ship, "Minerals Mined")})" : "\n")}";
+
+
+            ShipInfoBox.SetActive(true);
+        }
+
 
 
     }

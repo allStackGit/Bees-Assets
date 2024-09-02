@@ -16,6 +16,12 @@ namespace Assets.Scripts.Level
     {
         private bool _rightMouseButtonDown;
         private bool _leftMouseButtonDown;
+        /// <summary>
+        /// Whether or not the left mouse button has been pressed down, instead of return false the next frame it returns false after a short delay so that double clicks can be registered
+        /// </summary>
+        private bool _leftMouseClicked;
+        private float _leftMouseClickedTime;
+        private bool _leftMouseDoubleClicked;
         private bool _rightMouseButtonUp;
         private bool _leftMouseButtonUp;
         private bool _scrollPositive;
@@ -165,6 +171,12 @@ namespace Assets.Scripts.Level
                 _leftMouseButtonDown = true;
                 _leftMouseButtonUp = false;
                 _mouseDownPosition = new Vector2(_mousePosition.x, _mousePosition.y);
+                if (_leftMouseClicked)
+                {
+                    _leftMouseDoubleClicked = true;
+                }
+                _leftMouseClicked = true;
+                _leftMouseClickedTime = Time.realtimeSinceStartup;
             }
             else if (Input.GetMouseButtonUp(LeftClick))
             {
@@ -233,10 +245,15 @@ namespace Assets.Scripts.Level
                 }
 
             }
+
+            if (Time.realtimeSinceStartup - _leftMouseClickedTime > .25f)
+            {
+                _leftMouseClicked = false;
+                _leftMouseDoubleClicked = false;
+            }
             
 
         }
-
 
         private void SetRightMouseDownLongEnoughForDragging()
         {
@@ -326,6 +343,10 @@ namespace Assets.Scripts.Level
         {
             //Debug.Log($"right up: {Input.GetMouseButtonUp(RightClick)}, _clickedShip: {_clickedShip?.Name}");
             return Input.GetMouseButtonUp(RightClick) && _clickedShip != null && _clickedShip.IsWarpGate;
+        }
+        private bool HasEitherControlKey()
+        {
+            return Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
         }
 
         /// <summary>
@@ -562,7 +583,18 @@ namespace Assets.Scripts.Level
 
             if (potentialSquad != null)
             {
-                state.SelectSquad(potentialSquad);
+                if (HasEitherControlKey())
+                {
+                    state.AddSelectedSquad(potentialSquad);
+                }
+                else if (_leftMouseDoubleClicked)
+                {
+                    Level.GetState().SelectSquadsByShipType(_clickedShip.ShipType);
+                }
+                else
+                {
+                    state.SelectSquad(potentialSquad);
+                }
                 //Debug.Log($"Mouse was close enough to ${potentialSquad.Name}");
                 return true;
             }
@@ -714,10 +746,18 @@ namespace Assets.Scripts.Level
 
         private bool LeftClickAction()
         {
+
             if (_clickedShip != null)
             {
                 //Debug.Log($"_clickedShip is not null, running click action");
-                _clickedShip.Clicked(LeftClick);
+                if (_leftMouseDoubleClicked)
+                {
+                    Level.GetState().SelectSquadsByShipType(_clickedShip.ShipType);
+                }
+                else
+                {
+                    _clickedShip.Clicked(LeftClick, HasEitherControlKey());
+                }
                 return true;
             }
             else

@@ -237,6 +237,14 @@ namespace Assets.Scripts.Level
                 AddSelectedSquad(squad);
             });
         }
+        public void SelectSquadsByShipType(string type)
+        {
+            ClearSelectedSquads();
+            foreach (Squad squad in GetSquadsBySide(ConfigData.Configuration.UserSide).Where((squad) => squad.GetShips().Any((ship) => ship.ShipType == type)))
+            {
+                AddSelectedSquad(squad);
+            }
+        }
         public void ClearSelectedSquads()
         {
             _selectedSquads.ForEach((squad) =>

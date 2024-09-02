@@ -1025,7 +1025,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 transform.eulerAngles = Vector3.forward * 180;
             }
         }
-        public void Clicked(int mouseButton)
+        public void Clicked(int mouseButton, bool isCtrlClick = false)
         {
             GameState state = Level.GetState();
             if (!IsUserControlled && mouseButton == LevelInputManager.RightClick) // when this ship has been right clicked on and this ship *is not* user controlled
@@ -1040,7 +1040,14 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             }
             else if (IsUserControlled && mouseButton == LevelInputManager.LeftClick) // when this ship has been left clicked on and this ship *is* user controlled
             {
-                state.SelectSquad(Squad);
+                if (isCtrlClick)
+                {
+                    state.AddSelectedSquad(Squad);
+                }
+                else
+                {
+                    state.SelectSquad(Squad);
+                }
             }
         }
         public void SetCurrentSpeed(float speed, float maxSpeed = -1)
@@ -1625,18 +1632,21 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         }
         public void ShowShipStats()
         {
-            Debug.Log($"Showing ship stats for {Name}");
+            Level.Menus.ShowShipStats(FleetShip);
         }
         private void OnMouseEnter()
         {
-            Debug.Log($"Mouse is over {Name}");
-            Invoke(nameof(ShowShipStats), 2);
+            if (!ConfigData.SpawnedOnlyShipTypes.Contains(ShipType))
+            {
+                Invoke(nameof(ShowShipStats), 1);
+            }
         }
 
         private void OnMouseExit()
         {
-            Debug.Log($"Mouse has left {Name}");
             CancelInvoke(nameof(ShowShipStats));
+            Level.Menus.ShipInfoBox.SetActive(false);
+
         }
 
 

@@ -958,7 +958,7 @@ namespace Assets.Scripts.Level
                         //Totals[threadIndex].Stop();
                         GetNodes[threadIndex].Stop();
                         //Debug.Log($"End point has been found for #{threadIndex}:{Ships[threadIndex].Name}");
-                        Debug.Log($"Finished background finding path and destination list for #{threadIndex}:{Ships[threadIndex].Name} in {Totals[threadIndex].Elapsed.TotalMilliseconds}ms");
+                        //Debug.Log($"Finished background finding path and destination list for #{threadIndex}:{Ships[threadIndex].Name} in {Totals[threadIndex].Elapsed.TotalMilliseconds}ms");
 
                         Ships[threadIndex].PathfindingValue = BTPath;
 
