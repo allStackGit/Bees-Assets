@@ -129,6 +129,7 @@ MonoBehaviour:
   HealthBar: {fileID: 3179993197624593158}
   MiniMapIcon: {fileID: 4971123995003810503}
   ShipAnimation: {fileID: 0}
+  MovementMarker: {fileID: 0}
   TargetCoordinates: {x: 0, y: 0}
   FinalDestination: {x: 0, y: 0}
   OffsetFromCenter: {x: 0, y: 0}

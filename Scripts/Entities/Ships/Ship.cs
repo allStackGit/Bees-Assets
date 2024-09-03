@@ -29,7 +29,7 @@ namespace Assets.Scripts.Entities.Ships
         public bool ShowDebug;
         public int Health, MaxHealth, OriginalHealth, OriginalTsv, Sight, AdditionalTsv, Clearance, MaxRange, HalfMaxRange;
         public float SizeClass, ProjectileValue, Speed, SpecialFirePower, CurrentSpeed;
-        public GameObject ShipExplosion, HealthBar, MiniMapIcon, ShipAnimation;
+        public GameObject ShipExplosion, HealthBar, MiniMapIcon, ShipAnimation, MovementMarker;
         public Vector2 TargetCoordinates, FinalDestination, OffsetFromCenter; // the coordinates of where the ship should go, and it's offset from the center of the squad
         public Squad Squad, MotherSquad;
         public float DefaultAngle, TargetDirection;
@@ -48,7 +48,7 @@ namespace Assets.Scripts.Entities.Ships
         /// </summary>
         public bool IsUserControlled;
         public bool HasBrain, IsMobile, IsHiveMindControlled, IsMinionShip, HasTargetCoordinates, IsMiningShip, IsWarpGate, HasTargetDirection, HasVision, HasProximityCollider, HasShipAnimation, HasRocketFlares, 
-            HasLeftRocketFlares, HasCenterRocketFlares, HasRightRocketFlares;
+            HasLeftRocketFlares, HasCenterRocketFlares, HasRightRocketFlares, HasMovementMarker;
         public List<Weapon> Weapons;
         public List<GameObject> ProjectilePrefabs, WeaponPrefabs, ColoredPrefabs, LeftRocketFlares, CenterRocketFlares, RightRocketFlares;
         public Brain Brain = null;
@@ -219,11 +219,14 @@ namespace Assets.Scripts.Entities.Ships
             Body = GetComponent<Rigidbody2D>();
             Collider = GetComponent<Collider2D>();
 
+
             IsUserControlled = Side == ConfigData.Configuration.UserSide && Level.HasPlayer;
 
             if (!IsUserControlled)
             {
                 IsHiveMindControlled = true;
+                Vision.Setup(this);
+                Level.GetState().HivemindShips[Side - 1].Add(Id, new HashSet<Ship>());
             }
 
             Transform brain = transform.Find("Brain");
@@ -429,17 +432,25 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             SetToDefaultAngle();
             SetCurrentSpeed(Speed);
 
+            if (IsUserControlled)
+            {
+                MovementMarker = Instantiate(Level.MovementMarkerPrefab, Vector2.zero, Quaternion.identity);
+                MovementMarker.transform.SetParent(Level.Map.transform);
+                MovementMarker.SetActive(false);
+                MovementMarker.name = $"{Name}'s Movement Marker";
+                HasMovementMarker = true;
 
-            if (IsUserControlled && Level.ActivateFogOfWar)
-            {
-                //Debug.Log($"Setting up vision for {Name}");
-                HasVision = true;
-                Vision.Setup(this);
-            }
-            else if (IsHiveMindControlled)
-            {
-                Vision.Setup(this);
-                Level.GetState().HivemindShips[Side - 1].Add(Id, new HashSet<Ship>());
+                if (Squad.HasCustomColor)
+                {
+                    MovementMarker.GetComponent<SpriteRenderer>().color = Squad.Color;
+                }
+
+                if (Level.ActivateFogOfWar)
+                {
+                    //Debug.Log($"Setting up vision for {Name}");
+                    HasVision = true;
+                    Vision.Setup(this);
+                }
             }
 
 
@@ -636,6 +647,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 SetTargetCoordinates(destination);
                 FinalDestination = TargetCoordinates;
                 HasTargetCoordinates = true;
+
+                MoveMovementMarker();
             }
             
         }
@@ -737,6 +750,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 PathfindingValue = null;
                 IsPathfinding = false;
                 DebugWalkablePointNodes.Clear();
+                MoveMovementMarker();
                 //Debug.Log($"Merged full path to destination in {(Time.realtimeSinceStartup - start) * 1000}ms");
             }
         }
@@ -752,6 +766,22 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 IsFollowingPath = false;
                 DestinationQueue.Clear();
                 CancelInvoke(nameof(CheckForDirectPath));
+            }
+        }
+        private void MoveMovementMarker()
+        {
+            if (HasMovementMarker && Squad.IsSelected)
+            {
+                if (HasTargetCoordinates)
+                {
+                    MovementMarker.transform.position = FinalDestination;
+                    MovementMarker.SetActive(true);
+                }
+                else
+                {
+                    MovementMarker.SetActive(false);
+
+                }
             }
         }
         public void SetTargetCoordinates(Vector2 v)
@@ -1012,7 +1042,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     });
 
                 }
-
+                MoveMovementMarker();
                 //transform.position = TargetCoordinates;
                 //SetToDefaultAngle();
             }
@@ -1339,6 +1369,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 {
                     Squad.SetOffsets();
                 }
+                Destroy(MovementMarker);
                 Destroy(gameObject);
             }
         }

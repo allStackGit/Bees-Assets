@@ -221,11 +221,13 @@ namespace Assets.Scripts.Level
             if (squad != null && squad.IsUserControlled)
             {
                 _selectedSquads.Add(squad);
+                squad.IsSelected = true;
                 squad.MoveSquadBox();
-                if (Level.DoesUserHaveController)
+                Level.Menus.ActionBox.SetupForSquad();
+                squad.GetShips().ForEach((ship) =>
                 {
-                    Level.Menus.ActionBox.SetupForSquad();
-                }
+                    ship.MovementMarker.SetActive(true);
+                });
             }
 
         }
@@ -250,6 +252,11 @@ namespace Assets.Scripts.Level
             _selectedSquads.ForEach((squad) =>
             {
                 squad.DeactivateSquadBox();
+                squad.IsSelected = false;
+                squad.GetShips().ForEach((ship) =>
+                {
+                    ship.MovementMarker.SetActive(false);
+                });
             });
             _selectedSquads.Clear();
         }

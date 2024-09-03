@@ -15,12 +15,13 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// <summary>
         /// Whether or not the ship is being controlled by a user to fire towards a particular point on the map
         /// </summary>
-        public bool IsFiringManually;
+        public bool IsFiringManually, HasTargetingMarker;
         public int TargetingPasses, PassesPerFire;
         /// <summary> How many times the targeting sequence runs per fire sequence </summary>
         public float TargetingRate;
         public float DamagePerSecond => RateOfFire > 0 ? (Power / RateOfFire) : 0;
         public Vector2 TargetPoint;
+        public GameObject TargetingMarker;
 
 
         public virtual void Setup(Ship ship, string type, int range, int power, float rateOfFire, float projectileValue, GameObject piece,
@@ -32,6 +33,15 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             TargetingRate = RateOfFire / PassesPerFire;
             RotationRate = rotationRate;
 
+            if (Ship.IsUserControlled)
+            {
+                TargetingMarker = Instantiate(Level.TargetingMarkerPrefab, Vector2.zero, Quaternion.identity);
+                TargetingMarker.transform.SetParent(Level.Map.transform);
+                TargetingMarker.SetActive(false);
+                TargetingMarker.name = $"{Name}'s Targeting Marker";
+                HasTargetingMarker = true;
+            }
+
         }
         private void Start()
         {
@@ -40,6 +50,22 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 //Debug.Log($"Aiming rate: {TargetingRate} for {FleetShip.Name}");
                 InvokeRepeating(nameof(TargetingSequence), TargetingRate, TargetingRate);
                 //Invoke(nameof(Fire), RateOfFire);
+            }
+        }
+        private void MoveTargetingMarker()
+        {
+            if (HasTargetingMarker && Squad.IsSelected)
+            {
+                if (IsAimedAtTarget)
+                {
+                    TargetingMarker.transform.position = TargetPoint;
+                    TargetingMarker.SetActive(true);
+                }
+                else
+                {
+                    TargetingMarker.SetActive(false);
+
+                }
             }
         }
         private void FixedUpdate()
@@ -101,7 +127,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     }
                 }
             }
-            
+            MoveTargetingMarker();
+
 
         }
         /// <summary>

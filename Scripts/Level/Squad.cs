@@ -36,6 +36,10 @@ namespace Assets.Scripts.Level
         /// A squad can be dead for one frame before it is destroyed. It's important to check for the death of a squad on anything run by a timer outside of the squad object
         /// </summary>
         public bool IsDead;
+        /// <summary>
+        /// Is this squad is selected by the user?
+        /// </summary>
+        public bool IsSelected;
         public float CurrentSpeed;
 
         private List<Ship> _ships = new List<Ship>();
@@ -69,10 +73,7 @@ namespace Assets.Scripts.Level
         public bool HasOnlyBarges => GetShips().All((s) => s.ShipType == "Barge");
         public bool IsUserControlled => Side == ConfigData.Configuration.UserSide && Level.HasPlayer;
         public bool IsHiveMindControlled => Side == ConfigData.Configuration.AISide || (Side == ConfigData.Configuration.UserSide && !Level.HasPlayer);
-        /// <summary>
-        /// Is this squad is selected by the user?
-        /// </summary>
-        public bool IsSelected => Level.GetState().GetSelectedSquads().Any((squad) => Equals(squad));
+
         /// <summary>
         /// Whether or not the squad's ships have target coordinates. If they do, it hasn't reached the destination
         /// </summary>
@@ -275,7 +276,10 @@ namespace Assets.Scripts.Level
             {
                 //float x = Mathf.Clamp((destination.x + ship.OffsetFromCenter.x), Level.MinX, Level.MaxX);
                 //float y = Mathf.Clamp((destination.y + ship.OffsetFromCenter.y), Level.MinY, Level.MaxY);
-                ship.MoveToPoint(destination + ship.OffsetFromCenter);
+                if (ship.IsMobile)
+                {
+                    ship.MoveToPoint(destination + ship.OffsetFromCenter);
+                }
             }
             //float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
             //Debug.Log($"It took {Math.Round(end, 2)} ms to set {Name} moving. The average was {Math.Round(end / ships.Count, 2)}ms");

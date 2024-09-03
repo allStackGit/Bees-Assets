@@ -18,14 +18,14 @@ namespace Assets.Scripts.UIComponents
 {
     public class GameMenus : MonoBehaviour
     {
-        public GameObject MenuContainer, LevelEndedDialogue, NoAliveShipsAlert, SquadActionBoxUI, VictoryLabel, DefeatLabel, MiniMapCloseButton, MiniMapOpenButton, HumanScore, BeeScore, Codex,
-            CodexBarge, CodexBeacon, CodexCarrier, CodexCruiser, CodexDreadnought, CodexDrone, CodexFactory, CodexFireShip, CodexFlagship, CodexFrigate, CodexGunship, CodexScout, 
-            CodexStriker, CodexWarpGate, CodexBeehive, CodexBumblebee, CodexCarpenterBee, CodexHoneybee, CodexHornet, CodexLeafcutter, CodexQueen, CodexWasp, CodexYellowJacket, ShipInfoBox;
-        public Dictionary<string, GameObject> CodexShips;
+        public GameObject MenuContainer, LevelEndedDialogue, NoAliveShipsAlert, SquadActionBoxUI, VictoryLabel, DefeatLabel, MiniMapCloseButton, MiniMapOpenButton, HumanScore, BeeScore,
+            ShipInfoBox;
         public SquadActionBox ActionBox;
         public LevelStage Level;
         public Dialogue ExitConfirmationDialogue;
         public TMP_Text ShipInfoBoxTitle, ShipInfoBoxStats;
+        public Codex Codex;
+
         public bool HoveringOverMiniMapButton;
         public bool IsSquadActionBoxOpen => ActionBox != null && SquadActionBoxUI.activeSelf;
         public bool HasSquadActionBox => Level.HasPlayer && ActionBox != null;
@@ -37,7 +37,7 @@ namespace Assets.Scripts.UIComponents
             if (Level.HasPlayer)
             {
                 ActionBox = SquadActionBoxUI.GetComponent<SquadActionBox>();
-                SetupCodex();
+                Codex.SetupCodex();
                 
             }
 
@@ -90,71 +90,6 @@ namespace Assets.Scripts.UIComponents
         {
             Level.UnPause();
             Level.ReloadScene();
-        }
-        public void ViewCodex()
-        {
-            //Debug.Log("Viewing codex");
-            Codex.SetActive(true);
-        }
-        public void ExitCodex()
-        {
-            Codex.SetActive(false);
-        }
-        private void SetupCodex()
-        {
-            CodexShips = new Dictionary<string, GameObject> {
-                    {"Barge", CodexBarge },
-                    {"Beacon", CodexBeacon },
-                    {"Carrier", CodexCarrier },
-                    {"Cruiser", CodexCruiser },
-                    {"Dreadnought", CodexDreadnought },
-                    {"Drone", CodexDrone },
-                    {"Factory", CodexFactory },
-                    {"Fire Ship", CodexFireShip },
-                    {"Flagship", CodexFlagship },
-                    {"Frigate", CodexFrigate },
-                    {"Gunship", CodexGunship },
-                    {"Scout", CodexScout },
-                    {"Striker", CodexStriker },
-                    {"Warp Gate", CodexWarpGate },
-                    {"Beehive", CodexBeehive },
-                    {"Bumblebee", CodexBumblebee },
-                    {"Carpenter Bee", CodexCarpenterBee },
-                    {"Honeybee", CodexHoneybee },
-                    {"Hornet", CodexHornet },
-                    {"Leafcutter", CodexLeafcutter },
-                    {"Queen", CodexQueen },
-                    {"Wasp", CodexWasp },
-                    {"Yellow Jacket", CodexYellowJacket }
-                };
-
-            foreach (KeyValuePair<string, GameObject> ship in CodexShips)
-            {
-                if (!ConfigData.Configuration.VisibleShipTypes.Contains(ship.Key) && !ConfigData.SpawnedOnlyShipTypes.Contains(ship.Key))
-                {
-                    ship.Value.SetActive(false);
-                    if (ship.Key == "Carrier")
-                    {
-                        CodexDrone.SetActive(false);
-                        CodexStriker.SetActive(false);
-                    }
-                }
-                else
-                {
-                    TMP_Text description = ship.Value.transform.GetChild(2).GetComponent<TMP_Text>();
-                    TMP_Text stats = ship.Value.transform.GetChild(1).GetComponent<TMP_Text>();
-                    ShipStatBlock shipInfo = ConfigData.GetShipInfo(ship.Key);
-
-                    description.text = shipInfo.CodexDescription;
-                    stats.text =
-                        $"Health: {shipInfo.Health.ToString("N0")}\n" +
-                        $"Range: {shipInfo.PrintRange()}\n" +
-                        $"Power: {shipInfo.PrintPower()}\n" +
-                        $"Rate of Fire: {shipInfo.PrintRateOfFire()}\n" +
-                        $"Speed: {shipInfo.Speed}\n" +
-                        $"Capacity: {(!ConfigData.SpawnedOnlyShipTypes.Contains(ship.Key) ? ConfigData.AllShips.GetShipsOfType(ship.Key).First().GetMaxCapacity().ToString("N0") : "N/A")}";
-                }
-            }
         }
         public void TryNewLevel()
         {
