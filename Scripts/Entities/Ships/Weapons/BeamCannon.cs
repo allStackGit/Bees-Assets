@@ -41,7 +41,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
                 }
             }
-            
+            MoveTargetingMarker();
 
         }
         protected override void SetTargetShip(Ship targetShip)

@@ -77,9 +77,11 @@ MonoBehaviour:
   HealthBar: {fileID: 1909365371636913507}
   MiniMapIcon: {fileID: 8969261252052207092}
   ShipAnimation: {fileID: 0}
+  MovementMarker: {fileID: 0}
   TargetCoordinates: {x: 0, y: 0}
   FinalDestination: {x: 0, y: 0}
   OffsetFromCenter: {x: 0, y: 0}
+  WaitingTargetCoordinates: {x: 0, y: 0}
   Squad: {fileID: 0}
   MotherSquad: {fileID: 0}
   DefaultAngle: 0
@@ -111,6 +113,9 @@ MonoBehaviour:
   HasLeftRocketFlares: 0
   HasCenterRocketFlares: 0
   HasRightRocketFlares: 0
+  HasMovementMarker: 0
+  HasWaitingTargetCoordinates: 0
+  HasShatteredShip: 0
   Weapons: []
   ProjectilePrefabs:
   - {fileID: 2378685256343899705, guid: 3b1a5274038082f4fb1be503df70d6de, type: 3}
@@ -120,6 +125,8 @@ MonoBehaviour:
   LeftRocketFlares: []
   CenterRocketFlares: []
   RightRocketFlares: []
+  ShatteredShips:
+  - {fileID: 3284305956443189761, guid: abc976f81f683a8488eeb2e7cb347509, type: 3}
   Brain: {fileID: 0}
   NearbyAsteroids: []
   Turrets: []

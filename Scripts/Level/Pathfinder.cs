@@ -758,19 +758,29 @@ namespace Assets.Scripts.Level
             List<Vector2> BTDestinationList = new List<Vector2> { BTEndNode.Vector };
             
             MapNode BTCurrentNode = BTEndNode;
+            Vector2Int previousSlope = Vector2Int.zero;
+            Vector2Int slope = Vector2Int.one;
 
             while (BTCurrentNode.PreviousNode != MapNode.NullNode)
             {
                 //Debug.Log(currentNode.PreviousNode.Id);
-                BTDestinationList.Add(BTCurrentNode.PreviousNode.Vector);
-                BTCurrentNode = BTCurrentNode.PreviousNode;
 
-                BTCurrentNode.PreviousNode.IsPartOfPath = true;
+                slope = new Vector2Int(BTCurrentNode.x - BTCurrentNode.PreviousNode.x, BTCurrentNode.y - BTCurrentNode.PreviousNode.y);
+                //Debug.Log($"The slope for the point is {slope}, is is the same as the previous slope? {previousSlope == slope}");
+
+                if (previousSlope != slope)
+                {
+                    BTDestinationList.Add(BTCurrentNode.PreviousNode.Vector);
+                    BTCurrentNode.PreviousNode.IsPartOfPath = true;
+                }
+                previousSlope = slope;
+                BTCurrentNode = BTCurrentNode.PreviousNode;
 
             }
 
             BTDestinationList.Reverse();
             //path.SetPoints(destinationList);
+            //Debug.Log($"There are {BTDestinationList.Count} points in the path");
             BTPath.Points = BTDestinationList;
         }
         private MapNode GetCheapestNode(List<MapNode> list, MapNode previousNode)

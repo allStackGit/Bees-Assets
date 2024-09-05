@@ -52,20 +52,16 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 //Invoke(nameof(Fire), RateOfFire);
             }
         }
-        private void MoveTargetingMarker()
+        protected void MoveTargetingMarker()
         {
-            if (HasTargetingMarker && Squad.IsSelected)
+            if (HasTargetingMarker && Squad.IsSelected && IsAimedAtTarget)
             {
-                if (IsAimedAtTarget)
-                {
-                    TargetingMarker.transform.position = TargetPoint;
-                    TargetingMarker.SetActive(true);
-                }
-                else
-                {
-                    TargetingMarker.SetActive(false);
-
-                }
+                TargetingMarker.transform.position = TargetPoint;
+                TargetingMarker.SetActive(true);
+            }
+            else if (HasTargetingMarker)
+            {
+                TargetingMarker.SetActive(false);
             }
         }
         private void FixedUpdate()

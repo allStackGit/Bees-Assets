@@ -226,7 +226,10 @@ namespace Assets.Scripts.Level
                 Level.Menus.ActionBox.SetupForSquad();
                 squad.GetShips().ForEach((ship) =>
                 {
-                    ship.MovementMarker.SetActive(true);
+                    if (ship.HasTargetCoordinates)
+                    {
+                        ship.MovementMarker.SetActive(true);
+                    }
                 });
             }
 

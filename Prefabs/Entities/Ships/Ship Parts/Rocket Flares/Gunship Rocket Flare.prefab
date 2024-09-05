@@ -1,6 +1,6 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
---- !u!1 &591908296913115697
+--- !u!1 &6138492006316565239
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -8,23 +8,23 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 1445221022135788780}
-  - component: {fileID: 8202964886255065155}
-  - component: {fileID: 3563313556297076682}
+  - component: {fileID: 8976144066460689599}
+  - component: {fileID: 5842864600162321386}
+  - component: {fileID: 5934326579379477309}
   m_Layer: 0
-  m_Name: Scout Rocket Flare
+  m_Name: Gunship Rocket Flare
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!4 &1445221022135788780
+--- !u!4 &8976144066460689599
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 591908296913115697}
+  m_GameObject: {fileID: 6138492006316565239}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
@@ -33,13 +33,13 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!212 &8202964886255065155
+--- !u!212 &5842864600162321386
 SpriteRenderer:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 591908296913115697}
+  m_GameObject: {fileID: 6138492006316565239}
   m_Enabled: 1
   m_CastShadows: 0
   m_ReceiveShadows: 0
@@ -71,31 +71,31 @@ SpriteRenderer:
   m_AutoUVMaxDistance: 0.5
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
-  m_SortingLayerID: -1635513113
-  m_SortingLayer: 22
+  m_SortingLayerID: -1672541693
+  m_SortingLayer: 19
   m_SortingOrder: 1
-  m_Sprite: {fileID: 233600713, guid: cabe961784626824eab175531cc405ab, type: 3}
+  m_Sprite: {fileID: 225281033, guid: 140b0e5af7a291647a07e7cb1bbeedf5, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
-  m_Size: {x: 1.75, y: 1.75}
+  m_Size: {x: 2, y: 2}
   m_AdaptiveModeThreshold: 0.5
   m_SpriteTileMode: 0
   m_WasSpriteAssigned: 1
   m_MaskInteraction: 0
   m_SpriteSortPoint: 0
---- !u!95 &3563313556297076682
+--- !u!95 &5934326579379477309
 Animator:
   serializedVersion: 5
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 591908296913115697}
+  m_GameObject: {fileID: 6138492006316565239}
   m_Enabled: 1
   m_Avatar: {fileID: 0}
-  m_Controller: {fileID: 9100000, guid: ba3dfc371b9cf9740883ae0bf50d000b, type: 2}
+  m_Controller: {fileID: 9100000, guid: 93c5040168cb2e04595bdc7b682f0481, type: 2}
   m_CullingMode: 0
   m_UpdateMode: 0
   m_ApplyRootMotion: 0

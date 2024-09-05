@@ -31,6 +31,10 @@ namespace Assets.Scripts.Entities.Ships
         public float SizeClass, ProjectileValue, Speed, SpecialFirePower, CurrentSpeed;
         public GameObject ShipExplosion, HealthBar, MiniMapIcon, ShipAnimation, MovementMarker;
         public Vector2 TargetCoordinates, FinalDestination, OffsetFromCenter; // the coordinates of where the ship should go, and it's offset from the center of the squad
+        /// <summary>
+        /// If a ship can't move when it's given target coordinates, they are held here until it can move
+        /// </summary>
+        public Vector2 WaitingTargetCoordinates;
         public Squad Squad, MotherSquad;
         public float DefaultAngle, TargetDirection;
         public long LastKilled;
@@ -48,9 +52,9 @@ namespace Assets.Scripts.Entities.Ships
         /// </summary>
         public bool IsUserControlled;
         public bool HasBrain, IsMobile, IsHiveMindControlled, IsMinionShip, HasTargetCoordinates, IsMiningShip, IsWarpGate, HasTargetDirection, HasVision, HasProximityCollider, HasShipAnimation, HasRocketFlares, 
-            HasLeftRocketFlares, HasCenterRocketFlares, HasRightRocketFlares, HasMovementMarker;
+            HasLeftRocketFlares, HasCenterRocketFlares, HasRightRocketFlares, HasMovementMarker, HasWaitingTargetCoordinates, HasShatteredShip;
         public List<Weapon> Weapons;
-        public List<GameObject> ProjectilePrefabs, WeaponPrefabs, ColoredPrefabs, LeftRocketFlares, CenterRocketFlares, RightRocketFlares;
+        public List<GameObject> ProjectilePrefabs, WeaponPrefabs, ColoredPrefabs, LeftRocketFlares, CenterRocketFlares, RightRocketFlares, ShatteredShips;
         public Brain Brain = null;
         public Queue<Vector2> DestinationQueue = new Queue<Vector2>();
         public List<CollisionAsteroid> NearbyAsteroids = new List<CollisionAsteroid>();
@@ -385,43 +389,55 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 ProximityCollider.Setup(this, Sight);
                 HasProximityCollider = true;
             }
-            if (ShipAnimation != null && !Level.IsTraining)
-            {
-                HasShipAnimation = true;
-                if (Squad.HasCustomColor)
-                {
-                    ShipAnimationController.RecolorAnimationSprites();
-                }
-            }
 
-            if (Side == ConfigData.Configuration.HumanSide && !Level.IsTraining)
-            {
-                if (LeftRocketFlares.Count > 0)
-                {
-                    HasLeftRocketFlares = true;
-                }
-                if (CenterRocketFlares.Count > 0)
-                {
-                    HasCenterRocketFlares = true;
-                }
-                if (RightRocketFlares.Count > 0)
-                {
-                    HasRightRocketFlares = true;
-                }
 
-                if (HasLeftRocketFlares || HasCenterRocketFlares || HasRightRocketFlares)
+            if (!Level.IsTraining)
+            {
+                if (Side == ConfigData.Configuration.HumanSide)
                 {
-                    HasRocketFlares = true;
+                    if (LeftRocketFlares.Count > 0)
+                    {
+                        HasLeftRocketFlares = true;
+                    }
+                    if (CenterRocketFlares.Count > 0)
+                    {
+                        HasCenterRocketFlares = true;
+                    }
+                    if (RightRocketFlares.Count > 0)
+                    {
+                        HasRightRocketFlares = true;
+                    }
+
+                    if (HasLeftRocketFlares || HasCenterRocketFlares || HasRightRocketFlares)
+                    {
+                        HasRocketFlares = true;
+                    }
+                    else
+                    {
+                        HasRocketFlares = false;
+                    }
                 }
                 else
                 {
                     HasRocketFlares = false;
                 }
+
+                if (ShipAnimation != null)
+                {
+                    HasShipAnimation = true;
+                    if (Squad.HasCustomColor)
+                    {
+                        ShipAnimationController.RecolorAnimationSprites();
+                    }
+                }
+
+                if (ShatteredShips.Count > 0) // [testing] all ships should have multiple shattered ships eventually
+                {
+                    HasShatteredShip = true;
+                }
             }
-            else
-            {
-                HasRocketFlares = false;
-            }
+
+            
 
 
 
@@ -649,6 +665,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 HasTargetCoordinates = true;
 
                 MoveMovementMarker();
+            }
+            else
+            {
+                WaitingTargetCoordinates = destination;
+                HasWaitingTargetCoordinates = true;
             }
             
         }
@@ -1369,7 +1390,15 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 {
                     Squad.SetOffsets();
                 }
-                Destroy(MovementMarker);
+
+                if (!Level.IsTraining && IsUserControlled)
+                {
+                    Turrets.ForEach((turret) =>
+                    {
+                        Destroy(turret.TargetingMarker);
+                    });
+                    Destroy(MovementMarker);
+                }
                 Destroy(gameObject);
             }
         }
@@ -1651,14 +1680,26 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 _healthBarFillerSprite.color = ConfigData.GetUIColor("bad");
             }
         }
+        /// <summary>
+        /// Spawns the ship explosion and shattered ship 
+        /// </summary>
         protected void DropExplosionAnimation()
         {
             if (!Level.IsTraining)
             {
-                GameObject explosion = LevelStage.Instantiate(ShipExplosion, Vector2.zero, Quaternion.identity);
+                GameObject explosion = Instantiate(ShipExplosion, Vector2.zero, Quaternion.identity);
                 explosion.transform.localScale *= ConfigData.GetShipSizeFactor(ShipType);
                 explosion.transform.parent = Level.Map.transform;
                 explosion.transform.localPosition = GetPosition();
+
+                if (HasShatteredShip)
+                {
+                    GameObject shatteredShip = Instantiate(ShatteredShips.GetRange(Utilities.RandomInt(ShatteredShips.Count), 1).First(), Vector2.zero, Quaternion.identity);
+                    shatteredShip.transform.parent = Level.Map.transform;
+                    shatteredShip.transform.localPosition = GetPosition();
+                    shatteredShip.transform.eulerAngles = transform.eulerAngles;
+                }
+
             }
         }
         public void ShowShipStats()

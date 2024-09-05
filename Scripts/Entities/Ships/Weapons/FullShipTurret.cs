@@ -34,6 +34,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 {
                     LaserBuilderAnimation.SetActive(true);
                 }
+
+                MoveTargetingMarker();
             }
 
         }

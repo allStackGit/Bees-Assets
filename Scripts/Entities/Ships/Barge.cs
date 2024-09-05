@@ -135,6 +135,12 @@ namespace Assets.Scripts.Entities.Ships
                 HasCompletedRun = true;
                 StopMoving($"Finished cool down");
                 CannotChangeMovementOrders = false;
+
+                if (HasWaitingTargetCoordinates)
+                {
+                    MoveToPoint(WaitingTargetCoordinates);
+                    HasWaitingTargetCoordinates = false;
+                }
             }
 
         }
