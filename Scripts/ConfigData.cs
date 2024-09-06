@@ -225,13 +225,26 @@ namespace Assets.Scripts
 
         public static Vector2 BaseDragIconSize = new Vector2(.2f, .2f);
 
-
+        /// <summary>
+        /// Supports up to 16 ships, four rows of four columns
+        /// </summary>
         public static Vector2[] CarrierDoubleColumnFormationOffsets = new Vector2[] {
             (ShipOffset * new Vector2(-3, 0)),  (ShipOffset * new Vector2(-2, 0)),  (ShipOffset * new Vector2(2, 0)),  (ShipOffset * new Vector2(3, 0)),
             (ShipOffset * new Vector2(-3, -1)), (ShipOffset * new Vector2(-2, -1)), (ShipOffset * new Vector2(2, -1)), (ShipOffset * new Vector2(3, -1)),
             (ShipOffset * new Vector2(-3, -2)), (ShipOffset * new Vector2(-2, -2)), (ShipOffset * new Vector2(2, -2)), (ShipOffset * new Vector2(3, -2)),
             (ShipOffset * new Vector2(-3, -3)), (ShipOffset * new Vector2(-2, -3)), (ShipOffset * new Vector2(2, -3)), (ShipOffset * new Vector2(3, -3)),
             (ShipOffset * new Vector2(-3, -4)), (ShipOffset * new Vector2(-2, -4)), (ShipOffset * new Vector2(2, -4)), (ShipOffset * new Vector2(3, -4)),
+        };
+
+        /// <summary>
+        /// Supports up to 10 ships, five rows of two columns
+        /// </summary>
+        public static Vector2[] GeneratedSquadFormationOffsets = new Vector2[] {
+            (ShipOffset * new Vector2(-.5f, 0)), (ShipOffset * new Vector2(.5f, 0)), 
+            (ShipOffset * new Vector2(-.5f, -.75f)), (ShipOffset * new Vector2(.5f, -.75f)),
+            (ShipOffset * new Vector2(-.5f, .75f)), (ShipOffset * new Vector2(.5f, .75f)),
+            (ShipOffset * new Vector2(-.5f, -1.5f)), (ShipOffset * new Vector2(.5f, -1.5f)),
+            (ShipOffset * new Vector2(-.5f, 1.5f)),  (ShipOffset * new Vector2(.5f, 1.5f)),
         };
 
         public static Vector2[] CarrierColumnFormationOffsets = new Vector2[] {

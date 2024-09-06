@@ -39,7 +39,9 @@ namespace Assets.Scripts.Scenes
             DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateAudio, ActivateLoadingShipsMidLevel, UseMouseScrolling, IsDebugging, 
             MakeEnemyCeaseFire, FullCeaseFire, MakeShotsHarmless, UnlockCamera, HasRandomizedOptions, PlayMusic;
         public int OverrideTimeScale, OverrideMapIndex, OverrideUserSide, SpeedMultiplier, GeneratedSquadCountOverride, InitialCommandDelay, TimeoutTime;
-        public List<string> OverrideStrats = new List<string> { "Aggressive", "Random" };
+        public List<string> OverrideStrats = new List<string> { };
+        public List<string> OverrideBeeShipTypes = new List<string> { };
+        public List<string> OverrideHumanShipTypes = new List<string> { };
         public GameObject UIManager, SelectionBox, MiniMapContainer, FogOfWar;
         public AudioController Audio;
         public Camera MiniMapCamera;
@@ -96,8 +98,10 @@ namespace Assets.Scripts.Scenes
         public float StartTime;
         public List<SavedSquad>[] MidLevelSquads = new List<SavedSquad>[] { new List<SavedSquad>(), new List<SavedSquad>() };
         public List<Trigger> Triggers = new List<Trigger>();
+        public List<string> BeeShipTypes, HumanShipTypes = new List<string>();
 
-       
+
+
 
         public float CurrentZoom => Camera.orthographicSize;
         public bool HasFoundAllBees => HasBeeTypes.Count == FoundBeeTypes.Count;
@@ -194,6 +198,10 @@ namespace Assets.Scripts.Scenes
         }
         private void Setup()
         {
+            if (TimeoutTime == 0)
+            {
+                TimeoutTime = int.MaxValue;
+            }
             if (IsTrainingHiveMind || IsTrainingNueralNetwork)
             {
                 IsTraining = true;
@@ -202,6 +210,25 @@ namespace Assets.Scripts.Scenes
             {
                 IsTraining = false;
             }
+
+            if (OverrideBeeShipTypes.Count > 0)
+            {
+                BeeShipTypes = OverrideBeeShipTypes;
+            }
+            else
+            {
+                BeeShipTypes = ConfigData.Configuration.VisibleBeeShipTypes.ToList();
+            }
+
+            if (OverrideHumanShipTypes.Count > 0)
+            {
+                HumanShipTypes = OverrideHumanShipTypes;
+            }
+            else
+            {
+                HumanShipTypes = ConfigData.Configuration.VisibleHumanShipTypes.ToList();
+            }
+
             _obstacleLists = new Dictionary<int, List<GameObject>>()
                 {
                     // If this list changes the indexes need to all be accurate since the files are loaded based off of the indexes

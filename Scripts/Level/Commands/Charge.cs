@@ -97,7 +97,7 @@ namespace Assets.Scripts.Level.Commands
 
             if (!barge.IsDead && target != null && !target.IsDead)
             {
-                Debug.Log($"Charging!");
+                Debug.Log($"Charging! for {barge.Name}");
                 barge.IsCharging = true;
                 barge.SetCurrentSpeed(80, 80);
                 barge.MoveToDirectionOfPoint(target.GetPosition());
@@ -106,20 +106,7 @@ namespace Assets.Scripts.Level.Commands
 
 
             yield return new WaitForSeconds(1);
-            barge.StopCharge();
-
-            //yield return new WaitForSeconds(1);
-            //Debug.Log("1 second");
-            //yield return new WaitForSeconds(1);
-            //Debug.Log("2 seconds");
-            //yield return new WaitForSeconds(1);
-            //Debug.Log("3 seconds");
-            //yield return new WaitForSeconds(1);
-            //Debug.Log("4 seconds");
-            //yield return new WaitForSeconds(1);
-            yield return new WaitForSeconds(5);
-
-            barge.FinishCoolDown();
+            StartCoroutine(barge.StopCharge());
 
         }
 
@@ -128,47 +115,57 @@ namespace Assets.Scripts.Level.Commands
         {
             if (!Squad.IsDead)
             {
-                //Debug.Log("Bombing timer");
-                Squad.Status = $"In the middle of charging run against {EnemySquad.Name}";
-                List<Barge> ships = Squad.GetShips().Select((ship) => (Barge)ship).ToList();
-                ships.ForEach((ship) =>
+                if (EnemySquad != null && !EnemySquad.IsDead)
                 {
-                    if (ShouldShipPursueTarget(ship))
+                    //Debug.Log("Bombing timer");
+                    Squad.Status = $"In the middle of charging run against {EnemySquad.Name}";
+                    List<Barge> ships = Squad.GetShips().Select((ship) => (Barge)ship).ToList();
+                    ships.ForEach((ship) =>
                     {
-                        if (HasTargetsWithinChargingRange(ship))
+                        if (ShouldShipPursueTarget(ship))
                         {
-                            if (!ChargingShips.Contains(ship))
+                            if (HasTargetsWithinChargingRange(ship))
                             {
-                                ChargingShips.Add(ship);
-                                IsCharging = true;
-                                StartCoroutine(ChargeTarget(ship));
+                                if (!ChargingShips.Contains(ship))
+                                {
+                                    ChargingShips.Add(ship);
+                                    IsCharging = true;
+                                    StartCoroutine(ChargeTarget(ship));
+                                }
+                            }
+                            else
+                            {
+                                SendShipToTarget(ship);
                             }
                         }
-                        else
+                        else if (!ship.HasWeaponsTargetShips)
                         {
-                            SendShipToTarget(ship);
+                            GetTargetShip(ship);
                         }
-                    }else if (!ship.HasWeaponsTargetShips)
+                        //else // if you don't have target ships or all of them are dead
+                        //{
+                        //    Debug.Log($"{ship.Name} should not pursure targets because either it is charging ({ship.IsCharging}), or does not have target ships that aren't null {(ship.HasTargetShips && ship.TargetShips.Any((targetShip) => targetShip != null))}");
+                        //    if (!ship.IsCharging)
+                        //    {
+                        //        ship.HasCompletedRun = true;
+                        //    }
+                        //}
+                    });
+
+
+                    if (HaveAllShipsFinished(ships))
                     {
-                        GetTargetShip(ship);
+                        //Debug.Log("Ended charging run");
+                        SetFinalize("Completed charging run");
+
                     }
-                    //else // if you don't have target ships or all of them are dead
-                    //{
-                    //    Debug.Log($"{ship.Name} should not pursure targets because either it is charging ({ship.IsCharging}), or does not have target ships that aren't null {(ship.HasTargetShips && ship.TargetShips.Any((targetShip) => targetShip != null))}");
-                    //    if (!ship.IsCharging)
-                    //    {
-                    //        ship.HasCompletedRun = true;
-                    //    }
-                    //}
-                });
-
-
-                if (HaveAllShipsFinished(ships))
-                {
-                    //Debug.Log("Ended charging run");
-                    SetFinalize("Completed charging run");
-
                 }
+                else
+                {
+                    CancelInvoke(nameof(Timer));
+                    SetFinalize("The enemy squad is gone or dead");
+                }
+                
             }
 
         }

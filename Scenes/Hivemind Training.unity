@@ -1404,7 +1404,7 @@ RectTransform:
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
   m_AnchoredPosition: {x: 375, y: -222.5}
-  m_SizeDelta: {x: 500, y: 100}
+  m_SizeDelta: {x: 600, y: 100}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &243235901
 MonoBehaviour:
@@ -1470,7 +1470,7 @@ MonoBehaviour:
   m_lineSpacingMax: 0
   m_paragraphSpacing: 0
   m_charWidthMaxAdj: 0
-  m_enableWordWrapping: 0
+  m_enableWordWrapping: 1
   m_wordWrappingRatios: 0.4
   m_overflowMode: 0
   m_linkedTextComponent: {fileID: 0}
@@ -2854,6 +2854,9 @@ MonoBehaviour:
   DefeatLabel: {fileID: 1390444459}
   MiniMapCloseButton: {fileID: 1540195964}
   MiniMapOpenButton: {fileID: 1052380185}
+  MiniMapTopBorder: {fileID: 1271666119}
+  MiniMapLeftBorder: {fileID: 491436935}
+  MiniMapCameraCollider: {fileID: 1163534160}
   HumanScore: {fileID: 366690777}
   BeeScore: {fileID: 705791510}
   ShipInfoBox: {fileID: 671516569}
@@ -2933,7 +2936,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: TimeoutTime
-      value: 0
+      value: 900
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: ValidPrefab
@@ -2997,11 +3000,11 @@ PrefabInstance:
       objectReference: {fileID: 807741791}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: OverrideMapIndex
-      value: 3
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: OverrideUserSide
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: AsteroidSpawnRate
@@ -3049,7 +3052,7 @@ PrefabInstance:
       objectReference: {fileID: 2507697582912947509, guid: d5ee77a24c7f6a6499324a8a600b4943, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: UseFullyRandomSquads
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: TargetingMarkerPrefab
@@ -3125,7 +3128,7 @@ PrefabInstance:
       objectReference: {fileID: 7326860766664323640, guid: 17bf89bc91bbb5d4e8f81054255c1aab, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: OverrideStrats.Array.size
-      value: 0
+      value: 2
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: UseFullyRandomEnemySquads
@@ -3181,7 +3184,7 @@ PrefabInstance:
       objectReference: {fileID: 7478197031987364554, guid: a5a4aff81a2f516438f220043c5aa1b1, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: GeneratedSquadCountOverride
-      value: 0
+      value: 8
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: ActivateLoadingShipsMidLevel
@@ -3209,7 +3212,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: OverrideStrats.Array.data[1]
-      value: Full Retreat
+      value: Aggressive
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: OverrideStrats.Array.data[2]
@@ -3260,6 +3263,10 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 7326860766664323640, guid: 17bf89bc91bbb5d4e8f81054255c1aab, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
+      propertyPath: OverrideBeeShipTypes.Array.size
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: ThreePathsPrefabs.Array.data[0]
       value: 
       objectReference: {fileID: 6135775424364691314, guid: 4262d877ff71237409f1a5939950a248, type: 3}
@@ -3276,8 +3283,32 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 7326860766664323640, guid: 17bf89bc91bbb5d4e8f81054255c1aab, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
+      propertyPath: OverrideHumanShipTypes.Array.size
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
+      propertyPath: OverrideBeeShipTypes.Array.data[0]
+      value: Beehive
+      objectReference: {fileID: 0}
+    - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
+      propertyPath: OverrideBeeShipTypes.Array.data[1]
+      value: Honeybee
+      objectReference: {fileID: 0}
+    - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
+      propertyPath: OverrideBeeShipTypes.Array.data[2]
+      value: Hornet
+      objectReference: {fileID: 0}
+    - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: CollisionAsteroidPrefabs.Array.size
       value: 8
+      objectReference: {fileID: 0}
+    - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
+      propertyPath: OverrideHumanShipTypes.Array.data[0]
+      value: Scout
+      objectReference: {fileID: 0}
+    - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
+      propertyPath: OverrideHumanShipTypes.Array.data[1]
+      value: Scout
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: CollisionAsteroidPrefabs.Array.data[0]
@@ -6683,6 +6714,11 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1159349887}
   m_CullTransparentMesh: 1
+--- !u!1 &1163534160 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 782189641704365290, guid: 345c20c960a3f414f84b139929890c50, type: 3}
+  m_PrefabInstance: {fileID: 296977582}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1165877779
 GameObject:
   m_ObjectHideFlags: 0
@@ -9798,7 +9834,7 @@ RectTransform:
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
   m_AnchoredPosition: {x: 375, y: -80}
-  m_SizeDelta: {x: 500, y: 75}
+  m_SizeDelta: {x: 600, y: 75}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1969835362
 MonoBehaviour:

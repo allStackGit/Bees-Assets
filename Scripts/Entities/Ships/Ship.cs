@@ -52,7 +52,7 @@ namespace Assets.Scripts.Entities.Ships
         /// </summary>
         public bool IsUserControlled;
         public bool HasBrain, IsMobile, IsHiveMindControlled, IsMinionShip, HasTargetCoordinates, IsMiningShip, IsWarpGate, HasTargetDirection, HasVision, HasProximityCollider, HasShipAnimation, HasRocketFlares, 
-            HasLeftRocketFlares, HasCenterRocketFlares, HasRightRocketFlares, HasMovementMarker, HasWaitingTargetCoordinates, HasShatteredShip;
+            HasLeftRocketFlares, HasCenterRocketFlares, HasRightRocketFlares, HasMovementMarker, HasWaitingTargetCoordinates, HasShatteredShip, HasEnteredMap;
         public List<Weapon> Weapons;
         public List<GameObject> ProjectilePrefabs, WeaponPrefabs, ColoredPrefabs, LeftRocketFlares, CenterRocketFlares, RightRocketFlares, ShatteredShips;
         public Brain Brain = null;
@@ -196,6 +196,12 @@ namespace Assets.Scripts.Entities.Ships
                 __ShipsWarpingHere = ((WarpGate)this).ShipsWarpingHere.ToList();
             }
 
+            if (HasEnteredMap && Vector2.Distance(GetPosition(), Level.ForceBounds(GetPosition())) > 20)
+            {
+                Debug.Log($"{Name} is well out of bounds!");
+                throw new Exception();
+            }
+
 
             //__PastLocations = PastLocations.ToList();
             //AverageReward = AverageRewardSum / Actions;
@@ -223,8 +229,23 @@ namespace Assets.Scripts.Entities.Ships
             Body = GetComponent<Rigidbody2D>();
             Collider = GetComponent<Collider2D>();
 
+            ShipStatBlock shipStats = ConfigData.GetShipInfo(fleetShip.Type);
 
+            Health = shipStats.Health;
+            OriginalHealth = Health;
+            Clearance = Level.ShipClearances.GetValueOrDefault(ShipType);
+            Name = $"{ShipType} #{Id}";
+            gameObject.name = Name;
+            _healthBarFiller = HealthBar.transform.GetChild(0);
+            _healthBarFillerSprite = HealthBar.transform.GetChild(0).GetComponent<SpriteRenderer>();
             IsUserControlled = Side == ConfigData.Configuration.UserSide && Level.HasPlayer;
+            Transform brain = transform.Find("Brain");
+            AdditionalTsv = shipStats.AdditionalTsv;
+            Sight = shipStats.Sight;
+            Speed = shipStats.Speed;
+            MaxHealth = FleetShip.MaxHealth;
+            RotationSpeed = Speed * ConfigData.Configuration.RotationMultiplier;
+
 
             if (!IsUserControlled)
             {
@@ -233,9 +254,7 @@ namespace Assets.Scripts.Entities.Ships
                 Level.GetState().HivemindShips[Side - 1].Add(Id, new HashSet<Ship>());
             }
 
-            Transform brain = transform.Find("Brain");
 
-            MaxHealth = FleetShip.MaxHealth;
             if (brain != null && Level.ActivateBrains)
             {
                 //Debug.Log($"Found a brain for {Name}, {brain}");
@@ -253,15 +272,65 @@ namespace Assets.Scripts.Entities.Ships
                 IsSpawnedShip = true;
             }
 
-            ShipStatBlock shipStats = ConfigData.GetShipInfo(fleetShip.Type);
-            Health = shipStats.Health;
-            OriginalHealth = Health;
-            Clearance = Level.ShipClearances.GetValueOrDefault(ShipType);
+            if (Speed > 0)
+            {
+                IsMobile = true;
+            }
 
-            Name = $"{ShipType} #{Id}";
-            gameObject.name = Name;
-            _healthBarFiller = HealthBar.transform.GetChild(0);
-            _healthBarFillerSprite = HealthBar.transform.GetChild(0).GetComponent<SpriteRenderer>();
+            if (ProximityCollider != null)
+            {
+                ProximityCollider.Setup(this, Sight);
+                HasProximityCollider = true;
+            }
+
+
+            if (!Level.IsTraining)
+            {
+                if (Side == ConfigData.Configuration.HumanSide)
+                {
+                    if (LeftRocketFlares.Count > 0)
+                    {
+                        HasLeftRocketFlares = true;
+                    }
+                    if (CenterRocketFlares.Count > 0)
+                    {
+                        HasCenterRocketFlares = true;
+                    }
+                    if (RightRocketFlares.Count > 0)
+                    {
+                        HasRightRocketFlares = true;
+                    }
+
+                    if (HasLeftRocketFlares || HasCenterRocketFlares || HasRightRocketFlares)
+                    {
+                        HasRocketFlares = true;
+                    }
+                    else
+                    {
+                        HasRocketFlares = false;
+                    }
+                }
+                else
+                {
+                    HasRocketFlares = false;
+                }
+
+                if (ShipAnimation != null)
+                {
+                    HasShipAnimation = true;
+                    if (Squad.HasCustomColor)
+                    {
+                        ShipAnimationController.RecolorAnimationSprites();
+                    }
+                }
+
+                if (ShatteredShips.Count > 0) // [testing] all ships should have multiple shattered ships eventually
+                {
+                    HasShatteredShip = true;
+                }
+            }
+
+
 
             if (squad.HasCustomColor)
             {
@@ -370,76 +439,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             }
 
             Turrets = Weapons.Where((w) => w is Turret).ToList().ConvertAll((w) => (Turret)w);
-
-
-            AdditionalTsv = shipStats.AdditionalTsv;
-            Sight = shipStats.Sight;
-            Speed = shipStats.Speed;
-            RotationSpeed = Speed * ConfigData.Configuration.RotationMultiplier;
             MaxRange = HasWeapons ? Weapons.Max((w) => w.Range) : 0;
             HalfMaxRange = MaxRange / 2;
-
-            if (Speed > 0)
-            {
-                IsMobile = true;
-            }
-
-            if (ProximityCollider != null)
-            {
-                ProximityCollider.Setup(this, Sight);
-                HasProximityCollider = true;
-            }
-
-
-            if (!Level.IsTraining)
-            {
-                if (Side == ConfigData.Configuration.HumanSide)
-                {
-                    if (LeftRocketFlares.Count > 0)
-                    {
-                        HasLeftRocketFlares = true;
-                    }
-                    if (CenterRocketFlares.Count > 0)
-                    {
-                        HasCenterRocketFlares = true;
-                    }
-                    if (RightRocketFlares.Count > 0)
-                    {
-                        HasRightRocketFlares = true;
-                    }
-
-                    if (HasLeftRocketFlares || HasCenterRocketFlares || HasRightRocketFlares)
-                    {
-                        HasRocketFlares = true;
-                    }
-                    else
-                    {
-                        HasRocketFlares = false;
-                    }
-                }
-                else
-                {
-                    HasRocketFlares = false;
-                }
-
-                if (ShipAnimation != null)
-                {
-                    HasShipAnimation = true;
-                    if (Squad.HasCustomColor)
-                    {
-                        ShipAnimationController.RecolorAnimationSprites();
-                    }
-                }
-
-                if (ShatteredShips.Count > 0) // [testing] all ships should have multiple shattered ships eventually
-                {
-                    HasShatteredShip = true;
-                }
-            }
-
-            
-
-
 
             OriginalTsv = Utilities.CalculateMaxTsv(this);
             _size = Collider.bounds.size;
@@ -467,6 +468,15 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     HasVision = true;
                     Vision.Setup(this);
                 }
+            }
+
+            if (IsInBounds()) // [testing] just needed for testing
+            {
+                HasEnteredMap = true;
+            }
+            else
+            {
+                HasEnteredMap = false;
             }
 
 

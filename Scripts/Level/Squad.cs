@@ -532,7 +532,7 @@ namespace Assets.Scripts.Level
                 BannedStrats.UnionWith(ConfigData.CommandTypes);
                 BannedStrats = BannedStrats.Except(Level.OverrideStrats).ToHashSet();
 
-                if (Level.OverrideStrats.Contains("Scouting") && Level.GetState().GetShipsVisibleToHiveMind(Side).Count > 0 && Level.OverrideStrats.Count > 1)
+                if (Level.OverrideStrats.Contains("Scouting") && Level.GetState().GetShipsVisibleToHiveMind(Side).Count > 0 && Level.OverrideStrats.Count > 1 && !IsDefenseless)
                 {
                     BannedStrats.Add("Scouting");
                 }

@@ -82,7 +82,7 @@ namespace Assets.Scripts.Data
                 int id = Utilities.GetNegativeFleetshipId();
 
                 FleetShip fleetShip = new FleetShip(id, Side, $"{squadType} - #{id}", squadType, false, true, false, 0, 0, 0, 0, 0, 0, 0);
-                Vector2 offset = ConfigData.CarrierDoubleColumnFormationOffsets[shipIndex];
+                Vector2 offset = ConfigData.GeneratedSquadFormationOffsets[shipIndex];
                 SquadShip squadShip = new SquadShip(fleetShip.Id, fleetShip.Type, offset, this);
                 AddShipToSquad(squadShip);
 

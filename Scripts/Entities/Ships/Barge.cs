@@ -62,7 +62,7 @@ namespace Assets.Scripts.Entities.Ships
 
             if (Charge.Power == 0 || Level.GetState().GameOver) // if ran out of power or we killed the last ship stop the charge immediately
             {
-                StopCharge();
+                StartCoroutine(StopCharge());
             }
         }
 
@@ -90,26 +90,16 @@ namespace Assets.Scripts.Entities.Ships
 
 
             yield return new WaitForSeconds(1);
-            StopCharge();
-
-            //yield return new WaitForSeconds(1);
-            //Debug.Log("1 second");
-            //yield return new WaitForSeconds(1);
-            //Debug.Log("2 seconds");
-            //yield return new WaitForSeconds(1);
-            //Debug.Log("3 seconds");
-            //yield return new WaitForSeconds(1);
-            //Debug.Log("4 seconds");
-            //yield return new WaitForSeconds(1);
-            yield return new WaitForSeconds(5);
-
-            FinishCoolDown();
+            StartCoroutine(StopCharge());
 
         }
 
 
-
-        public void StopCharge() // [stats-method]
+        /// <summary>
+        /// Immediately stops the movement of the barge and initiates the cooldown after a five second delay
+        /// </summary>
+        /// <returns></returns>
+        public IEnumerator StopCharge() // [stats-method]
         {
             if (!IsDead)
             {
@@ -120,7 +110,11 @@ namespace Assets.Scripts.Entities.Ships
 
                 LogDamage(200);
 
-                Debug.Log($"Stopped charging");
+                Debug.Log($"Stopped charging for  {Name}");
+
+                yield return new WaitForSeconds(5);
+
+                FinishCoolDown();
             }
 
         }
@@ -129,7 +123,7 @@ namespace Assets.Scripts.Entities.Ships
         {
             if (!IsDead)
             {
-                Debug.Log($"Finished cool down");
+                Debug.Log($"Finished cool down for {Name}");
                 HasStartedCharging = false;
                 SetCurrentSpeed(Speed);
                 HasCompletedRun = true;

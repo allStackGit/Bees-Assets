@@ -21,24 +21,24 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             //Debug.Log($"{ship.Name} : {gameObject.name} Collider.radius: {Collider.radius}, Sight: {ship.Sight}");
             Ship = ship;
-            gameObject.name = $"{Ship.Name}'s Vision";
+            gameObject.name = $"{Ship.Name} -> Vision";
             if (Ship.IsHiveMindControlled)
             {
                 Collider = gameObject.AddComponent<CircleCollider2D>();
-                int range = ship.Sight;
+                int range = Ship.Sight;
                 if (range == 0)
                 {
-                    range = ship.MaxRange;
+                    range = Ship.MaxRange;
                 }
                 Collider.radius = range;
                 Collider.isTrigger = true;
             }
             else
             {
-                int range = ship.Sight * 2;
+                int range = Ship.Sight * 2;
                 if (range == 0)
                 {
-                    range = ship.MaxRange * 2;
+                    range = Ship.MaxRange * 2;
                 }
                 FogIlluminator = gameObject.AddComponent<SpriteMask>();
                 FogIlluminator.sprite = Ship.Level.VisonSprite;
@@ -47,7 +47,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 gameObject.layer = ConfigData.FogOfWarLayer;
 
             }
-            //Debug.Log($"{ship.Name} : {gameObject.name} Collider.radius: {Collider.radius}, Sight: {ship.Sight}");
+            //Debug.Log($"{Ship.Name} : {gameObject.name} Collider.radius: {Collider.radius}, Sight: {Ship.Sight}");
 
         }
         protected virtual void OnTriggerEnter2D(Collider2D collider)

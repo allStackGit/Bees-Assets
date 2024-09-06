@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using Assets.Scripts.Entities.Ships;
+using System.Collections;
 using UnityEngine;
 
 namespace Assets.Scripts.Entities
@@ -26,6 +27,31 @@ namespace Assets.Scripts.Entities
                 }
 
 
+            }
+        }
+
+        private void OnTriggerEnter2D(Collider2D collider)
+        {
+            //Debug.Log($"{Name} collided");
+            GameObject collidingThing = collider.gameObject;
+            if (collidingThing.CompareTag("Ship"))
+            {
+                //Debug.Log("Hit by ship");
+                Ship ship = collidingThing.GetComponent<Ship>();
+                if (ship.HasTargetDirection)
+                {
+                    //Debug.Log($"{Name} hit the map border while moving in a direction");
+                    if (ship.ShipType == "Barge")
+                    {
+                        Barge barge = (Barge)ship;
+                        if (barge.IsCharging)
+                        {
+                            StartCoroutine(barge.StopCharge());
+                            return;
+                        }
+                    }
+                    ship.StopMoving("Hit map border");
+                }
             }
         }
 

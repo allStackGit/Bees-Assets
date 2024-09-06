@@ -92,7 +92,7 @@ namespace Assets.Scripts.Level
             {
                 state.SelectSquad(state.GetSquadByNumber(ConfigData.Configuration.UserSide, 1));
             }
-            else if (!Level.IsTraining)
+            else if (!Level.IsTraining && Level.HasPlayer)
             {
                 Debug.Log($"User squads: {state.GetSquadsBySide(ConfigData.Configuration.UserSide).Count}, AI squads: {state.GetSquadsBySide(ConfigData.Configuration.AISide).Count}");
                 Level.Menus.NoAliveShipsAlert.SetActive(true);
@@ -140,14 +140,14 @@ namespace Assets.Scripts.Level
                         List<SavedSquad> squadsList = option == 0 ? preloadSquads : midLevelSquads;
                         for (int i = 0; i < squadNumber; i++)
                         {
-                            string type = ConfigData.Configuration.VisibleBeeShipTypes.ElementAt(Random.Range(0, ConfigData.Configuration.VisibleBeeShipTypes.Count));
+                            string type = Level.BeeShipTypes.ElementAt(Random.Range(0, Level.BeeShipTypes.Count));
                             if (side == ConfigData.Configuration.HumanSide)
                             {
-                                type = ConfigData.Configuration.VisibleHumanShipTypes.ElementAt(Random.Range(0, ConfigData.Configuration.VisibleHumanShipTypes.Count));
+                                type = Level.HumanShipTypes.ElementAt(Random.Range(0, Level.HumanShipTypes.Count));
                             }
-                            while (Level.HasObstacles && side == ConfigData.Configuration.BeeSide && type == "Queen")
+                            while (Level.HasObstacles && side == ConfigData.Configuration.BeeSide && type == "Queen" && Level.BeeShipTypes.Count > 1)
                             {
-                                type = ConfigData.Configuration.VisibleBeeShipTypes.ElementAt(Random.Range(0, ConfigData.Configuration.VisibleBeeShipTypes.Count));
+                                type = Level.BeeShipTypes.ElementAt(Random.Range(0, Level.BeeShipTypes.Count));
                             }
                             int squadId = Utilities.GetNegativeSavedSquadId();
                             SavedSquad savedSquad = new SavedSquad(squadId, side, $"{type}s #{squadId}", Vector2.zero, false, false,
@@ -155,7 +155,8 @@ namespace Assets.Scripts.Level
                             savedSquad.SetupRandomShips(type);
                             squadsList.Add(savedSquad);
 
-                            if (ConfigData.ArmedShipTypes.Contains(type))
+                            if (ConfigData.ArmedShipTypes.Contains(type) || (side == ConfigData.Configuration.BeeSide && Level.OverrideBeeShipTypes.Count > 0) 
+                                || (side == ConfigData.Configuration.HumanSide && Level.OverrideHumanShipTypes.Count > 0))
                             {
                                 hasArmedSquads = true;
                             }
