@@ -39,6 +39,7 @@ namespace Assets.Scripts.Scenes
             DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateAudio, ActivateLoadingShipsMidLevel, UseMouseScrolling, IsDebugging, 
             MakeEnemyCeaseFire, FullCeaseFire, MakeShotsHarmless, UnlockCamera, HasRandomizedOptions, PlayMusic;
         public int OverrideTimeScale, OverrideMapIndex, OverrideUserSide, SpeedMultiplier, GeneratedSquadCountOverride, InitialCommandDelay, TimeoutTime;
+        public RenderTexture MiniMapTexture;
         public List<string> OverrideStrats = new List<string> { };
         public List<string> OverrideBeeShipTypes = new List<string> { };
         public List<string> OverrideHumanShipTypes = new List<string> { };
@@ -523,6 +524,13 @@ namespace Assets.Scripts.Scenes
             {
                 __PathfindingThreads = Pathfinder.IsThreadActive.Select((s, i) => $"#{i} - {(s ? Pathfinder.Ships[i].Name : s)}").ToList();
             }
+
+            string path = $"{ConfigData.GetBasePath()}/debug/minimap_{Utilities.Hash()}.png";
+            Texture2D dest = new Texture2D(MiniMapTexture.width, MiniMapTexture.height, TextureFormat.RGB24, false);
+            RenderTexture.active = MiniMapTexture;
+            dest.ReadPixels(new Rect(0, 0, MiniMapTexture.width, MiniMapTexture.height), 0, 0);
+            dest.Apply();
+            File.WriteAllBytes(path, dest.EncodeToPNG());
         }
         private void SetTriggers()
         {
@@ -1028,18 +1036,18 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
 
             //StartNew();
             
-            StartNew();
+            
             //Invoke(nameof(StartNew), .1f);
             //Invoke(nameof(ReloadScene), 1f);
 
-            //if (ConfigData.Configuration.DoesUserHaveController)
-            //{
-            //    Invoke(nameof(LevelEndedDialogue), 2f);
-            //}
-            //else
-            //{
-            //    Invoke(nameof(ReloadScene), 3f);
-            //}
+            if (DoesUserHaveController)
+            {
+                Invoke(nameof(LevelEndedDialogue), 1f);
+            }
+            else
+            {
+                StartNew();
+            }
 
         }
         private void LevelEndedDialogue()

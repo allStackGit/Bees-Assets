@@ -121,6 +121,7 @@ namespace Assets.Scripts.Level.Commands
             {
                 Strategy = strategy;
                 ShootingStrategy = shootingStrategy;
+                Squad.ClearTargets(); // Clear all old targets before starting the new command
 
                 OutcomeId = commandOutcomeId;
                 if (!Level.IsTraining)

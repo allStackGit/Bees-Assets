@@ -24,6 +24,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public GameObject TargetingMarker;
 
 
+
         public virtual void Setup(Ship ship, string type, int range, int power, float rateOfFire, float projectileValue, GameObject piece,
             GameObject projectilePrefab, bool fireAtFrontOfShip, float rotationRate)
         {
@@ -106,11 +107,20 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
             else
             {
-                if (ShouldFire && !Utilities.HasObstaclesInTheWay(GetPosition(), TargetShip.GetPosition()))
+                if (ShouldFire)
                 {
-                    //Debug.Log($"Aiming {Piece.name}");
-                    TargetPoint = GetTargetPoint(TargetShip);
-                    IsAimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                    if (!Utilities.HasObstaclesInTheWay(GetPosition(), TargetShip.GetPosition()))
+                    {
+                        //Debug.Log($"Aiming {Piece.name}");
+                        TargetPoint = GetTargetPoint(TargetShip);
+                        IsAimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                    }
+                    else
+                    {
+                        BlockedShips.Add(TargetShip);
+                        SetTargetShip(null);
+                    }
+                    
 
                 }
                 else
@@ -169,6 +179,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 if (!DetermineTargetShip(CachedTargetingQueue, true))
                 {
+                    BlockedShips.Clear();
                     DetermineTargetShip(CachedTargetingQueue, false);
                 }
                 if (ShouldFire)

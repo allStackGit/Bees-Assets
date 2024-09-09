@@ -533,9 +533,9 @@ namespace Assets.Scripts.Scenes
         {
             if (_singleClick) // already has clicked
             {
-                //Debug.Log("Already clicked once, marking double click, choosing squad");
+                //Debug.Log("Already clicked once, marking double click, loading squad");
                 _doubleClick = true;
-                ConfirmChooseSquad(label);
+                ConfirmLoadSquad();
             }
             else // first click
             {
@@ -545,16 +545,18 @@ namespace Assets.Scripts.Scenes
                 int id = int.Parse(label.name.Substring(label.name.LastIndexOf("#") + 1));
                 SavedSquad squad = ConfigData.AllShips.GetSavedSquads().Where((s) => s.Id == id).First();
                 _squadToLoad = squad;
+                _squadToChoose = squad;
                 Invoke(nameof(ResetSingleClick), .5f);
             }
 
         }
         public void ResetSingleClick()
         {
-            if (!_doubleClick) // has not double clicked and opened the confirm choose squad label
+            if (!_doubleClick) // has not double clicked and opened the load squad label
             {
                 //Debug.Log("No double click, loading squad");
-                ConfirmLoadSquad();
+                ConfirmChooseSquad();
+
             }
             //Debug.Log("Resetting click");
             _singleClick = false;
@@ -572,16 +574,16 @@ namespace Assets.Scripts.Scenes
                 LoadSquadConfirmation.Show();
             }
         }
-        public void ConfirmChooseSquad(GameObject label)
+        public void ConfirmChooseSquad()
         {
-            int id = int.Parse(label.name.Substring(label.name.LastIndexOf("#") + 1));
-            SavedSquad squad = ConfigData.AllShips.GetSavedSquads().Where((s) => s.Id == id).First();
-            _squadToChoose = squad;
-            if (!squad.HasDeadShips)
+            //int id = int.Parse(label.name.Substring(label.name.LastIndexOf("#") + 1));
+            //SavedSquad squad = ConfigData.AllShips.GetSavedSquads().Where((s) => s.Id == id).First();
+            //_squadToChoose = squad;
+            if (!_squadToChoose.HasDeadShips)
             {
                 ChooseSquad();
             }
-            else if (squad.HasAliveShips)
+            else if (_squadToChoose.HasAliveShips)
             {
                 ChooseSquadConfirmation.Show();
             }

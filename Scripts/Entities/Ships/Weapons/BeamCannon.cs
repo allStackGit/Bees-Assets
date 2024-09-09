@@ -23,11 +23,20 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 {
                     TargetShip = LaserBeamTarget;
                 }
-                if (ShouldFire && !Utilities.HasObstaclesInTheWay(GetPosition(), TargetShip.GetPosition()))
+                if (ShouldFire)
                 {
-                    //Debug.Log($"Aiming {Piece.name} at {TargetShip.Name}");
-                    TargetPoint = GetTargetPoint(TargetShip);
-                    IsAimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                    if (!Utilities.HasObstaclesInTheWay(GetPosition(), TargetShip.GetPosition()))
+                    {
+                        //Debug.Log($"Aiming {Piece.name}");
+                        TargetPoint = GetTargetPoint(TargetShip);
+                        IsAimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                    }
+                    else
+                    {
+                        BlockedShips.Add(TargetShip);
+                        SetTargetShip(null);
+                    }
+
 
                 }
                 else

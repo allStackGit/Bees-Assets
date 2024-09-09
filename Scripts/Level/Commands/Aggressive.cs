@@ -37,7 +37,7 @@ namespace Assets.Scripts.Level.Commands
                     Squad.Status = $"Targeting enemy squad #{EnemySquad.SquadNumber}";
                     if (!IsComfortablyWithinRange) // check if all of their squad ships are comfortably within range of all of our squad ships
                     {
-                        if (Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
+                        if (Squad.AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
                         {
                             // Keep track of how many times all of the ships have been within range so we don't stop moving towards the enemy until we've been within range for a little bit at least
                             ConsecutiveTimesWithinRange++;

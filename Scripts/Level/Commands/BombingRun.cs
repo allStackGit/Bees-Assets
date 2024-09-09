@@ -23,7 +23,7 @@ namespace Assets.Scripts.Level.Commands
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
             //Debug.Log("Executing bombing run");
 
-            Squad.ClearTargets(); // Clear all old targets before starting the bombing run
+            
             if (CheckIfStrikersAreDefenseless())
             {
                 return;

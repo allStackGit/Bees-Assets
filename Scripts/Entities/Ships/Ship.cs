@@ -139,8 +139,8 @@ namespace Assets.Scripts.Entities.Ships
         public float __Firepower, __DamagePerSecond, __CurrentSpeed, __DegreesToTargetCoordinates, __DistanceToTargetCoordinates, __TurningRadius;
         public long __Tsv, __CommandTsv;
         public bool __HasReachedDestination, __SquadHasReachedDestination;
-        public List<Ship> __WeaponTargetShips, __SquadShips, __NearbyShips, __ShipsWarpingHere;
-        public List<string> __ShipsWithinRangeOfWeapons, __PastCommands, __BannedStrats, __DamageStatuses, __CommandTargetingQueue, __NearbyAsteroids, __HivemindShips;
+        public List<Ship> __WeaponTargetShips, __SquadShips, __NearbyShips, __ShipsWarpingHere, __BlockedShips;
+        public List<string> __ShipsWithinRangeOfWeapons, __PastCommands, __BannedStrats, __DamageStatuses, __CommandTargetingQueue, __NearbyAsteroids, __HivemindShips, __RejectReasons;
         public int __Clearance;
         //public List<Vector2> __PastLocations;
 
@@ -190,6 +190,16 @@ namespace Assets.Scripts.Entities.Ships
             __NearbyShips = HasProximityCollider ? ProximityCollider.NearbyEnemyShips.ToList() : new List<Ship>();
             __HivemindShips = Level.GetState().GetShipsVisibleToHiveMind(Side).Select(s => s.ToString()).ToList();
             __Clearance = GetClearance();
+
+            __BlockedShips = Weapons.Aggregate(new HashSet<Ship>(), (sum, weapon) => {
+                sum.UnionWith(weapon.BlockedShips.Where((ship) => ship != null && !ship.IsDead));
+                return sum;
+            }).ToList();
+
+            __RejectReasons = Weapons.Aggregate(new HashSet<string>(), (sum, weapon) => {
+                sum.UnionWith(weapon.__TargetingRejectReasons.Values);
+                return sum;
+            }).ToList();
 
             if (ShipType == "Warp Gate")
             {

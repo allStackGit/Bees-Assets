@@ -4,6 +4,7 @@ using System.Linq;
 using Assets.Scripts;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
+using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Level;
 using Assets.Scripts.Scenes;
 using UnityEngine;
@@ -52,6 +53,7 @@ namespace Assets.Scripts.Level
         public const int RightClick = 1;
         public const int LeftClick = 0;
         public List<Timer> Timers = new List<Timer>();
+        public List<Turret> TurretsFiringManually = new List<Turret>();
         public EventSystem EventSystem => Level.EventSystem;
 
         // these are booleans for user inputs that are held down so that we don't need to fire the action the entire time they're held down
@@ -399,6 +401,7 @@ namespace Assets.Scripts.Level
                                 ship.Turrets.ForEach((turret) =>
                                 {
                                     turret.IsFiringManually = true;
+                                    TurretsFiringManually.Add(turret);
                                 });
                             });
                         });
@@ -410,14 +413,18 @@ namespace Assets.Scripts.Level
                 {
                     if (IsFiringManually)
                     {
-                        Level.GetState().GetSelectedSquads().ForEach(squad => {
-                            squad.GetShips().ForEach((ship) =>
-                            {
-                                ship.Turrets.ForEach((turret) =>
-                                {
-                                    turret.IsFiringManually = false;
-                                });
-                            });
+                        //Level.GetState().GetSelectedSquads().ForEach(squad => {
+                        //    squad.GetShips().ForEach((ship) =>
+                        //    {
+                        //        ship.Turrets.ForEach((turret) =>
+                        //        {
+                        //            turret.IsFiringManually = false;
+                        //        });
+                        //    });
+                        //});
+                        TurretsFiringManually.ForEach((turret) =>
+                        {
+                            turret.IsFiringManually = false;
                         });
                         IsFiringManually = false;
                     }

@@ -21,9 +21,18 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 {
                     TargetPoint = Level.InputManager.GetMousePosition();
                 }
-                else if (ShouldFire && !Utilities.HasObstaclesInTheWay(GetPosition(), TargetShip.GetPosition()))
+                else if (ShouldFire)
                 {
-                    TargetPoint = GetTargetPoint(TargetShip);
+                    if (!Utilities.HasObstaclesInTheWay(GetPosition(), TargetShip.GetPosition()))
+                    {
+                        //Debug.Log($"Aiming {Piece.name}");
+                        TargetPoint = GetTargetPoint(TargetShip);
+                    }
+                    else
+                    {
+                        BlockedShips.Add(TargetShip);
+                        SetTargetShip(null);
+                    }
                 }
                 IsAimedAtTarget = Utilities.IsRotatedTowards(Piece, GetDegreesTowardsPoint(TargetPoint));
                 if (!IsAimedAtTarget)
