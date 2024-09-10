@@ -36,7 +36,8 @@ namespace Assets.Scripts.Level
         public LevelStage Level;
         public HashSet<Ship>[] VisionCache = new HashSet<Ship>[] { new HashSet<Ship>(), new HashSet<Ship>() };
         public Dictionary<long, HashSet<Ship>>[] HivemindShips = new Dictionary<long, HashSet<Ship>>[] { new Dictionary<long, HashSet<Ship>>(), new Dictionary<long, HashSet<Ship>>() };
-        public List<GameObject> FireShipExplosions = new List<GameObject>();    
+        public List<GameObject> FireShipExplosions = new List<GameObject>();
+        public List<GameObject> Deadbodies = new List<GameObject>();
         public bool HasWarpGates;
         //public bool[] HasMiningShips = new bool[2];
 
@@ -169,7 +170,10 @@ namespace Assets.Scripts.Level
             
             return VisionCache[side - 1];
         }
-
+        public void AddDeadBody(GameObject body)
+        {
+            Deadbodies.Add(body);
+        }
         public HashSet<string> GetHumanShipTypes()
         {
             return GetHumanShips().Select((s) => s.ShipType).ToHashSet();

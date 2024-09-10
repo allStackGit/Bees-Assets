@@ -39,7 +39,9 @@ namespace Assets.Scripts.Level.Commands
                 // loop through all the ships in the target squad
                 if (ship.ShipType == "Barge")
                 {
-                    ((Barge)ship).HasCompletedRun = false;
+                    Barge barge = (Barge) ship;
+                    barge.HasCompletedRun = false;
+                    barge.ShipsHit.Clear();
                 }
                 GetTargetShip(ship);
             }
@@ -66,9 +68,9 @@ namespace Assets.Scripts.Level.Commands
         {
             ship.MoveToDirectionOfPoint(ship.SetAndGetTargetEnemy().GetPosition()); // Move to the primary target ship
         }
-        private bool HaveAllShipsFinished(List<Barge> ships)
+        private bool HaveAnyShipsFinished(List<Barge> ships)
         {
-            return ships.All((ship) =>
+            return ships.Any((ship) =>
             {
                 return ship.HasCompletedRun;
             });
@@ -85,31 +87,6 @@ namespace Assets.Scripts.Level.Commands
 
 
 
-        public IEnumerator ChargeTarget(Barge barge)
-        {
-            Ship target = barge.WeaponsTargetShips.First();
-            barge.OriginalPower = barge.Charge.Power;
-
-            barge.StopMoving("Pausing to build up steam before charging");
-            Debug.Log($"{barge.Name} is about to charge {target.Name}");
-
-            yield return new WaitForSeconds(2);
-
-            if (!barge.IsDead && target != null && !target.IsDead)
-            {
-                Debug.Log($"Charging! for {barge.Name}");
-                barge.IsCharging = true;
-                barge.SetCurrentSpeed(80, 80);
-                barge.MoveToDirectionOfPoint(target.GetPosition());
-            }
-
-
-
-            yield return new WaitForSeconds(1);
-            StartCoroutine(barge.StopCharge());
-
-        }
-
 
         private void Timer()
         {
@@ -119,28 +96,28 @@ namespace Assets.Scripts.Level.Commands
                 {
                     //Debug.Log("Bombing timer");
                     Squad.Status = $"In the middle of charging run against {EnemySquad.Name}";
-                    List<Barge> ships = Squad.GetShips().Select((ship) => (Barge)ship).ToList();
-                    ships.ForEach((ship) =>
+                    List<Barge> barges = Squad.GetShips().Select((ship) => (Barge)ship).ToList();
+                    barges.ForEach((barge) =>
                     {
-                        if (ShouldShipPursueTarget(ship))
+                        if (ShouldShipPursueTarget(barge))
                         {
-                            if (HasTargetsWithinChargingRange(ship))
+                            if (HasTargetsWithinChargingRange(barge))
                             {
-                                if (!ChargingShips.Contains(ship))
+                                if (!ChargingShips.Contains(barge))
                                 {
-                                    ChargingShips.Add(ship);
+                                    ChargingShips.Add(barge);
                                     IsCharging = true;
-                                    StartCoroutine(ChargeTarget(ship));
+                                    StartCoroutine(barge.ChargeForward(barge.WeaponsTargetShips.First()));
                                 }
                             }
                             else
                             {
-                                SendShipToTarget(ship);
+                                SendShipToTarget(barge);
                             }
                         }
-                        else if (!ship.HasWeaponsTargetShips)
+                        else if (!barge.HasWeaponsTargetShips)
                         {
-                            GetTargetShip(ship);
+                            GetTargetShip(barge);
                         }
                         //else // if you don't have target ships or all of them are dead
                         //{
@@ -153,7 +130,7 @@ namespace Assets.Scripts.Level.Commands
                     });
 
 
-                    if (HaveAllShipsFinished(ships))
+                    if (HaveAnyShipsFinished(barges))
                     {
                         //Debug.Log("Ended charging run");
                         SetFinalize("Completed charging run");

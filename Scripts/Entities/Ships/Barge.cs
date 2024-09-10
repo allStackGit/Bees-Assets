@@ -20,6 +20,7 @@ namespace Assets.Scripts.Entities.Ships
         public bool IsCharging;
         public int OriginalPower;
         public Weapon Charge => Weapons.First();
+        public HashSet<Ship> ShipsHit = new HashSet<Ship>();
 
 
 
@@ -51,46 +52,75 @@ namespace Assets.Scripts.Entities.Ships
 
         }
 
-
-        public void HitShip(Ship ship)
+        protected void OnTriggerStay2D(Collider2D collider)
         {
-            int damage = math.min(Charge.Power, ship.Health);
-            LogAttackingDamage(damage, this, ship);
-            LogAttackingDamage((int)(damage * .75f), ship, this);
-            Charge.Power -= damage;
-            //Debug.Log($"{Name} hit {ship.Name} and did {damage} damage");
-
-            if (Charge.Power == 0 || Level.GetState().GameOver) // if ran out of power or we killed the last ship stop the charge immediately
+            GameObject collidingThing = collider.gameObject;
+            if (collidingThing.CompareTag("Ship") && Collider.IsTouching(collider))
             {
-                StartCoroutine(StopCharge());
+                Ship hit = collidingThing.GetComponent<Ship>();
+
+                if (hit.Side != Side && IsCharging)
+                {
+                    HitShip(hit);
+                }
             }
         }
 
-        public IEnumerator ChargeForward()
+
+        public void HitShip(Ship ship)
+        {
+            if (!ShipsHit.Contains(ship))
+            {
+                ShipsHit.Add(ship);
+                int damage = math.min(Charge.Power, ship.Health);
+                LogAttackingDamage(damage, this, ship);
+                LogAttackingDamage((int)(damage * .75f), ship, this); // Barge takes 75% of the damage it inflicts
+                Charge.Power -= damage;
+                Debug.Log($"{Name} hit {ship.Name} and did {damage} damage");
+
+                if (Charge.Power == 0 || Level.GetState().GameOver) // if ran out of power or we killed the last ship stop the charge immediately
+                {
+                    StartCoroutine(StopCharge());
+                }
+            }
+
+        }
+
+
+        public IEnumerator ChargeForward(Ship target = null)
         {
             OriginalPower = Charge.Power;
 
             StopMoving("Pausing to build up steam before charging");
             CannotChangeMovementOrders = true;
-            //Debug.Log($"{Name} is about to charge");
+            Debug.Log($"{Name} is about to charge");
 
             yield return new WaitForSeconds(2);
 
             if (!IsDead)
             {
-                //Debug.Log($"Charging!");
                 IsCharging = true;
                 HasStartedCharging = true;
                 CannotChangeMovementOrders = false;
                 SetCurrentSpeed(80, 80);
-                MoveInDirection(GetRotation());
+                if (target != null && !target.IsDead)
+                {
+                    MoveToDirectionOfPoint(target.GetPosition());
+                }
+                else
+                {
+                    MoveInDirection(GetRotation());
+
+                }
                 CannotChangeMovementOrders = true;
             }
 
 
-
             yield return new WaitForSeconds(1);
-            StartCoroutine(StopCharge());
+            if (!IsDead)
+            {
+                StartCoroutine(StopCharge());
+            }
 
         }
 
@@ -101,7 +131,7 @@ namespace Assets.Scripts.Entities.Ships
         /// <returns></returns>
         public IEnumerator StopCharge() // [stats-method]
         {
-            if (!IsDead)
+            if (IsCharging)
             {
                 IsCharging = false;
                 SetCurrentSpeed(0, 0);
@@ -112,7 +142,7 @@ namespace Assets.Scripts.Entities.Ships
 
                 Debug.Log($"Stopped charging for  {Name}");
 
-                yield return new WaitForSeconds(5);
+                yield return new WaitForSeconds(15);
 
                 FinishCoolDown();
             }

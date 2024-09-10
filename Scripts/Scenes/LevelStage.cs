@@ -39,7 +39,6 @@ namespace Assets.Scripts.Scenes
             DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateAudio, ActivateLoadingShipsMidLevel, UseMouseScrolling, IsDebugging, 
             MakeEnemyCeaseFire, FullCeaseFire, MakeShotsHarmless, UnlockCamera, HasRandomizedOptions, PlayMusic;
         public int OverrideTimeScale, OverrideMapIndex, OverrideUserSide, SpeedMultiplier, GeneratedSquadCountOverride, InitialCommandDelay, TimeoutTime;
-        public RenderTexture MiniMapTexture;
         public List<string> OverrideStrats = new List<string> { };
         public List<string> OverrideBeeShipTypes = new List<string> { };
         public List<string> OverrideHumanShipTypes = new List<string> { };
@@ -877,6 +876,7 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
         public void StartNew()
         {
             GameState state = GetState();
+
             state.ResetState();
             state.GameOver = false;
             state.LevelEnded = false;
@@ -1033,10 +1033,17 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
                 }
             }
 
+            while (state.Deadbodies.Count > 0)
+            {
+                GameObject deadbody = state.Deadbodies[0];
+                state.Deadbodies.Remove(deadbody);
+                Destroy(deadbody);
+            }
+
 
             //StartNew();
-            
-            
+
+
             //Invoke(nameof(StartNew), .1f);
             //Invoke(nameof(ReloadScene), 1f);
 

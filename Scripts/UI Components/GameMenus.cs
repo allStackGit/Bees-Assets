@@ -143,6 +143,11 @@ namespace Assets.Scripts.UIComponents
             Debug.Log("Back to game");
             CloseDialogue();
         }
+        public void PlayNextRound()
+        {
+            CloseDialogue();
+            Level.StartNew();
+        }
         public void GoToSettings()
         {
             DeselectButton();

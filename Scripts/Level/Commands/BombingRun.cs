@@ -292,7 +292,7 @@ namespace Assets.Scripts.Level.Commands
 
         private void EndBombingRun()
         {
-            Debug.Log("Ended bombing run");
+            //Debug.Log("Ended bombing run");
             CancelInvoke(nameof(Timer));
             SetFinalize("Completed bombing run");
 

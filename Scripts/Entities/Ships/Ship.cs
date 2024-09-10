@@ -206,11 +206,11 @@ namespace Assets.Scripts.Entities.Ships
                 __ShipsWarpingHere = ((WarpGate)this).ShipsWarpingHere.ToList();
             }
 
-            if (HasEnteredMap && Vector2.Distance(GetPosition(), Level.ForceBounds(GetPosition())) > 20)
-            {
-                Debug.Log($"{Name} is well out of bounds!");
-                throw new Exception();
-            }
+            //if (HasEnteredMap && Vector2.Distance(GetPosition(), Level.ForceBounds(GetPosition())) > 20)
+            //{
+            //    Debug.Log($"{Name} is well out of bounds!");
+            //    throw new Exception();
+            //}
 
 
             //__PastLocations = PastLocations.ToList();
@@ -260,7 +260,6 @@ namespace Assets.Scripts.Entities.Ships
             if (!IsUserControlled)
             {
                 IsHiveMindControlled = true;
-                Vision.Setup(this);
                 Level.GetState().HivemindShips[Side - 1].Add(Id, new HashSet<Ship>());
             }
 
@@ -479,6 +478,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     Vision.Setup(this);
                 }
             }
+            else
+            {
+                Vision.Setup(this); // Has to happen after MaxRange is calculated
+            }
 
             if (IsInBounds()) // [testing] just needed for testing
             {
@@ -582,7 +585,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     index++;
                 });
 
-                Debug.Log($"{status} sprites for {FleetShip.Name} took {(Time.realtimeSinceStartup - start)*1000}ms");
+                //Debug.Log($"{status} sprites for {FleetShip.Name} took {(Time.realtimeSinceStartup - start)*1000}ms");
             }
         }
 
@@ -1617,12 +1620,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         public Vector2 GetRandomPointOnShip(Vector2 nearPosition)
         {
             Vector2 randomPointBounds;
-            Vector2 basePosition = GetPosition() + Level.GetPosition();
             float halfWidth = GetHalfWidth() - ConfigData.OffsetFromFront;
             float halfHeight = GetHalfHeight() - ConfigData.OffsetFromFront;
 
             randomPointBounds = Utilities.ForceBounds(10, 10, halfWidth, halfHeight, -1 * halfWidth, -1 * halfHeight);
-            basePosition = nearPosition + Level.GetPosition();
+            Vector2 basePosition = nearPosition + Level.GetPosition();
 
             Vector2 randomPoint = Utilities.RandomCoordinate(Level, Vector2.zero, randomPointBounds, Vector2.zero) + basePosition;
             if (!Collider.OverlapPoint(randomPoint))
@@ -1718,6 +1720,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     shatteredShip.transform.parent = Level.Map.transform;
                     shatteredShip.transform.localPosition = GetPosition();
                     shatteredShip.transform.eulerAngles = transform.eulerAngles;
+                    Level.GetState().AddDeadBody(shatteredShip);
                 }
 
             }
