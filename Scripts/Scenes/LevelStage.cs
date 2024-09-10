@@ -358,8 +358,8 @@ namespace Assets.Scripts.Scenes
             {
                 Camera.orthographicSize = DefaultZoom;
                 //Debug.Log($"MapRenderer.size.x: {MapRenderer.size.x}, Camera aspect: {Camera.aspect}");
-                MiniMapCamera.orthographicSize = (MapRenderer.size.x / (Camera.aspect * 2));
-                MaxZoom = (int)MiniMapCamera.orthographicSize;
+                //MiniMapCamera.orthographicSize = (MapRenderer.size.x / (Camera.aspect * 2));
+                //MaxZoom = (int)MiniMapCamera.orthographicSize;
 
                 Vector2 cameraWorldUnitsSize = Utilities.ScreenPixelsToWorldUnits(new Vector2(MiniMapCamera.pixelWidth, MiniMapCamera.pixelHeight), Camera);
                 Transform colliderContainer = Camera.transform.GetChild(0);
@@ -525,12 +525,12 @@ namespace Assets.Scripts.Scenes
                 __PathfindingThreads = Pathfinder.IsThreadActive.Select((s, i) => $"#{i} - {(s ? Pathfinder.Ships[i].Name : s)}").ToList();
             }
 
-            string path = $"{ConfigData.GetBasePath()}/debug/minimap_{Utilities.Hash()}.png";
-            Texture2D dest = new Texture2D(MiniMapTexture.width, MiniMapTexture.height, TextureFormat.RGB24, false);
-            RenderTexture.active = MiniMapTexture;
-            dest.ReadPixels(new Rect(0, 0, MiniMapTexture.width, MiniMapTexture.height), 0, 0);
-            dest.Apply();
-            File.WriteAllBytes(path, dest.EncodeToPNG());
+            //string path = $"{ConfigData.GetBasePath()}/debug/minimap_{Utilities.Hash()}.png";
+            //Texture2D dest = new Texture2D(MiniMapTexture.width, MiniMapTexture.height, TextureFormat.RGB24, false);
+            //RenderTexture.active = MiniMapTexture;
+            //dest.ReadPixels(new Rect(0, 0, MiniMapTexture.width, MiniMapTexture.height), 0, 0);
+            //dest.Apply();
+            //File.WriteAllBytes(path, dest.EncodeToPNG());
         }
         private void SetTriggers()
         {

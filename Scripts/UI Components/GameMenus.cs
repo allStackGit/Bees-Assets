@@ -19,7 +19,7 @@ namespace Assets.Scripts.UIComponents
     public class GameMenus : MonoBehaviour
     {
         public GameObject MenuContainer, LevelEndedDialogue, NoAliveShipsAlert, SquadActionBoxUI, VictoryLabel, DefeatLabel, MiniMapCloseButton, MiniMapOpenButton, MiniMapTopBorder, MiniMapLeftBorder,
-            MiniMapCameraCollider, HumanScore, BeeScore, ShipInfoBox;
+            MiniMapCameraCollider, MiniMapOutput, HumanScore, BeeScore, ShipInfoBox;
         public SquadActionBox ActionBox;
         public LevelStage Level;
         public Dialogue ExitConfirmationDialogue;
@@ -80,6 +80,7 @@ namespace Assets.Scripts.UIComponents
             MiniMapLeftBorder.SetActive(!MiniMapLeftBorder.activeSelf);
             MiniMapTopBorder.SetActive(!MiniMapTopBorder.activeSelf);
             MiniMapCameraCollider.SetActive(!MiniMapCameraCollider.activeSelf);
+            MiniMapOutput.SetActive(!MiniMapOutput.activeSelf);
             
         }
         public void CloseDialogue()

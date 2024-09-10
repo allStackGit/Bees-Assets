@@ -1,5 +1,5 @@
 fileFormatVersion: 2
-guid: 5edeab9d0b71a574490be0201d7ef32a
+guid: b12f9a2d36383dd458e6c6dff765667b
 TextureImporter:
   internalIDToNameTable: []
   externalObjects: {}
@@ -21,7 +21,7 @@ TextureImporter:
     heightScale: 0.25
     normalMapFilter: 0
     flipGreenChannel: 0
-  isReadable: 1
+  isReadable: 0
   streamingMipmaps: 0
   streamingMipmapsPriority: 0
   vTOnly: 0
@@ -93,43 +93,17 @@ TextureImporter:
     ignorePlatformSupport: 0
     androidETC2FallbackOverride: 0
     forceMaximumCompressionQuality_BC6H_BC7: 0
-  - serializedVersion: 3
-    buildTarget: Server
-    maxTextureSize: 2048
-    resizeAlgorithm: 0
-    textureFormat: -1
-    textureCompression: 1
-    compressionQuality: 50
-    crunchedCompression: 0
-    allowsAlphaSplitting: 0
-    overridden: 0
-    ignorePlatformSupport: 0
-    androidETC2FallbackOverride: 0
-    forceMaximumCompressionQuality_BC6H_BC7: 0
-  - serializedVersion: 3
-    buildTarget: WebGL
-    maxTextureSize: 2048
-    resizeAlgorithm: 0
-    textureFormat: -1
-    textureCompression: 1
-    compressionQuality: 50
-    crunchedCompression: 0
-    allowsAlphaSplitting: 0
-    overridden: 0
-    ignorePlatformSupport: 0
-    androidETC2FallbackOverride: 0
-    forceMaximumCompressionQuality_BC6H_BC7: 0
   spriteSheet:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: Bumblebee Laser Shot_0
+      name: Queen Stinger Laser Shot_0
       rect:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 100
-        height: 100
+        width: 120
+        height: 180
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -137,20 +111,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: a99cfcd04c811cb42b6b4101c1678596
-      internalID: -1477229664
+      spriteID: 492263fa8631c504f8cad6d7e09b5e1d
+      internalID: -2102416807
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: Bumblebee Laser Shot_1
+      name: Queen Stinger Laser Shot_1
       rect:
         serializedVersion: 2
-        x: 100
+        x: 120
         y: 0
-        width: 100
-        height: 100
+        width: 120
+        height: 180
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -158,8 +132,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 2a034e472a9a7d54683b266824d3e835
-      internalID: 1565287268
+      spriteID: 4b2cd484c1ede42499bdb13a2369b31e
+      internalID: -1882502913
       vertices: []
       indices: 
       edges: []
@@ -175,8 +149,8 @@ TextureImporter:
     weights: []
     secondaryTextures: []
     nameFileIdTable:
-      Bumblebee Laser Shot_0: -1477229664
-      Bumblebee Laser Shot_1: 1565287268
+      Queen Stinger Laser Shot_0: -2102416807
+      Queen Stinger Laser Shot_1: -1882502913
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

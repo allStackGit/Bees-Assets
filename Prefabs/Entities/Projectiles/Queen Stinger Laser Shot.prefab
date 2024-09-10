@@ -15,7 +15,7 @@ GameObject:
   - component: {fileID: 8331629362155308964}
   - component: {fileID: -3884800941988369417}
   m_Layer: 10
-  m_Name: Queen Medium Laser Shot
+  m_Name: Queen Stinger Laser Shot
   m_TagString: Projectile
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -31,8 +31,8 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 2, y: 6, z: 0}
-  m_ConstrainProportionsScale: 0
+  m_LocalScale: {x: 1, y: 1, z: 0}
+  m_ConstrainProportionsScale: 1
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
@@ -74,15 +74,15 @@ SpriteRenderer:
   m_AutoUVMaxDistance: 0.5
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
-  m_SortingLayerID: -467856233
-  m_SortingLayer: 21
+  m_SortingLayerID: 0
+  m_SortingLayer: 0
   m_SortingOrder: 0
-  m_Sprite: {fileID: 152899647, guid: b8afdc41426486d4b9574d1131f20e60, type: 3}
+  m_Sprite: {fileID: -2102416807, guid: b12f9a2d36383dd458e6c6dff765667b, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
-  m_Size: {x: 1, y: 1}
+  m_Size: {x: 3, y: 4.5}
   m_AdaptiveModeThreshold: 0.5
   m_SpriteTileMode: 0
   m_WasSpriteAssigned: 1
@@ -98,7 +98,7 @@ Animator:
   m_GameObject: {fileID: 6983214468218345633}
   m_Enabled: 1
   m_Avatar: {fileID: 0}
-  m_Controller: {fileID: 9100000, guid: 44d002b2ee743ff42bec00b2701535b3, type: 2}
+  m_Controller: {fileID: 9100000, guid: c43f46bfb11379343bd27ec742cb57a1, type: 2}
   m_CullingMode: 0
   m_UpdateMode: 0
   m_ApplyRootMotion: 0
@@ -145,8 +145,8 @@ BoxCollider2D:
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0.5, y: 0.5}
-    oldSize: {x: 1, y: 1}
-    newSize: {x: 1, y: 1}
+    oldSize: {x: 3, y: 4.5}
+    newSize: {x: 3, y: 4.5}
     adaptiveTilingThreshold: 0.5
     drawMode: 0
     adaptiveTiling: 0
@@ -199,8 +199,8 @@ MonoBehaviour:
   Side: 0
   Collider: {fileID: 0}
   Body: {fileID: 0}
-  Range: 0
   Power: 0
+  Range: 0
   Speed: 100
   Shooter: {fileID: 0}
   Target: {fileID: 0}

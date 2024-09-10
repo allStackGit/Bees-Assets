@@ -857,9 +857,9 @@ namespace Assets.Scripts.Level
             if (Level.HasPlayer && !Level.UnlockCamera)
             {
                 MaintainHorizontalScrollBoundary(Level.Camera);
-                MaintainHorizontalScrollBoundary(Level.MiniMapCamera);
+                //MaintainHorizontalScrollBoundary(Level.MiniMapCamera);
                 MaintainVerticalScrollBoundary(Level.Camera);
-                MaintainVerticalScrollBoundary(Level.MiniMapCamera);
+                //MaintainVerticalScrollBoundary(Level.MiniMapCamera);
             }
 
         }
