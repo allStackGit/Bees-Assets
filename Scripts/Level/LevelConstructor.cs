@@ -303,7 +303,7 @@ namespace Assets.Scripts.Level
                         ship = tuple.Item2;
                         ship.Setup(
                                 Level,
-                                state.AddEntity(),
+                                state.GetId(),
                                 fleetShip,
                                 squad,
                                 squadShip.Offset

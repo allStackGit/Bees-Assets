@@ -60,7 +60,7 @@ namespace Assets.Scripts.Entities.Projectiles
             Explosion.transform.parent = Level.Map.transform;
             RocketExplosion explosion = (RocketExplosion) Explosion.GetComponent(typeof(RocketExplosion));
             GameState state = Level.GetState();
-            explosion.Setup(this.Level, this.Side, state.AddEntity(), this.Weapon, this.Shooter, this.Target, this.GetPosition(), 0, 0, this.Power);
+            explosion.Setup(this.Level, this.Side, state.GetId(), this.Weapon, this.Shooter, this.Target, this.GetPosition(), 0, 0, this.Power);
         }
 
         protected override void ShipCollision(Ship ship)

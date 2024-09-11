@@ -22,6 +22,7 @@ namespace Assets.Scripts.Entities
         {
             base.Setup(level, id);
             Health = ConfigData.CollisionAsteroidHealthIncrement * SizeClass;
+            OriginalHealth = Health;
             Speed = Utilities.RandomInt(Level.AsteroidMaxSpeed) + ConfigData.MinimumAsteroidSpeed;
 
             // starting right (+) or left (-)
@@ -55,22 +56,25 @@ namespace Assets.Scripts.Entities
                 // kill the ship, damage the asteroid
                 if (ship.SizeClass < SizeClass)
                 {
-                    Health -= math.min(ship.Health, Health);
+                    Health -= math.min(ship.OriginalHealth, Health);
                     ship.LogDamage(ship.Health); // kills the ship but logs the damage and tsv change first
 
                 }
                 else if (ship.SizeClass == SizeClass) { // kill both ship and asteroid
                     ship.LogDamage(ship.Health); // kills the ship but logs the damage and tsv change first
-                    CollisionObstacle = null;
-                    Invoke(nameof(DelayedCollision), ConfigData.CollisionAsteroidKillDelay);
+                    Health = 0;
                 }
                 else // kill the asteroid, damage the ship
                 {
-                    CollisionObstacle = null;
-                    Invoke(nameof(DelayedCollision), ConfigData.CollisionAsteroidKillDelay);
-                    ship.LogDamage(Health);
+                    ship.LogDamage(OriginalHealth);
+                    Health = 0;
                 }
                 NearbyShips.Remove(ship);
+
+                if (Health == 0)
+                {
+                    Invoke(nameof(DelayedCollision), ConfigData.CollisionAsteroidKillDelay);
+                }
             }
             else
             {
@@ -97,38 +101,30 @@ namespace Assets.Scripts.Entities
                 if (asteroid.SizeClass < SizeClass) // kill the other asteroid, damage this asteroid
                 {
                     
-                    Health -= math.min(asteroid.Health, Health);
-                    if (Health == 0)
-                    {
-                        CollisionObstacle = asteroid;
-                        Invoke(nameof(DelayedCollision), ConfigData.CollisionAsteroidKillDelay);
-                    }
-                    else
-                    {
-                        asteroid.CollisionObstacle = null;
-                        asteroid.Invoke(nameof(DelayedCollision), ConfigData.CollisionAsteroidKillDelay);
-                    }
+                    Health -= math.min(asteroid.OriginalHealth, Health);
+                    asteroid.Health = 0;
+                    
                 }
                 else if (asteroid.SizeClass == SizeClass) // kill both asteroids
                 {
-                    CollisionObstacle = asteroid;
-                    Invoke(nameof(DelayedCollision), ConfigData.CollisionAsteroidKillDelay);
+                    Health = 0;
+                    asteroid.Health = 0;
                 }
                 else // kill this asteroid, damage the other asteroid
                 {
-                    asteroid.Health -= math.min(Health, asteroid.Health);
-                    if (asteroid.Health == 0)
-                    {
-                        CollisionObstacle = asteroid;
-                        Invoke(nameof(DelayedCollision), ConfigData.CollisionAsteroidKillDelay);
-                    }
-                    else
-                    {
-                        CollisionObstacle = null;
-                        Invoke(nameof(DelayedCollision), ConfigData.CollisionAsteroidKillDelay);
-                    }
+                    asteroid.Health -= math.min(OriginalHealth, asteroid.Health);
+                    Health = 0;
                 }
-               
+
+                if (Health == 0)
+                {
+                    Invoke(nameof(DelayedCollision), ConfigData.CollisionAsteroidKillDelay);
+                }
+                if (asteroid.Health == 0)
+                {
+                    asteroid.Invoke(nameof(DelayedCollision), ConfigData.CollisionAsteroidKillDelay);
+                }
+
             }
             else if (obstacle.IsCollisionAsteroid && obstacle.HasEnteredMap)
             {
@@ -186,10 +182,6 @@ namespace Assets.Scripts.Entities
 
         private void DelayedCollision()
         {
-            if (CollisionObstacle != null)
-            {
-                CollisionObstacle.Kill();
-            }
             Kill();
         }
 

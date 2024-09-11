@@ -8,7 +8,7 @@ namespace Assets.Scripts.Entities
 {
     public class Obstacle : MonoBehaviour
     {
-        public int Health, Id;
+        public int Health, OriginalHealth, Id;
         /// <summary>
         /// The index of the obstacle in the list of obstacle points for the pathfinding map
         /// </summary>

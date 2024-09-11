@@ -68,10 +68,7 @@ namespace Assets.Scripts.Scenes
         /// Sets the upper bounds for how fast an asteroid can move
         /// </summary>
         public int AsteroidMaxSpeed;
-        public List<GameObject> EmptyObstacleList = new List<GameObject>();
-        public List<GameObject> MazePrefabs = new List<GameObject>();
-        public List<GameObject> ThreePathsPrefabs = new List<GameObject>();
-        public List<GameObject> ForestPrefabs = new List<GameObject>();
+        public List<GameObject> EmptyObstacleList, MazePrefabs, ThreePathsPrefabs, ForestPrefabs, TheWallPrefabs = new List<GameObject>();
         public int ChosenObstaclesIndex;
         public List<GameObject> MiningAsteroidPrefabs = new List<GameObject>();
         public List<GameObject> CollisionAsteroidPrefabs = new List<GameObject>();
@@ -235,7 +232,8 @@ namespace Assets.Scripts.Scenes
                     {0, EmptyObstacleList }, // it's important to have this here so we can load the "open space" pathfinding file for when there's no obstacles except asteroids
                     {1, MazePrefabs },
                     {2, ThreePathsPrefabs },
-                    {3, ForestPrefabs }
+                    {3, ForestPrefabs },
+                    {4, TheWallPrefabs }
                 };
             if (HasRandomizedOptions)
             {
@@ -1100,7 +1098,7 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
                 power /= 2;
             }
             //Debug.Log($"Position before setup for {projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
-            projectile.Setup(this, shooter.Side, state.AddEntity(), weapon, shooter, target, startingPosition, angle, weapon.Range, power);
+            projectile.Setup(this, shooter.Side, state.GetId(), weapon, shooter, target, startingPosition, angle, weapon.Range, power);
             //Debug.Log($"Position after setup for #{projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
         }
         public GameState GetState()

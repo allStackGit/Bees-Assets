@@ -29,7 +29,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 21, y: -55, z: 0}
-  m_LocalScale: {x: 470, y: 20, z: 0}
+  m_LocalScale: {x: 380, y: 12, z: 0}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -99,11 +99,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   Health: 1000
-  InitialHealth: 0
   Id: 0
   MapPointsIndex: 0
   Name: Big Wall
-  IsMobile: 0
+  IsCollisionAsteroid: 0
   IsMapBorder: 0
   HasEnteredMap: 0
   IsDead: 0

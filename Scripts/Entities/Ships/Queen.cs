@@ -94,7 +94,7 @@ namespace Assets.Scripts.Entities.Ships
             {
                 ship.Setup(
                     Level,
-                    Level.GetState().AddEntity(),
+                    Level.GetState().GetId(),
                     new FleetShip(id, Side, $"{ShipType} Minion {MinionType} - #{id}", MinionType, false, true, false, 0, 0, 0, 0, 0, 0, 0),
                     squad,
                     offset

@@ -74,7 +74,7 @@ namespace Assets.Scripts.Entities.Projectiles
                 shot.transform.parent = Level.Map.transform;
                 LaserShot projectile = (LaserShot)shot.GetComponent(typeof(LaserShot));
                 GameState state = Level.GetState();
-                projectile.Setup(Level, Shooter.Side, state.AddEntity(), Weapon, Shooter, Target, startingPosition, radians, Weapon.Range, (int) (Weapon.Power / 1.5f));
+                projectile.Setup(Level, Shooter.Side, state.GetId(), Weapon, Shooter, Target, startingPosition, radians, Weapon.Range, (int) (Weapon.Power / 1.5f));
                 projectile.ShipsToIgnore.Add(target);
 
             }

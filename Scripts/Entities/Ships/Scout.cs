@@ -56,7 +56,7 @@ namespace Assets.Scripts.Entities.Ships
                     Squad squad = CreateMinionSquad();
                     ship.Setup(
                         Level,
-                        Level.GetState().AddEntity(),
+                        Level.GetState().GetId(),
                         new FleetShip(id, Side, $"{Name} -> Beacon #{Id}", "Beacon", false, true, false, 0, 0, 0, 0, 0, 0, 0),
                         squad,
                         Vector2.zero

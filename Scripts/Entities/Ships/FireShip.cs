@@ -32,7 +32,7 @@ namespace Assets.Scripts.Entities.Ships
                     Explosion = Instantiate(ShipExplosion, GetPosition(), Quaternion.identity);
                     Explosion.transform.parent = Level.Map.transform;
                     RocketExplosion explosion = (RocketExplosion)Explosion.GetComponent(typeof(RocketExplosion));
-                    explosion.Setup(Level, Side, state.AddEntity(), Bomb, this, null, GetPosition(), 0, 0, Bomb.Power);
+                    explosion.Setup(Level, Side, state.GetId(), Bomb, this, null, GetPosition(), 0, 0, Bomb.Power);
 
 
                     int oldTsv = Tsv;

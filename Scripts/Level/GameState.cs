@@ -26,7 +26,7 @@ namespace Assets.Scripts.Level
         private List<Squad> _selectedSquads = new List<Squad>();
         private List<Obstacle> _obstacles = new List<Obstacle>();
 
-        public int EntityCount, IdCount, UserCommands, AICommands;
+        public int EntityCount, UserCommands, AICommands;
         public bool IsPaused;
         public bool GameOver = false;
         public bool LevelEnded = false;
@@ -63,7 +63,6 @@ namespace Assets.Scripts.Level
             OriginalSquadCounts = new int[] { 0, 0 };
             HivemindShips = new Dictionary<long, HashSet<Ship>>[] { new Dictionary<long, HashSet<Ship>>(), new Dictionary<long, HashSet<Ship>>() };
             VisionCache = new HashSet<Ship>[] { new HashSet<Ship>(), new HashSet<Ship>() };
-            IdCount = 0;
         }
 
         public void AddSpottedShip(Ship ship, Ship spotter)
@@ -91,17 +90,14 @@ namespace Assets.Scripts.Level
                 ships.Add(new SpottedShip(spottedShip, spotter.Id));
             }
         }
-        public int AddEntity()
-        {
-            return EntityCount++;
-        }
+
         public int AddUserCommand()
         {
             return UserCommands++;
         }
         public int GetId()
         {
-            return IdCount++;
+            return EntityCount++;
         }
         public void AddShip(Ship ship)
         {
