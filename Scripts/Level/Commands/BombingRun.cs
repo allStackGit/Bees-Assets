@@ -21,9 +21,9 @@ namespace Assets.Scripts.Level.Commands
         public override void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy)
         {
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
-            //Debug.Log("Executing bombing run");
+            Debug.Log("Executing bombing run");
 
-            
+
             if (CheckIfStrikersAreDefenseless())
             {
                 return;

@@ -18,6 +18,10 @@ public class FullRetreat : Command
             Squad.GetShips().ForEach((ship) =>
             {
                 TargetWarpGate.ShipsWarpingHere.Add(ship);
+                if (ship.Collider.IsTouching(TargetWarpGate.WarpCollider))
+                {
+                    WarpKill(ship);
+                }
             });
 
             PrepareDamageToSendEntries("closest");
@@ -34,7 +38,7 @@ public class FullRetreat : Command
     {
         if (!Squad.IsDead && !TargetWarpGate.IsDead && TargetWarpGate.ShipAnimationController.IsReadyToWarp)
         {
-            Vector2 targetPosition = TargetWarpGate.GetPosition();
+            Vector2 targetPosition = TargetWarpGate.GetPosition() + TargetWarpGate.WarpPoint;
             Squad.GetShips().ForEach((ship) =>
             {
                 ship.MoveToPoint(targetPosition);
@@ -47,15 +51,9 @@ public class FullRetreat : Command
         }
     }
 
-    public void Warp(Ship ship)
+    public void WarpKill(Ship ship)
     {
-        Tsv += (int) (ship.Tsv * .05f);
-        StartCoroutine(DelayedKill(ship));
-    }
-
-    public IEnumerator DelayedKill(Ship ship)
-    {
-        yield return new WaitForSeconds(2);
+        Tsv += (int)(ship.Tsv * .05f);
         TargetWarpGate.ShipsWarpingHere.Remove(ship);
         ship.Kill(null, true);
         if (TargetWarpGate.ShipsWarpingHere.Count == 0)
@@ -67,28 +65,32 @@ public class FullRetreat : Command
     public void CleanupWarpGate()
     {
         //Debug.Log($"Clenaing up warp gate: {TargetWarpGate}");
-        if (!Squad.IsDead)
+        if (TargetWarpGate != null && !TargetWarpGate.IsDead)
         {
-            Squad.GetShips().ForEach((ship) =>
+            if (!Squad.IsDead)
             {
-                TargetWarpGate.ShipsWarpingHere.Remove(ship);
-            });
-        }
-        else
-        {
-            TargetWarpGate.ShipsWarpingHere.RemoveWhere((s) =>
+                Squad.GetShips().ForEach((ship) =>
+                {
+                    TargetWarpGate.ShipsWarpingHere.Remove(ship);
+                });
+            }
+            else
             {
-                return s == null || s.IsDead;
-            });
-        }
+                TargetWarpGate.ShipsWarpingHere.RemoveWhere((s) =>
+                {
+                    return s == null || s.IsDead;
+                });
+            }
 
-        if (TargetWarpGate != null && !TargetWarpGate.IsDead && TargetWarpGate.ShipsWarpingHere.Count == 0)
-        {
-            TargetWarpGate.ShipAnimation.SetActive(false);
-            TargetWarpGate.ShipAnimationController.UseSecondaryLoop = false;
-            TargetWarpGate.ShipAnimationController.IsReadyToWarp = false;
-            TargetWarpGate.ShipAnimationController.SpriteIndex = 0;
+            if (TargetWarpGate.ShipsWarpingHere.Count == 0)
+            {
+                TargetWarpGate.ShipAnimation.SetActive(false);
+                TargetWarpGate.ShipAnimationController.UseSecondaryLoop = false;
+                TargetWarpGate.ShipAnimationController.IsReadyToWarp = false;
+                TargetWarpGate.ShipAnimationController.SpriteIndex = 0;
+            }
         }
+        
     }
     public override void SetFinalize(string cause)
     {

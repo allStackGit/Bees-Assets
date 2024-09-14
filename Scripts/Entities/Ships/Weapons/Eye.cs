@@ -35,11 +35,12 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 //Debug.Log($"Got target! {ship.name}");
                 _readyToChangeColor = true;
             }
-            else if(!CeaseFire || IsFiringManually)
+            else if (!CeaseFire)
             {
                 //Debug.Log("Setting color red!");
                 Pupil.color = ConfigData.GetUIColor("eye-aiming");
             }
+
         }
         protected override void Aim()
         {
@@ -50,6 +51,18 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 //Debug.Log("Setting color white!");
                 Pupil.color = Color.white;
+            }else if (IsFiringManually)
+            {
+                if (!_readyToChangeColor)
+                {
+                    //Debug.Log($"Got target! {ship.name}");
+                    _readyToChangeColor = true;
+                }
+                else
+                {
+                    //Debug.Log("Setting color red!");
+                    Pupil.color = ConfigData.GetUIColor("eye-aiming");
+                }
             }
         }
     }

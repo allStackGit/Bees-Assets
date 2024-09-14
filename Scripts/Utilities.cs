@@ -492,22 +492,27 @@ namespace Assets.Scripts
         /// <returns></returns>
         public static bool TimedRotation(GameObject entity, float rotation, float rotationSpeed)
         {
+            return TimedRotationDifference(entity, rotation, rotationSpeed) == 0;
+        }
+
+        public static float TimedRotationDifference(GameObject entity, float rotation, float rotationSpeed)
+        {
             float difference = Mathf.DeltaAngle(entity.transform.eulerAngles.z, rotation);
             //Debug.Log($"Difference in angles {difference}, {(difference > closeEnough ? "counter-clockwise" : "clockwise")}");
             if (difference > 3)
             {
                 entity.transform.Rotate(new Vector3(0, 0, 1 * Time.fixedDeltaTime * rotationSpeed));
-                return false;
+                return difference;
             }
-            else if (difference <  -3)
+            else if (difference < -3)
             {
                 entity.transform.Rotate(new Vector3(0, 0, 1 * Time.fixedDeltaTime * rotationSpeed * -1));
-                return false;
+                return difference;
             }
             else
             {
                 entity.transform.eulerAngles = new Vector3(0, 0, rotation);
-                return true;
+                return 0;
             }
         }
 

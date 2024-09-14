@@ -40,7 +40,6 @@ namespace Assets.Scripts.Entities.Ships
         }
         protected override void SetTargetShip(Ship ship)
         {
-            //Debug.Log($"Setting {Name} target, activating animation");
             base.SetTargetShip(ship);
             LaserBuilderAnimation.SetActive(true);
 
@@ -51,7 +50,7 @@ namespace Assets.Scripts.Entities.Ships
         {
             //Debug.Log("Leafcutter aiming");
             base.Aim();
-            if ((!HasTargetShip || CeaseFire || !IsAimedAtTarget) && !IsFiringManually)
+            if (LaserBuilderAnimation.activeSelf && (!HasTargetShip || CeaseFire || !IsAimedAtTarget) && !IsFiringManually)
             {
                 //Debug.Log($"{Name} has no TargetShip, deactivating animation");
                 LaserBuilderAnimation.SetActive(false);

@@ -1030,6 +1030,7 @@ namespace Assets.Scripts.Level
                 }
                 Ships[threadIndex].PathfindingThreadComplete = true;
                 IsThreadActive[threadIndex] = false; //[alert] must be uncommented when not testing
+                Ships[threadIndex].PathfindingValue = null;
 
 
             }).ContinueWith((task) =>

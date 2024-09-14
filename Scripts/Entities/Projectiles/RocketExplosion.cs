@@ -54,17 +54,6 @@ namespace Assets.Scripts.Entities.Projectiles
             //Debug.Log("Killed off the rocket explosion");
             Destroy(gameObject);
         } 
-        public void RemoveFireShip()
-        {
-            //if (Shooter.ShipType == "Fire Ship")
-            //{
-            //    if (Shooter.HasVision)
-            //    {
-            //        Shooter.Vision.Kill(1.25f);
-            //    }
-            //    //Destroy(Shooter.gameObject);
-            //}
-        }
 
         public void SetHarmless()
         {

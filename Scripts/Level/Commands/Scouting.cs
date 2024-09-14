@@ -25,7 +25,7 @@ namespace Assets.Scripts.Level.Commands
             InvokeRepeating(nameof(Timer), 0, CommandFrequency);
             Invoke(nameof(EndCommand), ConfigData.Configuration.AISquadPatrolTime);
 
-            if (Squad.Side == ConfigData.Configuration.HumanSide && ConfigData.Configuration.UserSide == Squad.Side && Level.DoesUserHaveController)
+            if (Squad.Side == ConfigData.Configuration.HumanSide && ConfigData.Configuration.UserSide == Squad.Side)
             {
                 Squad.GetShips().ForEach((ship) =>
                 {

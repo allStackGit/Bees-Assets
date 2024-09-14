@@ -23,29 +23,22 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 }
                 else if (ShouldFire)
                 {
-                    if (!Utilities.HasObstaclesInTheWay(GetPosition(), TargetShip.GetPosition()))
-                    {
-                        //Debug.Log($"Aiming {Piece.name}");
-                        TargetPoint = GetTargetPoint(TargetShip);
-                    }
-                    else
-                    {
-                        BlockedShips.Add(TargetShip);
-                        SetTargetShip(null);
-                    }
+                    TargetPoint = GetTargetPoint(TargetShip);
                 }
                 IsAimedAtTarget = Utilities.IsRotatedTowards(Piece, GetDegreesTowardsPoint(TargetPoint));
-                if (!IsAimedAtTarget)
-                {
-                    LaserBuilderAnimation.SetActive(false);
-                }
-                else
-                {
-                    LaserBuilderAnimation.SetActive(true);
-                }
 
-                MoveTargetingMarker();
             }
+
+            if (!IsAimedAtTarget)
+            {
+                LaserBuilderAnimation.SetActive(false);
+            }
+            else
+            {
+                LaserBuilderAnimation.SetActive(true);
+            }
+
+            MoveTargetingMarker();
 
         }
     }

@@ -82,7 +82,7 @@ namespace Assets.Scripts.Scenes
         public List<string> FoundBeeTypes = new List<string>();
         public bool IsLevelSetupOnServer;
         public bool IsLoaded = false;
-        public bool RetriedConnection;
+        public bool RetriedConnection, IsRestarting;
         public bool HasPlayer;
         public int WinningSide;
         public float MapX, MapY, MaxDistance, HalfX, HalfY;
@@ -540,7 +540,7 @@ namespace Assets.Scripts.Scenes
             {
                 Debug.Log($"60 seconds have passed, spawning new enemy ships");
                 Vector2 moveToPoint = StartingPositions[ConfigData.Configuration.AISide - 1];
-                LevelConstructor.AddShipsMidLevel(MidLevelSquads[ConfigData.Configuration.AISide - 1], StartingPositions[ConfigData.Configuration.AISide - 1] * new Vector2(0, 3), moveToPoint);
+                LevelConstructor.AddShipsMidLevel(MidLevelSquads[ConfigData.Configuration.AISide - 1], StartingPositions[ConfigData.Configuration.AISide - 1] * new Vector2(0, 2), moveToPoint);
 
             }));
 
@@ -632,7 +632,7 @@ namespace Assets.Scripts.Scenes
         /// <summary>
         /// Ends the level and marks the winner
         /// </summary>
-        void LevelOver() // [stats-method] [note]
+        public void LevelOver() // [stats-method] [note]
         {
             if (!IsTrainingNueralNetwork)
             {
@@ -956,12 +956,13 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
         {
             Debug.Log("Level timed out!");
             ConfigData.__LevelTimeouts++;
+            IsRestarting = true;
             SaveAndEnd();
         }
         /// <summary>
         /// Used for standard play and Hivemind Training. 
         /// </summary>
-        private void SaveAndEnd()
+        public void SaveAndEnd()
         {
             //Debug.Log($"Saving and ending");
 
@@ -1045,12 +1046,13 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
             //Invoke(nameof(StartNew), .1f);
             //Invoke(nameof(ReloadScene), 1f);
 
-            if (DoesUserHaveController)
+            if (DoesUserHaveController && !IsRestarting)
             {
                 Invoke(nameof(LevelEndedDialogue), 1f);
             }
             else
             {
+                IsRestarting = false;
                 StartNew();
             }
 

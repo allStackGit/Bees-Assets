@@ -25,18 +25,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 }
                 if (ShouldFire)
                 {
-                    if (!Utilities.HasObstaclesInTheWay(GetPosition(), TargetShip.GetPosition()))
-                    {
-                        //Debug.Log($"Aiming {Piece.name}");
-                        TargetPoint = GetTargetPoint(TargetShip);
-                        IsAimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
-                    }
-                    else
-                    {
-                        BlockedShips.Add(TargetShip);
-                        SetTargetShip(null);
-                    }
-
+                    TargetPoint = GetTargetPoint(TargetShip);
+                    IsAimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
 
                 }
                 else
@@ -58,7 +48,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             if (!IsFiringLaserBeam)
             {
                 //Debug.Log($"Setting target ship to {targetShip.Name}");
-                TargetShip = targetShip;
+                base.SetTargetShip(targetShip);
             }
         }
         protected override void SendProjectile() // [projectile-method] [note] [stats-method]

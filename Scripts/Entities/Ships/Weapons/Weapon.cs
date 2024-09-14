@@ -23,7 +23,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// <summary>
         /// Ships that this weapon can't fire at because an obstacle is in the way
         /// </summary>
-        public HashSet<Ship> BlockedShips = new HashSet<Ship>();
         public Dictionary<Ship, string> __TargetingRejectReasons = new Dictionary<Ship, string>();
         public float Firepower => Utilities.CalculateFirepower(Power, Range, RateOfFire, RotationRate, ProjectileValue, SpecialFirepower);
         public bool CeaseFire => Ship.Squad.CeaseFire;
@@ -111,9 +110,9 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 Ship potentialTargetShip = ships[i];
                 //Debug.Log($"{name} is firing at {ship.name} which is priority #{i} in because the Shooting strategy is {Squad.GetShootingStrategy()}.");
-                if (!foundTarget && potentialTargetShip != null && !BlockedShips.Contains(potentialTargetShip))
+                if (!foundTarget && potentialTargetShip != null)
                 {
-                    if (CheckIfShipIsValidTarget(potentialTargetShip)) // if the target ship is within range of this weapon
+                    if (IsShipValidTarget(potentialTargetShip)) // if the target ship is within range of this weapon
                     {
                         /*
                         Check to make sure that the damage already sent towards the ship is less than the health of the ship previously
@@ -138,6 +137,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                             SetTargetShip(potentialTargetShip);
                             foundTarget = true;
                             return foundTarget;
+
                         }
 
                     }
@@ -161,10 +161,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     {
                         __TargetingRejectReasons[potentialTargetShip] = $"{potentialTargetShip.Name} rejected: Already found targetship: {TargetShip.Name}";
                     }
-                    else if (BlockedShips.Contains(potentialTargetShip))
-                    {
-                        __TargetingRejectReasons[potentialTargetShip] = $"{potentialTargetShip.Name} rejected: The ship is blocked by an obstacle";
-                    }
                 }
             }
 
@@ -181,7 +177,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// </summary>
         /// <param name="potentialTargetShip"></param>
         /// <returns></returns>
-        protected virtual bool CheckIfShipIsValidTarget(Ship potentialTargetShip)
+        public virtual bool IsShipValidTarget(Ship potentialTargetShip)
         {
             return IsShipWithinRange(potentialTargetShip);
         }
@@ -236,7 +232,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             if (Ship.Squad.HasEnemy && Ship.Squad.IsAttacking)
             {
-                List<Ship> enemies = ShipsWithinRange.Where((s) => !BlockedShips.Contains(s) && s.Squad == Ship.Squad.Command.EnemySquad).ToList();
+                List<Ship> enemies = ShipsWithinRange.Where((s) => s.Squad == Ship.Squad.Command.EnemySquad).ToList();
                 if (enemies.Count > 0)
                 {
                     return enemies;
@@ -282,7 +278,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             TargetShip = null;
             CachedTargetingQueue.Clear();
-            BlockedShips.Clear();
             HasCachedChanged = true;
         }
         /// <summary>Sorts the potential target ships according to the shooting strategy. Uses a cached queue </summary>

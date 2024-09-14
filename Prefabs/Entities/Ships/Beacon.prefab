@@ -79,7 +79,7 @@ SpriteRenderer:
   m_SortingLayerID: -1646897113
   m_SortingLayer: 3
   m_SortingOrder: 0
-  m_Sprite: {fileID: 21300000, guid: 5b9daa3b52d8ec343b2fa38ecda16022, type: 3}
+  m_Sprite: {fileID: 21300000, guid: 6cbaccdd50c5ab9478e1af3d49ec7c65, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
@@ -118,6 +118,7 @@ MonoBehaviour:
   Clearance: 0
   MaxRange: 0
   HalfMaxRange: 0
+  SizeClass: 0
   ProjectileValue: 0
   Speed: 0
   SpecialFirePower: 0
@@ -126,9 +127,12 @@ MonoBehaviour:
   HealthBar: {fileID: 233216232580124255}
   MiniMapIcon: {fileID: 3691452956343594288}
   ShipAnimation: {fileID: 0}
+  MovementMarker: {fileID: 0}
   TargetCoordinates: {x: 0, y: 0}
   FinalDestination: {x: 0, y: 0}
   OffsetFromCenter: {x: 0, y: 0}
+  PathfindingDestination: {x: 0, y: 0}
+  WaitingTargetCoordinates: {x: 0, y: 0}
   Squad: {fileID: 0}
   MotherSquad: {fileID: 0}
   DefaultAngle: 0
@@ -160,6 +164,10 @@ MonoBehaviour:
   HasLeftRocketFlares: 0
   HasCenterRocketFlares: 0
   HasRightRocketFlares: 0
+  HasMovementMarker: 0
+  HasWaitingTargetCoordinates: 0
+  HasShatteredShip: 0
+  HasEnteredMap: 0
   Weapons: []
   ProjectilePrefabs: []
   WeaponPrefabs: []
@@ -167,6 +175,7 @@ MonoBehaviour:
   LeftRocketFlares: []
   CenterRocketFlares: []
   RightRocketFlares: []
+  ShatteredShips: []
   Brain: {fileID: 0}
   NearbyAsteroids: []
   Turrets: []
@@ -176,6 +185,7 @@ MonoBehaviour:
   TargetEnemyShipToFollow: {fileID: 0}
   IsCloseEnoughToTargetEnemyShipToFollow: 0
   PathfindingThreadComplete: 0
+  IsPathfinding: 0
   PathfindingThread: 0
   PrintDebugImage: 0
   __Strategy: 
@@ -209,14 +219,16 @@ MonoBehaviour:
   __CommandTargetingQueue: []
   __NearbyAsteroids: []
   __HivemindShips: []
+  __RejectReasons: []
+  __Clearance: 0
   Direction: 0
   ShouldDetonate: 0
   RLShootingStrategy: 
   RLSide: 0
   RLHealth: 0
   RLShipType: 0
-  StandardSprite: {fileID: 21300000, guid: 5b9daa3b52d8ec343b2fa38ecda16022, type: 3}
-  EnemySprite: {fileID: 21300000, guid: 8a9735dfaaadba94fa9cecd9743afaaa, type: 3}
+  StandardSprite: {fileID: 21300000, guid: 6cbaccdd50c5ab9478e1af3d49ec7c65, type: 3}
+  EnemySprite: {fileID: 21300000, guid: b927f2b254e594245af18aa210c2ccdd, type: 3}
 --- !u!58 &5366410214926510080
 CircleCollider2D:
   m_ObjectHideFlags: 0

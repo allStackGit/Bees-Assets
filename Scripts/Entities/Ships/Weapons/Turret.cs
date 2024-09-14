@@ -92,8 +92,18 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
             else
             {
-                SetTargetShip(null);
+                SetTargetShipNull();
             }
+        }
+
+        protected void SetTargetShipNull()
+        {
+            TargetShip = null;
+        }
+        protected override void SetTargetShip(Ship targetShip)
+        {
+            TargetShip = targetShip;
+
         }
         /// <summary>
         /// Run on FixedUpdate(). Aims the Turret at the TargetShip, if one exists
@@ -109,18 +119,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 if (ShouldFire)
                 {
-                    if (!Utilities.HasObstaclesInTheWay(GetPosition(), TargetShip.GetPosition()))
-                    {
-                        //Debug.Log($"Aiming {Piece.name}");
-                        TargetPoint = GetTargetPoint(TargetShip);
-                        IsAimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
-                    }
-                    else
-                    {
-                        BlockedShips.Add(TargetShip);
-                        SetTargetShip(null);
-                    }
-                    
+                    TargetPoint = GetTargetPoint(TargetShip);
+                    IsAimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
 
                 }
                 else
@@ -136,6 +136,15 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             MoveTargetingMarker();
 
 
+        }
+        /// <summary>
+        /// Checks if the ship is a) within range, b) Not blocked by obstacles and c) In the map
+        /// </summary>
+        /// <param name="potentialTargetShip"></param>
+        /// <returns></returns>
+        public override bool IsShipValidTarget(Ship potentialTargetShip)
+        {
+            return IsShipWithinRange(potentialTargetShip) && potentialTargetShip.IsInBounds() && (!Level.HasObstacles || !Utilities.HasObstaclesInTheWay(GetPosition(), GetTargetPoint(potentialTargetShip)));
         }
         /// <summary>
         /// Sends the projectile to the Target Ship. Last in the Targeting sequence.
@@ -166,8 +175,13 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
             if (!RangeCollider.Collider.OverlapPoint(targetPoint+Level.GetPosition()))
             {
-                //Debug.Log($"{Ship.Name} is firing at {ship.Name} but the target point is not within range");
-                targetPoint = ship.Collider.ClosestPoint(GetPosition());
+                Vector2 colliderPoint = ship.Collider.ClosestPoint(GetPosition());
+                if (colliderPoint != GetPosition())
+                {
+                    targetPoint = colliderPoint;
+                }
+                //Debug.Log($"{Ship.Name} is firing at {ship.Name} but the target point is not within range. The new target point is: {targetPoint}");
+
             }
             return targetPoint;
         }
@@ -179,7 +193,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 if (!DetermineTargetShip(CachedTargetingQueue, true))
                 {
-                    BlockedShips.Clear();
                     DetermineTargetShip(CachedTargetingQueue, false);
                 }
                 if (ShouldFire)
@@ -258,8 +271,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                         if (potentialTargetShip != null)
                         {
                             SetTargetShip(potentialTargetShip);
-                            //Debug.Log($"{Name} was not aimed at it's target but was aimed at another target: {TargetShip.Name}. Firing");
                             Fire();
+                            //Debug.Log($"{Name} was not aimed at it's target but was aimed at another target: {TargetShip.Name}. Firing");
 
                         }
                         else

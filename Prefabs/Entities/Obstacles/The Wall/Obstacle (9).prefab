@@ -27,7 +27,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 5595109888224089792}
   serializedVersion: 2
-  m_LocalRotation: {x: -0, y: -0, z: -0.1709597, w: 0.98527807}
+  m_LocalRotation: {x: -0, y: -0, z: -0.016067829, w: 0.99987096}
   m_LocalPosition: {x: 127.700005, y: 36.899994, z: 0}
   m_LocalScale: {x: 50, y: 25, z: 0}
   m_ConstrainProportionsScale: 0
@@ -99,6 +99,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   Health: 1000
+  OriginalHealth: 0
   Id: 0
   MapPointsIndex: 0
   Name: Obstacle

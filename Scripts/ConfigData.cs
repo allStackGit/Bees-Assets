@@ -181,7 +181,7 @@ namespace Assets.Scripts
         public const int MinimumAsteroidSpawnDistance = 100;
         public const int MinimumAsteroidSpeed = 2;
         public const int MinimumAsteroidAngularSpeedMultiplier = 5;
-        public const int CollisionAsteroidHealthIncrement = 500;
+        public const int CollisionAsteroidHealthIncrement = 250;
         public const int CollisionAsteroidKillDelay = 1;
         public const int MaximumTsvValueForSeeingAShip = 500;
         public const int MinimumTsvValueForSeeingAShip = 50;

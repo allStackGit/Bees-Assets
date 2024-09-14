@@ -124,23 +124,12 @@ namespace Assets.Scripts.UIComponents
         }
         private List<string> ShipTypes()
         {
-            if (HasSquadMaker)
+
+            if (Side == ConfigData.Configuration.BeeSide)
             {
-                if (Side == ConfigData.Configuration.BeeSide)
-                {
-                    return ConfigData.Configuration.VisibleHumanShipTypes.ToList();
-                }
-                return ConfigData.Configuration.VisibleBeeShipTypes.ToList();
+                return ConfigData.Configuration.VisibleHumanShipTypes.ToList();
             }
-            else if (HasLevel)
-            {
-                if (Side == ConfigData.Configuration.BeeSide)
-                {
-                    return Level.GetState().GetHumanShipTypes().ToList();
-                }
-                return Level.GetState().GetBeeShipTypes().ToList();
-            }
-            return new List<string>();
+            return ConfigData.Configuration.VisibleBeeShipTypes.ToList();
         }
         private void SetDropdownValue()
         {

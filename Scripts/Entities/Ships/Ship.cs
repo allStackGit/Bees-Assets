@@ -30,7 +30,7 @@ namespace Assets.Scripts.Entities.Ships
         public int Health, MaxHealth, OriginalHealth, OriginalTsv, Sight, AdditionalTsv, Clearance, MaxRange, HalfMaxRange;
         public float SizeClass, ProjectileValue, Speed, SpecialFirePower, CurrentSpeed;
         public GameObject ShipExplosion, HealthBar, MiniMapIcon, ShipAnimation, MovementMarker;
-        public Vector2 TargetCoordinates, FinalDestination, OffsetFromCenter; // the coordinates of where the ship should go, and it's offset from the center of the squad
+        public Vector2 TargetCoordinates, FinalDestination, OffsetFromCenter, PathfindingDestination; // the coordinates of where the ship should go, and it's offset from the center of the squad
         /// <summary>
         /// If a ship can't move when it's given target coordinates, they are held here until it can move
         /// </summary>
@@ -127,7 +127,7 @@ namespace Assets.Scripts.Entities.Ships
         public bool HasTargetEnemyShipToFollow => TargetEnemyShipToFollow != null  && !TargetEnemyShipToFollow.IsDead;
 
 
-        private bool _combatTimer;
+        private bool _combatTimer, _isInBounds;
         private Transform _healthBarFiller;
         private SpriteRenderer _healthBarFillerSprite;
         private Vector2 _size;
@@ -139,7 +139,7 @@ namespace Assets.Scripts.Entities.Ships
         public float __Firepower, __DamagePerSecond, __CurrentSpeed, __DegreesToTargetCoordinates, __DistanceToTargetCoordinates, __TurningRadius;
         public long __Tsv, __CommandTsv;
         public bool __HasReachedDestination, __SquadHasReachedDestination;
-        public List<Ship> __WeaponTargetShips, __SquadShips, __NearbyShips, __ShipsWarpingHere, __BlockedShips;
+        public List<Ship> __WeaponTargetShips, __SquadShips, __NearbyShips, __ShipsWarpingHere;
         public List<string> __ShipsWithinRangeOfWeapons, __PastCommands, __BannedStrats, __DamageStatuses, __CommandTargetingQueue, __NearbyAsteroids, __HivemindShips, __RejectReasons;
         public int __Clearance;
         //public List<Vector2> __PastLocations;
@@ -191,10 +191,10 @@ namespace Assets.Scripts.Entities.Ships
             __HivemindShips = Level.GetState().GetShipsVisibleToHiveMind(Side).Select(s => s.ToString()).ToList();
             __Clearance = GetClearance();
 
-            __BlockedShips = Weapons.Aggregate(new HashSet<Ship>(), (sum, weapon) => {
-                sum.UnionWith(weapon.BlockedShips.Where((ship) => ship != null && !ship.IsDead));
-                return sum;
-            }).ToList();
+            //__BlockedShips = Weapons.Aggregate(new HashSet<Ship>(), (sum, weapon) => {
+            //    sum.UnionWith(weapon.BlockedShips.Where((ship) => ship != null && !ship.IsDead));
+            //    return sum;
+            //}).ToList();
 
             __RejectReasons = Weapons.Aggregate(new HashSet<string>(), (sum, weapon) => {
                 sum.UnionWith(weapon.__TargetingRejectReasons.Values);
@@ -483,16 +483,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 Vision.Setup(this); // Has to happen after MaxRange is calculated
             }
 
-            if (IsInBounds()) // [testing] just needed for testing
-            {
-                HasEnteredMap = true;
-            }
-            else
-            {
-                HasEnteredMap = false;
-            }
-
-
         }
         protected void FixedUpdate()
         {
@@ -603,6 +593,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             if (!CannotChangeMovementOrders)
             {
                 destination = Level.ForceBounds(destination);
+
                 if (Level.HasObstacles && IsInBounds())
                 {
                     startPosition = GetPosition();
@@ -618,6 +609,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                         if (!IsPathfinding)
                         {
                             Level.Pathfinder.FindPath(this, convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance());
+                            PathfindingDestination = destination;
                         }
                         else
                         {
@@ -650,6 +642,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                                 if (!IsPathfinding)
                                 {
                                     Level.Pathfinder.FindPath(this, convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance());
+                                    PathfindingDestination = destination;
                                 }
                                 else
                                 {
@@ -792,11 +785,21 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 IsFollowingPath = true;
                 HasTargetCoordinates = true;
                 PathfindingValue = null;
-                IsPathfinding = false;
                 DebugWalkablePointNodes.Clear();
                 MoveMovementMarker();
                 //Debug.Log($"Merged full path to destination in {(Time.realtimeSinceStartup - start) * 1000}ms");
             }
+            else
+            {
+                Debug.Log($"{Name} couldn't find a path to {PathfindingDestination} and so it will try again in 2 seconds");
+                EndDestination("Could not find a path to destination");
+                Invoke(nameof(TryToFindPathAgain), 2);
+            }
+            IsPathfinding = false;
+        }
+        public void TryToFindPathAgain()
+        {
+            MoveToPoint(PathfindingDestination);
         }
         /// <summary>
         /// Periodically called while following a pathfinding path. Checks to see if there are any obstacles in the way and if not, cuts off the destination queue and takes a direct path
@@ -923,7 +926,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 return;
             }
 
-            Utilities.TimedRotation(gameObject, rotation, RotationSpeed);
+            float differenceInAngleToPoint = Utilities.TimedRotationDifference(gameObject, rotation, RotationSpeed);
             float degrees = GetRotation() - 180;
             float angle = degrees * Mathf.Deg2Rad;
 
@@ -934,10 +937,18 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     flare.SetActive(true);
                 });
 
-                //Debug.Log($"Degrees: {degrees}");
+                //Debug.Log($"differenceInAngleToPoint: {differenceInAngleToPoint}");
                 if (HasRightRocketFlares && HasLeftRocketFlares)
                 {
-                    if (degrees > 0)
+                    if (differenceInAngleToPoint > 0)
+                    {
+                        //Debug.Log($"Moving to the left, activating right rocket flares");
+                        RightRocketFlares.ForEach((flare) =>
+                        {
+                            flare.SetActive(true);
+                        });
+                    }
+                    else if (differenceInAngleToPoint < 0)
                     {
                         //Debug.Log($"Moving to the right, activating left rocket flares");
                         LeftRocketFlares.ForEach((flare) =>
@@ -945,10 +956,14 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                             flare.SetActive(true);
                         });
                     }
-                    else
+                    else // moving straight, activate both sides
                     {
-                        //Debug.Log($"Moving to the left, activating right rocket flares");
                         RightRocketFlares.ForEach((flare) =>
+                        {
+                            flare.SetActive(true);
+                        });
+
+                        LeftRocketFlares.ForEach((flare) =>
                         {
                             flare.SetActive(true);
                         });
@@ -982,7 +997,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             else if (
                 HasTargetEnemyShipToFollow &&
                 !(Squad.HasCommand && (Squad.Command.Type == "Circle" || Squad.Command.Type == "Right Swipe" ||  Squad.Command.Type == "Left Swipe") ||
-                Squad.Command.Type == "In and Out") &&  // Squad must either not have a command or not have a command of a certain type
+                Squad.Command.Type == "In and Out" || Squad.Command.Type == "Bombing Run") &&  // Squad must either not have a command or not have a command of a certain type
 
                 //TargetShips.Any((ship) => ship != null && (!HasTargetEnemy || TargetEnemy.Equals(ship)) && IsShipWithinRange(ship)) // Ship must have target ships within range and they must be the target enemy or there must not be a target enemy 
 
@@ -1114,14 +1129,18 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             }
             else if (IsUserControlled && mouseButton == LevelInputManager.LeftClick) // when this ship has been left clicked on and this ship *is* user controlled
             {
-                if (isCtrlClick)
+                if (!Squad.IsImmobile)
                 {
-                    state.AddSelectedSquad(Squad);
+                    if (isCtrlClick)
+                    {
+                        state.AddSelectedSquad(Squad);
+                    }
+                    else
+                    {
+                        state.SelectSquad(Squad);
+                    }
                 }
-                else
-                {
-                    state.SelectSquad(Squad);
-                }
+
             }
         }
         public void SetCurrentSpeed(float speed, float maxSpeed = -1)
@@ -1553,7 +1572,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         }
         public bool IsShipWithinRange(Ship ship)
         {
-            return Weapons.Any((w) => w.IsShipWithinRange(ship));
+            return Weapons.Any((w) => w.IsShipValidTarget(ship));
         }
         public bool CanSeeShip(Ship ship)
         {
@@ -1644,12 +1663,17 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             return clearance;
         }
         /// <summary>
-        /// Whether or not the ship is in the bounds of the map
+        /// Whether or not the ship is in the bounds of the map. Caches the result if it is in bounds
         /// </summary>
         /// <returns></returns>
         public bool IsInBounds()
         {
-            return GetPosition() == Level.ForceBounds(GetPosition());
+            if (!_isInBounds)
+            {
+                //Debug.Log($"{Name} is not in bounds yet but might be? {GetPosition() == Level.ForceBounds(GetPosition())}, {GetPosition()}, {Level.ForceBounds(GetPosition())}");
+                _isInBounds = GetPosition() == Level.ForceBounds(GetPosition());
+            }
+            return _isInBounds;
         }
 
 

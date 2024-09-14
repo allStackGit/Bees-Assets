@@ -41,7 +41,12 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             return queue;
         }
 
-        protected override bool CheckIfShipIsValidTarget(Ship potentialTargetShip)
+        /// <summary>
+        /// Returns true. All ships are valid targets for the bomb.
+        /// </summary>
+        /// <param name="potentialTargetShip"></param>
+        /// <returns></returns>
+        public override bool IsShipValidTarget(Ship potentialTargetShip)
         {
             return true; // all ships are "within range" and thus valid
         }

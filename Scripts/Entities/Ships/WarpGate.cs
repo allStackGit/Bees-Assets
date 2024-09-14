@@ -8,8 +8,9 @@ namespace Assets.Scripts.Entities.Ships
 {
     public class WarpGate : Ship
     {
-
+        public Vector2 WarpPoint;
         public HashSet<Ship> ShipsWarpingHere = new HashSet<Ship>();
+        public Collider2D WarpCollider;
 
         public void OnTriggerEnter2D(Collider2D collider)
         {
@@ -21,8 +22,8 @@ namespace Assets.Scripts.Entities.Ships
                     FullRetreat fullRetreat = (FullRetreat)ship.Squad.Command;
                     if (fullRetreat.TargetWarpGate == this)
                     {
-                        //Debug.Log($"{ship.Name} hit {Name} and so we're warping it");
-                        fullRetreat.Warp(ship);
+                        Debug.Log($"{ship.Name} hit {Name} and so we're warping it");
+                        fullRetreat.WarpKill(ship);
                     }
                 }
             }

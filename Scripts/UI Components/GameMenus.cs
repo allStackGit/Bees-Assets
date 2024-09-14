@@ -94,7 +94,9 @@ namespace Assets.Scripts.UIComponents
         public void RestartLevel()
         {
             Level.UnPause();
-            Level.ReloadScene();
+            Level.IsRestarting = true;
+            Level.SaveAndEnd();
+            MenuContainer.SetActive(false);
         }
         public void TryNewLevel()
         {
