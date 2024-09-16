@@ -1638,6 +1638,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         }
         public Vector2 GetRandomPointOnShip(Vector2 nearPosition)
         {
+            if (SizeClass == 1)
+            {
+                return GetPosition();
+            }
+
             Vector2 randomPointBounds;
             float halfWidth = GetHalfWidth() - ConfigData.OffsetFromFront;
             float halfHeight = GetHalfHeight() - ConfigData.OffsetFromFront;

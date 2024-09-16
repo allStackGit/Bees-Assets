@@ -10,7 +10,7 @@ namespace Assets.Scripts.Level.Commands
 {
     public class BombingRun : Command
     {
-
+        public HashSet<Ship> ShipsCompletedCommand = new HashSet<Ship>();
         /// <summary>
         /// Only available to Yellow Jackets, Fireships, and Strikers. Sends all ships straight onto the ships of the squad and back to the carrier if applicable
         /// </summary>
@@ -113,7 +113,7 @@ namespace Assets.Scripts.Level.Commands
             return false;
         }
         /// <summary>
-        /// Does the ship have a target to follow, and if it is a striker does it have its bomb ready?
+        /// Does the ship have a target to follow, and if it is a striker does it have its bomb ready? 
         /// </summary>
         /// <param name="ship"></param>
         /// <returns></returns>
@@ -124,7 +124,7 @@ namespace Assets.Scripts.Level.Commands
                 if (ship.ShipType == "Striker")
                 {
                     Striker striker = (Striker)ship;
-                    return striker.IsBombReady; // if it's a striker and its bombs are ready
+                    return striker.IsBombReady; // if it's a striker and its bombs are ready 
                 }
                 else
                 {
@@ -208,50 +208,55 @@ namespace Assets.Scripts.Level.Commands
                 List<long> fireShipsToDetonate = new List<long>();
                 ships.ForEach((ship) =>
                 {
-                    if (ShouldShipPursueTarget(ship))
+                    if (!ShipsCompletedCommand.Contains(ship))
                     {
-
-                        SendShipToTarget(ship);
-                        if (Squad.IsHiveMindControlled && ship.ShipType == "Fire Ship" && ship.ProximityCollider.NearbyEnemyShips.Contains(ship.TargetEnemyShipToFollow))
+                        if (ShouldShipPursueTarget(ship))
                         {
-                            // if you're a fire ship and within detonation distance of your target, detonate
-                            Debug.Log($"{ship.Name} is hivemind controlled and on a bombing run and near its target enemy and so it's going to detonate. ");
-                            fireShipsToDetonate.Add(ship.Id);
-                        }
-                    }
-                    else
-                    {
 
-                        //Debug.Log($"{ship.Name} should not pursure its target ({ship.TargetEnemyShipToFollow}) and so it's going back to its carrier");
+                            SendShipToTarget(ship);
+                            if (Squad.IsHiveMindControlled && ship.ShipType == "Fire Ship" && ship.ProximityCollider.NearbyEnemyShips.Contains(ship.TargetEnemyShipToFollow))
+                            {
+                                // if you're a fire ship and within detonation distance of your target, detonate
+                                Debug.Log($"{ship.Name} is hivemind controlled and on a bombing run and near its target enemy and so it's going to detonate. ");
+                                fireShipsToDetonate.Add(ship.Id);
+                            }
+                        }
+                        else
+                        {
+
+                            //Debug.Log($"{ship.Name} should not pursure its target ({ship.TargetEnemyShipToFollow}) and so it's going back to its carrier");
+                            if (ship.ShipType == "Striker")
+                            {
+                                Striker striker = (Striker)ship;
+                                if (EnemySquad.IsDead)
+                                {
+                                    striker.CompleteRun();
+                                }
+                                else if (striker.IsBombReady)
+                                {
+                                    GetTarget(ship);
+                                }
+                            }
+                            else if (ship.ShipType == "Yellow Jacket")
+                            {
+                                YellowJacket yellowJacket = (YellowJacket)ship;
+                                if (EnemySquad.IsDead)
+                                {
+                                    yellowJacket.HasCompletedRun = true;
+                                }
+                                else
+                                {
+                                    GetTarget(ship);
+                                }
+                            }
+                        }
                         if (ship.ShipType == "Striker")
                         {
                             Striker striker = (Striker)ship;
-                            if (EnemySquad.IsDead)
-                            {
-                                striker.CompleteRun();
-                            }else if (striker.IsBombReady)
-                            {
-                                GetTarget(ship);
-                            }
-                        }
-                        else if (ship.ShipType == "Yellow Jacket")
-                        {
-                            YellowJacket yellowJacket = (YellowJacket)ship;
-                            if (EnemySquad.IsDead)
-                            {
-                                yellowJacket.HasCompletedRun = true;
-                            }
-                            else
-                            {
-                                GetTarget(ship);
-                            }
+                            striker.ReturnToCarrierIfNecessary();
                         }
                     }
-                    if (ship.ShipType == "Striker")
-                    {
-                        Striker striker = (Striker)ship;
-                        striker.ReturnToCarrierIfNecessary();
-                    }
+                    
                 });
 
                 // This is necessary to prevent modifying the list when the fire ship(s) is killed

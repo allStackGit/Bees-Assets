@@ -33,6 +33,7 @@ namespace Assets.Scripts.Entities.Ships
                     Explosion.transform.parent = Level.Map.transform;
                     RocketExplosion explosion = (RocketExplosion)Explosion.GetComponent(typeof(RocketExplosion));
                     explosion.Setup(Level, Side, state.GetId(), Bomb, this, null, GetPosition(), 0, 0, Bomb.Power);
+                    state.FireShipExplosions.Add(explosion);
 
 
                     int oldTsv = Tsv;
@@ -78,6 +79,10 @@ namespace Assets.Scripts.Entities.Ships
                 else
                 {
                     Squad.SetOffsets();
+                }
+                if (!Level.IsTraining)
+                {
+                    Destroy(MovementMarker);
                 }
                 Destroy(gameObject);
             }

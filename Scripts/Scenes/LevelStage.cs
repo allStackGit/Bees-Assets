@@ -61,9 +61,9 @@ namespace Assets.Scripts.Scenes
             ScoutPrefab, StrikerPrefab, WarpGatePrefab, WaspPrefab, YellowJacketPrefab, BeaconPrefab, ValidPrefab, InvalidPrefab, MovementMarkerPrefab, TargetingMarkerPrefab,
             Map, SquadBox;
         /// <summary>
-        /// How frequently asteroids spawn in this level. Sets the upper bound in seconds of the randomly timed spawn
+        /// How frequently asteroids spawn in this level. Sets the upper and lower bounds in seconds of the randomly timed spawn
         /// </summary>
-        public int AsteroidSpawnRate;
+        public int AsteroidMaxSpawnRate, AsteroidMinimumSpawnRate;
         /// <summary>
         /// Sets the upper bounds for how fast an asteroid can move
         /// </summary>
@@ -480,7 +480,7 @@ namespace Assets.Scripts.Scenes
 
             if (ActivateCollisionAsteroids)
             {
-                Invoke(nameof(SpawnAsteroid), AsteroidSpawnRate + Utilities.RandomInt(AsteroidSpawnRate));
+                Invoke(nameof(SpawnAsteroid), AsteroidMinimumSpawnRate + Utilities.RandomInt(AsteroidMaxSpawnRate));
             }
         }
         private void SpawnMiningAsteroids()
@@ -509,7 +509,7 @@ namespace Assets.Scripts.Scenes
             state.AddObstacle(asteroid);
             asteroid.Setup(this, state.GetId());
 
-            Invoke(nameof(SpawnAsteroid), Utilities.RandomInt(AsteroidSpawnRate));
+            Invoke(nameof(SpawnAsteroid), AsteroidMinimumSpawnRate + Utilities.RandomInt(AsteroidMaxSpawnRate));
             asteroid.MapPointsIndex = Pathfinder.AddObstacle(asteroid);
         }
         private void UpdateDebugVariables()
@@ -640,16 +640,6 @@ namespace Assets.Scripts.Scenes
                 //Debug.Log("LEVEL OVER!");
                 GameState state = GetState();
 
-                while (state.FireShipExplosions.Count > 0)
-                {
-                    GameObject explosion = state.FireShipExplosions[0];
-                    if (explosion != null)
-                    {
-                        Destroy(explosion);
-                    }
-                    state.FireShipExplosions.RemoveAt(0);
-                }
-
                 state.GetAllSquads().ForEach((squad) =>
                 {
                     if (squad.HasCommand)
@@ -763,7 +753,15 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
                 }
                 else
                 {
-                    Invoke(nameof(SaveAndEnd), 5f);
+                    if (GetState().FireShipExplosions.Count > 0)
+                    {
+                        Invoke(nameof(SaveAndEnd), 5f);
+
+                    }
+                    else
+                    {
+                        Invoke(nameof(SaveAndEnd), .5f);
+                    }
 
                 }
             }

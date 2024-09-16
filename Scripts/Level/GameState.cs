@@ -36,9 +36,9 @@ namespace Assets.Scripts.Level
         public LevelStage Level;
         public HashSet<Ship>[] VisionCache = new HashSet<Ship>[] { new HashSet<Ship>(), new HashSet<Ship>() };
         public Dictionary<long, HashSet<Ship>>[] HivemindShips = new Dictionary<long, HashSet<Ship>>[] { new Dictionary<long, HashSet<Ship>>(), new Dictionary<long, HashSet<Ship>>() };
-        public List<GameObject> FireShipExplosions = new List<GameObject>();
         public List<GameObject> Deadbodies = new List<GameObject>();
-        public bool HasWarpGates;
+        public HashSet<RocketExplosion> FireShipExplosions = new HashSet<RocketExplosion>();
+        public bool HasWarpGates, IsFireShipExploding;
         //public bool[] HasMiningShips = new bool[2];
 
 

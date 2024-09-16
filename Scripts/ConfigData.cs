@@ -173,7 +173,7 @@ namespace Assets.Scripts
         /// </summary>
         public const float OffsetFromFront = .35f;
         public const int FireShipExplosionSize = 64;
-        public const float RefillDistanceToCarrier = 10;
+        public const float RefillDistanceToCarrier = 15;
         public const int MinimumDelayPerBeacon = 10;
         public const int BeaconUpdateFrequency = 5;
         public const int MaxBeaconsDroppedPerScout = 5;

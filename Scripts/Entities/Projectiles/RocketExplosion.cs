@@ -52,6 +52,7 @@ namespace Assets.Scripts.Entities.Projectiles
         public new virtual void Kill()
         {
             //Debug.Log("Killed off the rocket explosion");
+            Level.GetState().FireShipExplosions.Remove(this);
             Destroy(gameObject);
         } 
 

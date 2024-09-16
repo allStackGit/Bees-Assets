@@ -207,7 +207,7 @@ MonoBehaviour:
   Weapon: {fileID: 0}
   StartingPosition: {x: 0, y: 0}
   Angle: 0
-  ExplosionAnimationPrefab: {fileID: 3345242948093166458, guid: 6a95d017bd6a082479c47468372db16d, type: 3}
+  ExplosionAnimationPrefab: {fileID: 3345242948093166458, guid: 356ca648f9e412043912584134ab33dd, type: 3}
   Explosion: {fileID: 0}
   Name: 
   HasExplosion: 0

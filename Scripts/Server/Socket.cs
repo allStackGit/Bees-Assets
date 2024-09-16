@@ -604,7 +604,7 @@ namespace Assets.Scripts.Server
                     else if (commandType == "Full Retreat")
                     {
                         Vector2 position = squad.GetPosition();
-                        WarpGate warpGate = (WarpGate) state.GetHumanShips().Where((s) => s.IsWarpGate && s.Squad != squad).OrderBy((s) => s.DistanceToPoint(position)).FirstOrDefault();
+                        WarpGate warpGate = (WarpGate) state.GetHumanShips().Where((s) => s.IsWarpGate).OrderBy((s) => s.DistanceToPoint(position)).FirstOrDefault();
                         ((FullRetreat)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true, warpGate);
                     }
                     else

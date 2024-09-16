@@ -80,7 +80,7 @@ SpriteRenderer:
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: -1635513113
   m_SortingLayer: 22
-  m_SortingOrder: 0
+  m_SortingOrder: 1
   m_Sprite: {fileID: 21300000, guid: 775173d4a1edb6c4ea54dfa4ae144930, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
@@ -129,9 +129,12 @@ MonoBehaviour:
   HealthBar: {fileID: 2267541120155244752}
   MiniMapIcon: {fileID: 8685480211987732098}
   ShipAnimation: {fileID: 0}
+  MovementMarker: {fileID: 0}
   TargetCoordinates: {x: 0, y: 0}
   FinalDestination: {x: 0, y: 0}
   OffsetFromCenter: {x: 0, y: 0}
+  PathfindingDestination: {x: 0, y: 0}
+  WaitingTargetCoordinates: {x: 0, y: 0}
   Squad: {fileID: 0}
   MotherSquad: {fileID: 0}
   DefaultAngle: 0
@@ -163,6 +166,10 @@ MonoBehaviour:
   HasLeftRocketFlares: 0
   HasCenterRocketFlares: 0
   HasRightRocketFlares: 0
+  HasMovementMarker: 0
+  HasWaitingTargetCoordinates: 0
+  HasShatteredShip: 0
+  HasEnteredMap: 0
   Weapons: []
   ProjectilePrefabs: []
   WeaponPrefabs: []
@@ -171,6 +178,7 @@ MonoBehaviour:
   CenterRocketFlares:
   - {fileID: 1514532124611589136}
   RightRocketFlares: []
+  ShatteredShips: []
   Brain: {fileID: 0}
   NearbyAsteroids: []
   Turrets: []
@@ -214,6 +222,7 @@ MonoBehaviour:
   __CommandTargetingQueue: []
   __NearbyAsteroids: []
   __HivemindShips: []
+  __RejectReasons: []
   __Clearance: 0
   Direction: 0
   ShouldDetonate: 0

@@ -12,17 +12,30 @@ public class FullRetreat : Command
         if (warpgate != null)
         {
             TargetWarpGate = warpgate;
-            TargetWarpGate.ShipAnimation.SetActive(true);
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
 
             Squad.GetShips().ForEach((ship) =>
             {
-                TargetWarpGate.ShipsWarpingHere.Add(ship);
-                if (ship.Collider.IsTouching(TargetWarpGate.WarpCollider))
+                if (ship.ShipType != "Warp Gate")
                 {
-                    WarpKill(ship);
+                    TargetWarpGate.ShipsWarpingHere.Add(ship);
+                    if (ship.Collider.IsTouching(TargetWarpGate.WarpCollider))
+                    {
+                        WarpKill(ship);
+                    }
                 }
+
             });
+
+            if (TargetWarpGate.ShipsWarpingHere.Count > 0)
+            {
+                TargetWarpGate.ShipAnimation.SetActive(true);
+            }
+            else
+            {
+                SetFinalize("The only ships in this squad are Warp Gates");
+                return;
+            }
 
             PrepareDamageToSendEntries("closest");
             InvokeRepeating(nameof(MoveToWarpGate), 0, CommandFrequency);
@@ -41,7 +54,10 @@ public class FullRetreat : Command
             Vector2 targetPosition = TargetWarpGate.GetPosition() + TargetWarpGate.WarpPoint;
             Squad.GetShips().ForEach((ship) =>
             {
-                ship.MoveToPoint(targetPosition);
+                if (ship.ShipType != "Warp Gate")
+                {
+                    ship.MoveToPoint(targetPosition);
+                }
             });
             Squad.Status = $"Moving to {TargetWarpGate.Name} to warp out of the level: {targetPosition}";
         }
