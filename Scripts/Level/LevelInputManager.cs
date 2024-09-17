@@ -320,7 +320,7 @@ namespace Assets.Scripts.Level
         }
         private bool HasManualFireInput()
         {
-            return Input.GetKey(KeyCode.F);
+            return Input.GetKey(KeyCode.F) || Level.IsTestFiring;
         }
         private bool HasMiningCommandInput()
         {
@@ -393,7 +393,7 @@ namespace Assets.Scripts.Level
                 }
                 if (HasManualFireInput())
                 {
-                    if (!IsFiringManually)
+                    if (!IsFiringManually || Level.IsTestFiring)
                     {
                         Level.GetState().GetSelectedSquads().ForEach(squad => {
                             squad.GetShips().ForEach((ship) =>
@@ -495,11 +495,12 @@ namespace Assets.Scripts.Level
                     }
                     else if (_leftControl)
                     {
-                        ZoomIn();
+
+                        ScrollUp();
                     }
                     else
                     {
-                        ScrollUp();
+                        ZoomIn();
                     }
                 }
                 else if (_scrollNegative)
@@ -510,36 +511,36 @@ namespace Assets.Scripts.Level
                     }
                     else if (_leftControl)
                     {
-                        ZoomOut();
+                        ScrollDown();
                     }
                     else
                     {
-                        ScrollDown();
+                        ZoomOut();
                     }
                 }
 
-                float scrollSpeed = Level.ScrollSpeed * 2.5f * Time.deltaTime;
+                float mouseScrollSpeed = Level.ScrollSpeed * 5 * Time.deltaTime;
 
                 if (Level.UseMouseScrolling)
                 {
                     if (_mouseAtLeftEdge)
                     {
-                        ScrollLeft(scrollSpeed);
+                        ScrollLeft(mouseScrollSpeed);
 
                     }
                     else if (_mouseAtRightEdge)
                     {
-                        ScrollRight(scrollSpeed);
+                        ScrollRight(mouseScrollSpeed);
                     }
 
                     if (_mouseAtTopEdge)
                     {
-                        ScrollUp(scrollSpeed);
+                        ScrollUp(mouseScrollSpeed);
 
                     }
                     else if (_mouseAtBottomEdge)
                     {
-                        ScrollDown(scrollSpeed);
+                        ScrollDown(mouseScrollSpeed);
                     }
                 }
                 

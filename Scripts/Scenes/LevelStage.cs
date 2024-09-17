@@ -36,7 +36,7 @@ namespace Assets.Scripts.Scenes
         /// </summary>
         public bool ReplaceDeadShips;
         public bool ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, IsTraining, UseSemiRandomSquads, UseFullyRandomSquads, UseFullyRandomEnemySquads, RecordStats, 
-            DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateAudio, ActivateLoadingShipsMidLevel, UseMouseScrolling, IsDebugging, 
+            DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateAudio, ActivateLoadingShipsMidLevel, UseMouseScrolling, IsDebugging, IsTestFiring, 
             MakeEnemyCeaseFire, FullCeaseFire, MakeShotsHarmless, UnlockCamera, HasRandomizedOptions, PlayMusic;
         public int OverrideTimeScale, OverrideMapIndex, OverrideUserSide, SpeedMultiplier, GeneratedSquadCountOverride, InitialCommandDelay, TimeoutTime;
         public List<string> OverrideStrats = new List<string> { };
@@ -480,7 +480,7 @@ namespace Assets.Scripts.Scenes
 
             if (ActivateCollisionAsteroids)
             {
-                Invoke(nameof(SpawnAsteroid), AsteroidMinimumSpawnRate + Utilities.RandomInt(AsteroidMaxSpawnRate));
+                Invoke(nameof(SpawnAsteroid), AsteroidMinimumSpawnRate + Utilities.RandomInt(AsteroidMaxSpawnRate-AsteroidMinimumSpawnRate));
             }
         }
         private void SpawnMiningAsteroids()
@@ -509,7 +509,7 @@ namespace Assets.Scripts.Scenes
             state.AddObstacle(asteroid);
             asteroid.Setup(this, state.GetId());
 
-            Invoke(nameof(SpawnAsteroid), AsteroidMinimumSpawnRate + Utilities.RandomInt(AsteroidMaxSpawnRate));
+            Invoke(nameof(SpawnAsteroid), AsteroidMinimumSpawnRate + Utilities.RandomInt(AsteroidMaxSpawnRate - AsteroidMinimumSpawnRate));
             asteroid.MapPointsIndex = Pathfinder.AddObstacle(asteroid);
         }
         private void UpdateDebugVariables()

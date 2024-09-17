@@ -179,28 +179,28 @@ AnimationClip:
     floatParameter: 0
     intParameter: 0
     messageOptions: 0
-  - time: 1.1666666
+  - time: 1.25
     functionName: SetColliderSize
     data: 
     objectReferenceParameter: {fileID: 0}
     floatParameter: 0
     intParameter: 17
     messageOptions: 0
-  - time: 1.3333334
+  - time: 1.4166666
     functionName: SetColliderSize
     data: 
     objectReferenceParameter: {fileID: 0}
     floatParameter: 0
     intParameter: 34
     messageOptions: 0
-  - time: 1.4166666
+  - time: 1.5
     functionName: SetColliderSize
     data: 
     objectReferenceParameter: {fileID: 0}
     floatParameter: 0
     intParameter: 51
     messageOptions: 0
-  - time: 1.5
+  - time: 1.5833334
     functionName: SetColliderSize
     data: 
     objectReferenceParameter: {fileID: 0}

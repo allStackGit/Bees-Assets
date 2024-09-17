@@ -40,21 +40,27 @@ namespace Assets.Scripts.Entities.Ships
         }
         protected override void SetTargetShip(Ship ship)
         {
+            //Debug.Log($"{Name} set target ship to {ship}");
             base.SetTargetShip(ship);
             LaserBuilderAnimation.SetActive(true);
-
-
-
         }
         protected override void Aim()
         {
             //Debug.Log("Leafcutter aiming");
             base.Aim();
-            if (LaserBuilderAnimation.activeSelf && (!HasTargetShip || CeaseFire || !IsAimedAtTarget) && !IsFiringManually)
+            if (IsFiringManually && IsAimedAtTarget)
             {
-                //Debug.Log($"{Name} has no TargetShip, deactivating animation");
-                LaserBuilderAnimation.SetActive(false);
+                LaserBuilderAnimation.SetActive(true);
             }
+            else
+            {
+                if (LaserBuilderAnimation.activeSelf && (!HasTargetShip || CeaseFire || !IsAimedAtTarget))
+                {
+                    //Debug.Log($"{Name} has no TargetShip, deactivating animation");
+                    LaserBuilderAnimation.SetActive(false);
+                }
+            }
+
         }
     }
 }

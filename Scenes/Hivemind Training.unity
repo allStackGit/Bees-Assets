@@ -4122,7 +4122,7 @@ PrefabInstance:
       objectReference: {fileID: 641683768750393639, guid: 799add807972d1b429b4376b4f871f10, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: HasObstacles
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: SelectionBox
@@ -4178,7 +4178,7 @@ PrefabInstance:
       objectReference: {fileID: 807741791}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: OverrideMapIndex
-      value: 4
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: OverrideUserSide
@@ -4222,7 +4222,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: AsteroidMaxSpawnRate
-      value: 15
+      value: 10
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: HasRandomizedOptions
@@ -4266,7 +4266,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: AsteroidMinimumSpawnRate
-      value: 10
+      value: 5
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: ForestPrefabs.Array.size
@@ -4570,7 +4570,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: CollisionAsteroidPrefabs.Array.size
-      value: 10
+      value: 11
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: OverrideHumanShipTypes.Array.data[0]
@@ -4620,6 +4620,10 @@ PrefabInstance:
       propertyPath: CollisionAsteroidPrefabs.Array.data[9]
       value: 
       objectReference: {fileID: 2899863341814993073, guid: a1969efbfb7bd964d87858bba1ec1393, type: 3}
+    - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
+      propertyPath: CollisionAsteroidPrefabs.Array.data[10]
+      value: 
+      objectReference: {fileID: 2899863341814993073, guid: db2b908a39a40f941944e2633da344c8, type: 3}
     - target: {fileID: 7771984133898881547, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: m_Color.a
       value: 0
