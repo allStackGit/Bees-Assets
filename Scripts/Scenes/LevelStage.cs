@@ -26,7 +26,6 @@ namespace Assets.Scripts.Scenes
         //public float __RotationTest;
         //public Vector2 __OriginalPosition;
         private GameState _state;
-
         // If hivemind is activate, get commands from the server
         // If brains are activated, get actions from the nueral network
         // If IsTrainingNueralNetwork, train the neural network. IsTrainingHiveMind, train the hive mind
@@ -80,7 +79,14 @@ namespace Assets.Scripts.Scenes
 
         public List<string> HasBeeTypes = new List<string>();
         public List<string> FoundBeeTypes = new List<string>();
+        /// <summary>
+        /// Whether or not the level has been setup initially on the server
+        /// </summary>
         public bool IsLevelSetupOnServer;
+        /// <summary>
+        /// Whether or not this level is currently connected and setup on the server, regardless of whether other levels are connected
+        /// </summary>
+        public bool IsLevelConnectedToServer;
         public bool IsLoaded = false;
         public bool RetriedConnection, IsRestarting;
         public bool HasPlayer;
@@ -110,6 +116,25 @@ namespace Assets.Scripts.Scenes
 
         private List<GameObject> _chosenObstacles;
         private Dictionary<int, List<GameObject>> _obstacleLists;
+
+        private void UpdateDebugVariables()
+        {
+            __BeeHivemindShips = GetState().GetShipsVisibleToHiveMind(ConfigData.Configuration.BeeSide).Select(s => s.ToString()).ToList();
+            __HumanHivemindShips = GetState().GetShipsVisibleToHiveMind(ConfigData.Configuration.HumanSide).Select(s => s.ToString()).ToList();
+            __PastCommands = GetState().GetPastCommands().Select((c) => $"Command #{c.OutcomeId} - {c.Strategy.Name} for Squad {c.Squad} against [{c.Enemy}] with {c.Tsv} TSV").ToList();
+            
+            if (Pathfinder != null)
+            {
+                __PathfindingThreads = Pathfinder.IsThreadActive.Select((s, i) => $"#{i} - {(s ? Pathfinder.Ships[i].Name : s)}").ToList();
+            }
+
+            //string path = $"{ConfigData.GetBasePath()}/debug/minimap_{Utilities.Hash()}.png";
+            //Texture2D dest = new Texture2D(MiniMapTexture.width, MiniMapTexture.height, TextureFormat.RGB24, false);
+            //RenderTexture.active = MiniMapTexture;
+            //dest.ReadPixels(new Rect(0, 0, MiniMapTexture.width, MiniMapTexture.height), 0, 0);
+            //dest.Apply();
+            //File.WriteAllBytes(path, dest.EncodeToPNG());
+        }
 
         new void Start()
         {
@@ -512,23 +537,6 @@ namespace Assets.Scripts.Scenes
             Invoke(nameof(SpawnAsteroid), AsteroidMinimumSpawnRate + Utilities.RandomInt(AsteroidMaxSpawnRate - AsteroidMinimumSpawnRate));
             asteroid.MapPointsIndex = Pathfinder.AddObstacle(asteroid);
         }
-        private void UpdateDebugVariables()
-        {
-            __BeeHivemindShips = GetState().GetShipsVisibleToHiveMind(ConfigData.Configuration.BeeSide).Select(s => s.ToString()).ToList();
-            __HumanHivemindShips = GetState().GetShipsVisibleToHiveMind(ConfigData.Configuration.HumanSide).Select(s => s.ToString()).ToList();
-            __PastCommands = GetState().GetPastCommands().Select((c) => $"Command #{c.OutcomeId} - {c.Strategy.Name} for Squad {c.Squad} against [{c.Enemy}] with {c.Tsv} TSV").ToList();
-            if (Pathfinder != null)
-            {
-                __PathfindingThreads = Pathfinder.IsThreadActive.Select((s, i) => $"#{i} - {(s ? Pathfinder.Ships[i].Name : s)}").ToList();
-            }
-
-            //string path = $"{ConfigData.GetBasePath()}/debug/minimap_{Utilities.Hash()}.png";
-            //Texture2D dest = new Texture2D(MiniMapTexture.width, MiniMapTexture.height, TextureFormat.RGB24, false);
-            //RenderTexture.active = MiniMapTexture;
-            //dest.ReadPixels(new Rect(0, 0, MiniMapTexture.width, MiniMapTexture.height), 0, 0);
-            //dest.Apply();
-            //File.WriteAllBytes(path, dest.EncodeToPNG());
-        }
         private void SetTriggers()
         {
             Triggers.Clear();
@@ -584,20 +592,13 @@ namespace Assets.Scripts.Scenes
             //}
             if (IsLoaded)
             {
-                if (ConfigData.Socket.IsOpen && RetriedConnection)
-                {
-                    LevelConstructor.RequestServerSetup();
-                    RetriedConnection = false;
-                }
-
-
                 GameState state = GetState();
                 if (state.GameOver && !state.LevelEnded)
                 {
                     LevelOver();
                 }
 
-                if ((state.IsPaused || ConfigData.SocketManager.NetworkDisconnection.IsOpen || !IsLevelSetupOnServer) && !IsTrainingNueralNetwork)
+                if ((state.IsPaused || ConfigData.SocketManager.NetworkDisconnection.IsOpen || !IsLevelConnectedToServer) && !IsTrainingNueralNetwork)
                 {
                     Time.timeScale = 0;
                 }

@@ -748,7 +748,7 @@ namespace Assets.Scripts.Level
 
             if (loops == 100) // [debug]
             {
-                Debug.Log($"The loop for #{threadIndex}:{Ships[threadIndex].Name} broke after 100 loops trying to find a walkable point near {endNode.Vector} starting from {startNode.Vector}");
+                //Debug.Log($"The loop for #{threadIndex}:{Ships[threadIndex].Name} broke after 100 loops trying to find a walkable point near {endNode.Vector} starting from {startNode.Vector}");
             }
             return startNode;
 

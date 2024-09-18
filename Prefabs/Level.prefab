@@ -53,7 +53,10 @@ MonoBehaviour:
   WatchServerRequests: 0
   IsSocketManager: 0
   TimeScale: 1
+  IsLevel: 1
   __PastServerRequests: []
+  __SocketLevels: []
+  __StandingRequests: []
   __AverageRequestTime: 0
   __UsedHashes: 
   __Updates: 0
@@ -62,6 +65,7 @@ MonoBehaviour:
   ActivateBrains: 0
   IsTrainingNueralNetwork: 0
   IsTrainingHiveMind: 0
+  IsTraining: 0
   UseSemiRandomSquads: 0
   UseFullyRandomSquads: 1
   UseFullyRandomEnemySquads: 0
@@ -75,12 +79,23 @@ MonoBehaviour:
   ActivateLoadingShipsMidLevel: 0
   UseMouseScrolling: 0
   IsDebugging: 1
+  IsTestFiring: 0
   MakeEnemyCeaseFire: 0
+  FullCeaseFire: 0
+  MakeShotsHarmless: 0
+  UnlockCamera: 0
+  HasRandomizedOptions: 0
+  PlayMusic: 0
   OverrideTimeScale: 1
+  OverrideMapIndex: 0
   OverrideUserSide: 0
+  SpeedMultiplier: 0
   GeneratedSquadCountOverride: 0
   InitialCommandDelay: 1
   TimeoutTime: 420
+  OverrideStrats: []
+  OverrideBeeShipTypes: []
+  OverrideHumanShipTypes: []
   UIManager: {fileID: 0}
   SelectionBox: {fileID: 0}
   MiniMapContainer: {fileID: 0}
@@ -113,17 +128,22 @@ MonoBehaviour:
   WarpGatePrefab: {fileID: 2518675752222090675, guid: cadc3a4b614aa074f9bcd02924ca901f, type: 3}
   WaspPrefab: {fileID: 707182470515144504, guid: 3ca387e48b802ae4c9b7fea5c4bc5622, type: 3}
   YellowJacketPrefab: {fileID: 2518675752222090675, guid: bb23b0103b9e2e64f944157b23a516df, type: 3}
+  BeaconPrefab: {fileID: 0}
+  ValidPrefab: {fileID: 0}
+  InvalidPrefab: {fileID: 0}
+  MovementMarkerPrefab: {fileID: 0}
+  TargetingMarkerPrefab: {fileID: 0}
   Map: {fileID: 2434771279376139803}
   SquadBox: {fileID: 4393128050314196725, guid: 606f56cf5efd9f84d9e877d10187ad8b, type: 3}
-  AsteroidSpawnRate: 10
+  AsteroidMaxSpawnRate: 0
+  AsteroidMinimumSpawnRate: 0
   AsteroidMaxSpeed: 10
-  ObstaclePrefabs:
-  - {fileID: 7326860766664323640, guid: 27fa09186320d8445b9492e3a3e46c84, type: 3}
-  - {fileID: 7879729711353278377, guid: 5fcd52a281817014b9f332bafca912b2, type: 3}
-  - {fileID: 7326860766664323640, guid: eae3f525c2071d9479a7e4e79ef26465, type: 3}
-  - {fileID: 364200722728071239, guid: 4610f97684230014b8d22b27367aadf2, type: 3}
-  - {fileID: 7326860766664323640, guid: a8ddb3b368f22334ebfe8c02bc1f86a4, type: 3}
-  - {fileID: 8009567663079250967, guid: 00c76dc033163234ea601d61410a7e9f, type: 3}
+  EmptyObstacleList: []
+  MazePrefabs: []
+  ThreePathsPrefabs: []
+  ForestPrefabs: []
+  TheWallPrefabs: []
+  ChosenObstaclesIndex: 0
   MiningAsteroidPrefabs:
   - {fileID: 7879729711353278377, guid: fe6d0fb0d85c85c479edc717c832af86, type: 3}
   - {fileID: 7879729711353278377, guid: 3834dda5c834aa449bc5195a6e2d6c11, type: 3}
@@ -148,8 +168,10 @@ MonoBehaviour:
   HasBeeTypes: []
   FoundBeeTypes: []
   IsLevelSetupOnServer: 0
+  IsLevelConnectedToServer: 0
   IsLoaded: 0
   RetriedConnection: 0
+  IsRestarting: 0
   HasPlayer: 0
   WinningSide: 0
   MapX: 0
@@ -161,14 +183,17 @@ MonoBehaviour:
   MapHeight: 0
   HalfMapWidth: 0
   HalfMapHeight: 0
+  MaximumClearance: 0
   Seconds: 0
   FixedUpdates: 0
   TriggersActivated: 0
   StartTime: 0
-  __CachedPaths: []
+  BeeShipTypes: []
+  HumanShipTypes: []
   __BeeHivemindShips: []
   __HumanHivemindShips: []
   __PastCommands: []
+  __PathfindingThreads: []
 --- !u!1 &2434771279376139803
 GameObject:
   m_ObjectHideFlags: 0

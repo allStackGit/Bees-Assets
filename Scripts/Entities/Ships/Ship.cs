@@ -646,7 +646,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                                 }
                                 else
                                 {
-                                    Debug.Log($"{Name} is already pathfinding on {PathfindingThread} so it can't pathfind right now");
+                                    //Debug.Log($"{Name} is already pathfinding on {PathfindingThread} so it can't pathfind right now");
                                 }
                                 return;
                             }

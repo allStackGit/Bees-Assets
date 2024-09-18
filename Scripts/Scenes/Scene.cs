@@ -25,9 +25,10 @@ namespace Assets.Scripts.Scenes
         public Timer Timer;
 
 
+        public bool IsLevel = false;
 
 
-        public List<string> __PastServerRequests;
+        public List<string> __PastServerRequests, __SocketLevels, __StandingRequests;
         /// <summary>
         /// The average time a request takes to complete in ms
         /// </summary>
@@ -87,8 +88,10 @@ namespace Assets.Scripts.Scenes
             if (ConfigData.__PastServerRequests.Count > 0)
             {
                 __UsedHashes = ConfigData.UsedHashes.ToList();
-                __PastServerRequests = ConfigData.__PastServerRequests.Select((r) => $"Request #{r.Hash} ({r.Type}) on queue for {r.TimeOnQueue * 1000}ms with {r.Resends} resends.").ToList();
+                __PastServerRequests = ConfigData.__PastServerRequests.Select((r) => $"Request #{r.Hash} ({r.Type}) on queue for {r.TimeOnQueue * 1000}ms").ToList();
                 __AverageRequestTime = (ConfigData.__PastServerRequests.Sum((r) => r.TimeOnQueue) / ConfigData.__PastServerRequests.Count) * 1000;
+                __SocketLevels = ConfigData.Socket.OpenLevels.Select(s => s.Name).ToList();
+                __StandingRequests = ConfigData.Socket.StandingRequests.Select((r) => $"Request #{r.Hash} ({r.Type}) on queue since {r.StartTime}").ToList();
                 //__Updates = Time.frameCount;
             }
 
@@ -104,35 +107,38 @@ namespace Assets.Scripts.Scenes
             {
                 NetworkDisconnection.Show();
             }
-            else if (ConfigData.Socket.IsOpen && IsSocketManager && NetworkDisconnection.IsOpen)
+            else if (ConfigData.Socket.IsOpen && IsSocketManager && NetworkDisconnection.IsOpen && (!IsLevel || ((LevelStage)this).IsLevelConnectedToServer))
             {
-                NetworkDisconnection.Hide();
+                //NetworkDisconnection.Hide();
             }
             if (!ConfigData.SocketManager.NetworkDisconnection.IsOpen)
             {
                 // [alert] [debug]
               
-
-                if (ConfigData.AreAllSettingsLoaded && !ConfigData.IsAllUserDataLoaded)
+                if (!FinalizedScene)
                 {
-                    if (ConfigData.Configuration.IsDeadVersion)
+                    if (ConfigData.AreAllSettingsLoaded && !ConfigData.IsAllUserDataLoaded)
                     {
-                        Dialogue alert = new Dialogue(DialoguePrefab, "The game is out of date!", "Your version of the game is out of date and needs to be updated.",
-                            new List<string>() {ConfigData.Configuration.OK},new List<UnityAction>() {Exit});
-                        alert.Show();
+                        if (ConfigData.Configuration.IsDeadVersion)
+                        {
+                            Dialogue alert = new Dialogue(DialoguePrefab, "The game is out of date!", "Your version of the game is out of date and needs to be updated.",
+                                new List<string>() { ConfigData.Configuration.OK }, new List<UnityAction>() { Exit });
+                            alert.Show();
+                        }
+                        else
+                        {
+                            ConfigData.SetupUserData();
+                            ConfigData.CheckDataFiles();
+                            ConfigData.SquadMakerSide = ConfigData.Configuration.SquadMakerFirstSide;
+                        }
                     }
-                    else
+                    else if (ConfigData.AreAllSettingsLoaded && ConfigData.IsAllUserDataLoaded && !FinalizedScene)
                     {
-                        ConfigData.SetupUserData();
-                        ConfigData.CheckDataFiles();
-                        ConfigData.SquadMakerSide = ConfigData.Configuration.SquadMakerFirstSide;
+
+                        FinalizeSceneWithUserData();
                     }
                 }
-                else if (ConfigData.AreAllSettingsLoaded && ConfigData.IsAllUserDataLoaded && !FinalizedScene)
-                {
-
-                    FinalizeSceneWithUserData();
-                }
+                
             }
             
         }

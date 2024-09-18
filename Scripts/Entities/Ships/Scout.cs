@@ -74,11 +74,11 @@ namespace Assets.Scripts.Entities.Ships
                     OriginalTsv = Tsv;
                 }
             }
-            else
-            {
-                Debug.Log($"{Name} cannot drop a beacon because not enough time ({ConfigData.MinimumDelayPerBeacon}s) has passed or it has already dropped" +
-                    $"the max number of beacons ({BeaconsDropped}/{ConfigData.MaxBeaconsDroppedPerScout})");
-            }
+            //else
+            //{
+            //    Debug.Log($"{Name} cannot drop a beacon because not enough time ({ConfigData.MinimumDelayPerBeacon}s) has passed or it has already dropped" +
+            //        $"the max number of beacons ({BeaconsDropped}/{ConfigData.MaxBeaconsDroppedPerScout})");
+            //}
         }
     }
 

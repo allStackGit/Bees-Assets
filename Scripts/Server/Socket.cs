@@ -10,6 +10,7 @@ using Assets.Scripts.Level.Commands;
 
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
+using System;
 
 namespace Assets.Scripts.Server
 {
@@ -40,6 +41,7 @@ namespace Assets.Scripts.Server
         /// A queue of all messages received from the server
         /// </summary>
         public Queue<byte[]> MessageQueue = new Queue<byte[]>();
+        public List<LevelStage> OpenLevels = new List<LevelStage>();
 
 
 
@@ -116,9 +118,22 @@ namespace Assets.Scripts.Server
         }
         private void Open()
         {
-            Debug.Log("Connection open!");
             IsOpen = true;
-            HasClosed = false;
+            if (HasClosed)
+            {
+                HasClosed = false;
+                Debug.Log("Connection re-opened!");
+                OpenLevels.ForEach((level) =>
+                {
+                    ConfigData.Socket.SendRequest(new ReconnectLevelRequest(new SetupLevel(ConfigData.GetLevel(), ConfigData.GetUserId(), ConfigData.Version),
+                    ConfigData.StandardMaxTimeOnQueue,level));
+                    Debug.Log($"Trying to reconnect {level.Name} to the server");
+                });
+            }
+            else
+            {
+                Debug.Log("Connection open!");
+            }
         }
         private void Error(string e)
         {
@@ -135,6 +150,10 @@ namespace Assets.Scripts.Server
                 //    sr.Status = -1;
                 //});
             }
+            OpenLevels.ForEach((level) =>
+            {
+                level.IsLevelConnectedToServer = false;
+            });
             IsOpen = false;
             HasClosed = true;
             //_checkQueue.Dispose();
@@ -142,6 +161,15 @@ namespace Assets.Scripts.Server
             //{
             //    MakeSocket();
             //}
+        }
+        private void MarkStrandedRequestsForResending()
+        {
+            StandingRequests.ToList().ForEach((sr) =>
+            {
+                StandingRequests.Remove(sr);
+                Debug.Log($"Resending #{sr.Hash}");
+                SendRequest(sr);
+            });
         }
         private void Message(byte[] bytes)
         {
@@ -173,6 +201,9 @@ namespace Assets.Scripts.Server
                         return;
                     case "setup-level":
                         HandleSetupLevelResponse(response);
+                        return;
+                    case "reconnect-level":
+                        HandleReconnectLevelResponse(response);
                         return;
                     case "store-user-data":
                         HandleBasicResponse(response);
@@ -250,6 +281,9 @@ namespace Assets.Scripts.Server
                     return;
                 case "setup-level":
                     Send(((SetupLevelRequest)serverRequest).Request);
+                    return;
+                case "reconnect-level":
+                    Send(((ReconnectLevelRequest)serverRequest).Request);
                     return;
                 case "store-user-data":
                     Send(((StoreUserDataRequest)serverRequest).Request);
@@ -636,9 +670,32 @@ namespace Assets.Scripts.Server
             {
                 StandingRequests.Remove(standingRequest);
                 standingRequest.Level.IsLevelSetupOnServer = true;
+                standingRequest.Level.IsLevelConnectedToServer = true;
                 standingRequest.Level.HandledRequests.Add(response.Hash);
                 standingRequest.TimeOnQueue = Time.unscaledTime - standingRequest.StartTime;
                 ConfigData.__TotalLatency += standingRequest.TimeOnQueue;
+                OpenLevels.Add(standingRequest.Level);
+            }
+            else
+            {
+                Debug.Log($"Couldn't find a matching request for {response.Hash}");
+            }
+
+        }
+
+        private void HandleReconnectLevelResponse(ServerResponse response)
+        {
+            SetupLevelRequest standingRequest = (SetupLevelRequest)GetStandingRequest(response.Hash);
+
+            if (standingRequest != null)
+            {
+                StandingRequests.Remove(standingRequest);
+                standingRequest.Level.IsLevelConnectedToServer = true;
+                standingRequest.Level.HandledRequests.Add(response.Hash);
+                standingRequest.TimeOnQueue = Time.unscaledTime - standingRequest.StartTime;
+                ConfigData.__TotalLatency += standingRequest.TimeOnQueue;
+                Debug.Log($"Reconnected {standingRequest.Level.Name} to the server");
+                MarkStrandedRequestsForResending();
             }
             else
             {

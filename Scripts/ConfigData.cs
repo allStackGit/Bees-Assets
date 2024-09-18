@@ -22,7 +22,6 @@ namespace Assets.Scripts
         public const bool Production = !Test && !Development;
         public const string LocalServerHostname = "192.168.36.2";
         public const string GlobalServerHostname = "seagrams7.softether.net";
-        public const string RLServerHostname = "127.0.0.1";
         public const string TestServerHostname = GlobalServerHostname;
         public const string DevelopmentServerHostname = LocalServerHostname;
         public const string ProductionServerHostname = GlobalServerHostname;  
@@ -66,13 +65,33 @@ namespace Assets.Scripts
         public static bool IsSavedSquadsDataLoaded;
 
 
-
+        /// <summary>
+        /// Size class 3 in the spreeadsheet
+        /// </summary>
         public const int Tiny = 1; // this is the base size, equal to 4 World Units
-        public const float Small = 1.5f; 
+        /// <summary>
+        /// Size class 5 in the spreeadsheet
+        /// </summary>
+        public const float Small = 1.5f;
+        /// <summary>
+        /// Size class 6 in the spreeadsheet
+        /// </summary>
         public const int Medium = 2;
+        /// <summary>
+        /// Size class 7 in the spreeadsheet
+        /// </summary>
         public const int Large = 3;
+        /// <summary>
+        /// Size class 8 in the spreeadsheet
+        /// </summary>
         public const int Huge = 4;
+        /// <summary>
+        /// Size class 9 in the spreeadsheet
+        /// </summary>
         public const int Enormous = 8;
+        /// <summary>
+        /// Size class 10 in the spreeadsheet
+        /// </summary>
         public const int Unfathomable = 32;
 
         public static readonly Dictionary<string, Vector2Int> ShipSizes = new Dictionary<string, Vector2Int>() {
