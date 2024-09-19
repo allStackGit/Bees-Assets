@@ -452,7 +452,17 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             HalfMaxRange = MaxRange / 2;
 
             OriginalTsv = Utilities.CalculateMaxTsv(this);
-            _size = Collider.bounds.size;
+
+            // The beehive has an edge collider so it doesn't give accurate measurement of the size of the ship
+            if (ShipType != "Beehive")
+            {
+                _size = Collider.bounds.size;
+            }
+            else
+            {
+                _size = ConfigData.ShipSizes[ShipType] / ConfigData.PixelsPerUnit;
+
+            }
             //squad.AddShip(this);
             Level.GetState().AddShip(this);
             SetToDefaultAngle();

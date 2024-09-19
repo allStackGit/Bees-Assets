@@ -1081,10 +1081,11 @@ namespace Assets.Scripts.Level
                 if (GetShips().Count == 1)
                 {
                     Ship onlyShip = GetShips().First();
-                    if (onlyShip != null)
-                    {
-                        SquadBox.transform.rotation = onlyShip.transform.rotation;
-                    }
+                    SquadBox.transform.eulerAngles = onlyShip.transform.eulerAngles;
+                }
+                else
+                {
+                    SquadBox.transform.eulerAngles = Vector3.zero;
                 }
                 HasMovedBox = true;
             }
