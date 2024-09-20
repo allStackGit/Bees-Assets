@@ -284,14 +284,14 @@ namespace Assets.Scripts.Level.Commands
             IsFinalized = true;
             //ClearDestinations();
 
-            if (Squad != null)
-            {
+            //if (Squad != null)
+            //{
                 
-            }
-            else
-            {
-                Debug.LogError($"Tried to finalize command #{OutcomeId} for a null squad");
-            }
+            //}
+            //else
+            //{
+            //    Debug.LogError($"Tried to finalize command #{OutcomeId} for a null squad");
+            //}
 
             Squad.GetShips().ForEach((ship) =>
             {

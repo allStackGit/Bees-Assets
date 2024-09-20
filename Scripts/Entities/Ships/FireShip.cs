@@ -40,8 +40,9 @@ namespace Assets.Scripts.Entities.Ships
                     Health -= math.min(Bomb.Power, Health);
 
                     int tsvChange = Tsv - oldTsv; // this is a negative number since being hit by a projectile should induce a loss of TSV
-                                                  //Debug.Log($"Calling hit stats with a fire ship explosion. The shooter and shooter squad are null but the fire ship and fire ship squad are the target");
-                    LogHitStats(null, null, this, this.Squad, tsvChange, true);
+                    
+                    //Calling hit stats with a fire ship explosion. The shooter and shooter squad are null but the fire ship and fire ship squad are the target
+                    LogHitStats(null, null, this, this.Squad, tsvChange);
 
                     if (Squad.Command != null)
                     {
@@ -84,10 +85,18 @@ namespace Assets.Scripts.Entities.Ships
                 {
                     Destroy(MovementMarker);
                 }
-                Destroy(gameObject);
+                gameObject.SetActive(false);
+                Invoke(nameof(DelayedKill), 8);
+
             }
            
 
         }
+        private void DelayedKill()
+        {
+            Destroy(gameObject);
+        }
     }
+
+
 }

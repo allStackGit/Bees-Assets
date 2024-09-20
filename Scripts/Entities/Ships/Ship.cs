@@ -1298,7 +1298,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         /// <param name="targetSquad"></param>
         /// <param name="tsvChange"></param>
         /// <param name="isFireShipSelfHit"></param>
-        protected static void LogHitStats(Ship shooter, Squad shooterSquad, Ship target, Squad targetSquad, int tsvChange, bool isFireShipSelfHit = false) // [stats-method] [note]
+        protected static void LogHitStats(Ship shooter, Squad shooterSquad, Ship target, Squad targetSquad, int tsvChange) // [stats-method] [note]
         {
             if (shooter != null)
             {
