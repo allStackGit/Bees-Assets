@@ -68,7 +68,7 @@ namespace Assets.Scripts.Data
             List<SquadShip> ships = new List<SquadShip>();
             GetSquads().ForEach((squad) =>
             {
-                squad.GetShips().ForEach((squadShip) =>
+                squad.GetSquadShips().ForEach((squadShip) =>
                 {
                     ships.Add(squadShip);
                 });
@@ -80,7 +80,7 @@ namespace Assets.Scripts.Data
             List<FleetShip> ships = new List<FleetShip>();
             GetSquads().ForEach((squad) =>
             {
-                squad.GetShips().ForEach((squadShip) =>
+                squad.GetSquadShips().ForEach((squadShip) =>
                 {
                     ships.Add(squadShip.GetFleetShip());
                 });

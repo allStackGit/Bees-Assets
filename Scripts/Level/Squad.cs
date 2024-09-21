@@ -89,7 +89,7 @@ namespace Assets.Scripts.Level
         public List<Ship> __Ships;
 
         // Setup methods
-        public void Setup(LevelStage level, SavedSquad savedSquad, string shootingStrategy, bool ceaseFire, bool isMatchingSpeed, 
+        public void Setup(LevelStage level, SavedSquad savedSquad, string shootingStrategy, bool ceaseFire, bool isMatchingSpeed, bool shouldChase,
             int id, int side, int squadNumber, string name, Color color)
         {
             Level = level;
@@ -102,6 +102,7 @@ namespace Assets.Scripts.Level
             SquadNumber = squadNumber;
             IsMatchingSpeed = isMatchingSpeed;
             CeaseFire = ceaseFire;
+            _shouldChase = shouldChase;
             SetShootingStrategy(shootingStrategy);
             SetOpponent();
 

@@ -39,7 +39,6 @@ namespace Assets.Scripts.UIComponents
             Side = side;
             Destroy(PatrolButton);
             Destroy(GuardButton);
-            Destroy(ChaseButton);
             Destroy(HoldButton);
             Destroy(DetonateButton);
             Destroy(ChargeButton);
@@ -204,6 +203,14 @@ namespace Assets.Scripts.UIComponents
             {
                 ResetButton(AttackOnSightButton);
             }
+            if (IsAction("Chase"))
+            {
+                HighlightButton(ChaseButton);
+            }
+            else
+            {
+                ResetButton(ChaseButton);
+            }
             if (HasLevel)
             {
                 GameState state = Level.GetState();
@@ -227,14 +234,6 @@ namespace Assets.Scripts.UIComponents
                 else
                 {
                     ResetButton(GuardButton);
-                }
-                if (IsAction("Chase"))
-                {
-                    HighlightButton(ChaseButton);
-                }
-                else
-                {
-                    ResetButton(ChaseButton);
                 }
                 if (IsAction("Hold"))
                 {
@@ -287,6 +286,8 @@ namespace Assets.Scripts.UIComponents
                             return currentSquad.CeaseFire;
                         case "Attack on Sight":
                             return !currentSquad.CeaseFire;
+                        case "Chase":
+                            return currentSquad.IsSetToChase;
                     }
                 }
             }
@@ -594,6 +595,9 @@ namespace Assets.Scripts.UIComponents
                         case "Cease Fire":
                             currentSquad.CeaseFire = true;
                             break;
+                        case "Chase":
+                            currentSquad.IsSetToChase = !currentSquad.IsSetToChase;
+                            break;
                     }
 
                 }
@@ -641,6 +645,10 @@ namespace Assets.Scripts.UIComponents
                                     if (!ship.CannotChangeMovementOrders)
                                     {
                                         StartCoroutine(((Barge)ship).ChargeForward());
+                                    }
+                                    else
+                                    {
+                                        ((Barge)ship).WaitingForNewCharge = true;
                                     }
                                 }
                             });

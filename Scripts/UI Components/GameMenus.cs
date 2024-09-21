@@ -73,7 +73,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void ToggleMiniMapDisplay()
         {
-            Debug.Log("Toggling mini map!");
+            //Debug.Log("Toggling mini map!");
             Level.MiniMapContainer.SetActive(!Level.MiniMapContainer.activeSelf);
             MiniMapCloseButton.SetActive(!MiniMapCloseButton.activeSelf);
             MiniMapOpenButton.SetActive(!MiniMapOpenButton.activeSelf);
@@ -148,7 +148,7 @@ namespace Assets.Scripts.UIComponents
         public void PlayNextRound()
         {
             CloseDialogue();
-            Level.StartNew();
+            Level.SetupLevel();
         }
         public void GoToSettings()
         {

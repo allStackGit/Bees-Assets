@@ -90,6 +90,10 @@ namespace Assets.Scripts.Scenes
         public bool IsLoaded = false;
         public bool RetriedConnection, IsRestarting;
         public bool HasPlayer;
+        /// <summary>
+        /// Whether or not a tester pressed the pause key to pause the game
+        /// </summary>
+        public bool IsPausedByTester;
         public int WinningSide;
         public float MapX, MapY, MaxDistance, HalfX, HalfY;
         public int MapWidth, MapHeight, HalfMapWidth, HalfMapHeight, MaximumClearance;
@@ -98,7 +102,7 @@ namespace Assets.Scripts.Scenes
         public float Seconds;
         public HashSet<int> HandledRequests = new HashSet<int>();
         public int FixedUpdates, TriggersActivated;
-        public float StartTime;
+        public float StartTime, TimePaused;
         public List<SavedSquad>[] MidLevelSquads = new List<SavedSquad>[] { new List<SavedSquad>(), new List<SavedSquad>() };
         public List<Trigger> Triggers = new List<Trigger>();
         public List<string> BeeShipTypes, HumanShipTypes = new List<string>();
@@ -220,10 +224,218 @@ namespace Assets.Scripts.Scenes
         }
         private void Setup()
         {
-            if (TimeoutTime == 0)
+            //if (TimeoutTime == 0)
+            //{
+            //    TimeoutTime = int.MaxValue;
+            //}
+            //if (IsTrainingHiveMind || IsTrainingNueralNetwork)
+            //{
+            //    IsTraining = true;
+            //}
+            //else
+            //{
+            //    IsTraining = false;
+            //}
+
+            //if (OverrideBeeShipTypes.Count > 0)
+            //{
+            //    BeeShipTypes = OverrideBeeShipTypes;
+            //}
+            //else
+            //{
+            //    BeeShipTypes = ConfigData.Configuration.VisibleBeeShipTypes.ToList();
+            //}
+
+            //if (OverrideHumanShipTypes.Count > 0)
+            //{
+            //    HumanShipTypes = OverrideHumanShipTypes;
+            //}
+            //else
+            //{
+            //    HumanShipTypes = ConfigData.Configuration.VisibleHumanShipTypes.ToList();
+            //}
+
+            //_obstacleLists = new Dictionary<int, List<GameObject>>()
+            //    {
+            //        // If this list changes the indexes need to all be accurate since the files are loaded based off of the indexes
+            //        {0, EmptyObstacleList }, // it's important to have this here so we can load the "open space" pathfinding file for when there's no obstacles except asteroids
+            //        {1, MazePrefabs },
+            //        {2, ThreePathsPrefabs },
+            //        {3, ForestPrefabs },
+            //        {4, TheWallPrefabs }
+            //    };
+            //if (HasRandomizedOptions)
+            //{
+            //    RandomizeOptions();
+            //}
+            //else
+            //{
+            //    Debug.Log($"The map does not have randomized options");
+            //    ChosenObstaclesIndex = OverrideMapIndex;
+            //    _chosenObstacles = _obstacleLists.GetValueOrDefault(ChosenObstaclesIndex);
+            //}
+            //Debug.Log($"Setup scene");
+            //if (OverrideTimeScale == 0)
+            //{
+            //    TimeScale = ConfigData.Configuration.TimeScale;
+            //}
+            //else
+            //{
+            //    TimeScale = OverrideTimeScale;
+
+            //}
+            //if (DoesUserHaveController)
+            //{
+            //    HasPlayer = true;
+            //    if (OverrideUserSide == 1 || OverrideUserSide == 2 && OverrideUserSide != ConfigData.Configuration.UserSide)
+            //    {
+            //        ConfigData.SwapSides();
+            //    }
+            //}
+            //else
+            //{
+            //    HasPlayer = ConfigData.Configuration.DoesUserHaveController;
+            //}
+            //if (GeneratedSquadCountOverride > 0)
+            //{
+            //    ConfigData.Configuration.SquadGenerationCount = GeneratedSquadCountOverride;
+            //}
+            //if (ActivateBrains)
+            //{
+            //    AgentGroup = new SimpleMultiAgentGroup();
+            //    HumanAgentGroup = new SimpleMultiAgentGroup();
+
+            //    if (IsTrainingNueralNetwork)
+            //    {
+            //        Academy.Instance.OnEnvironmentReset += () =>
+            //        {
+            //            //Debug.Log($"Reset environment, {Academy.Instance.StepCount}");
+            //        };
+
+            //    }
+            //}
+
+
+
+            //// Setup Game State
+            //_state = gameObject.AddComponent<GameState>();
+            //_state.Setup(this);
+
+            //ConfigData.SetupSceneManagement(SceneManagement.GetComponent<SceneManagement>());
+            //if (!IsTraining)
+            //{
+            //    MiniMapCamera.gameObject.SetActive(true);
+
+            //    // Setup  Game menu 
+            //    Menus = UIManager.GetComponentInChildren<GameMenus>();
+            //    Menus.Setup(this);
+
+
+
+            //    // Setup Selection Box
+            //    Selector = SelectionBox.GetComponentInChildren<Selector>();
+            //    Selector.Setup(this, SelectionBox);
+            //    // Setup input manager
+            //    InputManager = new LevelInputManager(this, Selector);
+
+
+            //    // Setup Squad Action Box
+            //    if (HasPlayer)
+            //    {
+            //        Menus.ActionBox.Setup(this, EventSystem, ConfigData.Configuration.UserSide);
+            //    }
+            //    if (ActivateAudio && Audio != null)
+            //    {
+            //        Audio.Setup(PlayMusic);
+            //    }
+
+            //}
+            //else
+            //{
+            //    if (Audio != null)
+            //    {
+            //        Audio.gameObject.SetActive(false);
+            //    }
+            //}
+
+
+
+
+            //// Setup map bounds
+            //MapRenderer = Map.GetComponentInChildren<SpriteRenderer>();
+            //MapWidth = (int) (Mathf.Abs(MapRenderer.localBounds.min.x) + MapRenderer.localBounds.max.x);
+            //MapHeight = (int) (Mathf.Abs(MapRenderer.localBounds.min.y) + MapRenderer.localBounds.max.y);
+            //HalfMapWidth = MapWidth / 2;
+            //HalfMapHeight = MapHeight / 2;
+
+
+
+            //MinX = MapRenderer.localBounds.min.x + ConfigData.MapEdgePadding.x;
+            //MinY = MapRenderer.localBounds.min.y + ConfigData.MapEdgePadding.y;
+            //MaxX = MapRenderer.localBounds.max.x - ConfigData.MapEdgePadding.x;
+            //MaxY = MapRenderer.localBounds.max.y - ConfigData.MapEdgePadding.y;
+            //MapX = MapRenderer.localBounds.max.x*2;
+            //MapY = MapRenderer.localBounds.max.y*2;
+            //MaxDistance = Mathf.Sqrt(MapX * MapX + MapY * MapY);
+            //HalfX = MapX / 2;
+            //HalfY = MapY / 2;
+
+            //if (HasPlayer && !UnlockCamera)
+            //{
+            //    Camera.orthographicSize = DefaultZoom;
+            //    //Debug.Log($"MapRenderer.size.x: {MapRenderer.size.x}, Camera aspect: {Camera.aspect}");
+            //    //MiniMapCamera.orthographicSize = (MapRenderer.size.x / (Camera.aspect * 2));
+            //    //MaxZoom = (int)MiniMapCamera.orthographicSize;
+
+            //    Vector2 cameraWorldUnitsSize = Utilities.ScreenPixelsToWorldUnits(new Vector2(MiniMapCamera.pixelWidth, MiniMapCamera.pixelHeight), Camera);
+            //    Transform colliderContainer = Camera.transform.GetChild(0);
+            //    colliderContainer.localScale = cameraWorldUnitsSize;
+            //    Vector2 localizedPosition = DefaultCameraPosition + (Vector2)transform.position;
+            //    Camera.transform.position = new Vector3(localizedPosition.x, localizedPosition.y, -10);
+
+            //    InputManager.MaintainScrollBoundary();
+            //}
+
+            //if (HasObstacles)
+            //{
+            //    SpawnObstacles();
+            //    //InvokeRepeating(nameof(SetLocationHistory), .5f, .5f);
+            //    Pathfinder = new Pathfinder(this);
+            //}
+            //if (ActivateMining)
+            //{
+            //    SpawnMiningAsteroids();
+            //}
+            //if (ActivateFogOfWar && HasPlayer)
+            //{
+            //    FogOfWar.SetActive(true);
+            //}
+            //else
+            //{
+            //    FogOfWar.SetActive(false);
+            //}
+            //StartingPositions[ConfigData.Configuration.AISide - 1] = AIStartingPosition;
+            //StartingPositions[ConfigData.Configuration.UserSide - 1] = UserStartingPosition;
+
+            //Invoke(nameof(TimedOut), 60 * 5f);
+        }
+        /// <summary>
+        /// Takes care of any setup that needs to happen the first time the scene is loaded
+        /// </summary>
+        protected override void FinalizeSceneWithUserData()
+        {
+            //Debug.Log($"Finalize scene");
+            StartTime = Time.realtimeSinceStartup;
+            if (!ConfigData.Configuration.DoesUserHaveController && !DoesUserHaveController)
             {
-                TimeoutTime = int.MaxValue;
+                Invoke(nameof(TimeOut), TimeoutTime);
             }
+            
+            LevelConstructor = new LevelConstructor(this);
+            LevelConstructor.RequestServerSetup();
+            base.FinalizeSceneWithUserData();
+            IsLoaded = true;
+
             if (IsTrainingHiveMind || IsTrainingNueralNetwork)
             {
                 IsTraining = true;
@@ -233,53 +445,6 @@ namespace Assets.Scripts.Scenes
                 IsTraining = false;
             }
 
-            if (OverrideBeeShipTypes.Count > 0)
-            {
-                BeeShipTypes = OverrideBeeShipTypes;
-            }
-            else
-            {
-                BeeShipTypes = ConfigData.Configuration.VisibleBeeShipTypes.ToList();
-            }
-
-            if (OverrideHumanShipTypes.Count > 0)
-            {
-                HumanShipTypes = OverrideHumanShipTypes;
-            }
-            else
-            {
-                HumanShipTypes = ConfigData.Configuration.VisibleHumanShipTypes.ToList();
-            }
-
-            _obstacleLists = new Dictionary<int, List<GameObject>>()
-                {
-                    // If this list changes the indexes need to all be accurate since the files are loaded based off of the indexes
-                    {0, EmptyObstacleList }, // it's important to have this here so we can load the "open space" pathfinding file for when there's no obstacles except asteroids
-                    {1, MazePrefabs },
-                    {2, ThreePathsPrefabs },
-                    {3, ForestPrefabs },
-                    {4, TheWallPrefabs }
-                };
-            if (HasRandomizedOptions)
-            {
-                RandomizeOptions();
-            }
-            else
-            {
-                Debug.Log($"The map does not have randomized options");
-                ChosenObstaclesIndex = OverrideMapIndex;
-                _chosenObstacles = _obstacleLists.GetValueOrDefault(ChosenObstaclesIndex);
-            }
-            //Debug.Log($"Setup scene");
-            if (OverrideTimeScale == 0)
-            {
-                TimeScale = ConfigData.Configuration.TimeScale;
-            }
-            else
-            {
-                TimeScale = OverrideTimeScale;
-
-            }
             if (DoesUserHaveController)
             {
                 HasPlayer = true;
@@ -292,10 +457,16 @@ namespace Assets.Scripts.Scenes
             {
                 HasPlayer = ConfigData.Configuration.DoesUserHaveController;
             }
-            if (GeneratedSquadCountOverride > 0)
-            {
-                ConfigData.Configuration.SquadGenerationCount = GeneratedSquadCountOverride;
-            }
+
+            _obstacleLists = new Dictionary<int, List<GameObject>>()
+                {
+                    {0, EmptyObstacleList }, // it's important to have this here so we choose an empty level for testing
+                    {1, MazePrefabs },
+                    {2, ThreePathsPrefabs },
+                    {3, ForestPrefabs },
+                    {4, TheWallPrefabs }
+                };
+
             if (ActivateBrains)
             {
                 AgentGroup = new SimpleMultiAgentGroup();
@@ -311,13 +482,10 @@ namespace Assets.Scripts.Scenes
                 }
             }
 
-
-
             // Setup Game State
             _state = gameObject.AddComponent<GameState>();
             _state.Setup(this);
 
-            //ConfigData.SetupSceneManagement(SceneManagement.GetComponent<SceneManagement>());
             if (!IsTraining)
             {
                 MiniMapCamera.gameObject.SetActive(true);
@@ -354,13 +522,10 @@ namespace Assets.Scripts.Scenes
                 }
             }
 
-
-
-
             // Setup map bounds
             MapRenderer = Map.GetComponentInChildren<SpriteRenderer>();
-            MapWidth = (int) (Mathf.Abs(MapRenderer.localBounds.min.x) + MapRenderer.localBounds.max.x);
-            MapHeight = (int) (Mathf.Abs(MapRenderer.localBounds.min.y) + MapRenderer.localBounds.max.y);
+            MapWidth = (int)(Mathf.Abs(MapRenderer.localBounds.min.x) + MapRenderer.localBounds.max.x);
+            MapHeight = (int)(Mathf.Abs(MapRenderer.localBounds.min.y) + MapRenderer.localBounds.max.y);
             HalfMapWidth = MapWidth / 2;
             HalfMapHeight = MapHeight / 2;
 
@@ -370,8 +535,8 @@ namespace Assets.Scripts.Scenes
             MinY = MapRenderer.localBounds.min.y + ConfigData.MapEdgePadding.y;
             MaxX = MapRenderer.localBounds.max.x - ConfigData.MapEdgePadding.x;
             MaxY = MapRenderer.localBounds.max.y - ConfigData.MapEdgePadding.y;
-            MapX = MapRenderer.localBounds.max.x*2;
-            MapY = MapRenderer.localBounds.max.y*2;
+            MapX = MapRenderer.localBounds.max.x * 2;
+            MapY = MapRenderer.localBounds.max.y * 2;
             MaxDistance = Mathf.Sqrt(MapX * MapX + MapY * MapY);
             HalfX = MapX / 2;
             HalfY = MapY / 2;
@@ -392,59 +557,23 @@ namespace Assets.Scripts.Scenes
                 InputManager.MaintainScrollBoundary();
             }
 
-            if (HasObstacles)
-            {
-                SpawnObstacles();
-                //InvokeRepeating(nameof(SetLocationHistory), .5f, .5f);
-                Pathfinder = new Pathfinder(this);
-            }
-            if (ActivateMining)
-            {
-                SpawnMiningAsteroids();
-            }
-            if (ActivateFogOfWar && HasPlayer)
-            {
-                FogOfWar.SetActive(true);
-            }
-            else
-            {
-                FogOfWar.SetActive(false);
-            }
-            StartingPositions[ConfigData.Configuration.AISide - 1] = AIStartingPosition;
-            StartingPositions[ConfigData.Configuration.UserSide - 1] = UserStartingPosition;
-
-            //Invoke(nameof(TimedOut), 60 * 5f);
-        }
-        protected override void FinalizeSceneWithUserData()
-        {
-            //Debug.Log($"Finalize scene");
-            StartTime = Time.realtimeSinceStartup;
-            if (!ConfigData.Configuration.DoesUserHaveController && !DoesUserHaveController)
-            {
-                Invoke(nameof(TimeOut), TimeoutTime);
-            }
-            
-            LevelConstructor = new LevelConstructor(this);
-            LevelConstructor.RequestServerSetup();
-            base.FinalizeSceneWithUserData();
-            IsLoaded = true;
-            Setup();
-            LevelConstructor.SetupShips();
-            CalculateShipClearances();
-            if (ActivateHiveMind)
-            {
-                Invoke(nameof(GetHiveMindCommands), InitialCommandDelay);
-            }
+            SetupLevel();
+            //LevelConstructor.SetupShips();
+            //CalculateShipClearances();
+            //if (ActivateHiveMind)
+            //{
+            //    Invoke(nameof(GetHiveMindCommands), InitialCommandDelay);
+            //}
+            //if (IsDebugging)
+            //{
+            //    InvokeRepeating(nameof(UpdateDebugVariables), 1, 1);
+            //}
+            //if (ActivateLoadingShipsMidLevel)
+            //{
+            //    SetTriggers();
+            //    InvokeRepeating(nameof(CheckTriggers), 5, 5);
+            //}
             float end = (Time.realtimeSinceStartup - StartTime) * 1000; // seconds to milliseconds
-            if (IsDebugging)
-            {
-                InvokeRepeating(nameof(UpdateDebugVariables), 1, 1);
-            }
-            if (ActivateLoadingShipsMidLevel)
-            {
-                SetTriggers();
-                InvokeRepeating(nameof(CheckTriggers), 5, 5);
-            }
             Debug.Log($"It took {Math.Round(end, 2)} ms to set up the level and {Math.Round(Time.realtimeSinceStartup, 2)}s total time.");
         }
 
@@ -601,6 +730,15 @@ namespace Assets.Scripts.Scenes
                 if ((state.IsPaused || ConfigData.SocketManager.NetworkDisconnection.IsOpen || !IsLevelConnectedToServer) && !IsTrainingNueralNetwork)
                 {
                     Time.timeScale = 0;
+                    if (!IsTraining)
+                    {
+                        if (IsPausedByTester && InputManager.HasPauseInput() && Time.realtimeSinceStartup - TimePaused > 1)
+                        {
+                            IsPausedByTester = false;
+                            TimePaused = Time.realtimeSinceStartup;
+                            UnPause();
+                        }
+                    }
                 }
                 else
                 {
@@ -688,51 +826,51 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
                     Menus.UpdateScore(ConfigData.__HumanWins, ConfigData.__BeeWins);
                 }
 
-                //Debug.Log($"Setting stats for Saved Squads");
-                for (int i = 0; i < ConfigData.SquadsChosenForLevel.Count; i++)
-                {
-                    SavedSquad savedSquad = ConfigData.SquadsChosenForLevel[i];
-                    if (savedSquad.HasBeenSavedToStorage)
-                    {
-                        savedSquad = ConfigData.AllShips.GetSavedSquad(savedSquad.Id);
-                    }
-                    else
-                    {
-                        //Debug.Log($"{savedSquad.Name} has not been saved to storage #{savedSquad.Id}");
-                        continue;
-                    }
+                ////Debug.Log($"Setting stats for Saved Squads");
+                //for (int i = 0; i < ConfigData.SquadsChosenForLevel.Count; i++)
+                //{
+                //    SavedSquad savedSquad = ConfigData.SquadsChosenForLevel[i];
+                //    if (savedSquad.HasBeenSavedToStorage)
+                //    {
+                //        savedSquad = ConfigData.AllShips.GetSavedSquad(savedSquad.Id);
+                //    }
+                //    else
+                //    {
+                //        //Debug.Log($"{savedSquad.Name} has not been saved to storage #{savedSquad.Id}");
+                //        continue;
+                //    }
 
-                    //Debug.Log($"Logging stats for sqauds battles fought for {savedSquad.Name}");
-                    savedSquad.Stats.BattlesFought++;
+                //    //Debug.Log($"Logging stats for sqauds battles fought for {savedSquad.Name}");
+                //    savedSquad.Stats.BattlesFought++;
 
-                    if (savedSquad.Side == WinningSide)
-                    {
-                        //ConfigData.Ships.GetSavedSquad(savedSquad.Id).Stats.BattlesWon++;
-                        savedSquad.Stats.BattlesWon++;
-                    }
+                //    if (savedSquad.Side == WinningSide)
+                //    {
+                //        //ConfigData.Ships.GetSavedSquad(savedSquad.Id).Stats.BattlesWon++;
+                //        savedSquad.Stats.BattlesWon++;
+                //    }
 
-                    savedSquad.GetShips().ForEach((ship) =>
-                    {
-                        FleetShip fleetShip = ship.GetFleetShip();
-                        fleetShip.BattlesFought++;
-                        if (fleetShip.Side == WinningSide)
-                        {
-                            fleetShip.BattlesWon++;
-                        }
-                        //Debug.Log($"{fleetShip.Name} has mined {fleetShip.MineralsMined} minerals in its lifetime. It has mined {fleetShip.MineralsMinedThisLevel} minerals this level");
-                        if (fleetShip.Side == ConfigData.Configuration.UserSide)
-                        {
-                            ConfigData.GetUserProgressData().MinedTSV += fleetShip.MineralsMinedThisLevel;
-                        }
-                        else
-                        {
-                            ConfigData.GetUserProgressData().HivemindMinedTSV += fleetShip.MineralsMinedThisLevel;
-                        }
-                        fleetShip.MineralsMined += fleetShip.MineralsMinedThisLevel;
-                        fleetShip.MineralsMinedThisLevel = 0;
+                //    savedSquad.GetSquadShips().ForEach((ship) =>
+                //    {
+                //        FleetShip fleetShip = ship.GetFleetShip();
+                //        fleetShip.BattlesFought++;
+                //        if (fleetShip.Side == WinningSide)
+                //        {
+                //            fleetShip.BattlesWon++;
+                //        }
+                //        //Debug.Log($"{fleetShip.Name} has mined {fleetShip.MineralsMined} minerals in its lifetime. It has mined {fleetShip.MineralsMinedThisLevel} minerals this level");
+                //        if (fleetShip.Side == ConfigData.Configuration.UserSide)
+                //        {
+                //            ConfigData.GetUserProgressData().MinedTSV += fleetShip.MineralsMinedThisLevel;
+                //        }
+                //        else
+                //        {
+                //            ConfigData.GetUserProgressData().HivemindMinedTSV += fleetShip.MineralsMinedThisLevel;
+                //        }
+                //        fleetShip.MineralsMined += fleetShip.MineralsMinedThisLevel;
+                //        fleetShip.MineralsMinedThisLevel = 0;
 
-                    });
-                }
+                //    });
+                //}
 
 
 
@@ -863,22 +1001,64 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
 
                 ship.Kill(null, true);
             }
-            StartNew();
+            SetupLevel();
             //Invoke(nameof(StartNew), .1f);
             //WinningSide = 0;
         }
         /// <summary>
-        /// Called by both ResetLevel and SaveAndEnd(). Prepares the LevelStage for a new level
+        /// Called by both ResetLevel(), FinalizeSceneWithUserData(), and SaveAndEnd(). Prepares the LevelStage for a new level
         /// </summary>
-        public void StartNew()
+        public void SetupLevel()
         {
-            GameState state = GetState();
+            StartTime = Time.realtimeSinceStartup;
+            // Check settings and config variables
+            if (TimeoutTime == 0)
+            {
+                TimeoutTime = int.MaxValue;
+            }
 
+            if (OverrideBeeShipTypes.Count > 0)
+            {
+                BeeShipTypes = OverrideBeeShipTypes;
+            }
+            else
+            {
+                BeeShipTypes = ConfigData.Configuration.VisibleBeeShipTypes.ToList();
+            }
+
+            if (OverrideHumanShipTypes.Count > 0)
+            {
+                HumanShipTypes = OverrideHumanShipTypes;
+            }
+            else
+            {
+                HumanShipTypes = ConfigData.Configuration.VisibleHumanShipTypes.ToList();
+            }
+
+            if (OverrideTimeScale == 0)
+            {
+                TimeScale = ConfigData.Configuration.TimeScale;
+            }
+            else
+            {
+                TimeScale = OverrideTimeScale;
+
+            }
+            if (GeneratedSquadCountOverride > 0)
+            {
+                ConfigData.Configuration.SquadGenerationCount = GeneratedSquadCountOverride;
+            }
+
+            StartingPositions[ConfigData.Configuration.AISide - 1] = AIStartingPosition;
+            StartingPositions[ConfigData.Configuration.UserSide - 1] = UserStartingPosition;
+
+            // Reset any data that might have changed from a previous level
+
+            GameState state = GetState();
             state.ResetState();
             state.GameOver = false;
             state.LevelEnded = false;
             Seconds = 0;
-            StartTime = Time.realtimeSinceStartup;
             //Socket.StandingRequests.Clear();
             ConfigData.Socket.HandledRequests.Except(HandledRequests);
             HandledRequests.Clear();
@@ -886,6 +1066,19 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
             {
                 ConfigData.__PastServerRequests.Clear();
             }
+
+
+            if (HasRandomizedOptions)
+            {
+                RandomizeOptions();
+            }
+            else
+            {
+                Debug.Log($"The map does not have randomized options");
+                ChosenObstaclesIndex = OverrideMapIndex;
+                _chosenObstacles = _obstacleLists.GetValueOrDefault(ChosenObstaclesIndex);
+            }
+
 
             if (HasPlayer)
             {
@@ -904,11 +1097,7 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
                 CancelInvoke(nameof(TimeOut));
                 Invoke(nameof(TimeOut), TimeoutTime);
             }
-            //Debug.Log("Cleared timeout");
-            if (HasRandomizedOptions)
-            {
-                RandomizeOptions();
-            }
+
 
             if (HasObstacles)
             {
@@ -931,6 +1120,23 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
             {
                 FogOfWar.SetActive(false);
             }
+
+
+            ConfigData.SquadsChosenForLevel = ConfigData.SquadsChosenForLevel.Where((chosenSquad) => !MidLevelSquads[chosenSquad.Side - 1].Contains(chosenSquad)).ToList();
+            MidLevelSquads[ConfigData.Configuration.HumanSide-1].Clear();
+            MidLevelSquads[ConfigData.Configuration.BeeSide - 1].Clear();
+            LevelConstructor.SetupShips();
+            CalculateShipClearances();
+
+            CancelInvoke(nameof(GetHiveMindCommands));
+            if (ActivateHiveMind)
+            {
+                Invoke(nameof(GetHiveMindCommands), InitialCommandDelay);
+            }
+            if (IsDebugging)
+            {
+                InvokeRepeating(nameof(UpdateDebugVariables), 1, 1);
+            }
             CancelInvoke(nameof(CheckTriggers));
             if (ActivateLoadingShipsMidLevel)
             {
@@ -938,15 +1144,9 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
                 InvokeRepeating(nameof(CheckTriggers), 5, 5);
             }
 
-            ConfigData.SquadsChosenForLevel = ConfigData.SquadsChosenForLevel.Where((chosenSquad) => !MidLevelSquads[chosenSquad.Side - 1].Contains(chosenSquad)).ToList();
-            MidLevelSquads[ConfigData.Configuration.HumanSide-1].Clear();
-            MidLevelSquads[ConfigData.Configuration.BeeSide - 1].Clear();
-            LevelConstructor.SetupShips();
 
-
-
-
-
+            float end = (Time.realtimeSinceStartup - StartTime) * 1000; // seconds to milliseconds
+            Debug.Log($"It took {Math.Round(end, 2)} ms to set up the level and {Math.Round(Time.realtimeSinceStartup, 2)}s total time.");
         }
         /// <summary>
         /// Resets the level for Hivemind training
@@ -959,7 +1159,7 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
             SaveAndEnd();
         }
         /// <summary>
-        /// Used for standard play and Hivemind Training. 
+        /// Used for standard play and Hivemind Training. Stores commands, cleans the map, and records that stats.
         /// </summary>
         public void SaveAndEnd()
         {
@@ -971,6 +1171,51 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
 
             if (RecordStats && !IsTraining)
             {
+
+                for (int i = 0; i < ConfigData.SquadsChosenForLevel.Count; i++)
+                {
+                    SavedSquad savedSquad = ConfigData.SquadsChosenForLevel[i];
+                    if (savedSquad.HasBeenSavedToStorage)
+                    {
+                        savedSquad = ConfigData.AllShips.GetSavedSquad(savedSquad.Id);
+                    }
+                    else
+                    {
+                        //Debug.Log($"{savedSquad.Name} has not been saved to storage #{savedSquad.Id}");
+                        continue;
+                    }
+
+                    //Debug.Log($"Logging stats for sqauds battles fought for {savedSquad.Name}");
+                    savedSquad.Stats.BattlesFought++;
+
+                    if (savedSquad.Side == WinningSide)
+                    {
+                        //ConfigData.Ships.GetSavedSquad(savedSquad.Id).Stats.BattlesWon++;
+                        savedSquad.Stats.BattlesWon++;
+                    }
+
+                    savedSquad.GetSquadShips().ForEach((ship) =>
+                    {
+                        FleetShip fleetShip = ship.GetFleetShip();
+                        fleetShip.BattlesFought++;
+                        if (fleetShip.Side == WinningSide)
+                        {
+                            fleetShip.BattlesWon++;
+                        }
+                        //Debug.Log($"{fleetShip.Name} has mined {fleetShip.MineralsMined} minerals in its lifetime. It has mined {fleetShip.MineralsMinedThisLevel} minerals this level");
+                        if (fleetShip.Side == ConfigData.Configuration.UserSide)
+                        {
+                            ConfigData.GetUserProgressData().MinedTSV += fleetShip.MineralsMinedThisLevel;
+                        }
+                        else
+                        {
+                            ConfigData.GetUserProgressData().HivemindMinedTSV += fleetShip.MineralsMinedThisLevel;
+                        }
+                        fleetShip.MineralsMined += fleetShip.MineralsMinedThisLevel;
+                        fleetShip.MineralsMinedThisLevel = 0;
+
+                    });
+                }
                 //for (int i = 0; i < ConfigData.SquadsChosenForLevel.Count; i++)
                 //{
                 //    SavedSquad savedSquad = ConfigData.SquadsChosenForLevel[i];
@@ -1052,7 +1297,7 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
             else
             {
                 IsRestarting = false;
-                StartNew();
+                SetupLevel();
             }
 
         }

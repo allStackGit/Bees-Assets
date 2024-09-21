@@ -303,7 +303,7 @@ namespace Assets.Scripts
             {
                 Debug.Log($"Saving custom color ({squad.Color}) sprites for {squad.Name}");
 
-                List<SquadShip> squadShips = squad.GetShips();
+                List<SquadShip> squadShips = squad.GetSquadShips();
                 for (int i = 0; i < squadShips.Count; i++)
                 {
                     SquadShip squadShip = squadShips[i];

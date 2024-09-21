@@ -83,7 +83,7 @@ namespace Assets.Scripts.Entities.Ships
             if (ContactedShip.Health <= 0)
             {
                 ContactedShip.Kill(this); // kill the target ship if needed, yellow jacket gets credit
-                SuicideKill(targetShipSquad); // kill the yellow jacket and give credit to the target ship squad
+                Kill(ContactedShip);
             }
             else
             {
@@ -93,7 +93,7 @@ namespace Assets.Scripts.Entities.Ships
            
         }
 
-        public void SuicideKill(Squad squad) // [kill-method] [stats-method] [note]
+        public void SuicideKill(Squad killerSquad) // [kill-method] [stats-method] [note]
         {
             DropExplosionAnimation();
 
@@ -106,7 +106,7 @@ namespace Assets.Scripts.Entities.Ships
             }
             Squad.SavedSquad.Stats.ShipsLost++;
 
-            squad.SavedSquad.Stats.Kills++;
+            killerSquad.SavedSquad.Stats.Kills++;
             //FleetShip.BattlesFought++;
 
             if (Squad.GetShips().Count == 0)

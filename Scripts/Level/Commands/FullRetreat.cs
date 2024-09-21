@@ -2,6 +2,7 @@ using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Level.Commands;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 public class FullRetreat : Command
@@ -14,7 +15,9 @@ public class FullRetreat : Command
             TargetWarpGate = warpgate;
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
 
-            Squad.GetShips().ForEach((ship) =>
+            
+            // The ToList() is necessary to prevent errors from warp killing while looping through the list of ships
+            Squad.GetShips().ToList().ForEach((ship) =>
             {
                 if (ship.ShipType != "Warp Gate")
                 {

@@ -18,18 +18,18 @@ namespace Assets.Scripts.Data
         public string Name;
         public Color Color;
         public Vector2 StartingPosition;
-        public bool CeaseFire, IsMatchingSpeed, HasBeenSavedToStorage, HasCustomColor;
+        public bool CeaseFire, IsMatchingSpeed, IsSetToChase, HasBeenSavedToStorage, HasCustomColor;
         public string ChosenShootingStrategy = ConfigData.StartingSettings.DefaultShootingStrategy;
         public SquadStatBlock Stats;
         private List<SquadShip> _ships = new List<SquadShip>();
         private bool _hasChanged;
 
-        public bool HasMaxShips => GetShips().Count == ConfigData.Configuration.MaxSquadSize;
-        public bool IsEmptySquad => GetShips().Count == 0 && Name == "" && !CeaseFire && !IsMatchingSpeed;
+        public bool HasMaxShips => GetSquadShips().Count == ConfigData.Configuration.MaxSquadSize;
+        public bool IsEmptySquad => GetSquadShips().Count == 0 && Name == "" && !CeaseFire && !IsMatchingSpeed;
         public bool HasChanged => _hasChanged;
         public bool HasDeadShips => GetDeadShips().Any();
-        public bool HasAliveShips => GetDeadShips().Count < GetShips().Count;
-        public bool HasShips => GetShips().Any();
+        public bool HasAliveShips => GetDeadShips().Count < GetSquadShips().Count;
+        public bool HasShips => GetSquadShips().Any();
 
         public SavedSquad(int id, int side, string name, Vector2 startingPosition, bool ceaseFire, bool isMatchingSpeed, 
             string chosenShootingStrategy, Color color, SquadStatBlock stats = null)
@@ -88,17 +88,17 @@ namespace Assets.Scripts.Data
 
             }
         }
-        public List<SquadShip> GetShips()
+        public List<SquadShip> GetSquadShips()
         {
             return _ships;
         }
         public SquadShip GetShip(int fleetId)
         {
-            return GetShips().FirstOrDefault((ship) => ship.FleetId == fleetId);
+            return GetSquadShips().FirstOrDefault((ship) => ship.FleetId == fleetId);
         }
         public SquadShip GetMostValuableShip()
         {
-            return GetShips().OrderByDescending(s => s.GetFleetShip().GetMaxTsv()).ToList().First();
+            return GetSquadShips().OrderByDescending(s => s.GetFleetShip().GetMaxTsv()).ToList().First();
         }
         public void AddShipToSquad(SquadShip ship)
         {
@@ -123,7 +123,7 @@ namespace Assets.Scripts.Data
         }
         public List<SquadShip> GetDeadShips()
         {
-            return GetShips().Where((ship) => ship.GetFleetShip().IsDead).ToList();
+            return GetSquadShips().Where((ship) => ship.GetFleetShip().IsDead).ToList();
         }
         public bool HasShip(FleetShip ship)
         {
@@ -132,25 +132,25 @@ namespace Assets.Scripts.Data
         }
         public Vector2 GetLeftMostPoint()
         {
-            List<SquadShip> ships = GetShips().OrderBy((ship) => ship.GetLeftSide().x).ToList();
+            List<SquadShip> ships = GetSquadShips().OrderBy((ship) => ship.GetLeftSide().x).ToList();
             SquadShip ship = ships.First();
             return ship.GetLeftSide();
         }
         public Vector2 GetRightMostPoint()
         {
-            List<SquadShip> ships = GetShips().OrderByDescending((ship) => ship.GetRightSide().x).ToList();
+            List<SquadShip> ships = GetSquadShips().OrderByDescending((ship) => ship.GetRightSide().x).ToList();
             SquadShip ship = ships.First();
             return ship.GetRightSide();
         }
         public Vector2 GetTopMostPoint()
         {
-            List<SquadShip> ships = GetShips().OrderByDescending((ship) => ship.GetTopSide().y).ToList();
+            List<SquadShip> ships = GetSquadShips().OrderByDescending((ship) => ship.GetTopSide().y).ToList();
             SquadShip ship = ships.First();
             return ship.GetTopSide();
         }
         public Vector2 GetBottomMostPoint()
         {
-            List<SquadShip> ships = GetShips().OrderBy((ship) => ship.GetBottomSide().y).ToList();
+            List<SquadShip> ships = GetSquadShips().OrderBy((ship) => ship.GetBottomSide().y).ToList();
             SquadShip ship = ships.First();
             return ship.GetBottomSide();
         }
@@ -184,7 +184,7 @@ namespace Assets.Scripts.Data
 
             StartingPosition = GetCenterPoint();
             //Debug.Log($"After Orienting squad, center point: {StartingPosition}");
-            GetShips().ForEach((ship) =>
+            GetSquadShips().ForEach((ship) =>
             {
                 //Debug.Log($"Squad ship offset before orienting around center: {ship.Offset}");
                 ship.Offset.x = ship.Offset.x - StartingPosition.x;
@@ -194,19 +194,19 @@ namespace Assets.Scripts.Data
         }
         public int GetTsv()
         {
-            return GetShips().Sum((s) => s.GetFleetShip().GetTsv());
+            return GetSquadShips().Sum((s) => s.GetFleetShip().GetTsv());
         }
         public int GetCapacity()
         {
-            return GetShips().Sum((s) => s.GetFleetShip().GetCapacity());
+            return GetSquadShips().Sum((s) => s.GetFleetShip().GetCapacity());
         }
         public int GetMaxCapacity()
         {
-            return GetShips().Sum((s) => s.GetFleetShip().GetMaxCapacity());
+            return GetSquadShips().Sum((s) => s.GetFleetShip().GetMaxCapacity());
         }
         public int GetMaxTsv()
         {
-            return GetShips().Sum((s) => s.GetFleetShip().GetMaxTsv());
+            return GetSquadShips().Sum((s) => s.GetFleetShip().GetMaxTsv());
         }
         public bool Equals(SavedSquad squad)
         {
@@ -237,6 +237,7 @@ namespace Assets.Scripts.Data
                 ChosenShootingStrategy,
                 CeaseFire,
                 IsMatchingSpeed,
+                IsSetToChase,
                 Id,
                 Side,
                 0,
@@ -251,14 +252,14 @@ namespace Assets.Scripts.Data
             string json = $"{{\"Id\": {Id}, \"Side\": {Side}, \"Name\": \"{Name}\", \"Color\": {{\"r\": {Color.r}, \"g\": {Color.g}, \"b\": {Color.b}, \"a\": {Color.a} }}, \"StartingPosition\":" +
                 $" {{\"x\": {StartingPosition.x}, \"y\": {StartingPosition.y} }}, \"CeaseFire\": {(CeaseFire ? "true" : "false")}, \"IsMatchingSpeed\": {(IsMatchingSpeed ? "true" : "false")}, \"ChosenShootingStrategy\":" +
                 $" \"{ChosenShootingStrategy}\", \"Stats\": {Stats.ToJson()}, \"Ships\": [";
-            GetShips().ForEach((s) => json += $"{s.ToJson()}, ");
+            GetSquadShips().ForEach((s) => json += $"{s.ToJson()}, ");
             json = json.Remove(json.Length - 2);
             json += "]}";
             return json;
         }
         public override string ToString()
         {
-            return $"{Name} - #{Id}, Ships: {GetShips().Count}";
+            return $"{Name} - #{Id}, Ships: {GetSquadShips().Count}";
         }
     }
 }

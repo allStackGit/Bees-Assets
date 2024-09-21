@@ -36,22 +36,14 @@ namespace Assets.Scripts.Entities.Ships
                     state.FireShipExplosions.Add(explosion);
 
 
-                    int oldTsv = Tsv;
-                    Health -= math.min(Bomb.Power, Health);
+                    // The Fire ship is killing itself so it takes full damage but there's no shooter so it's just logging damage
+                    LogDamage(Health);
 
-                    int tsvChange = Tsv - oldTsv; // this is a negative number since being hit by a projectile should induce a loss of TSV
-                    
-                    //Calling hit stats with a fire ship explosion. The shooter and shooter squad are null but the fire ship and fire ship squad are the target
-                    LogHitStats(null, null, this, this.Squad, tsvChange);
-
-                    if (Squad.Command != null)
-                    {
-                        Squad.Command.Tsv += tsvChange; // subtract the TSV from the squad
-                    }
-
+                  
                     if (killer != null)
                     {
                         killer.LastKilled = Time.frameCount;
+                        Killer = killer;
                         LogKillerStats(killer);
                     }
                     else
@@ -86,15 +78,11 @@ namespace Assets.Scripts.Entities.Ships
                     Destroy(MovementMarker);
                 }
                 gameObject.SetActive(false);
-                Invoke(nameof(DelayedKill), 8);
+                Invoke(nameof(DelayedKill), 5);
 
             }
            
 
-        }
-        private void DelayedKill()
-        {
-            Destroy(gameObject);
         }
     }
 

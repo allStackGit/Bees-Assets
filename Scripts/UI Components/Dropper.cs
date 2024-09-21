@@ -613,7 +613,7 @@ namespace Assets.Scripts.UIComponents
             bool isInValidPositionWithOtherShips = true;
 
             // Loop through all the other positions in this unsaved squad
-            CurrentSquad.GetShips().ForEach((squadShip) =>
+            CurrentSquad.GetSquadShips().ForEach((squadShip) =>
             {
                 // if any are within too close x and y move the current one away
                 if ((ship == null || !ship.Equals(squadShip)) && TooCloseToShip(position, squadShip, tooClose))
@@ -667,7 +667,7 @@ namespace Assets.Scripts.UIComponents
 
             // Loop through all the other positions in this unsaved squad
             //Debug.Log("Snap -------------------------------------------------------");
-            CurrentSquad.GetShips().ForEach((ship) =>
+            CurrentSquad.GetSquadShips().ForEach((ship) =>
             {
                 if (ShouldSnapToXAxis(position, ship, snap.x))   // if any are within too close x or y, but not both, snap the current one to line up
                 {
@@ -953,11 +953,11 @@ namespace Assets.Scripts.UIComponents
             List<SquadShip> sameLevelShips;
             if (axis == 'x')
             {
-                sameLevelShips = CurrentSquad.GetShips().Where((squadShip) => squadShip.Offset.y == ship.Offset.y).ToList();
+                sameLevelShips = CurrentSquad.GetSquadShips().Where((squadShip) => squadShip.Offset.y == ship.Offset.y).ToList();
             }
             else
             {
-                sameLevelShips = CurrentSquad.GetShips().Where((squadShip) => squadShip.Offset.x == ship.Offset.x).ToList();
+                sameLevelShips = CurrentSquad.GetSquadShips().Where((squadShip) => squadShip.Offset.x == ship.Offset.x).ToList();
             }
 
             int count = sameLevelShips.Count;

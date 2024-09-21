@@ -16,7 +16,7 @@ namespace Assets.Scripts.Entities.Ships
         /// <summary>
         /// Whether the ship has started the charge action
         /// </summary>
-        public bool HasStartedCharging;
+        public bool HasStartedCharging, WaitingForNewCharge;
         public bool IsCharging;
         public int OriginalPower;
         public Weapon Charge => Weapons.First();
@@ -158,12 +158,18 @@ namespace Assets.Scripts.Entities.Ships
                 SetCurrentSpeed(Speed);
                 HasCompletedRun = true;
                 StopMoving($"Finished cool down");
+                ShipsHit.Clear();
                 CannotChangeMovementOrders = false;
 
                 if (HasWaitingTargetCoordinates)
                 {
                     MoveToPoint(WaitingTargetCoordinates);
                     HasWaitingTargetCoordinates = false;
+                }
+                if (WaitingForNewCharge)
+                {
+                    WaitingForNewCharge = false;
+                    StartCoroutine(ChargeForward());
                 }
             }
 

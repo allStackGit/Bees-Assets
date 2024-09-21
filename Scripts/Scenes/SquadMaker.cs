@@ -367,7 +367,7 @@ namespace Assets.Scripts.Scenes
                 if (_currentSquad != null)
                 {
                     bool hasChanged = _currentSquad.HasChanged;
-                    _currentSquad.GetShips().Clear();
+                    _currentSquad.GetSquadShips().Clear();
                     List<DragIcon> icons = dragIcons.ToList();
                     //_dragIcons.Clear();
                     icons.ForEach((icon) =>
@@ -854,7 +854,7 @@ namespace Assets.Scripts.Scenes
         private void UpdateSquadShipCounter()
         {
             TMP_Text shipCountLabel = SquadShipCountLabel.GetComponent<TMP_Text>();
-            shipCountLabel.text = $"{(_currentSquad != null ? _currentSquad.GetShips().Count : 0)} / {ConfigData.Configuration.MaxSquadSize}";
+            shipCountLabel.text = $"{(_currentSquad != null ? _currentSquad.GetSquadShips().Count : 0)} / {ConfigData.Configuration.MaxSquadSize}";
         }
         public void UpdateSquadUI()
         {
@@ -942,7 +942,7 @@ namespace Assets.Scripts.Scenes
             if (savedSquad != null)
             {
                 List<string> updatedShipTypes = new List<string>();
-                savedSquad.GetShips().ForEach((ship) =>
+                savedSquad.GetSquadShips().ForEach((ship) =>
                 {
                     string shipType = ship.ShipType;
                     if (!updatedShipTypes.Contains(shipType))
@@ -1060,8 +1060,8 @@ namespace Assets.Scripts.Scenes
             savedSquads[replacementIndex] = (SavedSquad)_currentSquad.Clone();
 
             ConfigData.AllShips.SaveSquadData();
-            if (oldSavedSquad.Color != _currentSquad.Color || oldSavedSquad.GetShips().Count != _currentSquad.GetShips().Count || 
-                oldSavedSquad.GetShips().Any((s) => _currentSquad.GetShip(s.GetFleetShip().Id) == null))
+            if (oldSavedSquad.Color != _currentSquad.Color || oldSavedSquad.GetSquadShips().Count != _currentSquad.GetSquadShips().Count || 
+                oldSavedSquad.GetSquadShips().Any((s) => _currentSquad.GetShip(s.GetFleetShip().Id) == null))
             {
                 SquadSavingStatus.Show();
                 StartCoroutine(Utilities.CacheSquadCustomSprites((SavedSquad)_currentSquad.Clone(), _shipPartSprites, SquadSavingStatus));
@@ -1087,14 +1087,14 @@ namespace Assets.Scripts.Scenes
             // close the color picker if active
             CloseColorPicker();
             // make and position all the drag icons
-            _currentSquad.GetShips().ForEach((ship) =>
+            _currentSquad.GetSquadShips().ForEach((ship) =>
             {
                 ship.SetOffset(_currentSquad.StartingPosition + ship.Offset);
                 //Debug.Log($"Set offset for {ship.GetFleetShip().Name}: {ship.Offset}");
 
             });
             Dropper dropper = GetDropper();
-            _currentSquad.GetShips().ForEach((ship) =>
+            _currentSquad.GetSquadShips().ForEach((ship) =>
             {
                 //Vector2 placementPosition = Utilities.WorldUnitsToScreenPixels(new Vector2(squad.StartingPosition.x + ship.Offset.x, squad.StartingPosition.y + ship.Offset.y), Camera);
                 Vector2 placementPosition = Camera.WorldToScreenPoint(ship.Offset);
@@ -1114,7 +1114,7 @@ namespace Assets.Scripts.Scenes
             }
             //set unchanged
             _currentSquad.SetChanged(false);
-            _squadToLoad = null;
+            //_squadToLoad = null;
 
 
         }
@@ -1166,7 +1166,7 @@ namespace Assets.Scripts.Scenes
             Dropper dropper = GetDropper();
             if (HasCurrentSquad && dropper.GetDragIcons().Count > 0)
             {
-                _currentSquad.GetShips().Clear();
+                _currentSquad.GetSquadShips().Clear();
                 switch (formation)
                 {
                     case "Line":
@@ -1283,7 +1283,7 @@ namespace Assets.Scripts.Scenes
 
                     titleText.text = $"{squad.Name}";
                     detaislText.text = $"Commander: {stats.Commander}\n\n" +
-                        $"Ships: {(squad.GetShips().Count - squad.GetDeadShips().Count).ToString("N0")} / {squad.GetShips().Count.ToString("N0")} " +
+                        $"Ships: {(squad.GetSquadShips().Count - squad.GetDeadShips().Count).ToString("N0")} / {squad.GetSquadShips().Count.ToString("N0")} " +
                         $"{(squad.HasDeadShips ? $" <color=#{UnityEngine.ColorUtility.ToHtmlStringRGB(ConfigData.GetUIColor("bad"))}><smallcaps><b>(Unfilled)</b></smallcaps></color>" : "")}\n" +
                         $"Capacity: {squad.GetCapacity().ToString("N0")} / {squad.GetMaxCapacity().ToString("N0")}\n" +
                         $"Battles: {stats.BattlesFought.ToString("N0")}: {stats.BattlesWon}W - {stats.BattlesLost}L     (#{ConfigData.AllShips.GetSquadRanking(squad, "Record")})\n" +
@@ -1525,7 +1525,7 @@ namespace Assets.Scripts.Scenes
                 {
                     Debug.Log($"Made squad worth {squad.GetMaxTsv()} tsv.");
                     string ships = "";
-                    squad.GetShips().ForEach((s) => ships += $"{s.ShipType}, ");
+                    squad.GetSquadShips().ForEach((s) => ships += $"{s.ShipType}, ");
                     Debug.Log(ships);
                 });
                 ConfigData.SquadsChosenForLevel.AddRange(newlySavedOpposingSquads);

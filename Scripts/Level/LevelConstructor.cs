@@ -198,16 +198,20 @@ namespace Assets.Scripts.Level
 
 
 
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 11),  // bee squad // 1 Bumblebee #11
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 12),  // bee squad // 1 Carpenter Bee #12
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 13),  // bee squad // 1 Honeybee #13
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 14),  // bee squad // 1 Hornet #14
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 15),  // bee squad // 1 Leafcutter #15
+                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 11),  // bee squad // 1 Bumblebee #11
+                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 12),  // bee squad // 1 Carpenter Bee #12
+                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 13),  // bee squad // 1 Honeybee #13
+                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 14),  // bee squad // 1 Hornet #14
+                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 15),  // bee squad // 1 Leafcutter #15
                         //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 16),  // bee squad // 1 Queen #16
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 17),  // bee squad // 1 Wasp #17 
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 18),  // bee squad // 1 Yellow Jacket #18
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 48),  // bee squad  // 1 Beehive #48
+                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 17),  // bee squad // 1 Wasp #17 
+                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 18),  // bee squad // 1 Yellow Jacket #18
+                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 48),  // bee squad  // 1 Beehive #48
                          //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 21),  // bee squad // Line of 10 Hornets #21
+
+                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 62),  // bee squad  // 10 Yellow Jackets #62
+                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 63),  // bee squad  // 1 Yellow Jacket #63
+
 
                     };
 
@@ -270,7 +274,7 @@ namespace Assets.Scripts.Level
                 // [note][testing] turn this off to do training without ships dying
                 //List<SquadShip> 
                 List<SquadShip> ships = new List<SquadShip>();
-                ships = savedSquad.GetShips().Where((s) => !s.GetFleetShip().IsDead).ToList();
+                ships = savedSquad.GetSquadShips().Where((s) => !s.GetFleetShip().IsDead).ToList();
                 if (ships.Count > 0)  
                 {
                     //Debug.Log($"There are {ships.Count} ships in {squad.Name}");
@@ -329,6 +333,7 @@ namespace Assets.Scripts.Level
                                     ship.Squad.GetShootingStrategy(),
                                     ship.Squad.CeaseFire,
                                     ship.Squad.IsMatchingSpeed,
+                                    ship.Squad.ShouldChase(),
                                     Utilities.GetNegativeSavedSquadId(),
                                     ship.Squad.Side,
                                     state.OriginalSquadCounts[ship.Side - 1] + 1,
@@ -347,6 +352,7 @@ namespace Assets.Scripts.Level
                                     ship.Squad.GetShootingStrategy(),
                                     ship.Squad.CeaseFire,
                                     ship.Squad.IsMatchingSpeed,
+                                    ship.Squad.ShouldChase(),
                                     Utilities.GetNegativeSavedSquadId(),
                                     ship.Squad.Side,
                                     state.OriginalSquadCounts[ship.Side - 1] + 1,

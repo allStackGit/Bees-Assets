@@ -74,6 +74,10 @@ namespace Assets.Scripts.Entities.Ships
         /// </summary>
         public Ship TargetEnemyShipToFollow;
         public bool IsCloseEnoughToTargetEnemyShipToFollow;
+        /// <summary>
+        /// The ship that killed this ship
+        /// </summary>
+        public Ship Killer;
 
 
 
@@ -1226,7 +1230,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             //}
         }
         /// <summary>
-        /// Notes the change in health and TSV and updates the health bar for any kind of non-attacking damage the ship takes. See LogAttackingDamage() for attacking damage
+        /// Notes the change in health and TSV for the ship and Squad command and updates the health bar for any kind of non-attacking damage the ship takes. See LogAttackingDamage() for attacking damage
         /// </summary>
         public void LogDamage(int damage)  // [damage-method] [note]
         {
@@ -1302,8 +1306,28 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         {
             if (shooter != null)
             {
-                shooter.FleetShip.DamageDone += -tsvChange;
-                shooter.Squad.SavedSquad.Stats.DamageDone += -tsvChange;
+                if (shooter.Side != target.Side)
+                {
+                    shooter.FleetShip.DamageDone += -tsvChange;
+                    shooter.Squad.SavedSquad.Stats.DamageDone += -tsvChange;
+                }
+                else 
+                {
+                    if (shooter.Killer != null) // someone killed the ship that damaged this ship. The killer should receive stats for the damage
+                    {
+                        Debug.Log($"{shooter.Killer.Name} has killed {shooter.Name} who has in turn damaged {target.Name} on the same side. {shooter.Killer.Name} has done {-tsvChange} additional damage");
+                        shooter.Killer.FleetShip.DamageDone += -tsvChange;
+                        shooter.Killer.Squad.SavedSquad.Stats.DamageDone += -tsvChange;
+
+                        if (shooter.Killer.Squad.HasCommand)
+                        {
+                            shooter.Killer.Squad.Command.Tsv += -tsvChange; // add the TSV (it's negative so it needs to be reversed to be positive) to the shooter
+                        }
+                    }
+                    tsvChange *= -1; // the shooter damaged its own team, reverse the tsv for the command 
+
+                }
+
 
                 if (shooterSquad.HasCommand)
                 {
@@ -1312,14 +1336,16 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             }
             else if (shooterSquad != null)
             {
-                //Debug.Log($"There was {tsvChange} damage done against {target.Name} but the shooter is null. The shooter squad got stats though.");
-                shooterSquad.SavedSquad.Stats.DamageDone += -tsvChange;
+                Debug.LogException(new Exception($"There was {tsvChange} damage done against {target.Name} but the shooter is null. The shooter squad got stats though."));
+                if (shooterSquad.Side != targetSquad.Side)
+                {
+                    shooterSquad.SavedSquad.Stats.DamageDone += -tsvChange;
+                }
 
             }
             else
             {
-                //Debug.Log($"There was {tsvChange} damage done against {target.Name} but the shooter is null and the shooterSquad is null. " +
-                //    $"Was it a fireship explosion hitting itself? {isFireShipSelfHit}");
+                Debug.LogException(new Exception($"There was {tsvChange} damage done against {target.Name} but the shooter is null and the shooterSquad is null. "));
             }
             if (target != null)
             {
@@ -1348,16 +1374,20 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             }
             else if (targetSquad != null)
             {
-                Debugger.Exception($"There was {tsvChange} damage done by {shooter.Name} but the target is null. The target squad got stats though.");
+                Debug.LogException(new Exception($"There was {tsvChange} damage done by {shooter.Name} but the target is null. The target squad got stats though."));
                 targetSquad.SavedSquad.Stats.DamageReceived += -1 * tsvChange;
             }
             else
             {
-                Debugger.Exception($"There was {tsvChange} damage done by {shooter.Name} but the target is null and the targetSquad is null. ");
+                Debug.LogException(new Exception($"There was {tsvChange} damage done by {shooter.Name} but the target is null and the targetSquad is null. "));
             }
 
 
         }
+        /// <summary>
+        /// Add kill stats for the the killer
+        /// </summary>
+        /// <param name="killer"></param>
         protected void LogKillerStats(Ship killer) // [stats-method] [note]
         {
             killer.FleetShip.Kills++;
@@ -1386,7 +1416,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             if (!IsDead)
             {
                 IsDead = true;
-                //Debug.Log($"Killing ship {Name} with size Factor {ConfigData.GetShipSizeFactor(ShipType)}");
+                Debug.Log($"Killing ship {Name} with size Factor {ConfigData.GetShipSizeFactor(ShipType)}");
                 GameState state = Level.GetState();
                 if (IsPathfinding)
                 {
@@ -1449,10 +1479,17 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     {
                         Destroy(turret.TargetingMarker);
                     });
+                    Debug.Log($"Destroying movement marker for {Name}");
                     Destroy(MovementMarker);
                 }
-                Destroy(gameObject);
+                gameObject.SetActive(false);
+                Invoke(nameof(DelayedKill), 5);
             }
+        }
+        protected void DelayedKill()
+        {
+            Debug.Log($"{Name} delay killed");
+            Destroy(gameObject);
         }
         /// <summary>
         /// Returns the target enemy ship to follow for this ship. The Target enemy ship will be the first in the targeting queue for this ship's squad's command. This is different from which ship its weapons are targeting

@@ -152,7 +152,7 @@ namespace Assets.Scripts.Data
             //Debug.Log($"Try to make a squad with {maxTsv} tsv");
             MakeTSVEquivilentSquad(maxTsv);
 
-            if (Squad.GetShips().Count == 0)
+            if (Squad.GetSquadShips().Count == 0)
             {
                 Debugger.Exception($"Could not fill a TSV equivilent squad for {opposingSquad.Name}");
             }
@@ -255,7 +255,7 @@ namespace Assets.Scripts.Data
         }
         public void MultiLine(int maxWidth, int maxLines, bool hollow = false)
         {
-            List<SquadShip> ships = Squad.GetShips();
+            List<SquadShip> ships = Squad.GetSquadShips();
             List<SquadShip> positioned = new List<SquadShip>();
             for (int row = 0; row < maxLines && ships.Count > 0; row++)
             {
@@ -332,7 +332,7 @@ namespace Assets.Scripts.Data
         public void BoxFormation()
         {
             Debug.Log($"Making a box formation");
-            List<SquadShip> ships = Squad.GetShips();
+            List<SquadShip> ships = Squad.GetSquadShips();
             if (ships.Count < 4) // make a line across
             {
                 LineMaker(ships.Count, 1, ships);
@@ -357,7 +357,7 @@ namespace Assets.Scripts.Data
         public void RectangleFormation()
         {
             Debug.Log($"Making a rectangle formation");
-            List<SquadShip> ships = Squad.GetShips();
+            List<SquadShip> ships = Squad.GetSquadShips();
             List<SquadShip> validShips = ships;
             List<SquadShip> dropped = new List<SquadShip>();
             if (ships.Count < 5)
@@ -418,7 +418,7 @@ namespace Assets.Scripts.Data
         public void PyramidFormation(bool hollow)
         {
             Debug.Log($"Making a pyramid formation");
-            List<SquadShip> ships = Squad.GetShips();
+            List<SquadShip> ships = Squad.GetSquadShips();
             List<SquadShip> validShips = ships;
             List<SquadShip> dropped = new List<SquadShip>();
             for (int row = 0; row < ConfigData.Configuration.MaxSquadHeight && validShips.Count > 0; row++)

@@ -350,6 +350,10 @@ namespace Assets.Scripts.Level
         {
             return Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
         }
+        public bool HasPauseInput()
+        {
+            return Input.GetKey(KeyCode.P);
+        }
 
         /// <summary>
         /// The new logic is as follows:
@@ -358,6 +362,17 @@ namespace Assets.Scripts.Level
         /// </summary>
         private void CheckActions()
         {
+            if (HasPauseInput())
+            {
+                if (!Level.IsPaused && Time.realtimeSinceStartup - Level.TimePaused > 1) 
+                {
+                    Level.IsPausedByTester = true;
+                    Level.TimePaused = Time.realtimeSinceStartup;
+                    Level.Pause();
+                    Debug.Break();
+                    return;
+                }
+            }
             if (HasOpenMenuInput())
             {
                 Level.Menus.OpenMenu();
