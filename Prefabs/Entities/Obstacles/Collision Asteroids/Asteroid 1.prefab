@@ -189,6 +189,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   Health: 0
+  OriginalHealth: 0
   Id: 0
   MapPointsIndex: 0
   Name: Collision Asteroid
@@ -205,7 +206,13 @@ MonoBehaviour:
   Body: {fileID: 2812687852296569020}
   Speed: 0
   SizeClass: 3
-  CollisionObstacle: {fileID: 0}
+  LastHitAsteroid: {fileID: 0}
+  ExplosionAnimation: {fileID: 0}
+  HasCollisionAnimatoion: 0
+  HasCrackedSprite: 0
+  DropCollisionAnimation: 0
+  CrackedSprite: {fileID: 0}
+  SpriteRenderer: {fileID: 1846929101835880065}
 --- !u!1 &5206769835850001811
 GameObject:
   m_ObjectHideFlags: 0

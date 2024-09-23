@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Unity.Mathematics;
 using UnityEngine;
+using UnityEngine.Rendering.Universal;
 
 namespace Assets.Scripts.Entities
 {
@@ -16,7 +17,11 @@ namespace Assets.Scripts.Entities
         public HashSet<Ship> TouchingShips = new HashSet<Ship>();
         public HashSet<Obstacle> NearbyObstacles = new HashSet<Obstacle>();
         public HashSet<CollisionAsteroid> AsteroidsHit = new HashSet<CollisionAsteroid>();
-        public Obstacle CollisionObstacle;
+        public CollisionAsteroid LastHitAsteroid;
+        public GameObject ExplosionAnimation;
+        public bool HasCollisionAnimation, HasCrackedSprite;
+        public Sprite CrackedSprite;
+        public SpriteRenderer SpriteRenderer;
         // Use this for initialization
         public new void Setup(LevelStage level, int id)
         {
@@ -38,6 +43,15 @@ namespace Assets.Scripts.Entities
 
             //Debug.Log($"Setup Asteroid {Name} with Speed: {Speed}, starting at {transform.localPosition}");
             SetMoving();
+
+            if (ExplosionAnimation != null)
+            {
+                HasCollisionAnimation = true;
+            }
+            if (CrackedSprite != null)
+            {
+                HasCrackedSprite = true;
+            }
         }
         public void SetMoving()
         {
@@ -73,7 +87,12 @@ namespace Assets.Scripts.Entities
 
                 if (Health == 0)
                 {
+                    SpriteRenderer.sprite = CrackedSprite;
                     Invoke(nameof(DelayedCollision), ConfigData.CollisionAsteroidKillDelay);
+                }
+                else if (HasCrackedSprite && (float) Health / OriginalHealth < .5f)
+                {
+                    SpriteRenderer.sprite = CrackedSprite;
                 }
             }
             else
@@ -90,39 +109,56 @@ namespace Assets.Scripts.Entities
             {
                 //Debug.Log($"It looks like {ship.Name} was already nearby and hit {Name}");
                 //ship.Kill(null);
-                CollisionAsteroid asteroid = (CollisionAsteroid)obstacle;
-                AsteroidsHit.Add(asteroid);
-                if (asteroid.AsteroidsHit.Contains(this))
+                LastHitAsteroid = (CollisionAsteroid)obstacle;
+                AsteroidsHit.Add(LastHitAsteroid);
+                if (LastHitAsteroid.AsteroidsHit.Contains(this))
                 {
                     //Debug.Log($"{asteroid.Name} has already registered the hit against {Name}");
                     return;
                 }
                 //Debug.Log($"{Name} ({SizeClass}) has been hit by {asteroid.Name} ({asteroid.SizeClass}) and will take {asteroid.Health} damage against {Health}");
-                if (asteroid.SizeClass < SizeClass) // kill the other asteroid, damage this asteroid
+                if (LastHitAsteroid.SizeClass < SizeClass) // kill the other asteroid, damage this asteroid
                 {
                     
-                    Health -= math.min(asteroid.OriginalHealth, Health);
-                    asteroid.Health = 0;
-                    
+                    Health -= math.min(LastHitAsteroid.OriginalHealth, Health);
+                    LastHitAsteroid.Health = 0;
+
                 }
-                else if (asteroid.SizeClass == SizeClass) // kill both asteroids
+                else if (LastHitAsteroid.SizeClass == SizeClass) // kill both asteroids
                 {
                     Health = 0;
-                    asteroid.Health = 0;
+                    LastHitAsteroid.Health = 0;
                 }
                 else // kill this asteroid, damage the other asteroid
                 {
-                    asteroid.Health -= math.min(OriginalHealth, asteroid.Health);
+                    LastHitAsteroid.Health -= math.min(OriginalHealth, LastHitAsteroid.Health);
                     Health = 0;
+                   
                 }
 
+                
+                if (LastHitAsteroid.Health == 0)
+                {
+                    LastHitAsteroid.SpriteRenderer.sprite = LastHitAsteroid.CrackedSprite;
+                    LastHitAsteroid.Invoke(nameof(DelayedCollision), ConfigData.CollisionAsteroidKillDelay);
+                }
+                else if (LastHitAsteroid.HasCrackedSprite && (float)LastHitAsteroid.Health / LastHitAsteroid.OriginalHealth < .5f)
+                {
+                    LastHitAsteroid.SpriteRenderer.sprite = LastHitAsteroid.CrackedSprite;
+                }
                 if (Health == 0)
                 {
+                    SpriteRenderer.sprite = CrackedSprite;
                     Invoke(nameof(DelayedCollision), ConfigData.CollisionAsteroidKillDelay);
                 }
-                if (asteroid.Health == 0)
+                else if (HasCrackedSprite && (float)Health / OriginalHealth < .5f)
                 {
-                    asteroid.Invoke(nameof(DelayedCollision), ConfigData.CollisionAsteroidKillDelay);
+                    SpriteRenderer.sprite = CrackedSprite;
+                    LastHitAsteroid = null;
+                }
+                else
+                {
+                    LastHitAsteroid = null;
                 }
 
             }
@@ -185,12 +221,24 @@ namespace Assets.Scripts.Entities
             Kill();
         }
 
+        private void ShowCollisionAnimation()
+        {
+            if (!Level.IsTraining && HasCollisionAnimation)
+            {
+                GameObject explosion = Instantiate(ExplosionAnimation, Vector2.zero, Quaternion.identity);
+                explosion.transform.parent = Level.Map.transform;
+                explosion.transform.localPosition = GetPosition();
+            }
+
+        }
+
         public override void Kill()
         {
             NearbyShips.ToList().ForEach((ship) =>
             {
                 ship.LeftNearbyAsteroid(this);
             });
+            ShowCollisionAnimation();
             base.Kill();
         }
     }

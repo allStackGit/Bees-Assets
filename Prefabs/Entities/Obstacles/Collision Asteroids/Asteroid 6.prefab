@@ -24,6 +24,10 @@ PrefabInstance:
       propertyPath: SizeClass
       value: 3
       objectReference: {fileID: 0}
+    - target: {fileID: 2520248311329120408, guid: c56c01c11c9ad6a4aa3c7694969bdc5b, type: 3}
+      propertyPath: CrackedSprite
+      value: 
+      objectReference: {fileID: 21300000, guid: 8190ee791a7b539408dfa9bea7dd1954, type: 3}
     - target: {fileID: 3873131917324500913, guid: c56c01c11c9ad6a4aa3c7694969bdc5b, type: 3}
       propertyPath: m_IsTrigger
       value: 1
