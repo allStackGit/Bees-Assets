@@ -1416,7 +1416,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             if (!IsDead)
             {
                 IsDead = true;
-                Debug.Log($"Killing ship {Name} with size Factor {ConfigData.GetShipSizeFactor(ShipType)}");
+                //Debug.Log($"Killing ship {Name} with size Factor {ConfigData.GetShipSizeFactor(ShipType)}");
                 GameState state = Level.GetState();
                 if (IsPathfinding)
                 {
@@ -1479,7 +1479,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     {
                         Destroy(turret.TargetingMarker);
                     });
-                    Debug.Log($"Destroying movement marker for {Name}");
+                    //Debug.Log($"Destroying movement marker for {Name}");
                     Destroy(MovementMarker);
                 }
                 gameObject.SetActive(false);
@@ -1488,7 +1488,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         }
         protected void DelayedKill()
         {
-            Debug.Log($"{Name} delay killed");
+            //Debug.Log($"{Name} delay killed");
             Destroy(gameObject);
         }
         /// <summary>

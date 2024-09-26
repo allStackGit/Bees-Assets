@@ -31,9 +31,13 @@ namespace Assets.Scripts.Entities
         public virtual void Kill()
         {
             //Debug.Log($"Killing {Name}");
-            IsDead = true;
-            Level.GetState().RemoveObstacle(this);
-            Destroy(gameObject);
+            if (!IsDead)
+            {
+                IsDead = true;
+                Level.GetState().RemoveObstacle(this);
+                Destroy(gameObject);
+            }
+
         }
 
         public Vector2 GetPosition()

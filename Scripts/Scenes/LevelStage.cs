@@ -71,6 +71,14 @@ namespace Assets.Scripts.Scenes
         public int ChosenObstaclesIndex;
         public List<GameObject> MiningAsteroidPrefabs = new List<GameObject>();
         public List<GameObject> CollisionAsteroidPrefabs = new List<GameObject>();
+        /// <summary>
+        /// Asteroids that can potentially be spawned from larger asteroids breaking apart
+        /// </summary>
+        public List<GameObject> BreakawayAsteroids = new List<GameObject>();
+        /// <summary>
+        /// Asteroid pieces that spawn (and don't collide) from larger asteroids breaking apart
+        /// </summary>
+        public List<GameObject> AsteroidPieces = new List<GameObject>();
 
         public float MinX, MinY, MaxX, MaxY;
         public int DefaultZoom, MaxZoom, MinZoom, ZoomSpeed, ScrollSpeed;
@@ -654,17 +662,21 @@ namespace Assets.Scripts.Scenes
         }
         private void SpawnAsteroid()
         {
-            GameState state = GetState();
-            Vector2 position = CollisionAsteroidPrefabs[Utilities.RandomInt(CollisionAsteroidPrefabs.Count)].transform.position;
             GameObject instance = Instantiate(CollisionAsteroidPrefabs[Utilities.RandomInt(CollisionAsteroidPrefabs.Count)]);
+            AddAsteroid(instance);
+            Invoke(nameof(SpawnAsteroid), AsteroidMinimumSpawnRate + Utilities.RandomInt(AsteroidMaxSpawnRate - AsteroidMinimumSpawnRate));
+        }
+
+        public CollisionAsteroid AddAsteroid(GameObject instance)
+        {
+            GameState state = GetState();
             instance.transform.parent = Map.transform;
-            instance.transform.localPosition = position;
             CollisionAsteroid asteroid = instance.GetComponent<CollisionAsteroid>();
             state.AddObstacle(asteroid);
             asteroid.Setup(this, state.GetId());
 
-            Invoke(nameof(SpawnAsteroid), AsteroidMinimumSpawnRate + Utilities.RandomInt(AsteroidMaxSpawnRate - AsteroidMinimumSpawnRate));
             asteroid.MapPointsIndex = Pathfinder.AddObstacle(asteroid);
+            return asteroid;
         }
         private void SetTriggers()
         {
@@ -1272,7 +1284,14 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
                 Obstacle obstacle = obstacles[i];
                 if (obstacle != null)
                 {
-                    obstacle.Kill();
+                    if (obstacle.IsCollisionAsteroid)
+                    {
+                        ((CollisionAsteroid)obstacle).Kill(true);
+                    }
+                    else
+                    {
+                        obstacle.Kill();
+                    }
                 }
             }
 
