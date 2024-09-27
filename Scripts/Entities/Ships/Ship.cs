@@ -557,8 +557,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             if (Squad.HasCustomColor)
             {
                 //Debug.Log("Setting sprite for ship");
-                float start = Time.realtimeSinceStartup;
-                string status = "Loading";
+                //float start = Time.realtimeSinceStartup;
+                //string status = "Loading";
                 ColoredPrefabs.Insert(0, gameObject);
                 Color[] colors = ConfigData.ChangeableShipColors.GetValueOrDefault(ShipType);
                 int index = 0;
@@ -580,7 +580,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     }
                     if (!hasLoadedSprite)
                     {
-                        status = "Drawing";
+                        //status = "Drawing";
                         Sprite shipIcon = prefabSprite;
                         int[] changeablePixels = Utilities.SetChangablePixelsForImage(colors, shipIcon);
                         Sprite recolored = Utilities.SetImageColor(Squad.Color, shipIcon, changeablePixels);
@@ -1315,7 +1315,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 {
                     if (shooter.Killer != null) // someone killed the ship that damaged this ship. The killer should receive stats for the damage
                     {
-                        Debug.Log($"{shooter.Killer.Name} has killed {shooter.Name} who has in turn damaged {target.Name} on the same side. {shooter.Killer.Name} has done {-tsvChange} additional damage");
+                        //Debug.Log($"{shooter.Killer.Name} has killed {shooter.Name} who has in turn damaged {target.Name} on the same side. {shooter.Killer.Name} has done {-tsvChange} additional damage");
                         shooter.Killer.FleetShip.DamageDone += -tsvChange;
                         shooter.Killer.Squad.SavedSquad.Stats.DamageDone += -tsvChange;
 
@@ -1786,7 +1786,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             if (!Level.IsTraining)
             {
                 GameObject explosion = Instantiate(ShipExplosion, Vector2.zero, Quaternion.identity);
-                explosion.transform.localScale *= ConfigData.GetShipSizeFactor(ShipType);
                 explosion.transform.parent = Level.Map.transform;
                 explosion.transform.localPosition = GetPosition();
 
@@ -1797,6 +1796,16 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     shatteredShip.transform.localPosition = GetPosition();
                     shatteredShip.transform.eulerAngles = transform.eulerAngles;
                     Level.GetState().AddDeadBody(shatteredShip);
+
+                    if (Squad.HasCustomColor)
+                    {
+                        Color[] colors = ConfigData.ChangeableShipColors.GetValueOrDefault(ShipType);
+                        Sprite prefabSprite = shatteredShip.GetComponent<SpriteRenderer>().sprite;
+                        Sprite shipIcon = prefabSprite;
+                        int[] changeablePixels = Utilities.SetChangablePixelsForImage(colors, shipIcon);
+                        Sprite recolored = Utilities.SetImageColor(Squad.Color, shipIcon, changeablePixels);
+                        shatteredShip.GetComponent<SpriteRenderer>().sprite = recolored;
+                    }
                 }
 
             }

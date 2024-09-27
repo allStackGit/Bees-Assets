@@ -4106,7 +4106,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: RecordStats
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: TimeoutTime
@@ -4122,7 +4122,7 @@ PrefabInstance:
       objectReference: {fileID: 641683768750393639, guid: 799add807972d1b429b4376b4f871f10, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: HasObstacles
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: IsTestFiring
@@ -4170,7 +4170,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: ActivateHiveMind
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: AsteroidMaxSpeed
@@ -4186,7 +4186,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: OverrideUserSide
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: AsteroidSpawnRate
@@ -4226,11 +4226,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: AsteroidMaxSpawnRate
-      value: 2
+      value: 10
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: HasRandomizedOptions
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: MovementMarkerPrefab
@@ -4238,7 +4238,7 @@ PrefabInstance:
       objectReference: {fileID: 2507697582912947509, guid: d5ee77a24c7f6a6499324a8a600b4943, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: UseFullyRandomSquads
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: TargetingMarkerPrefab
@@ -4270,7 +4270,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: AsteroidMinimumSpawnRate
-      value: 1
+      value: 5
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: ForestPrefabs.Array.size
@@ -4322,7 +4322,7 @@ PrefabInstance:
       objectReference: {fileID: 7326860766664323640, guid: 17bf89bc91bbb5d4e8f81054255c1aab, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: OverrideStrats.Array.size
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: TheWallPrefabs.Array.size
@@ -4334,7 +4334,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: ActivateCollisionAsteroids
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: ObstaclePrefabs.Array.size
@@ -4618,7 +4618,7 @@ PrefabInstance:
       objectReference: {fileID: 7326860766664323640, guid: 17bf89bc91bbb5d4e8f81054255c1aab, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: OverrideBeeShipTypes.Array.size
-      value: 5
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: ThreePathsPrefabs.Array.data[0]
@@ -4662,7 +4662,7 @@ PrefabInstance:
       objectReference: {fileID: 2899863341814993073, guid: 39f193e32fc710b4bb866fc5c890e817, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: OverrideHumanShipTypes.Array.size
-      value: 5
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: OverrideBeeShipTypes.Array.data[0]
@@ -4686,7 +4686,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: CollisionAsteroidPrefabs.Array.size
-      value: 4
+      value: 10
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: OverrideHumanShipTypes.Array.data[0]
@@ -4711,39 +4711,39 @@ PrefabInstance:
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: CollisionAsteroidPrefabs.Array.data[0]
       value: 
-      objectReference: {fileID: 2899863341814993073, guid: e45e959617e61c940badb738ea0b350d, type: 3}
+      objectReference: {fileID: 226534545502904114, guid: c56c01c11c9ad6a4aa3c7694969bdc5b, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: CollisionAsteroidPrefabs.Array.data[1]
       value: 
-      objectReference: {fileID: 2899863341814993073, guid: c785de744e9e8ca4b80a961b572f8d36, type: 3}
+      objectReference: {fileID: 439529657869320101, guid: fd259f1b80ec2cb4ab265509be0d9310, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: CollisionAsteroidPrefabs.Array.data[2]
       value: 
-      objectReference: {fileID: 2899863341814993073, guid: 13b78214c45620642affa6632e8f7f23, type: 3}
+      objectReference: {fileID: 4975317520758011166, guid: d4c09c3b30a0df240804e7d2ae0ce4f1, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: CollisionAsteroidPrefabs.Array.data[3]
       value: 
-      objectReference: {fileID: 2899863341814993073, guid: a1969efbfb7bd964d87858bba1ec1393, type: 3}
+      objectReference: {fileID: 2899863341814993073, guid: 795ef7f673ee4ad41bd8f30c805518eb, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: CollisionAsteroidPrefabs.Array.data[4]
       value: 
-      objectReference: {fileID: 2899863341814993073, guid: a1969efbfb7bd964d87858bba1ec1393, type: 3}
+      objectReference: {fileID: 2899863341814993073, guid: 5ba5ea3048392e449830477d46f83e9e, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: CollisionAsteroidPrefabs.Array.data[5]
       value: 
-      objectReference: {fileID: 2899863341814993073, guid: e45e959617e61c940badb738ea0b350d, type: 3}
+      objectReference: {fileID: 2899863341814993073, guid: 39f193e32fc710b4bb866fc5c890e817, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: CollisionAsteroidPrefabs.Array.data[6]
       value: 
-      objectReference: {fileID: 2899863341814993073, guid: c785de744e9e8ca4b80a961b572f8d36, type: 3}
+      objectReference: {fileID: 2899863341814993073, guid: e45e959617e61c940badb738ea0b350d, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: CollisionAsteroidPrefabs.Array.data[7]
       value: 
-      objectReference: {fileID: 2899863341814993073, guid: 13b78214c45620642affa6632e8f7f23, type: 3}
+      objectReference: {fileID: 2899863341814993073, guid: c785de744e9e8ca4b80a961b572f8d36, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: CollisionAsteroidPrefabs.Array.data[8]
       value: 
-      objectReference: {fileID: 2899863341814993073, guid: a1969efbfb7bd964d87858bba1ec1393, type: 3}
+      objectReference: {fileID: 2899863341814993073, guid: 13b78214c45620642affa6632e8f7f23, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: CollisionAsteroidPrefabs.Array.data[9]
       value: 

@@ -57,7 +57,7 @@ namespace Assets.Scripts.Entities
                 HasCrackedSprite = true;
             }
             IsImmune = true;
-            Invoke(nameof(RemoveImmunity), 2);
+            Invoke(nameof(RemoveImmunity), 4);
         }
 
         public void RemoveImmunity()
@@ -126,14 +126,14 @@ namespace Assets.Scripts.Entities
 
         public void ObstacleCollision(Obstacle obstacle)
         {
-            if (NearbyObstacles.Contains(obstacle) && !IsImmune)
+            if (NearbyObstacles.Contains(obstacle) && !IsImmune && HasEnteredMap)
             {
                 //Debug.Log($"It looks like {ship.Name} was already nearby and hit {Name}");
                 //ship.Kill(null);
                 LastHitAsteroid = (CollisionAsteroid)obstacle;
-                if (!LastHitAsteroid.IsImmune)
+                if (!LastHitAsteroid.IsImmune && LastHitAsteroid.HasEnteredMap)
                 {
-                    Debug.Log($"It looks like {LastHitAsteroid.Name} was already nearby and hit {Name}");
+                    //Debug.Log($"It looks like {LastHitAsteroid.Name} was already nearby and hit {Name}");
                     AsteroidsHit.Add(LastHitAsteroid);
                     if (LastHitAsteroid.AsteroidsHit.Contains(this))
                     {
@@ -288,16 +288,17 @@ namespace Assets.Scripts.Entities
                     {
                         ship.LeftNearbyAsteroid(this);
                     });
-                    SpawnBreakAwayAsteroids();
-                    ShowCollisionAnimation();
+                    base.Kill();
+                    //SpawnBreakAwayAsteroids();
+                    //ShowCollisionAnimation();
                 }
             }
         }
 
         public void SpawnBreakAwayAsteroids()
         {
-            int asteroidCount = SizeClass < 6 ? 0 : (SizeClass > 6 ? 4 : 2);
-            int pieceCount = SizeClass * 2;
+            int asteroidCount = SizeClass < 6 ? 0 : (SizeClass > 6 ? 3 : 2);
+            int pieceCount = (int) (SizeClass * 1.5f);
             GameState state = Level.GetState();
 
             //Debug.Log($"{Name} died and spawned {asteroidCount} asteroids and {pieceCount} pieces");
@@ -308,6 +309,7 @@ namespace Assets.Scripts.Entities
                 CollisionAsteroid asteroid = Level.AddAsteroid(instance);
                 asteroid.transform.localPosition = GetPosition();
                 asteroid.Body.angularVelocity = Body.angularVelocity;
+                asteroid.HasEnteredMap = true;
 
             }
 

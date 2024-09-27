@@ -8,6 +8,7 @@ using UnityEngine;
 public class FullRetreat : Command
 {
     public WarpGate TargetWarpGate;
+    public List<Ship> ShipsWaitingToWarp = new List<Ship>();
     public void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy, WarpGate warpgate)
     {
         if (warpgate != null)
@@ -24,7 +25,8 @@ public class FullRetreat : Command
                     TargetWarpGate.ShipsWarpingHere.Add(ship);
                     if (ship.Collider.IsTouching(TargetWarpGate.WarpCollider))
                     {
-                        WarpKill(ship);
+                        ShipsWaitingToWarp.Add(ship);
+                        WaitToWarp();
                     }
                 }
 
@@ -52,7 +54,7 @@ public class FullRetreat : Command
 
     public void MoveToWarpGate()
     {
-        if (!Squad.IsDead && !TargetWarpGate.IsDead && TargetWarpGate.ShipAnimationController.IsReadyToWarp)
+        if (!Squad.IsDead && !TargetWarpGate.IsDead)
         {
             Vector2 targetPosition = TargetWarpGate.GetPosition() + TargetWarpGate.WarpPoint;
             Squad.GetShips().ForEach((ship) =>
@@ -67,6 +69,22 @@ public class FullRetreat : Command
         else if (TargetWarpGate.IsDead)
         {
             SetFinalize("Warp gate was destroyed");
+        }
+    }
+
+    public void WaitToWarp()
+    {
+        if (TargetWarpGate.ShipAnimationController.IsReadyToWarp)
+        {
+            ShipsWaitingToWarp.ForEach((ship) =>
+            {
+                WarpKill(ship);
+            });
+            ShipsWaitingToWarp.Clear();
+        }
+        else
+        {
+            Invoke(nameof(WaitToWarp), 2);
         }
     }
 

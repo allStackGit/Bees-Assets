@@ -126,7 +126,7 @@ MonoBehaviour:
   Speed: 0
   SpecialFirePower: 0
   CurrentSpeed: 0
-  ShipExplosion: {fileID: 1876865744220396715, guid: 1f58b7947f208d944b8669f2e51a9a52, type: 3}
+  ShipExplosion: {fileID: 2246065620099526006, guid: 065ca2e62b6492c47aecb8daad1641a5, type: 3}
   HealthBar: {fileID: 3179993197624593158}
   MiniMapIcon: {fileID: 4971123995003810503}
   ShipAnimation: {fileID: 0}
@@ -134,6 +134,7 @@ MonoBehaviour:
   TargetCoordinates: {x: 0, y: 0}
   FinalDestination: {x: 0, y: 0}
   OffsetFromCenter: {x: 0, y: 0}
+  PathfindingDestination: {x: 0, y: 0}
   WaitingTargetCoordinates: {x: 0, y: 0}
   Squad: {fileID: 0}
   MotherSquad: {fileID: 0}
@@ -168,6 +169,8 @@ MonoBehaviour:
   HasRightRocketFlares: 0
   HasMovementMarker: 0
   HasWaitingTargetCoordinates: 0
+  HasShatteredShip: 0
+  HasEnteredMap: 0
   Weapons: []
   ProjectilePrefabs:
   - {fileID: 6428638681076635372, guid: c5d2fa5f5d52d0d4b855fdc29fca6e90, type: 3}
@@ -178,6 +181,7 @@ MonoBehaviour:
   CenterRocketFlares:
   - {fileID: 1542159203849933648}
   RightRocketFlares: []
+  ShatteredShips: []
   Brain: {fileID: 0}
   NearbyAsteroids: []
   Turrets: []
@@ -186,6 +190,7 @@ MonoBehaviour:
   RotationSpeed: 0
   TargetEnemyShipToFollow: {fileID: 0}
   IsCloseEnoughToTargetEnemyShipToFollow: 0
+  Killer: {fileID: 0}
   PathfindingThreadComplete: 0
   IsPathfinding: 0
   PathfindingThread: 0
@@ -221,6 +226,7 @@ MonoBehaviour:
   __CommandTargetingQueue: []
   __NearbyAsteroids: []
   __HivemindShips: []
+  __RejectReasons: []
   __Clearance: 0
   Direction: 0
   ShouldDetonate: 0

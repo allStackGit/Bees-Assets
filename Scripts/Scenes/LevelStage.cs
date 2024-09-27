@@ -456,7 +456,7 @@ namespace Assets.Scripts.Scenes
             if (DoesUserHaveController)
             {
                 HasPlayer = true;
-                if (OverrideUserSide == 1 || OverrideUserSide == 2 && OverrideUserSide != ConfigData.Configuration.UserSide)
+                if ((OverrideUserSide == 1 || OverrideUserSide == 2) && OverrideUserSide != ConfigData.Configuration.UserSide)
                 {
                     ConfigData.SwapSides();
                 }
@@ -1061,6 +1061,8 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
                 ConfigData.Configuration.SquadGenerationCount = GeneratedSquadCountOverride;
             }
 
+            //Debug.Log($"The human side is {ConfigData.Configuration.HumanSide}, the Bee side is {ConfigData.Configuration.BeeSide}, the AI side is {ConfigData.Configuration.AISide}, the user side is {ConfigData.Configuration.UserSide}");
+            //Debug.Log($"The AI Starting position is {AIStartingPosition}, the user starting position is {UserStartingPosition}");
             StartingPositions[ConfigData.Configuration.AISide - 1] = AIStartingPosition;
             StartingPositions[ConfigData.Configuration.UserSide - 1] = UserStartingPosition;
 

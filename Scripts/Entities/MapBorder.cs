@@ -18,7 +18,7 @@ namespace Assets.Scripts.Entities
                 if (asteroid.HasEnteredMap)
                 {
                     //Debug.Log($"{asteroid.Name} left the map border and is being killed");
-                    asteroid.Kill();
+                    asteroid.Kill(true);
                 }
                 else
                 {
@@ -52,6 +52,11 @@ namespace Assets.Scripts.Entities
                     }
                     ship.StopMoving("Hit map border");
                 }
+            }
+            else if (collidingThing.CompareTag("Obstacle"))
+            {
+                CollisionAsteroid asteroid = collidingThing.GetComponent<CollisionAsteroid>();
+                asteroid.HasEnteredMap = true;
             }
         }
 

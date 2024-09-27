@@ -11,11 +11,9 @@ GameObject:
   - component: {fileID: 316524386524035317}
   - component: {fileID: 6950940271862830520}
   - component: {fileID: 6861675588789407317}
-  - component: {fileID: -1155758467170267426}
-  - component: {fileID: 6561188998541698932}
-  - component: {fileID: 5287862860928756492}
-  m_Layer: 20
-  m_Name: Splode
+  - component: {fileID: 3781481413380275437}
+  m_Layer: 0
+  m_Name: Tiny Ship Explosion
   m_TagString: Projectile
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -75,9 +73,9 @@ SpriteRenderer:
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: -41909203
-  m_SortingLayer: 25
-  m_SortingOrder: -1
-  m_Sprite: {fileID: -2022771496, guid: d25af9551e49a27439ee528b9f38b0f8, type: 3}
+  m_SortingLayer: 27
+  m_SortingOrder: 0
+  m_Sprite: {fileID: -1113784017, guid: 9cb815d47a1f4cf4193e60d0e24b772f, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
@@ -98,7 +96,7 @@ Animator:
   m_GameObject: {fileID: 1876865744220396715}
   m_Enabled: 1
   m_Avatar: {fileID: 0}
-  m_Controller: {fileID: 9100000, guid: c15a22c6f7dec3248aead5ff2477b0f7, type: 2}
+  m_Controller: {fileID: 9100000, guid: df734f7c8b00bd14584dc60af87815c3, type: 2}
   m_CullingMode: 0
   m_UpdateMode: 0
   m_ApplyRootMotion: 0
@@ -109,42 +107,7 @@ Animator:
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorStateOnDisable: 0
   m_WriteDefaultValuesOnDisable: 0
---- !u!58 &-1155758467170267426
-CircleCollider2D:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1876865744220396715}
-  m_Enabled: 1
-  m_Density: 1
-  m_Material: {fileID: 0}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_LayerOverridePriority: 0
-  m_ForceSendLayers:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  m_ForceReceiveLayers:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  m_ContactCaptureLayers:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  m_CallbackLayers:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  m_IsTrigger: 1
-  m_UsedByEffector: 0
-  m_UsedByComposite: 0
-  m_Offset: {x: 0, y: 0}
-  serializedVersion: 2
-  m_Radius: 2
---- !u!114 &6561188998541698932
+--- !u!114 &3781481413380275437
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -153,52 +116,6 @@ MonoBehaviour:
   m_GameObject: {fileID: 1876865744220396715}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f79e2669952bc0e4a832f2dc512b367c, type: 3}
+  m_Script: {fileID: 11500000, guid: dcac2c4df5778a44499270e3c3b971a2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  Id: 0
-  Age: 0
-  Level: {fileID: 0}
-  Side: 0
-  Collider: {fileID: 0}
-  Body: {fileID: 0}
-  Power: 0
-  Range: 0
-  Speed: 0
-  Shooter: {fileID: 0}
-  Target: {fileID: 0}
-  Weapon: {fileID: 0}
-  StartingPosition: {x: 0, y: 0}
-  Angle: 0
-  ExplosionAnimationPrefab: {fileID: 0}
-  Explosion: {fileID: 0}
-  Name: 
-  HasExplosion: 0
-  HasSetMovement: 0
---- !u!50 &5287862860928756492
-Rigidbody2D:
-  serializedVersion: 4
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1876865744220396715}
-  m_BodyType: 1
-  m_Simulated: 1
-  m_UseFullKinematicContacts: 0
-  m_UseAutoMass: 0
-  m_Mass: 1
-  m_LinearDrag: 0
-  m_AngularDrag: 0.05
-  m_GravityScale: 1
-  m_Material: {fileID: 0}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_Interpolate: 0
-  m_SleepingMode: 1
-  m_CollisionDetection: 0
-  m_Constraints: 0

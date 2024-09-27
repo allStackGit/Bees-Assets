@@ -348,6 +348,7 @@ namespace Assets.Scripts
         }
         public static void SwapSides()
         {
+            Debug.Log($"Switching sides from {Configuration.UserSide}");
             if (Configuration.UserSide == Configuration.BeeSide) // if it was the bee side switch to the human side
             {
                 //Debug.Log($"Switching sides to humans");

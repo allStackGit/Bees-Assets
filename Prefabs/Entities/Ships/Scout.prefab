@@ -178,7 +178,8 @@ MonoBehaviour:
   CenterRocketFlares:
   - {fileID: 1514532124611589136}
   RightRocketFlares: []
-  ShatteredShips: []
+  ShatteredShips:
+  - {fileID: 3284305956443189761, guid: 9155b5af830f51c48ab1b31e8596c5f8, type: 3}
   Brain: {fileID: 0}
   NearbyAsteroids: []
   Turrets: []
@@ -187,6 +188,7 @@ MonoBehaviour:
   RotationSpeed: 0
   TargetEnemyShipToFollow: {fileID: 0}
   IsCloseEnoughToTargetEnemyShipToFollow: 0
+  Killer: {fileID: 0}
   PathfindingThreadComplete: 0
   IsPathfinding: 0
   PathfindingThread: 0

@@ -23,7 +23,8 @@ namespace Assets.Scripts.Entities.Ships
                     if (fullRetreat.TargetWarpGate == this)
                     {
                         Debug.Log($"{ship.Name} hit {Name} and so we're warping it");
-                        fullRetreat.WarpKill(ship);
+                        fullRetreat.ShipsWaitingToWarp.Add(ship);
+                        fullRetreat.WaitToWarp();
                     }
                 }
             }
