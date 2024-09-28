@@ -80,7 +80,7 @@ SpriteRenderer:
   m_SortingLayerID: 2059436743
   m_SortingLayer: 10
   m_SortingOrder: 1
-  m_Sprite: {fileID: 21300000, guid: 5db9059f49409824795cd80bbf0fd991, type: 3}
+  m_Sprite: {fileID: 41769915, guid: 5db9059f49409824795cd80bbf0fd991, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
@@ -110,7 +110,6 @@ MonoBehaviour:
   Collider: {fileID: 0}
   Body: {fileID: 0}
   ShowDebug: 0
-  SizeClass: 4
   Health: 0
   MaxHealth: 0
   OriginalHealth: 0
@@ -120,6 +119,7 @@ MonoBehaviour:
   Clearance: 0
   MaxRange: 0
   HalfMaxRange: 0
+  SizeClass: 4
   ProjectileValue: 0
   Speed: 0
   SpecialFirePower: 0
@@ -128,9 +128,12 @@ MonoBehaviour:
   HealthBar: {fileID: 3849417082422795799}
   MiniMapIcon: {fileID: 8676112412603631603}
   ShipAnimation: {fileID: 8908017228487048187}
+  MovementMarker: {fileID: 0}
   TargetCoordinates: {x: 0, y: 0}
   FinalDestination: {x: 0, y: 0}
   OffsetFromCenter: {x: 0, y: 0}
+  PathfindingDestination: {x: 0, y: 0}
+  WaitingTargetCoordinates: {x: 0, y: 0}
   Squad: {fileID: 0}
   MotherSquad: {fileID: 0}
   DefaultAngle: 0
@@ -162,6 +165,10 @@ MonoBehaviour:
   HasLeftRocketFlares: 0
   HasCenterRocketFlares: 0
   HasRightRocketFlares: 0
+  HasMovementMarker: 0
+  HasWaitingTargetCoordinates: 0
+  HasShatteredShip: 0
+  HasEnteredMap: 0
   Weapons: []
   ProjectilePrefabs:
   - {fileID: 2670737595383420918, guid: cbdd4db6593349049b7d89684f0bd405, type: 3}
@@ -171,6 +178,7 @@ MonoBehaviour:
   LeftRocketFlares: []
   CenterRocketFlares: []
   RightRocketFlares: []
+  ShatteredShips: []
   Brain: {fileID: 0}
   NearbyAsteroids: []
   Turrets: []
@@ -179,6 +187,7 @@ MonoBehaviour:
   RotationSpeed: 0
   TargetEnemyShipToFollow: {fileID: 0}
   IsCloseEnoughToTargetEnemyShipToFollow: 0
+  Killer: {fileID: 0}
   PathfindingThreadComplete: 0
   IsPathfinding: 0
   PathfindingThread: 0
@@ -214,6 +223,7 @@ MonoBehaviour:
   __CommandTargetingQueue: []
   __NearbyAsteroids: []
   __HivemindShips: []
+  __RejectReasons: []
   __Clearance: 0
   Direction: 0
   ShouldDetonate: 0
@@ -486,6 +496,10 @@ PrefabInstance:
     m_TransformParent: {fileID: 2518675752222090672}
     m_Modifications:
     - target: {fileID: 612356924527859748, guid: 17a735a48a0688b459470dc3c263bc96, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 612356924527859748, guid: 17a735a48a0688b459470dc3c263bc96, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0
       objectReference: {fileID: 0}
@@ -525,6 +539,10 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 612356924527859748, guid: 17a735a48a0688b459470dc3c263bc96, type: 3}
+      propertyPath: m_ConstrainProportionsScale
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 3996505235139677433, guid: 17a735a48a0688b459470dc3c263bc96, type: 3}
       propertyPath: m_Name
       value: Carpenter Bee Mining Animation
@@ -533,6 +551,18 @@ PrefabInstance:
       propertyPath: m_IsActive
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 4307895738237365756, guid: 17a735a48a0688b459470dc3c263bc96, type: 3}
+      propertyPath: m_Controller
+      value: 
+      objectReference: {fileID: 9100000, guid: 5dcc57426ced28242b1062e43289246b, type: 2}
+    - target: {fileID: 7371250153668764225, guid: 17a735a48a0688b459470dc3c263bc96, type: 3}
+      propertyPath: m_Size.x
+      value: 16
+      objectReference: {fileID: 0}
+    - target: {fileID: 7371250153668764225, guid: 17a735a48a0688b459470dc3c263bc96, type: 3}
+      propertyPath: m_Sprite
+      value: 
+      objectReference: {fileID: 41769915, guid: 5db9059f49409824795cd80bbf0fd991, type: 3}
     - target: {fileID: 7371250153668764225, guid: 17a735a48a0688b459470dc3c263bc96, type: 3}
       propertyPath: m_SortingLayer
       value: 10
@@ -544,6 +574,10 @@ PrefabInstance:
     - target: {fileID: 7371250153668764225, guid: 17a735a48a0688b459470dc3c263bc96, type: 3}
       propertyPath: m_SortingLayerID
       value: 2059436743
+      objectReference: {fileID: 0}
+    - target: {fileID: 7371250153668764225, guid: 17a735a48a0688b459470dc3c263bc96, type: 3}
+      propertyPath: m_WasSpriteAssigned
+      value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []

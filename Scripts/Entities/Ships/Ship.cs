@@ -56,6 +56,10 @@ namespace Assets.Scripts.Entities.Ships
         public List<Weapon> Weapons;
         public List<GameObject> ProjectilePrefabs, WeaponPrefabs, ColoredPrefabs, LeftRocketFlares, CenterRocketFlares, RightRocketFlares, ShatteredShips;
         public Brain Brain = null;
+        /// <summary>
+        /// The shattered ship that was dropped when this ship died
+        /// </summary>
+        public GameObject DroppedShatteredShip;
         public Queue<Vector2> DestinationQueue = new Queue<Vector2>();
         public List<CollisionAsteroid> NearbyAsteroids = new List<CollisionAsteroid>();
         public List<Turret> Turrets = new List<Turret>();
@@ -1486,9 +1490,13 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 Invoke(nameof(DelayedKill), 5);
             }
         }
+        /// <summary>
+        /// Actually destroys the ship in the game
+        /// </summary>
         protected void DelayedKill()
         {
             //Debug.Log($"{Name} delay killed");
+            Destroy(DroppedShatteredShip);
             Destroy(gameObject);
         }
         /// <summary>
@@ -1806,6 +1814,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                         Sprite recolored = Utilities.SetImageColor(Squad.Color, shipIcon, changeablePixels);
                         shatteredShip.GetComponent<SpriteRenderer>().sprite = recolored;
                     }
+                    DroppedShatteredShip = shatteredShip;
+
                 }
 
             }
