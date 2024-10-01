@@ -60,7 +60,7 @@ namespace Assets.Scripts.Level
         public bool HasCommand => Command != null;
         public bool HasEnemy => HasCommand && Command.HasEnemy;
         public bool IsAttacking => HasCommand && Command.IsAttacking;
-        public Vector2 StartingPosition => Side == ConfigData.Configuration.UserSide ? Level.UserStartingPosition : Level.AIStartingPosition;
+        public Vector2 StartingPosition => Side == ConfigData.Configuration.UserSide ? Level.Map.UserStartingPosition : Level.Map.AIStartingPosition;
         public bool IsDefenseless => GetShips().All((s) => s.Firepower == 0);
         public bool HasMiningShips => GetShips().Any((s) => s.IsMiningShip);
         public bool AttackOnSight => !CeaseFire;
@@ -552,15 +552,15 @@ namespace Assets.Scripts.Level
                 int atTheWalls = 0;
                 int distance = 15;
                 Vector2 position = GetPosition();
-                if (position.x < (Level.MapRenderer.bounds.min.x + distance) || position.x > (Level.MapRenderer.bounds.max.x - distance)) // check if it's at the sides
+                if (position.x < (Level.Map.SpriteRenderer.bounds.min.x + distance) || position.x > (Level.Map.SpriteRenderer.bounds.max.x - distance)) // check if it's at the sides
                 {
                     atTheWalls = 1;
-                    if (position.y < (Level.MapRenderer.bounds.min.y + distance) || position.y > (Level.MapRenderer.bounds.max.y - distance))
+                    if (position.y < (Level.Map.SpriteRenderer.bounds.min.y + distance) || position.y > (Level.Map.SpriteRenderer.bounds.max.y - distance))
                     {
                         atTheWalls = 2;
                     }
                 }
-                else if (position.y < (Level.MapRenderer.bounds.min.y + distance) || position.y > (Level.MapRenderer.bounds.max.y - distance))
+                else if (position.y < (Level.Map.SpriteRenderer.bounds.min.y + distance) || position.y > (Level.Map.SpriteRenderer.bounds.max.y - distance))
                 {
                     atTheWalls = 1;
                 }

@@ -1487,7 +1487,15 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     Destroy(MovementMarker);
                 }
                 gameObject.SetActive(false);
-                Invoke(nameof(DelayedKill), 5);
+                if (!endKill)
+                {
+                    Invoke(nameof(DelayedKill), 5);
+                }
+                else
+                {
+                    Destroy(DroppedShatteredShip);
+                    Destroy(gameObject);
+                }
             }
         }
         /// <summary>

@@ -6274,7 +6274,7 @@ PrefabInstance:
     - target: {fileID: 191410528261708819, guid: ab06642a9f613714bbc702b13ca82f1f, type: 3}
       propertyPath: m_Sprite
       value: 
-      objectReference: {fileID: 21300000, guid: 5db9059f49409824795cd80bbf0fd991, type: 3}
+      objectReference: {fileID: 21300000, guid: 493b27d8a0dda9d4b8a201ee1eccd5cf, type: 3}
     - target: {fileID: 6546966112793727268, guid: ab06642a9f613714bbc702b13ca82f1f, type: 3}
       propertyPath: m_Delegates.Array.data[0].callback.m_PersistentCalls.m_Calls.Array.data[0].m_Mode
       value: 2
@@ -15998,7 +15998,7 @@ MonoBehaviour:
   __Updates: 0
   Side: 1
   BargeDragIcon: {fileID: 644091232}
-  BeaconDragIcon: {fileID: 0}
+  BeaconDragIcon: {fileID: 1775978390}
   CarrierDragIcon: {fileID: 994602278}
   CruiserDragIcon: {fileID: 1011857921}
   DreadnoughtDragIcon: {fileID: 113926026}
@@ -16116,7 +16116,7 @@ MonoBehaviour:
   WarpGateSprite: {fileID: 21300000, guid: 0aa980f13ad03b241a711695b2681ced, type: 3}
   BeehiveSprite: {fileID: 21300000, guid: d4ccb1a88f3a32c45a4858329a062a50, type: 3}
   BumblebeeSprite: {fileID: 21300000, guid: 8895656659003e54098b941c66c97d98, type: 3}
-  CarpenterBeeSprite: {fileID: 21300000, guid: 5db9059f49409824795cd80bbf0fd991, type: 3}
+  CarpenterBeeSprite: {fileID: 21300000, guid: 493b27d8a0dda9d4b8a201ee1eccd5cf, type: 3}
   HoneybeeSprite: {fileID: 21300000, guid: 456c9777ece630b47aeddb40a0513ae5, type: 3}
   HornetSprite: {fileID: 21300000, guid: 7dd6c3f58403611428645dcd4dc55e87, type: 3}
   LeafcutterSprite: {fileID: 21300000, guid: f15f08e19969a7b428bd29e7af8b36c6, type: 3}
@@ -20579,7 +20579,7 @@ PrefabInstance:
     - target: {fileID: 1109014343575341394, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_Sprite
       value: 
-      objectReference: {fileID: 21300000, guid: 5db9059f49409824795cd80bbf0fd991, type: 3}
+      objectReference: {fileID: 21300000, guid: 493b27d8a0dda9d4b8a201ee1eccd5cf, type: 3}
     - target: {fileID: 2470922290977067781, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_Padding.m_Left
       value: 5

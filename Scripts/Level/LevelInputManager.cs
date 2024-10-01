@@ -151,7 +151,7 @@ namespace Assets.Scripts.Level
                             {
                                 Vector2 position = squad.GetPosition();
                                 Level.Camera.transform.position = new Vector3(position.x, position.y, -10) + Level.Get3DPosition();
-                                Level.Camera.orthographicSize = Level.MaxZoom;
+                                Level.Camera.orthographicSize = Level.Map.MaxZoom;
                                 MaintainScrollBoundary();
                             }
 
@@ -848,9 +848,9 @@ namespace Assets.Scripts.Level
         private void ZoomIn()
         {
             float difference = -1 * Level.ZoomSpeed;
-            if ((Level.Camera.orthographicSize + difference) < Level.MinZoom)
+            if ((Level.Camera.orthographicSize + difference) < Level.Map.MinZoom)
             {
-                difference = Level.Camera.orthographicSize - Level.MinZoom;
+                difference = Level.Camera.orthographicSize - Level.Map.MinZoom;
             }
             Level.Camera.orthographicSize += difference; // orthographic size decreases, zooming in
 
@@ -859,9 +859,9 @@ namespace Assets.Scripts.Level
         private void ZoomOut()
         {
             float difference = Level.ZoomSpeed;
-            if ((Level.Camera.orthographicSize + difference) > Level.MaxZoom)
+            if ((Level.Camera.orthographicSize + difference) > Level.Map.MaxZoom)
             {
-                difference = Level.Camera.orthographicSize - Level.MaxZoom;
+                difference = Level.Camera.orthographicSize - Level.Map.MaxZoom;
             }
             Level.Camera.orthographicSize += difference; // orthographic size increases, zooming out
 
@@ -886,7 +886,7 @@ namespace Assets.Scripts.Level
 
             float camVertExtent = camera.orthographicSize;
             float camHorzExtent = camera.aspect * camVertExtent;
-            Bounds mapBounds = Level.MapRenderer.bounds;
+            Bounds mapBounds = Level.Map.SpriteRenderer.bounds;
 
             float leftBound = mapBounds.min.x + camHorzExtent;
             float rightBound = mapBounds.max.x - camHorzExtent;
@@ -901,7 +901,7 @@ namespace Assets.Scripts.Level
             Vector3 position = camera.transform.position;
 
             float camVertExtent = camera.orthographicSize;
-            Bounds mapBounds = Level.MapRenderer.bounds;
+            Bounds mapBounds = Level.Map.SpriteRenderer.bounds;
 
            
             float bottomBound = mapBounds.min.y + camVertExtent;

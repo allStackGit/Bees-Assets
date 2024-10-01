@@ -7,6 +7,7 @@ using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Level;
 using Assets.Scripts.Level.Commands;
 using Assets.Scripts.Server;
+using Assets.Scripts.UI_Components;
 using Assets.Scripts.UIComponents;
 using System;
 using System.Collections.Generic;
@@ -37,16 +38,16 @@ namespace Assets.Scripts.Scenes
         public bool ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, IsTraining, UseSemiRandomSquads, UseFullyRandomSquads, UseFullyRandomEnemySquads, RecordStats, 
             DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateAudio, ActivateLoadingShipsMidLevel, UseMouseScrolling, IsDebugging, IsTestFiring, 
             MakeEnemyCeaseFire, FullCeaseFire, MakeShotsHarmless, UnlockCamera, HasRandomizedOptions, PlayMusic;
-        public int OverrideTimeScale, OverrideMapIndex, OverrideUserSide, SpeedMultiplier, GeneratedSquadCountOverride, InitialCommandDelay, TimeoutTime;
+        public int OverrideMapIndex,OverrideTimeScale, OverrideObstacleMapIndex, OverrideUserSide, SpeedMultiplier, GeneratedSquadCountOverride, InitialCommandDelay, TimeoutTime;
         public List<string> OverrideStrats = new List<string> { };
         public List<string> OverrideBeeShipTypes = new List<string> { };
         public List<string> OverrideHumanShipTypes = new List<string> { };
-        public GameObject UIManager, SelectionBox, MiniMapContainer, FogOfWar;
+        public GameObject UIManager, SelectionBox, MiniMapContainer;
+        public Map Map;
         public AudioController Audio;
         public Camera MiniMapCamera;
         public GameMenus Menus;
         public LevelInputManager InputManager;
-        public SpriteRenderer MapRenderer;
         public Selector Selector;
         public LevelConstructor LevelConstructor;
         public Pathfinder Pathfinder;
@@ -58,7 +59,7 @@ namespace Assets.Scripts.Scenes
         public GameObject BargePrefab, BeehivePrefab, BumblebeePrefab, CarpenterBeePrefab, CarrierPrefab, CruiserPrefab, DreadnoughtPrefab, DronePrefab,
             FactoryPrefab, FireShipPrefab, FlagshipPrefab, FrigatePrefab, GunshipPrefab, HoneybeePrefab, HornetPrefab, LeafcutterPrefab, QueenPrefab,
             ScoutPrefab, StrikerPrefab, WarpGatePrefab, WaspPrefab, YellowJacketPrefab, BeaconPrefab, ValidPrefab, InvalidPrefab, MovementMarkerPrefab, TargetingMarkerPrefab,
-            Map, SquadBox;
+            SquadBox;
         /// <summary>
         /// How frequently asteroids spawn in this level. Sets the upper and lower bounds in seconds of the randomly timed spawn
         /// </summary>
@@ -79,10 +80,14 @@ namespace Assets.Scripts.Scenes
         /// Asteroid pieces that spawn (and don't collide) from larger asteroids breaking apart
         /// </summary>
         public List<GameObject> AsteroidPieces = new List<GameObject>();
+        /// <summary>
+        /// A list of possible maps to load
+        /// </summary>
+        public List<GameObject> Maps = new List<GameObject>();
 
         public float MinX, MinY, MaxX, MaxY;
-        public int DefaultZoom, MaxZoom, MinZoom, ZoomSpeed, ScrollSpeed;
-        public Vector2 UserStartingPosition, AIStartingPosition, MouseScrollDistanceFromEdge, DefaultCameraPosition;
+        public int DefaultZoom, ZoomSpeed, ScrollSpeed;
+        public Vector2 MouseScrollDistanceFromEdge, DefaultCameraPosition;
         public Vector2[] StartingPositions = new Vector2[2];
 
         public List<string> HasBeeTypes = new List<string>();
@@ -159,6 +164,10 @@ namespace Assets.Scripts.Scenes
         {
             Debug.Log($"Randomizing options...");
 
+            Map = Instantiate(Maps[Utilities.RandomInt(Maps.Count)]).GetComponent<Map>();
+
+            Debug.Log($"Playing on the {Map.Name} map");
+
             if (Utilities.CoinToss())
             {
                 HasObstacles = true;
@@ -230,210 +239,13 @@ namespace Assets.Scripts.Scenes
             }
 
         }
-        private void Setup()
-        {
-            //if (TimeoutTime == 0)
-            //{
-            //    TimeoutTime = int.MaxValue;
-            //}
-            //if (IsTrainingHiveMind || IsTrainingNueralNetwork)
-            //{
-            //    IsTraining = true;
-            //}
-            //else
-            //{
-            //    IsTraining = false;
-            //}
-
-            //if (OverrideBeeShipTypes.Count > 0)
-            //{
-            //    BeeShipTypes = OverrideBeeShipTypes;
-            //}
-            //else
-            //{
-            //    BeeShipTypes = ConfigData.Configuration.VisibleBeeShipTypes.ToList();
-            //}
-
-            //if (OverrideHumanShipTypes.Count > 0)
-            //{
-            //    HumanShipTypes = OverrideHumanShipTypes;
-            //}
-            //else
-            //{
-            //    HumanShipTypes = ConfigData.Configuration.VisibleHumanShipTypes.ToList();
-            //}
-
-            //_obstacleLists = new Dictionary<int, List<GameObject>>()
-            //    {
-            //        // If this list changes the indexes need to all be accurate since the files are loaded based off of the indexes
-            //        {0, EmptyObstacleList }, // it's important to have this here so we can load the "open space" pathfinding file for when there's no obstacles except asteroids
-            //        {1, MazePrefabs },
-            //        {2, ThreePathsPrefabs },
-            //        {3, ForestPrefabs },
-            //        {4, TheWallPrefabs }
-            //    };
-            //if (HasRandomizedOptions)
-            //{
-            //    RandomizeOptions();
-            //}
-            //else
-            //{
-            //    Debug.Log($"The map does not have randomized options");
-            //    ChosenObstaclesIndex = OverrideMapIndex;
-            //    _chosenObstacles = _obstacleLists.GetValueOrDefault(ChosenObstaclesIndex);
-            //}
-            //Debug.Log($"Setup scene");
-            //if (OverrideTimeScale == 0)
-            //{
-            //    TimeScale = ConfigData.Configuration.TimeScale;
-            //}
-            //else
-            //{
-            //    TimeScale = OverrideTimeScale;
-
-            //}
-            //if (DoesUserHaveController)
-            //{
-            //    HasPlayer = true;
-            //    if (OverrideUserSide == 1 || OverrideUserSide == 2 && OverrideUserSide != ConfigData.Configuration.UserSide)
-            //    {
-            //        ConfigData.SwapSides();
-            //    }
-            //}
-            //else
-            //{
-            //    HasPlayer = ConfigData.Configuration.DoesUserHaveController;
-            //}
-            //if (GeneratedSquadCountOverride > 0)
-            //{
-            //    ConfigData.Configuration.SquadGenerationCount = GeneratedSquadCountOverride;
-            //}
-            //if (ActivateBrains)
-            //{
-            //    AgentGroup = new SimpleMultiAgentGroup();
-            //    HumanAgentGroup = new SimpleMultiAgentGroup();
-
-            //    if (IsTrainingNueralNetwork)
-            //    {
-            //        Academy.Instance.OnEnvironmentReset += () =>
-            //        {
-            //            //Debug.Log($"Reset environment, {Academy.Instance.StepCount}");
-            //        };
-
-            //    }
-            //}
-
-
-
-            //// Setup Game State
-            //_state = gameObject.AddComponent<GameState>();
-            //_state.Setup(this);
-
-            //ConfigData.SetupSceneManagement(SceneManagement.GetComponent<SceneManagement>());
-            //if (!IsTraining)
-            //{
-            //    MiniMapCamera.gameObject.SetActive(true);
-
-            //    // Setup  Game menu 
-            //    Menus = UIManager.GetComponentInChildren<GameMenus>();
-            //    Menus.Setup(this);
-
-
-
-            //    // Setup Selection Box
-            //    Selector = SelectionBox.GetComponentInChildren<Selector>();
-            //    Selector.Setup(this, SelectionBox);
-            //    // Setup input manager
-            //    InputManager = new LevelInputManager(this, Selector);
-
-
-            //    // Setup Squad Action Box
-            //    if (HasPlayer)
-            //    {
-            //        Menus.ActionBox.Setup(this, EventSystem, ConfigData.Configuration.UserSide);
-            //    }
-            //    if (ActivateAudio && Audio != null)
-            //    {
-            //        Audio.Setup(PlayMusic);
-            //    }
-
-            //}
-            //else
-            //{
-            //    if (Audio != null)
-            //    {
-            //        Audio.gameObject.SetActive(false);
-            //    }
-            //}
-
-
-
-
-            //// Setup map bounds
-            //MapRenderer = Map.GetComponentInChildren<SpriteRenderer>();
-            //MapWidth = (int) (Mathf.Abs(MapRenderer.localBounds.min.x) + MapRenderer.localBounds.max.x);
-            //MapHeight = (int) (Mathf.Abs(MapRenderer.localBounds.min.y) + MapRenderer.localBounds.max.y);
-            //HalfMapWidth = MapWidth / 2;
-            //HalfMapHeight = MapHeight / 2;
-
-
-
-            //MinX = MapRenderer.localBounds.min.x + ConfigData.MapEdgePadding.x;
-            //MinY = MapRenderer.localBounds.min.y + ConfigData.MapEdgePadding.y;
-            //MaxX = MapRenderer.localBounds.max.x - ConfigData.MapEdgePadding.x;
-            //MaxY = MapRenderer.localBounds.max.y - ConfigData.MapEdgePadding.y;
-            //MapX = MapRenderer.localBounds.max.x*2;
-            //MapY = MapRenderer.localBounds.max.y*2;
-            //MaxDistance = Mathf.Sqrt(MapX * MapX + MapY * MapY);
-            //HalfX = MapX / 2;
-            //HalfY = MapY / 2;
-
-            //if (HasPlayer && !UnlockCamera)
-            //{
-            //    Camera.orthographicSize = DefaultZoom;
-            //    //Debug.Log($"MapRenderer.size.x: {MapRenderer.size.x}, Camera aspect: {Camera.aspect}");
-            //    //MiniMapCamera.orthographicSize = (MapRenderer.size.x / (Camera.aspect * 2));
-            //    //MaxZoom = (int)MiniMapCamera.orthographicSize;
-
-            //    Vector2 cameraWorldUnitsSize = Utilities.ScreenPixelsToWorldUnits(new Vector2(MiniMapCamera.pixelWidth, MiniMapCamera.pixelHeight), Camera);
-            //    Transform colliderContainer = Camera.transform.GetChild(0);
-            //    colliderContainer.localScale = cameraWorldUnitsSize;
-            //    Vector2 localizedPosition = DefaultCameraPosition + (Vector2)transform.position;
-            //    Camera.transform.position = new Vector3(localizedPosition.x, localizedPosition.y, -10);
-
-            //    InputManager.MaintainScrollBoundary();
-            //}
-
-            //if (HasObstacles)
-            //{
-            //    SpawnObstacles();
-            //    //InvokeRepeating(nameof(SetLocationHistory), .5f, .5f);
-            //    Pathfinder = new Pathfinder(this);
-            //}
-            //if (ActivateMining)
-            //{
-            //    SpawnMiningAsteroids();
-            //}
-            //if (ActivateFogOfWar && HasPlayer)
-            //{
-            //    FogOfWar.SetActive(true);
-            //}
-            //else
-            //{
-            //    FogOfWar.SetActive(false);
-            //}
-            //StartingPositions[ConfigData.Configuration.AISide - 1] = AIStartingPosition;
-            //StartingPositions[ConfigData.Configuration.UserSide - 1] = UserStartingPosition;
-
-            //Invoke(nameof(TimedOut), 60 * 5f);
-        }
         /// <summary>
         /// Takes care of any setup that needs to happen the first time the scene is loaded
         /// </summary>
         protected override void FinalizeSceneWithUserData()
         {
             //Debug.Log($"Finalize scene");
-            StartTime = Time.realtimeSinceStartup;
+            //StartTime = Time.realtimeSinceStartup;
             if (!ConfigData.Configuration.DoesUserHaveController && !DoesUserHaveController)
             {
                 Invoke(nameof(TimeOut), TimeoutTime);
@@ -494,14 +306,13 @@ namespace Assets.Scripts.Scenes
             _state = gameObject.AddComponent<GameState>();
             _state.Setup(this);
 
-            if (!IsTraining)
+            if (HasPlayer)
             {
-                MiniMapCamera.gameObject.SetActive(true);
 
                 // Setup  Game menu 
                 Menus = UIManager.GetComponentInChildren<GameMenus>();
                 Menus.Setup(this);
-
+                Menus.ActionBox.Setup(this, EventSystem, ConfigData.Configuration.UserSide);
 
 
                 // Setup Selection Box
@@ -512,10 +323,6 @@ namespace Assets.Scripts.Scenes
 
 
                 // Setup Squad Action Box
-                if (HasPlayer)
-                {
-                    Menus.ActionBox.Setup(this, EventSystem, ConfigData.Configuration.UserSide);
-                }
                 if (ActivateAudio && Audio != null)
                 {
                     Audio.Setup(PlayMusic);
@@ -530,30 +337,32 @@ namespace Assets.Scripts.Scenes
                 }
             }
 
-            // Setup map bounds
-            MapRenderer = Map.GetComponentInChildren<SpriteRenderer>();
-            MapWidth = (int)(Mathf.Abs(MapRenderer.localBounds.min.x) + MapRenderer.localBounds.max.x);
-            MapHeight = (int)(Mathf.Abs(MapRenderer.localBounds.min.y) + MapRenderer.localBounds.max.y);
-            HalfMapWidth = MapWidth / 2;
-            HalfMapHeight = MapHeight / 2;
+            SetupLevel();
+
+            //// Setup map bounds
+            //MapWidth = (int)(Mathf.Abs(Map.SpriteRenderer.localBounds.min.x) + Map.SpriteRenderer.localBounds.max.x);
+            //MapHeight = (int)(Mathf.Abs(Map.SpriteRenderer.localBounds.min.y) + Map.SpriteRenderer.localBounds.max.y);
+            //HalfMapWidth = MapWidth / 2;
+            //HalfMapHeight = MapHeight / 2;
 
 
 
-            MinX = MapRenderer.localBounds.min.x + ConfigData.MapEdgePadding.x;
-            MinY = MapRenderer.localBounds.min.y + ConfigData.MapEdgePadding.y;
-            MaxX = MapRenderer.localBounds.max.x - ConfigData.MapEdgePadding.x;
-            MaxY = MapRenderer.localBounds.max.y - ConfigData.MapEdgePadding.y;
-            MapX = MapRenderer.localBounds.max.x * 2;
-            MapY = MapRenderer.localBounds.max.y * 2;
-            MaxDistance = Mathf.Sqrt(MapX * MapX + MapY * MapY);
-            HalfX = MapX / 2;
-            HalfY = MapY / 2;
+            //MinX = Map.SpriteRenderer.localBounds.min.x + ConfigData.MapEdgePadding.x;
+            //MinY = Map.SpriteRenderer.localBounds.min.y + ConfigData.MapEdgePadding.y;
+            //MaxX = Map.SpriteRenderer.localBounds.max.x - ConfigData.MapEdgePadding.x;
+            //MaxY = Map.SpriteRenderer.localBounds.max.y - ConfigData.MapEdgePadding.y;
+            //MapX = Map.SpriteRenderer.localBounds.max.x * 2;
+            //MapY = Map.SpriteRenderer.localBounds.max.y * 2;
+            //MaxDistance = Mathf.Sqrt(MapX * MapX + MapY * MapY);
+            //HalfX = MapX / 2;
+            //HalfY = MapY / 2;
 
             if (HasPlayer && !UnlockCamera)
             {
+
                 Camera.orthographicSize = DefaultZoom;
-                //Debug.Log($"MapRenderer.size.x: {MapRenderer.size.x}, Camera aspect: {Camera.aspect}");
-                //MiniMapCamera.orthographicSize = (MapRenderer.size.x / (Camera.aspect * 2));
+                //Debug.Log($"Map.SpriteRenderer.size.x: {Map.SpriteRenderer.size.x}, Camera aspect: {Camera.aspect}");
+                //MiniMapCamera.orthographicSize = (Map.SpriteRenderer.size.x / (Camera.aspect * 2));
                 //MaxZoom = (int)MiniMapCamera.orthographicSize;
 
                 Vector2 cameraWorldUnitsSize = Utilities.ScreenPixelsToWorldUnits(new Vector2(MiniMapCamera.pixelWidth, MiniMapCamera.pixelHeight), Camera);
@@ -565,24 +374,10 @@ namespace Assets.Scripts.Scenes
                 InputManager.MaintainScrollBoundary();
             }
 
-            SetupLevel();
-            //LevelConstructor.SetupShips();
-            //CalculateShipClearances();
-            //if (ActivateHiveMind)
-            //{
-            //    Invoke(nameof(GetHiveMindCommands), InitialCommandDelay);
-            //}
-            //if (IsDebugging)
-            //{
-            //    InvokeRepeating(nameof(UpdateDebugVariables), 1, 1);
-            //}
-            //if (ActivateLoadingShipsMidLevel)
-            //{
-            //    SetTriggers();
-            //    InvokeRepeating(nameof(CheckTriggers), 5, 5);
-            //}
-            float end = (Time.realtimeSinceStartup - StartTime) * 1000; // seconds to milliseconds
-            Debug.Log($"It took {Math.Round(end, 2)} ms to set up the level and {Math.Round(Time.realtimeSinceStartup, 2)}s total time.");
+            //SetupLevel();
+
+            //float end = (Time.realtimeSinceStartup - StartTime) * 1000; // seconds to milliseconds
+            //Debug.Log($"It took {Math.Round(end, 2)} ms to set up the level and {Math.Round(Time.realtimeSinceStartup, 2)}s total time.");
         }
 
 
@@ -838,54 +633,6 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
                     Menus.UpdateScore(ConfigData.__HumanWins, ConfigData.__BeeWins);
                 }
 
-                ////Debug.Log($"Setting stats for Saved Squads");
-                //for (int i = 0; i < ConfigData.SquadsChosenForLevel.Count; i++)
-                //{
-                //    SavedSquad savedSquad = ConfigData.SquadsChosenForLevel[i];
-                //    if (savedSquad.HasBeenSavedToStorage)
-                //    {
-                //        savedSquad = ConfigData.AllShips.GetSavedSquad(savedSquad.Id);
-                //    }
-                //    else
-                //    {
-                //        //Debug.Log($"{savedSquad.Name} has not been saved to storage #{savedSquad.Id}");
-                //        continue;
-                //    }
-
-                //    //Debug.Log($"Logging stats for sqauds battles fought for {savedSquad.Name}");
-                //    savedSquad.Stats.BattlesFought++;
-
-                //    if (savedSquad.Side == WinningSide)
-                //    {
-                //        //ConfigData.Ships.GetSavedSquad(savedSquad.Id).Stats.BattlesWon++;
-                //        savedSquad.Stats.BattlesWon++;
-                //    }
-
-                //    savedSquad.GetSquadShips().ForEach((ship) =>
-                //    {
-                //        FleetShip fleetShip = ship.GetFleetShip();
-                //        fleetShip.BattlesFought++;
-                //        if (fleetShip.Side == WinningSide)
-                //        {
-                //            fleetShip.BattlesWon++;
-                //        }
-                //        //Debug.Log($"{fleetShip.Name} has mined {fleetShip.MineralsMined} minerals in its lifetime. It has mined {fleetShip.MineralsMinedThisLevel} minerals this level");
-                //        if (fleetShip.Side == ConfigData.Configuration.UserSide)
-                //        {
-                //            ConfigData.GetUserProgressData().MinedTSV += fleetShip.MineralsMinedThisLevel;
-                //        }
-                //        else
-                //        {
-                //            ConfigData.GetUserProgressData().HivemindMinedTSV += fleetShip.MineralsMinedThisLevel;
-                //        }
-                //        fleetShip.MineralsMined += fleetShip.MineralsMinedThisLevel;
-                //        fleetShip.MineralsMinedThisLevel = 0;
-
-                //    });
-                //}
-
-
-
                 UnPause();
             }
             
@@ -951,20 +698,20 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
 
             //AIStartingPosition = new Vector2(Utilities.RandomInt((int)MaxX * 2), AIStartingPosition.y*2) - new Vector2(MaxX, AIStartingPosition.y);
 
-            AIStartingPosition = new Vector2(UnityEngine.Random.Range(MinX, MaxX), UnityEngine.Random.Range(0, MaxY));
+            Map.AIStartingPosition = new Vector2(UnityEngine.Random.Range(MinX, MaxX), UnityEngine.Random.Range(0, MaxY));
 
-            UserStartingPosition = new Vector2(UnityEngine.Random.Range(MinX, MaxX), UnityEngine.Random.Range(MinY, 0));
+            Map.UserStartingPosition = new Vector2(UnityEngine.Random.Range(MinX, MaxX), UnityEngine.Random.Range(MinY, 0));
 
             if (UnityEngine.Random.Range(0, 2) > 0)
             {
-                Vector2 swap = UserStartingPosition;
-                UserStartingPosition = AIStartingPosition;
-                AIStartingPosition = swap;
+                Vector2 swap = Map.UserStartingPosition;
+                Map.UserStartingPosition = Map.AIStartingPosition;
+                Map.AIStartingPosition = swap;
                
             }
 
-            StartingPositions[ConfigData.Configuration.AISide - 1] = AIStartingPosition;
-            StartingPositions[ConfigData.Configuration.UserSide - 1] = UserStartingPosition;
+            StartingPositions[ConfigData.Configuration.AISide - 1] = Map.AIStartingPosition;
+            StartingPositions[ConfigData.Configuration.UserSide - 1] = Map.UserStartingPosition;
 
 
 
@@ -1063,8 +810,7 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
 
             //Debug.Log($"The human side is {ConfigData.Configuration.HumanSide}, the Bee side is {ConfigData.Configuration.BeeSide}, the AI side is {ConfigData.Configuration.AISide}, the user side is {ConfigData.Configuration.UserSide}");
             //Debug.Log($"The AI Starting position is {AIStartingPosition}, the user starting position is {UserStartingPosition}");
-            StartingPositions[ConfigData.Configuration.AISide - 1] = AIStartingPosition;
-            StartingPositions[ConfigData.Configuration.UserSide - 1] = UserStartingPosition;
+
 
             // Reset any data that might have changed from a previous level
 
@@ -1081,7 +827,10 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
                 ConfigData.__PastServerRequests.Clear();
             }
 
-
+            if (Map != null)
+            {
+                Destroy(Map.gameObject);
+            }
             if (HasRandomizedOptions)
             {
                 RandomizeOptions();
@@ -1089,9 +838,34 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
             else
             {
                 Debug.Log($"The map does not have randomized options");
-                ChosenObstaclesIndex = OverrideMapIndex;
+                Map = Instantiate(Maps[OverrideMapIndex]).GetComponent<Map>();
+
+                
+                ChosenObstaclesIndex = OverrideObstacleMapIndex;
                 _chosenObstacles = _obstacleLists.GetValueOrDefault(ChosenObstaclesIndex);
             }
+
+            Map.name = Map.Name;
+            Map.transform.parent = this.transform;
+
+            StartingPositions[ConfigData.Configuration.AISide - 1] = Map.AIStartingPosition;
+            StartingPositions[ConfigData.Configuration.UserSide - 1] = Map.UserStartingPosition;
+
+            // Setup map bounds
+            MapWidth = (int)(Mathf.Abs(Map.SpriteRenderer.localBounds.min.x) + Map.SpriteRenderer.localBounds.max.x);
+            MapHeight = (int)(Mathf.Abs(Map.SpriteRenderer.localBounds.min.y) + Map.SpriteRenderer.localBounds.max.y);
+            HalfMapWidth = MapWidth / 2;
+            HalfMapHeight = MapHeight / 2;
+
+            MinX = Map.SpriteRenderer.localBounds.min.x + ConfigData.MapEdgePadding.x;
+            MinY = Map.SpriteRenderer.localBounds.min.y + ConfigData.MapEdgePadding.y;
+            MaxX = Map.SpriteRenderer.localBounds.max.x - ConfigData.MapEdgePadding.x;
+            MaxY = Map.SpriteRenderer.localBounds.max.y - ConfigData.MapEdgePadding.y;
+            MapX = Map.SpriteRenderer.localBounds.max.x * 2;
+            MapY = Map.SpriteRenderer.localBounds.max.y * 2;
+            MaxDistance = Mathf.Sqrt(MapX * MapX + MapY * MapY);
+            HalfX = MapX / 2;
+            HalfY = MapY / 2;
 
 
             if (HasPlayer)
@@ -1104,6 +878,9 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
                     ConfigData.SwapSides();
                     Menus.ActionBox.Setup(this, EventSystem, ConfigData.Configuration.UserSide);
                 }
+
+                MiniMapCamera.gameObject.SetActive(true);
+                MiniMapCamera.orthographicSize = Map.MiniMapCameraSize;
 
             }
             else
@@ -1128,11 +905,12 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
             }
             if (ActivateFogOfWar && HasPlayer)
             {
-                FogOfWar.SetActive(true);
+
+                Map.FogOfWar.SetActive(true);
             }
             else
             {
-                FogOfWar.SetActive(false);
+                Map.FogOfWar.SetActive(false);
             }
 
 
