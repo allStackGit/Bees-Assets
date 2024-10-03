@@ -70,9 +70,6 @@ namespace Assets.Scripts.Entities.Ships
                     ship.MotherSquad = Squad;
                     squad.AddShip(ship);
                     ship.LookForShips();
-
-                    AdditionalTsv += ship.Tsv;
-                    OriginalTsv = Tsv;
                 }
             }
             //else

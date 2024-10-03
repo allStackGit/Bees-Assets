@@ -95,7 +95,9 @@ namespace Assets.Scripts.Level
             else if (!Level.IsTraining && Level.HasPlayer)
             {
                 Debug.Log($"User squads: {state.GetSquadsBySide(ConfigData.Configuration.UserSide).Count}, AI squads: {state.GetSquadsBySide(ConfigData.Configuration.AISide).Count}");
+                Level.Pause();
                 Level.Menus.NoAliveShipsAlert.SetActive(true);
+
             }
         }
         public void SetShips(int side)

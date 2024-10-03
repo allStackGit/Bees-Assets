@@ -51,7 +51,11 @@ namespace Assets.Scripts.Entities.Ships
         /// This has the same side as the user and the user has a controller
         /// </summary>
         public bool IsUserControlled;
-        public bool HasBrain, IsMobile, IsHiveMindControlled, IsMinionShip, HasTargetCoordinates, IsMiningShip, IsWarpGate, HasTargetDirection, HasVision, HasProximityCollider, HasShipAnimation, HasRocketFlares, 
+        /// <summary>
+        /// Is this ship capable of movement?
+        /// </summary>
+        public bool IsMobile;
+        public bool HasBrain, IsHiveMindControlled, IsMinionShip, HasTargetCoordinates, IsMiningShip, IsWarpGate, HasTargetDirection, HasVision, HasProximityCollider, HasShipAnimation, HasRocketFlares, 
             HasLeftRocketFlares, HasCenterRocketFlares, HasRightRocketFlares, HasMovementMarker, HasWaitingTargetCoordinates, HasShatteredShip, HasEnteredMap;
         public List<Weapon> Weapons;
         public List<GameObject> ProjectilePrefabs, WeaponPrefabs, ColoredPrefabs, LeftRocketFlares, CenterRocketFlares, RightRocketFlares, ShatteredShips;
@@ -478,16 +482,20 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
             if (IsUserControlled)
             {
-                MovementMarker = Instantiate(Level.MovementMarkerPrefab, Vector2.zero, Quaternion.identity);
-                MovementMarker.transform.SetParent(Level.Map.transform);
-                MovementMarker.SetActive(false);
-                MovementMarker.name = $"{Name}'s Movement Marker";
-                HasMovementMarker = true;
-
-                if (Squad.HasCustomColor)
+                if (IsMobile)
                 {
-                    MovementMarker.GetComponent<SpriteRenderer>().color = Squad.Color;
+                    MovementMarker = Instantiate(Level.MovementMarkerPrefab, Vector2.zero, Quaternion.identity);
+                    MovementMarker.transform.SetParent(Level.Map.transform);
+                    MovementMarker.SetActive(false);
+                    MovementMarker.name = $"{Name}'s Movement Marker";
+                    HasMovementMarker = true;
+
+                    if (Squad.HasCustomColor)
+                    {
+                        MovementMarker.GetComponent<SpriteRenderer>().color = Squad.Color;
+                    }
                 }
+
 
                 if (Level.ActivateFogOfWar)
                 {
@@ -1436,7 +1444,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                         killer.IsCloseEnoughToTargetEnemyShipToFollow = false;
                         LogKillerStats(killer);
                     }
-                    LogKilledStats();
+                    if (ShipType != "Beacon") // Losing a beacon doesn't count as losing a ship
+                    {
+                        LogKilledStats();
+                    }
 
                     if (HasVision)
                     {

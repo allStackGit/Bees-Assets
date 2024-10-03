@@ -330,17 +330,21 @@ namespace Assets.Scripts.Level.Commands
                     //storedCommand.FinalizationCause = cause;
 
                     StoredCommand squadCommand = Squad.PastCommands.FirstOrDefault(c => c.OutcomeId == OutcomeId);
-                    //squadCommand.Age = Age;
-                    if (EnemySquad != null)
+                    if (squadCommand != null)
                     {
-                        squadCommand.Enemy = EnemySquad.Name;
+                        //squadCommand.Age = Age;
+                        if (EnemySquad != null)
+                        {
+                            squadCommand.Enemy = EnemySquad.Name;
+                        }
+                        else
+                        {
+                            squadCommand.Enemy = "";
+                        }
+                        squadCommand.Tsv = Tsv;
+                        squadCommand.FinalizationCause = cause;
                     }
-                    else
-                    {
-                        squadCommand.Enemy = "";
-                    }
-                    squadCommand.Tsv = Tsv;
-                    squadCommand.FinalizationCause = cause;
+
                 }
                 else
                 {

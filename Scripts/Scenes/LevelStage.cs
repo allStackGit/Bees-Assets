@@ -360,11 +360,6 @@ namespace Assets.Scripts.Scenes
             if (HasPlayer && !UnlockCamera)
             {
 
-                Camera.orthographicSize = DefaultZoom;
-                //Debug.Log($"Map.SpriteRenderer.size.x: {Map.SpriteRenderer.size.x}, Camera aspect: {Camera.aspect}");
-                //MiniMapCamera.orthographicSize = (Map.SpriteRenderer.size.x / (Camera.aspect * 2));
-                //MaxZoom = (int)MiniMapCamera.orthographicSize;
-
                 Vector2 cameraWorldUnitsSize = Utilities.ScreenPixelsToWorldUnits(new Vector2(MiniMapCamera.pixelWidth, MiniMapCamera.pixelHeight), Camera);
                 Transform colliderContainer = Camera.transform.GetChild(0);
                 colliderContainer.localScale = cameraWorldUnitsSize;
@@ -770,6 +765,7 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
         public void SetupLevel()
         {
             StartTime = Time.realtimeSinceStartup;
+            ConfigData.AllShips.ReplaceDeadSquadShips();
             // Check settings and config variables
             if (TimeoutTime == 0)
             {
@@ -870,6 +866,7 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
 
             if (HasPlayer)
             {
+                Camera.orthographicSize = DefaultZoom;
                 Vector2 localizedPosition = DefaultCameraPosition + (Vector2)transform.position;
                 Camera.transform.position = new Vector3(localizedPosition.x, localizedPosition.y, -10);
                 InputManager.MaintainScrollBoundary();
