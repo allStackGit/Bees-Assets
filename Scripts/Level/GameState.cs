@@ -19,12 +19,12 @@ namespace Assets.Scripts.Level
 {
     public class GameState : MonoBehaviour
     {
-        private List<Ship> _ships = new List<Ship>();
-        private List<Squad> _squads = new List<Squad>();
-        private Queue<Squad> _squadsAwaitingCommands = new Queue<Squad>();
-        private List<StoredCommand> _pastCommands = new List<StoredCommand>();
-        private List<Squad> _selectedSquads = new List<Squad>();
-        private List<Obstacle> _obstacles = new List<Obstacle>();
+        public List<Ship> Ships = new List<Ship>();
+        public List<Squad> Squads = new List<Squad>();
+        public Queue<Squad> SquadsAwaitingCommands = new Queue<Squad>();
+        public List<StoredCommand> PastCommands = new List<StoredCommand>();
+        public List<Squad> SelectedSquads = new List<Squad>();
+        public List<Obstacle> Obstacles = new List<Obstacle>();
 
         public int EntityCount, UserCommands, AICommands;
         public bool IsPaused;
@@ -41,8 +41,16 @@ namespace Assets.Scripts.Level
         public bool HasWarpGates, IsFireShipExploding;
         //public bool[] HasMiningShips = new bool[2];
 
+        public List<String> __Squads, __SquadsAwaitingCommands, __PastCommands, __Obstacles;
+        public void UpdateDebugVariables()
+        {
+            __Squads = Squads.Select(s => s.ToString()).ToList();
+            __SquadsAwaitingCommands = SquadsAwaitingCommands.Select(s => s.ToString()).ToList();
+            __PastCommands = PastCommands.Select((c) => $"Command #{c.OutcomeId} - {c.Strategy.Name} against {c.Enemy} ended with {c.Tsv}" +
+            $" TSV due to \"{c.FinalizationCause}\" and took {c.Age} ticks").ToList();
 
-
+            __Obstacles = Obstacles.Select((o) => $"{o.Name} at {o.GetPosition()} with {o.Health} health").ToList();
+        }
 
         public void Setup(LevelStage level)
         {
@@ -51,12 +59,12 @@ namespace Assets.Scripts.Level
         }
         public void ResetState()
         {
-            _ships.Clear();
-            _squads.Clear();
-            _squadsAwaitingCommands.Clear();
-            _pastCommands.Clear();
-            _selectedSquads.Clear();
-            _obstacles.Clear();
+            Ships.Clear();
+            Squads.Clear();
+            SquadsAwaitingCommands.Clear();
+            PastCommands.Clear();
+            SelectedSquads.Clear();
+            Obstacles.Clear();
             SpottedShips[0].Clear();
             SpottedShips[1].Clear();
             InitialTsv = new int[] { 0, 0 };
@@ -102,20 +110,20 @@ namespace Assets.Scripts.Level
         public void AddShip(Ship ship)
         {
             // Debug.Log($"{ship.name} has been added to the state");
-            _ships.Add(ship);
+            Ships.Add(ship);
         }
         public void AddSquad(Squad squad)
         {
-            _squads.Add(squad);
+            Squads.Add(squad);
             OriginalSquadCounts[squad.Side - 1]++;
         }
         public void AddObstacle(Obstacle obstacle)
         {
-            _obstacles.Add(obstacle);
+            Obstacles.Add(obstacle);
         }
         public void RemoveShip(Ship ship)
         {
-            _ships.Remove(ship);
+            Ships.Remove(ship);
             if (IsShipExtinct(ship.ShipType))
             {
                 if (Level.Audio != null)
@@ -128,19 +136,19 @@ namespace Assets.Scripts.Level
         }
         public void RemoveObstacle(Obstacle obstacle)
         {
-            _obstacles.Remove(obstacle);
+            Obstacles.Remove(obstacle);
         }
         public void AddCommand(Command command)
         {
             //_commands.Add(command);
-            _pastCommands.Add(new StoredCommand(command));
+            PastCommands.Add(new StoredCommand(command));
             AICommands++;
             ConfigData.__HivemindCommands++;
         }
 
         public List<Obstacle> GetObstacles()
         {
-            return _obstacles;
+            return Obstacles;
         }
         /// <summary>
         /// Gets all the ships on the level or for a certain side if specified
@@ -151,9 +159,9 @@ namespace Assets.Scripts.Level
         {
             return side switch
             {
-                1 => _ships.Where(ship => ship.Side == 1).ToList(),
-                2 => _ships.Where(ship => ship.Side == 2).ToList(),
-                _ => _ships
+                1 => Ships.Where(ship => ship.Side == 1).ToList(),
+                2 => Ships.Where(ship => ship.Side == 2).ToList(),
+                _ => Ships
             };
         }
         public HashSet<Ship> GetShipsVisibleToHiveMind(int side)
@@ -197,11 +205,11 @@ namespace Assets.Scripts.Level
         /// <returns></returns>
         public List<Ship> GetAllEnemyShips(int side)
         {
-            return _ships.Where(ship => ship.Side != side).ToList();
+            return Ships.Where(ship => ship.Side != side).ToList();
         }
         public Ship GetShipById(long id)
         {
-            return _ships.FirstOrDefault(ship => ship.Id == id);
+            return Ships.FirstOrDefault(ship => ship.Id == id);
         }
         public bool IsShipExtinct(string shipType)
         {
@@ -214,13 +222,13 @@ namespace Assets.Scripts.Level
         }
         public List<Squad> GetSelectedSquads()
         {
-            return _selectedSquads.Where((squad) => squad != null).ToList();
+            return SelectedSquads.Where((squad) => squad != null).ToList();
         }
         public void AddSelectedSquad(Squad squad)
         {
             if (squad != null && squad.IsUserControlled)
             {
-                _selectedSquads.Add(squad);
+                SelectedSquads.Add(squad);
                 squad.IsSelected = true;
                 squad.MoveSquadBox();
                 Level.Menus.ActionBox.SetupForSquad();
@@ -252,16 +260,19 @@ namespace Assets.Scripts.Level
         }
         public void ClearSelectedSquads()
         {
-            _selectedSquads.ForEach((squad) =>
+            SelectedSquads.ForEach((squad) =>
             {
                 squad.DeactivateSquadBox();
                 squad.IsSelected = false;
                 squad.GetShips().ForEach((ship) =>
                 {
-                    ship.MovementMarker.SetActive(false);
+                    if (ship.IsMobile)
+                    {
+                        ship.MovementMarker.SetActive(false);
+                    }
                 });
             });
-            _selectedSquads.Clear();
+            SelectedSquads.Clear();
         }
         public void SelectSquad(Squad squad)
         {
@@ -279,11 +290,11 @@ namespace Assets.Scripts.Level
         }
         public Squad GetSquadById(long Id)
         {
-            return _squads.FirstOrDefault(squad => squad.Id == Id);
+            return Squads.FirstOrDefault(squad => squad.Id == Id);
         }
         public List<Squad> GetAllSquads()
         {
-            return _squads.Where(squad => squad != null && !squad.IsDead).ToList();
+            return Squads.Where(squad => squad != null && !squad.IsDead).ToList();
         }
         public List<Squad> GetSquadsBySide(int side)
         {
@@ -300,16 +311,16 @@ namespace Assets.Scripts.Level
         }
         public void AddToSquadsAwaitingHiveMindCommands(Squad squad)
         {
-            _squadsAwaitingCommands.Enqueue(squad);
+            SquadsAwaitingCommands.Enqueue(squad);
         }
         public Queue<Squad> GetSquadsAwaitingHiveMindCommands()
         {
-            return _squadsAwaitingCommands;
+            return SquadsAwaitingCommands;
         }
         public List<Squad> GetTargetedSquads(int side)
         {
             List<Squad> targetedSquads = new List<Squad>();
-            _squads.Where((s) => s.Side == side).ToList().ForEach((s) =>
+            Squads.Where((s) => s.Side == side).ToList().ForEach((s) =>
             {
                 if (s.Command != null && s.Command.EnemySquad != null)
                 {
@@ -322,11 +333,11 @@ namespace Assets.Scripts.Level
 
         public List<StoredCommand> GetPastCommands()
         {
-            return _pastCommands;
+            return PastCommands;
         }
         public void StoreCommands()
         {
-            List<StoredCommand> completes = _pastCommands.Where((c) => c.IsHiveMindCommand && c.IsFinalized && !c.IsStored).ToList();
+            List<StoredCommand> completes = PastCommands.Where((c) => c.IsHiveMindCommand && c.IsFinalized && !c.IsStored).ToList();
             List<StoredCommand> commands = new List<StoredCommand>();
             List<StoredCommand> shootingCommands = new List<StoredCommand>();
             List<StoredCommand> targetingCommands = new List<StoredCommand>();
@@ -352,7 +363,7 @@ namespace Assets.Scripts.Level
 
                 ConfigData.Socket.SendRequest(new StoreCommandsRequest(new StoreCommands(commands, shootingCommands, targetingCommands),
                     ConfigData.StandardMaxTimeOnQueue));
-                _pastCommands = _pastCommands.Where(c => !c.IsStored).ToList();
+                PastCommands = PastCommands.Where(c => !c.IsStored).ToList();
             }
 
 

@@ -16,7 +16,9 @@ namespace Assets.Scripts
     public static class ConfigData
     {
         // server and socket settings
-        // test is for beta testing, non-local. Development is for development, local.
+        /// <summary>
+        /// Test is for beta testing, non-local. Development is for development, local.
+        /// </summary>
         public const bool Test = true; // [alert] should be true for beta testing
         public const bool Development = false;
         public const bool Production = !Test && !Development;

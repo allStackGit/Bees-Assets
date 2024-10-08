@@ -151,6 +151,7 @@ namespace Assets.Scripts.Scenes
             //dest.ReadPixels(new Rect(0, 0, MiniMapTexture.width, MiniMapTexture.height), 0, 0);
             //dest.Apply();
             //File.WriteAllBytes(path, dest.EncodeToPNG());
+            GetState().UpdateDebugVariables();
         }
 
         new void Start()
@@ -549,7 +550,10 @@ namespace Assets.Scripts.Scenes
                         Time.timeScale = TimeScale;
                         if (!IsTrainingHiveMind)
                         {
-                            InputManager.Update();
+                            if (HasPlayer)
+                            {
+                                InputManager.Update();
+                            }
                             if (HasObstacles)
                             {
                                 //Debug.Log($"Calling path finder update again");

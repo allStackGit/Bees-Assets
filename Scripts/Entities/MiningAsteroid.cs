@@ -44,17 +44,21 @@ namespace Assets.Scripts.Entities
 
         public override void Kill()
         {
-            IsDead = true;
-            SquadsMining.ForEach((squad) =>
+            if (!IsDead)
             {
-                if (squad != null && squad.HasCommand)
+                IsDead = true;
+                SquadsMining.ForEach((squad) =>
                 {
-                    squad.Command.SetFinalize("Mining asteroid was destroyed");
+                    if (squad != null && squad.HasCommand)
+                    {
+                        squad.Command.SetFinalize("Mining asteroid was destroyed");
 
-                }
-            });
-            Level.GetState().RemoveObstacle(this);
-            Destroy(gameObject);
+                    }
+                });
+                Level.GetState().RemoveObstacle(this);
+                Destroy(gameObject);
+            }
+
         }
     }
 }

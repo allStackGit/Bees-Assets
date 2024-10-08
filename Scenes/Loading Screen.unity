@@ -892,7 +892,10 @@ MonoBehaviour:
   WatchServerRequests: 0
   IsSocketManager: 0
   TimeScale: 1
+  IsLevel: 0
   __PastServerRequests: []
+  __SocketLevels: []
+  __StandingRequests: []
   __AverageRequestTime: 0
   __UsedHashes: 
   __Updates: 0

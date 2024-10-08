@@ -1466,14 +1466,24 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     Carrier nextCarrier = (Carrier)state.GetHumanShips().FirstOrDefault((s) => s is Carrier);
                     if (nextCarrier != null)
                     {
-                        state.GetHumanShips().Where((ship) => ship.ShipType == "Striker" && ((Striker)ship).Carrier.Equals(this)).ToList().ForEach((ship) => ((Striker)ship).Carrier = nextCarrier);
-                        state.GetHumanShips().Where((ship) => ship.ShipType == "Drone" && ((Drone)ship).Carrier.Equals(this)).ToList().ForEach((ship) => ((Drone)ship).Carrier = nextCarrier);
+
+                        state.GetHumanShips().ForEach((ship) =>
+                        {
+                            if (ship.ShipType == "Striker" || ship.ShipType == "Drone")
+                            {
+                                CarrierShip carrierShip = (CarrierShip)ship;
+
+                                if (carrierShip.Carrier != null && carrierShip.Carrier.Equals(this))
+                                {
+                                    carrierShip.Carrier = nextCarrier;
+                                }
+                            }
+                        });
                     }
                     else
                     {
                         Squad.GetShips().Where((ship) => ship.ShipType == "Striker").ToList().ForEach((ship) => {
-                            Striker striker = (Striker)ship;
-                            striker.LastCarrierPosition = GetPosition();
+                            ((Striker)ship).LastCarrierPosition = GetPosition();
                         });
                     }
 
