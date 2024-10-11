@@ -39,11 +39,13 @@ namespace Assets.Scripts.Level
         private bool _isRightMouseDownPrior;
         private bool _isRightMouseDragging;
         private bool _isDragMovementBlockedByTimer;
+        private bool _hasReleasedMiniMapToggle = true;
         //private bool _isDragMovingSquads;
         private Vector2 _mousePosition;
         private Vector2 _mouseDownPosition;
         private Vector2 _previousMousePosition;
         private Vector2 _previousDragMousePosition;
+        private float _timeSinceMiniMapToggled;
 
         private Ship _clickedShip = null;
         private MiningAsteroid _clickedMiningAsteroid = null;
@@ -138,20 +140,20 @@ namespace Assets.Scripts.Level
                         Squad squad = state.GetSquadByNumber(ConfigData.Configuration.UserSide, squadNumber);
                         if (state.GetSelectedSquads().Contains(squad))
                         {
-                            //Debug.Log("Selecting an already selected squad");
+                            Debug.Log("Selecting an already selected squad");
                             Vector2 position = squad.GetPosition();
-                            Level.Camera.orthographicSize = Level.DefaultZoom;
+                            ToggleZoom();
                             Level.Camera.transform.position = new Vector3(position.x, position.y, -10) + Level.Get3DPosition();
                             MaintainScrollBoundary();
                         }
                         else
                         {
-                            //Debug.Log("Selecting a new squad");
+                            Debug.Log("Selecting a new squad");
                             if (squad != null)
                             {
                                 Vector2 position = squad.GetPosition();
                                 Level.Camera.transform.position = new Vector3(position.x, position.y, -10) + Level.Get3DPosition();
-                                Level.Camera.orthographicSize = Level.Map.MaxZoom;
+                                ToggleZoom();
                                 MaintainScrollBoundary();
                             }
 
@@ -256,7 +258,17 @@ namespace Assets.Scripts.Level
             
 
         }
-
+        private void ToggleZoom()
+        {
+            if (Level.Camera.orthographicSize == Level.Map.MaxZoom)
+            {
+                Level.Camera.orthographicSize = Level.DefaultZoom;
+            }
+            else
+            {
+                Level.Camera.orthographicSize = Level.Map.MaxZoom;
+            }
+        }
         private void SetRightMouseDownLongEnoughForDragging()
         {
             if (_isRightMouseDownPrior)
@@ -322,6 +334,14 @@ namespace Assets.Scripts.Level
         {
             return Input.GetKey(KeyCode.F) || Level.IsTestFiring;
         }
+        private bool HasToggleMiniMapInput()
+        {
+            return Input.GetKey(KeyCode.M) && Time.realtimeSinceStartup - _timeSinceMiniMapToggled > .25f && _hasReleasedMiniMapToggle;
+        }
+        private bool HasMiniMapToggleRelease()
+        {
+            return Input.GetKeyUp(KeyCode.M);
+        }
         private bool HasMiningCommandInput()
         {
             if (_rightMouseButtonUp)
@@ -376,6 +396,16 @@ namespace Assets.Scripts.Level
             if (HasOpenMenuInput())
             {
                 Level.Menus.OpenMenu();
+            }
+            if (HasToggleMiniMapInput())
+            {
+                Level.Menus.ToggleMiniMapDisplay();
+                _timeSinceMiniMapToggled = Time.realtimeSinceStartup;
+                _hasReleasedMiniMapToggle = false;
+            }
+            else if (HasMiniMapToggleRelease())
+            {
+                _hasReleasedMiniMapToggle = true;
             }
             else
             {

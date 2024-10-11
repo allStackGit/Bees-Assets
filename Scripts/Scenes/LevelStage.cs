@@ -602,12 +602,12 @@ namespace Assets.Scripts.Scenes
                 if (state.IsSideKilled(ConfigData.Configuration.BeeSide) && !state.IsSideKilled(ConfigData.Configuration.HumanSide))
                 {
                     WinningSide = ConfigData.Configuration.HumanSide;
-                    ConfigData.__HumanWins++;
+                    ConfigData.GetUserProgressData().HumanWins++;
                 }
                 else if (state.IsSideKilled(ConfigData.Configuration.HumanSide) && !state.IsSideKilled(ConfigData.Configuration.BeeSide))
                 {
                     WinningSide = ConfigData.Configuration.BeeSide;
-                    ConfigData.__BeeWins++;
+                    ConfigData.GetUserProgressData().BeeWins++;
                 }
                 else if (state.IsSideKilled(ConfigData.Configuration.HumanSide) && state.IsSideKilled(ConfigData.Configuration.BeeSide))
                 {
@@ -618,18 +618,18 @@ namespace Assets.Scripts.Scenes
                     Debug.Log("Neither side is dead!");
                 }
 
-                int totalGames = ConfigData.__HumanWins + ConfigData.__BeeWins;
-                int humanWinPercentage = (int)(((float)ConfigData.__HumanWins / totalGames) * 100);
-                int beeWinPercentage = (int)(((float)ConfigData.__BeeWins / totalGames) * 100);
+                int totalGames = ConfigData.GetUserProgressData().HumanWins + ConfigData.GetUserProgressData().BeeWins;
+                int humanWinPercentage = (int)(((float)ConfigData.GetUserProgressData().HumanWins / totalGames) * 100);
+                int beeWinPercentage = (int)(((float)ConfigData.GetUserProgressData().BeeWins / totalGames) * 100);
                 ConfigData.__AverageLength = ConfigData.__TotalLength / totalGames;
 
-Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".PadRight(15)}   {$"fps: {fps}".PadRight(10).Substring(0, 10)}  {$"fups: {fups}".PadRight(10).Substring(0, 10)}     " +
+Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({humanWinPercentage}%)".PadRight(15)}   {$"fps: {fps}".PadRight(10).Substring(0, 10)}  {$"fups: {fups}".PadRight(10).Substring(0, 10)}     " +
                     $"{$"latency: {(int)(ConfigData.__AverageLatency*1000)}ms".PadRight(18)} {$"CPS: {ConfigData.__HivemindCommands / Time.unscaledTime}".PadRight(9).Substring(0, 9)}   " +
                     $"LTO: {ConfigData.__LevelTimeouts} AveLT: {(int) ConfigData.__AverageLength}s");
 
                 if (Menus != null)
                 {
-                    Menus.UpdateScore(ConfigData.__HumanWins, ConfigData.__BeeWins);
+                    Menus.UpdateScore(ConfigData.GetUserProgressData().HumanWins, ConfigData.GetUserProgressData().BeeWins);
                 }
 
                 UnPause();
@@ -1122,7 +1122,7 @@ Debug.Log($"{$"H:{ConfigData.__HumanWins}/{totalGames} ({humanWinPercentage}%)".
         public void UnPause()
         {
             GetState().IsPaused = false;
-            if (Audio != null)
+            if (Audio != null && PlayMusic)
             {
                 Audio.Play();
             }

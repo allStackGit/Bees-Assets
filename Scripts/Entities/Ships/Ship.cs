@@ -1826,6 +1826,13 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 explosion.transform.parent = Level.Map.transform;
                 explosion.transform.localPosition = GetPosition();
 
+                AudioSource soundEffect = explosion.GetComponent<AudioSource>();
+
+                if (soundEffect != null)
+                {
+                    soundEffect.Play();
+                }
+
                 if (HasShatteredShip)
                 {
                     GameObject shatteredShip = Instantiate(ShatteredShips.GetRange(Utilities.RandomInt(ShatteredShips.Count), 1).First(), Vector2.zero, Quaternion.identity);

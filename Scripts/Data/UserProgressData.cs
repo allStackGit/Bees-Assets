@@ -10,6 +10,7 @@ namespace Assets.Scripts.Data
         public int SavedSquadId = -1; //[alert] [reminder]  this starts at 1 because there are two starting squads 0, and 1. The next Id should be 2.
         public int MinedTSV = 0;
         public int HivemindMinedTSV = 0;
+        public int HumanWins, BeeWins;
 
         public UserProgressData(bool shouldFileExist): base()
         {
@@ -24,6 +25,8 @@ namespace Assets.Scripts.Data
                 SavedSquadId = json.SavedSquadId;
                 MinedTSV = json.MinedTSV;
                 HivemindMinedTSV = json.HivemindMinedTSV;
+                HumanWins = json.HumanWins;
+                BeeWins = json.BeeWins;
             });
             
         }

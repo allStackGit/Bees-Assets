@@ -328,7 +328,7 @@ namespace Assets.Scripts
 
         // DEBUG VARIABLES
         public static HashSet<ServerRequest> __PastServerRequests = new HashSet<ServerRequest>();
-        public static int __BeeWins, __HumanWins, __HivemindCommands, __TotalRequests, __LevelTimeouts;
+        public static int __HivemindCommands, __TotalRequests, __LevelTimeouts;
         public static double __TotalLatency, __AverageLatency, __TotalLength, __AverageLength;
 
 

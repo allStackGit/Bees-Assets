@@ -27,9 +27,12 @@ namespace Assets.Scripts
         public AudioSource BigCannonSound;
         public AudioSource BigCannonSound2;
 
+        public List<AudioSource> TinyShipExplosionSounds;
+
         public Dictionary<string, AudioSource> BeesIntros = new Dictionary<string, AudioSource>();
         public Dictionary<string, AudioSource> BeesLoops = new Dictionary<string, AudioSource>();
         public Dictionary<string, AudioSource[]> WeaponSounds = new Dictionary<string, AudioSource[]>();
+        public Dictionary<float, List<AudioSource>> ExplosionSounds = new Dictionary<float, List<AudioSource>>();
         public List<AudioSource> Loops = new List<AudioSource>();
         public List<AudioSource> Intros = new List<AudioSource>();
 
@@ -66,6 +69,8 @@ namespace Assets.Scripts
             WeaponSounds.Add("Light Cannon", new AudioSource[] { LightCannonSound, LightCannonSound2 });
             WeaponSounds.Add("Turret", new AudioSource[] { SmallCannonSound, SmallCannonSound2 });
             WeaponSounds.Add("Full Ship Turret", new AudioSource[] { BigCannonSound, BigCannonSound2 });
+
+            ExplosionSounds.Add(ConfigData.Tiny, TinyShipExplosionSounds);
 
             //mute bee intros
             MuteSource(CarpenterBeeIntro);
