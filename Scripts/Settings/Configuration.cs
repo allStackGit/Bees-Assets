@@ -203,6 +203,9 @@ namespace Assets.Scripts.Settings
             InvisibleShipTypes = new HashSet<string>(InvisibleHumanShipTypes.Union(VisibleBeeShipTypes));
             AllShipTypes = new HashSet<string>(InvisibleBeeShipTypes.Union(VisibleShipTypes).Union(InvisibleShipTypes));
 
+            ConfigData.BeeShipTypes = VisibleBeeShipTypes;
+            ConfigData.HumanShipTypes = VisibleHumanShipTypes;
+
             ConfigData.ShipTurningRadius = (360.0f / RotationMultiplier) / (2 * Mathf.PI);
 
         }

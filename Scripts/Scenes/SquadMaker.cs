@@ -54,7 +54,7 @@ namespace Assets.Scripts.Scenes
             ChosenSquadList, SavedSquadPrefab, ChosenSquadPrefab,
             
             SquadActionBox, DeadShipBox, DropZone, DropBox, DragStatusBox, ShipInfoBox, ShipInfoBoxTitle, ShipInfoBoxDetails, ShipInfoBoxIcon, SquadInfoBox,
-            SquadInfoBoxTitle, SquadInfoBoxDetails, SquadInfoBoxIcon, ShipStatsBox, ShipStatsBoxTitle, ShipStatsBoxDetails, SquadNameInput,
+            SquadInfoBoxTitle, SquadInfoBoxDetails, SquadInfoBoxIcon, ShipStatsBox, ShipStatsBoxDetails, SquadNameInput, ShipNameInput,
             SquadShipCount, SquadShipCountLabel, SquadColorLabel, SquadColorPickerButton, NextButton, StartButton, OpposingForceLabel, OpposingForcePresetDropdown;
 
         public Dialogue DeleteSquadConfirmation, ClearSquadConfirmation, LoadSquadConfirmation, ChooseSquadConfirmation, UnchooseSquadConfirmation, OverCapacityAlert, NoChosenSquadsAlert,
@@ -90,6 +90,7 @@ namespace Assets.Scripts.Scenes
         private SavedSquad _squadToLoad = null;
         private SavedSquad _squadToChoose = null;
         private SavedSquad _squadToUnchoose = null;
+        private FleetShip _currentShipInfo;
         private Color _squadColor = ConfigData.UnsetColor;
         private ColorPicker _colorPicker;
         private string _nameText = "";
@@ -1043,6 +1044,7 @@ namespace Assets.Scripts.Scenes
             AddSavedSquadToList(ConfigData.AllShips.GetSavedSquads().Last());
 
             ConfigData.AllShips.SaveSquadData();
+            ConfigData.AllShips.SaveFleetData();
             SquadSavingStatus.Show();
             StartCoroutine(Utilities.CacheSquadCustomSprites((SavedSquad)_currentSquad.Clone(), _shipPartSprites, SquadSavingStatus));
             ClearUnsavedSquad();
@@ -1060,6 +1062,7 @@ namespace Assets.Scripts.Scenes
             savedSquads[replacementIndex] = (SavedSquad)_currentSquad.Clone();
 
             ConfigData.AllShips.SaveSquadData();
+            ConfigData.AllShips.SaveFleetData();
             if (oldSavedSquad.Color != _currentSquad.Color || oldSavedSquad.GetSquadShips().Count != _currentSquad.GetSquadShips().Count || 
                 oldSavedSquad.GetSquadShips().Any((s) => _currentSquad.GetShip(s.GetFleetShip().Id) == null))
             {
@@ -1331,20 +1334,16 @@ namespace Assets.Scripts.Scenes
                 if (label != null)
                 {
                     int id = int.Parse(label.name.Substring(label.name.LastIndexOf("#") + 1));
-                    FleetShip ship = ConfigData.AllShips.GetFleetShip(id);
+                    _currentShipInfo = ConfigData.AllShips.GetFleetShip(id);
                     //Debug.Log($"Squad ID: {id}");
+                    //Debug.Log(_currentShipInfo.Name);
 
-                    TMP_Text titleText = ShipStatsBoxTitle.GetComponent<TMP_Text>();
-                    TMP_Text detaislText = ShipStatsBoxDetails.GetComponent<TMP_Text>();
-
-
-                    titleText.text = $"{ship.Name}";
-                    detaislText.text = $"Battles: {ship.BattlesFought.ToString("N0")}: {ship.BattlesWon}W - {ship.BattlesLost}L     (#{ConfigData.AllShips.GetShipRanking(ship, "Record")})\n" +
-                        $"Shots Fired: {ship.ShotsFired.ToString("N0")}     (#{ConfigData.AllShips.GetShipRanking(ship, "ShotsFired")})\n" +
-                        $"Damage Done: {ship.DamageDone.ToString("N0")}     (#{ConfigData.AllShips.GetShipRanking(ship, "DamageDone")})\n" +
-                        $"Damage Received: {ship.DamageReceived.ToString("N0")}     (#{ConfigData.AllShips.GetShipRanking(ship, "DamageReceived")})\n" +
-                        $"Kills: {ship.Kills.ToString("N0")}    (#{ConfigData.AllShips.GetShipRanking(ship, "Kills")})\n" + 
-                        $"{(ship.Type == "Carpenter Bee" || ship.Type == "Factory" ? $"Minerals Mined: {ship.MineralsMined.ToString("N0")}  (#{ConfigData.AllShips.GetShipRanking(ship, "Minerals Mined")})" : "\n")}";
+                    ShipStatsBoxDetails.GetComponent<TMP_Text>().text = $"Battles: {_currentShipInfo.BattlesFought.ToString("N0")}: {_currentShipInfo.BattlesWon}W - {_currentShipInfo.BattlesLost}L     (#{ConfigData.AllShips.GetShipRanking(_currentShipInfo, "Record")})\n" +
+                        $"Shots Fired: {_currentShipInfo.ShotsFired.ToString("N0")}     (#{ConfigData.AllShips.GetShipRanking(_currentShipInfo, "ShotsFired")})\n" +
+                        $"Damage Done: {_currentShipInfo.DamageDone.ToString("N0")}     (#{ConfigData.AllShips.GetShipRanking(_currentShipInfo, "DamageDone")})\n" +
+                        $"Damage Received: {_currentShipInfo.DamageReceived.ToString("N0")}     (#{ConfigData.AllShips.GetShipRanking(_currentShipInfo, "DamageReceived")})\n" +
+                        $"Kills: {_currentShipInfo.Kills.ToString("N0")}    (#{ConfigData.AllShips.GetShipRanking(_currentShipInfo, "Kills")})\n" + 
+                        $"{(_currentShipInfo.Type == "Carpenter Bee" || _currentShipInfo.Type == "Factory" ? $"Minerals Mined: {_currentShipInfo.MineralsMined.ToString("N0")}  (#{ConfigData.AllShips.GetShipRanking(_currentShipInfo, "Minerals Mined")})" : "\n")}";
 
 
                     ShipStatsBox.SetActive(true);
@@ -1358,6 +1357,12 @@ namespace Assets.Scripts.Scenes
 
                     //Debug.Log($"mouse: {mouse}, change: {change}");
                     ShipStatsBox.transform.position = new Vector2(mouse.x + change.x, mouse.y + change.y);
+
+                    TMP_InputField nameInput = ShipNameInput.GetComponent<TMP_InputField>();
+                    //EventSystem.current.SetSelectedGameObject(null);
+                    //EventSystem.current.SetSelectedGameObject(ShipNameInput);
+                    nameInput.ActivateInputField();
+                    nameInput.text = _currentShipInfo.Name;
                 }
                 else
                 {
@@ -1422,6 +1427,16 @@ namespace Assets.Scripts.Scenes
             _nameText = name;
             SquadNameInput.GetComponent<TMP_InputField>().text = name;
         }
+        public void ChangeShipName(string name)
+        {
+            name = ValidateInputString(name);
+            if (_currentShipInfo != null)
+            {
+                _currentShipInfo.Name = name;
+            }
+            //Debug.Log($"Ship name changed to {name}");
+            ShipNameInput.GetComponent<TMP_InputField>().text = name;
+        }
         public void OpenColorPicker()
         {
             //Debug.Log("Opening/Closing color picker");
@@ -1476,8 +1491,10 @@ namespace Assets.Scripts.Scenes
             //Debug.Log("On to the level!");
 
             // add the sqauds
+            ConfigData.IsUserLoadingCustomSquads = true;
             _chosenSquads.ForEach((chosenSquad) =>
             {
+                Debug.Log($"Chose {chosenSquad.Name} for level");
                 ConfigData.SquadsChosenForLevel.Add((SavedSquad)chosenSquad.Clone());
             });
 
@@ -1485,50 +1502,57 @@ namespace Assets.Scripts.Scenes
             // go to next side if you need to
             if (!IsRandomizedOpposingSide)
             {
-                List<SavedSquad> newlySavedOpposingSquads = new List<SavedSquad>();
+                ConfigData.BeeShipTypes = ConfigData.Configuration.VisibleBeeShipTypes;
+                ConfigData.HumanShipTypes = ConfigData.Configuration.VisibleHumanShipTypes;
+
                 if (Side == ConfigData.Configuration.SquadMakerFirstSide)
                 {
                     if (_chosenOpposingForceOption == 0) // [alert] order needs to be changed
                     {
+                        ConfigData.Configuration.SquadGenerationCount = 4;
+                    }
+                    else if (_chosenOpposingForceOption == 1)
+                    {
+                        ConfigData.Configuration.SquadGenerationCount = 8;
+                    }
+                    else if (_chosenOpposingForceOption == 2)
+                    {
+                        ConfigData.Configuration.SquadGenerationCount = 12;
+                    }
+                    else if (_chosenOpposingForceOption == 3)
+                    {
+                        // Player chooses custom enemy squads
                         ConfigData.SquadMakerSide = ConfigData.Configuration.SquadMakerSecondSide;
+                        ConfigData.IsUserLoadingCustomEnemySquads = true;
                         _nextScene = "Squad Maker";
                         Invoke(nameof(LoadScene), .25f);
                         return;
                     }
-                    else if (_chosenOpposingForceOption == 1)
+                    else if (_chosenOpposingForceOption == 4)
                     {
-                        _chosenSquads.ForEach((savedSquad) =>
+                        if (ConfigData.Configuration.SquadMakerSecondSide == ConfigData.Configuration.BeeSide)
                         {
-                            SavedSquad newSquad = new AutoBuiltSquad(ConfigData.Configuration.SquadMakerSecondSide, "random", savedSquad, false, false).Squad;
-                            newlySavedOpposingSquads.Add(newSquad);
-                        });
+                            ConfigData.BeeShipTypes = ConfigData.Configuration.VisibleBeeShipTypes.Intersect(ConfigData.BeeSwarmShips).ToHashSet();
+                        }
+                        else
+                        {
+                            ConfigData.HumanShipTypes = ConfigData.Configuration.VisibleHumanShipTypes.Intersect(ConfigData.HumanSwarmShips).ToHashSet();
+                        }
                     }
-                    else if (_chosenOpposingForceOption == 2)
+                    else if (_chosenOpposingForceOption == 5)
                     {
-                        _chosenSquads.ForEach((savedSquad) =>
+                        if (ConfigData.Configuration.SquadMakerSecondSide == ConfigData.Configuration.BeeSide)
                         {
-                            SavedSquad newSquad = new AutoBuiltSquad(ConfigData.Configuration.SquadMakerSecondSide, "random", savedSquad, true, false).Squad;
-                            newlySavedOpposingSquads.Add(newSquad);
-                        });
-
-                    }
-                    else if (_chosenOpposingForceOption == 3)
-                    {
-                        _chosenSquads.ForEach((savedSquad) =>
+                            ConfigData.BeeShipTypes = ConfigData.Configuration.VisibleBeeShipTypes.Intersect(ConfigData.BeePowerfulShips).ToHashSet();
+                        }
+                        else
                         {
-                            SavedSquad newSquad = new AutoBuiltSquad(ConfigData.Configuration.SquadMakerSecondSide, "random", savedSquad, false, true).Squad;
-                            newlySavedOpposingSquads.Add(newSquad);
-                        });
+                            ConfigData.HumanShipTypes = ConfigData.Configuration.VisibleHumanShipTypes.Intersect(ConfigData.HumanPowerfulShips).ToHashSet();
+                            Debug.Log($"Choosing human powerful ships: {ConfigData.HumanShipTypes.ToList()}");
+                        }
                     }
                 }
-                newlySavedOpposingSquads.ForEach((squad) =>
-                {
-                    Debug.Log($"Made squad worth {squad.GetMaxTsv()} tsv.");
-                    string ships = "";
-                    squad.GetSquadShips().ForEach((s) => ships += $"{s.ShipType}, ");
-                    Debug.Log(ships);
-                });
-                ConfigData.SquadsChosenForLevel.AddRange(newlySavedOpposingSquads);
+
             }
             
             //ConfigData.SquadsChosenForLevel.ForEach((s) => Debug.Log(s.ToString()));
@@ -1544,7 +1568,7 @@ namespace Assets.Scripts.Scenes
         }
         public void ChangeOpposingForceDropdown(int option)
         {
-            TMP_Dropdown dropdown = OpposingForcePresetDropdown.GetComponentInChildren<TMP_Dropdown>();
+            //TMP_Dropdown dropdown = OpposingForcePresetDropdown.GetComponentInChildren<TMP_Dropdown>();
             _chosenOpposingForceOption = option;
 
             if (option == 0)

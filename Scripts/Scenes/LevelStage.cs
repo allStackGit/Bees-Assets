@@ -273,6 +273,14 @@ namespace Assets.Scripts.Scenes
                 {
                     ConfigData.SwapSides();
                 }
+                if (ConfigData.IsUserLoadingCustomSquads)
+                {
+                    UseFullyRandomSquads = false;
+                }
+                if (ConfigData.IsUserLoadingCustomEnemySquads)
+                {
+                    UseFullyRandomEnemySquads = false;
+                }
             }
             else
             {
@@ -782,7 +790,7 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
             }
             else
             {
-                BeeShipTypes = ConfigData.Configuration.VisibleBeeShipTypes.ToList();
+                BeeShipTypes = ConfigData.BeeShipTypes.ToList();
             }
 
             if (OverrideHumanShipTypes.Count > 0)
@@ -791,7 +799,7 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
             }
             else
             {
-                HumanShipTypes = ConfigData.Configuration.VisibleHumanShipTypes.ToList();
+                HumanShipTypes = ConfigData.HumanShipTypes.ToList();
             }
 
             if (OverrideTimeScale == 0)

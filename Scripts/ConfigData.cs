@@ -179,6 +179,12 @@ namespace Assets.Scripts
         public static readonly HashSet<string> CommandTypes = new HashSet<string> { "Aggressive", "Defensive", "Random", "Circle", "Right Swipe", "Left Swipe", "Closest Friendly",
         "In and Out", "Patrol", "Guard", "Scouting", "Mining", "Full Retreat" };
 
+        public static HashSet<string> BeeShipTypes = new HashSet<string>();
+        public static HashSet<string> HumanShipTypes = new HashSet<string>();
+        public static readonly HashSet<string> BeeSwarmShips = new HashSet<string> { "Honeybee", "Hornet", "Yellow Jacket" };
+        public static readonly HashSet<string> HumanSwarmShips = new HashSet<string> { "Scout", "Carrier", "Gunship" };
+        public static readonly HashSet<string> BeePowerfulShips = new HashSet<string> { "Queen", "Bumblebee", "Leafcutter" };
+        public static readonly HashSet<string> HumanPowerfulShips = new HashSet<string> { "Flagship", "Fire Ship", "Cruiser", "Dreadnought" };
         public static readonly HashSet<string> SpawnedOnlyShipTypes = new HashSet<string> {"Drone", "Striker", "Beacon"};
         public static readonly HashSet<string> ArmedShipTypes = new HashSet<string> { "Cruiser", "Dreadnought", "Flagship", "Frigate", "Gunship", "Bumblebee", "Hornet", "Leafcutter", "Queen", "Wasp" };
 
@@ -320,6 +326,7 @@ namespace Assets.Scripts
         public static Ships AllShips = null; 
         public static List<SavedSquad> SquadsChosenForLevel = new List<SavedSquad>();
         public static bool IsLoadingUserData = false;
+        public static bool IsUserLoadingCustomSquads, IsUserLoadingCustomEnemySquads;
         public static bool AreAllSettingsLoaded => (ShipInfo != null && ShipInfo.IsLoaded) && (Configuration != null && Configuration.IsLoaded)
             && (StartingSettings != null && StartingSettings.IsLoaded);
         public static bool IsAllUserDataLoaded => IsUserProgressDataLoaded && IsFleetDataLoaded && IsSavedSquadsDataLoaded;  
