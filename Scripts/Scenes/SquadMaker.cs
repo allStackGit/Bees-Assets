@@ -102,6 +102,12 @@ namespace Assets.Scripts.Scenes
         private bool _doubleClick = false;
         private bool _startingLevel = false;
         private int _chosenOpposingForceOption;
+        private int _chosenObstacleOption = -1;
+        private int _chosenAsteroidsOption = -1;
+        private int _chosenLevelOption = -1;
+        private int _chosenFogOfWarOption = -1;
+        private int _chosenMiningOption = -1;
+        private int _chosenMidLevelShipsOption = -1;
         private string _nextScene = "";
 
         public bool HasActionBox => ActionBox != null;
@@ -1490,6 +1496,16 @@ namespace Assets.Scripts.Scenes
         {
             //Debug.Log("On to the level!");
 
+            // reset options
+            ConfigData.BeeShipTypes = ConfigData.Configuration.VisibleBeeShipTypes;
+            ConfigData.HumanShipTypes = ConfigData.Configuration.VisibleHumanShipTypes;
+            ConfigData.SelectedObstacleMapIndex = -1;
+            ConfigData.SelectedAsteroidOption = -1;
+            ConfigData.SelectedLevelMapIndex = -1;
+            ConfigData.SelecteFogOfWarOption = -1;
+            ConfigData.SelectedMiningOption = -1;
+            ConfigData.SelectedShipsLoadingMidLevelOption = -1;
+
             // add the sqauds
             ConfigData.IsUserLoadingCustomSquads = true;
             _chosenSquads.ForEach((chosenSquad) =>
@@ -1502,11 +1518,17 @@ namespace Assets.Scripts.Scenes
             // go to next side if you need to
             if (!IsRandomizedOpposingSide)
             {
-                ConfigData.BeeShipTypes = ConfigData.Configuration.VisibleBeeShipTypes;
-                ConfigData.HumanShipTypes = ConfigData.Configuration.VisibleHumanShipTypes;
+
 
                 if (Side == ConfigData.Configuration.SquadMakerFirstSide)
                 {
+                    ConfigData.SelectedObstacleMapIndex = _chosenObstacleOption;
+                    ConfigData.SelectedAsteroidOption = _chosenAsteroidsOption;
+                    ConfigData.SelectedLevelMapIndex = _chosenLevelOption;
+                    ConfigData.SelecteFogOfWarOption = _chosenFogOfWarOption;
+                    ConfigData.SelectedMiningOption = _chosenMiningOption;
+                    ConfigData.SelectedShipsLoadingMidLevelOption = _chosenMidLevelShipsOption;
+
                     if (_chosenOpposingForceOption == 0) // [alert] order needs to be changed
                     {
                         ConfigData.Configuration.SquadGenerationCount = 4;
@@ -1583,6 +1605,30 @@ namespace Assets.Scripts.Scenes
             }
 
             //Debug.Log($"User chose {dropdown.options[option].text}, {_chosenOpposingForceOption}");
+        }
+        public void ChangeObstaclesDropdown(int option)
+        {
+            _chosenObstacleOption = option - 1;
+        }
+        public void ChangeAsteroidsDropdown(int option)
+        {
+            _chosenAsteroidsOption = option - 1;
+        }
+        public void ChangeLevelDropdown(int option)
+        {
+            _chosenLevelOption = option - 1;
+        }
+        public void ChangeFogOfWarDropdown(int option)
+        {
+            _chosenFogOfWarOption = option - 1;
+        }
+        public void ChangeMiningDropdown(int option)
+        {
+            _chosenMiningOption = option - 1;
+        }
+        public void ChangeShipsLoadingMidLevelDropdown(int option)
+        {
+            _chosenMidLevelShipsOption = option - 1;
         }
 
 

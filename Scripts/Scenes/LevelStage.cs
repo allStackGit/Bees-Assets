@@ -164,20 +164,35 @@ namespace Assets.Scripts.Scenes
         private void RandomizeOptions()
         {
             Debug.Log($"Randomizing options...");
+            //Debug.Log($"Level selection option: {ConfigData.SelectedLevelMapIndex}");
 
-            Map = Instantiate(Maps[Utilities.RandomInt(Maps.Count)]).GetComponent<Map>();
+
+            if (ConfigData.SelectedLevelMapIndex == -1)
+            {
+                Map = Instantiate(Maps[Utilities.RandomInt(Maps.Count)]).GetComponent<Map>();
+            }
+            else
+            {
+                Map = Instantiate(Maps[ConfigData.SelectedLevelMapIndex]).GetComponent<Map>();
+            }
 
             Debug.Log($"Playing on the {Map.Name} map");
 
-            if (Utilities.CoinToss())
+            if (ConfigData.SelectedObstacleMapIndex > -1 || Utilities.CoinToss())
             {
                 HasObstacles = true;
                 Debug.Log($"The map has obstacles");
-
-                ChosenObstaclesIndex = Utilities.RandomInt(_obstacleLists.Count - 1) + 1;
+                if (ConfigData.SelectedObstacleMapIndex > -1)
+                {
+                    ChosenObstaclesIndex = ConfigData.SelectedObstacleMapIndex;
+                }
+                else
+                {
+                    ChosenObstaclesIndex = Utilities.RandomInt(_obstacleLists.Count - 1) + 1;
+                }
                 _chosenObstacles = _obstacleLists.GetValueOrDefault(ChosenObstaclesIndex);
 
-                if (Utilities.RandomInt(4) == 0)
+                if (ConfigData.SelectedAsteroidOption > -1 || Utilities.RandomInt(4) == 0)
                 {
                     ActivateCollisionAsteroids = true;
                     Debug.Log($"The map has obstacles and asteroids as well");
@@ -190,7 +205,7 @@ namespace Assets.Scripts.Scenes
             }
             else
             {
-                if (Utilities.CoinToss())
+                if (ConfigData.SelectedAsteroidOption > -1 || Utilities.CoinToss())
                 {
                     HasObstacles = true;
                     _chosenObstacles = EmptyObstacleList;
@@ -206,7 +221,7 @@ namespace Assets.Scripts.Scenes
                 }
             }
 
-            if (DoesUserHaveController && Utilities.CoinToss())
+            if (DoesUserHaveController && ((ConfigData.SelecteFogOfWarOption == -1 && Utilities.CoinToss()) || ConfigData.SelecteFogOfWarOption == 1))
             {
                 ActivateFogOfWar = true;
                 Debug.Log($"The map has fog of war");
@@ -217,7 +232,7 @@ namespace Assets.Scripts.Scenes
                 Debug.Log($"The map does not have fog of war");
             }
 
-            if (!HasObstacles && Utilities.CoinToss())
+            if ((ConfigData.SelectedMiningOption == -1  && !HasObstacles && Utilities.CoinToss()) || ConfigData.SelectedMiningOption == 1)
             {
                 ActivateMining = true;
                 Debug.Log($"The map has mining");
@@ -228,7 +243,7 @@ namespace Assets.Scripts.Scenes
                 Debug.Log($"The map does not have mining");
             }
 
-            if (Utilities.CoinToss())
+            if ((ConfigData.SelectedShipsLoadingMidLevelOption == -1 && Utilities.CoinToss()) || ConfigData.SelectedShipsLoadingMidLevelOption == 1)
             {
                 ActivateLoadingShipsMidLevel = true;
                 Debug.Log($"The map has ships loading midlevel");
@@ -383,8 +398,6 @@ namespace Assets.Scripts.Scenes
             //float end = (Time.realtimeSinceStartup - StartTime) * 1000; // seconds to milliseconds
             //Debug.Log($"It took {Math.Round(end, 2)} ms to set up the level and {Math.Round(Time.realtimeSinceStartup, 2)}s total time.");
         }
-
-
         public void CalculateShipClearances()
         {
             List<Ship> ships = GetState().GetShips();
@@ -441,6 +454,11 @@ namespace Assets.Scripts.Scenes
 
             if (ActivateCollisionAsteroids)
             {
+                if (ConfigData.SelectedAsteroidOption == 2)
+                {
+                    AsteroidMinimumSpawnRate /= 2;
+                    AsteroidMaxSpawnRate /= 2;
+                }
                 Invoke(nameof(SpawnAsteroid), AsteroidMinimumSpawnRate + Utilities.RandomInt(AsteroidMaxSpawnRate-AsteroidMinimumSpawnRate));
             }
         }
