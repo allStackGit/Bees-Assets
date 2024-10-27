@@ -38,7 +38,7 @@ namespace Assets.Scripts.Level
         public Dictionary<long, HashSet<Ship>>[] HivemindShips = new Dictionary<long, HashSet<Ship>>[] { new Dictionary<long, HashSet<Ship>>(), new Dictionary<long, HashSet<Ship>>() };
         public List<GameObject> Deadbodies = new List<GameObject>();
         public HashSet<RocketExplosion> FireShipExplosions = new HashSet<RocketExplosion>();
-        public bool HasWarpGates, IsFireShipExploding;
+        public bool HasWarpGates, IsFireShipExploding, HasSelectedSquads;
         //public bool[] HasMiningShips = new bool[2];
 
         public List<String> __Squads, __SquadsAwaitingCommands, __PastCommands, __Obstacles;
@@ -239,6 +239,7 @@ namespace Assets.Scripts.Level
                         ship.MovementMarker.SetActive(true);
                     }
                 });
+                HasSelectedSquads = true;
             }
 
         }
@@ -273,6 +274,7 @@ namespace Assets.Scripts.Level
                 });
             });
             SelectedSquads.Clear();
+            HasSelectedSquads = false;
         }
         public void SelectSquad(Squad squad)
         {

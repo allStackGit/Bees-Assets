@@ -53,7 +53,7 @@ namespace Assets.Scripts.UIComponents
         // Drag icon flow
         public void PullNewDragIcon(string shipType)
         {
-            FleetShip fleetShip = FleetList.Where((s) => s.Type == shipType).ToList().FirstOrDefault();
+            FleetShip fleetShip = FleetList.Where((s) => s.Type == shipType).FirstOrDefault();
 
             // if you've got a valid ship to drag, you're not already dragging, and the squad hasn't hit it's max size
             if (fleetShip != null && !_isDragging && (!HasCurrentSquad || !CurrentSquad.HasMaxShips))

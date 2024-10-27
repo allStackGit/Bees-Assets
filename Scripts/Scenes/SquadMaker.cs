@@ -18,6 +18,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.EventSystems;
+using UnityEngine.Rendering.Universal;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using UnityEngine.UIElements;
@@ -1038,6 +1039,25 @@ namespace Assets.Scripts.Scenes
                 ConfigData.AllShips.SaveSquadData();
             }
         }
+        public void DuplicateCurrentSquad()
+        {
+            if (HasCurrentSquad)
+            {
+                SavedSquad originalSquad = _currentSquad;
+                _currentSquad = (SavedSquad) originalSquad.Clone();
+                List<SquadShip> originalSquadShips = _currentSquad.GetSquadShips().ToList();
+                originalSquadShips.ForEach((originalSquadShip) =>
+                {
+                    _currentSquad.RemoveShipFromSquad(originalSquadShip);
+                    FleetShip fleetShip = GetFleetList().Where((s) => s.Type == originalSquadShip.ShipType).FirstOrDefault();
+                    _currentSquad.AddShipToSquad(new SquadShip(fleetShip.Id, fleetShip.Type, originalSquadShip.Offset - originalSquad.StartingPosition, _currentSquad));
+                });
+                _currentSquad.Stats = new SquadStatBlock(Utilities.GenerateCommanderName(), 0, 0, 0, 0, 0, 0);
+                _currentSquad.StartingPosition = originalSquad.StartingPosition;
+                SaveNewSquad();
+                _currentSquad = null;
+            }
+        }
         public void SaveNewSquad()
         {
             //Debug.Log("New squad, does not exist yet");
@@ -1404,7 +1424,7 @@ namespace Assets.Scripts.Scenes
 
 
                 //Debug.Log($"mouse: {mouse}, change: {change}");
-                Tooltip.transform.position = new Vector2(mouse.x + change.x, mouse.y + change.y);
+                Tooltip.transform.position = new Vector2(mouse.x + change.x, mouse.y + change.y); 
                 _showTooltip = true;
             }
             

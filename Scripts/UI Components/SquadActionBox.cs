@@ -606,100 +606,146 @@ namespace Assets.Scripts.UIComponents
                     switch (action)
                     {
                         case "Patrol":
-                            Level.InputManager.SetPatrolAreaActive();
+                            Patrol();
                             break;
 
                         case "Guard":
-                            Level.InputManager.SetSelectGuardTargetActive();
+                            Guard();
                             break;
 
                         case "Chase":
-                            Level.GetState().GetSelectedSquads().ForEach((squad) =>
-                            {
-                                squad.SetChase(true);
-                            });
+                            Chase();
                             break;
 
                         case "Hold":
-                            Level.GetState().GetSelectedSquads().ForEach((squad) =>
-                            {
-                                squad.StopChasing();
-                            });
+                            Hold();
                             break;
                         case "Detonate":
-                            Level.GetState().GetSelectedSquads().ForEach((squad) =>
-                            {
-                                squad.GetShips().Where((s) => s.ShipType == "Fire Ship").ToList().ForEach((ship) =>
-                                {
-                                    FireShip fireShip = (FireShip)ship;
-                                    fireShip.Detonate();
-                                });
-                            });
+                            Detonate();
                             break;
 
                         case "Charge":
-                            Level.GetState().GetSelectedSquads().ForEach((squad) =>
-                            {
-                                foreach (Ship ship in squad.GetShips().Where((s) => s.ShipType == "Barge"))
-                                {
-                                    if (!ship.CannotChangeMovementOrders)
-                                    {
-                                        StartCoroutine(((Barge)ship).ChargeForward());
-                                    }
-                                    else
-                                    {
-                                        ((Barge)ship).WaitingForNewCharge = true;
-                                    }
-                                }
-                            });
+                            Charge();
                             break;
 
                         case "Drop Beacon":
-                            Level.GetState().GetSelectedSquads().ForEach((squad) =>
-                            {
-                                foreach (Ship ship in squad.GetShips().Where((s) => s.ShipType == "Scout"))
-                                {
-                                    ((Scout)ship).DropBeacon();
-                                }
-                            });
+                            DropBeacon();
                             break;
 
                         case "Match Speed":
-                            List<Squad> squads = Level.GetState().GetSelectedSquads();
-                            bool IsMatchingSpeed = squads.All(squad => squad.IsMatchingSpeed);
-                            float slowestSpeed = squads.Min(squad => squad.SlowestSpeed);
-                            squads.ForEach((squad) =>
-                            {
-                                if (IsMatchingSpeed)
-                                {
-                                    squad.UnmatchSpeed();
-                                }
-                                else
-                                {
-                                    squad.MatchSpeed(slowestSpeed);
-                                }
-                            });
+                            MatchSpeed();
                             break;
 
                         case "Attack on Sight":
-                            Level.GetState().GetSelectedSquads().ForEach((squad) =>
-                            {
-                                squad.CeaseFire = false;
-                            });
+                            AttackOnSight();
                             break;
 
                         case "Cease Fire":
-                            Level.GetState().GetSelectedSquads().ForEach((squad) =>
-                            {
-                                squad.CeaseFire = true;
-                            });
+                            CeaseFire();
                             break;
                     }
                 }
-                HighlightSelectedButtons();
                 DeselectButton();
             }
                 
+        }
+        public void DropBeacon()
+        {
+            Level.GetState().GetSelectedSquads().ForEach((squad) =>
+            {
+                foreach (Ship ship in squad.GetShips().Where((s) => s.ShipType == "Scout"))
+                {
+                    ((Scout)ship).DropBeacon();
+                }
+            });
+        }
+        public void Charge()
+        {
+            Level.GetState().GetSelectedSquads().ForEach((squad) =>
+            {
+                foreach (Ship ship in squad.GetShips().Where((s) => s.ShipType == "Barge"))
+                {
+                    if (!ship.CannotChangeMovementOrders)
+                    {
+                        StartCoroutine(((Barge)ship).ChargeForward());
+                    }
+                    else
+                    {
+                        ((Barge)ship).WaitingForNewCharge = true;
+                    }
+                }
+            });
+        }
+        public void Detonate()
+        {
+            Level.GetState().GetSelectedSquads().ForEach((squad) =>
+            {
+                squad.GetShips().Where((s) => s.ShipType == "Fire Ship").ToList().ForEach((ship) =>
+                {
+                    FireShip fireShip = (FireShip)ship;
+                    fireShip.Detonate();
+                });
+            });
+        }
+        public void Hold()
+        {
+            Level.GetState().GetSelectedSquads().ForEach((squad) =>
+            {
+                squad.StopChasing();
+            });
+            HighlightSelectedButtons();
+        }
+        public void Chase()
+        {
+            Level.GetState().GetSelectedSquads().ForEach((squad) =>
+            {
+                squad.SetChase(true);
+            });
+            HighlightSelectedButtons();
+        }
+        public void Guard()
+        {
+            Level.InputManager.SetSelectGuardTargetActive();
+            HighlightSelectedButtons();
+        }
+        public void Patrol()
+        {
+            Level.InputManager.SetPatrolAreaActive();
+            HighlightSelectedButtons();
+        }
+        public void CeaseFire()
+        {
+            Level.GetState().GetSelectedSquads().ForEach((squad) =>
+            {
+                squad.CeaseFire = true;
+            });
+            HighlightSelectedButtons();
+        }
+        public void AttackOnSight()
+        {
+            Level.GetState().GetSelectedSquads().ForEach((squad) =>
+            {
+                squad.CeaseFire = false;
+            });
+            HighlightSelectedButtons();
+        }
+        public void MatchSpeed()
+        {
+            List<Squad> squads = Level.GetState().GetSelectedSquads();
+            bool IsMatchingSpeed = squads.All(squad => squad.IsMatchingSpeed);
+            float slowestSpeed = squads.Min(squad => squad.SlowestSpeed);
+            squads.ForEach((squad) =>
+            {
+                if (IsMatchingSpeed)
+                {
+                    squad.UnmatchSpeed();
+                }
+                else
+                {
+                    squad.MatchSpeed(slowestSpeed);
+                }
+            });
+            HighlightSelectedButtons();
         }
         public void SetShootingStrategy(string strategy)
         {
