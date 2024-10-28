@@ -50,6 +50,9 @@ namespace Assets.Scripts.Level
         private bool _hasDetonateInputRelease = true;
         private bool _hasChargeInputRelease = true;
         private bool _hasDropBeaconInputRelease = true;
+
+        private List<HotKeyAction> _shootingStrategyHotKeys = new List<HotKeyAction>();
+
         //private bool _isDragMovingSquads;
         private Vector2 _mousePosition;
         private Vector2 _mouseDownPosition;
@@ -73,12 +76,64 @@ namespace Assets.Scripts.Level
         public bool IsShowingRanges;
         public bool IsFiringManually;
 
+        private class HotKeyAction
+        {
+            public string Name;
+            public KeyCode Key;
+            public Action Action;
+            private bool _hasInputRelease = true;
+
+            public HotKeyAction(string name, string key, Action action)
+            {
+                Name = name;
+                Key = (KeyCode)Enum.Parse(typeof(KeyCode), key, true);
+                Action = action;
+            }
+
+            public bool HasInput()
+            {
+                return _hasInputRelease && Input.GetKey(Key);
+            }
+
+            public bool HasInputRelease()
+            {
+                return !_hasInputRelease && Input.GetKeyUp(Key);
+            }
+        }
+
 
         public LevelInputManager(LevelStage level, Selector selector)
         {
             Level = level;
             _mousePosition = Level.Camera.ScreenToWorldPoint(Input.mousePosition);
             Selector = selector;
+
+            List<string> keys = new List<string> {"A", "S", "D", "F", "G", "H", "J", "K", "Z", "X", "C", "V", "B", "N", "M", "Comma", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0" };
+
+            int i = 0;
+            ConfigData.Configuration.ShootingStrategies.ToList().ForEach((strategy) =>
+            {
+                if (i < keys.Count)
+                {
+                    int strategyIndex;
+                    if (int.TryParse(keys[i], out strategyIndex)){
+                        _shootingStrategyHotKeys.Add(new HotKeyAction(strategy, keys[i], () =>
+                        {
+                            Level.Menus.ActionBox.SetTypeStrategy(strategyIndex);
+                        }));
+                    }
+                    else
+                    {
+                        _shootingStrategyHotKeys.Add(new HotKeyAction(strategy, keys[i], () =>
+                        {
+                            Level.Menus.ActionBox.SetShootingStrategy(strategy);
+                        }));
+                    }
+
+                    i++;
+                }
+
+            });
         }
 
         public void Update()
@@ -458,8 +513,19 @@ namespace Assets.Scripts.Level
                 _hasDropBeaconInputRelease = false;
                 return true;
             }
+            else
+            {
+                HotKeyAction shootingStrategyAction = GetShootingStrategyInput();
+                if (shootingStrategyAction != null)
+                {
+                    shootingStrategyAction.Action();
+                }
+            }
 
 
+
+            // Shooting strategies
+            
             return false;
         }
         public void CheckSquadActionInputReleases()
@@ -547,6 +613,7 @@ namespace Assets.Scripts.Level
         }
 
 
+
         public bool HasMatchSpeedInput()
         {
             return _hasMatchSpeedInputRelease && Input.GetKey(KeyCode.Q);
@@ -587,6 +654,20 @@ namespace Assets.Scripts.Level
         {
             return _hasDropBeaconInputRelease && Input.GetKey(KeyCode.P);
         }
+        private HotKeyAction GetShootingStrategyInput()
+        {
+
+            foreach (HotKeyAction hotKeyAction in _shootingStrategyHotKeys)
+            {
+                if (hotKeyAction.HasInput())
+                {
+                    return hotKeyAction;
+                }
+            }
+
+            return null;
+        }
+
         /// <summary>
         /// The new logic is as follows:
         /// 1. As many inputs will be able to be customized in settings, it's important to abstract the input logic for an action away from the specific keys

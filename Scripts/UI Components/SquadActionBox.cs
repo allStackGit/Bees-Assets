@@ -557,11 +557,7 @@ namespace Assets.Scripts.UIComponents
             }
             else if (HasLevel)
             {
-                List<Squad> selectedSquads = Level.GetState().GetSelectedSquads();
-                if (selectedSquads.Count > 0)
-                {
-                    return true;
-                }
+                return Level.GetState().HasSelectedSquads;
             }
             return false;
         }
@@ -753,11 +749,11 @@ namespace Assets.Scripts.UIComponents
             if (HasSquad())
             {
                 
-                ShipTypes().ToList().ForEach((bee) =>
+                ShipTypes().ToList().ForEach((shipType) =>
                 {
-                    if (strategy.Contains(bee))
+                    if (strategy.Contains(shipType))
                     {
-                        strategy = $"Type {Utilities.ConvertShipNameToType(bee)}";
+                        strategy = $"Type {Utilities.ConvertShipNameToType(shipType)}";
                     }
                 });
 
