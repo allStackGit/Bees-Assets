@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Xml.Linq;
 using Assets.Scripts;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
@@ -78,14 +79,12 @@ namespace Assets.Scripts.Level
 
         private class HotKeyAction
         {
-            public string Name;
             public KeyCode Key;
             public Action Action;
             private bool _hasInputRelease = true;
 
-            public HotKeyAction(string name, string key, Action action)
+            public HotKeyAction(string key, Action action)
             {
-                Name = name;
                 Key = (KeyCode)Enum.Parse(typeof(KeyCode), key, true);
                 Action = action;
             }
@@ -108,23 +107,31 @@ namespace Assets.Scripts.Level
             _mousePosition = Level.Camera.ScreenToWorldPoint(Input.mousePosition);
             Selector = selector;
 
-            List<string> keys = new List<string> {"A", "S", "D", "F", "G", "H", "J", "K", "Z", "X", "C", "V", "B", "N", "M", "Comma", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0" };
+            List<string> keys = new List<string> {"A", "S", "D", "F", "G", "H", "J", "K", "Z", "X", "C", "V", "B", "N", "M", "Comma", "49", "50", "51", "52", "53", "54", "55", "56", "57", "48" };
 
             int i = 0;
+            int strategyIndex = 1;
             ConfigData.Configuration.ShootingStrategies.ToList().ForEach((strategy) =>
             {
                 if (i < keys.Count)
                 {
-                    int strategyIndex;
-                    if (int.TryParse(keys[i], out strategyIndex)){
-                        _shootingStrategyHotKeys.Add(new HotKeyAction(strategy, keys[i], () =>
+                    int keyNumber;
+                    if (int.TryParse(keys[i], out keyNumber)){
+                        //Debug.Log($"HotKey for {strategy} created with key {keyNumber} and enum {(KeyCode)Enum.Parse(typeof(KeyCode), keys[i], true)} with si {strategyIndex}");
+                        int indexCopy = (int)strategyIndex;
+                        _shootingStrategyHotKeys.Add(new HotKeyAction(keys[i], () =>
                         {
-                            Level.Menus.ActionBox.SetTypeStrategy(strategyIndex);
+
+                            //Debug.Log($"Hot key! {indexCopy}");
+                            Level.Menus.ActionBox.SetTypeStrategy(indexCopy);
+                            
                         }));
+                        strategyIndex++;
                     }
                     else
                     {
-                        _shootingStrategyHotKeys.Add(new HotKeyAction(strategy, keys[i], () =>
+                        //Debug.Log($"Could not parse {keys[i]} into a number: {strategyIndex}");
+                        _shootingStrategyHotKeys.Add(new HotKeyAction(keys[i], () =>
                         {
                             Level.Menus.ActionBox.SetShootingStrategy(strategy);
                         }));
@@ -516,6 +523,7 @@ namespace Assets.Scripts.Level
             else
             {
                 HotKeyAction shootingStrategyAction = GetShootingStrategyInput();
+                //Debug.Log($"Shooting strategy action: {shootingStrategyAction}");
                 if (shootingStrategyAction != null)
                 {
                     shootingStrategyAction.Action();

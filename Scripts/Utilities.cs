@@ -195,6 +195,10 @@ namespace Assets.Scripts
             {
                 return name;
             }
+            else if (name == "Factory")
+            {
+                return "Factories";
+            }
             else
             {
                 return $"{name}s";

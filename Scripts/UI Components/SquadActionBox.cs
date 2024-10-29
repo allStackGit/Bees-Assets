@@ -751,7 +751,7 @@ namespace Assets.Scripts.UIComponents
                 
                 ShipTypes().ToList().ForEach((shipType) =>
                 {
-                    if (strategy.Contains(shipType))
+                    if (strategy.Contains(shipType) || (strategy == "Factories" && shipType == "Factory"))
                     {
                         strategy = $"Type {Utilities.ConvertShipNameToType(shipType)}";
                     }
@@ -767,7 +767,7 @@ namespace Assets.Scripts.UIComponents
                 {
                     Level.GetState().GetSelectedSquads().ForEach((squad) =>
                     {
-                        //Debug.Log($"Setting the squad to shoot with {strategy}!");
+                        Debug.Log($"Setting the squad to shoot with {strategy}!");
                         squad.SetShootingStrategy(strategy);
                     });
                 }
@@ -783,14 +783,18 @@ namespace Assets.Scripts.UIComponents
             {
                 //Debug.Log($"Set type strategy {strategy}");
                 TMP_Dropdown dropdown = TypeSelector.GetComponentInChildren<TMP_Dropdown>();
-                string shipName = dropdown.options[strategy].text;
-
-                if (strategy == 0) // "-------" No option chosen
+                if (strategy < dropdown.options.Count)
                 {
-                    shipName = ConfigData.StartingSettings.DefaultShootingStrategy;
+                    string shipName = dropdown.options[strategy].text;
+
+                    if (strategy == 0) // "-------" No option chosen
+                    {
+                        shipName = ConfigData.StartingSettings.DefaultShootingStrategy;
+                    }
+                    //Debug.Log($"setting shooting strategy to {shipName}");
+                    SetShootingStrategy(shipName);
                 }
 
-                SetShootingStrategy(shipName);
             }
             else
             {
