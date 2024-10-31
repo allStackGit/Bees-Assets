@@ -107,7 +107,7 @@ namespace Assets.Scripts.Level
 
             if (ConfigData.SquadsChosenForLevel.Where((squad) => squad.Side == side).ToList().Count == 0)
             {
-                Debug.Log($"There were no chosen squads for {side}");
+                //Debug.Log($"There were no chosen squads for {side}");
                 List<SavedSquad> preloadSquads = new List<SavedSquad>();
                 List<SavedSquad> midLevelSquads = new List<SavedSquad>();
                 if (Level.UseSemiRandomSquads && (side != ConfigData.Configuration.AISide || !Level.UseFullyRandomEnemySquads))

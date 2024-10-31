@@ -52,7 +52,8 @@ namespace Assets.Scripts.Level
         private bool _hasChargeInputRelease = true;
         private bool _hasDropBeaconInputRelease = true;
 
-        private List<HotKeyAction> _shootingStrategyHotKeys = new List<HotKeyAction>();
+        //private List<HotKeyAction> _shootingStrategyHotKeys = new List<HotKeyAction>();
+        private List<HotKeyAction> _hotKeys = new List<HotKeyAction>();
 
         //private bool _isDragMovingSquads;
         private Vector2 _mousePosition;
@@ -79,25 +80,39 @@ namespace Assets.Scripts.Level
 
         private class HotKeyAction
         {
-            public KeyCode Key;
+            public List<KeyCode> Keys;
+            public string Name, KeyString;
             public Action Action;
             private bool _hasInputRelease = true;
 
-            public HotKeyAction(string key, Action action)
+            //public HotKeyAction(string key, Action action)
+            //{
+            //    Keys = new List<KeyCode> { (KeyCode)Enum.Parse(typeof(KeyCode), key, true) };
+            //    Action = action;
+            //}
+            //public HotKeyAction(List<string> keys, Action action)
+            //{
+            //    Keys = keys.Select(k => (KeyCode)Enum.Parse(typeof(KeyCode), k, true)).ToList();
+            //    Action = action;
+            //}
+            public HotKeyAction(string name, List<KeyCode> keys, Action action)
             {
-                Key = (KeyCode)Enum.Parse(typeof(KeyCode), key, true);
+                Name = name;
+                Keys = keys;
                 Action = action;
+                KeyString = Keys.Select(())
             }
 
             public bool HasInput()
             {
-                return _hasInputRelease && Input.GetKey(Key);
+                return _hasInputRelease && Keys.All(k => Input.GetKey(k));
             }
 
             public bool HasInputRelease()
             {
-                return !_hasInputRelease && Input.GetKeyUp(Key);
+                return !_hasInputRelease && Keys.Any(k => Input.GetKeyUp(k));
             }
+
         }
 
 
@@ -107,39 +122,57 @@ namespace Assets.Scripts.Level
             _mousePosition = Level.Camera.ScreenToWorldPoint(Input.mousePosition);
             Selector = selector;
 
-            List<string> keys = new List<string> {"A", "S", "D", "F", "G", "H", "J", "K", "Z", "X", "C", "V", "B", "N", "M", "Comma", "49", "50", "51", "52", "53", "54", "55", "56", "57", "48" };
+            //List<string> keys = new List<string> {"A", "S", "D", "F", "G", "H", "J", "K", "Z", "X", "C", "V", "B", "N", "M", "Comma", "49", "50", "51", "52", "53", "54", "55", "56", "57", "48" };
 
-            int i = 0;
-            int strategyIndex = 1;
-            ConfigData.Configuration.ShootingStrategies.ToList().ForEach((strategy) =>
+            //int i = 0;
+            //int strategyIndex = 1;
+            //ConfigData.Configuration.ShootingStrategies.ToList().ForEach((strategy) =>
+            //{
+            //    if (i < keys.Count)
+            //    {
+            //        int keyNumber;
+            //        if (int.TryParse(keys[i], out keyNumber)){
+            //            //Debug.Log($"HotKey for {strategy} created with key {keyNumber} and enum {(KeyCode)Enum.Parse(typeof(KeyCode), keys[i], true)} with si {strategyIndex}");
+            //            int indexCopy = (int)strategyIndex;
+            //            _shootingStrategyHotKeys.Add(new HotKeyAction(keys[i], () =>
+            //            {
+
+            //                //Debug.Log($"Hot key! {indexCopy}");
+            //                Level.Menus.ActionBox.SetTypeStrategy(indexCopy);
+
+            //            }));
+            //            strategyIndex++;
+            //        }
+            //        else
+            //        {
+            //            //Debug.Log($"Could not parse {keys[i]} into a number: {strategyIndex}");
+            //            _shootingStrategyHotKeys.Add(new HotKeyAction(keys[i], () =>
+            //            {
+            //                Level.Menus.ActionBox.SetShootingStrategy(strategy);
+            //            }));
+            //        }
+
+            //        i++;
+            //    }
+
+            //});
+            LoadHotKeySettings();
+        }
+
+        public void LoadHotKeySettings()
+        {
+            Dictionary<string, List<KeyCode>> userHotKeys = ConfigData.GetUserSettingsData().HotKeys;
+            userHotKeys.Keys.ToList().ForEach((actionKey) =>
             {
-                if (i < keys.Count)
+                switch (actionKey)
                 {
-                    int keyNumber;
-                    if (int.TryParse(keys[i], out keyNumber)){
-                        //Debug.Log($"HotKey for {strategy} created with key {keyNumber} and enum {(KeyCode)Enum.Parse(typeof(KeyCode), keys[i], true)} with si {strategyIndex}");
-                        int indexCopy = (int)strategyIndex;
-                        _shootingStrategyHotKeys.Add(new HotKeyAction(keys[i], () =>
+                    case "Match Speed":
+                        _hotKeys.Add(new HotKeyAction(actionKey, userHotKeys[actionKey], () =>
                         {
-
-                            //Debug.Log($"Hot key! {indexCopy}");
-                            Level.Menus.ActionBox.SetTypeStrategy(indexCopy);
-                            
+                            Level.Menus.ActionBox.MatchSpeed();
                         }));
-                        strategyIndex++;
-                    }
-                    else
-                    {
-                        //Debug.Log($"Could not parse {keys[i]} into a number: {strategyIndex}");
-                        _shootingStrategyHotKeys.Add(new HotKeyAction(keys[i], () =>
-                        {
-                            Level.Menus.ActionBox.SetShootingStrategy(strategy);
-                        }));
-                    }
-
-                    i++;
+                        break;
                 }
-
             });
         }
 
@@ -450,231 +483,238 @@ namespace Assets.Scripts.Level
         /// All squad actions require an input prefix to differentiate from other hot keys. Default is alt key.
         /// </summary>
         /// <returns></returns>
-        public bool HasSquadActionInputPrefix()
-        {
-            return Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
-        }
+        //public bool HasSquadActionInputPrefix()
+        //{
+        //    return Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+        //}
         /// <summary>
         /// Check for all the possible squad action inputs and take action if necessary
         /// </summary>
         /// <returns></returns>
-        public bool CheckSquadActionInputs()
-        {
-            if (HasMatchSpeedInput())
-            {
-                Level.Menus.ActionBox.MatchSpeed();
-                _hasMatchSpeedInputRelease = false;
-                return true;
-            }
-            else if (HasAttackOnSightInput())
-            {
-                Level.Menus.ActionBox.AttackOnSight();
-                _hasAttackOnSightInputRelease = false;
-                return true;
-            }
-            else if (HasCeaseFireInput())
-            {
-                Level.Menus.ActionBox.CeaseFire();
-                _hasCeaseFireInputRelease = false;
-                return true;
-            }
-            else if (HasPatrolInput())
-            {
-                Level.Menus.ActionBox.Patrol();
-                _hasPatrolInputRelease = false;
-                return true;
-            }
-            else if (HasGuardInput())
-            {
-                Level.Menus.ActionBox.Guard();
-                _hasGuardInputRelease = false;
-                return true;
-            }
-            else if (HasChaseInput())
-            {
-                Level.Menus.ActionBox.Chase();
-                _hasChaseInputRelease = false;
-                return true;
-            }
-            else if (HasHoldInput())
-            {
-                Level.Menus.ActionBox.Hold();
-                _hasHoldInputRelease = false;
-                return true;
-            }
-            else if (HasDetonateInput())
-            {
-                Level.Menus.ActionBox.Detonate();
-                _hasDetonateInputRelease = false;
-                return true;
-            }
-            else if (HasChargeInput())
-            {
-                Level.Menus.ActionBox.Charge();
-                _hasChargeInputRelease = false;
-                return true;
-            }
-            else if (HasDropBeaconInput())
-            {
-                Level.Menus.ActionBox.DropBeacon();
-                _hasDropBeaconInputRelease = false;
-                return true;
-            }
-            else
-            {
-                HotKeyAction shootingStrategyAction = GetShootingStrategyInput();
-                //Debug.Log($"Shooting strategy action: {shootingStrategyAction}");
-                if (shootingStrategyAction != null)
-                {
-                    shootingStrategyAction.Action();
-                }
-            }
+        //public bool CheckSquadActionInputs()
+        //{
+        //    if (HasMatchSpeedInput())
+        //    {
+        //        Level.Menus.ActionBox.MatchSpeed();
+        //        _hasMatchSpeedInputRelease = false;
+        //        return true;
+        //    }
+        //    else if (HasAttackOnSightInput())
+        //    {
+        //        Level.Menus.ActionBox.AttackOnSight();
+        //        _hasAttackOnSightInputRelease = false;
+        //        return true;
+        //    }
+        //    else if (HasCeaseFireInput())
+        //    {
+        //        Level.Menus.ActionBox.CeaseFire();
+        //        _hasCeaseFireInputRelease = false;
+        //        return true;
+        //    }
+        //    else if (HasPatrolInput())
+        //    {
+        //        Level.Menus.ActionBox.Patrol();
+        //        _hasPatrolInputRelease = false;
+        //        return true;
+        //    }
+        //    else if (HasGuardInput())
+        //    {
+        //        Level.Menus.ActionBox.Guard();
+        //        _hasGuardInputRelease = false;
+        //        return true;
+        //    }
+        //    else if (HasChaseInput())
+        //    {
+        //        Level.Menus.ActionBox.Chase();
+        //        _hasChaseInputRelease = false;
+        //        return true;
+        //    }
+        //    else if (HasHoldInput())
+        //    {
+        //        Level.Menus.ActionBox.Hold();
+        //        _hasHoldInputRelease = false;
+        //        return true;
+        //    }
+        //    else if (HasDetonateInput())
+        //    {
+        //        Level.Menus.ActionBox.Detonate();
+        //        _hasDetonateInputRelease = false;
+        //        return true;
+        //    }
+        //    else if (HasChargeInput())
+        //    {
+        //        Level.Menus.ActionBox.Charge();
+        //        _hasChargeInputRelease = false;
+        //        return true;
+        //    }
+        //    else if (HasDropBeaconInput())
+        //    {
+        //        Level.Menus.ActionBox.DropBeacon();
+        //        _hasDropBeaconInputRelease = false;
+        //        return true;
+        //    }
+        //    else
+        //    {
+        //        HotKeyAction shootingStrategyAction = GetShootingStrategyInput();
+        //        //Debug.Log($"Shooting strategy action: {shootingStrategyAction}");
+        //        if (shootingStrategyAction != null)
+        //        {
+        //            shootingStrategyAction.Action();
+        //        }
+        //    }
+
+        //    HotKeyAction shootingStrategyAction = GetShootingStrategyInput();
+        //    //Debug.Log($"Shooting strategy action: {shootingStrategyAction}");
+        //    if (shootingStrategyAction != null)
+        //    {
+        //        shootingStrategyAction.Action();
+        //    }
 
 
 
-            // Shooting strategies
-            
-            return false;
-        }
-        public void CheckSquadActionInputReleases()
-        {
-            if (HasMatchSpeedInputRelease())
-            {
-                _hasMatchSpeedInputRelease = true;
-            }
-            else if (HasAttackOnSightInputRelease())
-            {
-                _hasAttackOnSightInputRelease = true;
-            }
-            else if (HasCeaseFireInputRelease())
-            {
-                _hasCeaseFireInputRelease = true;
-            }
-            else if (HasPatrolInputRelease())
-            {
-                _hasPatrolInputRelease = true;
-            }
-            else if (HasGuardInputRelease())
-            {
-                _hasGuardInputRelease = true;
-            }
-            else if (HasChaseInputRelease())
-            {
-                _hasChaseInputRelease = true;
-            }
-            else if (HasHoldInputRelease())
-            {
-                _hasHoldInputRelease = true;
-            }
-            else if (HasDetonateInputRelease())
-            {
-                _hasDetonateInputRelease = true;
-            }
-            else if (HasChargeInputRelease())
-            {
-                _hasChargeInputRelease = true;
-            }
-            else if (HasDropBeaconInputRelease())
-            {
-                _hasDropBeaconInputRelease = true;
-            }
-        }
-        public bool HasMatchSpeedInputRelease()
-        {
-            return !_hasMatchSpeedInputRelease && Input.GetKeyUp(KeyCode.Q);
-        }
-        public bool HasAttackOnSightInputRelease()
-        {
-            return !_hasAttackOnSightInputRelease && Input.GetKeyUp(KeyCode.W);
-        }
-        public bool HasCeaseFireInputRelease()
-        {
-            return !_hasCeaseFireInputRelease && Input.GetKeyUp(KeyCode.E);
-        }
-        public bool HasPatrolInputRelease()
-        {
-            return !_hasPatrolInputRelease && Input.GetKeyUp(KeyCode.R);
-        }
-        public bool HasGuardInputRelease()
-        {
-            return !_hasGuardInputRelease && Input.GetKeyUp(KeyCode.T);
-        }
-        public bool HasChaseInputRelease()
-        {
-            return !_hasChaseInputRelease && Input.GetKeyUp(KeyCode.Y);
-        }
-        public bool HasHoldInputRelease()
-        {
-            return !_hasHoldInputRelease && Input.GetKeyUp(KeyCode.U);
-        }
-        public bool HasDetonateInputRelease()
-        {
-            return !_hasDetonateInputRelease && Input.GetKeyUp(KeyCode.I);
-        }
-        public bool HasChargeInputRelease()
-        {
-            return !_hasChargeInputRelease && Input.GetKeyUp(KeyCode.O);
-        }
-        public bool HasDropBeaconInputRelease()
-        {
-            return !_hasDropBeaconInputRelease && Input.GetKeyUp(KeyCode.P);
-        }
+        //    // Shooting strategies
+
+        //    return false;
+        //}
+        //public void CheckSquadActionInputReleases()
+        //{
+        //    if (HasMatchSpeedInputRelease())
+        //    {
+        //        _hasMatchSpeedInputRelease = true;
+        //    }
+        //    else if (HasAttackOnSightInputRelease())
+        //    {
+        //        _hasAttackOnSightInputRelease = true;
+        //    }
+        //    else if (HasCeaseFireInputRelease())
+        //    {
+        //        _hasCeaseFireInputRelease = true;
+        //    }
+        //    else if (HasPatrolInputRelease())
+        //    {
+        //        _hasPatrolInputRelease = true;
+        //    }
+        //    else if (HasGuardInputRelease())
+        //    {
+        //        _hasGuardInputRelease = true;
+        //    }
+        //    else if (HasChaseInputRelease())
+        //    {
+        //        _hasChaseInputRelease = true;
+        //    }
+        //    else if (HasHoldInputRelease())
+        //    {
+        //        _hasHoldInputRelease = true;
+        //    }
+        //    else if (HasDetonateInputRelease())
+        //    {
+        //        _hasDetonateInputRelease = true;
+        //    }
+        //    else if (HasChargeInputRelease())
+        //    {
+        //        _hasChargeInputRelease = true;
+        //    }
+        //    else if (HasDropBeaconInputRelease())
+        //    {
+        //        _hasDropBeaconInputRelease = true;
+        //    }
+        //}
+        //public bool HasMatchSpeedInputRelease()
+        //{
+        //    return !_hasMatchSpeedInputRelease && Input.GetKeyUp(KeyCode.Q);
+        //}
+        //public bool HasAttackOnSightInputRelease()
+        //{
+        //    return !_hasAttackOnSightInputRelease && Input.GetKeyUp(KeyCode.W);
+        //}
+        //public bool HasCeaseFireInputRelease()
+        //{
+        //    return !_hasCeaseFireInputRelease && Input.GetKeyUp(KeyCode.E);
+        //}
+        //public bool HasPatrolInputRelease()
+        //{
+        //    return !_hasPatrolInputRelease && Input.GetKeyUp(KeyCode.R);
+        //}
+        //public bool HasGuardInputRelease()
+        //{
+        //    return !_hasGuardInputRelease && Input.GetKeyUp(KeyCode.T);
+        //}
+        //public bool HasChaseInputRelease()
+        //{
+        //    return !_hasChaseInputRelease && Input.GetKeyUp(KeyCode.Y);
+        //}
+        //public bool HasHoldInputRelease()
+        //{
+        //    return !_hasHoldInputRelease && Input.GetKeyUp(KeyCode.U);
+        //}
+        //public bool HasDetonateInputRelease()
+        //{
+        //    return !_hasDetonateInputRelease && Input.GetKeyUp(KeyCode.I);
+        //}
+        //public bool HasChargeInputRelease()
+        //{
+        //    return !_hasChargeInputRelease && Input.GetKeyUp(KeyCode.O);
+        //}
+        //public bool HasDropBeaconInputRelease()
+        //{
+        //    return !_hasDropBeaconInputRelease && Input.GetKeyUp(KeyCode.P);
+        //}
 
 
 
-        public bool HasMatchSpeedInput()
-        {
-            return _hasMatchSpeedInputRelease && Input.GetKey(KeyCode.Q);
-        }
-        public bool HasAttackOnSightInput()
-        {
-            return _hasAttackOnSightInputRelease && Input.GetKey(KeyCode.W);
-        }
-        public bool HasCeaseFireInput()
-        {
-            return _hasCeaseFireInputRelease && Input.GetKey(KeyCode.E);
-        }
-        public bool HasPatrolInput()
-        {
-            return _hasPatrolInputRelease && Input.GetKey(KeyCode.R);
-        }
-        public bool HasGuardInput()
-        {
-            return _hasGuardInputRelease && Input.GetKey(KeyCode.T);
-        }
-        public bool HasChaseInput()
-        {
-            return _hasChaseInputRelease && Input.GetKey(KeyCode.Y);
-        }
-        public bool HasHoldInput()
-        {
-            return _hasHoldInputRelease && Input.GetKey(KeyCode.U);
-        }
-        public bool HasDetonateInput()
-        {
-            return _hasDetonateInputRelease && Input.GetKey(KeyCode.I);
-        }
-        public bool HasChargeInput()
-        {
-            return _hasChargeInputRelease && Input.GetKey(KeyCode.O);
-        }
-        public bool HasDropBeaconInput()
-        {
-            return _hasDropBeaconInputRelease && Input.GetKey(KeyCode.P);
-        }
-        private HotKeyAction GetShootingStrategyInput()
-        {
+        //public bool HasMatchSpeedInput()
+        //{
+        //    return _hasMatchSpeedInputRelease && Input.GetKey(KeyCode.Q);
+        //}
+        //public bool HasAttackOnSightInput()
+        //{
+        //    return _hasAttackOnSightInputRelease && Input.GetKey(KeyCode.W);
+        //}
+        //public bool HasCeaseFireInput()
+        //{
+        //    return _hasCeaseFireInputRelease && Input.GetKey(KeyCode.E);
+        //}
+        //public bool HasPatrolInput()
+        //{
+        //    return _hasPatrolInputRelease && Input.GetKey(KeyCode.R);
+        //}
+        //public bool HasGuardInput()
+        //{
+        //    return _hasGuardInputRelease && Input.GetKey(KeyCode.T);
+        //}
+        //public bool HasChaseInput()
+        //{
+        //    return _hasChaseInputRelease && Input.GetKey(KeyCode.Y);
+        //}
+        //public bool HasHoldInput()
+        //{
+        //    return _hasHoldInputRelease && Input.GetKey(KeyCode.U);
+        //}
+        //public bool HasDetonateInput()
+        //{
+        //    return _hasDetonateInputRelease && Input.GetKey(KeyCode.I);
+        //}
+        //public bool HasChargeInput()
+        //{
+        //    return _hasChargeInputRelease && Input.GetKey(KeyCode.O);
+        //}
+        //public bool HasDropBeaconInput()
+        //{
+        //    return _hasDropBeaconInputRelease && Input.GetKey(KeyCode.P);
+        //}
+        //private HotKeyAction GetShootingStrategyInput()
+        //{
 
-            foreach (HotKeyAction hotKeyAction in _shootingStrategyHotKeys)
-            {
-                if (hotKeyAction.HasInput())
-                {
-                    return hotKeyAction;
-                }
-            }
+        //    foreach (HotKeyAction hotKeyAction in _hotKeys)
+        //    {
+        //        if (hotKeyAction.HasInput())
+        //        {
+        //            return hotKeyAction;
+        //        }
+        //    }
 
-            return null;
-        }
+        //    return null;
+        //}
 
         /// <summary>
         /// The new logic is as follows:
@@ -683,16 +723,25 @@ namespace Assets.Scripts.Level
         /// </summary>
         private void CheckActions()
         {
-            if (HasSquadActionInputPrefix())
+            //if (HasSquadActionInputPrefix())
+            //{
+            //    if (Level.GetState().HasSelectedSquads)
+            //    {
+            //        if (!CheckSquadActionInputs())
+            //        {
+            //            CheckSquadActionInputReleases();
+            //        }
+            //    }
+            //    return;
+            //}
+            foreach (HotKeyAction hotKeyAction in _hotKeys)
             {
-                if (Level.GetState().HasSelectedSquads)
+                Debug.Log($"Checking if {hotKeyAction.Name} has input from {hotKeyAction.Keys.Count} keys");
+                if (hotKeyAction.HasInput())
                 {
-                    if (!CheckSquadActionInputs())
-                    {
-                        CheckSquadActionInputReleases();
-                    }
+                    hotKeyAction.Action();
+                    return;
                 }
-                return;
             }
             if (HasPauseInput())
             {

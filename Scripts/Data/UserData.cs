@@ -1,6 +1,7 @@
 ﻿
 using Assets.Scripts.Scenes;
 using System;
+using UnityEngine;
 
 namespace Assets.Scripts.Data
 {
@@ -27,18 +28,18 @@ namespace Assets.Scripts.Data
                     // throw error back to user if it does not, not because we can't make it but because it's missing
                     Debugger.Exception(new Exception("The user save data file is missing"));
                 }
-                //Debug.Log("DataFile doesn't exist");
+                //Debug.Log($"DataFile {filename} doesn't exist");
             }
             else
             {
-                //Debug.Log("Datafile exists, reading from it");
+                //Debug.Log($"Datafile {filename} exists, reading from it");
                 json = file.LoadJsonObject();
 
                 //Debug.Log($"got json variable in UserData. Did not await {json}");
             }
             if (json == null || file.GetContents() == "")
             {
-                //Debug.Log("Datafile doesn't exist or is blank, writing default data"); 
+                //Debug.Log($"Datafile {filename} doesn't exist or is blank, writing default data"); 
                 json = file.WriteData(defaultJsonData);
             }
             

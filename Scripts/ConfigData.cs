@@ -60,11 +60,13 @@ namespace Assets.Scripts
         public const string UserProgressFilename = "user_progress";
         public const string FleetDataFilename = "fleet_data";
         public const string SavedSquadsDataFilename = "saved_squads_data";
+        public const string UserSettingsFilename = "user_settings_data";
 
         // data loaded booleans
         public static bool IsUserProgressDataLoaded;
         public static bool IsFleetDataLoaded; 
         public static bool IsSavedSquadsDataLoaded;
+        public static bool IsUserSettingsDataLoaded;
 
 
         /// <summary>
@@ -338,7 +340,7 @@ namespace Assets.Scripts
         public static bool IsUserLoadingCustomSquads, IsUserLoadingCustomEnemySquads;
         public static bool AreAllSettingsLoaded => (ShipInfo != null && ShipInfo.IsLoaded) && (Configuration != null && Configuration.IsLoaded)
             && (StartingSettings != null && StartingSettings.IsLoaded);
-        public static bool IsAllUserDataLoaded => IsUserProgressDataLoaded && IsFleetDataLoaded && IsSavedSquadsDataLoaded;  
+        public static bool IsAllUserDataLoaded => IsUserProgressDataLoaded && IsFleetDataLoaded && IsSavedSquadsDataLoaded && IsUserSettingsDataLoaded;  
 
 
 
@@ -353,6 +355,7 @@ namespace Assets.Scripts
         private static UserProgressData _userProgressData = null;
         private static FleetData _fleetData = null;
         private static SavedSquadsData _savedSquadsData = null;
+        private static UserSettingsData _userSettingsData = null;
 
 
         public static bool HasSocketManager()
@@ -366,7 +369,7 @@ namespace Assets.Scripts
         }
         public static void SwapSides()
         {
-            Debug.Log($"Switching sides from {Configuration.UserSide}");
+            //Debug.Log($"Switching sides from {Configuration.UserSide}");
             if (Configuration.UserSide == Configuration.BeeSide) // if it was the bee side switch to the human side
             {
                 //Debug.Log($"Switching sides to humans");
@@ -408,7 +411,7 @@ namespace Assets.Scripts
                 IsLoadingUserData = true;
                 //Debug.Log("Setting up user data");
 
-                //Debug.Log($"Current Level before loading user data: {ConfigData.GetLevel()}");
+                //Debug.Log($"Current Level before loading user data: {GetLevel()}");
                 Dictionary<string, int> allStartingShips = new Dictionary<string, int>();
                 StartingSettings.HumanStartingShips.ToList().ForEach((s) => allStartingShips.Add(s.Key, s.Value));
                 StartingSettings.BeeStartingShips.ToList().ForEach((s) => allStartingShips.Add(s.Key, s.Value));
@@ -417,7 +420,8 @@ namespace Assets.Scripts
                 SetupUserProgressData(!FirstTimePlaying);
                 SetupFleetData(!FirstTimePlaying, allStartingShips);
                 SetupSavedSquadsData(!FirstTimePlaying);
-                //Debug.Log($"Current Level after loading user data: {ConfigData.GetLevel()}");
+                SetupUserSettingsData(!FirstTimePlaying);
+                //Debug.Log($"Current Level after loading user data: {GetLevel()}");
             }
 
         }
@@ -463,17 +467,19 @@ namespace Assets.Scripts
                 GetUserProgressData().WaitForData();
                 GetFleetData().WaitForData();
                 GetSavedSquadsData().WaitForData();
+                GetUserSettingsData().WaitForData();
             }
         }
         public static void SaveAll()
         {
-            //    Debug.Log($"Saving all: {Socket.IsOpen}");
+            //Debug.Log($"Saving all: {Socket.IsOpen}");
             //    Debug.Log($"Saving User Progress: {Socket.IsOpen}");
             GetUserProgressData().Save();
             //Debug.Log($"Saving Ships: {Socket.IsOpen}");
             AllShips.SaveFleetData();
             //Debug.Log($"Saving Squads: {Socket.IsOpen}");
             AllShips.SaveSquadData();
+            GetUserSettingsData().Save();
         }
         public static string GetBasePath()
         {
@@ -573,6 +579,14 @@ namespace Assets.Scripts
         public static UserProgressData GetUserProgressData()
         {
             return _userProgressData;
+        }
+        public static void SetupUserSettingsData(bool shouldFileExist)
+        {
+            _userSettingsData = new UserSettingsData(shouldFileExist);
+        }
+        public static UserSettingsData GetUserSettingsData()
+        {
+            return _userSettingsData;
         }
         public static void SetupFleetData(bool shouldFileExist, Dictionary<string, int> startingShips)
         {

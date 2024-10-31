@@ -767,7 +767,7 @@ namespace Assets.Scripts.UIComponents
                 {
                     Level.GetState().GetSelectedSquads().ForEach((squad) =>
                     {
-                        Debug.Log($"Setting the squad to shoot with {strategy}!");
+                        //Debug.Log($"Setting the squad to shoot with {strategy}!");
                         squad.SetShootingStrategy(strategy);
                     });
                 }
