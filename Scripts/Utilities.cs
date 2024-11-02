@@ -605,10 +605,6 @@ namespace Assets.Scripts
         {
             return ((JArray)jArray).ToList<dynamic>();
         }
-        public static T[] JArrayToArray<T>(dynamic jArray)
-        {
-            return Array.ConvertAll(((JArray)jArray).ToArray<dynamic>(), (item) => (T)item);
-        }
         public static Dictionary<K, V> JArrayToDictionary<K, V>(dynamic jArray)
         {
             Dictionary<K, V> dictionary = new Dictionary<K, V>();
