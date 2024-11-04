@@ -63,7 +63,10 @@ namespace Assets.Scripts.Level
                 _hasInputRelease = true;
             }
         }
-
+        public void ManuallySetInputRelease(bool value)
+        {
+            _hasInputRelease = value;
+        }
         public string ToJson()
         {
             return $"{{\"{Name}\": [{Keys.Aggregate("", (a, b) => a.ToString().Length > 0 ? $"{a}, {(int) b}" : $"{(int) b}")}]}}";

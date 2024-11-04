@@ -40,17 +40,17 @@ namespace Assets.Scripts.Level
         private bool _isRightMouseDownPrior;
         private bool _isRightMouseDragging;
         private bool _isDragMovementBlockedByTimer;
-        private bool _hasReleasedMiniMapToggle = true;
-        private bool _hasMatchSpeedInputRelease = true;
-        private bool _hasAttackOnSightInputRelease = true;
-        private bool _hasCeaseFireInputRelease = true;
-        private bool _hasPatrolInputRelease = true;
-        private bool _hasGuardInputRelease = true;
-        private bool _hasChaseInputRelease = true;
-        private bool _hasHoldInputRelease = true;
-        private bool _hasDetonateInputRelease = true;
-        private bool _hasChargeInputRelease = true;
-        private bool _hasDropBeaconInputRelease = true;
+        //private bool _hasReleasedMiniMapToggle = true;
+        //private bool _hasMatchSpeedInputRelease = true;
+        //private bool _hasAttackOnSightInputRelease = true;
+        //private bool _hasCeaseFireInputRelease = true;
+        //private bool _hasPatrolInputRelease = true;
+        //private bool _hasGuardInputRelease = true;
+        //private bool _hasChaseInputRelease = true;
+        //private bool _hasHoldInputRelease = true;
+        //private bool _hasDetonateInputRelease = true;
+        //private bool _hasChargeInputRelease = true;
+        //private bool _hasDropBeaconInputRelease = true;
 
         //private List<HotKeyAction> _shootingStrategyHotKeys = new List<HotKeyAction>();
         private List<HotKey> _hotKeys;
@@ -60,7 +60,7 @@ namespace Assets.Scripts.Level
         private Vector2 _mouseDownPosition;
         private Vector2 _previousMousePosition;
         private Vector2 _previousDragMousePosition;
-        private float _timeSinceMiniMapToggled;
+        //private float _timeSinceMiniMapToggled;
 
         private Ship _clickedShip = null;
         private MiningAsteroid _clickedMiningAsteroid = null;
@@ -98,6 +98,7 @@ namespace Assets.Scripts.Level
                 switch (hotKey.Name)
                 {
                     case "Match Speed":
+                        Debug.Log($"Found match speed");
                         hotKey.SetAction(() =>
                         {
                             Level.Menus.ActionBox.MatchSpeed();
@@ -161,13 +162,121 @@ namespace Assets.Scripts.Level
                     case var _ when ConfigData.Configuration.ShootingStrategies.Contains(hotKey.Name):
                         hotKey.SetAction(() =>
                         {
-                            Level.Menus.ActionBox.SetAction(hotKey.Name);
+                            Level.Menus.ActionBox.SetShootingStrategy(hotKey.Name);
                         });
                         break;
+
+                    case var _ when hotKey.Name.StartsWith("Select Squad #"):
+                        int number = int.Parse(hotKey.Name.Substring(hotKey.Name.Length - 1));
+                        hotKey.SetAction(() =>
+                        {
+                            SelectSquadByNumber(number);
+                        });
+                        break;
+
+                    case "Open Menu":
+                        hotKey.SetAction(() =>
+                        {
+                            Level.Menus.OpenMenu();
+                            hotKey.ManuallySetInputRelease(true);
+                        });
+                        break;
+                    case "Show Ranges":
+                        hotKey.SetAction(() =>
+                        {
+                            ShowRanges();
+                        });
+                        break;
+                    case "Manual Fire":
+                        hotKey.SetAction(() =>
+                        {
+                            ManualFire();
+                        });
+                        break;
+                    case "Toggle Mini Map":
+                        hotKey.SetAction(() =>
+                        {
+                            Level.Menus.ToggleMiniMapDisplay();
+                        });
+                        break;
+
                 }
             }));
         }
+        public void ShowRanges()
+        {
+            if (!IsShowingRanges)
+            {
+                Level.GetState().GetSelectedSquads().ForEach(s => {
+                    if (!s.IsShowingRanges)
+                    {
+                        s.ShowSquadRanges();
+                    }
+                });
+                IsShowingRanges = true;
+            }
+            else
+            {
+                Level.GetState().GetSelectedSquads().ForEach(s => {
+                    if (s.IsShowingRanges)
+                    {
+                        s.HideSquadRanges();
+                    }
+                });
+                IsShowingRanges = false;
+            }
+        }
+        public void ManualFire()
+        {
+            if (!IsFiringManually)
+            {
+                Level.GetState().GetSelectedSquads().ForEach(squad => {
+                    squad.GetShips().ForEach((ship) =>
+                    {
+                        ship.Turrets.ForEach((turret) =>
+                        {
+                            turret.IsFiringManually = true;
+                            TurretsFiringManually.Add(turret);
+                        });
+                    });
+                });
+                IsFiringManually = true;
+            }
+            else
+            {
+                TurretsFiringManually.ForEach((turret) =>
+                {
+                    turret.IsFiringManually = false;
+                });
+                IsFiringManually = false;
+            }
+        }
+        public void SelectSquadByNumber(int squadNumber)
+        {
+            if (squadNumber == 0)
+            {
+                squadNumber = 10;
+            }
 
+            GameState state = Level.GetState();
+            int friendlySquads = state.OriginalSquadCounts[ConfigData.Configuration.UserSide - 1];
+            squadNumber %= friendlySquads;
+            if (squadNumber == 0)
+            {
+                squadNumber = friendlySquads;
+            }
+
+            Squad squad = state.GetSquadByNumber(ConfigData.Configuration.UserSide, squadNumber);
+            if (squad != null)
+            {
+                Vector2 position = squad.GetPosition();
+                Level.Camera.transform.position = new Vector3(position.x, position.y, -10) + Level.Get3DPosition();
+                //ToggleZoom();
+                MaintainScrollBoundary();
+            }
+            //Debug.Log("Pressed " + squadNumber);
+            state.SelectSquad(squad);
+        }
         public void Update()
         {
             CheckInputs();
@@ -213,52 +322,52 @@ namespace Assets.Scripts.Level
             }
             else
             {
-                KeyCode[] keycodes = ConfigData.SquadKeys;
-                for (int i = 0; i < keycodes.Length; i++)
-                {
-                    if (Input.GetKeyDown(keycodes[i]))
-                    {
-                        //Debug.Log("Pressed key");
-                        int squadNumber = int.Parse(keycodes[i].ToString().Substring(5));
+                //KeyCode[] keycodes = ConfigData.SquadKeys;
+                //for (int i = 0; i < keycodes.Length; i++)
+                //{
+                //    if (Input.GetKeyDown(keycodes[i]))
+                //    {
+                //        //Debug.Log("Pressed key");
+                //        int squadNumber = int.Parse(keycodes[i].ToString().Substring(5));
 
-                        if (squadNumber == 0)
-                        {
-                            squadNumber = 10;
-                        }
+                //        if (squadNumber == 0)
+                //        {
+                //            squadNumber = 10;
+                //        }
 
-                        GameState state = Level.GetState();
-                        int friendlySquads = state.OriginalSquadCounts[ConfigData.Configuration.UserSide-1];
-                        squadNumber %= friendlySquads;
-                        if (squadNumber == 0)
-                        {
-                            squadNumber = friendlySquads;
-                        }
+                //        GameState state = Level.GetState();
+                //        int friendlySquads = state.OriginalSquadCounts[ConfigData.Configuration.UserSide-1];
+                //        squadNumber %= friendlySquads;
+                //        if (squadNumber == 0)
+                //        {
+                //            squadNumber = friendlySquads;
+                //        }
 
-                        Squad squad = state.GetSquadByNumber(ConfigData.Configuration.UserSide, squadNumber);
-                        if (state.GetSelectedSquads().Contains(squad))
-                        {
-                            Debug.Log("Selecting an already selected squad");
-                            Vector2 position = squad.GetPosition();
-                            ToggleZoom();
-                            Level.Camera.transform.position = new Vector3(position.x, position.y, -10) + Level.Get3DPosition();
-                            MaintainScrollBoundary();
-                        }
-                        else
-                        {
-                            Debug.Log("Selecting a new squad");
-                            if (squad != null)
-                            {
-                                Vector2 position = squad.GetPosition();
-                                Level.Camera.transform.position = new Vector3(position.x, position.y, -10) + Level.Get3DPosition();
-                                ToggleZoom();
-                                MaintainScrollBoundary();
-                            }
+                //        Squad squad = state.GetSquadByNumber(ConfigData.Configuration.UserSide, squadNumber);
+                //        if (state.GetSelectedSquads().Contains(squad))
+                //        {
+                //            Debug.Log("Selecting an already selected squad");
+                //            Vector2 position = squad.GetPosition();
+                //            ToggleZoom();
+                //            Level.Camera.transform.position = new Vector3(position.x, position.y, -10) + Level.Get3DPosition();
+                //            MaintainScrollBoundary();
+                //        }
+                //        else
+                //        {
+                //            Debug.Log("Selecting a new squad");
+                //            if (squad != null)
+                //            {
+                //                Vector2 position = squad.GetPosition();
+                //                Level.Camera.transform.position = new Vector3(position.x, position.y, -10) + Level.Get3DPosition();
+                //                ToggleZoom();
+                //                MaintainScrollBoundary();
+                //            }
 
-                        }
-                         //Debug.Log("Pressed " + squadNumber);
-                        state.SelectSquad(squad);
-                    }
-                }
+                //        }
+                //         //Debug.Log("Pressed " + squadNumber);
+                //        state.SelectSquad(squad);
+                //    }
+                //}
             }
 
             if (Input.GetMouseButtonDown(LeftClick)) // left mouse button down
@@ -373,14 +482,14 @@ namespace Assets.Scripts.Level
                 _isRightMouseDragging = true;
             }
         }
-        private bool HasOpenMenuInput()
-        {
-            return Input.GetKey(KeyCode.Escape);
-        }
-        private bool HasShowRangesInput()
-        {
-            return Input.GetKey(KeyCode.R);
-        }
+        //private bool HasOpenMenuInput()
+        //{
+        //    return Input.GetKey(KeyCode.Escape);
+        //}
+        //private bool HasShowRangesInput()
+        //{
+        //    return Input.GetKey(KeyCode.R);
+        //}
         private bool HasDragMoveSquadsInput()
         {
             if (!_isDragMovementBlockedByTimer && !EventSystem.IsPointerOverGameObject() && _isRightMouseDragging && Vector2.Distance(_previousDragMousePosition, _mousePosition) > 5)
@@ -427,18 +536,18 @@ namespace Assets.Scripts.Level
             }
             return false;
         }
-        private bool HasManualFireInput()
-        {
-            return Input.GetKey(KeyCode.F) || Level.IsTestFiring;
-        }
-        private bool HasToggleMiniMapInput()
-        {
-            return Input.GetKey(KeyCode.M) && Time.realtimeSinceStartup - _timeSinceMiniMapToggled > .25f && _hasReleasedMiniMapToggle;
-        }
-        private bool HasMiniMapToggleRelease()
-        {
-            return Input.GetKeyUp(KeyCode.M);
-        }
+        //private bool HasManualFireInput()
+        //{
+        //    return Input.GetKey(KeyCode.F) || Level.IsTestFiring;
+        //}
+        //private bool HasToggleMiniMapInput()
+        //{
+        //    return Input.GetKey(KeyCode.M) && Time.realtimeSinceStartup - _timeSinceMiniMapToggled > .25f && _hasReleasedMiniMapToggle;
+        //}
+        //private bool HasMiniMapToggleRelease()
+        //{
+        //    return Input.GetKeyUp(KeyCode.M);
+        //}
         private bool HasMiningCommandInput()
         {
             if (_rightMouseButtonUp)
@@ -488,7 +597,7 @@ namespace Assets.Scripts.Level
             }
             if (HasPauseInput())
             {
-                if (!Level.IsPaused && Time.realtimeSinceStartup - Level.TimePaused > 1) 
+                if (!Level.IsPaused && Time.realtimeSinceStartup - Level.TimePaused > 1)
                 {
                     Level.IsPausedByTester = true;
                     Level.TimePaused = Time.realtimeSinceStartup;
@@ -497,89 +606,89 @@ namespace Assets.Scripts.Level
                     return;
                 }
             }
-            if (HasOpenMenuInput())
-            {
-                Level.Menus.OpenMenu();
-            }
-            if (HasToggleMiniMapInput())
-            {
-                Level.Menus.ToggleMiniMapDisplay();
-                _timeSinceMiniMapToggled = Time.realtimeSinceStartup;
-                _hasReleasedMiniMapToggle = false;
-            }
-            else if (HasMiniMapToggleRelease())
-            {
-                _hasReleasedMiniMapToggle = true;
-            }
-            else
-            {
-                if (HasShowRangesInput())
-                {
-                    if (!IsShowingRanges)
-                    {
-                        Level.GetState().GetSelectedSquads().ForEach(s => {
-                            if (!s.IsShowingRanges)
-                            {
-                                s.ShowSquadRanges();
-                            }
-                        });
-                        IsShowingRanges = true;
-                    }
-                }
-                else
-                {
-                    if (IsShowingRanges)
-                    {
-                        Level.GetState().GetSelectedSquads().ForEach(s => {
-                            if (s.IsShowingRanges)
-                            {
-                                s.HideSquadRanges();
-                            }
-                        });
-                        IsShowingRanges = false;
-                    }
+            //if (HasOpenMenuInput())
+            //{
+            //    Level.Menus.OpenMenu();
+            //}
+            //if (HasToggleMiniMapInput())
+            //{
+            //    Level.Menus.ToggleMiniMapDisplay();
+            //    _timeSinceMiniMapToggled = Time.realtimeSinceStartup;
+            //    _hasReleasedMiniMapToggle = false;
+            //}
+            //else if (HasMiniMapToggleRelease())
+            //{
+            //    _hasReleasedMiniMapToggle = true;
+            //}
+            //else
+            //{
+            //    if (HasShowRangesInput())
+            //    {
+            //        if (!IsShowingRanges)
+            //        {
+            //            Level.GetState().GetSelectedSquads().ForEach(s => {
+            //                if (!s.IsShowingRanges)
+            //                {
+            //                    s.ShowSquadRanges();
+            //                }
+            //            });
+            //            IsShowingRanges = true;
+            //        }
+            //    }
+            //    else
+            //    {
+            //        if (IsShowingRanges)
+            //        {
+            //            Level.GetState().GetSelectedSquads().ForEach(s => {
+            //                if (s.IsShowingRanges)
+            //                {
+            //                    s.HideSquadRanges();
+            //                }
+            //            });
+            //            IsShowingRanges = false;
+            //        }
 
-                }
-                if (HasManualFireInput())
-                {
-                    if (!IsFiringManually || Level.IsTestFiring)
-                    {
-                        Level.GetState().GetSelectedSquads().ForEach(squad => {
-                            squad.GetShips().ForEach((ship) =>
-                            {
-                                ship.Turrets.ForEach((turret) =>
-                                {
-                                    turret.IsFiringManually = true;
-                                    TurretsFiringManually.Add(turret);
-                                });
-                            });
-                        });
-                        IsFiringManually = true;
-                    }
-                    
-                }
-                else
-                {
-                    if (IsFiringManually)
-                    {
-                        //Level.GetState().GetSelectedSquads().ForEach(squad => {
-                        //    squad.GetShips().ForEach((ship) =>
-                        //    {
-                        //        ship.Turrets.ForEach((turret) =>
-                        //        {
-                        //            turret.IsFiringManually = false;
-                        //        });
-                        //    });
-                        //});
-                        TurretsFiringManually.ForEach((turret) =>
-                        {
-                            turret.IsFiringManually = false;
-                        });
-                        IsFiringManually = false;
-                    }
-                }
-            }
-            
+            //    }
+            //    if (HasManualFireInput())
+            //    {
+            //        if (!IsFiringManually || Level.IsTestFiring)
+            //        {
+            //            Level.GetState().GetSelectedSquads().ForEach(squad => {
+            //                squad.GetShips().ForEach((ship) =>
+            //                {
+            //                    ship.Turrets.ForEach((turret) =>
+            //                    {
+            //                        turret.IsFiringManually = true;
+            //                        TurretsFiringManually.Add(turret);
+            //                    });
+            //                });
+            //            });
+            //            IsFiringManually = true;
+            //        }
+
+            //    }
+            //    else
+            //    {
+            //        if (IsFiringManually)
+            //        {
+            //            //Level.GetState().GetSelectedSquads().ForEach(squad => {
+            //            //    squad.GetShips().ForEach((ship) =>
+            //            //    {
+            //            //        ship.Turrets.ForEach((turret) =>
+            //            //        {
+            //            //            turret.IsFiringManually = false;
+            //            //        });
+            //            //    });
+            //            //});
+            //            TurretsFiringManually.ForEach((turret) =>
+            //            {
+            //                turret.IsFiringManually = false;
+            //            });
+            //            IsFiringManually = false;
+            //        }
+            //    }
+            //}
+
             if (!Level.IsPaused)
             {
                 //Debug.Log($"EVS: {EventSystem.IsPointerOverGameObject()}");

@@ -24,6 +24,40 @@ namespace Assets.Scripts.Data
             new HotKey("Detonate", new List<KeyCode>{KeyCode.LeftShift, KeyCode.I}),
             new HotKey("Charge", new List<KeyCode>{KeyCode.LeftShift, KeyCode.O}),
             new HotKey("Drop Beacon", new List<KeyCode>{KeyCode.LeftShift, KeyCode.P}),
+
+            new HotKey("First Seen", new List<KeyCode>{KeyCode.LeftShift, KeyCode.A}),
+            new HotKey("Random", new List<KeyCode>{KeyCode.LeftShift, KeyCode.S}),
+            new HotKey("Revenge", new List<KeyCode>{KeyCode.LeftShift, KeyCode.D}),
+            new HotKey("Most Dangerous", new List<KeyCode>{KeyCode.LeftShift, KeyCode.F}),
+            new HotKey("Most Health", new List<KeyCode>{KeyCode.LeftShift, KeyCode.G}),
+            new HotKey("Least Health", new List<KeyCode>{KeyCode.LeftShift, KeyCode.H}),
+            new HotKey("Most Powerful", new List<KeyCode>{KeyCode.LeftShift, KeyCode.J}),
+            new HotKey("Least Powerful", new List<KeyCode>{KeyCode.LeftShift, KeyCode.K}),
+
+            new HotKey("Closest", new List<KeyCode>{KeyCode.LeftShift, KeyCode.Z}),
+            new HotKey("Furthest", new List<KeyCode>{KeyCode.LeftShift, KeyCode.X}),
+            new HotKey("Most Range", new List<KeyCode>{KeyCode.LeftShift, KeyCode.C}),
+            new HotKey("Least Range", new List<KeyCode>{KeyCode.LeftShift, KeyCode.V}),
+            new HotKey("Fastest", new List<KeyCode>{KeyCode.LeftShift, KeyCode.B}),
+            new HotKey("Slowest", new List<KeyCode>{KeyCode.LeftShift, KeyCode.N}),
+            new HotKey("Most Valuable", new List<KeyCode>{KeyCode.LeftShift, KeyCode.M}),
+            new HotKey("Least Valuable", new List<KeyCode>{KeyCode.LeftShift, KeyCode.Comma}),
+
+            new HotKey("Select Squad #1", new List<KeyCode>{KeyCode.Alpha1}),
+            new HotKey("Select Squad #2", new List<KeyCode>{KeyCode.Alpha2}),
+            new HotKey("Select Squad #3", new List<KeyCode>{KeyCode.Alpha3}),
+            new HotKey("Select Squad #4", new List<KeyCode>{KeyCode.Alpha4}),
+            new HotKey("Select Squad #5", new List<KeyCode>{KeyCode.Alpha5}),
+            new HotKey("Select Squad #6", new List<KeyCode>{KeyCode.Alpha6}),
+            new HotKey("Select Squad #7", new List<KeyCode>{KeyCode.Alpha7}),
+            new HotKey("Select Squad #8", new List<KeyCode>{KeyCode.Alpha8}),
+            new HotKey("Select Squad #9", new List<KeyCode>{KeyCode.Alpha9}),
+            new HotKey("Select Squad #0", new List<KeyCode>{KeyCode.Alpha0}),
+
+            new HotKey("Open Menu", new List<KeyCode>{KeyCode.Escape}),
+            new HotKey("Show Ranges", new List<KeyCode>{KeyCode.R}),
+            new HotKey("Manual Fire", new List<KeyCode>{KeyCode.F}),
+            new HotKey("Toggle Mini Map", new List<KeyCode>{KeyCode.M}),
         };
 
 
