@@ -86,6 +86,11 @@ namespace Assets.Scripts.Data
             return HotKeys.FirstOrDefault(k => k.Name == name);
         }
 
+        public HotKey FindKeyByKeyString(string keyString) 
+        { 
+            return HotKeys.FirstOrDefault(k => k.KeyString == keyString); 
+        }
+
         public string DefaultJson()
         {
             string json = "{\"HotKeys\": [";
@@ -103,7 +108,7 @@ namespace Assets.Scripts.Data
             }
 
             json += "]}";
-            Debug.Log(json);
+            //Debug.Log(json);
             return json;
         }
 

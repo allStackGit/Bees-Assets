@@ -71,6 +71,10 @@ namespace Assets.Scripts.Level
         {
             return $"{{\"{Name}\": [{Keys.Aggregate("", (a, b) => a.ToString().Length > 0 ? $"{a}, {(int) b}" : $"{(int) b}")}]}}";
         }
+        public override string ToString()
+        {
+            return KeyString;
+        }
 
     }
 }

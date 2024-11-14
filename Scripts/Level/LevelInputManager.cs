@@ -312,6 +312,17 @@ namespace Assets.Scripts.Level
             Vector2 mouse = Input.mousePosition;
             _mousePosition = Level.Camera.ScreenToWorldPoint(mouse);
 
+            if (Input.anyKeyDown)
+            {
+                foreach (KeyCode key in Enum.GetValues(typeof(KeyCode)))
+                {
+                    if (Input.GetKeyDown(key))
+                    {
+                        Debug.Log("Key pressed: " + key);
+                    }
+                }
+            }
+
             if (Input.GetKey(KeyCode.LeftShift))
             {
                 _leftShift = true;

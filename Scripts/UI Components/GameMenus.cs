@@ -1,17 +1,10 @@
-﻿using System;
-
-using UnityEngine;
-
+﻿using UnityEngine;
 using UnityEngine.SceneManagement;
 using TMPro;
 using System.Collections.Generic;
-using System.Linq;
-using UnityEngine.UI;
-using UnityEngine.EventSystems;
 using Assets.Scripts.Scenes;
 using Assets.Scripts.UI_Components;
 using UnityEngine.Events;
-using Assets.Scripts.Settings;
 using Assets.Scripts.Data;
 
 namespace Assets.Scripts.UIComponents
@@ -25,6 +18,7 @@ namespace Assets.Scripts.UIComponents
         public Dialogue ExitConfirmationDialogue;
         public TMP_Text ShipInfoBoxTitle, ShipInfoBoxStats;
         public Codex Codex;
+        public SettingsMenu Settings;
 
         public bool HoveringOverMiniMapButton;
         public bool IsSquadActionBoxOpen => ActionBox != null && SquadActionBoxUI.activeSelf;
@@ -38,6 +32,7 @@ namespace Assets.Scripts.UIComponents
             {
                 ActionBox = SquadActionBoxUI.GetComponent<SquadActionBox>();
                 Codex.SetupCodex();
+                Settings.SetupSettings();
                 
             }
 
@@ -154,6 +149,8 @@ namespace Assets.Scripts.UIComponents
         {
             DeselectButton();
             Debug.Log("Settings!");
+            Settings.ViewSettings();
+            //Settings.ViewControls();
         }
         public void DeselectButton()
         {
