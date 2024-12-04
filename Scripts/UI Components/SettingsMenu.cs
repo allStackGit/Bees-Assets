@@ -1,8 +1,11 @@
 using Assets.Scripts;
 using Assets.Scripts.Level;
+using Assets.Scripts.Scenes;
+using NUnit.Framework;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using TMPro;
 using UnityEngine;
 using UnityEngine.TextCore.Text;
@@ -11,23 +14,80 @@ public class SettingsMenu : MonoBehaviour
 {
     public GameObject ControlsList, Entry;
     public List<HotKey> HotKeys;
+    public LevelStage Level;
     private readonly Dictionary<char, KeyCode> _keycodeCache = new Dictionary<char, KeyCode>();
     private HotKey _currentHotKey;
+    private TMP_InputField _currentEntry;
+    private bool _hasKeyInputEnabled;
+    private bool _isSetup;
+    private bool _hasChangedHotKeys;
+    private List<KeyCode> _newKeyCombination = new List<KeyCode>();
+    private List<TMP_InputField> _entryInputs = new List<TMP_InputField>();
+
+    public void Update()
+    {
+        if (_isSetup && _hasKeyInputEnabled)
+        {
+            CheckForKeyInput();
+        }
+    }
+    public void CheckForKeyInput()
+    {
+        if (Input.anyKey)
+        {
+            foreach (KeyCode key in Enum.GetValues(typeof(KeyCode)))
+            {
+                if (key < KeyCode.Mouse0 && Input.GetKeyDown(key))
+                {
+                    //Debug.Log("Key pressed: " + key);
+                    _newKeyCombination.Add(key);
+                    //Debug.Log($"Current keys pressed: {Utilities.ListToString(_newKeyCombination)}");
+                }
+            }
+        }
+        else if (_newKeyCombination.Count > 0)
+        {
+            //Debug.Log($"All keys have been released");
+            _currentHotKey.SetKeyCombination(_newKeyCombination.ToList());
+            _currentEntry.text = _currentHotKey.KeyString;
+            _hasChangedHotKeys = true;
+            //Debug.Log($"Chosen hot key: {_currentHotKey}");
+            ConfigData.GetUserSettingsData().SetKey(_currentHotKey.Name, _currentHotKey.Keys);
+            _newKeyCombination.Clear();
+            _hasKeyInputEnabled = false;
+        }
+    }
     public void ViewSettings()
     {
-        Debug.Log("Viewing settings");
+        //Debug.Log("Viewing settings");
+        _hasChangedHotKeys = false;
+        _newKeyCombination.Clear();
+        _hasKeyInputEnabled = false;
+        _currentEntry = null;
+        _currentHotKey = null;
         gameObject.SetActive(true);
     }
     public void ExitSettings()
     {
+        if (_hasChangedHotKeys)
+        {
+            //Debug.Log("Saving settings");
+            ConfigData.GetUserSettingsData().Save();
+            Level.InputManager.LoadHotKeySettings();
+        }
         gameObject.SetActive(false);
     }
     public void ViewControls()
     {
         ControlsList.SetActive(true);
     }
-    public void SetupSettings()
+    public TMP_InputField FindEntryByKeyString(string keyString)
     {
+        return _entryInputs.FirstOrDefault((e) => e.text == keyString);
+    }
+    public void SetupSettings(LevelStage level)
+    {
+        Level = level;
         HotKeys = ConfigData.GetUserSettingsData().HotKeys;
         HotKeys.ForEach(key =>
         {
@@ -44,34 +104,19 @@ public class SettingsMenu : MonoBehaviour
             keyInput.text = key.KeyString;
 
             entry.gameObject.SetActive(true);
+            _entryInputs.Add(keyInput);
         });
-    }
-    public void ValidateKeyInput(string key)
-    {
-        Debug.Log($"key pressed: {key}, keycode: {GetKeyCode(key.ToCharArray()[0])}");
+        _isSetup = true;
     }
     public void SelectTextInput(string selection)
     {
-        Debug.Log($"Text input selected: {selection}");
+        //Debug.Log($"Text input selected: {selection}");
         _currentHotKey = ConfigData.GetUserSettingsData().FindKeyByKeyString(selection);
-        Debug.Log(_currentHotKey);
-    }
-
-    public KeyCode GetKeyCode(char key)
-    {
-        KeyCode keyCode;
-        if (_keycodeCache.ContainsKey(key) )
+        _currentEntry = FindEntryByKeyString(selection);
+        if (_currentHotKey != null && _currentEntry != null)
         {
-            keyCode = _keycodeCache[key];
+            _hasKeyInputEnabled = true;
         }
-        else
-        {
-            int keyNumber = key;
-            keyCode = (KeyCode)Enum.Parse(typeof(KeyCode), keyNumber.ToString());
-            _keycodeCache.Add(key, keyCode);
-
-        }
-        return keyCode;
     }
 
 }

@@ -58,6 +58,21 @@ namespace Assets.Scripts.Data
             new HotKey("Show Ranges", new List<KeyCode>{KeyCode.R}),
             new HotKey("Manual Fire", new List<KeyCode>{KeyCode.F}),
             new HotKey("Toggle Mini Map", new List<KeyCode>{KeyCode.M}),
+
+            new HotKey("Move Camera Up", new List<KeyCode>{KeyCode.W}),
+            new HotKey("Move Camera Left", new List<KeyCode>{KeyCode.A}),
+            new HotKey("Move Camera Down", new List<KeyCode>{KeyCode.S}),
+            new HotKey("Move Camera Right", new List<KeyCode>{KeyCode.D}),
+            
+        };
+
+        // The Ids of actions that have continuous input
+        public HashSet<int> ContinuousInputActions = new HashSet<int>
+        {
+            "Move Camera Up".GetHashCode(),
+            "Move Camera Left".GetHashCode(),
+            "Move Camera Down".GetHashCode(),
+            "Move Camera Right".GetHashCode(),
         };
 
 
@@ -71,14 +86,20 @@ namespace Assets.Scripts.Data
                 //Debug.Log("Updated config file");
                 //Debug.Log($"JSON from DataFile: {json}");
                 Dictionary<string, int[]> hotKeys = Utilities.JArrayToDictionary<string, int[]>(json.HotKeys);
-                hotKeys.Keys.ToList().ForEach((hotKeyName) => HotKeys.Add(new HotKey(hotKeyName, hotKeys[hotKeyName].Select((k) => (KeyCode)k).ToList())));
+                hotKeys.Keys.ToList().ForEach((hotKeyName) => HotKeys.Add(new HotKey(hotKeyName, hotKeys[hotKeyName].Select((k) => (KeyCode)k).ToList(), ContinuousInputActions.Contains(hotKeyName.GetHashCode()))));
             });
 
         }
         public void SetKey(string keyName, List<KeyCode> keys)
         {
-            FindKey(keyName).Keys = keys;
-            Save();
+            //HotKey key = FindKey(keyName);
+            //int index = HotKeys.IndexOf(key);
+            //HotKey indexKey = HotKeys[index];
+            //key.Keys = keys;
+            //Debug.Log($"{key} keys are set to {Utilities.ListToString(keys)} at index #{index} with HotKey {indexKey}");
+
+            FindKey(keyName).SetKeyCombination(keys);
+
         }
 
         public HotKey FindKey(string name)
@@ -114,6 +135,7 @@ namespace Assets.Scripts.Data
 
         public override string ToJson()
         {
+            //Debug.Log(HotKeys[0].ToJson());
             string json = "{\"HotKeys\": [";
 
             for (int i = 0; i < HotKeys.Count; i++)
@@ -127,7 +149,7 @@ namespace Assets.Scripts.Data
                     json += HotKeys[i].ToJson();
                 }
             }
-
+            //Debug.Log(json);
             json += "]}";
             return json;
         }

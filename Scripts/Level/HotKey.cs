@@ -12,22 +12,39 @@ namespace Assets.Scripts.Level
         public string Name, KeyString;
         public Action Action;
         private bool _hasInputRelease = true;
+        /// <summary>
+        /// This action keeps happening as long as the key is held down
+        /// </summary>
+        private bool _hasContinuousInput;
+        private float _lastInputTime;
+        public int Id;
 
         public HotKey(string name, List<KeyCode> keys, Action action)
         {
             Name = name;
             Keys = keys;
+            Id = Name.GetHashCode();
             SetAction(action);
-            KeyString = Keys.Aggregate("", (a, b) => a.ToString().Length > 0 ? $"{a} + {b}" : $"{b}");
+            MakeKeyString();
         }
-        public HotKey(string name, List<KeyCode> keys)
+        public HotKey(string name, List<KeyCode> keys, bool hasContinuousInput = false)
         {
             Name = name;
             Keys = keys;
+            _hasContinuousInput = hasContinuousInput;
+            MakeKeyString();
+        }
+        public void MakeKeyString()
+        {
             KeyString = Keys.Aggregate("", (a, b) => a.ToString().Length > 0 ? $"{a} + {b}" : $"{b}");
         }
         public void SetAction(Action action) { 
             Action = action; 
+        }
+        public void SetKeyCombination(List<KeyCode> keys)
+        {
+            Keys = keys;
+            MakeKeyString();
         }
         public bool Checkinput()
         {
@@ -58,6 +75,11 @@ namespace Assets.Scripts.Level
 
         public void CheckInputRelease()
         {
+            if (_hasContinuousInput && Time.realtimeSinceStartup - _lastInputTime > .05f)
+            {
+                _lastInputTime = Time.realtimeSinceStartup;
+                _hasInputRelease = true;
+            }
             if (!_hasInputRelease && Keys.Any(k => Input.GetKeyUp(k)))
             {
                 _hasInputRelease = true;
@@ -73,7 +95,39 @@ namespace Assets.Scripts.Level
         }
         public override string ToString()
         {
-            return KeyString;
+            return $"{Name}#{Id}: {KeyString}";
+        }
+        public bool Equals(HotKey other)
+        {
+            return Id == other.Id;
+        }
+
+        public override int GetHashCode()
+        {
+            return Id.GetHashCode();
+        }
+
+        public static bool operator ==(HotKey a, HotKey b)
+        {
+            // If both are null, or both are same instance, return true.
+            if (System.Object.ReferenceEquals(a, b))
+            {
+                return true;
+            }
+
+            // If one is null, but not both, return false.
+            if (((object)a == null) || ((object)b == null))
+            {
+                return false;
+            }
+
+            // Return true if the fields match:
+            return a.Id == b.Id;
+        }
+
+        public static bool operator !=(HotKey a, HotKey b)
+        {
+            return !(a == b);
         }
 
     }

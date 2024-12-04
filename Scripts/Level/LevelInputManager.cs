@@ -40,19 +40,7 @@ namespace Assets.Scripts.Level
         private bool _isRightMouseDownPrior;
         private bool _isRightMouseDragging;
         private bool _isDragMovementBlockedByTimer;
-        //private bool _hasReleasedMiniMapToggle = true;
-        //private bool _hasMatchSpeedInputRelease = true;
-        //private bool _hasAttackOnSightInputRelease = true;
-        //private bool _hasCeaseFireInputRelease = true;
-        //private bool _hasPatrolInputRelease = true;
-        //private bool _hasGuardInputRelease = true;
-        //private bool _hasChaseInputRelease = true;
-        //private bool _hasHoldInputRelease = true;
-        //private bool _hasDetonateInputRelease = true;
-        //private bool _hasChargeInputRelease = true;
-        //private bool _hasDropBeaconInputRelease = true;
 
-        //private List<HotKeyAction> _shootingStrategyHotKeys = new List<HotKeyAction>();
         private List<HotKey> _hotKeys;
 
         //private bool _isDragMovingSquads;
@@ -98,9 +86,10 @@ namespace Assets.Scripts.Level
                 switch (hotKey.Name)
                 {
                     case "Match Speed":
-                        Debug.Log($"Found match speed");
+                        //Debug.Log($"Found match speed: {hotKey}");
                         hotKey.SetAction(() =>
                         {
+                            //Debug.Log($"Match speed action!");
                             Level.Menus.ActionBox.MatchSpeed();
                         });
                         break;
@@ -197,6 +186,30 @@ namespace Assets.Scripts.Level
                         hotKey.SetAction(() =>
                         {
                             Level.Menus.ToggleMiniMapDisplay();
+                        });
+                        break;
+                    case "Move Camera Up":
+                        hotKey.SetAction(() =>
+                        {
+                            ScrollUp();
+                        });
+                        break;
+                    case "Move Camera Right":
+                        hotKey.SetAction(() =>
+                        {
+                            ScrollRight();
+                        });
+                        break;
+                    case "Move Camera Down":
+                        hotKey.SetAction(() =>
+                        {
+                            ScrollDown();
+                        });
+                        break;
+                    case "Move Camera Left":
+                        hotKey.SetAction(() =>
+                        {
+                            ScrollLeft();
                         });
                         break;
 
@@ -312,16 +325,17 @@ namespace Assets.Scripts.Level
             Vector2 mouse = Input.mousePosition;
             _mousePosition = Level.Camera.ScreenToWorldPoint(mouse);
 
-            if (Input.anyKeyDown)
-            {
-                foreach (KeyCode key in Enum.GetValues(typeof(KeyCode)))
-                {
-                    if (Input.GetKeyDown(key))
-                    {
-                        Debug.Log("Key pressed: " + key);
-                    }
-                }
-            }
+            // A test to see which keys are being pressed
+            //if (Input.anyKeyDown)
+            //{
+            //    foreach (KeyCode key in Enum.GetValues(typeof(KeyCode)))
+            //    {
+            //        if (Input.GetKeyDown(key))
+            //        {
+            //            Debug.Log("Key pressed: " + key);
+            //        }
+            //    }
+            //}
 
             if (Input.GetKey(KeyCode.LeftShift))
             {
@@ -330,55 +344,6 @@ namespace Assets.Scripts.Level
             else if (Input.GetKey(KeyCode.LeftControl))
             {
                 _leftControl = true;
-            }
-            else
-            {
-                //KeyCode[] keycodes = ConfigData.SquadKeys;
-                //for (int i = 0; i < keycodes.Length; i++)
-                //{
-                //    if (Input.GetKeyDown(keycodes[i]))
-                //    {
-                //        //Debug.Log("Pressed key");
-                //        int squadNumber = int.Parse(keycodes[i].ToString().Substring(5));
-
-                //        if (squadNumber == 0)
-                //        {
-                //            squadNumber = 10;
-                //        }
-
-                //        GameState state = Level.GetState();
-                //        int friendlySquads = state.OriginalSquadCounts[ConfigData.Configuration.UserSide-1];
-                //        squadNumber %= friendlySquads;
-                //        if (squadNumber == 0)
-                //        {
-                //            squadNumber = friendlySquads;
-                //        }
-
-                //        Squad squad = state.GetSquadByNumber(ConfigData.Configuration.UserSide, squadNumber);
-                //        if (state.GetSelectedSquads().Contains(squad))
-                //        {
-                //            Debug.Log("Selecting an already selected squad");
-                //            Vector2 position = squad.GetPosition();
-                //            ToggleZoom();
-                //            Level.Camera.transform.position = new Vector3(position.x, position.y, -10) + Level.Get3DPosition();
-                //            MaintainScrollBoundary();
-                //        }
-                //        else
-                //        {
-                //            Debug.Log("Selecting a new squad");
-                //            if (squad != null)
-                //            {
-                //                Vector2 position = squad.GetPosition();
-                //                Level.Camera.transform.position = new Vector3(position.x, position.y, -10) + Level.Get3DPosition();
-                //                ToggleZoom();
-                //                MaintainScrollBoundary();
-                //            }
-
-                //        }
-                //         //Debug.Log("Pressed " + squadNumber);
-                //        state.SelectSquad(squad);
-                //    }
-                //}
             }
 
             if (Input.GetMouseButtonDown(LeftClick)) // left mouse button down
@@ -493,14 +458,6 @@ namespace Assets.Scripts.Level
                 _isRightMouseDragging = true;
             }
         }
-        //private bool HasOpenMenuInput()
-        //{
-        //    return Input.GetKey(KeyCode.Escape);
-        //}
-        //private bool HasShowRangesInput()
-        //{
-        //    return Input.GetKey(KeyCode.R);
-        //}
         private bool HasDragMoveSquadsInput()
         {
             if (!_isDragMovementBlockedByTimer && !EventSystem.IsPointerOverGameObject() && _isRightMouseDragging && Vector2.Distance(_previousDragMousePosition, _mousePosition) > 5)
@@ -547,18 +504,6 @@ namespace Assets.Scripts.Level
             }
             return false;
         }
-        //private bool HasManualFireInput()
-        //{
-        //    return Input.GetKey(KeyCode.F) || Level.IsTestFiring;
-        //}
-        //private bool HasToggleMiniMapInput()
-        //{
-        //    return Input.GetKey(KeyCode.M) && Time.realtimeSinceStartup - _timeSinceMiniMapToggled > .25f && _hasReleasedMiniMapToggle;
-        //}
-        //private bool HasMiniMapToggleRelease()
-        //{
-        //    return Input.GetKeyUp(KeyCode.M);
-        //}
         private bool HasMiningCommandInput()
         {
             if (_rightMouseButtonUp)
@@ -601,8 +546,13 @@ namespace Assets.Scripts.Level
         {
             foreach (HotKey hotKey in _hotKeys)
             {
+                //if (hotKey.Name == "Match Speed")
+                //{
+                //    Debug.Log($"Checking Match Speed: {hotKey}");
+                //}
                 if (hotKey.Checkinput())
                 {
+                    Debug.Log($"Input registered from {hotKey.Name}");
                     return;
                 }
             }
@@ -617,89 +567,7 @@ namespace Assets.Scripts.Level
                     return;
                 }
             }
-            //if (HasOpenMenuInput())
-            //{
-            //    Level.Menus.OpenMenu();
-            //}
-            //if (HasToggleMiniMapInput())
-            //{
-            //    Level.Menus.ToggleMiniMapDisplay();
-            //    _timeSinceMiniMapToggled = Time.realtimeSinceStartup;
-            //    _hasReleasedMiniMapToggle = false;
-            //}
-            //else if (HasMiniMapToggleRelease())
-            //{
-            //    _hasReleasedMiniMapToggle = true;
-            //}
-            //else
-            //{
-            //    if (HasShowRangesInput())
-            //    {
-            //        if (!IsShowingRanges)
-            //        {
-            //            Level.GetState().GetSelectedSquads().ForEach(s => {
-            //                if (!s.IsShowingRanges)
-            //                {
-            //                    s.ShowSquadRanges();
-            //                }
-            //            });
-            //            IsShowingRanges = true;
-            //        }
-            //    }
-            //    else
-            //    {
-            //        if (IsShowingRanges)
-            //        {
-            //            Level.GetState().GetSelectedSquads().ForEach(s => {
-            //                if (s.IsShowingRanges)
-            //                {
-            //                    s.HideSquadRanges();
-            //                }
-            //            });
-            //            IsShowingRanges = false;
-            //        }
-
-            //    }
-            //    if (HasManualFireInput())
-            //    {
-            //        if (!IsFiringManually || Level.IsTestFiring)
-            //        {
-            //            Level.GetState().GetSelectedSquads().ForEach(squad => {
-            //                squad.GetShips().ForEach((ship) =>
-            //                {
-            //                    ship.Turrets.ForEach((turret) =>
-            //                    {
-            //                        turret.IsFiringManually = true;
-            //                        TurretsFiringManually.Add(turret);
-            //                    });
-            //                });
-            //            });
-            //            IsFiringManually = true;
-            //        }
-
-            //    }
-            //    else
-            //    {
-            //        if (IsFiringManually)
-            //        {
-            //            //Level.GetState().GetSelectedSquads().ForEach(squad => {
-            //            //    squad.GetShips().ForEach((ship) =>
-            //            //    {
-            //            //        ship.Turrets.ForEach((turret) =>
-            //            //        {
-            //            //            turret.IsFiringManually = false;
-            //            //        });
-            //            //    });
-            //            //});
-            //            TurretsFiringManually.ForEach((turret) =>
-            //            {
-            //                turret.IsFiringManually = false;
-            //            });
-            //            IsFiringManually = false;
-            //        }
-            //    }
-            //}
-
+            
             if (!Level.IsPaused)
             {
                 //Debug.Log($"EVS: {EventSystem.IsPointerOverGameObject()}");

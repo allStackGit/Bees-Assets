@@ -32,7 +32,7 @@ namespace Assets.Scripts.UIComponents
             {
                 ActionBox = SquadActionBoxUI.GetComponent<SquadActionBox>();
                 Codex.SetupCodex();
-                Settings.SetupSettings();
+                Settings.SetupSettings(Level);
                 
             }
 
@@ -148,7 +148,7 @@ namespace Assets.Scripts.UIComponents
         public void GoToSettings()
         {
             DeselectButton();
-            Debug.Log("Settings!");
+            //Debug.Log("Settings!");
             Settings.ViewSettings();
             //Settings.ViewControls();
         }

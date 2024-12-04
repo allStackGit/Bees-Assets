@@ -593,6 +593,10 @@ namespace Assets.Scripts
             SetUIColor(gameObject, ConfigData.GetUIColor("good"));
         }
 
+        public static string ListToString(List<dynamic> list)
+        {
+            return string.Join(", ", list.ToArray());
+        }
         public static List<dynamic> JArrayToDynamicList(dynamic jArray)
         {
             return ((JArray)jArray).ToList<dynamic>();
