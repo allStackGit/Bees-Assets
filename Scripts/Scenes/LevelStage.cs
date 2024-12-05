@@ -254,6 +254,55 @@ namespace Assets.Scripts.Scenes
                 Debug.Log($"The map does not have ships loading midlevel");
             }
 
+            if (ConfigData.SelectedEnemyShipTypes == -1)
+            {
+                if (ConfigData.Configuration.AISide == ConfigData.Configuration.BeeSide)
+                {
+                    BeeShipTypes = new List<string>() { BeeShipTypes[Utilities.RandomInt(BeeShipTypes.Count)] };
+                    Debug.Log($"The user has selected randomized enemy ship type: {BeeShipTypes[0]}");
+                }
+                else
+                {
+                    HumanShipTypes = new List<string>() { HumanShipTypes[Utilities.RandomInt(HumanShipTypes.Count)] };
+                    Debug.Log($"The user has selected randomized enemy ship type: {HumanShipTypes[0]}");
+                }
+
+            }
+            else if (ConfigData.SelectedEnemyShipTypes == 0)
+            {
+                Debug.Log($"The map does not have a singular enemy ship type");
+                if (OverrideBeeShipTypes.Count > 0)
+                {
+                    BeeShipTypes = OverrideBeeShipTypes;
+                }
+                else
+                {
+                    BeeShipTypes = ConfigData.BeeShipTypes.ToList();
+                }
+
+                if (OverrideHumanShipTypes.Count > 0)
+                {
+                    HumanShipTypes = OverrideHumanShipTypes;
+                }
+                else
+                {
+                    HumanShipTypes = ConfigData.HumanShipTypes.ToList();
+                }
+            }
+            else
+            {
+                if (ConfigData.Configuration.AISide == ConfigData.Configuration.BeeSide)
+                {
+                    BeeShipTypes = new List<string>() { BeeShipTypes[ConfigData.SelectedEnemyShipTypes - 1] };
+                    Debug.Log($"The user has selected enemy ship type: {BeeShipTypes[0]}");
+                }
+                else
+                {
+                    HumanShipTypes = new List<string>() { HumanShipTypes[ConfigData.SelectedEnemyShipTypes - 1] };
+                    Debug.Log($"The user has selected enemy ship type: {HumanShipTypes[0]}");
+                }
+            }
+
         }
         /// <summary>
         /// Takes care of any setup that needs to happen the first time the scene is loaded
@@ -802,6 +851,20 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
                 TimeoutTime = int.MaxValue;
             }
 
+            if (OverrideTimeScale == 0)
+            {
+                TimeScale = ConfigData.Configuration.TimeScale;
+            }
+            else
+            {
+                TimeScale = OverrideTimeScale;
+
+            }
+            if (GeneratedSquadCountOverride > 0)
+            {
+                ConfigData.Configuration.SquadGenerationCount = GeneratedSquadCountOverride;
+            }
+
             if (OverrideBeeShipTypes.Count > 0)
             {
                 BeeShipTypes = OverrideBeeShipTypes;
@@ -818,20 +881,6 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
             else
             {
                 HumanShipTypes = ConfigData.HumanShipTypes.ToList();
-            }
-
-            if (OverrideTimeScale == 0)
-            {
-                TimeScale = ConfigData.Configuration.TimeScale;
-            }
-            else
-            {
-                TimeScale = OverrideTimeScale;
-
-            }
-            if (GeneratedSquadCountOverride > 0)
-            {
-                ConfigData.Configuration.SquadGenerationCount = GeneratedSquadCountOverride;
             }
 
             //Debug.Log($"The human side is {ConfigData.Configuration.HumanSide}, the Bee side is {ConfigData.Configuration.BeeSide}, the AI side is {ConfigData.Configuration.AISide}, the user side is {ConfigData.Configuration.UserSide}");

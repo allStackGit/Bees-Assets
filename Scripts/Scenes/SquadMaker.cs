@@ -56,7 +56,8 @@ namespace Assets.Scripts.Scenes
             
             SquadActionBox, DeadShipBox, DropZone, DropBox, DragStatusBox, ShipInfoBox, ShipInfoBoxTitle, ShipInfoBoxDetails, ShipInfoBoxIcon, SquadInfoBox,
             SquadInfoBoxTitle, SquadInfoBoxDetails, SquadInfoBoxIcon, ShipStatsBox, ShipStatsBoxDetails, SquadNameInput, ShipNameInput,
-            SquadShipCount, SquadShipCountLabel, SquadColorLabel, SquadColorPickerButton, NextButton, StartButton, OpposingForceLabel, OpposingForcePresetDropdown;
+            SquadShipCount, SquadShipCountLabel, SquadColorLabel, SquadColorPickerButton, NextButton, StartButton, OpposingForceLabel, OpposingForcePresetDropdown, 
+            ChosenEnemyShipTypesDropdown;
 
         public Dialogue DeleteSquadConfirmation, ClearSquadConfirmation, LoadSquadConfirmation, ChooseSquadConfirmation, UnchooseSquadConfirmation, OverCapacityAlert, NoChosenSquadsAlert,
             ChoosingUnsavedSquadAlert, ChoosingDeadSquadAlert, GoBackConfirmation, SquadSavingStatus;
@@ -109,6 +110,7 @@ namespace Assets.Scripts.Scenes
         private int _chosenFogOfWarOption = -1;
         private int _chosenMiningOption = -1;
         private int _chosenMidLevelShipsOption = -1;
+        private int _chosenEnemyShipTypes = -1;
         private string _nextScene = "";
 
         public bool HasActionBox => ActionBox != null;
@@ -313,6 +315,13 @@ namespace Assets.Scripts.Scenes
             SquadColorLabel.SetActive(false);
             SquadColorPickerButton.SetActive(false);
 
+            TMP_Dropdown dropdown = ChosenEnemyShipTypesDropdown.GetComponent<TMP_Dropdown>();
+
+            ConfigData.HumanShipTypes.ToList().ForEach(ship =>
+            {
+                //Debug.Log("Setting drop down option");
+                dropdown.options.Add(new TMP_Dropdown.OptionData($"{ship}"));
+            });
 
 
         }
@@ -355,6 +364,14 @@ namespace Assets.Scripts.Scenes
             ActionBox.Setup(this, EventSystem, ConfigData.Configuration.HumanSide);
 
             _shipTypes = ConfigData.StartingSettings.HumanShipTypes;
+
+            TMP_Dropdown dropdown = ChosenEnemyShipTypesDropdown.GetComponent<TMP_Dropdown>();
+
+            ConfigData.BeeShipTypes.ToList().ForEach(ship =>
+            {
+                //Debug.Log("Setting drop down option");
+                dropdown.options.Add(new TMP_Dropdown.OptionData($"{ship}"));
+            });
             //Debug.Log("End of human setup");
         }
         private void UpdateDimensions()
@@ -1525,6 +1542,7 @@ namespace Assets.Scripts.Scenes
             ConfigData.SelecteFogOfWarOption = -1;
             ConfigData.SelectedMiningOption = -1;
             ConfigData.SelectedShipsLoadingMidLevelOption = -1;
+            ConfigData.SelectedEnemyShipTypes = -1;
 
             // add the sqauds
             ConfigData.IsUserLoadingCustomSquads = true;
@@ -1548,6 +1566,7 @@ namespace Assets.Scripts.Scenes
                     ConfigData.SelecteFogOfWarOption = _chosenFogOfWarOption;
                     ConfigData.SelectedMiningOption = _chosenMiningOption;
                     ConfigData.SelectedShipsLoadingMidLevelOption = _chosenMidLevelShipsOption;
+                    ConfigData.SelectedEnemyShipTypes = _chosenEnemyShipTypes;
 
                     if (_chosenOpposingForceOption == 0) // [alert] order needs to be changed
                     {
@@ -1649,6 +1668,10 @@ namespace Assets.Scripts.Scenes
         public void ChangeShipsLoadingMidLevelDropdown(int option)
         {
             _chosenMidLevelShipsOption = option - 1;
+        }
+        public void ChangeEnemyShipTypes(int option)
+        {
+            _chosenEnemyShipTypes = option - 1;
         }
 
 

@@ -159,7 +159,7 @@ namespace Assets.Scripts.Level
                             squadsList.Add(savedSquad);
 
                             if (ConfigData.ArmedShipTypes.Contains(type) || (side == ConfigData.Configuration.BeeSide && Level.OverrideBeeShipTypes.Count > 0) 
-                                || (side == ConfigData.Configuration.HumanSide && Level.OverrideHumanShipTypes.Count > 0))
+                                || (side == ConfigData.Configuration.HumanSide && Level.OverrideHumanShipTypes.Count > 0) || ConfigData.SelectedEnemyShipTypes != 0)
                             {
                                 hasArmedSquads = true;
                             }

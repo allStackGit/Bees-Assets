@@ -48,11 +48,19 @@ namespace Assets.Scripts.Scenes
             Debug.Log("Settings!");
         }
 
-        public void GoToTrainingRoom()
+        public void GoToTrainingRoom(string side)
         {
             DeselectButton();
             Debug.Log("Training Room!");
-            ConfigData.SquadMakerSide = ConfigData.Configuration.SquadMakerFirstSide;
+            if ((side == "Humans" && ConfigData.Configuration.HumanSide == ConfigData.Configuration.SquadMakerFirstSide) || (side == "Bees" && ConfigData.Configuration.BeeSide == ConfigData.Configuration.SquadMakerFirstSide))
+            {
+                ConfigData.SquadMakerSide = ConfigData.Configuration.SquadMakerFirstSide;
+            }
+            else
+            {
+                ConfigData.SwapSides();
+            }
+
             SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
         }
 

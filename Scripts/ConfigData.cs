@@ -234,6 +234,7 @@ namespace Assets.Scripts
         public static int SelecteFogOfWarOption = -1;
         public static int SelectedMiningOption = -1;
         public static int SelectedShipsLoadingMidLevelOption = -1;
+        public static int SelectedEnemyShipTypes = -1;
 
 
         //public static KeyCode[] SquadKeys = new KeyCode[] { KeyCode.Alpha1, KeyCode.Alpha2, KeyCode.Alpha3, KeyCode.Alpha4, KeyCode.Alpha5, KeyCode.Alpha6, KeyCode.Alpha7, KeyCode.Alpha8, KeyCode.Alpha9, KeyCode.Alpha0 };
