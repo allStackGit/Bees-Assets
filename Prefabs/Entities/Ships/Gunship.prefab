@@ -152,8 +152,8 @@ MonoBehaviour:
   SpriteRenderer: {fileID: 0}
   IsDead: 0
   IsUserControlled: 0
-  HasBrain: 0
   IsMobile: 0
+  HasBrain: 0
   IsHiveMindControlled: 0
   IsMinionShip: 0
   HasTargetCoordinates: 0
@@ -169,7 +169,7 @@ MonoBehaviour:
   HasRightRocketFlares: 0
   HasMovementMarker: 0
   HasWaitingTargetCoordinates: 0
-  HasShatteredShip: 0
+  HasRemainsShip: 0
   HasEnteredMap: 0
   Weapons: []
   ProjectilePrefabs:
@@ -181,12 +181,15 @@ MonoBehaviour:
   CenterRocketFlares:
   - {fileID: 1542159203849933648}
   RightRocketFlares: []
-  ShatteredShips: []
+  RemainsShips:
+  - {fileID: 8509169495103239065, guid: db15dd052b3f4154089d2e57294c1df6, type: 3}
   Brain: {fileID: 0}
+  DroppedShatteredShip: {fileID: 0}
   NearbyAsteroids: []
   Turrets: []
   ProximityCollider: {fileID: 0}
   ShipAnimationController: {fileID: 0}
+  RemainsAnimationController: {fileID: 0}
   RotationSpeed: 0
   TargetEnemyShipToFollow: {fileID: 0}
   IsCloseEnoughToTargetEnemyShipToFollow: 0

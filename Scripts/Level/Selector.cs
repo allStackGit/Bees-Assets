@@ -82,13 +82,6 @@ namespace Assets.Scripts.Level
                     //Debug.Log($"Selecting #{ship.Squad.SquadNumber} squad");
                 }
             });
-            if (squads.Count == 0)
-            {
-                if (Level.DoesUserHaveController && Level.Menus.SquadActionBoxUI.activeSelf)
-                {
-                    Level.Menus.ActionBox.Hide();
-                }
-            }
             Level.GetState().SelectSquads(squads);
             ClearSelectedShips();
         }

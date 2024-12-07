@@ -124,6 +124,33 @@ namespace Assets.Scripts
             { "Wasp",           new Vector2Int(240, 240)},
             { "Yellow Jacket",  new Vector2Int(160, 160)},
         };
+
+        public static readonly Dictionary<string, Vector2Int> ShipRemainsSizes = new Dictionary<string, Vector2Int>() {
+            { "Barge",          new Vector2Int(0, 0)},
+            { "Beacon",         new Vector2Int(0, 0)},
+            { "Carrier",        new Vector2Int(0, 0)},
+            { "Cruiser",        new Vector2Int(0, 0)},
+            { "Dreadnought",    new Vector2Int(0, 0)},
+            { "Drone",          new Vector2Int(0, 0)},
+            { "Factory",        new Vector2Int(0, 0)},
+            { "Fire Ship",      new Vector2Int(0, 0)},
+            { "Flagship",       new Vector2Int(0, 0)},
+            { "Frigate",        new Vector2Int(0, 0)},
+            { "Gunship",        new Vector2Int(420, 420)},
+            { "Scout",          new Vector2Int(0, 0)},
+            { "Striker",        new Vector2Int(0, 0)},
+            { "Warp Gate",      new Vector2Int(0, 0)},
+
+            { "Beehive",        new Vector2Int(0, 0)},
+            { "Bumblebee",      new Vector2Int(0, 0)},
+            { "Carpenter Bee",  new Vector2Int(0, 0)},
+            { "Honeybee",       new Vector2Int(0, 0)},
+            { "Hornet",         new Vector2Int(0, 0)},
+            { "Leafcutter",     new Vector2Int(0, 0)},
+            { "Queen",          new Vector2Int(0, 0)},
+            { "Wasp",           new Vector2Int(0, 0)},
+            { "Yellow Jacket",  new Vector2Int(0, 0)},
+        };
         public static readonly Dictionary<string, float> ShipSizeFactor = new Dictionary<string, float>() {
             { "Barge",          Huge},
             { "Beacon",         Tiny},

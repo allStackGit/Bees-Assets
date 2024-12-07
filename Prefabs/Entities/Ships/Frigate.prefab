@@ -39,6 +39,9 @@ Transform:
   - {fileID: 3469355240471411907}
   - {fileID: 2437363206111094385}
   - {fileID: 2074335661387355577}
+  - {fileID: 6158312743665823509}
+  - {fileID: 3823599774583174228}
+  - {fileID: 8984655579875690836}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!212 &2518675752222090673
@@ -152,8 +155,8 @@ MonoBehaviour:
   SpriteRenderer: {fileID: 0}
   IsDead: 0
   IsUserControlled: 0
-  HasBrain: 0
   IsMobile: 0
+  HasBrain: 0
   IsHiveMindControlled: 0
   IsMinionShip: 0
   HasTargetCoordinates: 0
@@ -179,11 +182,15 @@ MonoBehaviour:
   - {fileID: 1256838388324771284}
   - {fileID: 38226734839496550}
   ColoredPrefabs: []
-  LeftRocketFlares: []
-  CenterRocketFlares: []
-  RightRocketFlares: []
+  LeftRocketFlares:
+  - {fileID: 8995762424950434141}
+  CenterRocketFlares:
+  - {fileID: 6128851715521548060}
+  RightRocketFlares:
+  - {fileID: 2067646119940682268}
   ShatteredShips: []
   Brain: {fileID: 0}
+  DroppedShatteredShip: {fileID: 0}
   NearbyAsteroids: []
   Turrets: []
   ProximityCollider: {fileID: 0}
@@ -329,6 +336,77 @@ PolygonCollider2D:
       - {x: -1.5500001, y: -3}
       - {x: -1.0500001, y: -2.4}
   m_UseDelaunayMesh: 0
+--- !u!1001 &17526065788775915
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 2518675752222090672}
+    m_Modifications:
+    - target: {fileID: 6138492006316565239, guid: b547ff7cdca8bad47a84a8e2206ad8ef, type: 3}
+      propertyPath: m_Name
+      value: Frigate Minor Rocket Flare
+      objectReference: {fileID: 0}
+    - target: {fileID: 6138492006316565239, guid: b547ff7cdca8bad47a84a8e2206ad8ef, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: b547ff7cdca8bad47a84a8e2206ad8ef, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: b547ff7cdca8bad47a84a8e2206ad8ef, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: -2.6
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: b547ff7cdca8bad47a84a8e2206ad8ef, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: b547ff7cdca8bad47a84a8e2206ad8ef, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: b547ff7cdca8bad47a84a8e2206ad8ef, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: b547ff7cdca8bad47a84a8e2206ad8ef, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: b547ff7cdca8bad47a84a8e2206ad8ef, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: b547ff7cdca8bad47a84a8e2206ad8ef, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: b547ff7cdca8bad47a84a8e2206ad8ef, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: b547ff7cdca8bad47a84a8e2206ad8ef, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: b547ff7cdca8bad47a84a8e2206ad8ef, type: 3}
+--- !u!1 &6128851715521548060 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 6138492006316565239, guid: b547ff7cdca8bad47a84a8e2206ad8ef, type: 3}
+  m_PrefabInstance: {fileID: 17526065788775915}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &8984655579875690836 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 8976144066460689599, guid: b547ff7cdca8bad47a84a8e2206ad8ef, type: 3}
+  m_PrefabInstance: {fileID: 17526065788775915}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &733388495366526249
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -589,6 +667,77 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 3170186827092325208, guid: 700fa286eaa45e64daad9783787585b3, type: 3}
   m_PrefabInstance: {fileID: 2007308193822527387}
   m_PrefabAsset: {fileID: 0}
+--- !u!1001 &3019403753685568426
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 2518675752222090672}
+    m_Modifications:
+    - target: {fileID: 6138492006316565239, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+      propertyPath: m_Name
+      value: Frigate Rocket Flare Left
+      objectReference: {fileID: 0}
+    - target: {fileID: 6138492006316565239, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -2
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: -3.35
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+--- !u!4 &6158312743665823509 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 8976144066460689599, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+  m_PrefabInstance: {fileID: 3019403753685568426}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1 &8995762424950434141 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 6138492006316565239, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+  m_PrefabInstance: {fileID: 3019403753685568426}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &3826619734815958659
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -745,6 +894,77 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0fc40819321686541a3ab67842cc5a3c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+--- !u!1001 &5296669410496712939
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 2518675752222090672}
+    m_Modifications:
+    - target: {fileID: 6138492006316565239, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+      propertyPath: m_Name
+      value: Frigate Rocket Flare Right
+      objectReference: {fileID: 0}
+    - target: {fileID: 6138492006316565239, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: -3.35
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+--- !u!1 &2067646119940682268 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 6138492006316565239, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+  m_PrefabInstance: {fileID: 5296669410496712939}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &3823599774583174228 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 8976144066460689599, guid: 3f68829b37ca57546a59367664fd3b55, type: 3}
+  m_PrefabInstance: {fileID: 5296669410496712939}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &6396063160995707330
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -779,7 +999,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5341925016214729742, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_LocalPosition.y
-      value: -4
+      value: -5
       objectReference: {fileID: 0}
     - target: {fileID: 5341925016214729742, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_LocalPosition.z

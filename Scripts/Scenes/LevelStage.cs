@@ -11,13 +11,13 @@ using Assets.Scripts.UI_Components;
 using Assets.Scripts.UIComponents;
 using System;
 using System.Collections.Generic;
-using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using Unity.MLAgents;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 using UnityEngine.UIElements;
 
 namespace Assets.Scripts.Scenes
@@ -119,6 +119,7 @@ namespace Assets.Scripts.Scenes
         public List<SavedSquad>[] MidLevelSquads = new List<SavedSquad>[] { new List<SavedSquad>(), new List<SavedSquad>() };
         public List<Trigger> Triggers = new List<Trigger>();
         public List<string> BeeShipTypes, HumanShipTypes = new List<string>();
+        public List<SquadTab> SquadTabs;
 
 
 
@@ -957,6 +958,12 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
 
                 MiniMapCamera.gameObject.SetActive(true);
                 MiniMapCamera.orthographicSize = Map.MiniMapCameraSize;
+
+                SquadTabs.ForEach((tab) =>
+                {
+                    tab.Background.GetComponent<UnityEngine.UI.Image>().color = Color.white;
+                    tab.HideTab();
+                });
 
             }
             else

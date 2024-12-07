@@ -552,7 +552,7 @@ namespace Assets.Scripts.Level
                 //}
                 if (hotKey.Checkinput())
                 {
-                    Debug.Log($"Input registered from {hotKey.Name}");
+                    //Debug.Log($"Input registered from {hotKey.Name}");
                     return;
                 }
             }

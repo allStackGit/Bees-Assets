@@ -73,6 +73,8 @@ namespace Assets.Scripts.Scenes
             BargeGameSprite, CarrierGameSprite, CruiserGameSprite, CruiserCannonGameSprite, DreadnoughtGameSprite, FactoryGameSprite, FactoryAnimationSprite, FireShipGameSprite, FlagshipGameSprite, FrigateGameSprite,
             GunshipGameSprite, ScoutGameSprite, WarpGateGameSprite, WarpGateAnimationSprite, WarpGateAnimationLoopSprite;
 
+        public Sprite GunshipRemainsSprite;
+         
         public Canvas DragCanvas;
         public Vector2 TooltipOffset, ShipStatsBoxOffset, ScreenScaleFactor, ReferenceScreenSize;
         public SquadActionBox ActionBox = null;
@@ -83,6 +85,7 @@ namespace Assets.Scripts.Scenes
         private Dictionary<string, GameObject> _dragIconTypes = new Dictionary<string, GameObject>();
         private Dictionary<string, Sprite> _spriteTypes = new Dictionary<string, Sprite>();
         private Dictionary<string, List<Sprite>> _shipPartSprites = new Dictionary<string, List<Sprite>>();
+        private Dictionary<string, List<Sprite>> _shipRemainsSprites = new Dictionary<string, List<Sprite>>();
         private Dropper _dropper;
         private List<GameObject> _deadShipBoxes = new List<GameObject>();
         private List<SavedSquad> _chosenSquads = new List<SavedSquad>();
@@ -246,10 +249,12 @@ namespace Assets.Scripts.Scenes
             _shipPartSprites["Scout"] = new List<Sprite> { ScoutGameSprite };
             //_shipPartSprites["Striker"] = new List<Sprite> { StrikerGameSprite }; // no striker because we won't be caching sprites for carrier ships
             _shipPartSprites["Warp Gate"] = new List<Sprite> { WarpGateGameSprite, WarpGateAnimationSprite, WarpGateAnimationLoopSprite };
-            
+
+
             // No bee sprites because those don't change colors
 
-
+            // Same thing as above but for ship remains animations
+            _shipRemainsSprites["Gunship"] = new List<Sprite> { GunshipRemainsSprite };
 
             // Post setup
             //Debug.Log("Post setup");
@@ -1090,6 +1095,7 @@ namespace Assets.Scripts.Scenes
             ConfigData.AllShips.SaveFleetData();
             SquadSavingStatus.Show();
             StartCoroutine(Utilities.CacheSquadCustomSprites((SavedSquad)_currentSquad.Clone(), _shipPartSprites, SquadSavingStatus));
+            StartCoroutine(Utilities.CacheSquadRemainsSprites((SavedSquad)_currentSquad.Clone(), _shipRemainsSprites));
             ClearUnsavedSquad();
 
 

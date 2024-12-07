@@ -208,9 +208,10 @@ MonoBehaviour:
   SizeClass: 3
   LastHitAsteroid: {fileID: 0}
   ExplosionAnimation: {fileID: 0}
-  HasCollisionAnimatoion: 0
+  HasCollisionAnimation: 0
   HasCrackedSprite: 0
-  DropCollisionAnimation: 0
+  HasDroppedDestructionAnimation: 0
+  IsImmune: 0
   CrackedSprite: {fileID: 0}
   SpriteRenderer: {fileID: 1846929101835880065}
 --- !u!1 &5206769835850001811

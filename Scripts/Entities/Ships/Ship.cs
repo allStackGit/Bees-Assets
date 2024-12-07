@@ -56,14 +56,14 @@ namespace Assets.Scripts.Entities.Ships
         /// </summary>
         public bool IsMobile;
         public bool HasBrain, IsHiveMindControlled, IsMinionShip, HasTargetCoordinates, IsMiningShip, IsWarpGate, HasTargetDirection, HasVision, HasProximityCollider, HasShipAnimation, HasRocketFlares, 
-            HasLeftRocketFlares, HasCenterRocketFlares, HasRightRocketFlares, HasMovementMarker, HasWaitingTargetCoordinates, HasShatteredShip, HasEnteredMap;
+            HasLeftRocketFlares, HasCenterRocketFlares, HasRightRocketFlares, HasMovementMarker, HasWaitingTargetCoordinates, HasRemainsShip, HasEnteredMap;
         public List<Weapon> Weapons;
-        public List<GameObject> ProjectilePrefabs, WeaponPrefabs, ColoredPrefabs, LeftRocketFlares, CenterRocketFlares, RightRocketFlares, ShatteredShips;
+        public List<GameObject> ProjectilePrefabs, WeaponPrefabs, ColoredPrefabs, LeftRocketFlares, CenterRocketFlares, RightRocketFlares, RemainsShips;
         public Brain Brain = null;
         /// <summary>
         /// The shattered ship that was dropped when this ship died
         /// </summary>
-        public GameObject DroppedShatteredShip;
+        public GameObject DroppeRemainsShip;
         public Queue<Vector2> DestinationQueue = new Queue<Vector2>();
         public List<CollisionAsteroid> NearbyAsteroids = new List<CollisionAsteroid>();
         public List<Turret> Turrets = new List<Turret>();
@@ -75,6 +75,10 @@ namespace Assets.Scripts.Entities.Ships
         /// Controls the animation and recoloring of sprites if the ship has an animation
         /// </summary>
         public ShipAnimationController ShipAnimationController;
+        /// <summary>
+        /// Controls the animation and recoloring of sprites if the ship has ship remains
+        /// </summary>
+        public RemainsAnimationController RemainsAnimationController;
         //public Stack<Vector2> PastLocations = new Stack<Vector2>();
         public float RotationSpeed;
         /// <summary>
@@ -345,9 +349,16 @@ namespace Assets.Scripts.Entities.Ships
                     }
                 }
 
-                if (ShatteredShips.Count > 0) // [testing] all ships should have multiple shattered ships eventually
+                if (RemainsShips.Count > 0) // [testing] all ships should have multiple shattered ships eventually
                 {
-                    HasShatteredShip = true;
+                    HasRemainsShip = true;
+                    DroppeRemainsShip = Instantiate(RemainsShips.GetRange(Utilities.RandomInt(RemainsShips.Count), 1).First(), Vector2.zero, Quaternion.identity);
+                    RemainsAnimationController = DroppeRemainsShip.GetComponent<RemainsAnimationController>();
+                    DroppeRemainsShip.SetActive(false);
+                    RemainsAnimationController.Ship = this;
+                    RemainsAnimationController.RecolorAnimationSprites();
+
+
                 }
             }
 
@@ -583,7 +594,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     bool hasLoadedSprite = false;
                     if (FleetShip.HasCachedSprite)
                     {
-                        loadedSprite = FleetShip.LoadCachedSprite(index, size);
+                        loadedSprite = FleetShip.LoadCachedSprite(index, "ship", size);
                         if (loadedSprite != null)
                         {
                             prefab.GetComponent<SpriteRenderer>().sprite = loadedSprite;
@@ -1514,7 +1525,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 }
                 else
                 {
-                    Destroy(DroppedShatteredShip);
+                    Destroy(DroppeRemainsShip);
                     Destroy(gameObject);
                 }
             }
@@ -1525,7 +1536,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         protected void DelayedKill()
         {
             //Debug.Log($"{Name} delay killed");
-            Destroy(DroppedShatteredShip);
+            Destroy(DroppeRemainsShip);
             Destroy(gameObject);
         }
         /// <summary>
@@ -1826,31 +1837,34 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 explosion.transform.parent = Level.Map.transform;
                 explosion.transform.localPosition = GetPosition();
 
-                AudioSource soundEffect = explosion.GetComponent<AudioSource>();
-
-                if (soundEffect != null)
+                if (Level.ActivateAudio)
                 {
-                    soundEffect.Play();
+                    AudioSource soundEffect = explosion.GetComponent<AudioSource>();
+
+                    if (soundEffect != null)
+                    {
+                        soundEffect.Play();
+                    }
                 }
 
-                if (HasShatteredShip)
-                {
-                    GameObject shatteredShip = Instantiate(ShatteredShips.GetRange(Utilities.RandomInt(ShatteredShips.Count), 1).First(), Vector2.zero, Quaternion.identity);
-                    shatteredShip.transform.parent = Level.Map.transform;
-                    shatteredShip.transform.localPosition = GetPosition();
-                    shatteredShip.transform.eulerAngles = transform.eulerAngles;
-                    Level.GetState().AddDeadBody(shatteredShip);
 
-                    if (Squad.HasCustomColor)
-                    {
-                        Color[] colors = ConfigData.ChangeableShipColors.GetValueOrDefault(ShipType);
-                        Sprite prefabSprite = shatteredShip.GetComponent<SpriteRenderer>().sprite;
-                        Sprite shipIcon = prefabSprite;
-                        int[] changeablePixels = Utilities.SetChangablePixelsForImage(colors, shipIcon);
-                        Sprite recolored = Utilities.SetImageColor(Squad.Color, shipIcon, changeablePixels);
-                        shatteredShip.GetComponent<SpriteRenderer>().sprite = recolored;
-                    }
-                    DroppedShatteredShip = shatteredShip;
+                if (HasRemainsShip)
+                {
+                    DroppeRemainsShip.transform.parent = Level.Map.transform;
+                    DroppeRemainsShip.transform.localPosition = GetPosition();
+                    DroppeRemainsShip.transform.eulerAngles = transform.eulerAngles;
+                    DroppeRemainsShip.SetActive(true);
+                    Level.GetState().AddDeadBody(DroppeRemainsShip);
+
+                    //if (Squad.HasCustomColor)
+                    //{
+                    //    Color[] colors = ConfigData.ChangeableShipColors.GetValueOrDefault(ShipType);
+                    //    Sprite prefabSprite = shatteredShip.GetComponent<SpriteRenderer>().sprite;
+                    //    Sprite shipIcon = prefabSprite;
+                    //    int[] changeablePixels = Utilities.SetChangablePixelsForImage(colors, shipIcon);
+                    //    Sprite recolored = Utilities.SetImageColor(Squad.Color, shipIcon, changeablePixels);
+                    //    shatteredShip.GetComponent<SpriteRenderer>().sprite = recolored;
+                    //}
 
                 }
 

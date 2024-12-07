@@ -239,6 +239,10 @@ namespace Assets.Scripts.Level
                         ship.MovementMarker.SetActive(true);
                     }
                 });
+                if (squad.HasSquadTab)
+                {
+                    squad.SquadTab.ShowSelected();
+                }
                 HasSelectedSquads = true;
             }
 
@@ -261,20 +265,14 @@ namespace Assets.Scripts.Level
         }
         public void ClearSelectedSquads()
         {
-            SelectedSquads.ForEach((squad) =>
+            //SelectedSquads.ForEach((squad) =>
+            //{
+            //    DeselectSquad(squad);
+            //});
+            while (SelectedSquads.Count > 0)
             {
-                squad.DeactivateSquadBox();
-                squad.IsSelected = false;
-                squad.GetShips().ForEach((ship) =>
-                {
-                    if (ship.IsMobile)
-                    {
-                        ship.MovementMarker.SetActive(false);
-                    }
-                });
-            });
-            SelectedSquads.Clear();
-            HasSelectedSquads = false;
+                DeselectSquad(SelectedSquads[0]);
+            }
         }
         public void SelectSquad(Squad squad)
         {
@@ -285,6 +283,32 @@ namespace Assets.Scripts.Level
                 AddSelectedSquad(squad);
             }
 
+        }
+        public void DeselectSquad(Squad squad)
+        {
+            squad.DeactivateSquadBox();
+            squad.IsSelected = false;
+            squad.GetShips().ForEach((ship) =>
+            {
+                if (ship.IsMobile)
+                {
+                    ship.MovementMarker.SetActive(false);
+                }
+            });
+            if (squad.HasSquadTab)
+            {
+                squad.SquadTab.HideSelected();
+            }
+            SelectedSquads.Remove(squad);
+
+            if (SelectedSquads.Count == 0)
+            {
+                HasSelectedSquads = false;
+                if (Level.HasPlayer)
+                {
+                    Level.Menus.ActionBox.Hide();
+                }
+            }
         }
         public Squad GetSquadByNumber(int side, int squadNumber)
         {

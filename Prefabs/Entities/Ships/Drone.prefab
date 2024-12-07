@@ -152,8 +152,8 @@ MonoBehaviour:
   SpriteRenderer: {fileID: 0}
   IsDead: 0
   IsUserControlled: 0
-  HasBrain: 0
   IsMobile: 0
+  HasBrain: 0
   IsHiveMindControlled: 0
   IsMinionShip: 0
   HasTargetCoordinates: 0
@@ -181,8 +181,10 @@ MonoBehaviour:
   CenterRocketFlares:
   - {fileID: 5233544985126007695}
   RightRocketFlares: []
-  ShatteredShips: []
+  ShatteredShips:
+  - {fileID: 3284305956443189761, guid: e1645a44ab1f1054d876dd172a8ff1e9, type: 3}
   Brain: {fileID: 0}
+  DroppedShatteredShip: {fileID: 0}
   NearbyAsteroids: []
   Turrets: []
   ProximityCollider: {fileID: 0}

@@ -10,6 +10,7 @@ using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Level.Commands;
 using Assets.Scripts.Scenes;
 using Assets.Scripts.Server;
+using Assets.Scripts.UI_Components;
 using UnityEngine;
 
 namespace Assets.Scripts.Level
@@ -31,7 +32,8 @@ namespace Assets.Scripts.Level
         public Color SquadBoxColor;
         public SavedSquad SavedSquad;
         public GameObject SquadBox;
-        public bool HasMovedBox, IsMatchingSpeed, IsImmobile, CeaseFire, HasAddedShips, IsShowingRanges, IsGrowingSquad, HasCustomColor;
+        public SquadTab SquadTab;
+        public bool HasMovedBox, IsMatchingSpeed, IsImmobile, CeaseFire, HasAddedShips, IsShowingRanges, IsGrowingSquad, HasCustomColor, HasSquadTab;
         /// <summary>
         /// A squad can be dead for one frame before it is destroyed. It's important to check for the death of a squad on anything run by a timer outside of the squad object
         /// </summary>
@@ -71,6 +73,9 @@ namespace Assets.Scripts.Level
         public bool HasOnlyStrikers => GetShips().All((s) => s.ShipType == "Striker");
         public bool HasOnlyBombers => GetShips().All((s) => s.ShipType == "Striker" || s.ShipType == "Yellow Jacket" || s.ShipType == "Fire Ship");
         public bool HasOnlyBarges => GetShips().All((s) => s.ShipType == "Barge");
+        /// <summary>
+        /// If this squad belongs to the user side and there is a player
+        /// </summary>
         public bool IsUserControlled => Side == ConfigData.Configuration.UserSide && Level.HasPlayer;
         public bool IsHiveMindControlled => Side == ConfigData.Configuration.AISide || (Side == ConfigData.Configuration.UserSide && !Level.HasPlayer);
 
@@ -202,6 +207,19 @@ namespace Assets.Scripts.Level
                 ship.transform.localPosition = new Vector2(position.x + adjustment.x, position.y + adjustment.y);
             });
 
+        }
+        public void SetSquadTab()
+        {
+            if (IsUserControlled && SquadNumber <= 10)
+            {
+                SquadTab = Level.SquadTabs[SquadNumber - 1];
+                HasSquadTab = true;
+                if (HasCustomColor)
+                {
+                    SquadTab.SetColor(Color);
+                }
+                SquadTab.ShowTab();
+            }
         }
         public void NameSquadShips()
         {
@@ -361,6 +379,8 @@ namespace Assets.Scripts.Level
             if (!IsDead)
             {
                 IsDead = true;
+                GameState state = Level.GetState();
+
 
                 if (!endKill)
                 {
@@ -373,8 +393,6 @@ namespace Assets.Scripts.Level
                     {
                         DeactivateSquadBox();
                     }
-
-                    GameState state = Level.GetState();
 
                     if (state.IsSideKilled(Side))
                     {
@@ -392,7 +410,12 @@ namespace Assets.Scripts.Level
 
                 if (IsUserControlled)
                 {
+                    if (HasSquadTab)
+                    {
+                        SquadTab.DisableTab();
+                    }
                     Destroy(SquadBox);
+                    state.DeselectSquad(this);
                 }
                 Destroy(this);
             }

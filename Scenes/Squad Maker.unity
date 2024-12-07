@@ -18827,6 +18827,7 @@ MonoBehaviour:
   WarpGateGameSprite: {fileID: 21300000, guid: 0aa980f13ad03b241a711695b2681ced, type: 3}
   WarpGateAnimationSprite: {fileID: -2033554761, guid: b13582e85569bdb4faa43a6baa403a38, type: 3}
   WarpGateAnimationLoopSprite: {fileID: 508279725, guid: 7a84976b5be42594ca7a932ae81b88ae, type: 3}
+  GunshipRemainsSprite: {fileID: -280745679, guid: e7dea394453fe3e40915540570452b79, type: 3}
   DragCanvas: {fileID: 1320965603}
   TooltipOffset: {x: 18, y: 2.5}
   ShipStatsBoxOffset: {x: 30, y: 20}

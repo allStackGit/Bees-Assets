@@ -44,11 +44,11 @@ namespace Assets.Scripts.Data
             GetStats();
         }
         
-        public Sprite LoadCachedSprite(int index, Vector2Int size)
+        public Sprite LoadCachedSprite(int index, string type, Vector2Int size)
         {
             try
             {
-                byte[] bytes = File.ReadAllBytes($"{ConfigData.GetCachePath()}/{Name}_{index}.png");
+                byte[] bytes = File.ReadAllBytes($"{ConfigData.GetCachePath()}/{Name}_{type}_{index}.png");
                 Texture2D texture = new Texture2D(size.x, size.y);
                 //texture.filterMode = FilterMode.Trilinear;
                 texture.LoadImage(bytes);
@@ -56,14 +56,14 @@ namespace Assets.Scripts.Data
             }
             catch (Exception e)
             {
-                //Debug.Log($"Error while trying to load cached sprites: {e}");
+                Debug.Log($"Error while trying to load cached sprites: {e}");
                 return null;
             }
         }
 
-        public void SaveSpriteToCache(int index, Color[] pixels, Vector2Int size)
+        public void SaveSpriteToCache(int index, string type, Color[] pixels, Vector2Int size)
         {
-            string path = $"{ConfigData.GetCachePath()}/{Name}_{index}.png";
+            string path = $"{ConfigData.GetCachePath()}/{Name}_{type}_{index}.png";
             Texture2D export = new Texture2D(size.x, size.y);
             export.SetPixels(pixels);
             export.Apply();
