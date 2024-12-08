@@ -355,8 +355,12 @@ namespace Assets.Scripts.Entities.Ships
                     DroppeRemainsShip = Instantiate(RemainsShips.GetRange(Utilities.RandomInt(RemainsShips.Count), 1).First(), Vector2.zero, Quaternion.identity);
                     RemainsAnimationController = DroppeRemainsShip.GetComponent<RemainsAnimationController>();
                     DroppeRemainsShip.SetActive(false);
-                    RemainsAnimationController.Ship = this;
-                    RemainsAnimationController.RecolorAnimationSprites();
+                    if (RemainsAnimationController != null )
+                    {
+                        RemainsAnimationController.Ship = this;
+                        RemainsAnimationController.RecolorAnimationSprites();
+                    }
+
 
 
                 }
@@ -1856,15 +1860,15 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     DroppeRemainsShip.SetActive(true);
                     Level.GetState().AddDeadBody(DroppeRemainsShip);
 
-                    //if (Squad.HasCustomColor)
-                    //{
-                    //    Color[] colors = ConfigData.ChangeableShipColors.GetValueOrDefault(ShipType);
-                    //    Sprite prefabSprite = shatteredShip.GetComponent<SpriteRenderer>().sprite;
-                    //    Sprite shipIcon = prefabSprite;
-                    //    int[] changeablePixels = Utilities.SetChangablePixelsForImage(colors, shipIcon);
-                    //    Sprite recolored = Utilities.SetImageColor(Squad.Color, shipIcon, changeablePixels);
-                    //    shatteredShip.GetComponent<SpriteRenderer>().sprite = recolored;
-                    //}
+                    if (Squad.HasCustomColor && RemainsAnimationController == null)
+                    {
+                        Color[] colors = ConfigData.ChangeableShipColors.GetValueOrDefault(ShipType);
+                        Sprite prefabSprite = DroppeRemainsShip.GetComponent<SpriteRenderer>().sprite;
+                        Sprite shipIcon = prefabSprite;
+                        int[] changeablePixels = Utilities.SetChangablePixelsForImage(colors, shipIcon);
+                        Sprite recolored = Utilities.SetImageColor(Squad.Color, shipIcon, changeablePixels);
+                        DroppeRemainsShip.GetComponent<SpriteRenderer>().sprite = recolored;
+                    }
 
                 }
 

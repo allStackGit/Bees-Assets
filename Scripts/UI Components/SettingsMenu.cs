@@ -44,6 +44,7 @@ public class SettingsMenu : MonoBehaviour
                     //Debug.Log($"Current keys pressed: {Utilities.ListToString(_newKeyCombination)}");
                 }
             }
+
         }
         else if (_newKeyCombination.Count > 0)
         {

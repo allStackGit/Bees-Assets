@@ -11,27 +11,37 @@ namespace Assets.Scripts.Level
         public List<KeyCode> Keys;
         public string Name, KeyString;
         public Action Action;
+        public Action ReleaseAction;
         private bool _hasInputRelease = true;
         /// <summary>
         /// This action keeps happening as long as the key is held down
         /// </summary>
         private bool _hasContinuousInput;
+        /// <summary>
+        /// This action stops as soon as the key is released and a new action is performed
+        /// </summary>
+        private bool _hasReleaseAction;
         private float _lastInputTime;
         public int Id;
 
-        public HotKey(string name, List<KeyCode> keys, Action action)
+        public HotKey(string name, List<KeyCode> keys, Action action, Action releaseAction = null, bool hasContinuousInput = false, bool hasReleaseAction = false)
         {
             Name = name;
             Keys = keys;
             Id = Name.GetHashCode();
+            _hasContinuousInput = hasContinuousInput;
+            _hasReleaseAction = hasReleaseAction;
+            SetReleaseAction(releaseAction);
             SetAction(action);
             MakeKeyString();
         }
-        public HotKey(string name, List<KeyCode> keys, bool hasContinuousInput = false)
+        public HotKey(string name, List<KeyCode> keys, bool hasContinuousInput = false, bool hasReleaseAction = false)
         {
             Name = name;
             Keys = keys;
+            Id = Name.GetHashCode();
             _hasContinuousInput = hasContinuousInput;
+            _hasReleaseAction = hasReleaseAction;
             MakeKeyString();
         }
         public void MakeKeyString()
@@ -40,6 +50,10 @@ namespace Assets.Scripts.Level
         }
         public void SetAction(Action action) { 
             Action = action; 
+        }
+        public void SetReleaseAction(Action action)
+        {
+            ReleaseAction = action;
         }
         public void SetKeyCombination(List<KeyCode> keys)
         {
@@ -55,15 +69,20 @@ namespace Assets.Scripts.Level
             }
             else
             {
-                CheckInputRelease();
+                if (CheckInputRelease() && _hasReleaseAction)
+                {
+                    ReleaseAction();
+                }
                 return false;
             }
         }
 
         public bool HasInput()
         {
-            if (_hasInputRelease && Keys.All(k => Input.GetKey(k)))
+            List<KeyCode> keysPressed = Utilities.GetAllKeys();
+            if (_hasInputRelease && Keys.All((k) => keysPressed.Contains(k)) && keysPressed.All((k) => Keys.Contains(k)))
             {
+                //Debug.Log($"Keys pressed for input: {Utilities.ListToString(keysPressed)}");
                 _hasInputRelease = false;
                 return true;
             }
@@ -73,7 +92,7 @@ namespace Assets.Scripts.Level
             }
         }
 
-        public void CheckInputRelease()
+        public bool CheckInputRelease()
         {
             if (_hasContinuousInput && Time.realtimeSinceStartup - _lastInputTime > .05f)
             {
@@ -83,7 +102,9 @@ namespace Assets.Scripts.Level
             if (!_hasInputRelease && Keys.Any(k => Input.GetKeyUp(k)))
             {
                 _hasInputRelease = true;
+                return true;
             }
+            return false;
         }
         public void ManuallySetInputRelease(bool value)
         {

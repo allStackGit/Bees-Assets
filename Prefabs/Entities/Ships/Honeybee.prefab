@@ -167,7 +167,7 @@ MonoBehaviour:
   HasRightRocketFlares: 0
   HasMovementMarker: 0
   HasWaitingTargetCoordinates: 0
-  HasShatteredShip: 0
+  HasRemainsShip: 0
   HasEnteredMap: 0
   Weapons: []
   ProjectilePrefabs: []
@@ -176,14 +176,15 @@ MonoBehaviour:
   LeftRocketFlares: []
   CenterRocketFlares: []
   RightRocketFlares: []
-  ShatteredShips:
+  RemainsShips:
   - {fileID: 3284305956443189761, guid: c622be5f7d500034a8a9c6094904f2ee, type: 3}
   Brain: {fileID: 0}
-  DroppedShatteredShip: {fileID: 0}
+  DroppeRemainsShip: {fileID: 0}
   NearbyAsteroids: []
   Turrets: []
   ProximityCollider: {fileID: 0}
   ShipAnimationController: {fileID: 0}
+  RemainsAnimationController: {fileID: 0}
   RotationSpeed: 0
   TargetEnemyShipToFollow: {fileID: 0}
   IsCloseEnoughToTargetEnemyShipToFollow: 0

@@ -81,6 +81,7 @@ MonoBehaviour:
   TargetCoordinates: {x: 0, y: 0}
   FinalDestination: {x: 0, y: 0}
   OffsetFromCenter: {x: 0, y: 0}
+  PathfindingDestination: {x: 0, y: 0}
   WaitingTargetCoordinates: {x: 0, y: 0}
   Squad: {fileID: 0}
   MotherSquad: {fileID: 0}
@@ -98,8 +99,8 @@ MonoBehaviour:
   SpriteRenderer: {fileID: 0}
   IsDead: 0
   IsUserControlled: 0
-  HasBrain: 0
   IsMobile: 0
+  HasBrain: 0
   IsHiveMindControlled: 0
   IsMinionShip: 0
   HasTargetCoordinates: 0
@@ -115,7 +116,8 @@ MonoBehaviour:
   HasRightRocketFlares: 0
   HasMovementMarker: 0
   HasWaitingTargetCoordinates: 0
-  HasShatteredShip: 0
+  HasRemainsShip: 0
+  HasEnteredMap: 0
   Weapons: []
   ProjectilePrefabs:
   - {fileID: 2378685256343899705, guid: 3b1a5274038082f4fb1be503df70d6de, type: 3}
@@ -125,16 +127,19 @@ MonoBehaviour:
   LeftRocketFlares: []
   CenterRocketFlares: []
   RightRocketFlares: []
-  ShatteredShips:
+  RemainsShips:
   - {fileID: 3284305956443189761, guid: abc976f81f683a8488eeb2e7cb347509, type: 3}
   Brain: {fileID: 0}
+  DroppeRemainsShip: {fileID: 0}
   NearbyAsteroids: []
   Turrets: []
   ProximityCollider: {fileID: 0}
   ShipAnimationController: {fileID: 0}
+  RemainsAnimationController: {fileID: 0}
   RotationSpeed: 0
   TargetEnemyShipToFollow: {fileID: 0}
   IsCloseEnoughToTargetEnemyShipToFollow: 0
+  Killer: {fileID: 0}
   PathfindingThreadComplete: 0
   IsPathfinding: 0
   PathfindingThread: 0
@@ -170,6 +175,7 @@ MonoBehaviour:
   __CommandTargetingQueue: []
   __NearbyAsteroids: []
   __HivemindShips: []
+  __RejectReasons: []
   __Clearance: 0
   Direction: 0
   ShouldDetonate: 0

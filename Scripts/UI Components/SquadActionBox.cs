@@ -647,101 +647,141 @@ namespace Assets.Scripts.UIComponents
         }
         public void DropBeacon()
         {
-            Level.GetState().GetSelectedSquads().ForEach((squad) =>
+            if (HasSquad())
             {
-                foreach (Ship ship in squad.GetShips().Where((s) => s.ShipType == "Scout"))
+                Level.GetState().GetSelectedSquads().ForEach((squad) =>
                 {
-                    ((Scout)ship).DropBeacon();
-                }
-            });
+                    foreach (Ship ship in squad.GetShips().Where((s) => s.ShipType == "Scout"))
+                    {
+                        ((Scout)ship).DropBeacon();
+                    }
+                });
+            }
+
         }
         public void Charge()
         {
-            Level.GetState().GetSelectedSquads().ForEach((squad) =>
+            if (HasSquad())
             {
-                foreach (Ship ship in squad.GetShips().Where((s) => s.ShipType == "Barge"))
+                Level.GetState().GetSelectedSquads().ForEach((squad) =>
                 {
-                    if (!ship.CannotChangeMovementOrders)
+                    foreach (Ship ship in squad.GetShips().Where((s) => s.ShipType == "Barge"))
                     {
-                        StartCoroutine(((Barge)ship).ChargeForward());
+                        if (!ship.CannotChangeMovementOrders)
+                        {
+                            StartCoroutine(((Barge)ship).ChargeForward());
+                        }
+                        else
+                        {
+                            ((Barge)ship).WaitingForNewCharge = true;
+                        }
                     }
-                    else
-                    {
-                        ((Barge)ship).WaitingForNewCharge = true;
-                    }
-                }
-            });
+                });
+            }
+
         }
         public void Detonate()
         {
-            Level.GetState().GetSelectedSquads().ForEach((squad) =>
+            if (HasSquad())
             {
-                squad.GetShips().Where((s) => s.ShipType == "Fire Ship").ToList().ForEach((ship) =>
+                Level.GetState().GetSelectedSquads().ForEach((squad) =>
                 {
-                    FireShip fireShip = (FireShip)ship;
-                    fireShip.Detonate();
+                    squad.GetShips().Where((s) => s.ShipType == "Fire Ship").ToList().ForEach((ship) =>
+                    {
+                        FireShip fireShip = (FireShip)ship;
+                        fireShip.Detonate();
+                    });
                 });
-            });
+            }
+
         }
         public void Hold()
         {
-            Level.GetState().GetSelectedSquads().ForEach((squad) =>
+            if (HasSquad())
             {
-                squad.StopChasing();
-            });
-            HighlightSelectedButtons();
+                Level.GetState().GetSelectedSquads().ForEach((squad) =>
+                {
+                    squad.StopChasing();
+                });
+                HighlightSelectedButtons();
+            }
+
         }
         public void Chase()
         {
-            Level.GetState().GetSelectedSquads().ForEach((squad) =>
+            if (HasSquad())
             {
-                squad.SetChase(true);
-            });
-            HighlightSelectedButtons();
+                Level.GetState().GetSelectedSquads().ForEach((squad) =>
+                {
+                    squad.SetChase(true);
+                });
+                HighlightSelectedButtons();
+            }
+
         }
         public void Guard()
         {
-            Level.InputManager.SetSelectGuardTargetActive();
-            HighlightSelectedButtons();
+            if (HasSquad())
+            {
+                Level.InputManager.SetSelectGuardTargetActive();
+                HighlightSelectedButtons();
+            }
+
         }
         public void Patrol()
         {
-            Level.InputManager.SetPatrolAreaActive();
-            HighlightSelectedButtons();
+            if (HasSquad())
+            {
+                Level.InputManager.SetPatrolAreaActive();
+                HighlightSelectedButtons();
+            }
+
         }
         public void CeaseFire()
         {
-            Level.GetState().GetSelectedSquads().ForEach((squad) =>
+            if (HasSquad())
             {
-                squad.CeaseFire = true;
-            });
-            HighlightSelectedButtons();
+                Level.GetState().GetSelectedSquads().ForEach((squad) =>
+                {
+                    squad.CeaseFire = true;
+                });
+                HighlightSelectedButtons();
+            }
+
         }
         public void AttackOnSight()
         {
-            Level.GetState().GetSelectedSquads().ForEach((squad) =>
+            if (HasSquad())
             {
-                squad.CeaseFire = false;
-            });
-            HighlightSelectedButtons();
+                Level.GetState().GetSelectedSquads().ForEach((squad) =>
+                {
+                    squad.CeaseFire = false;
+                });
+                HighlightSelectedButtons();
+            }
+
         }
         public void MatchSpeed()
         {
-            List<Squad> squads = Level.GetState().GetSelectedSquads();
-            bool IsMatchingSpeed = squads.All(squad => squad.IsMatchingSpeed);
-            float slowestSpeed = squads.Min(squad => squad.SlowestSpeed);
-            squads.ForEach((squad) =>
+            if (HasSquad())
             {
-                if (IsMatchingSpeed)
+                List<Squad> squads = Level.GetState().GetSelectedSquads();
+                bool IsMatchingSpeed = squads.All(squad => squad.IsMatchingSpeed);
+                float slowestSpeed = squads.Min(squad => squad.SlowestSpeed);
+                squads.ForEach((squad) =>
                 {
-                    squad.UnmatchSpeed();
-                }
-                else
-                {
-                    squad.MatchSpeed(slowestSpeed);
-                }
-            });
-            HighlightSelectedButtons();
+                    if (IsMatchingSpeed)
+                    {
+                        squad.UnmatchSpeed();
+                    }
+                    else
+                    {
+                        squad.MatchSpeed(slowestSpeed);
+                    }
+                });
+                HighlightSelectedButtons();
+            }
+
         }
         public void SetShootingStrategy(string strategy)
         {

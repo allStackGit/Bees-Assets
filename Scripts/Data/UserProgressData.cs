@@ -14,7 +14,7 @@ namespace Assets.Scripts.Data
 
         public UserProgressData(bool shouldFileExist): base()
         {
-            defaultJsonData = "{\"CurrentLevel\": 1, \"SavedSquadId\": -1, \"MinedTSV\": 0, \"HivemindMinedTSV\": 0}";
+            defaultJsonData = "{\"CurrentLevel\": 1, \"SavedSquadId\": -1, \"MinedTSV\": 0, \"HivemindMinedTSV\": 0, \"HumanWins\": 0, \"BeeWins\": 0}";
             
             dynamic json = SetupFile(shouldFileExist, ConfigData.UserProgressFilename, (json) =>
             {

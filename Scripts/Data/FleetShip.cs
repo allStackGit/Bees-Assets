@@ -48,7 +48,7 @@ namespace Assets.Scripts.Data
         {
             try
             {
-                byte[] bytes = File.ReadAllBytes($"{ConfigData.GetCachePath()}/{Name}_{type}_{index}.png");
+                byte[] bytes = File.ReadAllBytes($"{ConfigData.GetCachePath()}/{type}_{Id}_{index}.png");
                 Texture2D texture = new Texture2D(size.x, size.y);
                 //texture.filterMode = FilterMode.Trilinear;
                 texture.LoadImage(bytes);
@@ -63,7 +63,7 @@ namespace Assets.Scripts.Data
 
         public void SaveSpriteToCache(int index, string type, Color[] pixels, Vector2Int size)
         {
-            string path = $"{ConfigData.GetCachePath()}/{Name}_{type}_{index}.png";
+            string path = $"{ConfigData.GetCachePath()}/{type}_{Id}_{index}.png";
             Texture2D export = new Texture2D(size.x, size.y);
             export.SetPixels(pixels);
             export.Apply();

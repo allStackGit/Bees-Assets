@@ -81,6 +81,23 @@ namespace Assets.Scripts.Level
         public void LoadHotKeySettings()
         {
             _hotKeys = ConfigData.GetUserSettingsData().HotKeys;
+
+            // make special input for firing and showing ranges together
+            //List<KeyCode> combinedKeys = ConfigData.GetUserSettingsData().FindKey("Show Ranges").Keys.ToList();
+            //combinedKeys.AddRange(ConfigData.GetUserSettingsData().FindKey("Manual Fire").Keys);
+            //_hotKeys.Add(new HotKey("Show Ranges and Manual Fire", combinedKeys, () =>
+            //{
+            //    Debug.Log("Double action");
+            //    ShowRanges();
+            //    ManualFire();
+            //}, () =>
+            //{
+            //    Debug.Log("Double release action");
+            //    ShowRanges();
+            //    ManualFire();
+            //}, false, true));
+
+
             _hotKeys.ForEach((hotKey =>
             {
                 switch (hotKey.Name)
@@ -173,12 +190,24 @@ namespace Assets.Scripts.Level
                     case "Show Ranges":
                         hotKey.SetAction(() =>
                         {
+                            //Debug.Log("Show ranges");
+                            ShowRanges();
+                        });
+                        hotKey.SetReleaseAction(() =>
+                        {
+                            //Debug.Log("Show ranges release");
                             ShowRanges();
                         });
                         break;
                     case "Manual Fire":
                         hotKey.SetAction(() =>
                         {
+                            //Debug.Log("Manual fire");
+                            ManualFire();
+                        });
+                        hotKey.SetReleaseAction(() =>
+                        {
+                            //Debug.Log("Manual fire release");
                             ManualFire();
                         });
                         break;
@@ -544,6 +573,8 @@ namespace Assets.Scripts.Level
         /// </summary>
         private void CheckActions()
         {
+            //List<KeyCode> keysPressed = Utilities.GetAllKeys();
+            //Debug.Log($"Keys pressed: {Utilities.ListToString(keysPressed)}");
             foreach (HotKey hotKey in _hotKeys)
             {
                 //if (hotKey.Name == "Match Speed")
@@ -552,8 +583,7 @@ namespace Assets.Scripts.Level
                 //}
                 if (hotKey.Checkinput())
                 {
-                    //Debug.Log($"Input registered from {hotKey.Name}");
-                    return;
+                    //Debug.Log($"Input registered from {hotKey}");
                 }
             }
             if (HasPauseInput())

@@ -67,12 +67,18 @@ namespace Assets.Scripts.Data
         };
 
         // The Ids of actions that have continuous input
-        public HashSet<int> ContinuousInputActions = new HashSet<int>
+        public HashSet<string> ContinuousInputActions = new HashSet<string>
         {
-            "Move Camera Up".GetHashCode(),
-            "Move Camera Left".GetHashCode(),
-            "Move Camera Down".GetHashCode(),
-            "Move Camera Right".GetHashCode(),
+            "Move Camera Up",
+            "Move Camera Left",
+            "Move Camera Down",
+            "Move Camera Right",
+        };
+
+        public HashSet<string> HeldDownInputActions = new HashSet<string>
+        {
+            "Show Ranges",
+            "Manual Fire",
         };
 
 
@@ -86,7 +92,7 @@ namespace Assets.Scripts.Data
                 //Debug.Log("Updated config file");
                 //Debug.Log($"JSON from DataFile: {json}");
                 Dictionary<string, int[]> hotKeys = Utilities.JArrayToDictionary<string, int[]>(json.HotKeys);
-                hotKeys.Keys.ToList().ForEach((hotKeyName) => HotKeys.Add(new HotKey(hotKeyName, hotKeys[hotKeyName].Select((k) => (KeyCode)k).ToList(), ContinuousInputActions.Contains(hotKeyName.GetHashCode()))));
+                hotKeys.Keys.ToList().ForEach((hotKeyName) => HotKeys.Add(new HotKey(hotKeyName, hotKeys[hotKeyName].Select((k) => (KeyCode)k).ToList(), ContinuousInputActions.Contains(hotKeyName), HeldDownInputActions.Contains(hotKeyName))));
             });
 
         }

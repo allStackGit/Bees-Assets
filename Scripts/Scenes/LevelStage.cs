@@ -179,7 +179,7 @@ namespace Assets.Scripts.Scenes
 
             Debug.Log($"Playing on the {Map.Name} map");
 
-            if (ConfigData.SelectedObstacleMapIndex > -1 || Utilities.CoinToss())
+            if ((ConfigData.SelectedObstacleMapIndex == -1 && Utilities.CoinToss()) || ConfigData.SelectedObstacleMapIndex > 0) // User chose random and random chose obstacles OR user chose obstacles
             {
                 HasObstacles = true;
                 Debug.Log($"The map has obstacles");
@@ -193,20 +193,21 @@ namespace Assets.Scripts.Scenes
                 }
                 _chosenObstacles = _obstacleLists.GetValueOrDefault(ChosenObstaclesIndex);
 
-                if (ConfigData.SelectedAsteroidOption > -1 || Utilities.RandomInt(4) == 0)
+                if ((ConfigData.SelectedAsteroidOption == -1 && Utilities.RandomInt(4) == 0) || ConfigData.SelectedAsteroidOption > 0) // User chose random and random chose asteroids OR User chose asteroids
                 {
                     ActivateCollisionAsteroids = true;
                     Debug.Log($"The map has obstacles and asteroids as well");
                 }
-                else
+                else // user chose no asteroids or random chose no asteroids
                 {
                     ActivateCollisionAsteroids = false;
                     Debug.Log($"The map has obstacles and not asteroids");
                 }
             }
-            else
+            else // either the user chose no obstacles or random chose no obstacles
             {
-                if (ConfigData.SelectedAsteroidOption > -1 || Utilities.CoinToss())
+                
+                if ((ConfigData.SelectedAsteroidOption == -1 && Utilities.CoinToss()) || ConfigData.SelectedAsteroidOption > 0) // User chose random and random chose asteroids OR User chose asteroids
                 {
                     HasObstacles = true;
                     _chosenObstacles = EmptyObstacleList;
@@ -509,7 +510,7 @@ namespace Assets.Scripts.Scenes
                     AsteroidMinimumSpawnRate /= 2;
                     AsteroidMaxSpawnRate /= 2;
                 }
-                Invoke(nameof(SpawnAsteroid), AsteroidMinimumSpawnRate + Utilities.RandomInt(AsteroidMaxSpawnRate-AsteroidMinimumSpawnRate));
+                Invoke(nameof(SpawnAsteroid), AsteroidMinimumSpawnRate + Utilities.RandomInt(AsteroidMaxSpawnRate - AsteroidMinimumSpawnRate));
             }
         }
         private void SpawnMiningAsteroids()
