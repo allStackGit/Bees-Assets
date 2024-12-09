@@ -61,12 +61,11 @@ namespace Assets.Scripts
         public const string FleetDataFilename = "fleet_data";
         public const string SavedSquadsDataFilename = "saved_squads_data";
         public const string UserSettingsFilename = "user_settings_data";
+        public const string LevelsDataFilename = "levels_data";
+
 
         // data loaded booleans
-        public static bool IsUserProgressDataLoaded;
-        public static bool IsFleetDataLoaded; 
-        public static bool IsSavedSquadsDataLoaded;
-        public static bool IsUserSettingsDataLoaded;
+        public static bool IsUserProgressDataLoaded, IsFleetDataLoaded, IsSavedSquadsDataLoaded, IsUserSettingsDataLoaded, IsLevelsDataLoaded;
 
 
         /// <summary>
@@ -247,6 +246,7 @@ namespace Assets.Scripts
         public const int CollisionAsteroidKillDelay = 1;
         public const int MaximumTsvValueForSeeingAShip = 500;
         public const int MinimumTsvValueForSeeingAShip = 50;
+        public const int StandardReinforcementsDelay = 60;
         public const float TsvMultiplierForVision = .05f;
         public const float VisionShrinkingMultiplier = .8f;
         public static Vector2 HalfSize = new Vector2(.5f, .5f);
@@ -374,7 +374,7 @@ namespace Assets.Scripts
         public static bool IsUserLoadingCustomSquads, IsUserLoadingCustomEnemySquads;
         public static bool AreAllSettingsLoaded => (ShipInfo != null && ShipInfo.IsLoaded) && (Configuration != null && Configuration.IsLoaded)
             && (StartingSettings != null && StartingSettings.IsLoaded);
-        public static bool IsAllUserDataLoaded => IsUserProgressDataLoaded && IsFleetDataLoaded && IsSavedSquadsDataLoaded && IsUserSettingsDataLoaded;  
+        public static bool IsAllUserDataLoaded => IsUserProgressDataLoaded && IsFleetDataLoaded && IsSavedSquadsDataLoaded && IsUserSettingsDataLoaded && IsLevelsDataLoaded;  
 
 
 
@@ -390,6 +390,7 @@ namespace Assets.Scripts
         private static FleetData _fleetData = null;
         private static SavedSquadsData _savedSquadsData = null;
         private static UserSettingsData _userSettingsData = null;
+        private static LevelData _levelData = null;
 
 
         public static bool HasSocketManager()
@@ -455,6 +456,7 @@ namespace Assets.Scripts
                 SetupFleetData(!FirstTimePlaying, allStartingShips);
                 SetupSavedSquadsData(!FirstTimePlaying);
                 SetupUserSettingsData(!FirstTimePlaying);
+                SetupLevelData(!FirstTimePlaying);
                 //Debug.Log($"Current Level after loading user data: {GetLevel()}");
             }
 
@@ -502,6 +504,7 @@ namespace Assets.Scripts
                 GetFleetData().WaitForData();
                 GetSavedSquadsData().WaitForData();
                 GetUserSettingsData().WaitForData();
+                GetLevelData().WaitForData();
             }
         }
         public static void SaveAll()
@@ -514,6 +517,7 @@ namespace Assets.Scripts
             //Debug.Log($"Saving Squads: {Socket.IsOpen}");
             AllShips.SaveSquadData();
             GetUserSettingsData().Save();
+            GetLevelData().Save();
         }
         public static string GetBasePath()
         {
@@ -621,6 +625,14 @@ namespace Assets.Scripts
         public static UserSettingsData GetUserSettingsData()
         {
             return _userSettingsData;
+        }
+        public static void SetupLevelData(bool shouldFileExist)
+        {
+            _levelData = new LevelData(shouldFileExist);
+        }
+        public static LevelData GetLevelData()
+        {
+            return _levelData;
         }
         public static void SetupFleetData(bool shouldFileExist, Dictionary<string, int> startingShips)
         {

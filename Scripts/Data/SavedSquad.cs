@@ -182,7 +182,7 @@ namespace Assets.Scripts.Data
         {
             //Debug.Log($"Before Orienting squad, center point: {StartingPosition}");
 
-            StartingPosition = GetCenterPoint();
+             StartingPosition = GetCenterPoint();
             //Debug.Log($"After Orienting squad, center point: {StartingPosition}");
             GetSquadShips().ForEach((ship) =>
             {

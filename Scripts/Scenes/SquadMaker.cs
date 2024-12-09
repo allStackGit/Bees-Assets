@@ -913,12 +913,6 @@ namespace Assets.Scripts.Scenes
             }
             return sum;
         }
-        private string ValidateInputString(string str)
-        {
-            return Regex.Replace(str, @"[^a-zA-Z0-9\-\s!@#%&*_+=:'.]", "");
-            //Debug.Log($"Unvalidated string: {name}, replaced string {valid}");
-        }
-
 
         // Squad management
         public SavedSquad GetCurrentSquad()
@@ -1469,7 +1463,7 @@ namespace Assets.Scripts.Scenes
         }
         public void ChangeSquadName(string name)
         {
-            name = ValidateInputString(name);
+            name = Utilities.ValidateInputString(name);
             if (_currentSquad != null)
             {
                 _currentSquad.Name = name;
@@ -1480,7 +1474,7 @@ namespace Assets.Scripts.Scenes
         }
         public void ChangeShipName(string name)
         {
-            name = ValidateInputString(name);
+            name = Utilities.ValidateInputString(name);
             if (_currentShipInfo != null)
             {
                 _currentShipInfo.Name = name;
@@ -1619,6 +1613,10 @@ namespace Assets.Scripts.Scenes
                             ConfigData.HumanShipTypes = ConfigData.Configuration.VisibleHumanShipTypes.Intersect(ConfigData.HumanPowerfulShips).ToHashSet();
                             Debug.Log($"Choosing human powerful ships: {ConfigData.HumanShipTypes.ToList()}");
                         }
+                    }
+                    else if (_chosenOpposingForceOption == 6) // the user has selected a level and the level has preset options
+                    {
+
                     }
                 }
 

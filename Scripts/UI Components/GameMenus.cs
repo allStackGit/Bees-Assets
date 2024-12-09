@@ -6,17 +6,20 @@ using Assets.Scripts.Scenes;
 using Assets.Scripts.UI_Components;
 using UnityEngine.Events;
 using Assets.Scripts.Data;
+using System.Linq;
+using System;
 
 namespace Assets.Scripts.UIComponents
 {
     public class GameMenus : MonoBehaviour
     {
-        public GameObject MenuContainer, LevelEndedDialogue, NoAliveShipsAlert, SquadActionBoxUI, VictoryLabel, DefeatLabel, MiniMapCloseButton, MiniMapOpenButton, MiniMapTopBorder, MiniMapLeftBorder,
+        public GameObject MenuContainer, LevelEndedDialogue, SaveLevelDialogue, NoAliveShipsAlert, SquadActionBoxUI, VictoryLabel, DefeatLabel, MiniMapCloseButton, MiniMapOpenButton, MiniMapTopBorder, MiniMapLeftBorder,
             MiniMapCameraCollider, MiniMapOutput, HumanScore, BeeScore, ShipInfoBox;
         public SquadActionBox ActionBox;
         public LevelStage Level;
         public Dialogue ExitConfirmationDialogue;
         public TMP_Text ShipInfoBoxTitle, ShipInfoBoxStats;
+        public TMP_InputField LevelNameInput, SupplyCapacityInput;
         public Codex Codex;
         public SettingsMenu Settings;
 
@@ -83,6 +86,7 @@ namespace Assets.Scripts.UIComponents
             Debug.Log("Deciding not to exit");
             DeselectButton();
             LevelEndedDialogue.SetActive(false);
+            SaveLevelDialogue.SetActive(false);
             MenuContainer.SetActive(false);
             Level.UnPause();
         }
@@ -99,11 +103,31 @@ namespace Assets.Scripts.UIComponents
             ConfigData.SquadMakerSide = ConfigData.Configuration.SquadMakerFirstSide;
             SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
         }
+        public void ChangeLevelName(string name)
+        {
+            name = Utilities.ValidateInputString(name);
+            //Debug.Log($"Level name changed to {name}");
+            LevelNameInput.text = name;
+        }
+        public void ChangeSupplyCapacity(string capacity)
+        {
+            int validCapacity;
+            bool isValid = int.TryParse(capacity, out validCapacity); // the out keyword allows the method to essentially "return" a second value
+            if (!isValid)
+            {
+                validCapacity = 0;
+            }
+            SupplyCapacityInput.text = $"{validCapacity}";
+        }
         public void SwitchSides()
         {
             Level.UnPause();
             ConfigData.SwapSides();
             SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
+        }
+        public void ToggleFogOfWar()
+        {
+            Level.Map.FogOfWar.SetActive(!Level.Map.FogOfWar.activeSelf);
         }
         public void OpenLevelEndedDialogue()
         {
@@ -144,6 +168,29 @@ namespace Assets.Scripts.UIComponents
         {
             CloseDialogue();
             Level.SetupLevel();
+        }
+        public void ShowLevelSaveDialogue()
+        {
+            LevelNameInput.text = Level.LevelData.Name;
+            SupplyCapacityInput.text = $"{Level.GetState().InitialTsv[ConfigData.Configuration.UserSide - 1]}";
+            SaveLevelDialogue.SetActive(true);
+        }
+        public void SaveLevel()
+        {
+            int capacity;
+            bool isValid = int.TryParse(SupplyCapacityInput.text, out capacity); 
+            if (!isValid)
+            {
+                capacity = 0;
+            }
+
+            //Debug.Log($"LevelData: {LevelData.GetEnemyList()}");
+            Data.Level level = (Data.Level)Level.LevelData.Clone();
+            level.Name = LevelNameInput.text;
+            level.SupplyCapacity = capacity;
+            ConfigData.GetLevelData().AddLevel(level);
+            ConfigData.GetLevelData().Save();
+            CloseDialogue();
         }
         public void GoToSettings()
         {

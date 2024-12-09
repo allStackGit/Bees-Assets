@@ -10,6 +10,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Unity.Mathematics;
 
 using UnityEngine;
@@ -302,6 +303,36 @@ namespace Assets.Scripts
 
 
             return indexes.ToArray();
+        }
+
+        public static List<SavedSquad> LoadSquadsFromJson(List<dynamic> jsonSquads)
+        {
+            List<SavedSquad> savedSquads = new List<SavedSquad>();
+            jsonSquads.ForEach((squad) =>
+            {
+                Color color = new Color((float)squad.Color.r, (float)squad.Color.g, (float)squad.Color.b, (float)squad.Color.a);
+                SquadStatBlock Stats = new SquadStatBlock((string)squad.Stats.Commander, (int)squad.Stats.BattlesFought, (int)squad.Stats.BattlesWon,
+                    (int)squad.Stats.ShipsLost, (int)squad.Stats.DamageDone, (int)squad.Stats.DamageReceived, (int)squad.Stats.Kills);
+                SavedSquad savedSquad = new SavedSquad((int)squad.Id, (int)squad.Side, (string)squad.Name, new Vector2((float)squad.StartingPosition.x, (float)squad.StartingPosition.y),
+                    (bool)squad.CeaseFire, (bool)squad.IsMatchingSpeed, (string)squad.ChosenShootingStrategy, color, Stats);
+                //Debug.Log($"Squad ships, {savedSquad.Name}, {squad.Ships}");
+                //Vector2 startingPosition = new Vector2(savedSquad.StartingPosition.x, savedSquad.StartingPosition.y);
+                List<dynamic> ships = squad.Ships.ToObject<List<dynamic>>();
+
+                ships.ForEach((ship) =>
+                {
+
+                    savedSquad.AddShipToSquad(new SquadShip((int)ship.FleetId, (string)ship.ShipType, new Vector2((float)ship.Offset.x, (float)ship.Offset.y),
+                     savedSquad));
+
+                });
+                //Debug.Log($"Loaded squad {squad.Name} at {squad.StartingPosition} at before Add Squad call");
+                //savedSquad.StartingPosition = startingPosition;
+                savedSquads.Add(savedSquad);
+
+            });
+            //Debug.Log("Finished loading the squads from list");
+            return savedSquads;
         }
 
         public static IEnumerator CacheSquadCustomSprites(SavedSquad squad, Dictionary<string, List<Sprite>> shipPartSprites, string type, Dictionary<string, Vector2Int> sizes, Dialogue dialogue = null)
@@ -620,22 +651,19 @@ namespace Assets.Scripts
         {
             SetUIColor(gameObject, ConfigData.GetUIColor("good"));
         }
+        public static string ValidateInputString(string str)
+        {
+            return Regex.Replace(str, @"[^a-zA-Z0-9\-\s!@#%&*_+=:'.]", "");
+            //Debug.Log($"Unvalidated string: {name}, replaced string {valid}");
+        }
 
         public static string ListToString(List<dynamic> list)
         {
             return string.Join(", ", list.ToArray());
         }
-        public static List<dynamic> JArrayToDynamicList(dynamic jArray)
-        {
-            return ((JArray)jArray).ToList<dynamic>();
-        }
         public static List<T> JArrayToList<T>(dynamic jArray)
         {
            return ((JArray)jArray).ToList<dynamic>().ConvertAll((item) => (T)item);
-        }
-        public static List<dynamic> JArrayToList(dynamic jArray)
-        {
-            return ((JArray)jArray).ToList<dynamic>();
         }
         public static Dictionary<K, V> JArrayToDictionary<K, V>(dynamic jArray)
         {

@@ -256,13 +256,17 @@ namespace Assets.Scripts.Level
                         ConfigData.SquadsChosenForLevel.Add(s);
                     }
                 });
-                midLevelSquads.ForEach((s) =>
+                if (Level.ActivateLoadingShipsMidLevel)
                 {
-                    if (s != null && !ConfigData.SquadsChosenForLevel.Contains(s))
+                    midLevelSquads.ForEach((s) =>
                     {
-                        Level.MidLevelSquads[side - 1].Add(s);
-                    }
-                });
+                        if (s != null && !ConfigData.SquadsChosenForLevel.Contains(s))
+                        {
+                            Level.MidLevelSquads[side - 1].Add(s);
+                        }
+                    });
+                }
+
             }
         }
         private void SetupShipsAndSquads(List<SavedSquad> squads, Vector2 startingPosition, Vector2 moveToPoint)

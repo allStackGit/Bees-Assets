@@ -69,7 +69,7 @@ namespace Assets.Scripts.Scenes
         /// </summary>
         public int AsteroidMaxSpeed;
         public List<GameObject> EmptyObstacleList, MazePrefabs, ThreePathsPrefabs, ForestPrefabs, TheWallPrefabs = new List<GameObject>();
-        public int ChosenObstaclesIndex;
+        public int ChosenObstaclesIndex, MapIndex, AsteroidOption, ReinforcementsDelay;
         public List<GameObject> MiningAsteroidPrefabs = new List<GameObject>();
         public List<GameObject> CollisionAsteroidPrefabs = new List<GameObject>();
         /// <summary>
@@ -120,6 +120,7 @@ namespace Assets.Scripts.Scenes
         public List<Trigger> Triggers = new List<Trigger>();
         public List<string> BeeShipTypes, HumanShipTypes = new List<string>();
         public List<SquadTab> SquadTabs;
+        public Data.Level LevelData;
 
 
 
@@ -167,16 +168,16 @@ namespace Assets.Scripts.Scenes
             Debug.Log($"Randomizing options...");
             //Debug.Log($"Level selection option: {ConfigData.SelectedLevelMapIndex}");
 
-
             if (ConfigData.SelectedLevelMapIndex == -1)
             {
-                Map = Instantiate(Maps[Utilities.RandomInt(Maps.Count)]).GetComponent<Map>();
+                MapIndex = Utilities.RandomInt(Maps.Count);
+                
             }
             else
             {
-                Map = Instantiate(Maps[ConfigData.SelectedLevelMapIndex]).GetComponent<Map>();
+                MapIndex = ConfigData.SelectedLevelMapIndex;
             }
-
+            Map = Instantiate(Maps[MapIndex]).GetComponent<Map>();
             Debug.Log($"Playing on the {Map.Name} map");
 
             if ((ConfigData.SelectedObstacleMapIndex == -1 && Utilities.CoinToss()) || ConfigData.SelectedObstacleMapIndex > 0) // User chose random and random chose obstacles OR user chose obstacles
@@ -552,10 +553,10 @@ namespace Assets.Scripts.Scenes
 
             Triggers.Add(new Trigger(() =>
             {
-                return Time.realtimeSinceStartup - StartTime >= 60;
+                return Time.realtimeSinceStartup - StartTime >= ReinforcementsDelay;
             }, () =>
             {
-                Debug.Log($"60 seconds have passed, spawning new enemy ships");
+                Debug.Log($"{ReinforcementsDelay} seconds have passed, spawning new enemy ships");
                 Vector2 moveToPoint = StartingPositions[ConfigData.Configuration.AISide - 1];
                 LevelConstructor.AddShipsMidLevel(MidLevelSquads[ConfigData.Configuration.AISide - 1], StartingPositions[ConfigData.Configuration.AISide - 1] * new Vector2(0, 2), moveToPoint);
 
@@ -885,6 +886,11 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
                 HumanShipTypes = ConfigData.HumanShipTypes.ToList();
             }
 
+            if (LevelData == null)
+            {
+                ReinforcementsDelay = ConfigData.StandardReinforcementsDelay;
+            }
+
             //Debug.Log($"The human side is {ConfigData.Configuration.HumanSide}, the Bee side is {ConfigData.Configuration.BeeSide}, the AI side is {ConfigData.Configuration.AISide}, the user side is {ConfigData.Configuration.UserSide}");
             //Debug.Log($"The AI Starting position is {AIStartingPosition}, the user starting position is {UserStartingPosition}");
 
@@ -915,7 +921,8 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
             else
             {
                 Debug.Log($"The map does not have randomized options");
-                Map = Instantiate(Maps[OverrideMapIndex]).GetComponent<Map>();
+                MapIndex = OverrideMapIndex;
+                Map = Instantiate(Maps[MapIndex]).GetComponent<Map>();
 
                 
                 ChosenObstaclesIndex = OverrideObstacleMapIndex;
@@ -983,6 +990,20 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
                 Pathfinder = new Pathfinder(this);
 
             }
+
+
+            ConfigData.SquadsChosenForLevel = ConfigData.SquadsChosenForLevel.Where((chosenSquad) => !MidLevelSquads[chosenSquad.Side - 1].Contains(chosenSquad)).ToList();
+            MidLevelSquads[ConfigData.Configuration.HumanSide-1].Clear();
+            MidLevelSquads[ConfigData.Configuration.BeeSide - 1].Clear();
+            LevelConstructor.SetupShips();
+            CalculateShipClearances();
+
+            AsteroidOption = ConfigData.SelectedAsteroidOption == 2 ? 2 : (ActivateCollisionAsteroids ? 1 : 0);
+
+            LevelData = new Data.Level(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{Utilities.RandomInt(1000000)}", MapIndex, ChosenObstaclesIndex, AsteroidOption, 
+                ActivateFogOfWar ? 1 : 0, ActivateMining ? 1 : 0, Utilities.RandomInt(100000)+5000, ReinforcementsDelay, MidLevelSquads[ConfigData.Configuration.AISide - 1],
+                ConfigData.SquadsChosenForLevel.Where((s) => s.Side == ConfigData.Configuration.AISide).ToList());
+
             if (ActivateMining)
             {
                 SpawnMiningAsteroids();
@@ -998,11 +1019,6 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
             }
 
 
-            ConfigData.SquadsChosenForLevel = ConfigData.SquadsChosenForLevel.Where((chosenSquad) => !MidLevelSquads[chosenSquad.Side - 1].Contains(chosenSquad)).ToList();
-            MidLevelSquads[ConfigData.Configuration.HumanSide-1].Clear();
-            MidLevelSquads[ConfigData.Configuration.BeeSide - 1].Clear();
-            LevelConstructor.SetupShips();
-            CalculateShipClearances();
 
             CancelInvoke(nameof(GetHiveMindCommands));
             if (ActivateHiveMind)

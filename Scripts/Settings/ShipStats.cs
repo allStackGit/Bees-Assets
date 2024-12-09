@@ -22,7 +22,7 @@ namespace Assets.Scripts.Settings
         protected override void ProcessData(string contents)
         {
             //Debug.Log(contents);
-            Utilities.JArrayToDynamicList((JArray)JsonConvert.DeserializeObject(contents)).ForEach((ship) =>
+            Utilities.JArrayToList<dynamic>((JArray)JsonConvert.DeserializeObject(contents)).ForEach((ship) =>
             {
 
                 List<int> range = Utilities.JArrayToList<int>(ship.Range);

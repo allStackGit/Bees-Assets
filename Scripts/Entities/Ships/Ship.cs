@@ -512,12 +512,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 }
 
 
-                if (Level.ActivateFogOfWar)
-                {
-                    //Debug.Log($"Setting up vision for {Name}");
-                    HasVision = true;
-                    Vision.Setup(this);
-                }
+                HasVision = true;
+                Vision.Setup(this);
             }
             else
             {
