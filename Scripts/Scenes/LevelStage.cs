@@ -43,7 +43,7 @@ namespace Assets.Scripts.Scenes
         public List<string> OverrideBeeShipTypes = new List<string> { };
         public List<string> OverrideHumanShipTypes = new List<string> { };
         public GameObject UIManager, SelectionBox, MiniMapContainer;
-        public Map Map;
+        public UI_Components.Map Map;
         public AudioController Audio;
         public Camera MiniMapCamera;
         public GameMenus Menus;
@@ -120,7 +120,7 @@ namespace Assets.Scripts.Scenes
         public List<Trigger> Triggers = new List<Trigger>();
         public List<string> BeeShipTypes, HumanShipTypes = new List<string>();
         public List<SquadTab> SquadTabs;
-        public Data.Level LevelData;
+        public LevelOptions SaveLevelOptions;
 
 
 
@@ -177,7 +177,8 @@ namespace Assets.Scripts.Scenes
             {
                 MapIndex = ConfigData.SelectedLevelMapIndex;
             }
-            Map = Instantiate(Maps[MapIndex]).GetComponent<Map>();
+            Map = Instantiate(Maps[MapIndex]).GetComponent<UI_Components.Map>();
+            //Map.Setup()
             Debug.Log($"Playing on the {Map.Name} map");
 
             if ((ConfigData.SelectedObstacleMapIndex == -1 && Utilities.CoinToss()) || ConfigData.SelectedObstacleMapIndex > 0) // User chose random and random chose obstacles OR user chose obstacles
@@ -886,7 +887,7 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
                 HumanShipTypes = ConfigData.HumanShipTypes.ToList();
             }
 
-            if (LevelData == null)
+            if (SaveLevelOptions == null)
             {
                 ReinforcementsDelay = ConfigData.StandardReinforcementsDelay;
             }
@@ -922,13 +923,13 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
             {
                 Debug.Log($"The map does not have randomized options");
                 MapIndex = OverrideMapIndex;
-                Map = Instantiate(Maps[MapIndex]).GetComponent<Map>();
+                Map = Instantiate(Maps[MapIndex]).GetComponent<UI_Components.Map>();
 
                 
                 ChosenObstaclesIndex = OverrideObstacleMapIndex;
                 _chosenObstacles = _obstacleLists.GetValueOrDefault(ChosenObstaclesIndex);
             }
-
+            Map.Setup(ConfigData.Maps[MapIndex].Name, ConfigData.Maps[MapIndex].UserStartingPosition, ConfigData.Maps[MapIndex].AIStartingPosition);
             Map.name = Map.Name;
             Map.transform.parent = this.transform;
 
@@ -1000,7 +1001,7 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
 
             AsteroidOption = ConfigData.SelectedAsteroidOption == 2 ? 2 : (ActivateCollisionAsteroids ? 1 : 0);
 
-            LevelData = new Data.Level(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{Utilities.RandomInt(1000000)}", MapIndex, ChosenObstaclesIndex, AsteroidOption, 
+            SaveLevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetCurrentId()}", MapIndex, ChosenObstaclesIndex, AsteroidOption, 
                 ActivateFogOfWar ? 1 : 0, ActivateMining ? 1 : 0, Utilities.RandomInt(100000)+5000, ReinforcementsDelay, MidLevelSquads[ConfigData.Configuration.AISide - 1],
                 ConfigData.SquadsChosenForLevel.Where((s) => s.Side == ConfigData.Configuration.AISide).ToList());
 

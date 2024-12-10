@@ -171,7 +171,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void ShowLevelSaveDialogue()
         {
-            LevelNameInput.text = Level.LevelData.Name;
+            LevelNameInput.text = Level.SaveLevelOptions.Name;
             SupplyCapacityInput.text = $"{Level.GetState().InitialTsv[ConfigData.Configuration.UserSide - 1]}";
             SaveLevelDialogue.SetActive(true);
         }
@@ -185,7 +185,7 @@ namespace Assets.Scripts.UIComponents
             }
 
             //Debug.Log($"LevelData: {LevelData.GetEnemyList()}");
-            Data.Level level = (Data.Level)Level.LevelData.Clone();
+            Data.LevelOptions level = (Data.LevelOptions)Level.SaveLevelOptions.Clone();
             level.Name = LevelNameInput.text;
             level.SupplyCapacity = capacity;
             ConfigData.GetLevelData().AddLevel(level);

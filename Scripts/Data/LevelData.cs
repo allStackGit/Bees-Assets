@@ -8,7 +8,7 @@ namespace Assets.Scripts.Data
     // class that holds and manages storage for all the levels
     public class LevelData : UserData
     {
-        public List<Level> Levels = new List<Level>();
+        private List<LevelOptions> _levels = new List<LevelOptions>();
 
         public LevelData(bool shouldFileExist) : base()
         {
@@ -25,37 +25,49 @@ namespace Assets.Scripts.Data
                     List<SavedSquad> enemyReinforcements = Utilities.LoadSquadsFromJson(Utilities.JArrayToList<dynamic>(level.EnemyReinforcements));
                     List<SavedSquad> enemySquads = Utilities.LoadSquadsFromJson(Utilities.JArrayToList<dynamic>(level.EnemySquads));
 
-                    Levels.Add(new Level((int)level.Id, (int)level.Side, level.name, (int)level.MapIndex, (int)level.ObstacleMapIndex, (int)level.AsteroidOption, (int)level.FogOfWar,
+                    _levels.Add(new LevelOptions((int)level.Id, (int)level.Side, (string)level.Name, (int)level.MapIndex, (int)level.ObstacleMapIndex, (int)level.AsteroidOption, (int)level.FogOfWar,
                         (int)level.Mining, (int)level.SupplyCapacity, (int)level.EnemyReinforcementDelay, enemyReinforcements, enemySquads));
                 });
             });
 
         }
+        public List<LevelOptions> GetLevels()
+        {
+            return _levels;
+        }
+        public LevelOptions GetLevel(int levelId)
+        {
+            return _levels[levelId];
+        }
 
         public override string ToJson()
         {
             string json = "{\"Levels\": [";
-            for (int i = 0; i < Levels.Count; i++)
+            for (int i = 0; i < _levels.Count; i++)
             {
-                if (i < Levels.Count - 1)
+                if (i < _levels.Count - 1)
                 {
-                    json += Levels[i].ToJson() + ",";
+                    json += _levels[i].ToJson() + ",";
                 }
                 else
                 {
-                    json += Levels[i].ToJson();
+                    json += _levels[i].ToJson();
                 }
             }
             json += "]}";
             return json;
         }
-        public void AddLevel(Level level)
+        public void AddLevel(LevelOptions level)
         {
-            Levels.Add(level);
+            _levels.Add(level);
+        }
+        public int GetCurrentId()
+        {
+            return GetNewId() - 1;
         }
         public int GetNewId()
         {
-            return Levels.Count;
+            return _levels.Count;
         }
 
         

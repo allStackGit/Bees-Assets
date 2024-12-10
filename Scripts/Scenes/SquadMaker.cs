@@ -56,8 +56,9 @@ namespace Assets.Scripts.Scenes
             
             SquadActionBox, DeadShipBox, DropZone, DropBox, DragStatusBox, ShipInfoBox, ShipInfoBoxTitle, ShipInfoBoxDetails, ShipInfoBoxIcon, SquadInfoBox,
             SquadInfoBoxTitle, SquadInfoBoxDetails, SquadInfoBoxIcon, ShipStatsBox, ShipStatsBoxDetails, SquadNameInput, ShipNameInput,
-            SquadShipCount, SquadShipCountLabel, SquadColorLabel, SquadColorPickerButton, NextButton, StartButton, OpposingForceLabel, OpposingForcePresetDropdown, 
-            ChosenEnemyShipTypesDropdown;
+            SquadShipCount, SquadShipCountLabel, SquadColorLabel, SquadColorPickerButton, NextButton, StartButton, FogOfWarLabel, FogOfWarDropdown, MiningLabel,
+            MiningDropdown, EnemyReinforcementsLabel, EnemyReinforcementsDropdown, MapLabel, MapDropdown, AsteroidsLabel, AsteroidsDropdown, ObstaclesLabel, ObstaclesDropdown,
+            OpposingForceLabel, OpposingForcePresetDropdown, ChosenEnemyShipTypeLabel, ChosenEnemyShipTypesDropdown, LevelTitleContainer, LevelDetailsContainer;
 
         public Dialogue DeleteSquadConfirmation, ClearSquadConfirmation, LoadSquadConfirmation, ChooseSquadConfirmation, UnchooseSquadConfirmation, OverCapacityAlert, NoChosenSquadsAlert,
             ChoosingUnsavedSquadAlert, ChoosingDeadSquadAlert, GoBackConfirmation, SquadSavingStatus;
@@ -78,6 +79,8 @@ namespace Assets.Scripts.Scenes
         public Canvas DragCanvas;
         public Vector2 TooltipOffset, ShipStatsBoxOffset, ScreenScaleFactor, ReferenceScreenSize;
         public SquadActionBox ActionBox = null;
+        public TMP_Dropdown LevelDropdown;
+        public TMP_Text LevelTitle, LevelDetails;
         public bool IsRandomizedOpposingSide;
 
 
@@ -109,12 +112,17 @@ namespace Assets.Scripts.Scenes
         private int _chosenOpposingForceOption;
         private int _chosenObstacleOption = -1;
         private int _chosenAsteroidsOption = -1;
-        private int _chosenLevelOption = -1;
+        private int _chosenMapOption = -1;
         private int _chosenFogOfWarOption = -1;
         private int _chosenMiningOption = -1;
         private int _chosenMidLevelShipsOption = -1;
         private int _chosenEnemyShipTypes = -1;
         private string _nextScene = "";
+        private Data.LevelOptions _chosenLevel;
+        private Dictionary<int, Data.LevelOptions> _levelOptionIndexesToLevels = new Dictionary<int, Data.LevelOptions>();
+        private int _squadListOriginalScrollHeight, _squadListOptionsScrollHeight, _squadListLevelScrollHeight;
+        int _capacity;
+
 
         public bool HasActionBox => ActionBox != null;
         public bool HasColorPicker => _colorPicker != null;
@@ -167,17 +175,17 @@ namespace Assets.Scripts.Scenes
             //ConfigData.SetupSceneManagement(SceneManagement.GetComponent<SceneManagement>());
             ScreenScaleFactor = new Vector2(ConfigData.ScreenWidth / ReferenceScreenSize.x, ConfigData.ScreenHeight / ReferenceScreenSize.y);
 
-            if (Side == ConfigData.Configuration.SquadMakerFirstSide)
-            {
-                ConfigData.SquadsChosenForLevel.Clear();
-                NextButton.SetActive(true);
-                StartButton.SetActive(false);
-            }
-            else
-            {
-                NextButton.SetActive(false);
-                StartButton.SetActive(true);
-            }
+            //if (Side == ConfigData.Configuration.SquadMakerFirstSide)
+            //{
+            //    ConfigData.SquadsChosenForLevel.Clear();
+            //    NextButton.SetActive(true);
+            //    StartButton.SetActive(false);
+            //}
+            //else
+            //{
+            //    NextButton.SetActive(false);
+            //    StartButton.SetActive(true);
+            //}
 
             // Make Dialogues
             DeleteSquadConfirmation = new Dialogue(DialoguePrefab, ConfigData.Configuration.AreYouSure, ConfigData.Configuration.DeleteSquadConfirmation,
@@ -256,21 +264,39 @@ namespace Assets.Scripts.Scenes
             // Same thing as above but for ship remains animations
             _shipRemainsSprites["Gunship"] = new List<Sprite> { GunshipRemainsSprite };
 
+            _capacity = ConfigData.StartingSettings.SupplyCapacity[Side - 1];
             // Post setup
             //Debug.Log("Post setup");
             UpdateSquadMakerSupplyLabel();
             UpdateChosenSquadsSupplyLabel();
             UpdateSquadShipCounter();
+            SetupLevelDropdown();
 
+            _squadListOriginalScrollHeight = (int) ChosenSquadList.transform.parent.parent.GetComponent<RectTransform>().sizeDelta.y + 800;
+            _squadListOptionsScrollHeight = _squadListOriginalScrollHeight - 800;
+            _squadListLevelScrollHeight = _squadListOriginalScrollHeight - 1180;
+
+
+            //Debug.Log($"{_squadListOriginalScrollHeight}, {_squadListOptionsScrollHeight}, {_squadListLevelScrollHeight}");
+
+        }
+        private void SetupLevelDropdown()
+        {
+            int i = 2;
+            ConfigData.GetLevelData().GetLevels().Where((level) => level.Side != Side).ToList().ForEach((level) =>
+            {
+                //Debug.Log($"Adding option for {level} -> #{i}");
+                LevelDropdown.options.Add(new TMP_Dropdown.OptionData(level.Name));
+                _levelOptionIndexesToLevels[i] = level;
+                i++;
+            });
+            LevelDropdown.SetValueWithoutNotify(1);
         }
         private void SetupForOpposingSide()
         {
 
-            // Hide the "Choose Opposing Force" options and extend the squad list size
-            OpposingForceLabel.SetActive(false);
-            OpposingForcePresetDropdown.SetActive(false);
-            RectTransform squadListRect = ChosenSquadList.transform.parent.parent.GetComponent<RectTransform>();
-            squadListRect.sizeDelta = new Vector2(squadListRect.sizeDelta.x, squadListRect.sizeDelta.y + 200);
+            // Hide the level options and extend the squad list size
+            ToggleLevelOptions(false);
         }
 
         private void SkipOpposingSideSetup()
@@ -852,13 +878,12 @@ namespace Assets.Scripts.Scenes
         {
             int supply = SupplyUsedInChosenSquads();
             //Debug.Log($"Supply capacity {ConfigData.StartingSettings.SupplyCapacity.Count}, {Side}");
-            int capacity = ConfigData.StartingSettings.SupplyCapacity[Side - 1];
             GameObject container = ChosenSquadsSupplyCapacityLabel.transform.parent.gameObject;
             TMP_Text text = ChosenSquadsSupplyCapacityLabel.GetComponentInChildren<TMP_Text>();
 
 
-            text.text = $"Supply Capacity: {supply.ToString("N0")} / {capacity.ToString("N0")}";
-            if (supply > capacity)
+            text.text = $"Supply Capacity: {supply.ToString("N0")} / {_capacity.ToString("N0")}";
+            if (supply > _capacity)
             {
                 container.GetComponent<UnityEngine.UI.Image>().color = ConfigData.GetUIColor("bad");
             }
@@ -890,6 +915,37 @@ namespace Assets.Scripts.Scenes
         {
             UpdateSquadShipCounter();
             UpdateSquadMakerSupplyLabel();
+        }
+        public void ToggleLevelOptions(bool show)
+        {
+            FogOfWarLabel.SetActive(show);
+            FogOfWarDropdown.SetActive(show);
+            MiningLabel.SetActive(show);
+            MiningDropdown.SetActive(show);
+            EnemyReinforcementsLabel.SetActive(show);
+            EnemyReinforcementsDropdown.SetActive(show);
+            MapLabel.SetActive(show);
+            MapDropdown.SetActive(show);
+            AsteroidsLabel.SetActive(show);
+            AsteroidsDropdown.SetActive(show);
+            ObstaclesLabel.SetActive(show);
+            ObstaclesDropdown.SetActive(show);
+            OpposingForceLabel.SetActive(show);
+            OpposingForcePresetDropdown.SetActive(show);
+            ChosenEnemyShipTypeLabel.SetActive(show);
+            ChosenEnemyShipTypesDropdown.SetActive(show);
+
+            Debug.Log($"Changing height to {(show ? _squadListOptionsScrollHeight : _squadListOriginalScrollHeight)} because show is {show}");
+            RectTransform squadListRect = ChosenSquadList.transform.parent.parent.GetComponent<RectTransform>();
+            squadListRect.sizeDelta = new Vector2(squadListRect.sizeDelta.x, (show ? _squadListOptionsScrollHeight : _squadListOriginalScrollHeight));
+        }
+        public void ToggleLevelDetails(bool show)
+        {
+            Debug.Log($"Changing height to {(show ? _squadListLevelScrollHeight : _squadListOriginalScrollHeight)} because show is {show}");
+            LevelTitleContainer.SetActive(show);
+            LevelDetailsContainer.SetActive(show);
+            RectTransform squadListRect = ChosenSquadList.transform.parent.parent.GetComponent<RectTransform>();
+            squadListRect.sizeDelta = new Vector2(squadListRect.sizeDelta.x, (show ? _squadListLevelScrollHeight : _squadListOriginalScrollHeight));
         }
 
 
@@ -1564,60 +1620,71 @@ namespace Assets.Scripts.Scenes
                 {
                     ConfigData.SelectedObstacleMapIndex = _chosenObstacleOption;
                     ConfigData.SelectedAsteroidOption = _chosenAsteroidsOption;
-                    ConfigData.SelectedLevelMapIndex = _chosenLevelOption;
+                    ConfigData.SelectedLevelMapIndex = _chosenMapOption;
                     ConfigData.SelecteFogOfWarOption = _chosenFogOfWarOption;
                     ConfigData.SelectedMiningOption = _chosenMiningOption;
                     ConfigData.SelectedShipsLoadingMidLevelOption = _chosenMidLevelShipsOption;
                     ConfigData.SelectedEnemyShipTypes = _chosenEnemyShipTypes;
 
-                    if (_chosenOpposingForceOption == 0) // [alert] order needs to be changed
+                    if (_chosenLevel != null)
                     {
-                        ConfigData.Configuration.SquadGenerationCount = 4;
+                        ConfigData.LevelOptions = _chosenLevel;
                     }
-                    else if (_chosenOpposingForceOption == 1)
+                    else
                     {
-                        ConfigData.Configuration.SquadGenerationCount = 8;
-                    }
-                    else if (_chosenOpposingForceOption == 2)
-                    {
-                        ConfigData.Configuration.SquadGenerationCount = 12;
-                    }
-                    else if (_chosenOpposingForceOption == 3)
-                    {
-                        // Player chooses custom enemy squads
-                        ConfigData.SquadMakerSide = ConfigData.Configuration.SquadMakerSecondSide;
-                        ConfigData.IsUserLoadingCustomEnemySquads = true;
-                        _nextScene = "Squad Maker";
-                        Invoke(nameof(LoadScene), .25f);
-                        return;
-                    }
-                    else if (_chosenOpposingForceOption == 4)
-                    {
-                        if (ConfigData.Configuration.SquadMakerSecondSide == ConfigData.Configuration.BeeSide)
+                        if (_chosenOpposingForceOption == 0) // [alert] order needs to be changed
                         {
-                            ConfigData.BeeShipTypes = ConfigData.Configuration.VisibleBeeShipTypes.Intersect(ConfigData.BeeSwarmShips).ToHashSet();
+                            ConfigData.Configuration.SquadGenerationCount = 4;
                         }
-                        else
+                        else if (_chosenOpposingForceOption == 1)
                         {
-                            ConfigData.HumanShipTypes = ConfigData.Configuration.VisibleHumanShipTypes.Intersect(ConfigData.HumanSwarmShips).ToHashSet();
+                            ConfigData.Configuration.SquadGenerationCount = 8;
                         }
-                    }
-                    else if (_chosenOpposingForceOption == 5)
-                    {
-                        if (ConfigData.Configuration.SquadMakerSecondSide == ConfigData.Configuration.BeeSide)
+                        else if (_chosenOpposingForceOption == 2)
                         {
-                            ConfigData.BeeShipTypes = ConfigData.Configuration.VisibleBeeShipTypes.Intersect(ConfigData.BeePowerfulShips).ToHashSet();
+                            ConfigData.Configuration.SquadGenerationCount = 12;
                         }
-                        else
+                        else if (_chosenOpposingForceOption == 3)
                         {
-                            ConfigData.HumanShipTypes = ConfigData.Configuration.VisibleHumanShipTypes.Intersect(ConfigData.HumanPowerfulShips).ToHashSet();
-                            Debug.Log($"Choosing human powerful ships: {ConfigData.HumanShipTypes.ToList()}");
+                            // Player chooses custom enemy squads
+                            ConfigData.SquadMakerSide = ConfigData.Configuration.SquadMakerSecondSide;
+                            ConfigData.IsUserLoadingCustomEnemySquads = true;
+                            _nextScene = "Squad Maker";
+                            Invoke(nameof(LoadScene), .25f);
+                            return;
                         }
-                    }
-                    else if (_chosenOpposingForceOption == 6) // the user has selected a level and the level has preset options
-                    {
+                        else if (_chosenOpposingForceOption == 4)
+                        {
+                            if (ConfigData.Configuration.SquadMakerSecondSide == ConfigData.Configuration.BeeSide)
+                            {
+                                ConfigData.BeeShipTypes = ConfigData.Configuration.VisibleBeeShipTypes.Intersect(ConfigData.BeeSwarmShips).ToHashSet();
+                            }
+                            else
+                            {
+                                ConfigData.HumanShipTypes = ConfigData.Configuration.VisibleHumanShipTypes.Intersect(ConfigData.HumanSwarmShips).ToHashSet();
+                            }
+                        }
+                        else if (_chosenOpposingForceOption == 5)
+                        {
+                            if (ConfigData.Configuration.SquadMakerSecondSide == ConfigData.Configuration.BeeSide)
+                            {
+                                ConfigData.BeeShipTypes = ConfigData.Configuration.VisibleBeeShipTypes.Intersect(ConfigData.BeePowerfulShips).ToHashSet();
+                            }
+                            else
+                            {
+                                ConfigData.HumanShipTypes = ConfigData.Configuration.VisibleHumanShipTypes.Intersect(ConfigData.HumanPowerfulShips).ToHashSet();
+                                Debug.Log($"Choosing human powerful ships: {ConfigData.HumanShipTypes.ToList()}");
+                            }
+                        }
+
+                        ConfigData.LevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetCurrentId()}",
+                            ConfigData.SelectedLevelMapIndex, ConfigData.SelectedObstacleMapIndex, ConfigData.SelectedAsteroidOption, ConfigData.SelecteFogOfWarOption,
+                            ConfigData.SelectedMiningOption, Utilities.RandomInt(100000) + 5000, ConfigData.StandardReinforcementsDelay, new List<SavedSquad>(),
+                ConfigData.SquadsChosenForLevel.Where((s) => s.Side == ConfigData.Configuration.AISide).ToList());
 
                     }
+
+                    
                 }
 
             }
@@ -1638,7 +1705,7 @@ namespace Assets.Scripts.Scenes
             //TMP_Dropdown dropdown = OpposingForcePresetDropdown.GetComponentInChildren<TMP_Dropdown>();
             _chosenOpposingForceOption = option;
 
-            if (option == 0)
+            if (option == 3)
             {
                 NextButton.SetActive(true);
                 StartButton.SetActive(false);
@@ -1651,6 +1718,34 @@ namespace Assets.Scripts.Scenes
 
             //Debug.Log($"User chose {dropdown.options[option].text}, {_chosenOpposingForceOption}");
         }
+        public void ChangeLevel(int option)
+        {
+
+            if (option > 1) // a level was chosen
+            {
+                //Debug.Log($"option chosen: {option}");
+                _chosenLevel = _levelOptionIndexesToLevels[option];
+
+                LevelTitle.text = $"Level: {_chosenLevel.Name}";
+                LevelDetails.text = _chosenLevel.GetLevelDetails();
+                _capacity = _chosenLevel.SupplyCapacity;
+                UpdateChosenSquadsSupplyLabel();
+                ToggleLevelOptions(false); // hide the level options
+                ToggleLevelDetails(true); // show the level details
+            }
+            else if (LevelTitleContainer.activeSelf) // a level was not chosen but was previously shown
+            {
+                _chosenLevel = null;
+                ToggleLevelDetails(false); // hide the level
+                ToggleLevelOptions(option == 1); // either show or hide the level options
+                _capacity = ConfigData.StartingSettings.SupplyCapacity[Side - 1];
+            }
+            else // a level was not chosen and was not previously shown
+            {
+                ToggleLevelOptions(option == 1);
+            }
+
+        }
         public void ChangeObstaclesDropdown(int option)
         {
             _chosenObstacleOption = option - 1;
@@ -1659,9 +1754,9 @@ namespace Assets.Scripts.Scenes
         {
             _chosenAsteroidsOption = option - 1;
         }
-        public void ChangeLevelDropdown(int option)
+        public void ChangeMapDropdown(int option)
         {
-            _chosenLevelOption = option - 1;
+            _chosenMapOption = option - 1;
         }
         public void ChangeFogOfWarDropdown(int option)
         {
@@ -1680,13 +1775,5 @@ namespace Assets.Scripts.Scenes
             _chosenEnemyShipTypes = option - 1;
         }
 
-
-
-
-
-        private void OnDestroy()
-        {
-            //Debug.Log("Destroying squad maker scene");
-        }
     }
 }

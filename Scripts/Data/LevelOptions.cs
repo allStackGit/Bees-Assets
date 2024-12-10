@@ -6,7 +6,7 @@ using UnityEngine;
 
 namespace Assets.Scripts.Data
 {
-    public class Level : ICloneable
+    public class LevelOptions : ICloneable
     {
         /// <summary>
         /// The Unique Id of the level. Level data is stored on the server and any time a level is added it's added for all users
@@ -22,12 +22,14 @@ namespace Assets.Scripts.Data
         public string Name;
         /// <summary>
         /// The index of the map that the level has
+        /// -1 = Random
         /// 0 = Pluto
         /// 1 = Uranus
         /// </summary>
         public int MapIndex;
         /// <summary>
         /// The index of the obstacle map that the level has
+        /// -1 = Random
         /// 0 = No obstacles
         /// 1 = Maze
         /// 2 = Three Paths
@@ -37,6 +39,7 @@ namespace Assets.Scripts.Data
         public int ObstacleMapIndex;
         /// <summary>
         /// Whether or not the map has asteroids
+        /// -1 = Random
         /// 0 = No asteroids
         /// 1 = Normal asteroids
         /// 2 = Twice as many asteroids
@@ -44,12 +47,14 @@ namespace Assets.Scripts.Data
         public int AsteroidOption;
         /// <summary>
         /// Whether or not the map has Fog of War
+        /// -1 = Random
         /// 0 = No
         /// 1 = Yes
         /// </summary>
         public int FogOfWar;
         /// <summary>
         /// Whether or not the map has Mining
+        /// -1 = Random
         /// 0 = No
         /// 1 = Yes
         /// </summary>
@@ -71,7 +76,7 @@ namespace Assets.Scripts.Data
         /// </summary>
         public List<SavedSquad> EnemySquads;
 
-        public Level(int id, int side, string name, int mapIndex, int obstacleMapIndex, int asteroidOption, int fogOfWar, int mining, int supplyCapacity, int enemyReinforcementDelay, List<SavedSquad> enemyReinforcements,
+        public LevelOptions(int id, int side, string name, int mapIndex, int obstacleMapIndex, int asteroidOption, int fogOfWar, int mining, int supplyCapacity, int enemyReinforcementDelay, List<SavedSquad> enemyReinforcements,
              List<SavedSquad> enemySquads) 
         {
             Id = id;
@@ -110,6 +115,10 @@ namespace Assets.Scripts.Data
             json += "]}";
             return json;
         }
+        public override string ToString()
+        {
+            return $"Level #{Id} - {Name}";
+        }
 
         public string GetEnemyList()
         {
@@ -140,13 +149,23 @@ namespace Assets.Scripts.Data
 
             return enemyList;
         }
-        public bool Equals(Level level)
+        public string GetLevelDetails()
+        {
+            return $"Map: {ConfigData.Maps[MapIndex]}\n" +
+                $"Obstacles: {ConfigData.ObstacleMaps[ObstacleMapIndex]}\n" +
+                $"Asteroids: {(AsteroidOption == 0 ? "None" : (AsteroidOption == 1 ? "Yes" : "Double"))}\n" +
+                $"Fog of War: {(FogOfWar == 1 ? "Yes" : "No")}\n" +
+                $"Mining: {(Mining == 1 ? "Yes": "No")}\n" +
+                $"Supply Capacity: {SupplyCapacity}\n\n" +
+                GetEnemyList();
+        }
+        public bool Equals(LevelOptions level)
         {
             return level.Id == Id;
         }
         public object Clone()
         {
-            Level clone = (Level)MemberwiseClone();
+            LevelOptions clone = (LevelOptions)MemberwiseClone();
 
             clone.EnemyReinforcements = new List<SavedSquad>();
             EnemyReinforcements.ForEach((squad) =>

@@ -12,5 +12,11 @@ namespace Assets.Scripts.UI_Components
         public Vector2 UserStartingPosition, AIStartingPosition;
         public string Name;
 
+        public void Setup(string name, Vector2 userStartingPosition, Vector2 aiStartingPosition)
+        {
+            Name = name;
+            UserStartingPosition = userStartingPosition;
+            AIStartingPosition = aiStartingPosition;
+        }
     }
 }

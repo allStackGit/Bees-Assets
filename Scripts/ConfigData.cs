@@ -26,7 +26,7 @@ namespace Assets.Scripts
         public const string GlobalServerHostname = "seagrams7.softether.net";
         public const string TestServerHostname = GlobalServerHostname;
         public const string DevelopmentServerHostname = LocalServerHostname;
-        public const string ProductionServerHostname = GlobalServerHostname;  
+        public const string ProductionServerHostname = GlobalServerHostname;
         public const int DevelopmentPort = 7146;
         public const int TestPort = 7143;
         public const int ProductionPort = 7144;
@@ -108,7 +108,7 @@ namespace Assets.Scripts
             { "Fire Ship",      new Vector2Int(760, 360)},
             { "Flagship",       new Vector2Int(640, 760)},
             { "Frigate",        new Vector2Int(240, 240)},
-            { "Gunship",        new Vector2Int(240, 240)}, 
+            { "Gunship",        new Vector2Int(240, 240)},
             { "Scout",          new Vector2Int(200, 160)},
             { "Striker",        new Vector2Int(160, 160)},
             { "Warp Gate",      new Vector2Int(1120, 640)},
@@ -189,7 +189,7 @@ namespace Assets.Scripts
             { "Frigate", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
 
 
-            { "Gunship", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.1843f, 0.5686f, 0.3725f, 1), 
+            { "Gunship", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.1843f, 0.5686f, 0.3725f, 1),
                 new Color(0.1607f, 0.4823f, 0.3215f, 1), new Color(0.1921f, 0.6039f, 0.3960f, 1), new Color(0.1607f, 0.5098f, 0.3215f, 1),
             new Color(0.1450f, 0.4588f, 0.2941f, 1)} },
 
@@ -219,9 +219,11 @@ namespace Assets.Scripts
         public static readonly HashSet<string> HumanSwarmShips = new HashSet<string> { "Scout", "Carrier", "Gunship" };
         public static readonly HashSet<string> BeePowerfulShips = new HashSet<string> { "Queen", "Bumblebee", "Leafcutter" };
         public static readonly HashSet<string> HumanPowerfulShips = new HashSet<string> { "Flagship", "Fire Ship", "Cruiser", "Dreadnought" };
-        public static readonly HashSet<string> SpawnedOnlyShipTypes = new HashSet<string> {"Drone", "Striker", "Beacon"};
+        public static readonly HashSet<string> SpawnedOnlyShipTypes = new HashSet<string> { "Drone", "Striker", "Beacon" };
         public static readonly HashSet<string> ArmedShipTypes = new HashSet<string> { "Cruiser", "Dreadnought", "Flagship", "Frigate", "Gunship", "Bumblebee", "Hornet", "Leafcutter", "Queen", "Wasp" };
-
+        public static readonly List<Map> Maps = new List<Map> { new Map(0, new Vector2(0, -215), new Vector2(0, 215), "Pluto"), new Map(1, new Vector2(0, -430), new Vector2(0, 430), "Uranus") };
+        public static readonly List<ObstacleMap> ObstacleMaps = new List<ObstacleMap> { new ObstacleMap(0, "None"), new ObstacleMap(1, "Maze") , new ObstacleMap(2, "Three Paths") , 
+            new ObstacleMap(0, "Forest"), new ObstacleMap(0, "The Wall") };
         public static int SquadMakerSide;
 
         public const bool UseWebSocketSharp = true; // Whether to use the "WebSocketSharp" implementation of WebSockets or use the "NativeWebSocket" implmentation
@@ -268,6 +270,7 @@ namespace Assets.Scripts
         public static int SelectedMiningOption = -1;
         public static int SelectedShipsLoadingMidLevelOption = -1;
         public static int SelectedEnemyShipTypes = -1;
+        public static LevelOptions LevelOptions;
 
 
         //public static KeyCode[] SquadKeys = new KeyCode[] { KeyCode.Alpha1, KeyCode.Alpha2, KeyCode.Alpha3, KeyCode.Alpha4, KeyCode.Alpha5, KeyCode.Alpha6, KeyCode.Alpha7, KeyCode.Alpha8, KeyCode.Alpha9, KeyCode.Alpha0 };
