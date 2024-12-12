@@ -1677,7 +1677,7 @@ namespace Assets.Scripts.Scenes
                             }
                         }
 
-                        ConfigData.LevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetCurrentId()}",
+                        ConfigData.LevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}",
                             ConfigData.SelectedLevelMapIndex, ConfigData.SelectedObstacleMapIndex, ConfigData.SelectedAsteroidOption, ConfigData.SelecteFogOfWarOption,
                             ConfigData.SelectedMiningOption, Utilities.RandomInt(100000) + 5000, ConfigData.StandardReinforcementsDelay, new List<SavedSquad>(),
                 ConfigData.SquadsChosenForLevel.Where((s) => s.Side == ConfigData.Configuration.AISide).ToList());
