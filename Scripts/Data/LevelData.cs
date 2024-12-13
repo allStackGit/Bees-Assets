@@ -26,7 +26,7 @@ namespace Assets.Scripts.Data
                     List<SavedSquad> enemySquads = Utilities.LoadSquadsFromJson(Utilities.JArrayToList<dynamic>(level.EnemySquads));
 
                     _levels.Add(new LevelOptions((int)level.Id, (int)level.Side, (string)level.Name, (int)level.MapIndex, (int)level.ObstacleMapIndex, (int)level.AsteroidOption, (int)level.FogOfWar,
-                        (int)level.Mining, (int)level.SupplyCapacity, (int)level.EnemyReinforcementDelay, enemyReinforcements, enemySquads));
+                        (int)level.Mining, (int)level.SupplyCapacity, (int) level.EnemyReinforcementsOption, (int)level.EnemyReinforcementDelay, 0, enemyReinforcements, enemySquads));
                 });
             });
 

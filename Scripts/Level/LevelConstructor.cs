@@ -27,12 +27,13 @@ namespace Assets.Scripts.Level
 
         public void AddShipsMidLevel(List<SavedSquad> squads, Vector2 spawnPoint, Vector2 moveToPoint)
         {
-            Debug.Log($"Adding ships into the middle of the level at {spawnPoint}");
+            //Debug.Log($"Adding ships into the middle of the level at {spawnPoint}: {Utilities.ListToString(squads)}");
             SetupShipsAndSquads(squads, spawnPoint, moveToPoint);
             squads.ForEach((squad) =>
             {
                 if (squad != null && !ConfigData.SquadsChosenForLevel.Contains(squad))
                 {
+                    //Debug.Log($"{squad} added to level");
                     ConfigData.SquadsChosenForLevel.Add(squad);
                 }
             });
@@ -159,7 +160,7 @@ namespace Assets.Scripts.Level
                             squadsList.Add(savedSquad);
 
                             if (ConfigData.ArmedShipTypes.Contains(type) || (side == ConfigData.Configuration.BeeSide && Level.OverrideBeeShipTypes.Count > 0) 
-                                || (side == ConfigData.Configuration.HumanSide && Level.OverrideHumanShipTypes.Count > 0) || ConfigData.SelectedEnemyShipTypes != 0)
+                                || (side == ConfigData.Configuration.HumanSide && Level.OverrideHumanShipTypes.Count > 0) || Level.CurrentLevelOptions.EnemyShipTypeOption != 0)
                             {
                                 hasArmedSquads = true;
                             }
@@ -256,7 +257,7 @@ namespace Assets.Scripts.Level
                         ConfigData.SquadsChosenForLevel.Add(s);
                     }
                 });
-                if (Level.ActivateLoadingShipsMidLevel)
+                if (Level.ActivateLoadingShipsMidLevel && Level.CurrentLevelOptions.EnemyReinforcements.Count == 0)
                 {
                     midLevelSquads.ForEach((s) =>
                     {

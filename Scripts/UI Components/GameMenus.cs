@@ -185,7 +185,7 @@ namespace Assets.Scripts.UIComponents
             }
 
             //Debug.Log($"LevelData: {LevelData.GetEnemyList()}");
-            Data.LevelOptions level = (Data.LevelOptions)Level.SaveLevelOptions.Clone();
+            LevelOptions level = (LevelOptions)Level.SaveLevelOptions.Clone();
             level.Name = LevelNameInput.text;
             level.SupplyCapacity = capacity;
             ConfigData.GetLevelData().AddLevel(level);

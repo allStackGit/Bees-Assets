@@ -64,9 +64,23 @@ namespace Assets.Scripts.Data
         /// </summary>
         public int SupplyCapacity;
         /// <summary>
+        /// Whether or not the map has Reinforcements
+        /// -1 = Random
+        /// 0 = No
+        /// 1 = Yes
+        /// </summary>
+        public int EnemyReinforcementsOption;
+        /// <summary>
         /// The amount of time (in seconds) before enemy reinforcement spawn outside of the map. A time of 0 indicates no reinforcements
         /// </summary>
         public int EnemyReinforcementDelay;
+        /// <summary>
+        /// Whether the enemy squads are only of a particular ship type and if so, what ship type. Does not get permanantly stored because the actual ships in the level get stored instead
+        /// -1 = Random, any ship type
+        /// 0  = All ship types
+        /// 1+ = The index of the ship type
+        /// </summary>
+        public int EnemyShipTypeOption;
         /// <summary>
         /// The enemy squad compositions of the reinforcements the enemy has. If it's empty there are not reinforcements
         /// </summary>
@@ -76,7 +90,8 @@ namespace Assets.Scripts.Data
         /// </summary>
         public List<SavedSquad> EnemySquads;
 
-        public LevelOptions(int id, int side, string name, int mapIndex, int obstacleMapIndex, int asteroidOption, int fogOfWar, int mining, int supplyCapacity, int enemyReinforcementDelay, List<SavedSquad> enemyReinforcements,
+        public LevelOptions(int id, int side, string name, int mapIndex, int obstacleMapIndex, int asteroidOption, int fogOfWar, int mining, int supplyCapacity, 
+            int enemyReinforcementsOption, int enemyReinforcementDelay, int enemyShipTypeOption, List<SavedSquad> enemyReinforcements,
              List<SavedSquad> enemySquads) 
         {
             Id = id;
@@ -88,7 +103,9 @@ namespace Assets.Scripts.Data
             FogOfWar = fogOfWar;
             Mining = mining;
             SupplyCapacity = supplyCapacity;
+            EnemyReinforcementsOption = enemyReinforcementsOption;
             EnemyReinforcementDelay = enemyReinforcementDelay;
+            EnemyShipTypeOption = enemyShipTypeOption;
             EnemyReinforcements = enemyReinforcements;
             EnemySquads = enemySquads;
         }
@@ -96,7 +113,8 @@ namespace Assets.Scripts.Data
         public string ToJson()
         {
             string json = $"{{\"Id\": {Id}, \"Side\": {Side}, \"Name\": \"{Name}\", \"MapIndex\": {MapIndex}, \"ObstacleMapIndex\": {ObstacleMapIndex}, \"AsteroidOption\": {AsteroidOption}, " +
-                $"\"FogOfWar\": {FogOfWar}, \"Mining\": {Mining}, \"SupplyCapacity\": {SupplyCapacity}, \"EnemyReinforcementDelay\": {EnemyReinforcementDelay}, \"EnemyReinforcements\": [";
+                $"\"FogOfWar\": {FogOfWar}, \"Mining\": {Mining}, \"SupplyCapacity\": {SupplyCapacity}, \"EnemyReinforcementsOption\": {EnemyReinforcementsOption}," +
+                $" \"EnemyReinforcementDelay\": {EnemyReinforcementDelay}, \"EnemyReinforcements\": [";
             
             if (EnemyReinforcements.Count > 0)
             {
@@ -135,7 +153,7 @@ namespace Assets.Scripts.Data
 
             enemyList += "\nReinforcements: \n";
 
-            if (EnemyReinforcements.Count > 0)
+            if (EnemyReinforcementsOption == 1)
             {
                 shipTypes.ForEach((type) =>
                 {

@@ -29,7 +29,7 @@ namespace Assets.Scripts.Scenes
     {
         public int Side;
 
-        public GameObject 
+        public GameObject
             BargeDragIcon, BeaconDragIcon, CarrierDragIcon, CruiserDragIcon, DreadnoughtDragIcon, DroneDragIcon,
             FactoryDragIcon, FireShipDragIcon, FlagshipDragIcon, FrigateDragIcon, GunshipDragIcon, ScoutDragIcon,
             StrikerDragIcon, WarpGateDragIcon,
@@ -48,12 +48,12 @@ namespace Assets.Scripts.Scenes
             FactoryFleetLabel, FireShipFleetLabel, FlagshipFleetLabel, FrigateFleetLabel, GunshipFleetLabel, ScoutFleetLabel,
             StrikerFleetLabel, WarpGateFleetLabel,
 
-            BeehiveFleetLabel, BumblebeeFleetLabel, CarpenterBeeFleetLabel, HoneybeeFleetLabel, HornetFleetLabel, LeafcutterFleetLabel, QueenFleetLabel, 
+            BeehiveFleetLabel, BumblebeeFleetLabel, CarpenterBeeFleetLabel, HoneybeeFleetLabel, HornetFleetLabel, LeafcutterFleetLabel, QueenFleetLabel,
             WaspFleetLabel, YellowJacketFleetLabel,
 
             SquadMakerSupplyCapacityLabel, ChosenSquadsSupplyCapacityLabel, Tooltip, TooltipText, ColorPicker, SavedSquadList,
             ChosenSquadList, SavedSquadPrefab, ChosenSquadPrefab,
-            
+
             SquadActionBox, DeadShipBox, DropZone, DropBox, DragStatusBox, ShipInfoBox, ShipInfoBoxTitle, ShipInfoBoxDetails, ShipInfoBoxIcon, SquadInfoBox,
             SquadInfoBoxTitle, SquadInfoBoxDetails, SquadInfoBoxIcon, ShipStatsBox, ShipStatsBoxDetails, SquadNameInput, ShipNameInput,
             SquadShipCount, SquadShipCountLabel, SquadColorLabel, SquadColorPickerButton, NextButton, StartButton, FogOfWarLabel, FogOfWarDropdown, MiningLabel,
@@ -75,7 +75,7 @@ namespace Assets.Scripts.Scenes
             GunshipGameSprite, ScoutGameSprite, WarpGateGameSprite, WarpGateAnimationSprite, WarpGateAnimationLoopSprite;
 
         public Sprite GunshipRemainsSprite;
-         
+
         public Canvas DragCanvas;
         public Vector2 TooltipOffset, ShipStatsBoxOffset, ScreenScaleFactor, ReferenceScreenSize;
         public SquadActionBox ActionBox = null;
@@ -118,8 +118,8 @@ namespace Assets.Scripts.Scenes
         private int _chosenMidLevelShipsOption = -1;
         private int _chosenEnemyShipTypes = -1;
         private string _nextScene = "";
-        private Data.LevelOptions _chosenLevel;
-        private Dictionary<int, Data.LevelOptions> _levelOptionIndexesToLevels = new Dictionary<int, Data.LevelOptions>();
+        private LevelOptions _chosenLevel;
+        private Dictionary<int, LevelOptions> _levelOptionIndexesToLevels = new Dictionary<int, LevelOptions>();
         private int _squadListOriginalScrollHeight, _squadListOptionsScrollHeight, _squadListLevelScrollHeight;
         int _capacity;
 
@@ -168,7 +168,7 @@ namespace Assets.Scripts.Scenes
         }
         private void Setup()
         {
-            //Debug.Log($"Squad Maker Setup called");
+            Debug.Log($"Squad Maker Setup called");
             // Universal pre setup
             _dropper = new Dropper(this);
             Side = ConfigData.SquadMakerSide;
@@ -187,9 +187,13 @@ namespace Assets.Scripts.Scenes
             //    StartButton.SetActive(true);
             //}
 
+            _squadListOriginalScrollHeight = 1135 + 800;
+            _squadListOptionsScrollHeight = _squadListOriginalScrollHeight - 800;
+            _squadListLevelScrollHeight = _squadListOriginalScrollHeight - 1180;
+
             // Make Dialogues
             DeleteSquadConfirmation = new Dialogue(DialoguePrefab, ConfigData.Configuration.AreYouSure, ConfigData.Configuration.DeleteSquadConfirmation,
-                new List<string>() {ConfigData.Configuration.Yes, ConfigData.Configuration.No}, new List<UnityAction>() {DeleteCurrentSquad});
+                new List<string>() { ConfigData.Configuration.Yes, ConfigData.Configuration.No }, new List<UnityAction>() { DeleteCurrentSquad });
 
             ClearSquadConfirmation = new Dialogue(DialoguePrefab, ConfigData.Configuration.AreYouSure, ConfigData.Configuration.ClearSquadConfirmation,
                 new List<string>() { ConfigData.Configuration.Yes, ConfigData.Configuration.No }, new List<UnityAction>() { ClearChanges });
@@ -243,27 +247,6 @@ namespace Assets.Scripts.Scenes
                 SkipOpposingSideSetup();
             }
 
-            _shipPartSprites["Barge"] = new List<Sprite> { BargeGameSprite };
-            //_shipPartSprites["Beacon"] = new List<Sprite> { BeaconGameSprite }; // no beacon because we won't be caching sprites for scout ships
-            _shipPartSprites["Carrier"] = new List<Sprite> { CarrierGameSprite };
-            _shipPartSprites["Cruiser"] = new List<Sprite> { CruiserGameSprite, CruiserCannonGameSprite };
-            _shipPartSprites["Dreadnought"] = new List<Sprite> { DreadnoughtGameSprite };
-            //_shipPartSprites["Drone"] = new List<Sprite> { DroneGameSprite }; // no drone because we won't be caching sprites for carrier ships
-            _shipPartSprites["Factory"] = new List<Sprite> { FactoryGameSprite, FactoryAnimationSprite };
-            _shipPartSprites["Fire Ship"] = new List<Sprite> { FireShipGameSprite };
-            _shipPartSprites["Flagship"] = new List<Sprite> { FlagshipGameSprite };
-            _shipPartSprites["Frigate"] = new List<Sprite> { FrigateGameSprite };
-            _shipPartSprites["Gunship"] = new List<Sprite> { GunshipGameSprite };
-            _shipPartSprites["Scout"] = new List<Sprite> { ScoutGameSprite };
-            //_shipPartSprites["Striker"] = new List<Sprite> { StrikerGameSprite }; // no striker because we won't be caching sprites for carrier ships
-            _shipPartSprites["Warp Gate"] = new List<Sprite> { WarpGateGameSprite, WarpGateAnimationSprite, WarpGateAnimationLoopSprite };
-
-
-            // No bee sprites because those don't change colors
-
-            // Same thing as above but for ship remains animations
-            _shipRemainsSprites["Gunship"] = new List<Sprite> { GunshipRemainsSprite };
-
             _capacity = ConfigData.StartingSettings.SupplyCapacity[Side - 1];
             // Post setup
             //Debug.Log("Post setup");
@@ -272,9 +255,7 @@ namespace Assets.Scripts.Scenes
             UpdateSquadShipCounter();
             SetupLevelDropdown();
 
-            _squadListOriginalScrollHeight = (int) ChosenSquadList.transform.parent.parent.GetComponent<RectTransform>().sizeDelta.y + 800;
-            _squadListOptionsScrollHeight = _squadListOriginalScrollHeight - 800;
-            _squadListLevelScrollHeight = _squadListOriginalScrollHeight - 1180;
+
 
 
             //Debug.Log($"{_squadListOriginalScrollHeight}, {_squadListOptionsScrollHeight}, {_squadListLevelScrollHeight}");
@@ -296,6 +277,7 @@ namespace Assets.Scripts.Scenes
         {
 
             // Hide the level options and extend the squad list size
+            ToggleLevelDetails(false);
             ToggleLevelOptions(false);
         }
 
@@ -390,6 +372,28 @@ namespace Assets.Scripts.Scenes
             _spriteTypes.Add("Scout", ScoutSprite);
             _spriteTypes.Add("Striker", StrikerSprite);
             _spriteTypes.Add("Warp Gate", WarpGateSprite);
+
+
+            _shipPartSprites["Barge"] = new List<Sprite> { BargeGameSprite };
+            //_shipPartSprites["Beacon"] = new List<Sprite> { BeaconGameSprite }; // no beacon because we won't be caching sprites for scout ships
+            _shipPartSprites["Carrier"] = new List<Sprite> { CarrierGameSprite };
+            _shipPartSprites["Cruiser"] = new List<Sprite> { CruiserGameSprite, CruiserCannonGameSprite };
+            _shipPartSprites["Dreadnought"] = new List<Sprite> { DreadnoughtGameSprite };
+            //_shipPartSprites["Drone"] = new List<Sprite> { DroneGameSprite }; // no drone because we won't be caching sprites for carrier ships
+            _shipPartSprites["Factory"] = new List<Sprite> { FactoryGameSprite, FactoryAnimationSprite };
+            _shipPartSprites["Fire Ship"] = new List<Sprite> { FireShipGameSprite };
+            _shipPartSprites["Flagship"] = new List<Sprite> { FlagshipGameSprite };
+            _shipPartSprites["Frigate"] = new List<Sprite> { FrigateGameSprite };
+            _shipPartSprites["Gunship"] = new List<Sprite> { GunshipGameSprite };
+            _shipPartSprites["Scout"] = new List<Sprite> { ScoutGameSprite };
+            //_shipPartSprites["Striker"] = new List<Sprite> { StrikerGameSprite }; // no striker because we won't be caching sprites for carrier ships
+            _shipPartSprites["Warp Gate"] = new List<Sprite> { WarpGateGameSprite, WarpGateAnimationSprite, WarpGateAnimationLoopSprite };
+
+
+            // No bee sprites because those don't change colors
+
+            // Same thing as above but for ship remains animations
+            _shipRemainsSprites["Gunship"] = new List<Sprite> { GunshipRemainsSprite };
 
             ActionBox = SquadActionBox.GetComponent<SquadActionBox>();
             ActionBox.Setup(this, EventSystem, ConfigData.Configuration.HumanSide);
@@ -693,7 +697,7 @@ namespace Assets.Scripts.Scenes
         // UI Methods
         private GameObject GetShipIconContainer(string shipType)
         {
-            switch(shipType)
+            switch (shipType)
             {
                 case "Barge":
                     return BargeShipIcon;
@@ -749,7 +753,7 @@ namespace Assets.Scripts.Scenes
         {
             // instantiate a squad label
             SavedSquadPrefab.SetActive(true);
-            GameObject squadLabel =  Instantiate(SavedSquadPrefab);
+            GameObject squadLabel = Instantiate(SavedSquadPrefab);
             squadLabel.name = $"Saved Squad - {savedSquad.Name} #{savedSquad.Id}";
             string shipType = savedSquad.GetMostValuableShip().GetFleetShip().Type;
 
@@ -950,12 +954,12 @@ namespace Assets.Scripts.Scenes
 
 
         // Utility methods
-        private int SupplyUsedInSquadMaker() 
+        private int SupplyUsedInSquadMaker()
         {
             int sum = 0;
             if (_currentSquad != null)
             {
-               sum += _currentSquad.GetCapacity();
+                sum += _currentSquad.GetCapacity();
             }
             return sum;
         }
@@ -1001,7 +1005,7 @@ namespace Assets.Scripts.Scenes
                 GetDropper().GetDragIcons().ForEach((icon) =>
                 {
                     //icon.GetIcon().GetComponent<Image>().color = color;
-                    icon.SetColor(color);   
+                    icon.SetColor(color);
                 });
                 _currentSquad.SetChanged(true);
             }
@@ -1116,7 +1120,7 @@ namespace Assets.Scripts.Scenes
             if (HasCurrentSquad)
             {
                 SavedSquad originalSquad = _currentSquad;
-                _currentSquad = (SavedSquad) originalSquad.Clone();
+                _currentSquad = (SavedSquad)originalSquad.Clone();
                 List<SquadShip> originalSquadShips = _currentSquad.GetSquadShips().ToList();
                 originalSquadShips.ForEach((originalSquadShip) =>
                 {
@@ -1144,7 +1148,7 @@ namespace Assets.Scripts.Scenes
             ConfigData.AllShips.SaveSquadData();
             ConfigData.AllShips.SaveFleetData();
             SquadSavingStatus.Show();
-            StartCoroutine(Utilities.CacheSquadCustomSprites((SavedSquad)_currentSquad.Clone(), _shipPartSprites, "ship", ConfigData.ShipSizes,  SquadSavingStatus));
+            StartCoroutine(Utilities.CacheSquadCustomSprites((SavedSquad)_currentSquad.Clone(), _shipPartSprites, "ship", ConfigData.ShipSizes, SquadSavingStatus));
             StartCoroutine(Utilities.CacheSquadCustomSprites((SavedSquad)_currentSquad.Clone(), _shipRemainsSprites, "remains", ConfigData.ShipRemainsSizes));
             //StartCoroutine(Utilities.CacheSquadRemainsSprites((SavedSquad)_currentSquad.Clone(), _shipRemainsSprites));
             ClearUnsavedSquad();
@@ -1163,7 +1167,7 @@ namespace Assets.Scripts.Scenes
 
             ConfigData.AllShips.SaveSquadData();
             ConfigData.AllShips.SaveFleetData();
-            if (oldSavedSquad.Color != _currentSquad.Color || oldSavedSquad.GetSquadShips().Count != _currentSquad.GetSquadShips().Count || 
+            if (oldSavedSquad.Color != _currentSquad.Color || oldSavedSquad.GetSquadShips().Count != _currentSquad.GetSquadShips().Count ||
                 oldSavedSquad.GetSquadShips().Any((s) => _currentSquad.GetShip(s.GetFleetShip().Id) == null))
             {
                 SquadSavingStatus.Show();
@@ -1343,7 +1347,7 @@ namespace Assets.Scripts.Scenes
                     $"Range: {shipInfo.PrintRange()}\n" +
                     $"Power: {shipInfo.PrintPower()}\n" +
                     $"Rate of Fire: {shipInfo.PrintRateOfFire()}\n" +
-                    $"Speed: {shipInfo.Speed}\n"+
+                    $"Speed: {shipInfo.Speed}\n" +
                     $"Capacity: {(ship != "Drone" && ship != "Striker" && ship != "Beacon" ? ConfigData.AllShips.GetShipsOfType(ship).First().GetMaxCapacity().ToString("N0") : "N/A")}";
 
                 UnityEngine.UI.Image image = ShipInfoBoxIcon.GetComponent<UnityEngine.UI.Image>();
@@ -1373,10 +1377,10 @@ namespace Assets.Scripts.Scenes
         {
             if (!GetDropper().IsDragging)
             {
-               
+
                 if (label != null)
                 {
-                    int id = int.Parse(label.name.Substring(label.name.LastIndexOf("#")+1));
+                    int id = int.Parse(label.name.Substring(label.name.LastIndexOf("#") + 1));
                     SavedSquad squad = ConfigData.AllShips.GetSavedSquads().Where((s) => s.Id == id).First();
                     SquadStatBlock stats = squad.Stats;
                     //Debug.Log($"Squad ID: {id}");
@@ -1408,9 +1412,9 @@ namespace Assets.Scripts.Scenes
                 }
                 else
                 {
-                    Debug.Log($"No selected object: {label}");  
+                    Debug.Log($"No selected object: {label}");
                 }
-                
+
             }
         }
         public void HideSquadInfo()
@@ -1443,7 +1447,7 @@ namespace Assets.Scripts.Scenes
                         $"Shots Fired: {_currentShipInfo.ShotsFired.ToString("N0")}     (#{ConfigData.AllShips.GetShipRanking(_currentShipInfo, "ShotsFired")})\n" +
                         $"Damage Done: {_currentShipInfo.DamageDone.ToString("N0")}     (#{ConfigData.AllShips.GetShipRanking(_currentShipInfo, "DamageDone")})\n" +
                         $"Damage Received: {_currentShipInfo.DamageReceived.ToString("N0")}     (#{ConfigData.AllShips.GetShipRanking(_currentShipInfo, "DamageReceived")})\n" +
-                        $"Kills: {_currentShipInfo.Kills.ToString("N0")}    (#{ConfigData.AllShips.GetShipRanking(_currentShipInfo, "Kills")})\n" + 
+                        $"Kills: {_currentShipInfo.Kills.ToString("N0")}    (#{ConfigData.AllShips.GetShipRanking(_currentShipInfo, "Kills")})\n" +
                         $"{(_currentShipInfo.Type == "Carpenter Bee" || _currentShipInfo.Type == "Factory" ? $"Minerals Mined: {_currentShipInfo.MineralsMined.ToString("N0")}  (#{ConfigData.AllShips.GetShipRanking(_currentShipInfo, "Minerals Mined")})" : "\n")}";
 
 
@@ -1499,10 +1503,10 @@ namespace Assets.Scripts.Scenes
 
 
                 //Debug.Log($"mouse: {mouse}, change: {change}");
-                Tooltip.transform.position = new Vector2(mouse.x + change.x, mouse.y + change.y); 
+                Tooltip.transform.position = new Vector2(mouse.x + change.x, mouse.y + change.y);
                 _showTooltip = true;
             }
-            
+
         }
         public void HideTooltip()
         {
@@ -1594,16 +1598,17 @@ namespace Assets.Scripts.Scenes
             // reset options
             ConfigData.BeeShipTypes = ConfigData.Configuration.VisibleBeeShipTypes;
             ConfigData.HumanShipTypes = ConfigData.Configuration.VisibleHumanShipTypes;
-            ConfigData.SelectedObstacleMapIndex = -1;
-            ConfigData.SelectedAsteroidOption = -1;
-            ConfigData.SelectedLevelMapIndex = -1;
-            ConfigData.SelecteFogOfWarOption = -1;
-            ConfigData.SelectedMiningOption = -1;
-            ConfigData.SelectedShipsLoadingMidLevelOption = -1;
-            ConfigData.SelectedEnemyShipTypes = -1;
+            //ConfigData.SelectedObstacleMapIndex = -1;
+            //ConfigData.SelectedAsteroidOption = -1;
+            //ConfigData.SelectedLevelMapIndex = -1;
+            //ConfigData.SelecteFogOfWarOption = -1;
+            //ConfigData.SelectedMiningOption = -1;
+            //ConfigData.SelectedShipsLoadingMidLevelOption = -1;
+            //ConfigData.SelectedEnemyShipTypes = -1;
 
             // add the sqauds
             ConfigData.IsUserLoadingCustomSquads = true;
+            ConfigData.SquadsChosenForLevel = ConfigData.SquadsChosenForLevel.Where((chosenSquad) => chosenSquad.Side != Side).ToList();
             _chosenSquads.ForEach((chosenSquad) =>
             {
                 Debug.Log($"Chose {chosenSquad.Name} for level");
@@ -1618,19 +1623,26 @@ namespace Assets.Scripts.Scenes
 
                 if (Side == ConfigData.Configuration.SquadMakerFirstSide)
                 {
-                    ConfigData.SelectedObstacleMapIndex = _chosenObstacleOption;
-                    ConfigData.SelectedAsteroidOption = _chosenAsteroidsOption;
-                    ConfigData.SelectedLevelMapIndex = _chosenMapOption;
-                    ConfigData.SelecteFogOfWarOption = _chosenFogOfWarOption;
-                    ConfigData.SelectedMiningOption = _chosenMiningOption;
-                    ConfigData.SelectedShipsLoadingMidLevelOption = _chosenMidLevelShipsOption;
-                    ConfigData.SelectedEnemyShipTypes = _chosenEnemyShipTypes;
+                    //ConfigData.SelectedObstacleMapIndex = _chosenObstacleOption;
+                    //ConfigData.SelectedAsteroidOption = _chosenAsteroidsOption;
+                    //ConfigData.SelectedLevelMapIndex = _chosenMapOption;
+                    //ConfigData.SelecteFogOfWarOption = _chosenFogOfWarOption;
+                    //ConfigData.SelectedMiningOption = _chosenMiningOption;
+                    //ConfigData.SelectedShipsLoadingMidLevelOption = _chosenMidLevelShipsOption;
+                    //ConfigData.SelectedEnemyShipTypes = _chosenEnemyShipTypes;
 
                     if (_chosenLevel != null)
                     {
                         ConfigData.LevelOptions = _chosenLevel;
+                        Debug.Log($"ConfigData.LevelOptions is {_chosenLevel.Name}");
+                        ConfigData.LevelOptions.EnemySquads.ForEach((enemySquad) =>
+                        {
+                            Debug.Log($"Chose {enemySquad.Name} for level");
+                            ConfigData.IsUserLoadingCustomEnemySquads = true;
+                            ConfigData.SquadsChosenForLevel.Add((SavedSquad)enemySquad.Clone());
+                        });
                     }
-                    else
+                    else if (!ConfigData.ChooseRandomLevel)
                     {
                         if (_chosenOpposingForceOption == 0) // [alert] order needs to be changed
                         {
@@ -1650,6 +1662,7 @@ namespace Assets.Scripts.Scenes
                             ConfigData.SquadMakerSide = ConfigData.Configuration.SquadMakerSecondSide;
                             ConfigData.IsUserLoadingCustomEnemySquads = true;
                             _nextScene = "Squad Maker";
+                            SetLevelOptions();
                             Invoke(nameof(LoadScene), .25f);
                             return;
                         }
@@ -1677,24 +1690,47 @@ namespace Assets.Scripts.Scenes
                             }
                         }
 
-                        ConfigData.LevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}",
-                            ConfigData.SelectedLevelMapIndex, ConfigData.SelectedObstacleMapIndex, ConfigData.SelectedAsteroidOption, ConfigData.SelecteFogOfWarOption,
-                            ConfigData.SelectedMiningOption, Utilities.RandomInt(100000) + 5000, ConfigData.StandardReinforcementsDelay, new List<SavedSquad>(),
-                ConfigData.SquadsChosenForLevel.Where((s) => s.Side == ConfigData.Configuration.AISide).ToList());
+                        SetLevelOptions();
 
                     }
+                    else // a random level has been chosen and therefore custom enemy squads associated with that level will be loaded
+                    {
+                        Debug.Log($"A random level has been chosen");
+                        ConfigData.IsUserLoadingCustomEnemySquads = true;
+                    }
 
-                    
+
+                }
+                else if (ConfigData.LevelOptions != null)
+                {
+                    Debug.Log($"Has level options and is choosing custom enemy squads from squad maker");
+
+                }
+                else
+                {
+                    Debug.Log($"Does not have level options and is choosing custom enemy squads from squad maker");
                 }
 
             }
-            
+            else
+            {
+                Debug.Log($"Randomized opposing side");
+            }
+
             //ConfigData.SquadsChosenForLevel.ForEach((s) => Debug.Log(s.ToString()));
             _nextScene = "Hivemind Training";
             Invoke(nameof(LoadScene), .5f);
             //SceneManager.LoadSceneAsync("Training Room One Screen", LoadSceneMode.Single); // [alert] this should go to the actual level based on the level number
             //SceneManager.LoadSceneAsync("RL Tiny Box", LoadSceneMode.Single); // [alert] [rl-training]
         }
+        private void SetLevelOptions(){
+            Debug.Log($"Setting level options for configdata");
+            ConfigData.LevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}",
+                _chosenMapOption, _chosenObstacleOption, _chosenAsteroidsOption, _chosenFogOfWarOption, _chosenMiningOption, -1,
+                _chosenMidLevelShipsOption, ConfigData.StandardReinforcementsDelay, _chosenEnemyShipTypes, new List<SavedSquad>(),
+                ConfigData.SquadsChosenForLevel.Where((s) => s.Side == ConfigData.Configuration.AISide).ToList());
+        }
+
         private void LoadScene()
         {
             Debug.Log("Loading scene!");
@@ -1744,6 +1780,8 @@ namespace Assets.Scripts.Scenes
             {
                 ToggleLevelOptions(option == 1);
             }
+
+            ConfigData.ChooseRandomLevel = option == 0;
 
         }
         public void ChangeObstaclesDropdown(int option)

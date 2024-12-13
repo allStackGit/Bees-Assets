@@ -122,6 +122,7 @@ namespace Assets.Scripts.Scenes
         public List<SquadTab> SquadTabs;
         public LevelOptions SaveLevelOptions;
         public LevelOptions CurrentLevelOptions;
+        public Data.Map MapData;
 
 
 
@@ -173,15 +174,16 @@ namespace Assets.Scripts.Scenes
             {
                 CurrentLevelOptions.MapIndex = Utilities.RandomInt(Maps.Count);              
             }
+            MapIndex = CurrentLevelOptions.MapIndex;
+            MapData = ConfigData.Maps[CurrentLevelOptions.MapIndex];
             Map = Instantiate(Maps[CurrentLevelOptions.MapIndex]).GetComponent<UI_Components.Map>();
-            //Map.Setup()
-            Debug.Log($"Playing on the {Map.Name} map");
+            Debug.Log($"Playing on the {MapData.Name} ({Map.Name}) at index #{CurrentLevelOptions.MapIndex} map");
 
             if ((CurrentLevelOptions.ObstacleMapIndex == -1 && Utilities.CoinToss()) || CurrentLevelOptions.ObstacleMapIndex > 0) // User chose random and random chose obstacles OR user chose obstacles
             {
                 HasObstacles = true;
                 Debug.Log($"The map has obstacles");
-                if (ConfigData.SelectedObstacleMapIndex == -1)
+                if (CurrentLevelOptions.ObstacleMapIndex == -1)
                 {
                     CurrentLevelOptions.ObstacleMapIndex = Utilities.RandomInt(_obstacleLists.Count - 1) + 1;
                 }
@@ -239,10 +241,22 @@ namespace Assets.Scripts.Scenes
                 Debug.Log($"The map does not have mining");
             }
 
-            if ((CurrentLevelOptions.EnemyReinforcements == -1 && Utilities.CoinToss()) || ConfigData.SelectedShipsLoadingMidLevelOption == 1)
+            if ((CurrentLevelOptions.EnemyReinforcementsOption == -1 && Utilities.CoinToss()) || CurrentLevelOptions.EnemyReinforcementsOption == 1)
             {
                 ActivateLoadingShipsMidLevel = true;
                 Debug.Log($"The map has ships loading midlevel");
+
+                if (CurrentLevelOptions.EnemyReinforcements.Count > 0)
+                {
+                    CurrentLevelOptions.EnemyReinforcements.ForEach((savedSquad) =>
+                    {
+                        if (savedSquad != null && !ConfigData.SquadsChosenForLevel.Contains(savedSquad))
+                        {
+                            //Debug.Log($"{savedSquad} added to mid level squads for ");
+                            MidLevelSquads[savedSquad.Side -1].Add(savedSquad);
+                        }
+                    });
+                }
             }
             else
             {
@@ -250,7 +264,7 @@ namespace Assets.Scripts.Scenes
                 Debug.Log($"The map does not have ships loading midlevel");
             }
 
-            if (ConfigData.SelectedEnemyShipTypes == -1)
+            if (CurrentLevelOptions.EnemyShipTypeOption == -1)
             {
                 if (ConfigData.Configuration.AISide == ConfigData.Configuration.BeeSide)
                 {
@@ -264,7 +278,7 @@ namespace Assets.Scripts.Scenes
                 }
 
             }
-            else if (ConfigData.SelectedEnemyShipTypes == 0)
+            else if (CurrentLevelOptions.EnemyShipTypeOption == 0)
             {
                 Debug.Log($"The map does not have a singular enemy ship type");
                 if (OverrideBeeShipTypes.Count > 0)
@@ -289,12 +303,12 @@ namespace Assets.Scripts.Scenes
             {
                 if (ConfigData.Configuration.AISide == ConfigData.Configuration.BeeSide)
                 {
-                    BeeShipTypes = new List<string>() { BeeShipTypes[ConfigData.SelectedEnemyShipTypes - 1] };
+                    BeeShipTypes = new List<string>() { BeeShipTypes[CurrentLevelOptions.EnemyShipTypeOption] };
                     Debug.Log($"The user has selected enemy ship type: {BeeShipTypes[0]}");
                 }
                 else
                 {
-                    HumanShipTypes = new List<string>() { HumanShipTypes[ConfigData.SelectedEnemyShipTypes - 1] };
+                    HumanShipTypes = new List<string>() { HumanShipTypes[CurrentLevelOptions.EnemyShipTypeOption] };
                     Debug.Log($"The user has selected enemy ship type: {HumanShipTypes[0]}");
                 }
             }
@@ -405,8 +419,6 @@ namespace Assets.Scripts.Scenes
                     Audio.gameObject.SetActive(false);
                 }
             }
-            CurrentLevelOptions = (LevelOptions)ConfigData.LevelOptions.Clone();
-
             SetupLevel();
 
             //// Setup map bounds
@@ -500,7 +512,7 @@ namespace Assets.Scripts.Scenes
 
             if (ActivateCollisionAsteroids)
             {
-                if (ConfigData.SelectedAsteroidOption == 2)
+                if (CurrentLevelOptions.AsteroidOption == 2)
                 {
                     AsteroidMinimumSpawnRate /= 2;
                     AsteroidMaxSpawnRate /= 2;
@@ -550,7 +562,7 @@ namespace Assets.Scripts.Scenes
                 return Time.realtimeSinceStartup - StartTime >= ReinforcementsDelay;
             }, () =>
             {
-                Debug.Log($"{ReinforcementsDelay} seconds have passed, spawning new enemy ships");
+                Debug.Log($"{ReinforcementsDelay} seconds have passed, spawning new enemy ships for side: {ConfigData.Configuration.AISide}");
                 Vector2 moveToPoint = StartingPositions[ConfigData.Configuration.AISide - 1];
                 LevelConstructor.AddShipsMidLevel(MidLevelSquads[ConfigData.Configuration.AISide - 1], StartingPositions[ConfigData.Configuration.AISide - 1] * new Vector2(0, 2), moveToPoint);
 
@@ -841,6 +853,17 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
         public void SetupLevel()
         {
             StartTime = Time.realtimeSinceStartup;
+
+            if (ConfigData.ChooseRandomLevel)
+            {
+                List<LevelOptions> possibleLevels = ConfigData.GetLevelData().GetLevels().Where((level) => level.Side == ConfigData.Configuration.AISide).ToList();
+                CurrentLevelOptions = (LevelOptions)possibleLevels[Utilities.RandomInt(possibleLevels.Count)].Clone();
+            }
+            else
+            {
+                CurrentLevelOptions = (LevelOptions)ConfigData.LevelOptions.Clone();
+            }
+            Debug.Log($"Playing level: {CurrentLevelOptions.Name}");
             // Check settings and config variables
             SetConfigOptionsAndOverrides();
 
@@ -859,6 +882,7 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
             {
                 Debug.Log($"The map does not have randomized options");
                 MapIndex = OverrideMapIndex;
+                MapData = ConfigData.Maps[MapIndex];
                 Map = Instantiate(Maps[MapIndex]).GetComponent<UI_Components.Map>();
 
                 
@@ -887,6 +911,7 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
                 Map.FogOfWar.SetActive(false);
             }
 
+            SetupHivemind();
 
             float end = (Time.realtimeSinceStartup - StartTime) * 1000; // seconds to milliseconds
             Debug.Log($"It took {Math.Round(end, 2)} ms to set up the level and {Math.Round(Time.realtimeSinceStartup, 2)}s total time.");
@@ -932,6 +957,9 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
         }
         public void ResetGameData()
         {
+            MidLevelSquads[ConfigData.Configuration.HumanSide - 1].Clear();
+            MidLevelSquads[ConfigData.Configuration.BeeSide - 1].Clear();
+
             ConfigData.AllShips.ReplaceDeadSquadShips();
             GameState state = GetState();
             state.ResetState();
@@ -971,16 +999,33 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
         }
         public void MakeSaveLevel()
         {
+            if (ReinforcementsDelay == 0)
+            {
+                ReinforcementsDelay = ConfigData.StandardReinforcementsDelay;
+            }
             SaveLevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}", MapIndex,
-                ChosenObstaclesIndex, ConfigData.SelectedAsteroidOption == 2 ? 2 : (ActivateCollisionAsteroids ? 1 : 0),
-                ActivateFogOfWar ? 1 : 0, ActivateMining ? 1 : 0, Utilities.RandomInt(100000) + 5000, ReinforcementsDelay, MidLevelSquads[ConfigData.Configuration.AISide - 1],
-                ConfigData.SquadsChosenForLevel.Where((s) => s.Side == ConfigData.Configuration.AISide).ToList());
+                ChosenObstaclesIndex, CurrentLevelOptions.AsteroidOption == 2 ? 2 : (ActivateCollisionAsteroids ? 1 : 0),
+                ActivateFogOfWar ? 1 : 0, ActivateMining ? 1 : 0, -1, ActivateLoadingShipsMidLevel ? 1 : 0, ReinforcementsDelay, CurrentLevelOptions.EnemyShipTypeOption, 
+                MidLevelSquads[ConfigData.Configuration.AISide - 1], ConfigData.SquadsChosenForLevel.Where((s) => s.Side == ConfigData.Configuration.AISide).ToList());
         }
         public void SetupShips()
         {
-            ConfigData.SquadsChosenForLevel = ConfigData.SquadsChosenForLevel.Where((chosenSquad) => !MidLevelSquads[chosenSquad.Side - 1].Contains(chosenSquad)).ToList();
-            MidLevelSquads[ConfigData.Configuration.HumanSide - 1].Clear();
-            MidLevelSquads[ConfigData.Configuration.BeeSide - 1].Clear();
+
+           
+            if (ConfigData.ChooseRandomLevel)
+            {
+                ConfigData.SquadsChosenForLevel = ConfigData.SquadsChosenForLevel.Where((chosenSquad) => !MidLevelSquads[chosenSquad.Side - 1].Contains(chosenSquad) && 
+                chosenSquad.Side != CurrentLevelOptions.Side).ToList();
+                CurrentLevelOptions.EnemySquads.ForEach((enemySquad) =>
+                {
+                    Debug.Log($"Chose {enemySquad.Name} for level");
+                    ConfigData.SquadsChosenForLevel.Add((SavedSquad)enemySquad.Clone());
+                });
+            }
+            else
+            {
+                ConfigData.SquadsChosenForLevel = ConfigData.SquadsChosenForLevel.Where((chosenSquad) => !MidLevelSquads[chosenSquad.Side - 1].Contains(chosenSquad)).ToList();
+            }
             LevelConstructor.SetupShips();
             CalculateShipClearances();
         }
