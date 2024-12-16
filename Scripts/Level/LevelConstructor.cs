@@ -13,7 +13,6 @@ namespace Assets.Scripts.Level
     public class LevelConstructor
     {
         public LevelStage Level;
-        public int SquadNumber;
         public LevelConstructor(LevelStage level)
         {
             Level = level;
@@ -23,23 +22,6 @@ namespace Assets.Scripts.Level
             Level.IsLevelSetupOnServer = false;
             ConfigData.Socket.SendRequest(new SetupLevelRequest(new SetupLevel(ConfigData.GetLevel(), ConfigData.GetUserId(), ConfigData.Version),
                 ConfigData.StandardMaxTimeOnQueue, Level));
-        }
-
-        public void AddShipsMidLevel(List<SavedSquad> squads, Vector2 spawnPoint, Vector2 moveToPoint)
-        {
-            //Debug.Log($"Adding ships into the middle of the level at {spawnPoint}: {Utilities.ListToString(squads)}");
-            SetupShipsAndSquads(squads, spawnPoint, moveToPoint);
-            squads.ForEach((squad) =>
-            {
-                if (squad != null && !ConfigData.SquadsChosenForLevel.Contains(squad))
-                {
-                    //Debug.Log($"{squad} added to level");
-                    ConfigData.SquadsChosenForLevel.Add(squad);
-                }
-            });
-
-            
-            
         }
         public void SetCarrierShipFleetships()
         {
@@ -57,220 +39,208 @@ namespace Assets.Scripts.Level
                 }
             });
         }
+        /// <summary>
+        /// Generates random ships for the side and if the side is also the enemy side and there should be reinforcements it generates random reinforcements as well
+        /// </summary>
+        /// <param name="side"></param>
+        public void AddRandomSquads(int side)
+        {
+            for (int option = 0; option < (Level.CurrentLevelOptions.EnemyReinforcementsOption == 1 ? 2 : 1); option++)
+            {
+                bool hasArmedSquads = false;
+                List<SavedSquad> squadsList = new List<SavedSquad>();
+                for (int i = 0; i < Level.CurrentLevelOptions.EnemySquadGenerationCount; i++)
+                {
+                    string type = Level.BeeShipTypes.ElementAt(Random.Range(0, Level.BeeShipTypes.Count));
+                    if (side == ConfigData.Configuration.HumanSide)
+                    {
+                        type = Level.HumanShipTypes.ElementAt(Random.Range(0, Level.HumanShipTypes.Count));
+                    }
+                    while (Level.HasObstacles && side == ConfigData.Configuration.BeeSide && type == "Queen" && Level.BeeShipTypes.Count > 1)
+                    {
+                        type = Level.BeeShipTypes.ElementAt(Random.Range(0, Level.BeeShipTypes.Count));
+                    }
+                    int squadId = Utilities.GetNegativeSavedSquadId();
+                    SavedSquad savedSquad = new SavedSquad(squadId, side, $"{type}s #{squadId}", Vector2.zero, false, false,
+                        ConfigData.StartingSettings.DefaultShootingStrategy, ConfigData.UnsetColor, null);
+                    savedSquad.SetupRandomShips(type);
+                    squadsList.Add(savedSquad);
 
-        public void SetupShips()
+                    if (ConfigData.ArmedShipTypes.Contains(type) || (side == ConfigData.Configuration.BeeSide && Level.OverrideBeeShipTypes.Count > 0)
+                        || (side == ConfigData.Configuration.HumanSide && Level.OverrideHumanShipTypes.Count > 0) || Level.CurrentLevelOptions.EnemyShipTypeOption != 0)
+                    {
+                        hasArmedSquads = true;
+                    }
+                    if (i == Level.CurrentLevelOptions.EnemySquadGenerationCount - 1 && !hasArmedSquads)
+                    {
+                        i--;
+                        squadsList.Remove(savedSquad);
+                    }
+                }
+
+                if (option == 0)
+                {
+                    if (side == ConfigData.Configuration.AISide)
+                    {
+                        Level.CurrentLevelOptions.EnemySquads.AddRange(squadsList);
+                    }
+                    else
+                    {
+                        Level.CurrentLevelOptions.ChosenSquads.AddRange(squadsList);
+                    }
+
+                }
+                else
+                {
+                    if (side == ConfigData.Configuration.AISide)
+                    {
+                        Level.CurrentLevelOptions.EnemyReinforcements.AddRange(squadsList);
+                    }
+                }
+            }
+        }
+        /// <summary>
+        /// Adds the override squads for each level
+        /// </summary>
+        /// <param name="side"></param>
+        public void AddOverrideSquads(int side)
+        {
+            List<SavedSquad> preloadSquads = new List<SavedSquad> {
+                ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 0),  // human squad // 1 Barge, #0
+                ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 1),  // human squad // 1 Carrier, #1
+                ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 2),  // human squad // 1 Cruiser, #2s
+                ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 3),  // human squad // 1 Dreadnought, #3
+                ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 4),  // human squad // 1 Factory, #4
+                ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 5),  // human squad // 1 Fire Ship, #5
+                ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 6),  // human squad // 1 Flagship, #6
+                ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 7),  // human squad // 1 Frigate, #7
+                ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 8),  // human squad // 1 Gunship, #8
+                ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 9),  // human squad // 1 Scout, #9
+                ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 10),  // human squad // 1 Warp Gate, #10
+
+                //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 34),  // human squad
+                //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 35),  // human squad
+                //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 36),  // human squad
+                //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 37),  // human squad
+                //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 38),  // human squad
+                //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 39),  // human squad
+                //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 40),  // human squad
+                //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 46),  // human squad (Warp gate ships)
+                //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 47),  // human squad (3 red carriers)
+                //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 52),  // human squad (Warp gate ship and others)
+
+
+
+                ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 11),  // bee squad // 1 Bumblebee #11
+                ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 12),  // bee squad // 1 Carpenter Bee #12
+                ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 13),  // bee squad // 1 Honeybee #13
+                ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 14),  // bee squad // 1 Hornet #14
+                ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 15),  // bee squad // 1 Leafcutter #15
+                //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 16),  // bee squad // 1 Queen #16
+                ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 17),  // bee squad // 1 Wasp #17 
+                //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 18),  // bee squad // 1 Yellow Jacket #18
+                //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 48),  // bee squad  // 1 Beehive #48
+                    //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 21),  // bee squad // Line of 10 Hornets #21
+
+                //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 62),  // bee squad  // 10 Yellow Jackets #62
+                //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 63),  // bee squad  // 1 Yellow Jacket #63
+
+
+            };
+
+            List<SavedSquad> midLevelSquads = new List<SavedSquad> {
+                ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 0),  // human squad // 1 Barge, #0
+                ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 1),  // human squad // 1 Carrier, #1
+                //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 2),  // human squad // 1 Cruiser, #2
+                //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 3),  // human squad // 1 Dreadnought, #3
+                //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 4),  // human squad // 1 Factory, #4
+                //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 5),  // human squad // 1 Fire Ship, #5
+                ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 6),  // human squad // 1 Flagship, #6
+                //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 7),  // human squad // 1 Frigate, #7
+                //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 8),  // human squad // 1 Gunship, #8
+                //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 9),  // human squad // 1 Scout, #9
+                //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 10),  // human squad // 1 Warp Gate, #10
+                    //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 19),  // human squad // New ships with colors, #19
+
+
+
+                ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 11),  // bee squad // 1 Bumblebee #11
+                ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 12),  // bee squad // 1 Carpenter Bee #12
+                ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 13),  // bee squad // 1 Honeybee #13
+                ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 14),  // bee squad // 1 Hornet #14
+                //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 15),  // bee squad // 1 Leafcutter #15
+                //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 16),  // bee squad // 1 Queen #16
+                ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 17),  // bee squad // 1 Wasp #17 
+                //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 18),  // bee squad // 1 Yellow Jacket #18
+
+            };
+
+            if (side == ConfigData.Configuration.AISide)
+            {
+                preloadSquads.ForEach((squad) =>
+                {
+                    if (squad != null && !Level.CurrentLevelOptions.EnemySquads.Contains(squad))
+                    {
+                        Level.CurrentLevelOptions.EnemySquads.Add(squad);
+                    }
+                });
+
+                if (Level.CurrentLevelOptions.EnemyReinforcementsOption == 1)
+                {
+                    preloadSquads.ForEach((squad) =>
+                    {
+                        if (squad != null && !Level.CurrentLevelOptions.EnemyReinforcements.Contains(squad))
+                        {
+                            Level.CurrentLevelOptions.EnemyReinforcements.Add(squad);
+                        }
+                    });
+                }
+            }
+            else
+            {
+                preloadSquads.ForEach((squad) =>
+                {
+                    if (squad != null && !Level.CurrentLevelOptions.ChosenSquads.Contains(squad))
+                    {
+                        Level.CurrentLevelOptions.ChosenSquads.Add(squad);
+                    }
+                });
+            }
+            
+        }
+        public void SetupShips(int side)
         {
             GameState state = Level.GetState();
             ConfigData.AllShips = new Ships(ConfigData.GetFleetData(), ConfigData.GetSavedSquadsData());
 
 
-            if (Level.IsTrainingNueralNetwork || Level.UseSemiRandomSquads || Level.UseFullyRandomSquads)
+            if (Level.IsTrainingNueralNetwork || Level.UseFullyRandomSquads || ((Level.UseFullyRandomEnemySquads || Level.CurrentLevelOptions.EnemySquadGenerationCount > 0) && side == ConfigData.Configuration.AISide))
             {
-                ConfigData.SquadsChosenForLevel.Clear();
-            }else if (Level.UseFullyRandomEnemySquads)
+                AddRandomSquads(side);
+            }
+            else if ((Level.UseOverrideSquads && side == ConfigData.Configuration.UserSide) || (Level.UseOverrideEnemySquads && side == ConfigData.Configuration.AISide))
             {
-                ConfigData.SquadsChosenForLevel = ConfigData.SquadsChosenForLevel.Where((squad) => squad.Side == ConfigData.Configuration.UserSide).ToList();
+                AddOverrideSquads(side);
             }
             else
             {
                 ConfigData.AllShips.ReplaceDeadSquadShips();
             }
-            SquadNumber = Random.Range(1, ConfigData.Configuration.SquadGenerationCount);
-            SetShips(ConfigData.Configuration.UserSide);
-            SetShips(ConfigData.Configuration.AISide);
 
             // Setup entities on the level
-            SetupShipsAndSquads(ConfigData.SquadsChosenForLevel.Where((s) => s.Side == ConfigData.Configuration.UserSide).OrderByDescending((s) => s.Side).ToList(), 
-                Level.StartingPositions[ConfigData.Configuration.UserSide - 1], Vector2.zero);
-            SetupShipsAndSquads(ConfigData.SquadsChosenForLevel.Where((s) => s.Side == ConfigData.Configuration.AISide).OrderByDescending((s) => s.Side).ToList(), 
-                Level.StartingPositions[ConfigData.Configuration.AISide - 1], Vector2.zero);
-
-            // set the fleetships for the carrier ships
-            SetCarrierShipFleetships();
-
-
-            if (state.GetSquadsBySide(ConfigData.Configuration.UserSide).Count > 0 && state.GetSquadsBySide(ConfigData.Configuration.AISide).Count > 0 && !Level.IsTraining && Level.HasPlayer)
+            //Debug.Log($"Setting up ships for {side} at {Level.StartingPositions[side - 1]}");
+            if (side == ConfigData.Configuration.AISide)
             {
-                state.SelectSquad(state.GetSquadByNumber(ConfigData.Configuration.UserSide, 1));
+                SpawnShipsAndSquads(Level.CurrentLevelOptions.EnemySquads, Level.StartingPositions[side - 1], Vector2.zero);
             }
-            else if (!Level.IsTraining && Level.HasPlayer)
+            else
             {
-                Debug.Log($"User squads: {state.GetSquadsBySide(ConfigData.Configuration.UserSide).Count}, AI squads: {state.GetSquadsBySide(ConfigData.Configuration.AISide).Count}");
-                Level.Pause();
-                Level.Menus.NoAliveShipsAlert.SetActive(true);
-
+                SpawnShipsAndSquads(Level.CurrentLevelOptions.ChosenSquads, Level.StartingPositions[side - 1], Vector2.zero);
+                // set the fleetships for the carrier ships
+                SetCarrierShipFleetships();
             }
         }
-        public void SetShips(int side)
-        {
-            //GameState state = Level.GetState();
-            
-
-            if (ConfigData.SquadsChosenForLevel.Where((squad) => squad.Side == side).ToList().Count == 0)
-            {
-                //Debug.Log($"There were no chosen squads for {side}");
-                List<SavedSquad> preloadSquads = new List<SavedSquad>();
-                List<SavedSquad> midLevelSquads = new List<SavedSquad>();
-                if (Level.UseSemiRandomSquads && (side != ConfigData.Configuration.AISide || !Level.UseFullyRandomEnemySquads))
-                {
-
-                    List<List<int>> indexes = new List<List<int>>();
-                    indexes.Add(new List<int> {16, 41, 42, 43, 44, 45}); // bee indexes
-                    indexes.Add(new List<int> {34, 35, 36, 37, 38, 39, 40}); // human indexes
-
-                    for (int option = 0; option < 2; option++)
-                    {
-                        List<SavedSquad> squadsList = option == 0 ? preloadSquads : midLevelSquads;
-                        for (int i = 0; i < SquadNumber; i++)
-                        {
-                            int chosenIndex = indexes[side - 1][Random.Range(0, indexes[side - 1].Count)];
-
-                            indexes[side - 1].Remove(chosenIndex);
-                            SavedSquad squad = ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Id == chosenIndex);
-                            if (squad != null)
-                            {
-                                squadsList.Add(squad);
-                            }
-                        }
-                    }
-                    
-                    
-                } else if (Level.UseFullyRandomSquads || (Level.UseFullyRandomEnemySquads && side != ConfigData.Configuration.UserSide)) {
-
-                    for (int option = 0; option < 2; option++)
-                    {
-                        bool hasArmedSquads = false;
-                        int squadNumber = SquadNumber;
-                        List<SavedSquad> squadsList = option == 0 ? preloadSquads : midLevelSquads;
-                        for (int i = 0; i < squadNumber; i++)
-                        {
-                            string type = Level.BeeShipTypes.ElementAt(Random.Range(0, Level.BeeShipTypes.Count));
-                            if (side == ConfigData.Configuration.HumanSide)
-                            {
-                                type = Level.HumanShipTypes.ElementAt(Random.Range(0, Level.HumanShipTypes.Count));
-                            }
-                            while (Level.HasObstacles && side == ConfigData.Configuration.BeeSide && type == "Queen" && Level.BeeShipTypes.Count > 1)
-                            {
-                                type = Level.BeeShipTypes.ElementAt(Random.Range(0, Level.BeeShipTypes.Count));
-                            }
-                            int squadId = Utilities.GetNegativeSavedSquadId();
-                            SavedSquad savedSquad = new SavedSquad(squadId, side, $"{type}s #{squadId}", Vector2.zero, false, false,
-                                ConfigData.StartingSettings.DefaultShootingStrategy, ConfigData.UnsetColor, null);
-                            savedSquad.SetupRandomShips(type);
-                            squadsList.Add(savedSquad);
-
-                            if (ConfigData.ArmedShipTypes.Contains(type) || (side == ConfigData.Configuration.BeeSide && Level.OverrideBeeShipTypes.Count > 0) 
-                                || (side == ConfigData.Configuration.HumanSide && Level.OverrideHumanShipTypes.Count > 0) || Level.CurrentLevelOptions.EnemyShipTypeOption != 0)
-                            {
-                                hasArmedSquads = true;
-                            }
-                            if (i == squadNumber - 1 && !hasArmedSquads)
-                            {
-                                i--;
-                                squadsList.Remove(savedSquad);
-                            }
-                        }
-                    }
-                    
-
-
-                }
-                else
-                {
-                    preloadSquads = new List<SavedSquad> {
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 0),  // human squad // 1 Barge, #0
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 1),  // human squad // 1 Carrier, #1
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 2),  // human squad // 1 Cruiser, #2s
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 3),  // human squad // 1 Dreadnought, #3
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 4),  // human squad // 1 Factory, #4
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 5),  // human squad // 1 Fire Ship, #5
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 6),  // human squad // 1 Flagship, #6
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 7),  // human squad // 1 Frigate, #7
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 8),  // human squad // 1 Gunship, #8
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 9),  // human squad // 1 Scout, #9
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 10),  // human squad // 1 Warp Gate, #10
-
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 34),  // human squad
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 35),  // human squad
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 36),  // human squad
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 37),  // human squad
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 38),  // human squad
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 39),  // human squad
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 40),  // human squad
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 46),  // human squad (Warp gate ships)
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 47),  // human squad (3 red carriers)
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 52),  // human squad (Warp gate ship and others)
-
-
-
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 11),  // bee squad // 1 Bumblebee #11
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 12),  // bee squad // 1 Carpenter Bee #12
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 13),  // bee squad // 1 Honeybee #13
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 14),  // bee squad // 1 Hornet #14
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 15),  // bee squad // 1 Leafcutter #15
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 16),  // bee squad // 1 Queen #16
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 17),  // bee squad // 1 Wasp #17 
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 18),  // bee squad // 1 Yellow Jacket #18
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 48),  // bee squad  // 1 Beehive #48
-                         //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 21),  // bee squad // Line of 10 Hornets #21
-
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 62),  // bee squad  // 10 Yellow Jackets #62
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 63),  // bee squad  // 1 Yellow Jacket #63
-
-
-                    };
-
-                    midLevelSquads = new List<SavedSquad> {
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 0),  // human squad // 1 Barge, #0
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 1),  // human squad // 1 Carrier, #1
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 2),  // human squad // 1 Cruiser, #2
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 3),  // human squad // 1 Dreadnought, #3
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 4),  // human squad // 1 Factory, #4
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 5),  // human squad // 1 Fire Ship, #5
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 6),  // human squad // 1 Flagship, #6
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 7),  // human squad // 1 Frigate, #7
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 8),  // human squad // 1 Gunship, #8
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 9),  // human squad // 1 Scout, #9
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 10),  // human squad // 1 Warp Gate, #10
-                         //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 19),  // human squad // New ships with colors, #19
-
-
-
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 11),  // bee squad // 1 Bumblebee #11
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 12),  // bee squad // 1 Carpenter Bee #12
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 13),  // bee squad // 1 Honeybee #13
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 14),  // bee squad // 1 Hornet #14
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 15),  // bee squad // 1 Leafcutter #15
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 16),  // bee squad // 1 Queen #16
-                        ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 17),  // bee squad // 1 Wasp #17 
-                        //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 18),  // bee squad // 1 Yellow Jacket #18
-
-                    };
-                }
-
-                
-
-                preloadSquads.ForEach((s) =>
-                {
-                    if (s != null && !ConfigData.SquadsChosenForLevel.Contains(s))  
-                    {
-                        ConfigData.SquadsChosenForLevel.Add(s);
-                    }
-                });
-                if (Level.ActivateLoadingShipsMidLevel && Level.CurrentLevelOptions.EnemyReinforcements.Count == 0)
-                {
-                    midLevelSquads.ForEach((s) =>
-                    {
-                        if (s != null && !ConfigData.SquadsChosenForLevel.Contains(s))
-                        {
-                            Level.MidLevelSquads[side - 1].Add(s);
-                        }
-                    });
-                }
-
-            }
-        }
-        private void SetupShipsAndSquads(List<SavedSquad> squads, Vector2 startingPosition, Vector2 moveToPoint)
+        public void SpawnShipsAndSquads(List<SavedSquad> squads, Vector2 startingPosition, Vector2 moveToPoint)
         {
             GameState state = Level.GetState();
             List<Squad> setupSquads = new List<Squad>();
@@ -502,7 +472,7 @@ namespace Assets.Scripts.Level
                     }
 
 
-                    position.x = squad.StartingPosition.x; // center the squad on the origina x point. The y point should be on the same level as the previous squads
+                    position.x = squad.StartingPosition.x; // center the squad on the original x point. The y point should be on the same level as the previous squads
 
                     // increase the vertical margin for this squad from the starting position of the first squad. The half height of this squad and the half height
                     // of the first squad on the previous level.

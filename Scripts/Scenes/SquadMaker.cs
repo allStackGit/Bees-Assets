@@ -110,12 +110,13 @@ namespace Assets.Scripts.Scenes
         private bool _doubleClick = false;
         private bool _startingLevel = false;
         private int _chosenOpposingForceOption;
+        private int _enemySquadGenerationCount;
         private int _chosenObstacleOption = -1;
         private int _chosenAsteroidsOption = -1;
         private int _chosenMapOption = -1;
         private int _chosenFogOfWarOption = -1;
         private int _chosenMiningOption = -1;
-        private int _chosenMidLevelShipsOption = -1;
+        private int _chosenEnemyReinforcementsOption = -1;
         private int _chosenEnemyShipTypes = -1;
         private string _nextScene = "";
         private LevelOptions _chosenLevel;
@@ -169,6 +170,7 @@ namespace Assets.Scripts.Scenes
         private void Setup()
         {
             Debug.Log($"Squad Maker Setup called");
+            ConfigData.ChooseRandomLevel = false;
             // Universal pre setup
             _dropper = new Dropper(this);
             Side = ConfigData.SquadMakerSide;
@@ -1606,15 +1608,6 @@ namespace Assets.Scripts.Scenes
             //ConfigData.SelectedShipsLoadingMidLevelOption = -1;
             //ConfigData.SelectedEnemyShipTypes = -1;
 
-            // add the sqauds
-            ConfigData.IsUserLoadingCustomSquads = true;
-            ConfigData.SquadsChosenForLevel = ConfigData.SquadsChosenForLevel.Where((chosenSquad) => chosenSquad.Side != Side).ToList();
-            _chosenSquads.ForEach((chosenSquad) =>
-            {
-                Debug.Log($"Chose {chosenSquad.Name} for level");
-                ConfigData.SquadsChosenForLevel.Add((SavedSquad)chosenSquad.Clone());
-            });
-
             //Debug.Log($"SMS: {ConfigData.SquadMakerSide}, SMFS: {ConfigData.Configuration.SquadMakerFirstSide}, SMSS: {ConfigData.Configuration.SquadMakerSecondSide}");
             // go to next side if you need to
             if (!IsRandomizedOpposingSide)
@@ -1635,26 +1628,29 @@ namespace Assets.Scripts.Scenes
                     {
                         ConfigData.LevelOptions = _chosenLevel;
                         Debug.Log($"ConfigData.LevelOptions is {_chosenLevel.Name}");
-                        ConfigData.LevelOptions.EnemySquads.ForEach((enemySquad) =>
+                        ConfigData.IsUserLoadingCustomEnemySquads = true;
+
+                        // add the sqauds
+                        ConfigData.IsUserLoadingCustomSquads = true;
+                        _chosenSquads.ForEach((chosenSquad) =>
                         {
-                            Debug.Log($"Chose {enemySquad.Name} for level");
-                            ConfigData.IsUserLoadingCustomEnemySquads = true;
-                            ConfigData.SquadsChosenForLevel.Add((SavedSquad)enemySquad.Clone());
+                            Debug.Log($"Chose {chosenSquad.Name} for level");
+                            ConfigData.LevelOptions.ChosenSquads.Add((SavedSquad)chosenSquad.Clone());
                         });
                     }
                     else if (!ConfigData.ChooseRandomLevel)
                     {
                         if (_chosenOpposingForceOption == 0) // [alert] order needs to be changed
                         {
-                            ConfigData.Configuration.SquadGenerationCount = 4;
+                            _enemySquadGenerationCount = 4;
                         }
                         else if (_chosenOpposingForceOption == 1)
                         {
-                            ConfigData.Configuration.SquadGenerationCount = 8;
+                            _enemySquadGenerationCount = 8;
                         }
                         else if (_chosenOpposingForceOption == 2)
                         {
-                            ConfigData.Configuration.SquadGenerationCount = 12;
+                            _enemySquadGenerationCount = 12;
                         }
                         else if (_chosenOpposingForceOption == 3)
                         {
@@ -1697,6 +1693,9 @@ namespace Assets.Scripts.Scenes
                     {
                         Debug.Log($"A random level has been chosen");
                         ConfigData.IsUserLoadingCustomEnemySquads = true;
+                        List<LevelOptions> possibleLevels = ConfigData.GetLevelData().GetLevels().Where((level) => level.Side == ConfigData.Configuration.AISide).ToList();
+                        ConfigData.LevelOptions = (LevelOptions)possibleLevels[Utilities.RandomInt(possibleLevels.Count)].Clone();
+                        ConfigData.LevelOptions.ChosenSquads = _chosenSquads;
                     }
 
 
@@ -1704,7 +1703,11 @@ namespace Assets.Scripts.Scenes
                 else if (ConfigData.LevelOptions != null)
                 {
                     Debug.Log($"Has level options and is choosing custom enemy squads from squad maker");
-
+                    _chosenSquads.ForEach((chosenSquad) =>
+                    {
+                        Debug.Log($"Chose {chosenSquad.Name} for level");
+                        ConfigData.LevelOptions.EnemySquads.Add(chosenSquad);
+                    });
                 }
                 else
                 {
@@ -1724,11 +1727,13 @@ namespace Assets.Scripts.Scenes
             //SceneManager.LoadSceneAsync("RL Tiny Box", LoadSceneMode.Single); // [alert] [rl-training]
         }
         private void SetLevelOptions(){
+            ConfigData.IsUserLoadingCustomSquads = true;
+
             Debug.Log($"Setting level options for configdata");
             ConfigData.LevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}",
                 _chosenMapOption, _chosenObstacleOption, _chosenAsteroidsOption, _chosenFogOfWarOption, _chosenMiningOption, -1,
-                _chosenMidLevelShipsOption, ConfigData.StandardReinforcementsDelay, _chosenEnemyShipTypes, new List<SavedSquad>(),
-                ConfigData.SquadsChosenForLevel.Where((s) => s.Side == ConfigData.Configuration.AISide).ToList());
+                _chosenEnemyReinforcementsOption, ConfigData.StandardReinforcementsDelay, _chosenEnemyShipTypes, _enemySquadGenerationCount, new List<SavedSquad>(),
+               new List<SavedSquad>(), _chosenSquads);
         }
 
         private void LoadScene()
@@ -1806,7 +1811,7 @@ namespace Assets.Scripts.Scenes
         }
         public void ChangeShipsLoadingMidLevelDropdown(int option)
         {
-            _chosenMidLevelShipsOption = option - 1;
+            _chosenEnemyReinforcementsOption = option - 1;
         }
         public void ChangeEnemyShipTypes(int option)
         {

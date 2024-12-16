@@ -82,6 +82,12 @@ namespace Assets.Scripts.Data
         /// </summary>
         public int EnemyShipTypeOption;
         /// <summary>
+        /// The upper limit on how many enemy squads should be randomly generated
+        /// 0 = No squads randomly generated, enemy squads are already picked
+        /// 1+ = The maximum number of squads to generate
+        /// </summary>
+        public int EnemySquadGenerationCount;
+        /// <summary>
         /// The enemy squad compositions of the reinforcements the enemy has. If it's empty there are not reinforcements
         /// </summary>
         public List<SavedSquad> EnemyReinforcements;
@@ -89,10 +95,14 @@ namespace Assets.Scripts.Data
         /// The enemy squad compositions that the player will face
         /// </summary>
         public List<SavedSquad> EnemySquads;
+        /// <summary>
+        /// The squad compositions that the player chose
+        /// </summary>
+        public List<SavedSquad> ChosenSquads;
 
         public LevelOptions(int id, int side, string name, int mapIndex, int obstacleMapIndex, int asteroidOption, int fogOfWar, int mining, int supplyCapacity, 
-            int enemyReinforcementsOption, int enemyReinforcementDelay, int enemyShipTypeOption, List<SavedSquad> enemyReinforcements,
-             List<SavedSquad> enemySquads) 
+            int enemyReinforcementsOption, int enemyReinforcementDelay, int enemyShipTypeOption, int enemySquadGenerationCount, List<SavedSquad> enemyReinforcements,
+             List<SavedSquad> enemySquads, List<SavedSquad> chosenSquads) 
         {
             Id = id;
             Side = side;
@@ -106,8 +116,10 @@ namespace Assets.Scripts.Data
             EnemyReinforcementsOption = enemyReinforcementsOption;
             EnemyReinforcementDelay = enemyReinforcementDelay;
             EnemyShipTypeOption = enemyShipTypeOption;
+            EnemySquadGenerationCount = enemySquadGenerationCount;
             EnemyReinforcements = enemyReinforcements;
             EnemySquads = enemySquads;
+            ChosenSquads = chosenSquads;
         }
 
         public string ToJson()
@@ -188,13 +200,19 @@ namespace Assets.Scripts.Data
             clone.EnemyReinforcements = new List<SavedSquad>();
             EnemyReinforcements.ForEach((squad) =>
             {
-                clone.EnemyReinforcements.Add(squad);
+                clone.EnemyReinforcements.Add((SavedSquad)squad.Clone());
             });
 
             clone.EnemySquads = new List<SavedSquad>();
             EnemySquads.ForEach((squad) =>
             {
-                clone.EnemySquads.Add(squad);
+                clone.EnemySquads.Add((SavedSquad)squad.Clone());
+            });
+
+            clone.ChosenSquads = new List<SavedSquad>();
+            ChosenSquads.ForEach((squad) =>
+            {
+                clone.ChosenSquads.Add((SavedSquad)squad.Clone());
             });
 
             return clone;

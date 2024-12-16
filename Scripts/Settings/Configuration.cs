@@ -76,7 +76,6 @@ namespace Assets.Scripts.Settings
         public int SquadMakerFirstSide;
         public int SquadMakerSecondSide;
         public int TotalLevels; // [alert] should be set to actual number of levels
-        public int SquadGenerationCount;
 
 
         public bool MirrorLocalStorageToServer => UseLocalStorage && MirrorStorage;
@@ -112,7 +111,6 @@ namespace Assets.Scripts.Settings
             CarrierCarryStrikerMax = (int)so.CarrierCarryStrikerMax;
             CarrierSquadCount = (int)so.CarrierSquadCount;
             TotalLevels = (int)so.TotalLevels;
-            SquadGenerationCount = (int)so.SquadGenerationCount;
 
             Yes = (string)so.Yes;
             No = (string)so.No;

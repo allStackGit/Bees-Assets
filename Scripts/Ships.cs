@@ -275,13 +275,13 @@ namespace Assets.Scripts
                 }
             });
 
-            ConfigData.SquadsChosenForLevel.ForEach((squad) =>
-            {
-                if (ReplaceDeadShipsInSquad(squad))
-                {
-                    replaced = true;
-                }
-            });
+            //ConfigData.SquadsChosenForLevel.ForEach((squad) =>
+            //{
+            //    if (ReplaceDeadShipsInSquad(squad))
+            //    {
+            //        replaced = true;
+            //    }
+            //});
             if (replaced)
             {
                 Debug.Log("Replaced dead ships");

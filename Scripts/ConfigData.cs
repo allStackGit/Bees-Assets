@@ -373,7 +373,7 @@ namespace Assets.Scripts
         //Carrying variables - Changing variables that need to be carried between scenes
 
         public static Ships AllShips = null; 
-        public static List<SavedSquad> SquadsChosenForLevel = new List<SavedSquad>();
+        //public static List<SavedSquad> SquadsChosenForLevel = new List<SavedSquad>();
         public static bool IsLoadingUserData = false;
         public static bool IsUserLoadingCustomSquads, IsUserLoadingCustomEnemySquads;
         public static bool AreAllSettingsLoaded => (ShipInfo != null && ShipInfo.IsLoaded) && (Configuration != null && Configuration.IsLoaded)

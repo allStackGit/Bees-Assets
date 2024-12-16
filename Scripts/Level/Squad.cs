@@ -202,9 +202,10 @@ namespace Assets.Scripts.Level
                 }
 
                 //Debug.Log($"Sizefactor for {ship.Name}: {sizeFactor}");
-                //Debug.Log($"Local starting position for {ship.Name}: {new Vector2(x, y)}");
                 //ship.transform.localPosition = Level.ForceBounds((position.x + adjustment.x), (position.y + adjustment.y));
                 ship.transform.localPosition = new Vector2(position.x + adjustment.x, position.y + adjustment.y);
+                //Debug.Log($"Local starting position for {ship.Name}: {ship.transform.localPosition}");
+
             });
 
         }

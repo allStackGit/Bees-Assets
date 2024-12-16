@@ -73,6 +73,7 @@ namespace Assets.Scripts.Data
                 SavedSquad newSquad = (SavedSquad) squad.Clone();
                 //Debug.Log($"Squad location after cloning: {newSquad.StartingPosition}");
                 _savedSquadsList.Add(newSquad);
+                Debug.Log($"{squad} added to saved squads list");
             }
             else
             {
