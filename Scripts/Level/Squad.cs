@@ -111,7 +111,7 @@ namespace Assets.Scripts.Level
             SetShootingStrategy(shootingStrategy);
             SetOpponent();
 
-            if (Color != ConfigData.UnsetColor)
+            if (Color != ConfigData.UnsetColor && IsUserControlled)
             {
                 HasCustomColor = true;
                 SquadBoxColor = new Color(Color.r, Color.g, Color.b, ConfigData.GetUIColor("squadbox-default-color").a);

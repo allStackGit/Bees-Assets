@@ -173,10 +173,10 @@ namespace Assets.Scripts.Server
         }
         private void Message(byte[] bytes)
         {
-            //Debug.Log($"Got message from server for {_scene}");
+            //Debug.Log($"Got message from server");
             // getting the message as a string
             string message = System.Text.Encoding.UTF8.GetString(bytes);
-            //Debug.Log($"Server message: {message} Thread: {Thread.CurrentThread.ManagedThreadId}");
+            //Debug.Log($"Server message: {message}");
             ServerResponse response = JsonUtility.FromJson<ServerResponse>(message);
             //Debug.Log(response);
             string type = response.Type;
@@ -369,13 +369,13 @@ namespace Assets.Scripts.Server
             DataFileRequest standingRequest = (DataFileRequest)GetStandingRequest(userDataResponse.Hash);
             if (standingRequest != null)
             {
+                standingRequest.TimeOnQueue = Time.unscaledTime - standingRequest.StartTime;
+                ConfigData.__TotalLatency += standingRequest.TimeOnQueue;
 
                 if (userDataResponse.Filename != "" && userDataResponse.Contents != "")
                 {
-                    standingRequest.Status = 1;
                     standingRequest.Response = userDataResponse;
-                    standingRequest.TimeOnQueue = Time.unscaledTime - standingRequest.StartTime;
-                    ConfigData.__TotalLatency += standingRequest.TimeOnQueue;
+                    standingRequest.Status = 1;
                     //Debug.Log($"Set the response {userDataResponse.Filename}, {userDataResponse.Contents}");
                 }
                 else
@@ -388,17 +388,39 @@ namespace Assets.Scripts.Server
                             UserProgressData userProgressData = ConfigData.GetUserProgressData();
                             userProgressData.GetDataFile().WriteData(userProgressData.GetDefaultJson());
                             break;
+
+                        case ConfigData.FleetDataFilename:
+                            FleetData fleetData = ConfigData.GetFleetData();
+                            fleetData.GetDataFile().WriteData(fleetData.GetDefaultJson());
+                            break;
+
+                        case ConfigData.SavedSquadsDataFilename:
+                            SavedSquadsData savedSquadsData = ConfigData.GetSavedSquadsData();
+                            savedSquadsData.GetDataFile().WriteData(savedSquadsData.GetDefaultJson());
+                            break;
+
+                        case ConfigData.UserSettingsFilename:
+                            UserSettingsData userSettingsData = ConfigData.GetUserSettingsData();
+                            userSettingsData.GetDataFile().WriteData(userSettingsData.GetDefaultJson());
+                            break;
+
+                        case ConfigData.LevelsDataFilename:
+                            LevelData levelData = ConfigData.GetLevelData();
+                            levelData.GetDataFile().WriteData(levelData.GetDefaultJson());
+                            break;
                     }
+                    standingRequest.Status = -1;
+
                     //Task.Run(async () =>
                     //{
                     //    await Task.Delay(500);
                     //    standingRequest.Status = -1; // indicates the the request needs to be resent
                     //    standingRequest.Response = userDataResponse;
                     //});
-                    
+
 
                 }
-                
+
                 //Debug.Log("Set the response");
             }
             else

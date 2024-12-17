@@ -17,7 +17,6 @@ namespace Assets.Scripts.Data
 
         private string _textContents;
         private object _jsonObject;
-        private const string _waitingMessage = "{\"status\": \"waiting\"}";
         private DataFileRequest _request = null;
         private bool _isDataLoaded = false;
 
@@ -57,7 +56,7 @@ namespace Assets.Scripts.Data
             {
                 _request = new DataFileRequest(new GetUserData(ConfigData.GetUserId(), Name), this, ConfigData.StandardMaxTimeOnQueue);
                 ConfigData.Socket.SendRequest(_request);
-                contents = _waitingMessage;
+                contents = ConfigData.WaitingMessage;
             }
             
             SetContents(contents);
@@ -78,24 +77,29 @@ namespace Assets.Scripts.Data
             if (_request != null)
             {
                 DataFileRequest standingRequest = (DataFileRequest)ConfigData.Socket.GetStandingRequest(_request.Hash);
-                if (standingRequest.Status == 1)
+                if (standingRequest != null)
                 {
-                    ConfigData.Socket.StandingRequests.Remove(standingRequest);
-                    //Debug.Log($"The standing request has completed, setting the contents: {standingRequest.Response.Contents}");
-                    SetContents(standingRequest.Response.Contents);
-                    _isDataLoaded = true;
-                    return;
+                    if (standingRequest.Status == 1)
+                    {
+                        ConfigData.Socket.StandingRequests.Remove(standingRequest);
+                        //Debug.Log($"The standing request has completed, setting the contents: {standingRequest.Response.Contents}");
+                        SetContents(standingRequest.Response.Contents);
+                        _isDataLoaded = true;
+                        return;
+                    }
+                    else if (standingRequest.Status == -1)
+                    {
+                        //Debug.Log($"The standing request has completed but needs to be resent");
+                        ConfigData.Socket.StandingRequests.Remove(standingRequest);
+                        ReadContents();
+                        return;
+                    }
+                    else
+                    {
+                        //Debug.Log("Still waiting for datafile request to complete");
+                    }
                 }
-                else if (standingRequest.Status == -1)
-                {
-                    Debug.Log($"The standing request has completed but needs to be resent");
-                    ReadContents();
-                    return;
-                }
-                else
-                {
-                    //Debug.Log("Still waiting for datafile request to complete");
-                }
+
             }
 
         }
@@ -127,7 +131,7 @@ namespace Assets.Scripts.Data
         }
         public bool IsDataLoaded()
         {
-            return _isDataLoaded;
+            return _isDataLoaded && _textContents != ConfigData.WaitingMessage;
         }
         public bool Exists()
         {   

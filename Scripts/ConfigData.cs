@@ -259,6 +259,7 @@ namespace Assets.Scripts
         public static HashSet<long> UsedHashes = new HashSet<long>();
         public static WaitForEndOfFrame WaitForEndOfFrame = new WaitForEndOfFrame();
         public static int MaxThreads;
+        public static string WaitingMessage = "{\"status\": \"waiting\"}";
 
         /// <summary>
         /// The obstacle map index that the user has selected, -1 means no selection
@@ -503,11 +504,16 @@ namespace Assets.Scripts
         {
             if (!IsAllUserDataLoaded)
             {
-                //Debug.Log("Checking Data files");
+                //Debug.Log("Checking Data files...");
+                //Debug.Log($"Waiting for User Progress Data");
                 GetUserProgressData().WaitForData();
+                //Debug.Log($"Waiting for Fleet Data");
                 GetFleetData().WaitForData();
+                //Debug.Log($"Waiting for Saved Squads Data");
                 GetSavedSquadsData().WaitForData();
+                //Debug.Log($"Waiting for User Settings Data");
                 GetUserSettingsData().WaitForData();
+                //Debug.Log($"Waiting for Level Data");
                 GetLevelData().WaitForData();
             }
         }

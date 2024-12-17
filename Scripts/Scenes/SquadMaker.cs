@@ -169,7 +169,7 @@ namespace Assets.Scripts.Scenes
         }
         private void Setup()
         {
-            Debug.Log($"Squad Maker Setup called");
+            //Debug.Log($"Squad Maker Setup called");
             ConfigData.ChooseRandomLevel = false;
             // Universal pre setup
             _dropper = new Dropper(this);
