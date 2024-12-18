@@ -247,10 +247,6 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 1318501751415289206, guid: 31e2b232088eb6749aeed7426fa5f98a, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 1318501751415289206, guid: 31e2b232088eb6749aeed7426fa5f98a, type: 3}
       propertyPath: m_LocalRotation.w
       value: 1
       objectReference: {fileID: 0}
@@ -295,8 +291,24 @@ PrefabInstance:
       value: 48
       objectReference: {fileID: 0}
     - target: {fileID: 1318501751415289207, guid: 31e2b232088eb6749aeed7426fa5f98a, type: 3}
+      propertyPath: m_fontColor.b
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1318501751415289207, guid: 31e2b232088eb6749aeed7426fa5f98a, type: 3}
+      propertyPath: m_fontColor.g
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1318501751415289207, guid: 31e2b232088eb6749aeed7426fa5f98a, type: 3}
+      propertyPath: m_fontColor.r
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1318501751415289207, guid: 31e2b232088eb6749aeed7426fa5f98a, type: 3}
       propertyPath: m_fontSizeBase
       value: 48
+      objectReference: {fileID: 0}
+    - target: {fileID: 1318501751415289207, guid: 31e2b232088eb6749aeed7426fa5f98a, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4278190080
       objectReference: {fileID: 0}
     - target: {fileID: 1318501751415289207, guid: 31e2b232088eb6749aeed7426fa5f98a, type: 3}
       propertyPath: checkPaddingRequired

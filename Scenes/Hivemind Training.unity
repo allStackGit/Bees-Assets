@@ -5151,7 +5151,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: ReplaceDeadShips
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: AsteroidSpawnRate
@@ -5167,7 +5167,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: UseMouseScrolling
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: IsTrainingHiveMind

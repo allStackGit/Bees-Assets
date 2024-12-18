@@ -188,7 +188,7 @@ namespace Assets.Scripts.Scenes
                 {
                     CurrentLevelOptions.ObstacleMapIndex = Utilities.RandomInt(_obstacleLists.Count - 1) + 1;
                 }
-                _chosenObstacles = _obstacleLists.GetValueOrDefault(ChosenObstaclesIndex);
+                _chosenObstacles = _obstacleLists.GetValueOrDefault(CurrentLevelOptions.ObstacleMapIndex);
 
                 if ((CurrentLevelOptions.AsteroidOption == -1 && Utilities.RandomInt(4) == 0) || CurrentLevelOptions.AsteroidOption > 0) // User chose random and random chose asteroids OR User chose asteroids
                 {
@@ -208,12 +208,13 @@ namespace Assets.Scripts.Scenes
                 {
                     HasObstacles = true;
                     _chosenObstacles = EmptyObstacleList;
-                    ChosenObstaclesIndex = 0;
+                    CurrentLevelOptions.ObstacleMapIndex = 0;
                     ActivateCollisionAsteroids = true;
                     Debug.Log($"The map has asteroids but not obstacles");
                 }
                 else
                 {
+                    CurrentLevelOptions.ObstacleMapIndex = 0;
                     ActivateCollisionAsteroids = false;
                     HasObstacles = false;
                     Debug.Log($"The map does not have asteroids or obstacles");
@@ -1006,7 +1007,7 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
                 ReinforcementsDelay = ConfigData.StandardReinforcementsDelay;
             }
             SaveLevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}", MapIndex,
-                ChosenObstaclesIndex, CurrentLevelOptions.AsteroidOption == 2 ? 2 : (ActivateCollisionAsteroids ? 1 : 0),
+                CurrentLevelOptions.ObstacleMapIndex, CurrentLevelOptions.AsteroidOption == 2 ? 2 : (ActivateCollisionAsteroids ? 1 : 0),
                 ActivateFogOfWar ? 1 : 0, ActivateMining ? 1 : 0, -1, ActivateLoadingShipsMidLevel ? 1 : 0, ReinforcementsDelay, CurrentLevelOptions.EnemyShipTypeOption, 0,
                 CurrentLevelOptions.EnemyReinforcements.ToList(), CurrentLevelOptions.EnemySquads.ToList(), new List<SavedSquad>());
         }
