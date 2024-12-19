@@ -221,20 +221,18 @@ namespace Assets.Scripts.Level
             {
                 AddOverrideSquads(side);
             }
-            else
-            {
-                ConfigData.AllShips.ReplaceDeadSquadShips();
-            }
 
             // Setup entities on the level
-            Debug.Log($"Setting up ships for {side} at {Level.StartingPositions[side - 1]}");
+            //Debug.Log($"Setting up ships for {side} at {Level.StartingPositions[side - 1]}");
+            //Debug.Log($"Chosen squads: {Utilities.ListToString(Level.CurrentLevelOptions.ChosenSquads)}");
             if (side == ConfigData.Configuration.AISide)
             {
-                Debug.Log($"Squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.EnemySquads)}");
+                //Debug.Log($"Squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.EnemySquads)}");
                 SpawnShipsAndSquads(Level.CurrentLevelOptions.EnemySquads, Level.StartingPositions[side - 1], Vector2.zero);
             }
             else
             {
+                //Debug.Log($"Squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.ChosenSquads)}");
                 SpawnShipsAndSquads(Level.CurrentLevelOptions.ChosenSquads, Level.StartingPositions[side - 1], Vector2.zero);
                 // set the fleetships for the carrier ships
                 SetCarrierShipFleetships();

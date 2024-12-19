@@ -79,15 +79,15 @@ namespace Assets.Scripts
         private static readonly Random _rnd = new Random();
         public static int Hash()
         {
-            return RandomInt(1000000000); // 1bil
+            return RandomInt(); 
         }
         public static long UniqueHash()
         {
-            long hash = RandomLong(1000000000) * RandomLong(1000); // 1tril
+            long hash = RandomLong() * RandomLong();
             while (ConfigData.UsedHashes.Contains(hash))
             {
                 Debug.Log($"A duplicate hash was found! {hash}");
-                hash = RandomLong(1000000000) * RandomLong(1000);
+                hash = RandomLong() * RandomLong();
             }
             ConfigData.UsedHashes.Add(hash);
             return hash;
@@ -104,11 +104,11 @@ namespace Assets.Scripts
         /// <summary>
         /// Returns an integer between 0 (inclusive) and max (exclusive)
         /// </summary>
-        public static int RandomInt(int max) 
+        public static int RandomInt(int max = int.MaxValue) 
         {
             return _rnd.Next(max);
         }
-        public static long RandomLong(int max)
+        public static long RandomLong(int max = int.MaxValue)
         {
             return (long) _rnd.Next(max);
         }

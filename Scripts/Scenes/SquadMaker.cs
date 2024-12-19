@@ -1703,10 +1703,10 @@ namespace Assets.Scripts.Scenes
                 else if (ConfigData.LevelOptions != null)
                 {
                     Debug.Log($"Has level options and is choosing custom enemy squads from squad maker");
+                    ConfigData.LevelOptions.EnemyShipTypeOption = 0;
                     _chosenSquads.ForEach((chosenSquad) =>
                     {
-                        Debug.Log($"Chose {chosenSquad.Name} for level");
-                        ConfigData.LevelOptions.EnemySquads.Add(chosenSquad);
+                        ConfigData.LevelOptions.EnemySquads.Add(chosenSquad.ConvertToUnsavedSquad());
                     });
                 }
                 else

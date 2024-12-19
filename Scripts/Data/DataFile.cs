@@ -19,12 +19,14 @@ namespace Assets.Scripts.Data
         private object _jsonObject;
         private DataFileRequest _request = null;
         private bool _isDataLoaded = false;
+        private int _userId;
 
         public DataFile(string name)
         {
             this.Name = name;
             this.Path = ConfigData.GetBasePath();
             this.FullPath = $"{Path}{Name}{Extension}";
+            _userId = ConfigData.GetUserId();
             //Debug.Log($"Full file path is {FullPath}");
         }
         private void MakeFileIfNecessary()
@@ -54,7 +56,7 @@ namespace Assets.Scripts.Data
             }
             else
             {
-                _request = new DataFileRequest(new GetUserData(ConfigData.GetUserId(), Name), this, ConfigData.StandardMaxTimeOnQueue);
+                _request = new DataFileRequest(new GetUserData(_userId, Name), this, ConfigData.StandardMaxTimeOnQueue);
                 ConfigData.Socket.SendRequest(_request);
                 contents = ConfigData.WaitingMessage;
             }
@@ -147,7 +149,7 @@ namespace Assets.Scripts.Data
         }
         public void WriteServerData(string data)
         {
-            ConfigData.Socket.SendRequest(new StoreUserDataRequest(new StoreUserData(ConfigData.GetUserId(), Name, data),
+            ConfigData.Socket.SendRequest(new StoreUserDataRequest(new StoreUserData(_userId, Name, data),
                 ConfigData.StandardMaxTimeOnQueue));
         }
         public void WriteLocalData(string data)

@@ -228,6 +228,22 @@ namespace Assets.Scripts.Data
             //clone.StartingPosition = new Vector2(StartingPosition.x, StartingPosition.y);
             return clone;
         }
+        /// <summary>
+        /// Converts a saved squad to an unlinked unsaved squad that has the exact same ships and features
+        /// </summary>
+        /// <returns></returns>
+        public SavedSquad ConvertToUnsavedSquad()
+        {
+            SavedSquad convert = new SavedSquad(Utilities.GetNegativeSavedSquadId(), Side, Name, StartingPosition, CeaseFire, IsMatchingSpeed, ChosenShootingStrategy, Color);
+            GetSquadShips().ForEach((squadShip) =>
+            {
+                FleetShip fleetShip = squadShip.GetFleetShip();
+                FleetShip newFleetShip = new FleetShip(Utilities.GetNegativeFleetshipId(), fleetShip.Side, fleetShip.Name, fleetShip.Type, false, true, false, 0, 0, 0, 0, 0, 0, 0);
+                SquadShip newSquadShip = new SquadShip(newFleetShip.Id, newFleetShip.Type, squadShip.Offset, convert);
+                convert.AddShipToSquad(newSquadShip);
+            });
+            return convert;
+        }
         public Squad ToSquad(LevelStage level)
         {
             Squad squad = level.gameObject.AddComponent<Squad>();

@@ -19405,7 +19405,7 @@ MonoBehaviour:
   DialoguePrefab: {fileID: 4693076599736100422, guid: cf96c357f9237f545b82628a7c3499b7, type: 3}
   EventSystem: {fileID: 155230033}
   FinalizedScene: 0
-  WatchServerRequests: 1
+  WatchServerRequests: 0
   IsSocketManager: 0
   TimeScale: 1
   IsLevel: 0

@@ -390,7 +390,7 @@ namespace Assets.Scripts
 
 
         // private variables
-        private static int _userId = 2; // [alert] should be set to actual userId and linked to Steam or other account Id
+        private static int _userId = -1; // [alert] should be set to actual userId and linked to Steam or other account Id
         private static UserProgressData _userProgressData = null;
         private static FleetData _fleetData = null;
         private static SavedSquadsData _savedSquadsData = null;
@@ -611,14 +611,18 @@ namespace Assets.Scripts
         }
         public static int GetUserId()
         {
-            return _userId;
-        }
-        public static void SetUserId(int id)
-        {
-            if (id > 1)
+            if (_userId == -1 && !PlayerPrefs.HasKey("userId"))
             {
-                _userId = id;
+                _userId = Utilities.RandomInt();
+                PlayerPrefs.SetInt("userId", _userId);
             }
+            else
+            {
+                _userId = PlayerPrefs.GetInt("userId");
+                FirstTimePlaying = false;
+            }
+            //Debug.Log($"User id is {_userId}");
+            return _userId;
         }
         public static void SetupUserProgressData(bool shouldFileExist)
         {

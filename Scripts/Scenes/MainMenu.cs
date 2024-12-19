@@ -88,7 +88,7 @@ namespace Assets.Scripts.Scenes
 
         private void OnDestroy()
         {
-            Debug.Log("Destroying main menu scene");
+            //Debug.Log("Destroying main menu scene");
             //Debug.Log("Killing the connection");
             //ConfigData.GetSocket().CloseConnection();   
         }

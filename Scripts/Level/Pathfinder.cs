@@ -362,6 +362,7 @@ namespace Assets.Scripts.Level
             _grid = new Grid(Width, Height, this);
 
             GameObject[] obstacles = GameObject.FindGameObjectsWithTag("Obstacle");
+            Debug.Log($"There are {obstacles.Length} obstacles to map: {Utilities.ListToString(obstacles.ToList())}");
             GameState state = Level.GetState();
 
             // initialize obstacle points lists

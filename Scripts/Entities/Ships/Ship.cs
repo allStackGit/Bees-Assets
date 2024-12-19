@@ -150,7 +150,7 @@ namespace Assets.Scripts.Entities.Ships
 
 
         // Test variables
-        public string __Strategy, __Squad, __SquadStatus, __CommandStatus, __LastStopReason, __EnemySquad, __TargetEnemyShipToFollow;
+        public string __Strategy, __Squad, __SavedSquad, __SquadStatus, __CommandStatus, __LastStopReason, __EnemySquad, __TargetEnemyShipToFollow;
         public Vector2 __CommandDestination, __Velocity, __TargetCoordinates;
         public float __Firepower, __DamagePerSecond, __CurrentSpeed, __DegreesToTargetCoordinates, __DistanceToTargetCoordinates, __TurningRadius;
         public long __Tsv, __CommandTsv;
@@ -176,6 +176,7 @@ namespace Assets.Scripts.Entities.Ships
             __WeaponTargetShips = WeaponsTargetShips;
             __ShipsWithinRangeOfWeapons = ShipsWithinRange.Select((ship) => ship.Name).ToList();
             __Squad = Squad.Name;
+            __SavedSquad = Squad.SavedSquad.Name;
             __SquadStatus = Squad.Status;
             //__CommandStatus = Squad.HasCommand ? Squad.Comd.Status : "-";
             __CommandDestination = Squad.HasCommand ? Squad.Command.GetDestination() : Vector2.zero;
@@ -1102,6 +1103,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         {
             return distance < ConfigData.ShipTurningRadius && !(!IsFollowingPath && HasTargetEnemyShipToFollow && HasCommand && Squad.Command.Type == "Bombing Run" && ProximityCollider.NearbyEnemyShips.Contains(TargetEnemyShipToFollow));
         }
+        /// <summary>
+        /// Stop the ship from moving at all
+        /// </summary>
+        /// <param name="reason"></param>
         public void StopMoving(string reason)
         {
             if (IsMobile)
@@ -1332,6 +1337,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 if (shooter.Side != target.Side)
                 {
                     shooter.FleetShip.DamageDone += -tsvChange;
+                    //Debug.Log($"shooter {shooter}");
+                    //Debug.Log($"squad {shooter.Squad}");
+                    //Debug.Log($"saved Squad {shooter.Squad.SavedSquad}");
+                    //Debug.Log($"stats {shooter.Squad.SavedSquad.Stats}");
                     shooter.Squad.SavedSquad.Stats.DamageDone += -tsvChange;
                 }
                 else 

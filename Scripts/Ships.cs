@@ -266,6 +266,7 @@ namespace Assets.Scripts
         /// </summary>
         public void ReplaceDeadSquadShips()
         {
+            Debug.Log($"Replacing dead squad ships");
             bool replaced = false;
             GetSavedSquads().ForEach((squad) =>
             {
@@ -285,6 +286,10 @@ namespace Assets.Scripts
         public bool ReplaceDeadShipsInSquad(SavedSquad squad)
         {
             bool replaced = false;
+            //if (squad.GetDeadShips().Count == 0)
+            //{
+            //    Debug.Log($"There are no dead ships for {squad}");
+            //}
             squad.GetDeadShips().ForEach((squadShip) =>
             {
                 FleetShip replacement = GetAvailableShipsOfType(squadShip.GetFleetShip().Type).FirstOrDefault();
@@ -292,12 +297,12 @@ namespace Assets.Scripts
                 {
                     squadShip.FleetId = replacement.Id;
                     replaced = true;
-                    Debug.Log($"Replaced dead {squadShip} with {replacement}");
+                    //Debug.Log($"Replaced dead {squadShip} with {replacement}");
                 }
-                else
-                {
-                    Debug.Log($"Could not replace {squadShip} because there were no available replacements");
-                }
+                //else
+                //{
+                //    Debug.Log($"Could not replace {squadShip} because there were no available replacements");
+                //}
             });
             return replaced;
         }

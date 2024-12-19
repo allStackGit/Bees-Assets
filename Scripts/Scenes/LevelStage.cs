@@ -841,28 +841,31 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
         {
             StartTime = Time.realtimeSinceStartup;
 
+
             if (ConfigData.ChooseRandomLevel)
             {
                 List<LevelOptions> possibleLevels = ConfigData.GetLevelData().GetLevels().Where((level) => level.Side == ConfigData.Configuration.AISide).ToList();
-                List<SavedSquad> chosenSquads = ConfigData.LevelOptions.ChosenSquads.ToList();
                 CurrentLevelOptions = (LevelOptions)possibleLevels[Utilities.RandomInt(possibleLevels.Count)].Clone();
-                CurrentLevelOptions.ChosenSquads = chosenSquads;
             }
             else
             {
                 CurrentLevelOptions = (LevelOptions)ConfigData.LevelOptions.Clone();
             }
-            Debug.Log($"Playing level: {CurrentLevelOptions.Name}");
+
+            // Reset any data that might have changed from a previous level
+            ResetGameData();
+            ConfigData.LevelOptions.ChosenSquads.ForEach((savedSquad) =>
+            {
+                CurrentLevelOptions.ChosenSquads.Add(ConfigData.AllShips.GetSavedSquad(savedSquad.Id));
+            });
+            Debug.Log($"Playing level: {CurrentLevelOptions.Name} with squads: {Utilities.ListToString(CurrentLevelOptions.ChosenSquads)}");
             // Check settings and config variables
             SetConfigOptionsAndOverrides();
 
             //Debug.Log($"The human side is {ConfigData.Configuration.HumanSide}, the Bee side is {ConfigData.Configuration.BeeSide}, the AI side is {ConfigData.Configuration.AISide}, the user side is {ConfigData.Configuration.UserSide}");
             //Debug.Log($"The AI Starting position is {AIStartingPosition}, the user starting position is {UserStartingPosition}");
 
-
-            // Reset any data that might have changed from a previous level
-            ResetGameData();
-           
+            //Debug.Log($"Chosen squads: {Utilities.ListToString(CurrentLevelOptions.ChosenSquads)}");
             if (HasRandomizedOptions)
             {
                 RandomizeOptions();
@@ -878,7 +881,6 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
                 CurrentLevelOptions.ObstacleMapIndex = OverrideObstacleMapIndex;
                 _chosenObstacles = _obstacleLists.GetValueOrDefault(CurrentLevelOptions.ObstacleMapIndex);
             }
-
             SetupMapAndCamera();
 
             SetupShips();
@@ -967,6 +969,8 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
             {
                 Destroy(Map.gameObject);
             }
+            AllSquads.Clear();
+            CurrentLevelOptions.ChosenSquads.Clear();
         }
         public void SetupHivemind()
         {
@@ -1000,7 +1004,7 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
         public void SetupShips()
         {
 
-           
+
             //if (ConfigData.ChooseRandomLevel)
             //{
             //    ConfigData.SquadsChosenForLevel = ConfigData.SquadsChosenForLevel.Where((chosenSquad) => !MidLevelSquads[chosenSquad.Side - 1].Contains(chosenSquad) && 

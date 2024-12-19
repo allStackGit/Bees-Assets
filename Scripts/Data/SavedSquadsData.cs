@@ -39,6 +39,10 @@ namespace Assets.Scripts.Data
         {
             return _savedSquadsList;
         }
+        public SavedSquad GetSquad(int id)
+        {
+            return _savedSquadsList.Find(s => s.Id == id);
+        }
         public List<SquadShip> GetAllSquadShips()
         {
             List<SquadShip> ships = new List<SquadShip>();
@@ -77,7 +81,7 @@ namespace Assets.Scripts.Data
             }
             else
             {
-                Debug.Log($"Squad exists: {squad.Id}, {squad.Name}");
+                //Debug.Log($"Squad exists: {squad.Id}, {squad.Name}");
             }
             
         }
