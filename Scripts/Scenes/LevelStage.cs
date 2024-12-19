@@ -69,7 +69,6 @@ namespace Assets.Scripts.Scenes
         /// </summary>
         public int AsteroidMaxSpeed;
         public List<GameObject> EmptyObstacleList, MazePrefabs, ThreePathsPrefabs, ForestPrefabs, TheWallPrefabs = new List<GameObject>();
-        public int ChosenObstaclesIndex, MapIndex, ReinforcementsDelay;
         public List<GameObject> MiningAsteroidPrefabs = new List<GameObject>();
         public List<GameObject> CollisionAsteroidPrefabs = new List<GameObject>();
         /// <summary>
@@ -116,7 +115,6 @@ namespace Assets.Scripts.Scenes
         public HashSet<int> HandledRequests = new HashSet<int>();
         public int FixedUpdates, TriggersActivated;
         public float StartTime, TimePaused;
-        public List<SavedSquad>[] MidLevelSquads = new List<SavedSquad>[] { new List<SavedSquad>(), new List<SavedSquad>() };
         public List<Trigger> Triggers = new List<Trigger>();
         public List<string> BeeShipTypes, HumanShipTypes = new List<string>();
         public List<SquadTab> SquadTabs;
@@ -175,7 +173,6 @@ namespace Assets.Scripts.Scenes
             {
                 CurrentLevelOptions.MapIndex = Utilities.RandomInt(Maps.Count);              
             }
-            MapIndex = CurrentLevelOptions.MapIndex;
             MapData = ConfigData.Maps[CurrentLevelOptions.MapIndex];
             Map = Instantiate(Maps[CurrentLevelOptions.MapIndex]).GetComponent<UI_Components.Map>();
             Debug.Log($"Playing on the {MapData.Name} ({Map.Name}) at index #{CurrentLevelOptions.MapIndex} map");
@@ -247,14 +244,6 @@ namespace Assets.Scripts.Scenes
             {
                 ActivateLoadingShipsMidLevel = true;
                 Debug.Log($"The map has ships loading midlevel");
-
-                if (CurrentLevelOptions.EnemyReinforcements.Count > 0)
-                {
-                    CurrentLevelOptions.EnemyReinforcements.ForEach((savedSquad) =>
-                    {
-                        MidLevelSquads[savedSquad.Side - 1].Add(savedSquad);
-                    });
-                }
             }
             else
             {
@@ -557,12 +546,12 @@ namespace Assets.Scripts.Scenes
 
             Triggers.Add(new Trigger(() =>
             {
-                return Time.realtimeSinceStartup - StartTime >= ReinforcementsDelay;
+                return Time.realtimeSinceStartup - StartTime >= CurrentLevelOptions.EnemyReinforcementDelay;
             }, () =>
             {
-                Debug.Log($"{ReinforcementsDelay} seconds have passed, spawning new enemy ships for side: {ConfigData.Configuration.AISide}");
+                Debug.Log($"{CurrentLevelOptions.EnemyReinforcementDelay} seconds have passed, spawning new enemy ships for side: {ConfigData.Configuration.AISide}");
                 Vector2 moveToPoint = StartingPositions[ConfigData.Configuration.AISide - 1];
-                LevelConstructor.SpawnShipsAndSquads(MidLevelSquads[ConfigData.Configuration.AISide - 1], StartingPositions[ConfigData.Configuration.AISide - 1] * new Vector2(0, 2), moveToPoint);
+                LevelConstructor.SpawnShipsAndSquads(CurrentLevelOptions.EnemyReinforcements, StartingPositions[ConfigData.Configuration.AISide - 1] * new Vector2(0, 2), moveToPoint);
 
             }));
 
@@ -881,13 +870,13 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
             else
             {
                 Debug.Log($"The map does not have randomized options");
-                MapIndex = OverrideMapIndex;
-                MapData = ConfigData.Maps[MapIndex];
-                Map = Instantiate(Maps[MapIndex]).GetComponent<UI_Components.Map>();
+                CurrentLevelOptions.MapIndex = OverrideMapIndex;
+                MapData = ConfigData.Maps[CurrentLevelOptions.MapIndex];
+                Map = Instantiate(Maps[CurrentLevelOptions.MapIndex]).GetComponent<UI_Components.Map>();
 
                 
-                ChosenObstaclesIndex = OverrideObstacleMapIndex;
-                _chosenObstacles = _obstacleLists.GetValueOrDefault(ChosenObstaclesIndex);
+                CurrentLevelOptions.ObstacleMapIndex = OverrideObstacleMapIndex;
+                _chosenObstacles = _obstacleLists.GetValueOrDefault(CurrentLevelOptions.ObstacleMapIndex);
             }
 
             SetupMapAndCamera();
@@ -960,9 +949,6 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
         }
         public void ResetGameData()
         {
-            MidLevelSquads[ConfigData.Configuration.HumanSide - 1].Clear();
-            MidLevelSquads[ConfigData.Configuration.BeeSide - 1].Clear();
-
             ConfigData.AllShips.ReplaceDeadSquadShips();
             GameState state = GetState();
             state.ResetState();
@@ -1002,13 +988,13 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
         }
         public void MakeSaveLevel()
         {
-            if (ReinforcementsDelay == 0)
+            if (CurrentLevelOptions.EnemyReinforcementDelay == 0)
             {
-                ReinforcementsDelay = ConfigData.StandardReinforcementsDelay;
+                CurrentLevelOptions.EnemyReinforcementDelay = ConfigData.StandardReinforcementsDelay;
             }
-            SaveLevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}", MapIndex,
+            SaveLevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}", CurrentLevelOptions.MapIndex,
                 CurrentLevelOptions.ObstacleMapIndex, CurrentLevelOptions.AsteroidOption == 2 ? 2 : (ActivateCollisionAsteroids ? 1 : 0),
-                ActivateFogOfWar ? 1 : 0, ActivateMining ? 1 : 0, -1, ActivateLoadingShipsMidLevel ? 1 : 0, ReinforcementsDelay, CurrentLevelOptions.EnemyShipTypeOption, 0,
+                ActivateFogOfWar ? 1 : 0, ActivateMining ? 1 : 0, -1, ActivateLoadingShipsMidLevel ? 1 : 0, CurrentLevelOptions.EnemyReinforcementDelay, CurrentLevelOptions.EnemyShipTypeOption, 0,
                 CurrentLevelOptions.EnemyReinforcements.ToList(), CurrentLevelOptions.EnemySquads.ToList(), new List<SavedSquad>());
         }
         public void SetupShips()
@@ -1046,7 +1032,7 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
         }
         public void SetupMapAndCamera()
         {
-            Map.Setup(ConfigData.Maps[MapIndex].Name, ConfigData.Maps[MapIndex].UserStartingPosition, ConfigData.Maps[MapIndex].AIStartingPosition);
+            Map.Setup(ConfigData.Maps[CurrentLevelOptions.MapIndex].Name, ConfigData.Maps[CurrentLevelOptions.MapIndex].UserStartingPosition, ConfigData.Maps[CurrentLevelOptions.MapIndex].AIStartingPosition);
             Map.name = Map.Name;
             Map.transform.parent = this.transform;
 

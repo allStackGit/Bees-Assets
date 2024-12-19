@@ -941,13 +941,13 @@ namespace Assets.Scripts.Scenes
             ChosenEnemyShipTypeLabel.SetActive(show);
             ChosenEnemyShipTypesDropdown.SetActive(show);
 
-            Debug.Log($"Changing height to {(show ? _squadListOptionsScrollHeight : _squadListOriginalScrollHeight)} because show is {show}");
+            //Debug.Log($"Changing height to {(show ? _squadListOptionsScrollHeight : _squadListOriginalScrollHeight)} because show is {show}");
             RectTransform squadListRect = ChosenSquadList.transform.parent.parent.GetComponent<RectTransform>();
             squadListRect.sizeDelta = new Vector2(squadListRect.sizeDelta.x, (show ? _squadListOptionsScrollHeight : _squadListOriginalScrollHeight));
         }
         public void ToggleLevelDetails(bool show)
         {
-            Debug.Log($"Changing height to {(show ? _squadListLevelScrollHeight : _squadListOriginalScrollHeight)} because show is {show}");
+            //Debug.Log($"Changing height to {(show ? _squadListLevelScrollHeight : _squadListOriginalScrollHeight)} because show is {show}");
             LevelTitleContainer.SetActive(show);
             LevelDetailsContainer.SetActive(show);
             RectTransform squadListRect = ChosenSquadList.transform.parent.parent.GetComponent<RectTransform>();
@@ -1627,14 +1627,14 @@ namespace Assets.Scripts.Scenes
                     if (_chosenLevel != null)
                     {
                         ConfigData.LevelOptions = _chosenLevel;
-                        Debug.Log($"ConfigData.LevelOptions is {_chosenLevel.Name}");
+                        //Debug.Log($"ConfigData.LevelOptions is {_chosenLevel.Name}");
                         ConfigData.IsUserLoadingCustomEnemySquads = true;
 
                         // add the sqauds
                         ConfigData.IsUserLoadingCustomSquads = true;
                         _chosenSquads.ForEach((chosenSquad) =>
                         {
-                            Debug.Log($"Chose {chosenSquad.Name} for level");
+                            //Debug.Log($"Chose {chosenSquad.Name} for level");
                             ConfigData.LevelOptions.ChosenSquads.Add((SavedSquad)chosenSquad.Clone());
                         });
                     }

@@ -19,6 +19,7 @@ namespace Assets.Scripts.Level
             SquadType = squadType;
             SetupShips();
             SetShootingStrategy(carrier.Squad.GetShootingStrategy());
+            SetSquadTab();
         }
         private void SetupShips()
         {

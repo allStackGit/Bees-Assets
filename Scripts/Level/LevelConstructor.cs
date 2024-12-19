@@ -210,7 +210,6 @@ namespace Assets.Scripts.Level
         }
         public void SetupShips(int side)
         {
-            GameState state = Level.GetState();
             ConfigData.AllShips = new Ships(ConfigData.GetFleetData(), ConfigData.GetSavedSquadsData());
 
 
@@ -228,9 +227,10 @@ namespace Assets.Scripts.Level
             }
 
             // Setup entities on the level
-            //Debug.Log($"Setting up ships for {side} at {Level.StartingPositions[side - 1]}");
+            Debug.Log($"Setting up ships for {side} at {Level.StartingPositions[side - 1]}");
             if (side == ConfigData.Configuration.AISide)
             {
+                Debug.Log($"Squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.EnemySquads)}");
                 SpawnShipsAndSquads(Level.CurrentLevelOptions.EnemySquads, Level.StartingPositions[side - 1], Vector2.zero);
             }
             else
@@ -244,6 +244,7 @@ namespace Assets.Scripts.Level
         {
             GameState state = Level.GetState();
             List<Squad> setupSquads = new List<Squad>();
+            List<Ship> carriers = new List<Ship>();
             squads.ForEach((savedSquad) =>
             {
                 //Debug.Log($"The squad is {savedSquad.Name}");
@@ -301,58 +302,10 @@ namespace Assets.Scripts.Level
 
                         if (ship.ShipType == "Carrier")
                         {
+                            carriers.Add(ship);
                             //Debug.Log("Spawned a carrier");
 
-                            // spawn drones
-                            for (int i = 0; i < ConfigData.Configuration.CarrierSquadCount; i++)
-                            {
-                                CarrierSquad droneSquad = Level.gameObject.AddComponent<CarrierSquad>();
-                                droneSquad.Setup(
-                                    Level,
-                                    ship.Squad.SavedSquad,
-                                    ship.Squad.GetShootingStrategy(),
-                                    ship.Squad.CeaseFire,
-                                    ship.Squad.IsMatchingSpeed,
-                                    ship.Squad.ShouldChase(),
-                                    Utilities.GetNegativeSavedSquadId(),
-                                    ship.Squad.Side,
-                                    state.OriginalSquadCounts[ship.Side - 1] + 1,
-                                    $"{ship.Squad.Name} - Drone Force #{i + 1}",
-                                    ship.Squad.Color
-                                );
-                                state.AddSquad(droneSquad);
-                                setupSquads.Add(droneSquad);
-                                droneSquad.SetupCarrierSquad((Carrier)ship, "Drone");
-
-                                // spawn strikers
-                                CarrierSquad strikerSquad = Level.gameObject.AddComponent<CarrierSquad>();
-                                strikerSquad.Setup(
-                                    Level,
-                                    ship.Squad.SavedSquad,
-                                    ship.Squad.GetShootingStrategy(),
-                                    ship.Squad.CeaseFire,
-                                    ship.Squad.IsMatchingSpeed,
-                                    ship.Squad.ShouldChase(),
-                                    Utilities.GetNegativeSavedSquadId(),
-                                    ship.Squad.Side,
-                                    state.OriginalSquadCounts[ship.Side - 1] + 1,
-                                    $"{ship.Squad.Name} - Striker Force #{i + 1}",
-                                    ship.Squad.Color
-                                );
-                                state.AddSquad(strikerSquad);
-                                setupSquads.Add(strikerSquad);
-
-                                strikerSquad.SetupCarrierSquad((Carrier)ship, "Striker");
-
-                                if (squad.IsMatchingSpeed)
-                                {
-                                    strikerSquad.MatchSpeed();
-                                    droneSquad.MatchSpeed();
-                                }
-
-                                ship.AdditionalTsv += droneSquad.Tsv + strikerSquad.Tsv;
-
-                            }
+                           
 
                         }
 
@@ -364,6 +317,61 @@ namespace Assets.Scripts.Level
                     // set initial tsv
                     state.InitialTsv[squad.Side - 1] += squad.Tsv;
                     //Debug.Log($"Increase side TSV by {squad.Tsv} / {state.InitialTsv[squad.Side - 1]}");
+                }
+            });
+
+            carriers.ForEach((carrier) =>
+            {
+                Squad squad = carrier.Squad;
+                // spawn drones
+                for (int i = 0; i < ConfigData.Configuration.CarrierSquadCount; i++)
+                {
+                    CarrierSquad droneSquad = Level.gameObject.AddComponent<CarrierSquad>();
+                    droneSquad.Setup(
+                        Level,
+                        carrier.Squad.SavedSquad,
+                        carrier.Squad.GetShootingStrategy(),
+                        carrier.Squad.CeaseFire,
+                        carrier.Squad.IsMatchingSpeed,
+                        carrier.Squad.ShouldChase(),
+                        Utilities.GetNegativeSavedSquadId(),
+                        carrier.Squad.Side,
+                        state.OriginalSquadCounts[carrier.Side - 1] + 1,
+                        $"{carrier.Squad.Name} - Drone Force #{i + 1}",
+                        carrier.Squad.Color
+                    );
+                    state.AddSquad(droneSquad);
+                    setupSquads.Add(droneSquad);
+                    droneSquad.SetupCarrierSquad((Carrier)carrier, "Drone");
+
+                    // spawn strikers
+                    CarrierSquad strikerSquad = Level.gameObject.AddComponent<CarrierSquad>();
+                    strikerSquad.Setup(
+                        Level,
+                        carrier.Squad.SavedSquad,
+                        carrier.Squad.GetShootingStrategy(),
+                        carrier.Squad.CeaseFire,
+                        carrier.Squad.IsMatchingSpeed,
+                        carrier.Squad.ShouldChase(),
+                        Utilities.GetNegativeSavedSquadId(),
+                        carrier.Squad.Side,
+                        state.OriginalSquadCounts[carrier.Side - 1] + 1,
+                        $"{carrier.Squad.Name} - Striker Force #{i + 1}",
+                        carrier.Squad.Color
+                    );
+                    state.AddSquad(strikerSquad);
+                    setupSquads.Add(strikerSquad);
+
+                    strikerSquad.SetupCarrierSquad((Carrier)carrier, "Striker");
+
+                    if (squad.IsMatchingSpeed)
+                    {
+                        strikerSquad.MatchSpeed();
+                        droneSquad.MatchSpeed();
+                    }
+
+                    carrier.AdditionalTsv += droneSquad.Tsv + strikerSquad.Tsv;
+
                 }
             });
 

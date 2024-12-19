@@ -275,13 +275,6 @@ namespace Assets.Scripts
                 }
             });
 
-            //ConfigData.SquadsChosenForLevel.ForEach((squad) =>
-            //{
-            //    if (ReplaceDeadShipsInSquad(squad))
-            //    {
-            //        replaced = true;
-            //    }
-            //});
             if (replaced)
             {
                 Debug.Log("Replaced dead ships");
@@ -299,6 +292,11 @@ namespace Assets.Scripts
                 {
                     squadShip.FleetId = replacement.Id;
                     replaced = true;
+                    Debug.Log($"Replaced dead {squadShip} with {replacement}");
+                }
+                else
+                {
+                    Debug.Log($"Could not replace {squadShip} because there were no available replacements");
                 }
             });
             return replaced;
