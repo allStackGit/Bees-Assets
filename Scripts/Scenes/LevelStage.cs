@@ -63,7 +63,7 @@ namespace Assets.Scripts.Scenes
         /// <summary>
         /// How frequently asteroids spawn in this level. Sets the upper and lower bounds in seconds of the randomly timed spawn
         /// </summary>
-        public int AsteroidMaxSpawnRate, AsteroidMinimumSpawnRate;
+        public int AsteroidMaxSpawnRate, AsteroidMinimumSpawnRate, CurrentAsteroidMaxSpawnRate, CurrentAsteroidMinimumSpawnRate;
         /// <summary>
         /// Sets the upper bounds for how fast an asteroid can move
         /// </summary>
@@ -290,12 +290,12 @@ namespace Assets.Scripts.Scenes
             {
                 if (ConfigData.Configuration.AISide == ConfigData.Configuration.BeeSide)
                 {
-                    BeeShipTypes = new List<string>() { BeeShipTypes[CurrentLevelOptions.EnemyShipTypeOption] };
+                    BeeShipTypes = new List<string>() { BeeShipTypes[CurrentLevelOptions.EnemyShipTypeOption-1] };
                     Debug.Log($"The user has selected enemy ship type: {BeeShipTypes[0]}");
                 }
                 else
                 {
-                    HumanShipTypes = new List<string>() { HumanShipTypes[CurrentLevelOptions.EnemyShipTypeOption] };
+                    HumanShipTypes = new List<string>() { HumanShipTypes[CurrentLevelOptions.EnemyShipTypeOption-1] };
                     Debug.Log($"The user has selected enemy ship type: {HumanShipTypes[0]}");
                 }
             }
@@ -488,6 +488,8 @@ namespace Assets.Scripts.Scenes
         private void SpawnObstacles()
         {
             GameState state = GetState();
+            CurrentAsteroidMaxSpawnRate = AsteroidMaxSpawnRate;
+            CurrentAsteroidMinimumSpawnRate = AsteroidMinimumSpawnRate;
             _chosenObstacles.ForEach((prefab) =>
             {
                 Vector2 position = prefab.transform.position;
@@ -501,10 +503,10 @@ namespace Assets.Scripts.Scenes
             {
                 if (CurrentLevelOptions.AsteroidOption == 2)
                 {
-                    AsteroidMinimumSpawnRate /= 2;
-                    AsteroidMaxSpawnRate /= 2;
+                    CurrentAsteroidMaxSpawnRate /= 2;
+                    CurrentAsteroidMinimumSpawnRate /= 2;
                 }
-                Invoke(nameof(SpawnAsteroid), AsteroidMinimumSpawnRate + Utilities.RandomInt(AsteroidMaxSpawnRate - AsteroidMinimumSpawnRate));
+                Invoke(nameof(SpawnAsteroid), AsteroidMinimumSpawnRate + Utilities.RandomInt(CurrentAsteroidMaxSpawnRate - CurrentAsteroidMinimumSpawnRate));
             }
         }
         private void SpawnMiningAsteroids()
@@ -526,7 +528,7 @@ namespace Assets.Scripts.Scenes
         {
             GameObject instance = Instantiate(CollisionAsteroidPrefabs[Utilities.RandomInt(CollisionAsteroidPrefabs.Count)]);
             AddAsteroid(instance);
-            Invoke(nameof(SpawnAsteroid), AsteroidMinimumSpawnRate + Utilities.RandomInt(AsteroidMaxSpawnRate - AsteroidMinimumSpawnRate));
+            Invoke(nameof(SpawnAsteroid), AsteroidMinimumSpawnRate + Utilities.RandomInt(CurrentAsteroidMaxSpawnRate - CurrentAsteroidMinimumSpawnRate));
         }
 
         public CollisionAsteroid AddAsteroid(GameObject instance)

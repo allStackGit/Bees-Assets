@@ -1662,7 +1662,7 @@ namespace Assets.Scripts.Scenes
                             Invoke(nameof(LoadScene), .25f);
                             return;
                         }
-                        else if (_chosenOpposingForceOption == 4)
+                        else if (_chosenOpposingForceOption == 4) // Swarms only
                         {
                             if (ConfigData.Configuration.SquadMakerSecondSide == ConfigData.Configuration.BeeSide)
                             {
@@ -1673,7 +1673,7 @@ namespace Assets.Scripts.Scenes
                                 ConfigData.HumanShipTypes = ConfigData.Configuration.VisibleHumanShipTypes.Intersect(ConfigData.HumanSwarmShips).ToHashSet();
                             }
                         }
-                        else if (_chosenOpposingForceOption == 5)
+                        else if (_chosenOpposingForceOption == 5) // Powerful ships only
                         {
                             if (ConfigData.Configuration.SquadMakerSecondSide == ConfigData.Configuration.BeeSide)
                             {
