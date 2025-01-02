@@ -9,6 +9,9 @@ using Assets.Scripts.Data;
 
 namespace Assets.Scripts
 {
+    /// <summary>
+    /// Handles all the combined ship data for both fleet ships and saved squads
+    /// </summary>
     public class Ships
     {
         private FleetData _fleetData;

@@ -58,14 +58,17 @@ namespace Assets.Scripts
 
         // constant filenames
         public const string UserProgressFilename = "user_progress";
-        public const string FleetDataFilename = "fleet_data";
-        public const string SavedSquadsDataFilename = "saved_squads_data";
+        public static string[] FleetDataFilenames = new string[] { "campaign_fleet_data", "fleet_data" };
+        public static string[] SavedSquadsDataFilenames = new string[] { "campaign_saved_squads_data", "saved_squads_data" };
         public const string UserSettingsFilename = "user_settings_data";
-        public const string LevelsDataFilename = "levels_data";
+        public static string[] LevelsDataFilenames = new string[] {"campaign_levels_data", "levels_data" };
 
 
         // data loaded booleans
-        public static bool IsUserProgressDataLoaded, IsFleetDataLoaded, IsSavedSquadsDataLoaded, IsUserSettingsDataLoaded, IsLevelsDataLoaded;
+        public static bool IsUserProgressDataLoaded, IsUserSettingsDataLoaded;
+        public static bool[] IsLevelsDataLoaded = new bool[] { false, false };
+        public static bool[] IsSavedSquadsDataLoaded = new bool[] { false, false };
+        public static bool[] IsFleetDataLoaded = new bool[] { false, false };
 
 
         /// <summary>
@@ -373,13 +376,19 @@ namespace Assets.Scripts
 
         //Carrying variables - Changing variables that need to be carried between scenes
 
-        public static Ships AllShips = null; 
+        /// <summary>
+        /// The current set of ships the player is playing with, either the campaign ships or free play ships
+        /// </summary>
+        public static Ships CurrentShips = null;
+        public static Ships FreePlayShips = null;
+        public static Ships CampaignShips = null;
         //public static List<SavedSquad> SquadsChosenForLevel = new List<SavedSquad>();
         public static bool IsLoadingUserData = false;
         public static bool IsUserLoadingCustomSquads, IsUserLoadingCustomEnemySquads;
+        public static bool IsPlayingCampaign = false;
         public static bool AreAllSettingsLoaded => (ShipInfo != null && ShipInfo.IsLoaded) && (Configuration != null && Configuration.IsLoaded)
             && (StartingSettings != null && StartingSettings.IsLoaded);
-        public static bool IsAllUserDataLoaded => IsUserProgressDataLoaded && IsFleetDataLoaded && IsSavedSquadsDataLoaded && IsUserSettingsDataLoaded && IsLevelsDataLoaded;  
+        public static bool IsAllUserDataLoaded => IsUserProgressDataLoaded && IsFleetDataLoaded[0] && IsFleetDataLoaded[1] && IsSavedSquadsDataLoaded[0] && IsSavedSquadsDataLoaded[1] && IsUserSettingsDataLoaded && IsLevelsDataLoaded[0] && IsLevelsDataLoaded[1];  
 
 
 
@@ -396,6 +405,10 @@ namespace Assets.Scripts
         private static SavedSquadsData _savedSquadsData = null;
         private static UserSettingsData _userSettingsData = null;
         private static LevelData _levelData = null;
+
+        private static LevelData _campaignLevelData = null;
+        private static FleetData _campaignFleetData = null;
+        private static SavedSquadsData _campaignSavedSquadsData = null;
 
 
         public static bool HasSocketManager()
@@ -456,9 +469,14 @@ namespace Assets.Scripts
                 StartingSettings.HumanStartingShips.ToList().ForEach((s) => allStartingShips.Add(s.Key, s.Value));
                 StartingSettings.BeeStartingShips.ToList().ForEach((s) => allStartingShips.Add(s.Key, s.Value));
 
+                Dictionary<string, int> allCampaignStartingShips = new Dictionary<string, int>();
+                StartingSettings.HumanCampaignStartingShips.ToList().ForEach((s) => allCampaignStartingShips.Add(s.Key, s.Value));
+                StartingSettings.BeeCampaignStartingShips.ToList().ForEach((s) => allCampaignStartingShips.Add(s.Key, s.Value));
+
 
                 SetupUserProgressData(!FirstTimePlaying);
                 SetupFleetData(!FirstTimePlaying, allStartingShips);
+                SetupCampaignFleetData(!FirstTimePlaying, allCampaignStartingShips);
                 SetupSavedSquadsData(!FirstTimePlaying);
                 SetupUserSettingsData(!FirstTimePlaying);
                 SetupLevelData(!FirstTimePlaying);
@@ -509,25 +527,16 @@ namespace Assets.Scripts
                 GetUserProgressData().WaitForData();
                 //Debug.Log($"Waiting for Fleet Data");
                 GetFleetData().WaitForData();
+                GetCampaignFleetData().WaitForData();
                 //Debug.Log($"Waiting for Saved Squads Data");
                 GetSavedSquadsData().WaitForData();
+                GetCampaignSavedSquadsData().WaitForData();
                 //Debug.Log($"Waiting for User Settings Data");
                 GetUserSettingsData().WaitForData();
                 //Debug.Log($"Waiting for Level Data");
                 GetLevelData().WaitForData();
+                GetCampaignLevelData().WaitForData();
             }
-        }
-        public static void SaveAll()
-        {
-            //Debug.Log($"Saving all: {Socket.IsOpen}");
-            //    Debug.Log($"Saving User Progress: {Socket.IsOpen}");
-            GetUserProgressData().Save();
-            //Debug.Log($"Saving Ships: {Socket.IsOpen}");
-            AllShips.SaveFleetData();
-            //Debug.Log($"Saving Squads: {Socket.IsOpen}");
-            AllShips.SaveSquadData();
-            GetUserSettingsData().Save();
-            GetLevelData().Save();
         }
         public static string GetBasePath()
         {
@@ -586,29 +595,6 @@ namespace Assets.Scripts
                     return path;
 #endif
         }
-        public static void SetLevel(int level)
-        {
-            if (level > 0 && level <= ConfigData.Configuration.TotalLevels)
-            {
-                GetUserProgressData().SetCurrentLevel(level);
-            }else if (level == -1)
-            {
-                Debug.Log("The level was set to -1, indicating that the user's progress data has not loaded yet");
-            }
-            else
-            {
-                Debugger.Exception(new System.Exception($"There was an attempt to set the level to an invalid number: {level}"));
-            }   
-        }
-        public static int GetLevel()
-        {
-            if (GetUserProgressData() != null)
-            {
-                return GetUserProgressData().CurrentLevel;  
-            }
-            return -1;
-            
-        }
         public static int GetUserId()
         {
             if (_userId == -1 && !PlayerPrefs.HasKey("userId"))
@@ -642,27 +628,45 @@ namespace Assets.Scripts
         }
         public static void SetupLevelData(bool shouldFileExist)
         {
-            _levelData = new LevelData(shouldFileExist);
+            _campaignLevelData = new LevelData(shouldFileExist, 0);
+            _levelData = new LevelData(shouldFileExist, 1);
         }
         public static LevelData GetLevelData()
         {
             return _levelData;
         }
+        public static LevelData GetCampaignLevelData()
+        {
+            return _campaignLevelData;
+        }
+        public static void SetupCampaignFleetData(bool shouldFileExist, Dictionary<string, int> startingShips)
+        {
+            _campaignFleetData = new FleetData(shouldFileExist, startingShips, 0);
+        }
         public static void SetupFleetData(bool shouldFileExist, Dictionary<string, int> startingShips)
         {
-            _fleetData = new FleetData(shouldFileExist, startingShips);
+            _fleetData = new FleetData(shouldFileExist, startingShips, 1);
         }
         public static FleetData GetFleetData()
         {
             return _fleetData;
         }
+        public static FleetData GetCampaignFleetData()
+        {
+            return _campaignFleetData;
+        }
         public static void SetupSavedSquadsData(bool shouldFileExist)
         {
-            _savedSquadsData = new SavedSquadsData(shouldFileExist);
+            _campaignSavedSquadsData = new SavedSquadsData(shouldFileExist, 0);
+            _savedSquadsData = new SavedSquadsData(shouldFileExist, 1);
         }
         public static SavedSquadsData GetSavedSquadsData()
         {
             return _savedSquadsData;
+        }
+        public static SavedSquadsData GetCampaignSavedSquadsData()
+        {
+            return _campaignSavedSquadsData;
         }
 
     }

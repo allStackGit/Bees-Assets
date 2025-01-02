@@ -12,6 +12,8 @@ namespace Assets.Scripts.Settings
     {
         public Dictionary<string, int> HumanStartingShips;
         public Dictionary<string, int> BeeStartingShips;
+        public Dictionary<string, int> HumanCampaignStartingShips;
+        public Dictionary<string, int> BeeCampaignStartingShips;
         public List<int> SupplyCapacity ; 
         public string DefaultShootingStrategy;
         public List<string> HumanShipTypes => HumanStartingShips.Keys.ToList(); // Barge, Carrier, Cruiser, Dreadnought, Drone, Factory, Fire Ship, Frigate, Gunship, Scout, Striker, Warp Gate
@@ -29,6 +31,9 @@ namespace Assets.Scripts.Settings
             
             HumanStartingShips = Utilities.JArrayToDictionary<string, int>(so.HumanStartingShips);
             BeeStartingShips = Utilities.JArrayToDictionary<string, int>(so.BeeStartingShips);
+
+            HumanCampaignStartingShips = Utilities.JArrayToDictionary<string, int>(so.HumanCampaignStartingShips);
+            BeeCampaignStartingShips = Utilities.JArrayToDictionary<string, int>(so.BeeCampaignStartingShips);
         }
     }
 }

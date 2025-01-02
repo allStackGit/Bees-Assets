@@ -445,7 +445,7 @@ namespace Assets.Scripts
                     
                 }
                 yield return ConfigData.WaitForEndOfFrame;
-                ConfigData.AllShips.SaveFleetData();
+                ConfigData.CurrentShips.SaveFleetData();
             }
 
             Debug.Log($"Drawing and saving sprites for {squad.Name} took {(Time.realtimeSinceStartup - start)}s");
@@ -653,7 +653,7 @@ namespace Assets.Scripts
         }
         public static string ValidateInputString(string str)
         {
-            return Regex.Replace(str, @"[^a-zA-Z0-9\-\s!@#%&*_+=:'.]", "");
+            return Regex.Replace(str, @"[^a-zA-Z0-9\-\s!@#%&*_+=:'.?]", "");
             //Debug.Log($"Unvalidated string: {name}, replaced string {valid}");
         }
 
@@ -791,11 +791,11 @@ namespace Assets.Scripts
 
         public static int GetNegativeFleetshipId()
         {
-            return -(Hash() + ConfigData.AllShips.GetFleetShips().Count);
+            return -(Hash() + ConfigData.CurrentShips.GetFleetShips().Count);
         }
         public static int GetNegativeSavedSquadId()
         {
-            return -(Hash() + ConfigData.AllShips.GetSavedSquads().Count);
+            return -(Hash() + ConfigData.CurrentShips.GetSavedSquads().Count);
         }
 
 

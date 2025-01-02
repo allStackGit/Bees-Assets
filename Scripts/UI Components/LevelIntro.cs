@@ -17,7 +17,7 @@ namespace UIComponents
     {
         public GameObject EventSystem, Portrait, PortraitTitle, MessageTitle,  Message;
         private List<LevelIntroMessage>  _messages = new List<LevelIntroMessage>();
-        private int _level = ConfigData.GetLevel();
+        private int _level = ConfigData.GetUserProgressData().CurrentLevel;
         void Awake()
         {
             //ConfigData.SetupUserData();

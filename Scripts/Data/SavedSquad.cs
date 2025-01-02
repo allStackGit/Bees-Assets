@@ -249,7 +249,7 @@ namespace Assets.Scripts.Data
             Squad squad = level.gameObject.AddComponent<Squad>();
             squad.Setup(
                 level,
-                HasBeenSavedToStorage ? ConfigData.AllShips.GetSavedSquad(Id) : this,
+                HasBeenSavedToStorage ? ConfigData.CurrentShips.GetSavedSquad(Id) : this,
                 ChosenShootingStrategy,
                 CeaseFire,
                 IsMatchingSpeed,

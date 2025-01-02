@@ -5,18 +5,18 @@ using UnityEngine;
 
 namespace Assets.Scripts.Data
 {
-    // class that holds and manages storage for all the levels
+    // class that holds and manages storage for a list of levels
     public class LevelData : UserData
     {
         private List<LevelOptions> _levels = new List<LevelOptions>();
 
-        public LevelData(bool shouldFileExist) : base()
+        public LevelData(bool shouldFileExist, int type) : base()
         {
             defaultJsonData = "{\"Levels\": []}";
 
-            dynamic json = SetupFile(shouldFileExist, ConfigData.LevelsDataFilename, (json) =>
+            dynamic json = SetupFile(shouldFileExist, ConfigData.LevelsDataFilenames[type], (json) =>
             {
-                ConfigData.IsLevelsDataLoaded = true;
+                ConfigData.IsLevelsDataLoaded[type] = true;
                 //Debug.Log("Updated config file");
                 //Debug.Log($"JSON from DataFile: {json}");
                 List<dynamic> levels = Utilities.JArrayToList<dynamic>(json.Levels);

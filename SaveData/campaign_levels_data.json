@@ -1,0 +1,407 @@
+{
+  "Levels": [
+    {
+      "Id": 0,
+      "Side": 1,
+      "Name": "Campaign Level #0",
+      "MapIndex": 0,
+      "ObstacleMapIndex": 0,
+      "AsteroidOption": 0,
+      "FogOfWar": 1,
+      "Mining": 0,
+      "SupplyCapacity": 1067,
+      "EnemyReinforcementsOption": 0,
+      "EnemyReinforcementDelay": 60,
+      "EnemyReinforcements": [],
+      "EnemySquads": [
+        {
+          "Id": -217590022,
+          "Side": 1,
+          "Name": "Squadron #28",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -20.25,
+            "y": -0.75
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "Caece Faehy",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -1606654634,
+              "ShipType": "Honeybee",
+              "Offset": {
+                "x": 0,
+                "y": 0.00000286102294921875
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Id": 1,
+      "Side": 1,
+      "Name": "Campaign Level #1",
+      "MapIndex": 0,
+      "ObstacleMapIndex": 0,
+      "AsteroidOption": 0,
+      "FogOfWar": 0,
+      "Mining": 0,
+      "SupplyCapacity": 11000,
+      "EnemyReinforcementsOption": 0,
+      "EnemyReinforcementDelay": 60,
+      "EnemyReinforcements": [],
+      "EnemySquads": [
+        {
+          "Id": -1267024165,
+          "Side": 1,
+          "Name": "Squadron #28",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -30.74998,
+            "y": -0.75
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "Qyge Re",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -950514070,
+              "ShipType": "Honeybee",
+              "Offset": {
+                "x": 10.499984741210938,
+                "y": 0.00000286102294921875
+              }
+            },
+            {
+              "FleetId": -1222260779,
+              "ShipType": "Honeybee",
+              "Offset": {
+                "x": -10.499992370605469,
+                "y": 0.00000286102294921875
+              }
+            }
+          ]
+        },
+        {
+          "Id": -406967659,
+          "Side": 1,
+          "Name": "Squadron #33",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -30.74998,
+            "y": -0.75
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "Gae Bo",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -1988940893,
+              "ShipType": "Honeybee",
+              "Offset": {
+                "x": 10.499984741210938,
+                "y": 0.00000286102294921875
+              }
+            },
+            {
+              "FleetId": -1419278401,
+              "ShipType": "Honeybee",
+              "Offset": {
+                "x": -10.499992370605469,
+                "y": 0.00000286102294921875
+              }
+            }
+          ]
+        },
+        {
+          "Id": -1329124783,
+          "Side": 1,
+          "Name": "Squadron #34",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -20.25,
+            "y": -11.25
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "Gaeky Ry",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -1850287675,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": 0,
+                "y": 10.50000286102295
+              }
+            },
+            {
+              "FleetId": -520921316,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": -20.999977111816406,
+                "y": 10.50000286102295
+              }
+            },
+            {
+              "FleetId": -706196911,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": 20.999977111816406,
+                "y": 10.50000286102295
+              }
+            },
+            {
+              "FleetId": -1321050200,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": 0,
+                "y": -10.5
+              }
+            },
+            {
+              "FleetId": -202896268,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": -20.999977111816406,
+                "y": -10.5
+              }
+            },
+            {
+              "FleetId": -1341882019,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": 20.999977111816406,
+                "y": -10.5
+              }
+            }
+          ]
+        },
+        {
+          "Id": -1098771349,
+          "Side": 1,
+          "Name": "Squadron #35",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -30.74998,
+            "y": -11.25
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "Ka Ne",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -699424397,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": 10.499984741210938,
+                "y": 10.50000286102295
+              }
+            },
+            {
+              "FleetId": -276954811,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": -10.499992370605469,
+                "y": 10.50000286102295
+              }
+            },
+            {
+              "FleetId": -497657181,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": 10.499984741210938,
+                "y": -10.5
+              }
+            },
+            {
+              "FleetId": -1663931017,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": -10.499992370605469,
+                "y": -10.5
+              }
+            }
+          ]
+        },
+        {
+          "Id": -1842056111,
+          "Side": 1,
+          "Name": "Squadron #36",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -30.74998,
+            "y": -11.25
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "Jasyja To",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -1883755493,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": 10.499984741210938,
+                "y": 10.50000286102295
+              }
+            },
+            {
+              "FleetId": -1269105643,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": -10.499992370605469,
+                "y": 10.50000286102295
+              }
+            },
+            {
+              "FleetId": -564153382,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": 10.499984741210938,
+                "y": -10.5
+              }
+            },
+            {
+              "FleetId": -194414600,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": -10.499992370605469,
+                "y": -10.5
+              }
+            }
+          ]
+        },
+        {
+          "Id": -799294413,
+          "Side": 1,
+          "Name": "Squadron #37",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -30.74998,
+            "y": -0.75
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "Kehu Piwulu",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -344782802,
+              "ShipType": "Wasp",
+              "Offset": {
+                "x": 10.499984741210938,
+                "y": 0.00000286102294921875
+              }
+            },
+            {
+              "FleetId": -756090069,
+              "ShipType": "Wasp",
+              "Offset": {
+                "x": -10.499992370605469,
+                "y": 0.00000286102294921875
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

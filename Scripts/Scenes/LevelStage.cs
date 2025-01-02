@@ -36,7 +36,7 @@ namespace Assets.Scripts.Scenes
         /// </summary>
         public bool ReplaceDeadShips;
         public bool ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, IsTraining, UseFullyRandomSquads, UseFullyRandomEnemySquads, UseOverrideSquads, 
-            UseOverrideEnemySquads, RecordStats,DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateAudio, ActivateLoadingShipsMidLevel, 
+            UseOverrideEnemySquads, RecordStats, DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateAudio, ActivateLoadingShipsMidLevel, 
             UseMouseScrolling, IsDebugging, IsTestFiring, MakeEnemyCeaseFire, FullCeaseFire, MakeShotsHarmless, UnlockCamera, HasRandomizedOptions, PlayMusic;
         public int OverrideMapIndex,OverrideTimeScale, OverrideObstacleMapIndex, OverrideUserSide, SpeedMultiplier, GeneratedSquadCountOverride, InitialCommandDelay, TimeoutTime;
         public List<string> OverrideStrats = new List<string> { };
@@ -308,6 +308,11 @@ namespace Assets.Scripts.Scenes
         {
             //Debug.Log($"Finalize scene");
             //StartTime = Time.realtimeSinceStartup;
+            if (ConfigData.IsPlayingCampaign)
+            {
+                ReplaceDeadShips = true;
+                RecordStats = true;
+            }
             if (!ConfigData.Configuration.DoesUserHaveController && !DoesUserHaveController)
             {
                 Invoke(nameof(TimeOut), TimeoutTime);
@@ -858,7 +863,7 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
             ResetGameData();
             ConfigData.LevelOptions.ChosenSquads.ForEach((savedSquad) =>
             {
-                CurrentLevelOptions.ChosenSquads.Add(ConfigData.AllShips.GetSavedSquad(savedSquad.Id));
+                CurrentLevelOptions.ChosenSquads.Add(ConfigData.CurrentShips.GetSavedSquad(savedSquad.Id));
             });
             Debug.Log($"Playing level: {CurrentLevelOptions.Name} with squads: {Utilities.ListToString(CurrentLevelOptions.ChosenSquads)}");
             // Check settings and config variables
@@ -953,7 +958,7 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
         }
         public void ResetGameData()
         {
-            ConfigData.AllShips.ReplaceDeadSquadShips();
+            ConfigData.CurrentShips.ReplaceDeadSquadShips();
             GameState state = GetState();
             state.ResetState();
             state.GameOver = false;
@@ -1112,7 +1117,7 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
             SaveAndEnd();
         }
         /// <summary>
-        /// Used for standard play and Hivemind Training. Stores commands, cleans the map, and records that stats.
+        /// Used for standard play and Hivemind Training. Stores commands, cleans the map, and records the stats.
         /// </summary>
         public void SaveAndEnd()
         {
@@ -1130,7 +1135,7 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
                     SavedSquad savedSquad = AllSquads[i];
                     if (savedSquad.HasBeenSavedToStorage)
                     {
-                        savedSquad = ConfigData.AllShips.GetSavedSquad(savedSquad.Id);
+                        savedSquad = ConfigData.CurrentShips.GetSavedSquad(savedSquad.Id);
                     }
                     else
                     {
@@ -1202,8 +1207,13 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
                 //    });
                 //}
 
-                ConfigData.AllShips.SaveFleetData();
-                ConfigData.AllShips.SaveSquadData();
+                ConfigData.CurrentShips.SaveFleetData();
+                ConfigData.CurrentShips.SaveSquadData();
+
+                if (ConfigData.IsPlayingCampaign)
+                {
+                    ConfigData.GetUserProgressData().AdvanceToNextLevel();
+                }
                 ConfigData.GetUserProgressData().Save();
             }
             //Debug.Log($"Resetting scene");

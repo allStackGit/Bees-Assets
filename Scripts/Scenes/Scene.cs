@@ -78,7 +78,15 @@ namespace Assets.Scripts.Scenes
         protected virtual void FinalizeSceneWithUserData()
         {
             //Debug.Log($"Finalizing {Name} Scene");
-            ConfigData.AllShips = new Ships(ConfigData.GetFleetData(), ConfigData.GetSavedSquadsData());
+
+
+            if (ConfigData.CurrentShips == null)
+            {
+                ConfigData.FreePlayShips = new Ships(ConfigData.GetFleetData(), ConfigData.GetSavedSquadsData());
+                ConfigData.CampaignShips = new Ships(ConfigData.GetCampaignFleetData(), ConfigData.GetCampaignSavedSquadsData());
+
+                ConfigData.CurrentShips = ConfigData.FreePlayShips;
+            }
 
             //ConfigData.Ships.ReplaceDeadSquadShips();
             FinalizedScene = true;

@@ -23,7 +23,7 @@ namespace Assets.Scripts.Scenes
         }
         public void ContinueGame()
         {
-            Debug.Log($"Continuing Game! User is on level #{ConfigData.GetLevel()}");
+            Debug.Log($"Continuing Game! User is on level #{ConfigData.GetUserProgressData().CurrentLevel}");
             //SceneManager.LoadSceneAsync("Level Intro"); 
             //SceneManager.LoadSceneAsync("Squad Maker");
             DeselectButton();
@@ -51,6 +51,8 @@ namespace Assets.Scripts.Scenes
         public void GoToTrainingRoom(string side)
         {
             DeselectButton();
+            ConfigData.IsPlayingCampaign = false;
+            ConfigData.CurrentShips = ConfigData.FreePlayShips;
             Debug.Log("Training Room!");
             if ((side == "Humans" && ConfigData.Configuration.HumanSide == ConfigData.Configuration.SquadMakerFirstSide) || (side == "Bees" && ConfigData.Configuration.BeeSide == ConfigData.Configuration.SquadMakerFirstSide))
             {
@@ -68,12 +70,20 @@ namespace Assets.Scripts.Scenes
         {
             // [alert] should give the user an alert saying that this will reset their previous progress, if they've already started a game
             // [alert] should reset user progress data
-            ConfigData.SetLevel(1);
+            ConfigData.GetUserProgressData().SetCurrentLevel(0);
             SceneManager.LoadSceneAsync("Level Intro", LoadSceneMode.Single);
             DeselectButton();
             Debug.Log("New Game!"); 
         }
        
+        public void PlayCampaign()
+        {
+            DeselectButton();
+            ConfigData.IsPlayingCampaign = true;
+            ConfigData.CurrentShips = ConfigData.CampaignShips;
+            SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
+        }
+
         public void ExitGame()
         {
             //ConfigData.SaveAll();

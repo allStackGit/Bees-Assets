@@ -15,7 +15,7 @@ namespace Assets.Scripts.Data
 
 
 
-        public SavedSquadsData(bool shouldFileExist) : base()
+        public SavedSquadsData(bool shouldFileExist, int type) : base()
         {
             // [alert] this should be equal to the JSON data for whatever starting squads there will be, currently two squads, one of three scouts and one
             // of three gunships
@@ -23,9 +23,9 @@ namespace Assets.Scripts.Data
             defaultJsonData = "[]"; // [alert] need to change to actual defaults
             //Debug.Log($"defaultJSON: {defaultJsonData}");
 
-            dynamic json = SetupFile(shouldFileExist, ConfigData.SavedSquadsDataFilename, (json) =>
+            dynamic json = SetupFile(shouldFileExist, ConfigData.SavedSquadsDataFilenames[type], (json) =>
             {
-                ConfigData.IsSavedSquadsDataLoaded = true;
+                ConfigData.IsSavedSquadsDataLoaded[type] = true;
 
                 Utilities.LoadSquadsFromJson(Utilities.JArrayToList<dynamic>((JArray)JsonConvert.DeserializeObject(file.GetContents()))).ForEach(s =>
                 {

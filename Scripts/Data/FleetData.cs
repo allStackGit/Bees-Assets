@@ -14,13 +14,13 @@ namespace Assets.Scripts.Data
         private List<FleetShip> _shipList = new List<FleetShip>();
 
 
-        public FleetData(bool shouldFileExist, Dictionary<string, int> startingShips) : base()
+        public FleetData(bool shouldFileExist, Dictionary<string, int> startingShips, int type) : base()
         {
             defaultJsonData = MakeDefaultList(startingShips);
 
-            dynamic json = SetupFile(shouldFileExist, ConfigData.FleetDataFilename, (json) =>
+            dynamic json = SetupFile(shouldFileExist, ConfigData.FleetDataFilenames[type], (json) =>
             {
-                ConfigData.IsFleetDataLoaded = true;
+                ConfigData.IsFleetDataLoaded[type] = true;
                 //Debug.Log("Updated config file");
                 LoadShipsFromJson(Utilities.JArrayToList<dynamic>((JArray)JsonConvert.DeserializeObject(file.GetContents())));
                 //Debug.Log($"Loaded ships {GetShips().Find((s => s.Id == Utilities.RandomInt(GetShips().Count-1))).Name}");
@@ -74,10 +74,6 @@ namespace Assets.Scripts.Data
         {
             return _shipList;
         }
-        public List<FleetShip> GetShipsByType(string type)
-        {
-            return GetShips().Where((ship) => ship.Type== type).ToList();
-        }
         public FleetShip GetFleetShip(int id)
         {
             return GetShips().Find((ship) => ship.Id == id);
@@ -89,10 +85,6 @@ namespace Assets.Scripts.Data
                 _shipList.Add(ship);
             }
             
-        }
-        public void RemoveShipFromFleet(FleetShip ship)
-        {
-            _shipList.Remove(ship);
         }
         public void ClearFleet()
         {

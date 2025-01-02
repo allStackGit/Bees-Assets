@@ -19535,6 +19535,7 @@ MonoBehaviour:
   ChosenEnemyShipTypesDropdown: {fileID: 1838313602}
   LevelTitleContainer: {fileID: 1353334151}
   LevelDetailsContainer: {fileID: 1527060498}
+  ChooseLevelLabel: {fileID: 219516179}
   BargeSprite: {fileID: 21300000, guid: 6fa64241b9a6f9c4f941a8f38449fa2c, type: 3}
   BeaconSprite: {fileID: 21300000, guid: 6cbaccdd50c5ab9478e1af3d49ec7c65, type: 3}
   CarrierSprite: {fileID: 21300000, guid: d345c41298bdcde4c81806f290b71b13, type: 3}

@@ -125,7 +125,7 @@ namespace Assets.Scripts.Server
                 Debug.Log("Connection re-opened!");
                 OpenLevels.ForEach((level) =>
                 {
-                    ConfigData.Socket.SendRequest(new ReconnectLevelRequest(new SetupLevel(ConfigData.GetLevel(), ConfigData.GetUserId(), ConfigData.Version),
+                    ConfigData.Socket.SendRequest(new ReconnectLevelRequest(new SetupLevel(ConfigData.GetUserProgressData().CurrentLevel, ConfigData.GetUserId(), ConfigData.Version),
                     ConfigData.StandardMaxTimeOnQueue,level));
                     Debug.Log($"Trying to reconnect {level.Name} to the server");
                 });
@@ -382,33 +382,52 @@ namespace Assets.Scripts.Server
                 {
                     //Debug.Log("The server data file was null, writing the defaults to the server");
                     string dataFilename = standingRequest.Request.DataFile;
-                    switch (dataFilename)
+
+                    if (dataFilename == ConfigData.FleetDataFilenames[0])
                     {
-                        case ConfigData.UserProgressFilename:
-                            UserProgressData userProgressData = ConfigData.GetUserProgressData();
-                            userProgressData.GetDataFile().WriteData(userProgressData.GetDefaultJson());
-                            break;
-
-                        case ConfigData.FleetDataFilename:
-                            FleetData fleetData = ConfigData.GetFleetData();
-                            fleetData.GetDataFile().WriteData(fleetData.GetDefaultJson());
-                            break;
-
-                        case ConfigData.SavedSquadsDataFilename:
-                            SavedSquadsData savedSquadsData = ConfigData.GetSavedSquadsData();
-                            savedSquadsData.GetDataFile().WriteData(savedSquadsData.GetDefaultJson());
-                            break;
-
-                        case ConfigData.UserSettingsFilename:
-                            UserSettingsData userSettingsData = ConfigData.GetUserSettingsData();
-                            userSettingsData.GetDataFile().WriteData(userSettingsData.GetDefaultJson());
-                            break;
-
-                        case ConfigData.LevelsDataFilename:
-                            LevelData levelData = ConfigData.GetLevelData();
-                            levelData.GetDataFile().WriteData(levelData.GetDefaultJson());
-                            break;
+                        FleetData fleetData = ConfigData.GetCampaignFleetData();
+                        fleetData.GetDataFile().WriteData(fleetData.GetDefaultJson());
                     }
+                    else if (dataFilename == ConfigData.FleetDataFilenames[1])
+                    {
+                        FleetData fleetData = ConfigData.GetFleetData();
+                        fleetData.GetDataFile().WriteData(fleetData.GetDefaultJson());
+                    }
+
+                    else if (dataFilename == ConfigData.SavedSquadsDataFilenames[0])
+                    {
+                        SavedSquadsData savedSquadsData = ConfigData.GetCampaignSavedSquadsData();
+                        savedSquadsData.GetDataFile().WriteData(savedSquadsData.GetDefaultJson());
+                    }
+                    else if (dataFilename == ConfigData.SavedSquadsDataFilenames[1])
+                    {
+                        SavedSquadsData savedSquadsData = ConfigData.GetSavedSquadsData();
+                        savedSquadsData.GetDataFile().WriteData(savedSquadsData.GetDefaultJson());
+                    }
+
+                    else if (dataFilename == ConfigData.LevelsDataFilenames[0])
+                    {
+                        LevelData levelData = ConfigData.GetCampaignLevelData();
+                        levelData.GetDataFile().WriteData(levelData.GetDefaultJson());
+                    }
+                    else if (dataFilename == ConfigData.LevelsDataFilenames[1])
+                    {
+                        LevelData levelData = ConfigData.GetLevelData();
+                        levelData.GetDataFile().WriteData(levelData.GetDefaultJson());
+                    }
+
+                    else if (dataFilename == ConfigData.UserProgressFilename)
+                    {
+                        UserProgressData userProgressData = ConfigData.GetUserProgressData();
+                        userProgressData.GetDataFile().WriteData(userProgressData.GetDefaultJson());
+                    }
+
+                    else if (dataFilename == ConfigData.UserSettingsFilename)
+                    {
+                        UserSettingsData userSettingsData = ConfigData.GetUserSettingsData();
+                        userSettingsData.GetDataFile().WriteData(userSettingsData.GetDefaultJson());
+                    }
+
                     standingRequest.Status = -1;
 
                     //Task.Run(async () =>

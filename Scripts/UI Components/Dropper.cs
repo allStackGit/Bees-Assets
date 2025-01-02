@@ -465,12 +465,12 @@ namespace Assets.Scripts.UIComponents
         {
             FleetShip fleetShip = dragIcon.GetFleetShip();
 
-            SavedSquad dragIconsSquad = ConfigData.AllShips.GetSavedSquadFromFleetShip(fleetShip);
+            SavedSquad dragIconsSquad = ConfigData.CurrentShips.GetSavedSquadFromFleetShip(fleetShip);
             bool isShipInSquad = false;
             bool isShipsSquadThisSquad = false;
             if (dragIconsSquad != null && HasCurrentSquad)
             {
-                isShipInSquad = ConfigData.AllShips.IsShipInSquad(fleetShip);
+                isShipInSquad = ConfigData.CurrentShips.IsShipInSquad(fleetShip);
                 isShipsSquadThisSquad = dragIconsSquad.Equals(CurrentSquad);
                 //Debug.Log($"Trying to remove ship from unsaved squad. The squad is {squad.Name} #{squad.Id}, and the " +
                 //    $"currentUnsavedSquad is {_currentUnsavedSquad.Id}, and are they equal? {isSquadThisSquad}");
