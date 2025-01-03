@@ -13,12 +13,13 @@ namespace Assets.Scripts.UIComponents
 {
     public class GameMenus : MonoBehaviour
     {
-        public GameObject MenuContainer, LevelEndedDialogue, SaveLevelDialogue, NoAliveShipsAlert, SquadActionBoxUI, VictoryLabel, DefeatLabel, MiniMapCloseButton, MiniMapOpenButton, MiniMapTopBorder, MiniMapLeftBorder,
-            MiniMapCameraCollider, MiniMapOutput, HumanScore, BeeScore, ShipInfoBox;
+        public GameObject MenuContainer, LevelEndedDialogue, SaveLevelDialogue, NoAliveShipsAlert, SquadActionBoxUI, VictoryLabel, DefeatLabel, MiniMapCloseButton, MiniMapOpenButton, 
+            MiniMapTopBorder, MiniMapLeftBorder, MiniMapCameraCollider, MiniMapOutput, HumanScore, BeeScore, ShipInfoBox, KeepGoingButton, ToggleFogOfWarButton, RestartLevelButton,
+            ChooseNewSquadsButton, SwitchSidesButton, SaveAsLevelButton, ExitToMainMenuButton;
         public SquadActionBox ActionBox;
         public LevelStage Level;
         public Dialogue ExitConfirmationDialogue;
-        public TMP_Text ShipInfoBoxTitle, ShipInfoBoxStats;
+        public TMP_Text ShipInfoBoxTitle, ShipInfoBoxStats, TryNewSquadsButtonText;
         public TMP_InputField LevelNameInput, SupplyCapacityInput;
         public Codex Codex;
         public SettingsMenu Settings;
@@ -37,6 +38,15 @@ namespace Assets.Scripts.UIComponents
                 Codex.SetupCodex();
                 Settings.SetupSettings(Level);
                 
+                if (ConfigData.IsPlayingCampaign)
+                {
+                    ToggleFogOfWarButton.SetActive(false);
+                    RestartLevelButton.SetActive(false);
+                    ChooseNewSquadsButton.SetActive(false);
+                    SwitchSidesButton.SetActive(false);
+                    SaveAsLevelButton.SetActive(false);
+                    ExitToMainMenuButton.SetActive(false);
+                }
             }
 
             ExitConfirmationDialogue = new Dialogue(Level.DialoguePrefab, ConfigData.Configuration.AreYouSureExit, ConfigData.Configuration.LevelProgressLost,

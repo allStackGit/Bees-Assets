@@ -311,7 +311,7 @@ namespace Assets.Scripts.Scenes
             if (ConfigData.IsPlayingCampaign)
             {
                 ReplaceDeadShips = true;
-                RecordStats = true;
+                RecordStats = true;                
             }
             if (!ConfigData.Configuration.DoesUserHaveController && !DoesUserHaveController)
             {
@@ -556,7 +556,7 @@ namespace Assets.Scripts.Scenes
                 return Time.realtimeSinceStartup - StartTime >= CurrentLevelOptions.EnemyReinforcementDelay;
             }, () =>
             {
-                Debug.Log($"{CurrentLevelOptions.EnemyReinforcementDelay} seconds have passed, spawning new enemy ships for side: {ConfigData.Configuration.AISide}");
+                Debug.Log($"{CurrentLevelOptions.EnemyReinforcementDelay} seconds have passed, spawning new enemy ships for side {ConfigData.Configuration.AISide}: {Utilities.ListToString(CurrentLevelOptions.EnemyReinforcements)}");
                 Vector2 moveToPoint = StartingPositions[ConfigData.Configuration.AISide - 1];
                 LevelConstructor.SpawnShipsAndSquads(CurrentLevelOptions.EnemyReinforcements, StartingPositions[ConfigData.Configuration.AISide - 1] * new Vector2(0, 2), moveToPoint);
 
@@ -680,12 +680,10 @@ namespace Assets.Scripts.Scenes
                 if (state.IsSideKilled(ConfigData.Configuration.BeeSide) && !state.IsSideKilled(ConfigData.Configuration.HumanSide))
                 {
                     WinningSide = ConfigData.Configuration.HumanSide;
-                    ConfigData.GetUserProgressData().HumanWins++;
                 }
                 else if (state.IsSideKilled(ConfigData.Configuration.HumanSide) && !state.IsSideKilled(ConfigData.Configuration.BeeSide))
                 {
                     WinningSide = ConfigData.Configuration.BeeSide;
-                    ConfigData.GetUserProgressData().BeeWins++;
                 }
                 else if (state.IsSideKilled(ConfigData.Configuration.HumanSide) && state.IsSideKilled(ConfigData.Configuration.BeeSide))
                 {
@@ -865,6 +863,7 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
             {
                 CurrentLevelOptions.ChosenSquads.Add(ConfigData.CurrentShips.GetSavedSquad(savedSquad.Id));
             });
+
             Debug.Log($"Playing level: {CurrentLevelOptions.Name} with squads: {Utilities.ListToString(CurrentLevelOptions.ChosenSquads)}");
             // Check settings and config variables
             SetConfigOptionsAndOverrides();
@@ -1161,14 +1160,6 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
                             fleetShip.BattlesWon++;
                         }
                         //Debug.Log($"{fleetShip.Name} has mined {fleetShip.MineralsMined} minerals in its lifetime. It has mined {fleetShip.MineralsMinedThisLevel} minerals this level");
-                        if (fleetShip.Side == ConfigData.Configuration.UserSide)
-                        {
-                            ConfigData.GetUserProgressData().MinedTSV += fleetShip.MineralsMinedThisLevel;
-                        }
-                        else
-                        {
-                            ConfigData.GetUserProgressData().HivemindMinedTSV += fleetShip.MineralsMinedThisLevel;
-                        }
                         fleetShip.MineralsMined += fleetShip.MineralsMinedThisLevel;
                         fleetShip.MineralsMinedThisLevel = 0;
 
@@ -1212,9 +1203,9 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
 
                 if (ConfigData.IsPlayingCampaign)
                 {
-                    ConfigData.GetUserProgressData().AdvanceToNextLevel();
+                    SaveCampaignStats();
                 }
-                ConfigData.GetUserProgressData().Save();
+                
             }
             //Debug.Log($"Resetting scene");
             Ship[] ships = state.GetShips().ToArray(); // need to convert this to an array because killing a ship removes it from the list of ships in the state
@@ -1271,15 +1262,61 @@ Debug.Log($"{$"H:{ConfigData.GetUserProgressData().HumanWins}/{totalGames} ({hum
             }
 
         }
+        private void SaveCampaignStats()
+        {
+            UserProgressData progress = ConfigData.GetUserProgressData();
+
+            if (WinningSide == ConfigData.Configuration.HumanSide)
+            {
+                progress.HumanWins++;
+            }
+            else
+            {
+                progress.BeeWins++;
+            }
+
+            if (WinningSide == ConfigData.Configuration.UserSide)
+            {
+                progress.AdvanceToNextLevel();
+            }
+
+            for (int i = 0; i < AllSquads.Count; i++)
+            {
+                SavedSquad savedSquad = AllSquads[i];
+                savedSquad.GetSquadShips().ForEach((ship) =>
+                {
+                    FleetShip fleetShip = ship.GetFleetShip();
+                    //Debug.Log($"{fleetShip.Name} has mined {fleetShip.MineralsMined} minerals in its lifetime. It has mined {fleetShip.MineralsMinedThisLevel} minerals this level");
+                    if (fleetShip.Side == ConfigData.Configuration.UserSide)
+                    {
+                        progress.MinedTSV += fleetShip.MineralsMinedThisLevel;
+                    }
+                    else
+                    {
+                        progress.HivemindMinedTSV += fleetShip.MineralsMinedThisLevel;
+                    }
+
+                });
+            }
+
+            progress.Save();
+        }
         private void LevelEndedDialogue()
         {
             Menus.OpenLevelEndedDialogue();
-        }
-        public void ReloadScene()
-        {
-            //Debug.Log($"Before scene manager");
-            SceneManager.LoadSceneAsync(SceneManager.GetActiveScene().name, LoadSceneMode.Single);
-            //Debug.Log($"After scene manager");
+
+            if (ConfigData.IsPlayingCampaign)
+            {
+                if (WinningSide == ConfigData.Configuration.UserSide)
+                {
+                    Menus.TryNewSquadsButtonText.text = "Play next level";
+                }
+                else
+                {
+                    Menus.TryNewSquadsButtonText.text = "Try again";
+                }
+                Menus.KeepGoingButton.SetActive(false);
+            }
         }
         public void Pause()
         {

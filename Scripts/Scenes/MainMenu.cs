@@ -70,7 +70,7 @@ namespace Assets.Scripts.Scenes
         {
             // [alert] should give the user an alert saying that this will reset their previous progress, if they've already started a game
             // [alert] should reset user progress data
-            ConfigData.GetUserProgressData().SetCurrentLevel(0);
+            ConfigData.GetUserProgressData().SetCurrentLevel(1);
             SceneManager.LoadSceneAsync("Level Intro", LoadSceneMode.Single);
             DeselectButton();
             Debug.Log("New Game!"); 

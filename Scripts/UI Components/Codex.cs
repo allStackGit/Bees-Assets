@@ -73,7 +73,7 @@ public class Codex : MonoBehaviour
                     $"Power: {shipInfo.PrintPower()}\n" +
                     $"Rate of Fire: {shipInfo.PrintRateOfFire()}\n" +
                     $"Speed: {shipInfo.Speed}\n" +
-                    $"Capacity: {(!ConfigData.SpawnedOnlyShipTypes.Contains(ship.Key) ? ConfigData.CurrentShips.GetShipsOfType(ship.Key).First().GetMaxCapacity().ToString("N0") : "N/A")}";
+                    $"Capacity: {(!ConfigData.SpawnedOnlyShipTypes.Contains(ship.Key) ? ConfigData.FreePlayShips.GetShipsOfType(ship.Key).First().GetMaxCapacity().ToString("N0") : "N/A")}";
             }
         }
     }

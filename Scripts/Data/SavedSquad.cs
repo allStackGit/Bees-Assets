@@ -92,6 +92,10 @@ namespace Assets.Scripts.Data
         {
             return _ships;
         }
+        public List<SquadShip> GetAliveSquadShips()
+        {
+            return GetSquadShips().Where((ship) => !ship.GetFleetShip().IsDead).ToList();
+        }
         public SquadShip GetShip(int fleetId)
         {
             return GetSquadShips().FirstOrDefault((ship) => ship.FleetId == fleetId);
@@ -194,11 +198,11 @@ namespace Assets.Scripts.Data
         }
         public int GetTsv()
         {
-            return GetSquadShips().Sum((s) => s.GetFleetShip().GetTsv());
+            return GetAliveSquadShips().Sum((s) => s.GetFleetShip().GetTsv());
         }
         public int GetCapacity()
         {
-            return GetSquadShips().Sum((s) => s.GetFleetShip().GetCapacity());
+            return GetAliveSquadShips().Sum((s) => s.GetFleetShip().GetCapacity());
         }
         public int GetMaxCapacity()
         {

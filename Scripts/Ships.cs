@@ -269,7 +269,7 @@ namespace Assets.Scripts
         /// </summary>
         public void ReplaceDeadSquadShips()
         {
-            Debug.Log($"Replacing dead squad ships");
+            //Debug.Log($"Replacing dead squad ships");
             bool replaced = false;
             GetSavedSquads().ForEach((squad) =>
             {

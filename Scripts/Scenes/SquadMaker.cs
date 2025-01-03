@@ -3,6 +3,7 @@ using Assets.Scripts.Data;
 using Assets.Scripts.Settings;
 using Assets.Scripts.UI_Components;
 using Assets.Scripts.UIComponents;
+using Google.Protobuf.WellKnownTypes;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -269,15 +270,17 @@ namespace Assets.Scripts.Scenes
         }
         private void SetupForCampaign()
         {
-            Debug.Log($"Setting up for campaign");
-            int i = 0;
+            //Debug.Log($"Setting up for campaign");
+            int i = 1;
             ConfigData.GetCampaignLevelData().GetLevels().Where((level) => level.Side != Side).ToList().ForEach((level) =>
             {
-                Debug.Log($"Adding option for {level} -> #{i}");
+                //Debug.Log($"Adding option for {level} -> #{i}");
                 _levelOptionIndexesToLevels[i] = level;
                 i++;
             });
-            ChangeLevel(ConfigData.GetUserProgressData().CurrentLevel);
+            Debug.Log($"User is on level #{ConfigData.GetUserProgressData().CurrentLevel}");
+
+            LoadLevel(ConfigData.GetUserProgressData().CurrentLevel);
         }
         private void SetupLevelDropdown()
         {
@@ -307,7 +310,17 @@ namespace Assets.Scripts.Scenes
             ToggleLevelDetails(false);
             ToggleLevelOptions(false);
         }
+        public void LoadLevel(int levelIndex)
+        {
+            _chosenLevel = _levelOptionIndexesToLevels[levelIndex];
 
+            LevelTitle.text = $"Level: {_chosenLevel.Name}";
+            LevelDetails.text = _chosenLevel.GetLevelDetails();
+            _capacity = _chosenLevel.SupplyCapacity;
+            UpdateChosenSquadsSupplyLabel();
+            ToggleLevelOptions(false); // hide the level options
+            ToggleLevelDetails(true); // show the level details
+        }
         private void SkipOpposingSideSetup()
         {
             NextButton.SetActive(false);
@@ -585,6 +598,12 @@ namespace Assets.Scripts.Scenes
                 AddSavedSquadToList(savedSquad);
             });
         }
+        private void LoadScene()
+        {
+            //Debug.Log("Loading scene!");
+            SceneManager.LoadSceneAsync(_nextScene, LoadSceneMode.Single);
+        }
+
 
 
         // Dialogues
@@ -1651,17 +1670,18 @@ namespace Assets.Scripts.Scenes
 
                     if (_chosenLevel != null)
                     {
-                        ConfigData.LevelOptions = _chosenLevel;
-                        //Debug.Log($"ConfigData.LevelOptions is {_chosenLevel.Name}");
+                        ConfigData.LevelOptions = (LevelOptions)_chosenLevel.Clone();
+                        Debug.Log($"ConfigData.LevelOptions is {_chosenLevel.Name}");
                         ConfigData.IsUserLoadingCustomEnemySquads = true;
 
                         // add the sqauds
                         ConfigData.IsUserLoadingCustomSquads = true;
                         _chosenSquads.ForEach((chosenSquad) =>
                         {
-                            //Debug.Log($"Chose {chosenSquad.Name} for level");
+                            Debug.Log($"Chose {chosenSquad.Name} for level");
                             ConfigData.LevelOptions.ChosenSquads.Add((SavedSquad)chosenSquad.Clone());
                         });
+                        Debug.Log($"ConfigData.LevelOption.ChosenSquads: {Utilities.ListToString(ConfigData.LevelOptions.ChosenSquads)}");
                     }
                     else if (!ConfigData.ChooseRandomLevel)
                     {
@@ -1732,6 +1752,11 @@ namespace Assets.Scripts.Scenes
                     _chosenSquads.ForEach((chosenSquad) =>
                     {
                         ConfigData.LevelOptions.EnemySquads.Add(chosenSquad.ConvertToUnsavedSquad());
+
+                        if (ConfigData.LevelOptions.EnemyReinforcementsOption != 0)
+                        {
+                            ConfigData.LevelOptions.EnemyReinforcements.Add(chosenSquad.ConvertToUnsavedSquad());
+                        }
                     });
                 }
                 else
@@ -1761,11 +1786,6 @@ namespace Assets.Scripts.Scenes
                new List<SavedSquad>(), _chosenSquads);
         }
 
-        private void LoadScene()
-        {
-            Debug.Log("Loading scene!");
-            SceneManager.LoadSceneAsync(_nextScene, LoadSceneMode.Single);
-        }
         public void ChangeOpposingForceDropdown(int option)
         {
             //TMP_Dropdown dropdown = OpposingForcePresetDropdown.GetComponentInChildren<TMP_Dropdown>();
@@ -1789,15 +1809,9 @@ namespace Assets.Scripts.Scenes
 
             if (option > 1) // a level was chosen
             {
+                LoadLevel(option);
                 //Debug.Log($"option chosen: {option}");
-                _chosenLevel = _levelOptionIndexesToLevels[option];
-
-                LevelTitle.text = $"Level: {_chosenLevel.Name}";
-                LevelDetails.text = _chosenLevel.GetLevelDetails();
-                _capacity = _chosenLevel.SupplyCapacity;
-                UpdateChosenSquadsSupplyLabel();
-                ToggleLevelOptions(false); // hide the level options
-                ToggleLevelDetails(true); // show the level details
+                
             }
             else if (LevelTitleContainer.activeSelf) // a level was not chosen but was previously shown
             {
