@@ -15,7 +15,7 @@ namespace Assets.Scripts.UIComponents
     {
         public GameObject MenuContainer, LevelEndedDialogue, SaveLevelDialogue, NoAliveShipsAlert, SquadActionBoxUI, VictoryLabel, DefeatLabel, MiniMapCloseButton, MiniMapOpenButton, 
             MiniMapTopBorder, MiniMapLeftBorder, MiniMapCameraCollider, MiniMapOutput, HumanScore, BeeScore, ShipInfoBox, KeepGoingButton, ToggleFogOfWarButton, RestartLevelButton,
-            ChooseNewSquadsButton, SwitchSidesButton, SaveAsLevelButton, ExitToMainMenuButton;
+            ChooseNewSquadsButton, SwitchSidesButton, SaveAsLevelButton, ExitToMainMenuButton, Scoreboard;
         public SquadActionBox ActionBox;
         public LevelStage Level;
         public Dialogue ExitConfirmationDialogue;
@@ -163,11 +163,16 @@ namespace Assets.Scripts.UIComponents
             int humanWinPercentage = (int) (((float) humanWins / totalGames)*100);
             int beeWinPercentage = (int) (((float) beeWins / totalGames)*100);
 
-            TMP_Text humanScoreText = HumanScore.GetComponentInChildren<TMP_Text>();
-            TMP_Text beeScoreText = BeeScore.GetComponentInChildren<TMP_Text>();
+            if (totalGames > 0)
+            {
+                TMP_Text humanScoreText = HumanScore.GetComponentInChildren<TMP_Text>();
+                TMP_Text beeScoreText = BeeScore.GetComponentInChildren<TMP_Text>();
 
-            humanScoreText.text = $"Humans: {humanWins}W - {humanLosses}L {humanWinPercentage}%";
-            beeScoreText.text = $"Bees: {beeWins}W - {beeLosses}L {beeWinPercentage}%";
+                humanScoreText.text = $"Humans: {humanWins}W - {humanLosses}L {humanWinPercentage}%";
+                beeScoreText.text = $"Bees: {beeWins}W - {beeLosses}L {beeWinPercentage}%";
+            }
+
+
         }
         public void BacktoGame()
         {

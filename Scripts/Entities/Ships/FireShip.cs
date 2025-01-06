@@ -46,14 +46,11 @@ namespace Assets.Scripts.Entities.Ships
                         Killer = killer;
                         LogKillerStats(killer);
                     }
-                    else
+                    if (Level.ReplaceDeadShips && Squad.SavedSquad.HasBeenSavedToStorage)
                     {
-                        if (Level.ReplaceDeadShips && Squad.SavedSquad.HasBeenSavedToStorage)
-                        {
-                            FleetShip.IsDead = true;
-                        }
-                        Squad.SavedSquad.Stats.ShipsLost++;
+                        FleetShip.IsDead = true;
                     }
+                    Squad.SavedSquad.Stats.ShipsLost++;
 
                     if (HasVision)
                     {

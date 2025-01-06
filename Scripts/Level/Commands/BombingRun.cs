@@ -78,6 +78,7 @@ namespace Assets.Scripts.Level.Commands
         {
             Bomb bomb = (Bomb)ship.Weapons.First();
             int loops = 0;
+            bomb.HasCachedChanged = true;
             while (!bomb.DetermineTargetShip(bomb.MakeSortedTargetingList(true), true) && loops < 10)
             {
                 Squad.DamageSentToEnemyShipsBySquad.Clear();

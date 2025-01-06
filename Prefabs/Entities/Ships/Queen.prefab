@@ -133,9 +133,12 @@ MonoBehaviour:
   HealthBar: {fileID: 3570096180295899104}
   MiniMapIcon: {fileID: 3941083685554326912}
   ShipAnimation: {fileID: 0}
+  MovementMarker: {fileID: 0}
   TargetCoordinates: {x: 0, y: 0}
   FinalDestination: {x: 0, y: 0}
   OffsetFromCenter: {x: 0, y: 0}
+  PathfindingDestination: {x: 0, y: 0}
+  WaitingTargetCoordinates: {x: 0, y: 0}
   Squad: {fileID: 0}
   MotherSquad: {fileID: 0}
   DefaultAngle: 0
@@ -152,8 +155,8 @@ MonoBehaviour:
   SpriteRenderer: {fileID: 0}
   IsDead: 0
   IsUserControlled: 0
-  HasBrain: 0
   IsMobile: 0
+  HasBrain: 0
   IsHiveMindControlled: 0
   IsMinionShip: 0
   HasTargetCoordinates: 0
@@ -167,6 +170,10 @@ MonoBehaviour:
   HasLeftRocketFlares: 0
   HasCenterRocketFlares: 0
   HasRightRocketFlares: 0
+  HasMovementMarker: 0
+  HasWaitingTargetCoordinates: 0
+  HasRemainsShip: 0
+  HasEnteredMap: 0
   Weapons: []
   ProjectilePrefabs:
   - {fileID: 6983214468218345633, guid: 3c88303479b0014448bbb58d6782a7ad, type: 3}
@@ -184,20 +191,25 @@ MonoBehaviour:
   LeftRocketFlares: []
   CenterRocketFlares: []
   RightRocketFlares: []
+  RemainsShips: []
   Brain: {fileID: 0}
+  DroppeRemainsShip: {fileID: 0}
   NearbyAsteroids: []
   Turrets: []
   ProximityCollider: {fileID: 0}
   ShipAnimationController: {fileID: 0}
+  RemainsAnimationController: {fileID: 0}
   RotationSpeed: 0
   TargetEnemyShipToFollow: {fileID: 0}
   IsCloseEnoughToTargetEnemyShipToFollow: 0
+  Killer: {fileID: 0}
   PathfindingThreadComplete: 0
   IsPathfinding: 0
   PathfindingThread: 0
   PrintDebugImage: 0
   __Strategy: 
   __Squad: 
+  __SavedSquad: 
   __SquadStatus: 
   __CommandStatus: 
   __LastStopReason: 
@@ -227,6 +239,7 @@ MonoBehaviour:
   __CommandTargetingQueue: []
   __NearbyAsteroids: []
   __HivemindShips: []
+  __RejectReasons: []
   __Clearance: 0
   Direction: 0
   ShouldDetonate: 0
@@ -237,7 +250,7 @@ MonoBehaviour:
   MinionType: Yellow Jacket
   MinionCount: 8
   SpawnPoint: {x: 0, y: -48}
-  SpawnFrequency: 60
+  SpawnFrequency: 45
   TimeBetweenMinions: 5
   MinionSquadsCount: 0
   CurrentMinionSquad: {fileID: 0}

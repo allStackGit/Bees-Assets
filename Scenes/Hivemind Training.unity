@@ -4952,6 +4952,7 @@ MonoBehaviour:
   SwitchSidesButton: {fileID: 1159349887}
   SaveAsLevelButton: {fileID: 2087423609}
   ExitToMainMenuButton: {fileID: 7644198588130245405}
+  Scoreboard: {fileID: 1552784622}
   ActionBox: {fileID: 0}
   Level: {fileID: 0}
   ShipInfoBoxTitle: {fileID: 19937036}

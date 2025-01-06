@@ -163,7 +163,7 @@ namespace Assets.Scripts.Scenes
                     //Debug.Log(GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}"));
                     //Debug.Log(GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>());
                     //Debug.Log(GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>().color);
-                    GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>().color = ConfigData.GetUIColor("bad"); ;
+                    GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>().color = ConfigData.GetUIColor("bad");
                 }
             });
             //Debug.Log("Finalized the page");
@@ -907,6 +907,19 @@ namespace Assets.Scripts.Scenes
             {
                 int[] changeablePixels = Utilities.SetChangablePixelsForImage(ConfigData.ChangeableShipColors.GetValueOrDefault(shipType), squadIconImage.sprite);
                 squadIconImage.sprite = Utilities.SetImageColor(savedSquad.Color, squadIconImage.sprite, changeablePixels);
+            }
+
+            if (savedSquad.HasDeadShips)
+            {
+                //Debug.Log($"{squad.Name} still has dead ships");
+                //Debug.Log(GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}"));
+                //Debug.Log(GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>());
+                //Debug.Log(GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>().color);
+                GameObject.Find($"Saved Squad - {savedSquad.Name} #{savedSquad.Id}").GetComponent<UnityEngine.UI.Image>().color = ConfigData.GetUIColor("bad");
+            }
+            else
+            {
+                GameObject.Find($"Saved Squad - {savedSquad.Name} #{savedSquad.Id}").GetComponent<UnityEngine.UI.Image>().color = ConfigData.GetUIColor("saved-squad-label-default-color");
             }
 
         }

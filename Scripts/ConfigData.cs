@@ -224,7 +224,7 @@ namespace Assets.Scripts
         public static readonly HashSet<string> HumanPowerfulShips = new HashSet<string> { "Flagship", "Fire Ship", "Cruiser", "Dreadnought" };
         public static readonly HashSet<string> SpawnedOnlyShipTypes = new HashSet<string> { "Drone", "Striker", "Beacon" };
         public static readonly HashSet<string> ArmedShipTypes = new HashSet<string> { "Cruiser", "Dreadnought", "Flagship", "Frigate", "Gunship", "Bumblebee", "Hornet", "Leafcutter", "Queen", "Wasp" };
-        public static readonly List<Map> Maps = new List<Map> { new Map(0, new Vector2(0, -215), new Vector2(0, 215), "Pluto"), new Map(1, new Vector2(0, -430), new Vector2(0, 430), "Uranus") };
+        public static readonly List<Map> Maps = new List<Map> { new Map(0, new Vector2(0, -230), new Vector2(0, 230), "Pluto"), new Map(1, new Vector2(0, -430), new Vector2(0, 430), "Uranus") };
         public static readonly List<ObstacleMap> ObstacleMaps = new List<ObstacleMap> { new ObstacleMap(0, "None"), new ObstacleMap(1, "Maze") , new ObstacleMap(2, "Three Paths") , 
             new ObstacleMap(0, "Forest"), new ObstacleMap(0, "The Wall") };
         public static int SquadMakerSide;
@@ -371,6 +371,7 @@ namespace Assets.Scripts
             {"striker-loaded-indicator", new Color32(34, 175, 76, 255)},
             {"striker-not-loaded-indicator", new Color32(236, 44, 44, 255)},
             {"squadbox-default-color", new Color(0.4761926f, 0.8207547f, 0.4979669f, 0.6941177f)},
+            {"saved-squad-label-default-color", new Color(0.6527f, 0.6625f, 0.7169f, 1)},
         };
 
 
