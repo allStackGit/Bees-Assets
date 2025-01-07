@@ -74,14 +74,8 @@ namespace Assets.Scripts.Entities.Ships
             {
                 ShipsHit.Add(ship);
                 int damage = math.min(Charge.Power, ship.Health);
-                LogAttackingDamage(damage, Charge.BaseProjectile, ship);
-
-
-                GameObject instance = Instantiate(new GameObject(), new Vector2(0, 0), Quaternion.identity);
-                Projectile contactedShipProjectile = (Projectile)instance.AddComponent(typeof(Projectile));
-                contactedShipProjectile.Setup(Level, ship.Side, Level.GetState().GetId(), null, ship, this, ship.GetPosition(), 0, 0, (int)(damage * .75f));
-
-                LogAttackingDamage((int)(damage * .75f), contactedShipProjectile, this); // Barge takes 75% of the damage it inflicts
+                LogAttackingDamage(damage, this, FleetShip, Squad.SavedSquad, ship);
+                LogAttackingDamage((int)(damage * .75f), ship, ship.FleetShip, ship.Squad.SavedSquad, this); // Barge takes 75% of the damage it inflicts
                 Charge.Power -= damage;
                 Debug.Log($"{Name} hit {ship.Name} and did {damage} damage");
 
@@ -147,9 +141,9 @@ namespace Assets.Scripts.Entities.Ships
 
                 LogDamage(200);
 
-                Debug.Log($"Stopped charging for  {Name}");
+                Debug.Log($"Stopped charging for {Name}");
 
-                yield return new WaitForSeconds(15);
+                yield return new WaitForSeconds(10);
 
                 FinishCoolDown();
             }

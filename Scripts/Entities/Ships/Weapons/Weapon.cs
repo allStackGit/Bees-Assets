@@ -22,10 +22,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public bool IsUsingCachedTargetingQueue, HasCachedChanged, HasRangeCircle, HasRangeCollider, HasSoundEffect;
         public AudioSource SoundEffect;
         /// <summary>
-        /// Serves as a functional projectile for weapons where the ship is the projectile (Yellow Jacket, Barge, Fire Ship)
-        /// </summary>
-        public Projectile BaseProjectile;
-        /// <summary>
         /// Ships that this weapon can't fire at because an obstacle is in the way
         /// </summary>
         public Dictionary<Ship, string> __TargetingRejectReasons = new Dictionary<Ship, string>();
@@ -71,13 +67,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 SoundEffect.transform.parent = piece.transform;
                 SoundEffect.transform.localPosition = Vector2.zero;
 
-            }
-
-            if (Ship.ShipType == "Barge" || Ship.ShipType == "Fire Ship" || Ship.ShipType == "Yellow Jacket" || Ship.ShipType == "Striker")
-            {
-                GameObject instance = Instantiate(new GameObject(), new Vector2(0, 0), Quaternion.identity);
-                BaseProjectile = (Projectile)instance.AddComponent(typeof(Projectile));
-                BaseProjectile.Setup(Level, Side, Level.GetState().GetId(), this, Ship, null, Vector2.zero, 0, 0, Power);
             }
 
             SetupRangeCircleAndCollider();

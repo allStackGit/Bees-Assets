@@ -1,4 +1,5 @@
-﻿using Assets.Scripts.Entities.Ships;
+﻿using Assets.Scripts.Data;
+using Assets.Scripts.Entities.Ships;
 using System.Collections;
 using UnityEngine;
 
@@ -8,6 +9,8 @@ namespace Assets.Scripts.Entities.Projectiles
     {
         public int Power;
         public Striker Striker;
+        public FleetShip FleetShip;
+        public SavedSquad SavedSquad;
         public Ship ContactedShip;
         public GameObject Explosion;
         // Use this for initialization
@@ -15,6 +18,8 @@ namespace Assets.Scripts.Entities.Projectiles
         {
             Power = power;
             Striker = striker;
+            FleetShip = Striker.FleetShip;
+            SavedSquad = Striker.Squad.SavedSquad;
             ContactedShip = contactedShip;
             Invoke(nameof(Explode), 1.5f);
 
@@ -22,7 +27,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
         private void Explode()
         {
-            Ship.LogAttackingDamage(Power, Striker.Bomb.BaseProjectile, ContactedShip);
+            Ship.LogAttackingDamage(Power, Striker, FleetShip, SavedSquad, ContactedShip);
             GameObject explosion = Instantiate(Explosion, transform.position, Quaternion.identity);
             explosion.transform.parent = ContactedShip.transform;
             Destroy(gameObject);

@@ -65,6 +65,10 @@ namespace Assets.Scripts.Entities.Projectiles
             weapon.IsFiringLaserBeam = false;
             weapon.LaserBeamTarget = null;
             RemoveDamageSentEntry();
+            if (!ShipIsDead)
+            {
+                Shooter.ProjectilesInFlight.Remove(this);
+            }
             Destroy(gameObject);
         }
         private Vector2 GetChangeInShooterPosition()

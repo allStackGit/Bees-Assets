@@ -92,7 +92,7 @@ public class FullRetreat : Command
     {
         Tsv += (int)(ship.Tsv * .05f);
         TargetWarpGate.ShipsWarpingHere.Remove(ship);
-        ship.Kill(null, true);
+        ship.EndKill();
         if (TargetWarpGate.ShipsWarpingHere.Count == 0)
         {
             SetFinalize("All ships have warped");

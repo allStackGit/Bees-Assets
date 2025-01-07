@@ -62,6 +62,10 @@ namespace Assets.Scripts.Entities.Projectiles
         {
             //Debug.Log($"killed projectile {Name}");
             RemoveDamageSentEntry();
+            if (!ShipIsDead)
+            {
+                Shooter.ProjectilesInFlight.Remove(this);
+            }
             Destroy(gameObject);
         }
 
@@ -189,7 +193,7 @@ namespace Assets.Scripts.Entities.Projectiles
                 {
                     int originalPower = Power;
                     ContactTarget(ship);
-                    Ship.LogAttackingDamage(originalPower, this, ship);
+                    Ship.LogAttackingDamage(originalPower, Shooter, FleetShip, SavedSquad, ship);
                 }
             }
 

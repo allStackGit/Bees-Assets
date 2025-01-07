@@ -76,23 +76,18 @@ namespace Assets.Scripts.Entities.Ships
             //Debug.Log($"Yellow Jacket #{Id} is detonating against {ContactedShip.Name}");
             HasCompletedRun = true;
 
-            Bomb.BaseProjectile.Target = ContactedShip;
-
-            GameObject instance = Instantiate(new GameObject(), new Vector2(0, 0), Quaternion.identity);
-            Projectile contactedShipProjectile = (Projectile)instance.gameObject.AddComponent(typeof(Projectile));
-            contactedShipProjectile.Setup(Level, ContactedShip.Side, Level.GetState().GetId(), null, ContactedShip, this, ContactedShip.GetPosition(), 0, 0, Bomb.Power);
 
             // do damage and stats
-            LogDetonationDamage(Bomb.BaseProjectile, ContactedShip);
-            LogDetonationDamage(contactedShipProjectile, this);
+            LogDetonationDamage(Bomb.Power, this, ContactedShip);
+            LogDetonationDamage(Bomb.Power, ContactedShip, this);
 
             if (ContactedShip.Health <= 0)
             {
-                ContactedShip.Kill(Bomb.BaseProjectile); // kill the target ship if needed, yellow jacket gets credit
+                ContactedShip.Kill(this, FleetShip, Squad.SavedSquad); // kill the target ship if needed, yellow jacket gets credit
             }
 
 
-            Kill(contactedShipProjectile); // kill the Yellow Jacket either way, giving credit to the contacted ship 
+            Kill(ContactedShip, ContactedShip.FleetShip, ContactedShip.Squad.SavedSquad); // kill the Yellow Jacket either way, giving credit to the contacted ship 
 
         }
 
@@ -125,10 +120,10 @@ namespace Assets.Scripts.Entities.Ships
 
         }
 
-        private void LogDetonationDamage(Projectile projectile, Ship target) // [damage-method] [note]
+        private void LogDetonationDamage(int power, Ship attacker, Ship target) // [damage-method] [note]
         {
             int targetOldTSV = target.Tsv;
-            target.Health -= projectile.Power;
+            target.Health -= power;
 
             if (target.Health < 0)
             {
@@ -137,13 +132,13 @@ namespace Assets.Scripts.Entities.Ships
 
             int targetTSVChange = target.Tsv - targetOldTSV; // this is a negative number since being hit by a projectile should induce a loss of TSV
             //Debug.Log($"Yellow Jacket #{Id} Detonation: {targetTSVChange} tsv inflicted on {target.Name}");
-            LogHitStats(projectile, target, target.Squad, targetTSVChange);
+            LogHitStats(attacker, attacker.FleetShip, attacker.Squad.SavedSquad, target, target.Squad, targetTSVChange);
 
             // each hit, add the negative TSV to the target's command and subtract the negative TSV from the shooter's command
 
-            if (projectile.Shooter.Squad.Command != null)
+            if (attacker.Squad.Command != null)
             {
-                projectile.Shooter.Squad.Command.Tsv += -1 * targetTSVChange; // add the TSV to the shooter
+                attacker.Squad.Command.Tsv += -1 * targetTSVChange; // add the TSV to the shooter
             }
             if (target.Squad.Command != null)
             {

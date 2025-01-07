@@ -108,7 +108,7 @@ MonoBehaviour:
   Age: 0
   Level: {fileID: 0}
   Side: 0
-  Collider: {fileID: 3350157427599320761}
+  Collider: {fileID: 2779061522766282275}
   Body: {fileID: 0}
   ShowDebug: 0
   Health: 0
@@ -151,8 +151,8 @@ MonoBehaviour:
   SpriteRenderer: {fileID: 0}
   IsDead: 0
   IsUserControlled: 0
-  HasBrain: 0
   IsMobile: 0
+  HasBrain: 0
   IsHiveMindControlled: 0
   IsMinionShip: 0
   HasTargetCoordinates: 0
@@ -168,7 +168,7 @@ MonoBehaviour:
   HasRightRocketFlares: 0
   HasMovementMarker: 0
   HasWaitingTargetCoordinates: 0
-  HasShatteredShip: 0
+  HasRemainsShip: 0
   HasEnteredMap: 0
   Weapons: []
   ProjectilePrefabs: []
@@ -177,21 +177,25 @@ MonoBehaviour:
   LeftRocketFlares: []
   CenterRocketFlares: []
   RightRocketFlares: []
-  ShatteredShips: []
+  RemainsShips: []
   Brain: {fileID: 0}
+  DroppeRemainsShip: {fileID: 0}
   NearbyAsteroids: []
   Turrets: []
   ProximityCollider: {fileID: 0}
   ShipAnimationController: {fileID: 0}
+  RemainsAnimationController: {fileID: 0}
   RotationSpeed: 0
   TargetEnemyShipToFollow: {fileID: 0}
   IsCloseEnoughToTargetEnemyShipToFollow: 0
+  Killer: {fileID: 0}
   PathfindingThreadComplete: 0
   IsPathfinding: 0
   PathfindingThread: 0
   PrintDebugImage: 0
   __Strategy: 
   __Squad: 
+  __SavedSquad: 
   __SquadStatus: 
   __CommandStatus: 
   __LastStopReason: 
@@ -263,7 +267,7 @@ PolygonCollider2D:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2518675752222090675}
-  m_Enabled: 0
+  m_Enabled: 1
   m_Density: 1
   m_Material: {fileID: 0}
   m_IncludeLayers:
@@ -300,12 +304,21 @@ PolygonCollider2D:
   m_AutoTiling: 0
   m_Points:
     m_Paths:
-    - - {x: -16.108244, y: -0.0156002045}
+    - - {x: -12.043899, y: -0.11048293}
+      - {x: -16.108244, y: -0.0156002045}
       - {x: -8.027721, y: 13.98498}
-      - {x: 8.006115, y: 14.054574}
-      - {x: 16.1622, y: 0.122302055}
-      - {x: 8.092171, y: -14.111845}
-      - {x: -8.313777, y: -14.026251}
+      - {x: 7.9055514, y: 13.831013}
+      - {x: 15.979017, y: -0.027822495}
+      - {x: 8.009539, y: -13.906197}
+      - {x: -7.7629423, y: -13.723198}
+      - {x: -16.067387, y: -0.030529976}
+      - {x: -11.949804, y: -0.13054085}
+      - {x: -5.9481883, y: -11.170878}
+      - {x: 5.924408, y: -11.040956}
+      - {x: 12.12928, y: -0.033528447}
+      - {x: 5.9011683, y: 10.679171}
+      - {x: -6.035833, y: 10.840645}
+      - {x: -8.5114, y: 6.444954}
   m_UseDelaunayMesh: 0
 --- !u!68 &3350157427599320761
 EdgeCollider2D:
@@ -314,7 +327,7 @@ EdgeCollider2D:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2518675752222090675}
-  m_Enabled: 1
+  m_Enabled: 0
   m_Density: 1
   m_Material: {fileID: 0}
   m_IncludeLayers:

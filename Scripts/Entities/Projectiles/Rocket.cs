@@ -61,6 +61,7 @@ namespace Assets.Scripts.Entities.Projectiles
             RocketExplosion explosion = (RocketExplosion) Explosion.GetComponent(typeof(RocketExplosion));
             GameState state = Level.GetState();
             explosion.Setup(this.Level, this.Side, state.GetId(), this.Weapon, this.Shooter, this.Target, this.GetPosition(), 0, 0, this.Power);
+            Shooter.ProjectilesInFlight.Add(explosion);
         }
 
         protected override void ShipCollision(Ship ship)

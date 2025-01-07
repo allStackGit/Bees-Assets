@@ -140,12 +140,12 @@ namespace Assets.Scripts.Entities.Ships
 
             // drop bomb animation
             Vector2 bombPosition = ContactedShip.GetRandomPointOnShip(GetPosition());
-            if (ContactedShip.ShipType == "Beehive")
-            {
-                Vector2 targetPoint = GetPosition();
-                Vector2 frontOfShip = targetPoint + new Vector2(0, GetHalfHeight() + 2);
-                bombPosition = ContactedShip.GetRandomPointOnShip(Utilities.RotatePointAroundPoint(targetPoint, frontOfShip, GetRotation() * Mathf.Deg2Rad));
-            }
+            //if (ContactedShip.ShipType == "Beehive")
+            //{
+            //    Vector2 targetPoint = GetPosition();
+            //    Vector2 frontOfShip = targetPoint + new Vector2(0, GetHalfHeight() + 2);
+            //    bombPosition = ContactedShip.GetRandomPointOnShip(Utilities.RotatePointAroundPoint(targetPoint, frontOfShip, GetRotation() * Mathf.Deg2Rad));
+            //}
 
             GameObject instance = Instantiate(BombSprite, Vector2.zero, Quaternion.identity);
             instance.transform.localPosition = bombPosition;

@@ -76,6 +76,7 @@ namespace Assets.Scripts.Entities.Projectiles
                 GameState state = Level.GetState();
                 projectile.Setup(Level, Shooter.Side, state.GetId(), Weapon, Shooter, Target, startingPosition, radians, Weapon.Range, (int) (Weapon.Power / 1.5f));
                 projectile.ShipsToIgnore.Add(target);
+                Shooter.ProjectilesInFlight.Add(projectile);
 
             }
 

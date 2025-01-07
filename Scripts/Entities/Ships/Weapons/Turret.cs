@@ -170,6 +170,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             if (ShouldFireAtFrontOfShip)
             {
                 Vector2 frontOfShip = targetPoint + new Vector2(0, ship.GetHalfHeight() - ConfigData.OffsetFromFrontOfShip.GetValueOrDefault(ship.ShipType));
+                //Debug.Log($"{ship} is positioned at {ship.GetPosition()} and target point is {frontOfShip}");
                 targetPoint = Utilities.RotatePointAroundPoint(targetPoint, frontOfShip, ship.GetRotation() * Mathf.Deg2Rad);
 
             }

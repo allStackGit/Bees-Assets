@@ -127,6 +127,11 @@ namespace Assets.Scripts.Data
             Id = id;
             Side = side;
             Name = name;
+            MapIndex = -1;
+            ObstacleMapIndex = -1;
+            AsteroidOption = -1;
+            Mining = -1;
+            EnemyReinforcementsOption = -1;
             EnemyReinforcements = new List<SavedSquad>();
             EnemySquads = new List<SavedSquad>();
             ChosenSquads = new List<SavedSquad>();

@@ -231,9 +231,9 @@ namespace Assets.Scripts
             { "Gunship", .35f },
             { "Scout", .35f },
             { "Striker", .35f },
-            { "Warp Gate", -1.65f },
+            { "Warp Gate", 13f },
 
-            { "Beehive ", -1.65f },
+            { "Beehive", 4f },
             { "Bumblebee", .35f },
             { "Carpenter Bee", .35f },
             { "Honeybee", .35f },

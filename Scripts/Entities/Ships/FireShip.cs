@@ -1,11 +1,10 @@
-﻿using Assets.Scripts.Entities;
+﻿using Assets.Scripts.Data;
+using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Level;
 using System.Linq;
-using Unity.Mathematics;
 using UnityEngine;
-using static UnityEngine.GraphicsBuffer;
 
 namespace Assets.Scripts.Entities.Ships
 {
@@ -16,11 +15,11 @@ namespace Assets.Scripts.Entities.Ships
         {
             //Debug.Log("Detonating fire ship");
 
-            Kill(null);
+            Kill(null, null, null);
         }
         public Weapon Bomb => Weapons.First();
 
-        public override void Kill(Projectile killer, bool endKill = false) // [kill-method] [damage-method] [note] [stats-method]
+        public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false) // [kill-method] [damage-method] [note] [stats-method]
         {
             if (!IsDead)
             {
@@ -34,6 +33,7 @@ namespace Assets.Scripts.Entities.Ships
                     RocketExplosion explosion = (RocketExplosion)Explosion.GetComponent(typeof(RocketExplosion));
                     explosion.Setup(Level, Side, state.GetId(), Bomb, this, null, GetPosition(), 0, 0, Bomb.Power);
                     state.FireShipExplosions.Add(explosion);
+                    ProjectilesInFlight.Add(explosion);
 
 
                     // The Fire ship is killing itself so it takes full damage but there's no shooter so it's just logging damage
@@ -42,9 +42,11 @@ namespace Assets.Scripts.Entities.Ships
                   
                     if (killer != null)
                     {
-                        killer.Shooter.LastKilled = Time.frameCount;
-                        Killer = killer.Shooter;
-                        LogKillerStats(killer);
+                        killer.LastKilled = Time.frameCount;
+                        Killer = killer;
+                        KillerFleetShip = killer.FleetShip;
+                        KillerSavedSquad = killer.Squad.SavedSquad;
+                        LogKillerStats(KillerFleetShip, KillerSavedSquad);
                     }
                     if (Level.ReplaceDeadShips && Squad.SavedSquad.HasBeenSavedToStorage)
                     {

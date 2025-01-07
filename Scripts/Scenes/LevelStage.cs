@@ -833,7 +833,7 @@ namespace Assets.Scripts.Scenes
             {
                 Ship ship = ships[i];
 
-                ship.Kill(null, true);
+                ship.EndKill();
             }
             SetupLevel();
             //Invoke(nameof(StartNew), .1f);
@@ -852,7 +852,7 @@ namespace Assets.Scripts.Scenes
                 List<LevelOptions> possibleLevels = ConfigData.GetLevelData().GetLevels().Where((level) => level.Side == ConfigData.Configuration.AISide).ToList();
                 CurrentLevelOptions = (LevelOptions)possibleLevels[Utilities.RandomInt(possibleLevels.Count)].Clone();
             }
-            else if (!HasRandomizedOptions)
+            else if (ConfigData.LevelOptions == null)
             {
                 CurrentLevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}");
             }
@@ -1226,7 +1226,7 @@ namespace Assets.Scripts.Scenes
             {
                 Ship ship = ships[i];
 
-                ship.Kill(null, true);
+                ship.EndKill();
             }
             GetComponents<Command>().ToList().ForEach((command) =>
             {
@@ -1369,6 +1369,7 @@ namespace Assets.Scripts.Scenes
             }
             //Debug.Log($"Position before setup for {projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
             projectile.Setup(this, shooter.Side, state.GetId(), weapon, shooter, target, startingPosition, angle, weapon.Range, power);
+            shooter.ProjectilesInFlight.Add(projectile);
             //Debug.Log($"Position after setup for #{projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
         }
         public GameState GetState()
