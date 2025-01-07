@@ -20,7 +20,7 @@ namespace Assets.Scripts.Entities
         public HashSet<CollisionAsteroid> AsteroidsHit = new HashSet<CollisionAsteroid>();
         public CollisionAsteroid LastHitAsteroid;
         public GameObject ExplosionAnimation;
-        public bool HasCollisionAnimation, HasCrackedSprite, HasDroppedDestructionAnimation, IsImmune;
+        public bool HasCollisionAnimation, HasCrackedSprite, HasDroppedDestructionAnimation, IsImmune, HasTouchedMapBorder;
         public Sprite CrackedSprite;
         public SpriteRenderer SpriteRenderer;
 
@@ -131,7 +131,7 @@ namespace Assets.Scripts.Entities
                 //Debug.Log($"It looks like {ship.Name} was already nearby and hit {Name}");
                 //ship.Kill(null);
                 LastHitAsteroid = (CollisionAsteroid)obstacle;
-                if (!LastHitAsteroid.IsImmune && LastHitAsteroid.HasEnteredMap)
+                if (!LastHitAsteroid.IsImmune && LastHitAsteroid.HasTouchedMapBorder)
                 {
                     //Debug.Log($"It looks like {LastHitAsteroid.Name} was already nearby and hit {Name}");
                     AsteroidsHit.Add(LastHitAsteroid);

@@ -53,7 +53,14 @@ namespace Assets.Scripts.Entities
                     ship.StopMoving("Hit map border");
                 }
             }
-            
+            else if (collidingThing.CompareTag("Obstacle"))
+            {
+                CollisionAsteroid asteroid = collidingThing.GetComponent<CollisionAsteroid>();
+                asteroid.HasTouchedMapBorder = true;
+
+
+            }
+
         }
 
 

@@ -20,7 +20,7 @@ namespace Assets.Scripts.Entities.Ships
         }
         public Weapon Bomb => Weapons.First();
 
-        public override void Kill(Ship killer, bool endKill = false) // [kill-method] [damage-method] [note] [stats-method]
+        public override void Kill(Projectile killer, bool endKill = false) // [kill-method] [damage-method] [note] [stats-method]
         {
             if (!IsDead)
             {
@@ -42,8 +42,8 @@ namespace Assets.Scripts.Entities.Ships
                   
                     if (killer != null)
                     {
-                        killer.LastKilled = Time.frameCount;
-                        Killer = killer;
+                        killer.Shooter.LastKilled = Time.frameCount;
+                        Killer = killer.Shooter;
                         LogKillerStats(killer);
                     }
                     if (Level.ReplaceDeadShips && Squad.SavedSquad.HasBeenSavedToStorage)

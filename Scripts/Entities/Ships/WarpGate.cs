@@ -1,4 +1,5 @@
-﻿using Assets.Scripts.Level;
+﻿using Assets.Scripts.Entities.Projectiles;
+using Assets.Scripts.Level;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -30,7 +31,7 @@ namespace Assets.Scripts.Entities.Ships
             }
         }
 
-        public override void Kill(Ship killer, bool endKill = false)
+        public override void Kill(Projectile killer, bool endKill = false)
         {
             GameState state = Level.GetState();
             if (state.GetHumanShips().Where((s) => s.ShipType == ShipType).Count() == 1) // check if this is the last warp gate

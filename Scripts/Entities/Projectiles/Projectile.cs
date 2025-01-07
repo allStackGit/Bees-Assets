@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using Assets.Scripts.Data;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Entities.Ships.Weapons;
@@ -17,6 +18,8 @@ namespace Assets.Scripts.Entities.Projectiles
         public int Power, Range;
         public double Speed;
         public Ship Shooter, Target;
+        public FleetShip FleetShip;
+        public SavedSquad SavedSquad;
         public Weapon Weapon;
         public Vector2 StartingPosition;
         public float Angle;
@@ -26,7 +29,7 @@ namespace Assets.Scripts.Entities.Projectiles
         public Queue<Ship> CollidingQueue = new Queue<Ship>();
         public Queue<Obstacle> CollidingObstacleQueue = new Queue<Obstacle>();
         public string Name;
-        public bool HasExplosion, HasSetMovement;
+        public bool HasExplosion, HasSetMovement, ShipIsDead;
         
         public void Setup(LevelStage level, int side, long id, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power)
         {
@@ -50,6 +53,9 @@ namespace Assets.Scripts.Entities.Projectiles
             {
                 SetMovement();
             }
+
+            FleetShip = shooter.FleetShip;
+            SavedSquad = shooter.Squad.SavedSquad;
         }
 
         public virtual void Kill()
@@ -119,6 +125,11 @@ namespace Assets.Scripts.Entities.Projectiles
                 {
                     ContactObstacle(CollidingObstacleQueue.Dequeue());
                 }
+                if (ShipIsDead && DistanceToPoint(StartingPosition) > Range)
+                {
+                    Debug.Log($"Projectile ({Name}) killed because it went past its range ({Range}), and it's shooter ({FleetShip.Name}) is dead");
+                    Kill();
+                }
             }
             
         }
@@ -178,7 +189,7 @@ namespace Assets.Scripts.Entities.Projectiles
                 {
                     int originalPower = Power;
                     ContactTarget(ship);
-                    Ship.LogAttackingDamage(originalPower, Shooter, ship);
+                    Ship.LogAttackingDamage(originalPower, this, ship);
                 }
             }
 

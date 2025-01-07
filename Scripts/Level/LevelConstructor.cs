@@ -45,6 +45,7 @@ namespace Assets.Scripts.Level
         /// <param name="side"></param>
         public void AddRandomSquads(int side)
         {
+            Debug.Log($"Adding random squads for side {side}");
             for (int option = 0; option < (Level.CurrentLevelOptions.EnemyReinforcementsOption == 1 ? 2 : 1); option++)
             {
                 bool hasArmedSquads = false;
@@ -108,15 +109,15 @@ namespace Assets.Scripts.Level
             List<SavedSquad> preloadSquads = new List<SavedSquad> {
                 ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 0),  // human squad // 1 Barge, #0
                 ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 1),  // human squad // 1 Carrier, #1
-                ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 2),  // human squad // 1 Cruiser, #2s
-                ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 3),  // human squad // 1 Dreadnought, #3
-                ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 4),  // human squad // 1 Factory, #4
-                ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 5),  // human squad // 1 Fire Ship, #5
-                ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 6),  // human squad // 1 Flagship, #6
-                ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 7),  // human squad // 1 Frigate, #7
-                ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 8),  // human squad // 1 Gunship, #8
-                ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 9),  // human squad // 1 Scout, #9
-                ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 10),  // human squad // 1 Warp Gate, #10
+                ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 9),  // human squad // 1 Cruiser, #2s
+                ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 10),  // human squad // 1 Dreadnought, #3
+                ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 11),  // human squad // 1 Factory, #4
+                ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 12),  // human squad // 1 Fire Ship, #5
+                ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 13),  // human squad // 1 Flagship, #6
+                ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 14),  // human squad // 1 Frigate, #7
+                ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 15),  // human squad // 1 Gunship, #8
+                ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 16),  // human squad // 1 Scout, #9
+                ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 17),  // human squad // 1 Warp Gate, #10
 
                 //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 34),  // human squad
                 //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 35),  // human squad

@@ -539,10 +539,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 Move();
                 if (!Level.IsTraining)
                 {
-                    if (Side == ConfigData.Configuration.HumanSide && Level.HasPlayer && !Level.HasFoundAllBees && Level.Audio != null)
-                    {
-                        CheckForBees();
-                    }
+                    // We've removed the use of Bee tracks so this isn't needed anymore
+                    //if (Side == ConfigData.Configuration.HumanSide && Level.HasPlayer && !Level.HasFoundAllBees && Level.Audio != null)
+                    //{
+                    //    CheckForBees();
+                    //}
 
                     if (Level.IsDebugging || ShowDebug) // [alert] [debug] remove this for release
                     {
@@ -1289,9 +1290,9 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         /// <param name="power"></param>
         /// <param name="shooter"></param>
         /// <param name="target"></param>
-        public static void LogAttackingDamage(int power, Ship shooter, Ship target) // [damage-method] [note]
+        public static void LogAttackingDamage(int power, Projectile projectile, Ship target) // [damage-method] [note]
         {
-            if (shooter.Level.MakeShotsHarmless)
+            if (projectile.Level.MakeShotsHarmless)
             {
                 power = 0;
             }
@@ -1302,14 +1303,14 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
 
             int targetTSVChange = target.Tsv - targetOldTSV; // this is a negative number since being hit by a projectile should induce a loss of TSV
-            LogHitStats(shooter, shooter.Squad, target, target.Squad,targetTSVChange);
+            LogHitStats(projectile, target, target.Squad,targetTSVChange);
 
 
-            ShipDamageStatus status = shooter.Squad.GetShipDamageStatus(target);
+            ShipDamageStatus status = projectile.Shooter.Squad.GetShipDamageStatus(target);
             if (target.Health == 0)
             {
-                target.Kill(shooter);
-                shooter.Squad.DamageSentToEnemyShipsBySquad.Remove(status);
+                target.Kill(projectile);
+                projectile.Shooter.Squad.DamageSentToEnemyShipsBySquad.Remove(status);
             }
             else
             {
@@ -1330,30 +1331,33 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         /// <param name="targetSquad"></param>
         /// <param name="tsvChange"></param>
         /// <param name="isFireShipSelfHit"></param>
-        protected static void LogHitStats(Ship shooter, Squad shooterSquad, Ship target, Squad targetSquad, int tsvChange) // [stats-method] [note]
+        protected static void LogHitStats(Projectile projectile, Ship target, Squad targetSquad, int tsvChange) // [stats-method] [note]
         {
-            if (shooter != null)
+
+
+
+            if (projectile != null)
             {
-                if (shooter.Side != target.Side)
+                if (projectile.Side != target.Side)
                 {
-                    shooter.FleetShip.DamageDone += -tsvChange;
+                    projectile.FleetShip.DamageDone += -tsvChange;
                     //Debug.Log($"shooter {shooter}");
                     //Debug.Log($"squad {shooter.Squad}");
                     //Debug.Log($"saved Squad {shooter.Squad.SavedSquad}");
                     //Debug.Log($"stats {shooter.Squad.SavedSquad.Stats}");
-                    shooter.Squad.SavedSquad.Stats.DamageDone += -tsvChange;
+                    projectile.SavedSquad.Stats.DamageDone += -tsvChange;
                 }
                 else 
                 {
-                    if (shooter.Killer != null) // someone killed the ship that damaged this ship. The killer should receive stats for the damage
+                    if (projectile.Shooter.Killer != null) // someone killed the ship that damaged this ship. (e.g. a Bumblebee killing a Fire Ship that exploded and killed this ship) The killer should receive stats for the damage
                     {
                         //Debug.Log($"{shooter.Killer.Name} has killed {shooter.Name} who has in turn damaged {target.Name} on the same side. {shooter.Killer.Name} has done {-tsvChange} additional damage");
-                        shooter.Killer.FleetShip.DamageDone += -tsvChange;
-                        shooter.Killer.Squad.SavedSquad.Stats.DamageDone += -tsvChange;
+                        projectile.Shooter.Killer.FleetShip.DamageDone += -tsvChange;
+                        projectile.Shooter.Killer.Squad.SavedSquad.Stats.DamageDone += -tsvChange;
 
-                        if (shooter.Killer.Squad.HasCommand)
+                        if (projectile.Shooter.Killer.Squad.HasCommand)
                         {
-                            shooter.Killer.Squad.Command.Tsv += -tsvChange; // add the TSV (it's negative so it needs to be reversed to be positive) to the shooter
+                            projectile.Shooter.Killer.Squad.Command.Tsv += -tsvChange; // add the TSV (it's negative so it needs to be reversed to be positive) to the shooter
                         }
                     }
                     tsvChange *= -1; // the shooter damaged its own team, reverse the tsv for the command 
@@ -1361,19 +1365,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 }
 
 
-                if (shooterSquad.HasCommand)
+                if (projectile.Shooter.Squad.HasCommand)
                 {
-                    shooterSquad.Command.Tsv += -tsvChange; // add the TSV (it's negative) to the shooter
+                    projectile.Shooter.Squad.Command.Tsv += -tsvChange; // add the TSV (it's negative) to the shooter
                 }
-            }
-            else if (shooterSquad != null)
-            {
-                Debug.LogException(new Exception($"There was {tsvChange} damage done against {target.Name} but the shooter is null. The shooter squad got stats though."));
-                if (shooterSquad.Side != targetSquad.Side)
-                {
-                    shooterSquad.SavedSquad.Stats.DamageDone += -tsvChange;
-                }
-
             }
             else
             {
@@ -1397,21 +1392,21 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     //Debug.Log($"{shooter.Name} destroyed {percentageTsvDestroyed}  {tsvChange} / {initialTsv[target.Side - 1]} of the total initial tsv of the enemy");
                     target.Brain.AddReward(-percentageTsvDestroyed);
 
-                    if (shooter != null)
+                    if (projectile.Shooter != null)
                     {
-                        shooter.Brain.AddReward(percentageTsvDestroyed);
+                        projectile.Shooter.Brain.AddReward(percentageTsvDestroyed);
                     }
                 }
                 
             }
             else if (targetSquad != null)
             {
-                Debug.LogException(new Exception($"There was {tsvChange} damage done by {shooter.Name} but the target is null. The target squad got stats though."));
+                Debug.LogException(new Exception($"There was {tsvChange} damage done by {projectile.Shooter.Name} but the target is null. The target squad got stats though."));
                 targetSquad.SavedSquad.Stats.DamageReceived += -1 * tsvChange;
             }
             else
             {
-                Debug.LogException(new Exception($"There was {tsvChange} damage done by {shooter.Name} but the target is null and the targetSquad is null. "));
+                Debug.LogException(new Exception($"There was {tsvChange} damage done by {projectile.Shooter.Name} but the target is null and the targetSquad is null. "));
             }
 
 
@@ -1420,10 +1415,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         /// Add kill stats for the the killer
         /// </summary>
         /// <param name="killer"></param>
-        protected void LogKillerStats(Ship killer) // [stats-method] [note]
+        protected void LogKillerStats(Projectile killer) // [stats-method] [note]
         {
             killer.FleetShip.Kills++;
-            killer.Squad.SavedSquad.Stats.Kills++;
+            killer.SavedSquad.Stats.Kills++;
         }
         protected void LogKilledStats() // [stats-method]
         {
@@ -1443,7 +1438,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                Level.Selector.DeselectShip(this);
             }
         }
-        public virtual void Kill(Ship killer, bool endKill = false) // [kill method] [stats-method] [note]
+        public virtual void Kill(Projectile killer, bool endKill = false) // [kill method] [stats-method] [note]
         {
             if (!IsDead)
             {
@@ -1458,12 +1453,13 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 {
                     DropExplosionAnimation();
 
-                    if (killer != null)
+                    if (killer.Shooter != null)
                     {
-                        killer.LastKilled = Time.frameCount;
-                        killer.IsCloseEnoughToTargetEnemyShipToFollow = false;
-                        LogKillerStats(killer);
+                        killer.Shooter.LastKilled = Time.frameCount;
+                        killer.Shooter.IsCloseEnoughToTargetEnemyShipToFollow = false;
                     }
+                    LogKillerStats(killer);
+
                     if (ShipType != "Beacon") // Losing a beacon doesn't count as losing a ship
                     {
                         LogKilledStats();
@@ -1527,16 +1523,20 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     //Debug.Log($"Destroying movement marker for {Name}");
                     Destroy(MovementMarker);
                 }
-                gameObject.SetActive(false);
-                if (!endKill)
-                {
-                    Invoke(nameof(DelayedKill), 5);
-                }
-                else
-                {
-                    Destroy(DroppeRemainsShip);
-                    Destroy(gameObject);
-                }
+                Destroy(gameObject);
+
+
+                // Delayed kill code
+                //gameObject.SetActive(false);
+                //if (!endKill)
+                //{
+                //    Invoke(nameof(DelayedKill), 5);
+                //}
+                //else
+                //{
+                //    Destroy(DroppeRemainsShip);
+                //    Destroy(gameObject);
+                //}
             }
         }
         /// <summary>
@@ -1748,8 +1748,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             }
 
             Vector2 randomPointBounds;
-            float halfWidth = GetHalfWidth() - ConfigData.OffsetFromFront;
-            float halfHeight = GetHalfHeight() - ConfigData.OffsetFromFront;
+            float halfWidth = GetHalfWidth() - ConfigData.OffsetFromFrontOfShip.GetValueOrDefault(ShipType);
+            float halfHeight = GetHalfHeight() - ConfigData.OffsetFromFrontOfShip.GetValueOrDefault(ShipType);
 
             randomPointBounds = Utilities.ForceBounds(10, 10, halfWidth, halfHeight, -1 * halfWidth, -1 * halfHeight);
             Vector2 basePosition = nearPosition + Level.GetPosition();

@@ -226,7 +226,7 @@ namespace Assets.Scripts.Level
         }
         public void AddSelectedSquad(Squad squad)
         {
-            if (squad != null && squad.IsUserControlled)
+            if (squad != null && squad.IsUserControlled && !SelectedSquads.Contains(squad))
             {
                 SelectedSquads.Add(squad);
                 squad.IsSelected = true;

@@ -213,6 +213,37 @@ namespace Assets.Scripts
             { "Yellow Jacket",  new Color[] {UnsetColor } },
         };
 
+        /// <summary>
+        /// Offset in world units from the front of a ship when aiming at the front of a ship
+        /// </summary>
+        public static readonly Dictionary<string, float> OffsetFromFrontOfShip = new Dictionary<string, float>()
+        {
+            { "Barge", .35f },
+            { "Beacon", .35f },
+            { "Carrier", .35f },
+            { "Cruiser", .35f },
+            { "Dreadnought", .35f },
+            { "Drone", .35f },
+            { "Factory", .35f },
+            { "Fire Ship", .35f },
+            { "Flagship", .35f },
+            { "Frigate", .35f },
+            { "Gunship", .35f },
+            { "Scout", .35f },
+            { "Striker", .35f },
+            { "Warp Gate", -1.65f },
+
+            { "Beehive ", -1.65f },
+            { "Bumblebee", .35f },
+            { "Carpenter Bee", .35f },
+            { "Honeybee", .35f },
+            { "Hornet", .35f },
+            { "Leafcutter", .35f },
+            { "Queen", .35f },
+            { "Wasp", .35f },
+            { "Yellow Jacket", .35f },
+        };
+
         public static readonly HashSet<string> CommandTypes = new HashSet<string> { "Aggressive", "Defensive", "Random", "Circle", "Right Swipe", "Left Swipe", "Closest Friendly",
         "In and Out", "Patrol", "Guard", "Scouting", "Mining", "Full Retreat" };
 
@@ -234,10 +265,7 @@ namespace Assets.Scripts
         public static readonly List<int> InitialVisibleShips = Enumerable.Range(0, 3400).ToList(); // // [alert] [server] Starting ships should be pulled from server
         public static bool FirstTimePlaying = true; // [alert] should be linked to whether a user has actually played before   
         public const float CloseEnoughCoordinateVariance = 1.5f; // world units
-        /// <summary>
-        /// Offset in world units from the front of a ship when aiming at the front of a ship
-        /// </summary>
-        public const float OffsetFromFront = .35f;
+
         public const int FireShipExplosionSize = 64;
         public const float RefillDistanceToCarrier = 15;
         public const int MinimumDelayPerBeacon = 10;

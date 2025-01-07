@@ -122,6 +122,16 @@ namespace Assets.Scripts.Data
             ChosenSquads = chosenSquads;
         }
 
+        public LevelOptions(int id, int side, string name)
+        {
+            Id = id;
+            Side = side;
+            Name = name;
+            EnemyReinforcements = new List<SavedSquad>();
+            EnemySquads = new List<SavedSquad>();
+            ChosenSquads = new List<SavedSquad>();
+        }
+
         public string ToJson()
         {
             string json = $"{{\"Id\": {Id}, \"Side\": {Side}, \"Name\": \"{Name}\", \"MapIndex\": {MapIndex}, \"ObstacleMapIndex\": {ObstacleMapIndex}, \"AsteroidOption\": {AsteroidOption}, " +

@@ -1,4 +1,5 @@
-﻿using Assets.Scripts.Entities.Ships.Weapons;
+﻿using Assets.Scripts.Entities.Projectiles;
+using Assets.Scripts.Entities.Ships.Weapons;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -73,8 +74,14 @@ namespace Assets.Scripts.Entities.Ships
             {
                 ShipsHit.Add(ship);
                 int damage = math.min(Charge.Power, ship.Health);
-                LogAttackingDamage(damage, this, ship);
-                LogAttackingDamage((int)(damage * .75f), ship, this); // Barge takes 75% of the damage it inflicts
+                LogAttackingDamage(damage, Charge.BaseProjectile, ship);
+
+
+                GameObject instance = Instantiate(new GameObject(), new Vector2(0, 0), Quaternion.identity);
+                Projectile contactedShipProjectile = (Projectile)instance.AddComponent(typeof(Projectile));
+                contactedShipProjectile.Setup(Level, ship.Side, Level.GetState().GetId(), null, ship, this, ship.GetPosition(), 0, 0, (int)(damage * .75f));
+
+                LogAttackingDamage((int)(damage * .75f), contactedShipProjectile, this); // Barge takes 75% of the damage it inflicts
                 Charge.Power -= damage;
                 Debug.Log($"{Name} hit {ship.Name} and did {damage} damage");
 

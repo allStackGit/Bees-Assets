@@ -1,4 +1,5 @@
 ﻿
+using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Level;
 using System.Collections;
 using System.Collections.Generic;

@@ -7,10 +7,11 @@ namespace Assets.Scripts.Entities.Projectiles
     public class StrikerBomb : MonoBehaviour
     {
         public int Power;
-        public Ship Striker, ContactedShip;
+        public Striker Striker;
+        public Ship ContactedShip;
         public GameObject Explosion;
         // Use this for initialization
-        public void Setup(int power, Ship striker, Ship contactedShip)
+        public void Setup(int power, Striker striker, Ship contactedShip)
         {
             Power = power;
             Striker = striker;
@@ -21,7 +22,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
         private void Explode()
         {
-            Ship.LogAttackingDamage(Power, Striker, ContactedShip);
+            Ship.LogAttackingDamage(Power, Striker.Bomb.BaseProjectile, ContactedShip);
             GameObject explosion = Instantiate(Explosion, transform.position, Quaternion.identity);
             explosion.transform.parent = ContactedShip.transform;
             Destroy(gameObject);

@@ -852,6 +852,10 @@ namespace Assets.Scripts.Scenes
                 List<LevelOptions> possibleLevels = ConfigData.GetLevelData().GetLevels().Where((level) => level.Side == ConfigData.Configuration.AISide).ToList();
                 CurrentLevelOptions = (LevelOptions)possibleLevels[Utilities.RandomInt(possibleLevels.Count)].Clone();
             }
+            else if (!HasRandomizedOptions)
+            {
+                CurrentLevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}");
+            }
             else
             {
                 CurrentLevelOptions = (LevelOptions)ConfigData.LevelOptions.Clone();
@@ -859,10 +863,14 @@ namespace Assets.Scripts.Scenes
 
             // Reset any data that might have changed from a previous level
             ResetGameData();
-            ConfigData.LevelOptions.ChosenSquads.ForEach((savedSquad) =>
+            if (ConfigData.LevelOptions != null)
             {
-                CurrentLevelOptions.ChosenSquads.Add(ConfigData.CurrentShips.GetSavedSquad(savedSquad.Id));
-            });
+                ConfigData.LevelOptions.ChosenSquads.ForEach((savedSquad) =>
+                {
+                    CurrentLevelOptions.ChosenSquads.Add(ConfigData.CurrentShips.GetSavedSquad(savedSquad.Id));
+                });
+            }
+
 
             Debug.Log($"Playing level: {CurrentLevelOptions.Name} with squads: {Utilities.ListToString(CurrentLevelOptions.ChosenSquads)}");
             // Check settings and config variables
@@ -935,6 +943,10 @@ namespace Assets.Scripts.Scenes
             if (GeneratedSquadCountOverride > 0)
             {
                 CurrentLevelOptions.EnemySquadGenerationCount = GeneratedSquadCountOverride;
+            }
+            else if (CurrentLevelOptions.EnemySquadGenerationCount == 0)
+            {
+                CurrentLevelOptions.EnemySquadGenerationCount = Utilities.RandomInt(8)+1;
             }
 
             if (OverrideBeeShipTypes.Count > 0)
