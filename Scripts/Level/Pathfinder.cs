@@ -1092,20 +1092,20 @@ namespace Assets.Scripts.Level
                         //UpdateMapTime[threadIndex].Stop();
                     }
                     //Debug.Log($"Pre starting Finding path for #{i} from {startNode.x}, {startNode.y} to {endNode.x}, {endNode.y}");
-                    //try
-                    //{
-                    //    StartNodes[threadIndex] = GridNodes[threadIndex][startX][startY];
-                    //    EndNodes[threadIndex] = GridNodes[threadIndex][endX][endY];
+                    try
+                    {
+                        StartNodes[threadIndex] = GridNodes[threadIndex][startX][startY];
+                        EndNodes[threadIndex] = GridNodes[threadIndex][endX][endY];
 
-                    //}
-                    //catch(Exception e)
-                    //{
-                    //    Debug.Log($"Tried to start at ({startX}, {startY}) and end at ({endX}, {endY}) for {ship.Name}");
-                    //    throw e;
-                    //}
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.Log($"Tried to start at ({startX}, {startY}) and end at ({endX}, {endY}) for {ship.Name} on thread #{threadIndex}");
+                        throw e;
+                    }
 
-                    StartNodes[threadIndex] = GridNodes[threadIndex][startX][startY];
-                    EndNodes[threadIndex] = GridNodes[threadIndex][endX][endY];
+                    //StartNodes[threadIndex] = GridNodes[threadIndex][startX][startY];
+                    //EndNodes[threadIndex] = GridNodes[threadIndex][endX][endY];
 
                     Ships[threadIndex] = ship;
 

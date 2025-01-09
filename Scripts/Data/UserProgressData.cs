@@ -10,11 +10,11 @@ namespace Assets.Scripts.Data
         public int SavedSquadId = -1; //[alert] [reminder]  this starts at 1 because there are two starting squads 0, and 1. The next Id should be 2.
         public int MinedTSV = 0;
         public int HivemindMinedTSV = 0;
-        public int HumanWins, BeeWins;
+        public int HumanWins, BeeWins, HumanFreePlayWins, BeeFreePlayWins;
 
         public UserProgressData(bool shouldFileExist): base()
         {
-            defaultJsonData = "{\"CurrentLevel\": 1, \"SavedSquadId\": -1, \"MinedTSV\": 0, \"HivemindMinedTSV\": 0, \"HumanWins\": 0, \"BeeWins\": 0}";
+            defaultJsonData = "{\"CurrentLevel\": 1, \"SavedSquadId\": -1, \"MinedTSV\": 0, \"HivemindMinedTSV\": 0, \"HumanWins\": 0, \"BeeWins\": 0, \"HumanFreePlayWins\": 0, \"BeeFreePlayWins\": 0}";
             
             dynamic json = SetupFile(shouldFileExist, ConfigData.UserProgressFilename, (json) =>
             {
@@ -27,6 +27,8 @@ namespace Assets.Scripts.Data
                 HivemindMinedTSV = json.HivemindMinedTSV;
                 HumanWins = json.HumanWins;
                 BeeWins = json.BeeWins;
+                HumanFreePlayWins = json.HumanFreePlayWins;
+                BeeFreePlayWins= json.BeeFreePlayWins;
             });
             
         }

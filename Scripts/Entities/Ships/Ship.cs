@@ -643,7 +643,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
                 if (Level.HasObstacles && IsInBounds())
                 {
-                    startPosition = GetPosition();
+                    startPosition = Level.ForceBounds(GetPosition());
                     DestinationQueue.Clear();
                    
 

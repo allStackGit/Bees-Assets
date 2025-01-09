@@ -403,13 +403,13 @@ namespace Assets.Scripts.Scenes
                     Audio.Setup(PlayMusic);
                 }
 
-                if (!ConfigData.IsPlayingCampaign)
+                if (ConfigData.IsPlayingCampaign)
                 {
-                    Menus.Scoreboard.SetActive(false);
+                    Menus.UpdateScore(ConfigData.GetUserProgressData().HumanWins, ConfigData.GetUserProgressData().BeeWins);
                 }
                 else
                 {
-                    Menus.UpdateScore(ConfigData.GetUserProgressData().HumanWins, ConfigData.GetUserProgressData().BeeWins);
+                    Menus.UpdateScore(ConfigData.GetUserProgressData().HumanFreePlayWins, ConfigData.GetUserProgressData().BeeFreePlayWins);
                 }
 
 
@@ -694,10 +694,20 @@ namespace Assets.Scripts.Scenes
                 if (state.IsSideKilled(ConfigData.Configuration.BeeSide) && !state.IsSideKilled(ConfigData.Configuration.HumanSide))
                 {
                     WinningSide = ConfigData.Configuration.HumanSide;
+                    if (!ConfigData.IsPlayingCampaign)
+                    {
+                        ConfigData.GetUserProgressData().HumanFreePlayWins++;
+                        ConfigData.GetUserProgressData().Save();
+                    }
                 }
                 else if (state.IsSideKilled(ConfigData.Configuration.HumanSide) && !state.IsSideKilled(ConfigData.Configuration.BeeSide))
                 {
                     WinningSide = ConfigData.Configuration.BeeSide;
+                    if (!ConfigData.IsPlayingCampaign)
+                    {
+                        ConfigData.GetUserProgressData().BeeFreePlayWins++;
+                        ConfigData.GetUserProgressData().Save();
+                    }
                 }
                 else if (state.IsSideKilled(ConfigData.Configuration.HumanSide) && state.IsSideKilled(ConfigData.Configuration.BeeSide))
                 {
@@ -706,6 +716,11 @@ namespace Assets.Scripts.Scenes
                 else
                 {
                     Debug.Log("Neither side is dead!");
+                }
+
+                if (Menus != null && !ConfigData.IsPlayingCampaign)
+                {
+                    Menus.UpdateScore(ConfigData.GetUserProgressData().HumanFreePlayWins, ConfigData.GetUserProgressData().BeeFreePlayWins);
                 }
 
                 UnPause();
