@@ -60,10 +60,6 @@ namespace Assets.Scripts.Entities.Ships
         public List<Weapon> Weapons;
         public List<GameObject> ProjectilePrefabs, WeaponPrefabs, ColoredPrefabs, LeftRocketFlares, CenterRocketFlares, RightRocketFlares, RemainsShips;
         public Brain Brain = null;
-        /// <summary>
-        /// The shattered ship that was dropped when this ship died
-        /// </summary>
-        public GameObject DroppeRemainsShip;
         public Queue<Vector2> DestinationQueue = new Queue<Vector2>();
         public List<CollisionAsteroid> NearbyAsteroids = new List<CollisionAsteroid>();
         public List<Turret> Turrets = new List<Turret>();
@@ -75,11 +71,6 @@ namespace Assets.Scripts.Entities.Ships
         /// Controls the animation and recoloring of sprites if the ship has an animation
         /// </summary>
         public ShipAnimationController ShipAnimationController;
-        /// <summary>
-        /// Controls the animation and recoloring of sprites if the ship has ship remains
-        /// </summary>
-        public RemainsAnimationController RemainsAnimationController;
-        //public Stack<Vector2> PastLocations = new Stack<Vector2>();
         public float RotationSpeed;
         /// <summary>
         /// The ship that this ship is following after in order to target it. The primary enemy ship. This is NOT necessarily the ship that this ship is firing at. The weapon(s) have that information
@@ -96,6 +87,10 @@ namespace Assets.Scripts.Entities.Ships
         /// All the projectiles that came from this ship and are not yet dead
         /// </summary>
         public HashSet<Projectile> ProjectilesInFlight = new HashSet<Projectile>();
+        /// <summary>
+        /// The remains of this ship, whether animated or not. Controls the placing and removing of the remains
+        /// </summary>
+        public ShipRemains ShipRemains;
 
 
 
@@ -359,19 +354,9 @@ namespace Assets.Scripts.Entities.Ships
                 if (RemainsShips.Count > 0) // [testing] all ships should have multiple shattered ships eventually
                 {
                     HasRemainsShip = true;
-                    DroppeRemainsShip = Instantiate(RemainsShips.GetRange(Utilities.RandomInt(RemainsShips.Count), 1).First(), Vector2.zero, Quaternion.identity);
-                    RemainsAnimationController = DroppeRemainsShip.GetComponent<RemainsAnimationController>();
-                    DroppeRemainsShip.transform.parent = Level.Map.transform;
-                    DroppeRemainsShip.SetActive(false);
-                    
-                    if (RemainsAnimationController != null )
-                    {
-                        RemainsAnimationController.Ship = this;
-                        RemainsAnimationController.RecolorAnimationSprites();
-                    }
-
-
-
+                    GameObject remains = Instantiate(RemainsShips.GetRange(Utilities.RandomInt(RemainsShips.Count), 1).First(), Vector2.zero, Quaternion.identity);
+                    ShipRemains = remains.AddComponent<ShipRemains>();
+                    ShipRemains.Setup(this);
                 }
             }
 
@@ -1553,8 +1538,12 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     //Debug.Log($"Destroying movement marker for {Name}");
                     Destroy(MovementMarker);
                 }
-                Destroy(DroppeRemainsShip);
+                //Destroy(DroppedRemainsShip);
                 Destroy(gameObject);
+                if (HasRemainsShip) // [debug] all ships should eventually have remains ships
+                {
+
+                }
 
 
                 // Delayed kill code
@@ -1576,7 +1565,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         protected void DelayedKill()
         {
             //Debug.Log($"{Name} delay killed");
-            Destroy(DroppeRemainsShip);
+            //Destroy(DroppedRemainsShip);
             Destroy(gameObject);
         }
         /// <summary>
@@ -1589,36 +1578,37 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             while (!HasTargetEnemyShipToFollow && loop < 10) // [note] the loop check should be removed if no longer needed
             {
                 loop++;
-                //try
-                //{
-                //    if (Squad.Command.TargetingQueue.Count == 0)
-                //    {
-                //        if (Squad.Command.EnemySquad.IsGrowingSquad)
-                //        {
-                //            Squad.Command.OriginalQueue = new Queue<Ship>(Squad.Command.MakeTargetingQueue());
-                //        }
-                //        Squad.Command.TargetingQueue = new Queue<Ship>(Squad.Command.OriginalQueue);
-                //    }
-                //    TargetEnemyShipToFollow = Squad.Command.TargetingQueue.Dequeue();
-                //}catch(Exception e)
-                //{
-                //    Debug.Log($"Squad: {Squad}");
-                //    Debug.Log($"Command: {Squad?.Command}"); // command is null
-                //    Debug.Log($"TargetingQueue: {Squad?.Command?.TargetingQueue}");
-                //    Debug.Log($"Enemy: {Squad?.Command?.EnemySquad?.Name}");
-                //    Debug.Log($"Make Targeting Queue: {Squad?.Command?.MakeTargetingQueue()}");
-                //    throw e;
-                //}
-
-                if (Squad.Command.TargetingQueue.Count == 0)
+                try
                 {
-                    if (Squad.Command.EnemySquad.IsGrowingSquad)
+                    if (Squad.Command.TargetingQueue.Count == 0)
                     {
-                        Squad.Command.OriginalQueue = new Queue<Ship>(Squad.Command.MakeTargetingQueue());
+                        if (Squad.Command.EnemySquad.IsGrowingSquad)
+                        {
+                            Squad.Command.OriginalQueue = new Queue<Ship>(Squad.Command.MakeTargetingQueue());
+                        }
+                        Squad.Command.TargetingQueue = new Queue<Ship>(Squad.Command.OriginalQueue);
                     }
-                    Squad.Command.TargetingQueue = new Queue<Ship>(Squad.Command.OriginalQueue);
+                    TargetEnemyShipToFollow = Squad.Command.TargetingQueue.Dequeue();
                 }
-                TargetEnemyShipToFollow = Squad.Command.TargetingQueue.Dequeue();
+                catch (Exception e)
+                {
+                    Debug.Log($"Squad: {Squad}");
+                    Debug.Log($"Command: {Squad?.Command}"); // command is null
+                    Debug.Log($"TargetingQueue: {Squad?.Command?.TargetingQueue}");
+                    Debug.Log($"Enemy: {Squad?.Command?.EnemySquad?.Name}");
+                    Debug.Log($"Make Targeting Queue: {Squad?.Command?.MakeTargetingQueue()}");
+                    throw e;
+                }
+
+                //if (Squad.Command.TargetingQueue.Count == 0)
+                //{
+                //    if (Squad.Command.EnemySquad.IsGrowingSquad)
+                //    {
+                //        Squad.Command.OriginalQueue = new Queue<Ship>(Squad.Command.MakeTargetingQueue());
+                //    }
+                //    Squad.Command.TargetingQueue = new Queue<Ship>(Squad.Command.OriginalQueue);
+                //}
+                //TargetEnemyShipToFollow = Squad.Command.TargetingQueue.Dequeue();
 
 
                 //Debug.Log($"{Name} doesn't have target ships so it's moving towards the target ship in the squad, {TargetEnemy.Name}");
@@ -1913,21 +1903,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
                 if (HasRemainsShip)
                 {
-                    DroppeRemainsShip.transform.localPosition = GetPosition();
-                    DroppeRemainsShip.transform.eulerAngles = transform.eulerAngles;
-                    DroppeRemainsShip.SetActive(true);
-                    Level.GetState().AddDeadBody(DroppeRemainsShip);
-
-                    if (Squad.HasCustomColor && RemainsAnimationController == null)
-                    {
-                        Color[] colors = ConfigData.ChangeableShipColors.GetValueOrDefault(ShipType);
-                        Sprite prefabSprite = DroppeRemainsShip.GetComponent<SpriteRenderer>().sprite;
-                        Sprite shipIcon = prefabSprite;
-                        int[] changeablePixels = Utilities.SetChangablePixelsForImage(colors, shipIcon);
-                        Sprite recolored = Utilities.SetImageColor(Squad.Color, shipIcon, changeablePixels);
-                        DroppeRemainsShip.GetComponent<SpriteRenderer>().sprite = recolored;
-                    }
-
+                    //Debug.Log($"Dropping remains for {Name}");
+                    ShipRemains.Place();
                 }
 
             }

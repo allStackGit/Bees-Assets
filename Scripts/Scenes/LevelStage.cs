@@ -313,10 +313,6 @@ namespace Assets.Scripts.Scenes
                 ReplaceDeadShips = true;
                 RecordStats = true;                
             }
-            if (!ConfigData.Configuration.DoesUserHaveController && !DoesUserHaveController)
-            {
-                Invoke(nameof(TimeOut), TimeoutTime);
-            }
             
             LevelConstructor = new LevelConstructor(this);
             LevelConstructor.RequestServerSetup();
@@ -416,6 +412,7 @@ namespace Assets.Scripts.Scenes
             }
             else
             {
+                Invoke(nameof(TimeOut), TimeoutTime);
                 if (Audio != null)
                 {
                     Audio.gameObject.SetActive(false);
@@ -959,10 +956,6 @@ namespace Assets.Scripts.Scenes
             {
                 CurrentLevelOptions.EnemySquadGenerationCount = GeneratedSquadCountOverride;
             }
-            else if (CurrentLevelOptions.EnemySquadGenerationCount == 0)
-            {
-                CurrentLevelOptions.EnemySquadGenerationCount = Utilities.RandomInt(8)+1;
-            }
 
             if (OverrideBeeShipTypes.Count > 0)
             {
@@ -982,6 +975,9 @@ namespace Assets.Scripts.Scenes
                 HumanShipTypes = ConfigData.HumanShipTypes.ToList();
             }
         }
+        /// <summary>
+        /// Cleans up the game state and requests and deletes the previous map
+        /// </summary>
         public void ResetGameData()
         {
             ConfigData.CurrentShips.ReplaceDeadSquadShips();
@@ -1266,10 +1262,12 @@ namespace Assets.Scripts.Scenes
 
             while (state.Deadbodies.Count > 0)
             {
-                GameObject deadbody = state.Deadbodies[0];
+                ShipRemains deadbody = state.Deadbodies[0];
                 state.Deadbodies.Remove(deadbody);
-                Destroy(deadbody);
+
             }
+
+            
 
 
             //StartNew();

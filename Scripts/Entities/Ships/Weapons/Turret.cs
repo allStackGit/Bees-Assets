@@ -16,6 +16,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// Whether or not the ship is being controlled by a user to fire towards a particular point on the map
         /// </summary>
         public bool IsFiringManually, HasTargetingMarker;
+        /// <summary>
+        /// When the turret is completely ready to fire. It has a target, it's aimed at the target and it's rate of fire has completed
+        /// </summary>
+        public bool ReadyToFire;
         public int TargetingPasses, PassesPerFire;
         /// <summary> How many times the targeting sequence runs per fire sequence </summary>
         public float TargetingRate;
@@ -76,7 +80,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             __NotShootingReason = $"Reset Reason.";
             TargetingPasses++;
-            if (TargetingPasses == PassesPerFire)
+            if ((ReadyToFire && IsAimedAtTarget) || TargetingPasses == PassesPerFire)
             {
                 //Debug.Log($"{Name} hit {TargetingPasses} targeting passes, now firing");
                 TryToFire();
@@ -121,7 +125,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 {
                     TargetPoint = GetTargetPoint(TargetShip);
                     IsAimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
-
                 }
                 else
                 {
@@ -236,7 +239,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             TargetShip.SetCombatTimer();
 
             SendProjectile();
-
+            ReadyToFire = false;
         }
         protected void FireAtPoint()
         {
@@ -264,6 +267,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     if (IsAimedAtTarget)
                     {
                         Fire();
+
                     }
                     else
                     {
@@ -281,6 +285,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                             //Debug.Log($"{Ship.Name} is not firing {Name} because the piece is not aimed at any target");
                             __NotShootingReason = $"{Ship.Name} is not firing {Name} because the piece is not aimed at any target";
                             //Invoke(nameof(FireNext), .1f);
+                            ReadyToFire = true;
                         }
                     }
 

@@ -84,7 +84,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         public void Kill(float initialDelay)
         {
-            transform.SetParent(Ship.Level.transform);
+            transform.SetParent(Ship.Level.Map.transform);
             InvokeRepeating(nameof(ShrinkVision), initialDelay, .1f);
         }
 
