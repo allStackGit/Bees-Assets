@@ -28,7 +28,7 @@ namespace Assets.Scripts.Entities.Ships
     {
         public bool ShowDebug;
         public int Health, MaxHealth, OriginalHealth, OriginalTsv, Sight, AdditionalTsv, Clearance, MaxRange, HalfMaxRange;
-        public float SizeClass, ProjectileValue, Speed, SpecialFirePower, CurrentSpeed;
+        public float SizeClass, ProjectileValue, Speed, SpecialFirePower, CurrentSpeed, LongestSide;
         public GameObject ShipExplosion, HealthBar, MiniMapIcon, ShipAnimation, MovementMarker;
         public Vector2 TargetCoordinates, FinalDestination, OffsetFromCenter, PathfindingDestination; // the coordinates of where the ship should go, and it's offset from the center of the squad
         /// <summary>
@@ -91,6 +91,10 @@ namespace Assets.Scripts.Entities.Ships
         /// The remains of this ship, whether animated or not. Controls the placing and removing of the remains
         /// </summary>
         public ShipRemains ShipRemains;
+        /// <summary>
+        /// The set of all ships that are visually and spatially below this ship
+        /// </summary>
+        public HashSet<Ship> ShipsOnTopOf = new HashSet<Ship>();
 
 
 
@@ -156,7 +160,7 @@ namespace Assets.Scripts.Entities.Ships
         public float __Firepower, __DamagePerSecond, __CurrentSpeed, __DegreesToTargetCoordinates, __DistanceToTargetCoordinates, __TurningRadius;
         public long __Tsv, __CommandTsv;
         public bool __HasReachedDestination, __SquadHasReachedDestination;
-        public List<Ship> __WeaponTargetShips, __SquadShips, __NearbyShips, __ShipsWarpingHere;
+        public List<Ship> __WeaponTargetShips, __SquadShips, __NearbyShips, __ShipsWarpingHere, __ShipsOnTopOf;
         public List<string> __ShipsWithinRangeOfWeapons, __PastCommands, __BannedStrats, __DamageStatuses, __CommandTargetingQueue, __NearbyAsteroids, __HivemindShips, __RejectReasons;
         public int __Clearance;
         //public List<Vector2> __PastLocations;
@@ -208,6 +212,7 @@ namespace Assets.Scripts.Entities.Ships
             __NearbyShips = HasProximityCollider ? ProximityCollider.NearbyEnemyShips.ToList() : new List<Ship>();
             __HivemindShips = Level.GetState().GetShipsVisibleToHiveMind(Side).Select(s => s.ToString()).ToList();
             __Clearance = GetClearance();
+            __ShipsOnTopOf = ShipsOnTopOf.ToList();
 
             //__BlockedShips = Weapons.Aggregate(new HashSet<Ship>(), (sum, weapon) => {
             //    sum.UnionWith(weapon.BlockedShips.Where((ship) => ship != null && !ship.IsDead));
@@ -514,6 +519,15 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 Vision.Setup(this); // Has to happen after MaxRange is calculated
             }
 
+            if (GetWidth() > GetHeight())
+            {
+                LongestSide = GetWidth();
+            }
+            else
+            {
+                LongestSide = GetHeight();
+            }
+
         }
         protected void FixedUpdate()
         {
@@ -589,7 +603,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     bool hasLoadedSprite = false;
                     if (FleetShip.HasCachedSprite)
                     {
-                        loadedSprite = FleetShip.LoadCachedSprite(index, "ship", size);
+                        loadedSprite = FleetShip.LoadCachedSprite(index, "ship", size, Squad.SavedSquad.Color);
                         if (loadedSprite != null)
                         {
                             prefab.GetComponent<SpriteRenderer>().sprite = loadedSprite;
@@ -610,7 +624,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 //Debug.Log($"{status} sprites for {FleetShip.Name} took {(Time.realtimeSinceStartup - start)*1000}ms");
             }
         }
-
         public void SetSquadName()
         {
             // Set the name of the ships with the Squad name
@@ -790,7 +803,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         /// <summary>
         /// Uses pathfinding (if necessary) to find the shortest path to the destination
         /// </summary>
-        /// <param name="destination"></param>
         Vector2Int convertedStart, convertedDestination;
         Vector2 startPosition;
         private void MergePathfindingPaths()
@@ -1011,6 +1023,42 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         {
             SetMovementVelocity();
         }
+        /// <summary>
+        /// Returns the number of ships of the same type that are visually and spatially below this ship. Also keeps track of which ships those are
+        /// </summary>
+        /// <returns></returns>
+        private int GetCountOfSameShipsBelowThisShip()
+        {
+            ShipsOnTopOf.Clear();
+            int shipsHit = 0;
+            RaycastHit2D[] hits = Physics2D.RaycastAll(GetPosition(), Vector2.zero);
+            for (int i = 0; i < hits.Length; i++)
+            {
+                if (hits[i].collider != null)
+                {
+                    Ship ship = hits[i].collider.gameObject.GetComponent<Ship>();
+                    if (ship != null && ship.ShipType == ShipType && !Equals(ship))
+                    {
+                        shipsHit++;
+                        ShipsOnTopOf.Add(ship);
+                        //Debug.Log($"hit: {ship.Name} #{shipsHit}");
+                    }
+
+                }
+            }
+            return shipsHit;
+        }
+        /// <summary>
+        /// Checks if this ship is below any other ship of the same type
+        /// </summary>
+        /// <returns></returns>
+        private bool IsBelowOtherShips()
+        {
+            return Level.GetState().GetShips(Side).Where((ship) => ship.ShipType == ShipType).ToList().Any((ship) =>
+            {
+                return ship.ShipsOnTopOf.Contains(this);
+            });
+        }
         private void MoveToTargetCoordinates()
         {
 
@@ -1021,8 +1069,16 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
             if (IsCloseEnoughToTargetCoordinates(distance))
             {
+
                 //Debug.Log($"Ship {Name} is close enough ({distance}) to the target coordinates {TargetCoordinates} and will now stop moving.");
                 EndDestination($"Ship {Name} is close enough ({distance}) to the target coordinates {TargetCoordinates}");
+
+                //int stacked = GetCountOfSameShipsBelowThisShip();
+                //if (!IsBelowOtherShips())
+                //{
+                //    Debug.Log($"{Name} is on top of {stacked} {ShipType}s and has no ships above it");
+
+                //}
             }
 
             //if any of the target ship(s) if your weapons are not dead and are within range
@@ -1280,9 +1336,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         /// <summary>
         /// Logs damage to a ship from being attacked by another ship. See LogDamage() for non-attacking damage
         /// </summary>
-        /// <param name="power"></param>
-        /// <param name="shooter"></param>
-        /// <param name="target"></param>
         public static void LogAttackingDamage(int power, Ship attacker, FleetShip attackerFleetShip, SavedSquad attackerSavedSquad, Ship target) // [damage-method] [note]
         {
             if (target.Level.MakeShotsHarmless)
@@ -1327,12 +1380,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         /// <summary>
         /// Logs the stats to the fleet ships, saved squads, and commands of the shooter and the target 
         /// </summary>
-        /// <param name="shooter"></param>
-        /// <param name="shooterSquad"></param>
-        /// <param name="target"></param>
-        /// <param name="targetSquad"></param>
-        /// <param name="tsvChange"></param>
-        /// <param name="isFireShipSelfHit"></param>
         protected static void LogHitStats(Ship attacker, FleetShip attackerFleetShip, SavedSquad attackerSavedSquad, Ship target, Squad targetSquad, int tsvChange) // [stats-method] [note]
         {
 
@@ -1411,7 +1458,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         /// <summary>
         /// Add kill stats for the the killer
         /// </summary>
-        /// <param name="killer"></param>
         protected void LogKillerStats(FleetShip killerFleetShip, SavedSquad killerSavedSquad) // [stats-method] [note]
         {
             killerFleetShip.Kills++;
@@ -1620,7 +1666,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 Debug.Log($"TargetingQueue: {Squad?.Command?.TargetingQueue}");
                 Debug.Log($"Enemy: {Squad?.Command?.EnemySquad?.Name}");
                 //Debug.Log($"Make Targeting Queue: {Squad?.Command?.MakeTargetingQueue()}");
-                Debug.Log($"Hit loop limit for getTargetEnemy()");
+                Debug.LogException(new Exception($"Hit loop limit for getTargetEnemy()"));
             }
             return TargetEnemyShipToFollow;
 
@@ -1903,7 +1949,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
                 if (HasRemainsShip)
                 {
-                    //Debug.Log($"Dropping remains for {Name}");
+                    Debug.Log($"Dropping remains for {Name}");
                     ShipRemains.Place();
                 }
 

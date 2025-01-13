@@ -956,6 +956,10 @@ namespace Assets.Scripts.Scenes
             {
                 CurrentLevelOptions.EnemySquadGenerationCount = GeneratedSquadCountOverride;
             }
+            if (CurrentLevelOptions.EnemySquadGenerationCount > 0)
+            {
+                CurrentLevelOptions.EnemySquadGenerationCount = Utilities.RandomInt(CurrentLevelOptions.EnemySquadGenerationCount) + 1;
+            }
 
             if (OverrideBeeShipTypes.Count > 0)
             {
@@ -1187,6 +1191,7 @@ namespace Assets.Scripts.Scenes
                         fleetShip.MineralsMinedThisLevel = 0;
 
                     });
+
                 }
                 //for (int i = 0; i < ConfigData.SquadsChosenForLevel.Count; i++)
                 //{

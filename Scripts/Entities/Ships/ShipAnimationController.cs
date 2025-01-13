@@ -22,7 +22,7 @@ namespace Assets.Scripts.Entities.Ships
             {
                 for (int i = 0; i < RecoloredSprites.Length; i++)
                 {
-                    RecoloredSprites[i] = Ship.FleetShip.LoadCachedSprite(i+1, "ship", ConfigData.ShipSizes[Ship.ShipType]); // skips the first sprite because that's the base sprite
+                    RecoloredSprites[i] = Ship.FleetShip.LoadCachedSprite(i+1, "ship", ConfigData.ShipSizes[Ship.ShipType], Ship.Squad.SavedSquad.Color); // skips the first sprite because that's the base sprite
                 }
             }
         }

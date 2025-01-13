@@ -5,6 +5,7 @@ using System.Linq;
 //using System.Security.Policy;
 using System.Text.RegularExpressions;
 using Assets.Scripts;
+using Assets.Scripts.Data;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships;
@@ -308,6 +309,10 @@ namespace Assets.Scripts.Level
                 {
                     Level.Menus.ActionBox.Hide();
                 }
+            }
+            else if (Level.HasPlayer)
+            {
+                Level.Menus.ActionBox.SetupForSquad();
             }
         }
         public Squad GetSquadByNumber(int side, int squadNumber)

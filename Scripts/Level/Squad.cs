@@ -951,6 +951,10 @@ namespace Assets.Scripts.Level
         public void RemoveShip(Ship ship)
         {
             _ships.Remove(ship);
+            if (IsSelected && Level.HasPlayer)
+            {
+                Level.Menus.ActionBox.SetSquadsText();
+            }
         }       
 
 
@@ -960,7 +964,7 @@ namespace Assets.Scripts.Level
         {
             return squad.Id == Id;
         }
-        public new string ToString()
+        public override string ToString()
         {
             return $"Squad Number #{SquadNumber} on side #{Side} {Name} with {_ships.Count} ships";
         }

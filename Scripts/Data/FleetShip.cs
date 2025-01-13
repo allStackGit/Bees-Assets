@@ -44,30 +44,37 @@ namespace Assets.Scripts.Data
             GetStats();
         }
         
-        public Sprite LoadCachedSprite(int index, string type, Vector2Int size)
+        public Sprite LoadCachedSprite(int index, string type, Vector2Int size, Color squadColor)
         {
             try
             {
-                byte[] bytes = File.ReadAllBytes($"{ConfigData.GetCachePath()}/{type}_{Id}_{index}.png");
+                string path = $"{ConfigData.GetCachePath()}{type}_{Type}_{ColorUtility.ToHtmlStringRGB(squadColor)}_{index}.png";
+                byte[] bytes = File.ReadAllBytes(path);
                 Texture2D texture = new Texture2D(size.x, size.y);
-                //texture.filterMode = FilterMode.Trilinear;
                 texture.LoadImage(bytes);
+                //Debug.Log($"Loaded cached sprites from {path} for Fleetship {Name}");
                 return Sprite.Create(texture, new Rect(0, 0, size.x, size.y), ConfigData.HalfSize, ConfigData.PixelsPerUnit);
             }
             catch (Exception e)
             {
                 Debug.Log($"Error while trying to load cached sprites: {e}");
+                throw e;
                 return null;
             }
         }
 
-        public void SaveSpriteToCache(int index, string type, Color[] pixels, Vector2Int size)
+        public void SaveSpriteToCache(int index, string type, Color[] pixels, Vector2Int size, Color squadColor)
         {
-            string path = $"{ConfigData.GetCachePath()}/{type}_{Id}_{index}.png";
-            Texture2D export = new Texture2D(size.x, size.y);
-            export.SetPixels(pixels);
-            export.Apply();
-            File.WriteAllBytesAsync(path, export.EncodeToPNG());
+            string path = $"{ConfigData.GetCachePath()}{type}_{Type}_{ColorUtility.ToHtmlStringRGB(squadColor)}_{index}.png";
+            if (!File.Exists(path))
+            {
+                Texture2D export = new Texture2D(size.x, size.y);
+                export.SetPixels(pixels);
+                export.Apply();
+                File.WriteAllBytesAsync(path, export.EncodeToPNG());
+            }
+            HasCachedSprite = true;
+
         }
         private void GetStats() // [tsv-calculation]
         {

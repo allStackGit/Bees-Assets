@@ -21,8 +21,9 @@ namespace Assets.Scripts.Entities.Ships
             {
                 for (int i = 0; i < RecoloredSprites.Length; i++)
                 {
-                    RecoloredSprites[i] = Ship.FleetShip.LoadCachedSprite(i, "remains", ConfigData.ShipSizes[Ship.ShipType]); 
+                    RecoloredSprites[i] = Ship.FleetShip.LoadCachedSprite(i, "remains", ConfigData.ShipSizes[Ship.ShipType], Ship.Squad.SavedSquad.Color); 
                 }
+                //Debug.Log($"Loaded cached sprites for Ship {Ship.Name}");
             }
         }
 
@@ -58,7 +59,7 @@ namespace Assets.Scripts.Entities.Ships
 
         public void Kill()
         {
-            Destroy(gameObject);
+            //Destroy(gameObject);
         }
     }
 }

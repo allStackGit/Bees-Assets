@@ -298,6 +298,10 @@ namespace Assets.Scripts
                 FleetShip replacement = GetAvailableShipsOfType(squadShip.GetFleetShip().Type).FirstOrDefault();
                 if (replacement != null)
                 {
+                    if (squadShip.GetFleetShip().HasCachedSprite)
+                    {
+                        replacement.HasCachedSprite = true;
+                    }
                     squadShip.FleetId = replacement.Id;
                     replaced = true;
                     //Debug.Log($"Replaced dead {squadShip} with {replacement}");

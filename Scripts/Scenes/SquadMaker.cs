@@ -284,6 +284,7 @@ namespace Assets.Scripts.Scenes
         }
         private void SetupLevelDropdown()
         {
+            Debug.Log($"Setting up level dropdown");
             if (ConfigData.IsPlayingCampaign)
             {
                 LevelDropdown.gameObject.SetActive(false);
@@ -294,7 +295,7 @@ namespace Assets.Scripts.Scenes
                 int i = 2;
                 ConfigData.GetLevelData().GetLevels().Where((level) => level.Side != Side).ToList().ForEach((level) =>
                 {
-                    //Debug.Log($"Adding option for {level} -> #{i}");
+                    Debug.Log($"Adding option for {level} -> #{i}");
                     LevelDropdown.options.Add(new TMP_Dropdown.OptionData(level.Name));
                     _levelOptionIndexesToLevels[i] = level;
                     i++;

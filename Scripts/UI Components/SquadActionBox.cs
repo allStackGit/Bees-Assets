@@ -75,7 +75,15 @@ namespace Assets.Scripts.UIComponents
             TMP_Text squadText = GameObject.Find("Squad Text").GetComponentInChildren<TMP_Text>();
             if (squadText != null)
             {
-                squadText.text = GetSquadNames();
+                if (HasLevel)
+                {
+                    squadText.text = $"({Level.GetState().SelectedSquads.Sum((squad) => squad.GetShips().Count)} ships) - {GetSquadNames()}";
+                }
+                else
+                {
+                    squadText.text = GetSquadNames();
+                }
+                
             }
         }
         public string GetSquadNames()

@@ -1,1 +1,1 @@
-[{"Id": 0, "Side": 2, "Name": "Squadron #0", "Color": {"r": 0, "g": 0, "b": 0, "a": 0 }, "StartingPosition": {"x": -40.74998, "y": -0.75 }, "CeaseFire": false, "IsMatchingSpeed": false, "ChosenShootingStrategy": "First Seen", "Stats": {"Commander":"Laeba Naeli","BattlesFought":2,"BattlesWon":1,"ShipsLost":2,"DamageDone":148,"DamageReceived":1067,"Kills":1}, "Ships": [{"FleetId":61,"ShipType":"Scout","Offset":{"x":20.499984741210939,"y":0.00000286102294921875}}, {"FleetId":46,"ShipType":"Gunship","Offset":{"x":-0.49999237060546877,"y":0.00000286102294921875}}]}]
+[]
