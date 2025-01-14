@@ -47,6 +47,10 @@ namespace Assets.Scripts.Level.Commands
             }
 
             InvokeRepeating(nameof(Timer), 0, CommandFrequency);
+            if (IsHiveMindCommand)
+            {
+                Invoke(nameof(Timeout), ConfigData.StandardMaxCommandTime);
+            }
 
         }
         private void GetTargetShip(Ship ship)

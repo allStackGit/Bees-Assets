@@ -43,8 +43,7 @@ namespace Assets.Scripts.Level.Commands
             switch (Name)
             {
                 case "Random":
-                    Random rnd = new Random();
-                    return queue.OrderBy(s => rnd.Next()).First();
+                    return queue.OrderBy(s => Utilities.RandomInt(2)).First();
                 case "Revenge":
                     return queue.OrderByDescending(s => s.LastKilled).First();
                 case "Most Dangerous":

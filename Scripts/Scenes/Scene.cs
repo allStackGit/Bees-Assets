@@ -18,7 +18,7 @@ namespace Assets.Scripts.Scenes
         public Camera Camera;
         public GameObject DialoguePrefab;
         public EventSystem EventSystem;
-        public bool FinalizedScene, WatchServerRequests, IsSocketManager;
+        public bool FinalizedScene, WatchServerRequests, IsSocketManager, IsMainScene;
         //public List<Dialogue> Dialogues = new List<Dialogue>();
         public Dialogue NetworkDisconnection;
         public float TimeScale = 1;
@@ -47,6 +47,7 @@ namespace Assets.Scripts.Scenes
             if (!ConfigData.HasSocketManager())
             {
                 IsSocketManager = true;
+                IsMainScene = true;
                 ConfigData.SocketManager = this;
                 NetworkDisconnection = new Dialogue(DialoguePrefab, "Server disconnected!", "The game needs to be connected to the server in order to function properly.",
                                                new List<string>() { "Retry", "Exit Game" }, new List<UnityAction>() { ConfigData.RetryConnection, Exit });

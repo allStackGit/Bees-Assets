@@ -20,6 +20,10 @@ namespace Assets.Scripts.Level.Commands
             IsAttacking = true;
             PrepareDamageToSendEntries();
             InvokeRepeating(nameof(Timer), 0, CommandFrequency);
+            if (IsHiveMindCommand)
+            {
+                Invoke(nameof(Timeout), ConfigData.StandardMaxCommandTime);
+            }
         }
         private void Timer()
         {

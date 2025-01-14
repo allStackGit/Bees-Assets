@@ -77,7 +77,13 @@ namespace Assets.Scripts.UIComponents
             {
                 if (HasLevel)
                 {
-                    squadText.text = $"({Level.GetState().SelectedSquads.Sum((squad) => squad.GetShips().Count)} ships) - {GetSquadNames()}";
+                    int sum = Level.GetState().SelectedSquads.Sum((squad) => squad.GetShips().Count);
+                    string shipCount = $"({sum}) ships";
+                    if (sum == 1)
+                    {
+                        shipCount = $"({sum} ship)";
+                    }
+                    squadText.text = $"{shipCount} - {GetSquadNames()}";
                 }
                 else
                 {

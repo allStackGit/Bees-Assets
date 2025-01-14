@@ -13,6 +13,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public Weapon Weapon;
         public int Range;
         public CircleCollider2D Collider;
+        public bool IsTurret;
 
         public virtual void Setup(Weapon weapon, int range)
         {
@@ -20,6 +21,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             Range = range;
             Weapon.HasRangeCollider = true;
             Collider.radius = Range;
+
+         
         }
         protected virtual void OnTriggerEnter2D(Collider2D collider)
         {

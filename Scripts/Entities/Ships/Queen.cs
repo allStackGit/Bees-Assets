@@ -109,7 +109,14 @@ namespace Assets.Scripts.Entities.Ships
             Vector2 rotatedSpawnPosition = Utilities.RotatePointAroundPoint(position, position + SpawnPoint, GetRotation() * Mathf.Deg2Rad);
             ship.transform.localPosition = rotatedSpawnPosition;
 
-            ship.MoveToPoint(squadGatheringPoint + offset + new Vector2(0, -10));
+            if (shipIndex > 0 && squad.HasDestination)
+            {
+                ship.MoveToPoint(squad.Destination + ship.OffsetFromCenter);
+            }
+            else
+            {
+                ship.MoveToPoint(squadGatheringPoint + offset + new Vector2(0, -10));
+            }
             ship.SetSquadName();
 
         }

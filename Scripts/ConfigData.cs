@@ -280,6 +280,7 @@ namespace Assets.Scripts
         public const int MaximumTsvValueForSeeingAShip = 500;
         public const int MinimumTsvValueForSeeingAShip = 50;
         public const int StandardReinforcementsDelay = 60;
+        public const int StandardMaxCommandTime = 120;
         public const float TsvMultiplierForVision = .05f;
         public const float VisionShrinkingMultiplier = .8f;
         public static Vector2 HalfSize = new Vector2(.5f, .5f);

@@ -37,7 +37,7 @@ namespace Assets.Scripts.Entities.Ships
         public Vector2 WaitingTargetCoordinates;
         public Squad Squad, MotherSquad;
         public float DefaultAngle, TargetDirection;
-        public long LastKilled;
+        public int LastKilled;
         public FleetShip FleetShip = null;
         public string ShipType, Name;
         public bool FireAtFrontOfShip, InCombat, IsFollowingPath, CannotChangeMovementOrders, IsSpawnedShip;
@@ -160,7 +160,7 @@ namespace Assets.Scripts.Entities.Ships
         public float __Firepower, __DamagePerSecond, __CurrentSpeed, __DegreesToTargetCoordinates, __DistanceToTargetCoordinates, __TurningRadius;
         public long __Tsv, __CommandTsv;
         public bool __HasReachedDestination, __SquadHasReachedDestination;
-        public List<Ship> __WeaponTargetShips, __SquadShips, __NearbyShips, __ShipsWarpingHere, __ShipsOnTopOf;
+        public List<Ship> __WeaponTargetShips, __SquadShips, __NearbyShips, __ShipsWarpingHere, __ShipsOnTopOf, __SortedTargetingQueue;
         public List<string> __ShipsWithinRangeOfWeapons, __PastCommands, __BannedStrats, __DamageStatuses, __CommandTargetingQueue, __NearbyAsteroids, __HivemindShips, __RejectReasons;
         public int __Clearance;
         //public List<Vector2> __PastLocations;
@@ -508,6 +508,17 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     {
                         MovementMarker.GetComponent<SpriteRenderer>().color = Squad.Color;
                     }
+                    else
+                    {
+                        if (Side == ConfigData.Configuration.HumanSide)
+                        {
+                            MovementMarker.GetComponent<SpriteRenderer>().color = ConfigData.GetUIColor("human");
+                        }
+                        else
+                        {
+                            MovementMarker.GetComponent<SpriteRenderer>().color = ConfigData.GetUIColor("bee");
+                        }
+                    }
                 }
 
 
@@ -650,7 +661,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
                         convertedStart = Level.Pathfinder.ConvertToMapCoordinates(startPosition);
                         convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
-                        StopMoving("Got a new destination");
+                        //StopMoving("Got a new destination");
+                        ClearPreviousDesintation();
                         if (!IsPathfinding)
                         {
                             Level.Pathfinder.FindPath(this, convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance());
@@ -682,7 +694,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                                 //}
                                 convertedStart = Level.Pathfinder.ConvertToMapCoordinates(startPosition);
                                 convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
-                                StopMoving("Got a new destination");
+                                //StopMoving("Got a new destination");
+                                ClearPreviousDesintation();
 
                                 if (!IsPathfinding)
                                 {
@@ -719,7 +732,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 //    Debug.Log($"No obstacles in the way for {Name}");
 
                 //}
-                StopMoving("Got a new destination");
+                //StopMoving("Got a new destination");
+                ClearPreviousDesintation();
                 IsFollowingPath = false;
                 SetTargetCoordinates(destination);
                 FinalDestination = TargetCoordinates;
@@ -991,6 +1005,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                         {
                             flare.SetActive(true);
                         });
+
+                        LeftRocketFlares.ForEach((flare) =>
+                        {
+                            flare.SetActive(false);
+                        });
                     }
                     else if (differenceInAngleToPoint < 0)
                     {
@@ -998,6 +1017,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                         LeftRocketFlares.ForEach((flare) =>
                         {
                             flare.SetActive(true);
+                        });
+
+                        RightRocketFlares.ForEach((flare) =>
+                        {
+                            flare.SetActive(false);
                         });
                     }
                     else // moving straight, activate both sides
@@ -1165,16 +1189,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 //Debug.Log(__LastStopReason);
                 SetTargetCoordinates(Vector2.zero);
                 Body.velocity = Vector2.zero;
-                HasTargetCoordinates = false;
-                HasTargetDirection = false;
-                TargetDirection = 0;
-                if (IsFollowingPath)
-                {
-                    IsFollowingPath = false;
-                    DestinationQueue.Clear();
-                    CancelInvoke(nameof(CheckForDirectPath));
-                }
-
+                ClearPreviousDesintation();
                 if (HasRocketFlares)
                 {
                     CenterRocketFlares.ForEach((flare) =>
@@ -1198,6 +1213,18 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 //SetToDefaultAngle();
             }
 
+        }
+        public void ClearPreviousDesintation()
+        {
+            HasTargetCoordinates = false;
+            HasTargetDirection = false;
+            TargetDirection = 0;
+            if (IsFollowingPath)
+            {
+                IsFollowingPath = false;
+                DestinationQueue.Clear();
+                CancelInvoke(nameof(CheckForDirectPath));
+            }
         }
         public void SetToDefaultAngle()
         {
@@ -1949,7 +1976,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
                 if (HasRemainsShip)
                 {
-                    Debug.Log($"Dropping remains for {Name}");
+                    //Debug.Log($"Dropping remains for {Name}");
                     ShipRemains.Place();
                 }
 

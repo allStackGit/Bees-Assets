@@ -34,6 +34,7 @@ namespace Assets.Scripts.Level
         public GameObject SquadBox;
         public SquadTab SquadTab;
         public bool HasMovedBox, IsMatchingSpeed, IsImmobile, CeaseFire, HasAddedShips, IsShowingRanges, IsGrowingSquad, HasCustomColor, HasSquadTab;
+        public Vector2 Destination;
         /// <summary>
         /// A squad can be dead for one frame before it is destroyed. It's important to check for the death of a squad on anything run by a timer outside of the squad object
         /// </summary>
@@ -48,7 +49,7 @@ namespace Assets.Scripts.Level
         private bool _shouldChase = false;
         private string _chosenShootingStrategy; // there is a shooting strategy attached to the squad because users attach shooting strategies to the squad whereas the AI attaches them to the command
 
-        public long LastKilled => GetShips().Max(s => s.LastKilled);
+        public int LastKilled => GetShips().Max(s => s.LastKilled);
         public int DamageDone => GetShips().Sum(s => s.FleetShip.DamageDone);
         public int Health => GetShips().Sum(s => s.Health);
         public float Firepower => GetShips().Sum(s => s.Firepower);
@@ -301,6 +302,7 @@ namespace Assets.Scripts.Level
                     ship.MoveToPoint(destination + ship.OffsetFromCenter);
                 }
             }
+            Destination = destination;
             //float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
             //Debug.Log($"It took {Math.Round(end, 2)} ms to set {Name} moving. The average was {Math.Round(end / ships.Count, 2)}ms");
 

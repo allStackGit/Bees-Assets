@@ -102,7 +102,7 @@ namespace Assets.Scripts.Data
         }
         public SquadShip GetMostValuableShip()
         {
-            return GetSquadShips().OrderByDescending(s => s.GetFleetShip().GetMaxTsv()).ToList().First();
+            return GetSquadShips().OrderByDescending(s => s.GetFleetShip().GetMaxTsv()).First();
         }
         public void AddShipToSquad(SquadShip ship)
         {

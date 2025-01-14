@@ -105,6 +105,10 @@ namespace Assets.Scripts.Level.Commands
 
             });
         }
+        protected void Timeout()
+        {
+            SetFinalize("The command ran out of time");
+        }
         public void StandStill()
         {
             if (Squad!= null)
@@ -155,36 +159,64 @@ namespace Assets.Scripts.Level.Commands
                     case "First Seen":
                         return queue;
                     case "Random":
+                        queue.Sort((a, b) => Utilities.RandomSign());
+                        break;
                         return queue.OrderBy(s => Utilities.RandomInt(2)).ToList();
                     case "Revenge":
+                        queue.Sort((a, b) => b.LastKilled - a.LastKilled);
+                        break;
                         return queue.OrderByDescending(s => s.LastKilled).ToList();
                     case "Most Dangerous":
+                        queue.Sort((a, b) => b.FleetShip.DamageDone - a.FleetShip.DamageDone);
+                        break;
                         return queue.OrderByDescending(s => s.FleetShip.DamageDone).ToList();
                     case "Least Health":
+                        queue.Sort((a, b) => a.Health - b.Health);
+                        break;
                         return queue.OrderBy(s => s.Health).ToList();
                     case "Most Health":
+                        queue.Sort((a, b) => b.Health - a.Health);
+                        break;
                         return queue.OrderByDescending(s => s.Health).ToList();
                     case "Most Powerful":
+                        queue.Sort((a, b) => (int) (b.Firepower - a.Firepower));
+                        break;
                         return queue.OrderByDescending(s => s.Firepower).ToList();
                     case "Least Powerful":
+                        queue.Sort((a, b) => (int) (a.Firepower - b.Firepower));
+                        break;
                         return queue.OrderBy(s => s.Firepower).ToList();
                     case "Closest":
                         queue.Sort((a, b) => (int)(Squad.DistanceToPoint(a.GetPosition()) - Squad.DistanceToPoint(b.GetPosition())));
+                        break;
                         return queue.ToList();
                     case "Furthest":
                         queue.Sort((a, b) => (int)(Squad.DistanceToPoint(b.GetPosition()) - Squad.DistanceToPoint(a.GetPosition())));
+                        break;
                         return queue.ToList();
                     case "Most Range":
+                        queue.Sort((a, b) => b.MaxRange - a.MaxRange);
+                        break;
                         return queue.OrderByDescending(s => s.MaxRange).ToList();
                     case "Least Range":
+                        queue.Sort((a, b) => a.MaxRange - b.MaxRange);
+                        break;
                         return queue.OrderBy(s => s.MaxRange).ToList();
                     case "Fastest":
+                        queue.Sort((a, b) => (int) (b.Speed - a.Speed));
+                        break;
                         return queue.OrderByDescending(s => s.Speed).ToList();
                     case "Slowest":
+                        queue.Sort((a, b) => (int)(a.Speed - b.Speed));
+                        break;
                         return queue.OrderBy(s => s.Speed).ToList();
                     case "Most Valuable":
+                        queue.Sort((a, b) => b.Tsv - a.Tsv);
+                        break;
                         return queue.OrderByDescending(s => s.Tsv).ToList();
                     case "Least Valuable":
+                        queue.Sort((a, b) => a.Tsv - b.Tsv);
+                        break;
                         return queue.OrderBy(s => s.Tsv).ToList();
                     default:
                         if (strategy.StartsWith("Type "))

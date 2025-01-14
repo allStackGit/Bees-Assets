@@ -38,7 +38,7 @@ namespace Assets.Scripts.Scenes
         public bool ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, IsTraining, UseFullyRandomSquads, UseFullyRandomEnemySquads, UseOverrideSquads, 
             UseOverrideEnemySquads, RecordStats, DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateAudio, ActivateLoadingShipsMidLevel, 
             UseMouseScrolling, IsDebugging, IsTestFiring, MakeEnemyCeaseFire, FullCeaseFire, MakeShotsHarmless, UnlockCamera, HasRandomizedOptions, PlayMusic;
-        public int OverrideMapIndex,OverrideTimeScale, OverrideObstacleMapIndex, OverrideUserSide, SpeedMultiplier, GeneratedSquadCountOverride, InitialCommandDelay, TimeoutTime;
+        public int OverrideMapIndex,OverrideTimeScale, OverrideObstacleMapIndex, OverrideUserSide, SpeedMultiplier, GeneratedSquadCountOverride, InitialCommandDelay, TimeoutTime, StageCount;
         public List<string> OverrideStrats = new List<string> { };
         public List<string> OverrideBeeShipTypes = new List<string> { };
         public List<string> OverrideHumanShipTypes = new List<string> { };
@@ -122,7 +122,11 @@ namespace Assets.Scripts.Scenes
         public LevelOptions CurrentLevelOptions;
         public Data.Map MapData;
         public List<SavedSquad> AllSquads = new List<SavedSquad>();
-
+        public Dictionary<int, Vector2[]> StageLayouts = new Dictionary<int, Vector2[]>
+        {
+            {2, new Vector2[] { new Vector2(-756, 0), new Vector2(756, 0) } },
+            {4, new Vector2[] { new Vector2(-756, 756), new Vector2(756, 756), new Vector2(-756, -756), new Vector2(756, -756) } },
+        };
 
 
 
@@ -162,6 +166,28 @@ namespace Assets.Scripts.Scenes
             //Debug.Log($"Start level scene");
             Name = "Level";
             base.Start();
+
+            if (IsMainScene && StageCount > 1)
+            {
+                SpawnStages();
+            }
+        }
+
+        private void SpawnStages()
+        {
+            Debug.Log($"Spawning level stages");
+            transform.position = StageLayouts[StageCount][0];
+            for (int i = 1; i < StageCount; i++)
+            {
+                IsMainScene = false;
+                IsSocketManager = false;
+
+                GameObject nextStage = Instantiate(gameObject, transform.parent);
+                nextStage.transform.position = StageLayouts[StageCount][i];
+                IsMainScene = true;
+                IsSocketManager = true;
+
+            }
         }
 
         private void RandomizeOptions()
@@ -1072,6 +1098,7 @@ namespace Assets.Scripts.Scenes
             Map.Setup(ConfigData.Maps[CurrentLevelOptions.MapIndex].Name, ConfigData.Maps[CurrentLevelOptions.MapIndex].UserStartingPosition, ConfigData.Maps[CurrentLevelOptions.MapIndex].AIStartingPosition);
             Map.name = Map.Name;
             Map.transform.parent = this.transform;
+            Map.transform.localPosition = Vector2.zero;
 
             StartingPositions[ConfigData.Configuration.AISide - 1] = Map.AIStartingPosition;
             StartingPositions[ConfigData.Configuration.UserSide - 1] = Map.UserStartingPosition;

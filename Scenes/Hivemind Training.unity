@@ -604,7 +604,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6831814667753787025, guid: fb47494049b4ce841b6f64eb5fad19f0, type: 3}
       propertyPath: m_AnchoredPosition.x
-      value: 850
+      value: 950
       objectReference: {fileID: 0}
     - target: {fileID: 6831814667753787025, guid: fb47494049b4ce841b6f64eb5fad19f0, type: 3}
       propertyPath: m_AnchoredPosition.y
@@ -2631,7 +2631,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6831814667753787025, guid: fb47494049b4ce841b6f64eb5fad19f0, type: 3}
       propertyPath: m_AnchoredPosition.x
-      value: 550
+      value: 650
       objectReference: {fileID: 0}
     - target: {fileID: 6831814667753787025, guid: fb47494049b4ce841b6f64eb5fad19f0, type: 3}
       propertyPath: m_AnchoredPosition.y
@@ -3127,7 +3127,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8776210996925803749, guid: e4467ba09234ffe4c8ec251f1b4fa9a6, type: 3}
       propertyPath: m_SizeDelta.x
-      value: 350
+      value: 450
       objectReference: {fileID: 0}
     - target: {fileID: 8776210996925803749, guid: e4467ba09234ffe4c8ec251f1b4fa9a6, type: 3}
       propertyPath: m_SizeDelta.y
@@ -3163,7 +3163,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8776210996925803749, guid: e4467ba09234ffe4c8ec251f1b4fa9a6, type: 3}
       propertyPath: m_AnchoredPosition.x
-      value: 175
+      value: 225
       objectReference: {fileID: 0}
     - target: {fileID: 8776210996925803749, guid: e4467ba09234ffe4c8ec251f1b4fa9a6, type: 3}
       propertyPath: m_AnchoredPosition.y
@@ -3400,7 +3400,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6831814667753787025, guid: fb47494049b4ce841b6f64eb5fad19f0, type: 3}
       propertyPath: m_AnchoredPosition.x
-      value: 475
+      value: 575
       objectReference: {fileID: 0}
     - target: {fileID: 6831814667753787025, guid: fb47494049b4ce841b6f64eb5fad19f0, type: 3}
       propertyPath: m_AnchoredPosition.y
@@ -5068,6 +5068,10 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 725459426}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
+      propertyPath: StageCount
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: EventSystem
       value: 
       objectReference: {fileID: 1128415138}
@@ -5221,7 +5225,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: HasRandomizedOptions
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: MovementMarkerPrefab
@@ -5233,7 +5237,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: UseFullyRandomSquads
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: TargetingMarkerPrefab
@@ -5241,7 +5245,7 @@ PrefabInstance:
       objectReference: {fileID: 2507697582912947509, guid: 60a6013777594eb47842724022e04add, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: DoesUserHaveController
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: IsCalculatingClearance
@@ -5425,7 +5429,7 @@ PrefabInstance:
       objectReference: {fileID: 4942428436154776674, guid: 3e2997c21f944aa4c9075385a82fabba, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: GeneratedSquadCountOverride
-      value: 4
+      value: 12
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: ActivateLoadingShipsMidLevel
@@ -5713,7 +5717,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: OverrideBeeShipTypes.Array.data[0]
-      value: Leafcutter
+      value: Bumblebee
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: OverrideBeeShipTypes.Array.data[1]
@@ -5737,7 +5741,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: OverrideHumanShipTypes.Array.data[0]
-      value: Carrier
+      value: Scout
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: OverrideHumanShipTypes.Array.data[1]
@@ -9427,7 +9431,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6831814667753787025, guid: fb47494049b4ce841b6f64eb5fad19f0, type: 3}
       propertyPath: m_AnchoredPosition.x
-      value: 925
+      value: 1025
       objectReference: {fileID: 0}
     - target: {fileID: 6831814667753787025, guid: fb47494049b4ce841b6f64eb5fad19f0, type: 3}
       propertyPath: m_AnchoredPosition.y
@@ -10940,7 +10944,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6831814667753787025, guid: fb47494049b4ce841b6f64eb5fad19f0, type: 3}
       propertyPath: m_AnchoredPosition.x
-      value: 625
+      value: 725
       objectReference: {fileID: 0}
     - target: {fileID: 6831814667753787025, guid: fb47494049b4ce841b6f64eb5fad19f0, type: 3}
       propertyPath: m_AnchoredPosition.y
@@ -12686,7 +12690,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6831814667753787025, guid: fb47494049b4ce841b6f64eb5fad19f0, type: 3}
       propertyPath: m_AnchoredPosition.x
-      value: 775
+      value: 875
       objectReference: {fileID: 0}
     - target: {fileID: 6831814667753787025, guid: fb47494049b4ce841b6f64eb5fad19f0, type: 3}
       propertyPath: m_AnchoredPosition.y
@@ -12903,7 +12907,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6831814667753787025, guid: fb47494049b4ce841b6f64eb5fad19f0, type: 3}
       propertyPath: m_AnchoredPosition.x
-      value: 700
+      value: 800
       objectReference: {fileID: 0}
     - target: {fileID: 6831814667753787025, guid: fb47494049b4ce841b6f64eb5fad19f0, type: 3}
       propertyPath: m_AnchoredPosition.y
@@ -13796,7 +13800,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6831814667753787025, guid: fb47494049b4ce841b6f64eb5fad19f0, type: 3}
       propertyPath: m_AnchoredPosition.x
-      value: 400
+      value: 500
       objectReference: {fileID: 0}
     - target: {fileID: 6831814667753787025, guid: fb47494049b4ce841b6f64eb5fad19f0, type: 3}
       propertyPath: m_AnchoredPosition.y
@@ -17123,7 +17127,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6831814667753787025, guid: fb47494049b4ce841b6f64eb5fad19f0, type: 3}
       propertyPath: m_AnchoredPosition.x
-      value: 1075
+      value: 1175
       objectReference: {fileID: 0}
     - target: {fileID: 6831814667753787025, guid: fb47494049b4ce841b6f64eb5fad19f0, type: 3}
       propertyPath: m_AnchoredPosition.y
@@ -18482,7 +18486,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6831814667753787025, guid: fb47494049b4ce841b6f64eb5fad19f0, type: 3}
       propertyPath: m_AnchoredPosition.x
-      value: 1000
+      value: 1100
       objectReference: {fileID: 0}
     - target: {fileID: 6831814667753787025, guid: fb47494049b4ce841b6f64eb5fad19f0, type: 3}
       propertyPath: m_AnchoredPosition.y
