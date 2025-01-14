@@ -39,6 +39,8 @@ namespace Assets.Scripts.Level
         public Dictionary<long, HashSet<Ship>>[] HivemindShips = new Dictionary<long, HashSet<Ship>>[] { new Dictionary<long, HashSet<Ship>>(), new Dictionary<long, HashSet<Ship>>() };
         public List<ShipRemains> Deadbodies = new List<ShipRemains>();
         public HashSet<RocketExplosion> FireShipExplosions = new HashSet<RocketExplosion>();
+        public HashSet<MiningAsteroid> MiningAsteroids = new HashSet<MiningAsteroid>();
+        public HashSet<Ship> MiningShips = new HashSet<Ship>();
         public bool HasWarpGates, IsFireShipExploding, HasSelectedSquads;
         //public bool[] HasMiningShips = new bool[2];
 
@@ -99,6 +101,10 @@ namespace Assets.Scripts.Level
                 ships.Add(new SpottedShip(spottedShip, spotter.Id));
             }
         }
+        public bool CanUserKeepMining()
+        {
+            return MiningShips.Count > 0 && MiningAsteroids.Count > 0;
+        }
 
         public int AddUserCommand()
         {
@@ -125,15 +131,7 @@ namespace Assets.Scripts.Level
         public void RemoveShip(Ship ship)
         {
             Ships.Remove(ship);
-            if (IsShipExtinct(ship.ShipType))
-            {
-                if (Level.Audio != null)
-                {
-                    Level.Audio.MuteSource(Level.Audio.BeesLoops.GetValueOrDefault(ship.ShipType));
-                    Level.Audio.MuteSource(Level.Audio.BeesIntros.GetValueOrDefault(ship.ShipType));
-                }
-
-            }
+            MiningShips.Remove(ship);
         }
         public void RemoveObstacle(Obstacle obstacle)
         {

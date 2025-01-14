@@ -1125,7 +1125,7 @@ namespace Assets.Scripts.Level
                 {
                     if (Totals[threadIndex] != null && Totals[threadIndex].ElapsedMilliseconds > 1000)
                     {
-                        Debug.Log($"Thread #{threadIndex}:{Ships[threadIndex].Name} has been running for {Totals[threadIndex].ElapsedMilliseconds}ms");
+                        //Debug.Log($"Thread #{threadIndex}:{Ships[threadIndex].Name} has been running for {Totals[threadIndex].ElapsedMilliseconds}ms");
                     }
                     //Debug.Log($"Thread #{i} has been running for {Totals[i].ElapsedMilliseconds}ms");
                 }

@@ -5225,7 +5225,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: HasRandomizedOptions
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: MovementMarkerPrefab
@@ -5429,7 +5429,7 @@ PrefabInstance:
       objectReference: {fileID: 4942428436154776674, guid: 3e2997c21f944aa4c9075385a82fabba, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: GeneratedSquadCountOverride
-      value: 12
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: ActivateLoadingShipsMidLevel
@@ -5529,7 +5529,7 @@ PrefabInstance:
       objectReference: {fileID: 305151279942074956, guid: b4cb9b051560baf41bc941bfbcf1b9b9, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: OverrideStrats.Array.data[0]
-      value: Scouting
+      value: Factory
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: OverrideStrats.Array.data[1]
@@ -5741,7 +5741,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: OverrideHumanShipTypes.Array.data[0]
-      value: Scout
+      value: Factory
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: OverrideHumanShipTypes.Array.data[1]

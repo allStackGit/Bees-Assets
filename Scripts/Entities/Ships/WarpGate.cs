@@ -24,7 +24,7 @@ namespace Assets.Scripts.Entities.Ships
                     FullRetreat fullRetreat = (FullRetreat)ship.Squad.Command;
                     if (fullRetreat.TargetWarpGate == this)
                     {
-                        Debug.Log($"{ship.Name} hit {Name} and so we're warping it");
+                        //Debug.Log($"{ship.Name} hit {Name} and so we're warping it");
                         fullRetreat.ShipsWaitingToWarp.Add(ship);
                         fullRetreat.WaitToWarp();
                     }

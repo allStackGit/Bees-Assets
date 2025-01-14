@@ -35,7 +35,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// <summary>
         /// Whether a weapon has a target ship and is not cease fire and therefore *should* fire at a target. It may still not be *able* to fire at a target, if for instance it's a turret and not aimed at the target.
         /// </summary>
-        public bool ShouldFire => TargetShip != null && !CeaseFire;
+        public virtual bool ShouldFire => TargetShip != null && !CeaseFire;
         public Squad Squad => Ship.Squad;
         public int Side => Ship.Side;
 
@@ -113,7 +113,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 //Debug.Log($"{name} is firing at {ship.name} which is priority #{i} in because the Shooting strategy is {Squad.GetShootingStrategy()}.");
                 if (!foundTarget && potentialTargetShip != null)
                 {
-                    if (IsShipValidTarget(potentialTargetShip)) // if the target ship is within range of this weapon
+                    if (IsShipValidTarget(potentialTargetShip)) // if the target ship is within range of this weapon and otherwise valid
                     {
                         /*
                         Check to make sure that the damage already sent towards the ship is less than the health of the ship previously
@@ -146,7 +146,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     {
                         //Debug.Log($"{Ship.Name} is not find a target for {Piece.name} because the potential target ship {potentialTargetShip.Name} is out of range");
                         __NotShootingReason = $"{Ship.Name} is not find a target for {Piece.name} because the potential target ship {potentialTargetShip.Name} is out of range";
-                        ShipsWithinRange.Remove(potentialTargetShip);
+                        //ShipsWithinRange.Remove(potentialTargetShip);
                     }
                 }
                 else

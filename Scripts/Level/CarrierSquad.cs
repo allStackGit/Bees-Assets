@@ -62,8 +62,6 @@ namespace Assets.Scripts.Level
                     );
                 }
                 AddShip(ship);
-                Carrier.AdditionalTsv += ship.Tsv;
-                Carrier.OriginalTsv = Carrier.Tsv;
                 ship.SetColor();
             }
 

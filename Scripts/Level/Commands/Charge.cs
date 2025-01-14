@@ -70,7 +70,7 @@ namespace Assets.Scripts.Level.Commands
         } 
         private void SendShipToTarget(Ship ship)
         {
-            ship.MoveToDirectionOfPoint(ship.SetAndGetTargetEnemy().GetPosition()); // Move to the primary target ship
+            ship.MoveToPoint(ship.SetAndGetTargetEnemy().GetPosition()); // Move to the primary target ship
         }
         private bool HaveAnyShipsFinished(List<Barge> ships)
         {
@@ -86,7 +86,9 @@ namespace Assets.Scripts.Level.Commands
 
         private bool HasTargetsWithinChargingRange(Ship ship)
         {
-            return ship.HasWeaponsTargetShips && ship.WeaponsTargetShips.Any((targetShip) => targetShip != null &&  ship.ShipsWithinRange.Contains(targetShip) && Utilities.IsRotatedTowards(ship.gameObject, ship.GetDegreesTowardsPoint(targetShip.GetPosition())));
+            return ship.HasWeaponsTargetShips && ship.WeaponsTargetShips.Any((targetShip) => targetShip != null &&  ship.ShipsWithinRange.Contains(targetShip) 
+            && Utilities.IsRotatedTowards(ship.gameObject, ship.GetDegreesTowardsPoint(targetShip.GetPosition()))) && !ship.ShipsWithinRange.Any((targetship) => 
+            Utilities.HasObstaclesInTheWay(ship.GetPosition(), targetship.GetPosition()));
         }
 
 

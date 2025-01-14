@@ -898,7 +898,7 @@ namespace Assets.Scripts.Level
         }
         public MiningAsteroid GetNearestMiningAsteroid()
         {
-            return (MiningAsteroid)Level.GetState().GetObstacles().Where((o) => o.IsMiningAsteroid).OrderBy((o) => DistanceToPoint(o.GetPosition())).FirstOrDefault();
+            return Level.GetState().MiningAsteroids.OrderBy((o) => DistanceToPoint(o.GetPosition())).FirstOrDefault();
         }
 
 

@@ -107,7 +107,7 @@ namespace Assets.Scripts.Level
         public void AddOverrideSquads(int side)
         {
             List<SavedSquad> preloadSquads = new List<SavedSquad> {
-                //ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 0),  // human squad // 1 Barge, #0
+                //ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 7),  // human squad // 1 Barge, #0
                 ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 8),  // human squad // 1 Carrier, #1
                 //ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 9),  // human squad // 1 Cruiser, #2s
                 //ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 10),  // human squad // 1 Dreadnought, #3
@@ -235,6 +235,10 @@ namespace Assets.Scripts.Level
             {
                 //Debug.Log($"Squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.ChosenSquads)}");
                 SpawnShipsAndSquads(Level.CurrentLevelOptions.ChosenSquads, Level.StartingPositions[side - 1], Vector2.zero);
+            }
+
+            if (side == ConfigData.Configuration.HumanSide)
+            {
                 // set the fleetships for the carrier ships
                 SetCarrierShipFleetships();
             }
@@ -368,8 +372,6 @@ namespace Assets.Scripts.Level
                         strikerSquad.MatchSpeed();
                         droneSquad.MatchSpeed();
                     }
-
-                    carrier.AdditionalTsv += droneSquad.Tsv + strikerSquad.Tsv;
 
                 }
             });

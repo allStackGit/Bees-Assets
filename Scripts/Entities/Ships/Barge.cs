@@ -77,7 +77,7 @@ namespace Assets.Scripts.Entities.Ships
                 LogAttackingDamage(damage, this, FleetShip, Squad.SavedSquad, ship);
                 LogAttackingDamage((int)(damage * .75f), ship, ship.FleetShip, ship.Squad.SavedSquad, this); // Barge takes 75% of the damage it inflicts
                 Charge.Power -= damage;
-                Debug.Log($"{Name} hit {ship.Name} and did {damage} damage");
+                //Debug.Log($"{Name} hit {ship.Name} and did {damage} damage");
 
                 if ((Charge.Power == 0 || Level.GetState().GameOver) && gameObject.activeSelf) // if ran out of power or we killed the last ship stop the charge immediately
                 {
@@ -94,7 +94,7 @@ namespace Assets.Scripts.Entities.Ships
 
             StopMoving("Pausing to build up steam before charging");
             CannotChangeMovementOrders = true;
-            Debug.Log($"{Name} is about to charge");
+            //Debug.Log($"{Name} is about to charge");
 
             yield return new WaitForSeconds(2);
 
@@ -141,7 +141,7 @@ namespace Assets.Scripts.Entities.Ships
 
                 LogDamage(200);
 
-                Debug.Log($"Stopped charging for {Name}");
+                //Debug.Log($"Stopped charging for {Name}");
 
                 yield return new WaitForSeconds(10);
 

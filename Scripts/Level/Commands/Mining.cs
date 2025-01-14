@@ -3,6 +3,7 @@ using Assets.Scripts.Entities.Ships;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using Unity.Mathematics;
 using UnityEngine;
 
 namespace Assets.Scripts.Level.Commands
@@ -30,6 +31,11 @@ namespace Assets.Scripts.Level.Commands
                 {
                     if (ship.Collider.IsTouching(TargetAstroid.Collider))
                     {
+                        if (!TargetAstroid.SquadsMining.Contains(ship.Squad))
+                        {
+                            TargetAstroid.SquadsMining.Add(ship.Squad);
+
+                        }
                         FoundAsteroid(ship);
                     }
                 });
@@ -89,26 +95,23 @@ namespace Assets.Scripts.Level.Commands
             {
                 //Debug.Log($"There are {ShipsMining.Count} ships mining for {Squad.Name}");
                 int miningRate = ConfigData.MiningRate * ShipsMining.Count;
-                int amountMined = miningRate;
-                if (TargetAstroid.Health < miningRate)
-                {
-                    amountMined = TargetAstroid.Health;
-                }
+                int amountMined = math.min(miningRate, TargetAstroid.Health);
 
                 Tsv += amountMined;
                 TargetAstroid.Health -= amountMined;
                 //Debug.Log($"{Squad.Name} mined {amountMined} from {TargetAstroid.Name}. It has {TargetAstroid.Health} health left");
-                if (TargetAstroid.Health <= 0)
-                {
-                    TargetAstroid.Kill();
-                }
 
-                int amountPerShip = miningRate / ShipsMining.Count;
+                int amountPerShip = amountMined / ShipsMining.Count;
                 ShipsMining.ForEach((ship) =>
                 {
                     ship.FleetShip.MineralsMinedThisLevel += amountPerShip;
                     ship.AdditionalTsv += amountPerShip;
                 });
+
+                if (TargetAstroid.Health == 0)
+                {
+                    TargetAstroid.Kill();
+                }
             }
 
         }
@@ -122,10 +125,12 @@ namespace Assets.Scripts.Level.Commands
         public override void SetFinalize(string cause)
         {
             CleanupAsteroid();
+            //Debug.Log($"Finalizing mining command for {Squad}");
             Squad.GetShips().ForEach((ship) =>
             {
                 if (ship.HasShipAnimation)
                 {
+                    //Debug.Log($"Turning off mining animation for {ship.Name}");
                     ship.ShipAnimation.SetActive(false);
                 }
             });

@@ -155,11 +155,11 @@ namespace Assets.Scripts.Entities.Ships
 
 
         // Test variables
-        public string __Strategy, __Squad, __SavedSquad, __SquadStatus, __CommandStatus, __LastStopReason, __EnemySquad, __TargetEnemyShipToFollow;
+        public string __Strategy, __Squad, __SavedSquad, __SquadStatus, __CommandStatus, __LastStopReason, __EnemySquad, __TargetEnemyShipToFollow, __SquadColor;
         public Vector2 __CommandDestination, __Velocity, __TargetCoordinates;
         public float __Firepower, __DamagePerSecond, __CurrentSpeed, __DegreesToTargetCoordinates, __DistanceToTargetCoordinates, __TurningRadius;
         public long __Tsv, __CommandTsv;
-        public bool __HasReachedDestination, __SquadHasReachedDestination;
+        public bool __HasReachedDestination, __SquadHasReachedDestination, __IsInBounds;
         public List<Ship> __WeaponTargetShips, __SquadShips, __NearbyShips, __ShipsWarpingHere, __ShipsOnTopOf, __SortedTargetingQueue;
         public List<string> __ShipsWithinRangeOfWeapons, __PastCommands, __BannedStrats, __DamageStatuses, __CommandTargetingQueue, __NearbyAsteroids, __HivemindShips, __RejectReasons;
         public int __Clearance;
@@ -213,6 +213,8 @@ namespace Assets.Scripts.Entities.Ships
             __HivemindShips = Level.GetState().GetShipsVisibleToHiveMind(Side).Select(s => s.ToString()).ToList();
             __Clearance = GetClearance();
             __ShipsOnTopOf = ShipsOnTopOf.ToList();
+            __IsInBounds = IsInBounds();
+            __SquadColor = ColorUtility.ToHtmlStringRGB(Squad.Color);
 
             //__BlockedShips = Weapons.Aggregate(new HashSet<Ship>(), (sum, weapon) => {
             //    sum.UnionWith(weapon.BlockedShips.Where((ship) => ship != null && !ship.IsDead));
@@ -280,10 +282,12 @@ namespace Assets.Scripts.Entities.Ships
             RotationSpeed = Speed * ConfigData.Configuration.RotationMultiplier;
 
 
+            GameState state = Level.GetState();
+
             if (!IsUserControlled)
             {
                 IsHiveMindControlled = true;
-                Level.GetState().HivemindShips[Side - 1].Add(Id, new HashSet<Ship>());
+                state.HivemindShips[Side - 1].Add(Id, new HashSet<Ship>());
             }
 
 
@@ -399,7 +403,7 @@ namespace Assets.Scripts.Entities.Ships
             else if (fleetShip.Type == "Warp Gate")
             {
                 IsWarpGate = true;
-                Level.GetState().HasWarpGates = true;
+                state.HasWarpGates = true;
             }
             for (int i = 0; i < shipStats.ProjectileValues.Count; i++)
             {
@@ -480,17 +484,9 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             OriginalTsv = Utilities.CalculateMaxTsv(this);
 
             // The beehive has an edge collider so it doesn't give accurate measurement of the size of the ship
-            if (ShipType != "Beehive")
-            {
-                _size = Collider.bounds.size;
-            }
-            else
-            {
-                _size = ConfigData.ShipSizes[ShipType] / ConfigData.PixelsPerUnit;
-
-            }
+            _size = ConfigData.ShipSizes[ShipType] / ConfigData.PixelsPerUnit;
             //squad.AddShip(this);
-            Level.GetState().AddShip(this);
+            state.AddShip(this);
             SetToDefaultAngle();
             SetCurrentSpeed(Speed);
 
@@ -537,6 +533,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             else
             {
                 LongestSide = GetHeight();
+            }
+
+            if (ConfigData.Configuration.UserSide == Side && (ShipType == "Factory" || ShipType == "Carpenter Bee"))
+            {
+                state.MiningShips.Add(this);
             }
 
         }
@@ -1410,8 +1411,9 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         protected static void LogHitStats(Ship attacker, FleetShip attackerFleetShip, SavedSquad attackerSavedSquad, Ship target, Squad targetSquad, int tsvChange) // [stats-method] [note]
         {
 
+            // tsvChange is a negative number, -tsvChange is a positive number
 
-
+            bool isFriendlyFire = false; // So far friendly fire can only occur if a fire ship blows up and kills its own side's ships
             if (attackerFleetShip.Side != target.Side)
             {
                 attackerFleetShip.DamageDone += -tsvChange;
@@ -1425,6 +1427,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             {
                 if (attacker.KillerFleetShip != null) // someone killed the ship that damaged this ship. (e.g. a Bumblebee killing a Fire Ship that exploded and killed this ship) The killer should receive stats for the damage
                 {
+                    isFriendlyFire = true;
                     //Debug.Log($"{shooter.Killer.Name} has killed {shooter.Name} who has in turn damaged {target.Name} on the same side. {shooter.Killer.Name} has done {-tsvChange} additional damage");
                     attacker.KillerFleetShip.DamageDone += -tsvChange;
                     attacker.KillerSavedSquad.Stats.DamageDone += -tsvChange;
@@ -1434,25 +1437,27 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                         attacker.Killer.Squad.Command.Tsv += -tsvChange; // add the TSV (it's negative so it needs to be reversed to be positive) to the shooter
                     }
                 }
-                tsvChange *= -1; // the shooter damaged its own team, reverse the tsv for the command 
+               
 
             }
 
 
             if (attacker != null && attacker.Squad.HasCommand)
             {
-                attacker.Squad.Command.Tsv += -tsvChange; // add the TSV (it's negative) to the shooter
+                attacker.Squad.Command.Tsv += tsvChange * (isFriendlyFire ? 1 : -1); // add the already negative TSV to the shooter if it's friendly fire
+                                                                                     // multiply by -1 to add the positive number if it's not friendly fire
             }
 
 
             if (target != null)
             {
+                //Debug.Log($"{target.Name} has been hit by {attacker.Name} and so {target.FleetShip.Name} and {target.Squad.SavedSquad.Name} will increase damage received");
                 target.FleetShip.DamageReceived += -tsvChange;
                 target.Squad.SavedSquad.Stats.DamageReceived += -tsvChange;
 
                 if (targetSquad.HasCommand)
                 {
-                    targetSquad.Command.Tsv += tsvChange; // subtract the TSV (it's negative) from the target
+                    targetSquad.Command.Tsv += tsvChange; // add the negative TSV to the target command because it took damage
                 }
 
                 if (target.Level.IsTrainingNueralNetwork)
@@ -1468,12 +1473,12 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                         attacker.Brain.AddReward(percentageTsvDestroyed);
                     }
                 }
-                
+
             }
             else if (targetSquad != null)
             {
                 Debug.LogException(new Exception($"There was {tsvChange} damage done by {attacker.Name} but the target is null. The target squad got stats though."));
-                targetSquad.SavedSquad.Stats.DamageReceived += -1 * tsvChange;
+                targetSquad.SavedSquad.Stats.DamageReceived += -tsvChange;
             }
             else
             {

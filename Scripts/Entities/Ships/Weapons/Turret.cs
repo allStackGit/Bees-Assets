@@ -27,6 +27,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public Vector2 TargetPoint;
         public GameObject TargetingMarker;
 
+        //public override bool ShouldFire => TargetShip != null && !CeaseFire && IsShipValidTarget(TargetShip);
+
 
 
         public virtual void Setup(Ship ship, string type, int range, int power, float rateOfFire, float projectileValue, GameObject piece,
@@ -110,7 +112,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         }
         /// <summary>
-        /// Run on FixedUpdate(). Aims the Turret at the TargetShip, if one exists
+        /// Run on FixedUpdate(). Aims the Turret at the TargetShip, if one exists and can be aimed at
         /// </summary>
         protected virtual void Aim()
         {
@@ -129,7 +131,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 else
                 {
                     IsAimedAtTarget = false;
-                    if (!HasShipsWithinRange || CeaseFire)
+                    if (CeaseFire || !HasValidTarget())
                     {
                         //Debug.Log($"{Name} has no ships to fire at, returning to default aim");
                         Utilities.TimedRotation(Piece, Ship.GetRotation(), RotationRate);
@@ -141,7 +143,15 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         }
         /// <summary>
-        /// Checks if the ship is a) within range, b) Not blocked by obstacles and c) In the map
+        /// Checks all ships within range to see if this turret can fire upon them
+        /// </summary>
+        /// <returns></returns>
+        public bool HasValidTarget()
+        {
+            return ShipsWithinRange.Any((targetShip) => IsShipValidTarget(targetShip));
+        }
+        /// <summary>
+        /// Checks if the ship is a) within range, b) In the map, and c) Not blocked by obstacles
         /// </summary>
         /// <param name="potentialTargetShip"></param>
         /// <returns></returns>

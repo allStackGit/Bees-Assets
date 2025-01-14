@@ -19,7 +19,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
         public override void ContactTarget(Ship target)
         {
-            Debug.Log($"Explosion hit {target.Name}");
+            //Debug.Log($"Explosion hit {target.Name}");
             _shipsHit.Add(target);
         }
 
@@ -63,7 +63,7 @@ namespace Assets.Scripts.Entities.Projectiles
         }
         public void SetColliderSize(int size)
         {
-            Debug.Log($"Setting collider size to {size} for {Name}");
+            //Debug.Log($"Setting collider size to {size} for {Name}");
             CircleCollider.radius = size;
         }
         protected override void FixedUpdate()
@@ -72,7 +72,7 @@ namespace Assets.Scripts.Entities.Projectiles
             {
                 if (CollidingQueue.Count > 0)
                 {
-                    Debug.Log($"Pulled collision for {Name} off of rocket explosion queue");
+                    //Debug.Log($"Pulled collision for {Name} off of rocket explosion queue");
                     for (int i = 0; i < CollidingQueue.Count; i++)
                     {
                         ShipCollision(CollidingQueue.Dequeue());
@@ -87,7 +87,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
         protected override void ShipCollision(Ship ship)
         {
-            Debug.Log($"Rocket explosion collided with {ship.Name}");
+            //Debug.Log($"Rocket explosion collided with {ship.Name}");
             if (ship != null)
             {
                 // if hit enemy projectile or fire ship explosion

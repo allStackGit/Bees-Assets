@@ -558,6 +558,7 @@ namespace Assets.Scripts.Scenes
                 instance.transform.localPosition = position;
                 MiningAsteroid asteroid = instance.GetComponent<MiningAsteroid>();
                 state.AddObstacle(asteroid);
+                state.MiningAsteroids.Add(asteroid);
                 asteroid.Setup(this, state.GetId());
 
             });
@@ -638,7 +639,10 @@ namespace Assets.Scripts.Scenes
                 GameState state = GetState();
                 if (state.GameOver && !state.LevelEnded)
                 {
-                    LevelOver();
+                    if (!state.CanUserKeepMining())
+                    {
+                        LevelOver();
+                    }
                 }
 
                 if ((state.IsPaused || ConfigData.SocketManager.NetworkDisconnection.IsOpen || !IsLevelConnectedToServer) && !IsTrainingNueralNetwork)
