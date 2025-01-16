@@ -67,16 +67,13 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
                 Level.AddProjectile(ProjectilePrefab, this, GetPosition(), angle);
                 Ship.FleetShip.ShotsFired++;
-
                 if (!IsFiringManually)
                 {
-                    ShipDamageStatus shipDamageStatus = Squad.GetShipDamageStatus(TargetShip);
+                    ShipDamageStatus shipDamageStatus = Level.GetState().GetShipDamageStatus(Side, TargetShip);
                     shipDamageStatus.TotalDamageSentToShip += Power;
                     LaserBeamTarget = TargetShip;
                 }
-
                 IsFiringLaserBeam = true;
-
             }
 
 

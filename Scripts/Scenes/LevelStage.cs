@@ -748,6 +748,11 @@ namespace Assets.Scripts.Scenes
                 if (Menus != null && !ConfigData.IsPlayingCampaign)
                 {
                     Menus.UpdateScore(ConfigData.GetUserProgressData().HumanFreePlayWins, ConfigData.GetUserProgressData().BeeFreePlayWins);
+
+                    if (!Menus.IsMiniMapOpen)
+                    {
+                        Menus.ToggleMiniMapDisplay();
+                    }
                 }
 
                 UnPause();

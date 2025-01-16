@@ -1,10 +1,12 @@
 ﻿
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Level;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using static UnityEngine.GraphicsBuffer;
 
 namespace Assets.Scripts.Entities.Ships.Weapons
 {
@@ -54,11 +56,28 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         protected override void SetTargetShip(Ship targetShip)
         {
-            ShipDamageStatus shipDamageStatus = Squad.GetShipDamageStatus(targetShip);
+            ShipDamageStatus shipDamageStatus = Level.GetState().GetShipDamageStatus(Side, targetShip);
             shipDamageStatus.TotalDamageSentToShip += Power;
             TargetShip = targetShip;
             //Debug.Log($"Setting target ship to {TargetShip.Name} and sending {Power} / {shipDamageStatus.totalDamageSentToShip} damage ");
 
+        }
+        /// <summary>
+        /// Used to determine a target ship if the sorted target list can't give you a ship back
+        /// </summary>
+        /// <param name="ships"></param>
+        public void SetRandomTarget(List<Ship> ships)
+        {
+            int index = Utilities.RandomInt(ships.Count);
+            try
+            {
+                SetTargetShip(ships[index]);
+            }
+            catch (Exception e)
+            {
+                Debug.Log($"Exception with index {index} and ships list length of {ships.Count}");
+                throw e;
+            }
         }
     }
 }

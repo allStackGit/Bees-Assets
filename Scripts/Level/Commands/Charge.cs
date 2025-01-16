@@ -53,20 +53,26 @@ namespace Assets.Scripts.Level.Commands
             }
 
         }
-        private void GetTargetShip(Ship ship)
+        private void GetTargetShip(Ship chargingShip)
         {
-            Bomb bomb = (Bomb)ship.Weapons.First();
-            int loops = 0;
-            while (!bomb.DetermineTargetShip(bomb.MakeSortedTargetingList(true), true) && loops < 10)
+            Bomb bomb = (Bomb)chargingShip.Weapons.First();
+            List<Ship> targetingList = bomb.MakeSortedTargetingList(true);
+            if (!bomb.DetermineTargetShip(targetingList, true))
             {
-                Squad.DamageSentToEnemyShipsBySquad.Clear();
-                loops++;
+                // Couldn't find a valid target ship, potentially because too much damage has been sent to each ship already
+                bomb.SetRandomTarget(targetingList);
             }
-            ship.TargetEnemyShipToFollow = bomb.TargetShip;
-            if (loops == 10)
-            {
-                Debug.Log($"Looped 10 times while trying to determine a target ship for {bomb.Name}");
-            }
+            //int loops = 0;
+            //while (!bomb.DetermineTargetShip(bomb.MakeSortedTargetingList(true), true) && loops < 10)
+            //{
+            //    Squad.DamageSentToEnemyShipsBySquad.Clear();
+            //    loops++;
+            //}
+            chargingShip.TargetEnemyShipToFollow = bomb.TargetShip;
+            //if (loops == 10)
+            //{
+            //    Debug.Log($"Looped 10 times while trying to determine a target ship for {bomb.Name}");
+            //}
         } 
         private void SendShipToTarget(Ship ship)
         {

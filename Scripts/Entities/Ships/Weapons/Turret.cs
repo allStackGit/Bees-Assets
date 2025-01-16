@@ -148,7 +148,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// <returns></returns>
         public bool HasValidTarget()
         {
-            return ShipsWithinRange.Any((targetShip) => IsShipValidTarget(targetShip));
+            return ShipsWithinRange.Any((targetShip) => targetShip != null && IsShipValidTarget(targetShip));
         }
         /// <summary>
         /// Checks if the ship is a) within range, b) In the map, and c) Not blocked by obstacles

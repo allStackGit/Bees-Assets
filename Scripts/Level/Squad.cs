@@ -21,7 +21,6 @@ namespace Assets.Scripts.Level
         public LevelStage Level;
         public int Side, SquadNumber, OpponentId, Id;
         public long Age;
-        public List<ShipDamageStatus> DamageSentToEnemyShipsBySquad = new List<ShipDamageStatus>();
         public Command Command;
         public List<StoredCommand> PastCommands = new List<StoredCommand>();
         public MatchupStrategy MatchupStrategy; // the matchup strategy belongs to the squad and not the command because it is used to determine the command by making the matchup
@@ -906,27 +905,6 @@ namespace Assets.Scripts.Level
         public List<Ship> GetShips()
         {
             return _ships;
-        }
-        /// <summary>
-        /// Finds the damage status entry for this ship in the squads list or creates it if it doesn't exist
-        /// </summary>
-        /// <param name="potentialTargetShip"></param>
-        /// <returns></returns>
-        public ShipDamageStatus GetShipDamageStatus(Ship potentialTargetShip)
-        {
-            List<ShipDamageStatus> damageSentToEnemyShipsBySquad = DamageSentToEnemyShipsBySquad;
-            ShipDamageStatus shipDamageStatus = null;
-            if (damageSentToEnemyShipsBySquad.Count > 0)
-            {
-                shipDamageStatus = damageSentToEnemyShipsBySquad.FirstOrDefault(s => s != null && s.Ship != null && s.Ship.Equals(potentialTargetShip));
-            }
-
-            if (shipDamageStatus == null)
-            {
-                shipDamageStatus = new ShipDamageStatus(potentialTargetShip);
-                damageSentToEnemyShipsBySquad.Add(shipDamageStatus);
-            }
-            return shipDamageStatus;
         }
         public void AddShip(Ship ship)
         {

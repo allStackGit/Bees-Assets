@@ -23,6 +23,7 @@ namespace Assets.Scripts.UIComponents
         public TMP_InputField LevelNameInput, SupplyCapacityInput;
         public Codex Codex;
         public SettingsMenu Settings;
+        public bool IsMiniMapOpen;
 
         public bool HoveringOverMiniMapButton;
         public bool IsSquadActionBoxOpen => ActionBox != null && SquadActionBoxUI.activeSelf;
@@ -48,6 +49,8 @@ namespace Assets.Scripts.UIComponents
                     ExitToMainMenuButton.SetActive(false);
                 }
             }
+
+            IsMiniMapOpen = MiniMapCloseButton.activeSelf;
 
             ExitConfirmationDialogue = new Dialogue(Level.DialoguePrefab, ConfigData.Configuration.AreYouSureExit, ConfigData.Configuration.LevelProgressLost,
                 new List<string>() { ConfigData.Configuration.Yes, ConfigData.Configuration.No }, new List<UnityAction>() { ExitToMainMenu });
@@ -89,6 +92,7 @@ namespace Assets.Scripts.UIComponents
             MiniMapTopBorder.SetActive(!MiniMapTopBorder.activeSelf);
             MiniMapCameraCollider.SetActive(!MiniMapCameraCollider.activeSelf);
             MiniMapOutput.SetActive(!MiniMapOutput.activeSelf);
+            IsMiniMapOpen = MiniMapCloseButton.activeSelf;
             
         }
         public void CloseDialogue()

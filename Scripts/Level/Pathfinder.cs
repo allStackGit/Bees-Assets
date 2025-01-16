@@ -1023,11 +1023,11 @@ namespace Assets.Scripts.Level
 
                 if (Totals[threadIndex].Elapsed.TotalSeconds > TimeLimit)
                 {
-                    Debug.Log($"Ran out of time while trying to find a path #{threadIndex}");
+                    //Debug.Log($"Ran out of time while trying to find a path #{threadIndex}");
                 }
                 else if (BTUncheckedNodes.Count == 0)
                 {
-                    Debug.Log($"No more nodes to check for ship: {Ships[threadIndex].Name} Thread: #{threadIndex} Clearance: {Clearances[threadIndex]}.  checkedNodes: {BTCheckedNodes.Count} / {_grid.TotalNodes}  CurrentNode: {BTCurrentNode},");
+                    //Debug.Log($"No more nodes to check for ship: {Ships[threadIndex].Name} Thread: #{threadIndex} Clearance: {Clearances[threadIndex]}.  checkedNodes: {BTCheckedNodes.Count} / {_grid.TotalNodes}  CurrentNode: {BTCurrentNode},");
                 }
                 Ships[threadIndex].PathfindingThreadComplete = true;
                 IsThreadActive[threadIndex] = false; //[alert] must be uncommented when not testing

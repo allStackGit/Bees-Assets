@@ -16,7 +16,15 @@ namespace Assets.Scripts.Entities.Ships
 
         public void OnTriggerEnter2D(Collider2D collider)
         {
-            if (collider.gameObject.CompareTag("Ship"))
+            if (collider.gameObject.name == "Selection Box")
+            {
+                //Debug.Log("Striker hit selection box");
+                if (IsUserControlled)
+                {
+                    Level.Selector.SelectShip(this);
+                }
+            }
+            else if (collider.gameObject.CompareTag("Ship"))
             {
                 Ship ship = collider.GetComponent<Ship>();
                 if (ship.Side == Side && ship.Squad?.Command?.Strategy.Name == "Full Retreat" && ship.ShipType != this.ShipType)

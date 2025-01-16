@@ -15,6 +15,10 @@ namespace Assets.Scripts.Level.Commands
          */
         private Squad _guardedSquad;
         public List<Squad> OtherGuardSquads = new List<Squad>();
+        /// <summary>
+        /// The position of the squad as either, 0, 1, 2, or 3. Corresponds to the cardinal directions to determine where the squad should be
+        /// </summary>
+        public int GuardPosition;
         public void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy, Squad guardedSquad)
         {
             base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
@@ -28,7 +32,7 @@ namespace Assets.Scripts.Level.Commands
             }
             if (_guardedSquad != null)
             {
-                //Debug.Log($"{Squad.Name} is guarding {GuardedSquad.Name}!");
+
                 // add this squad to the list for all other guard squads
                 Level.GetState().GetSquadsBySide(Squad.Side).ForEach((guardingSquad) =>
                 {
@@ -40,6 +44,8 @@ namespace Assets.Scripts.Level.Commands
                         OtherGuardSquads.Add(guardingSquad);
                     }
                 });
+                GuardPosition = GetGuardingSquads().Count % 4;
+                //Debug.Log($"{Squad.Name} is guarding {_guardedSquad.Name} at position #{GuardPosition}");
                 Squad.Status = $"Guarding {_guardedSquad.Name}";
                 if (IsHiveMindCommand)
                 {
@@ -68,7 +74,7 @@ namespace Assets.Scripts.Level.Commands
                     Vector2 offsetFromSquad = new Vector2(Squad.GetWidth() + offset, Squad.GetHeight() + offset);
 
 
-                    switch (GetGuardingSquads().Count % 4)
+                    switch (GuardPosition)
                     {
                         case 0:
                             position.y += offsetFromSquad.y;
@@ -106,7 +112,7 @@ namespace Assets.Scripts.Level.Commands
         {
             return Level.GetState().GetSquadsBySide(Side)
                 .Where((s) => !s.Equals(Squad) && (!s.HasCommand || !s.Command.HasStrategy || s.Command.Strategy.Name != "Guard"))
-                .OrderBy(s => s.DistanceToPoint(Squad.GetPosition())).ToList().FirstOrDefault();
+                .OrderBy(s => s.DistanceToPoint(Squad.GetPosition())).FirstOrDefault();
         }
         public List<Squad> GetGuardingSquads()
         {

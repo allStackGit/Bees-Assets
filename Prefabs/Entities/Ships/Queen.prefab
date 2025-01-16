@@ -215,6 +215,7 @@ MonoBehaviour:
   __LastStopReason: 
   __EnemySquad: 
   __TargetEnemyShipToFollow: 
+  __SquadColor: 
   __CommandDestination: {x: 0, y: 0}
   __Velocity: {x: 0, y: 0}
   __TargetCoordinates: {x: 0, y: 0}
@@ -228,11 +229,13 @@ MonoBehaviour:
   __CommandTsv: 0
   __HasReachedDestination: 0
   __SquadHasReachedDestination: 0
+  __IsInBounds: 0
   __WeaponTargetShips: []
   __SquadShips: []
   __NearbyShips: []
   __ShipsWarpingHere: []
   __ShipsOnTopOf: []
+  __SortedTargetingQueue: []
   __ShipsWithinRangeOfWeapons: []
   __PastCommands: []
   __BannedStrats: []
@@ -264,7 +267,7 @@ Rigidbody2D:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 4725796339288062921}
-  m_BodyType: 0
+  m_BodyType: 1
   m_Simulated: 1
   m_UseFullKinematicContacts: 0
   m_UseAutoMass: 0

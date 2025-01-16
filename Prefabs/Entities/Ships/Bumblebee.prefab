@@ -79,7 +79,7 @@ SpriteRenderer:
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: -1262946043
-  m_SortingLayer: 13
+  m_SortingLayer: 14
   m_SortingOrder: 0
   m_Sprite: {fileID: 21300000, guid: 350d0547bddb6c94bbb40d50884b48c3, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -125,6 +125,7 @@ MonoBehaviour:
   Speed: 0
   SpecialFirePower: 0
   CurrentSpeed: 0
+  LongestSide: 0
   ShipExplosion: {fileID: 5251504260705199934, guid: 70dc82c9665ce3f4eb24bbfe8e62b2c9, type: 3}
   HealthBar: {fileID: 6850946413038590219}
   MiniMapIcon: {fileID: 950416694817212127}
@@ -168,7 +169,7 @@ MonoBehaviour:
   HasRightRocketFlares: 0
   HasMovementMarker: 0
   HasWaitingTargetCoordinates: 0
-  HasShatteredShip: 0
+  HasRemainsShip: 0
   HasEnteredMap: 0
   Weapons: []
   ProjectilePrefabs:
@@ -179,9 +180,8 @@ MonoBehaviour:
   LeftRocketFlares: []
   CenterRocketFlares: []
   RightRocketFlares: []
-  ShatteredShips: []
+  RemainsShips: []
   Brain: {fileID: 0}
-  DroppedShatteredShip: {fileID: 0}
   NearbyAsteroids: []
   Turrets: []
   ProximityCollider: {fileID: 0}
@@ -190,17 +190,20 @@ MonoBehaviour:
   TargetEnemyShipToFollow: {fileID: 0}
   IsCloseEnoughToTargetEnemyShipToFollow: 0
   Killer: {fileID: 0}
+  ShipRemains: {fileID: 0}
   PathfindingThreadComplete: 0
   IsPathfinding: 0
   PathfindingThread: 0
   PrintDebugImage: 0
   __Strategy: 
   __Squad: 
+  __SavedSquad: 
   __SquadStatus: 
   __CommandStatus: 
   __LastStopReason: 
   __EnemySquad: 
   __TargetEnemyShipToFollow: 
+  __SquadColor: 
   __CommandDestination: {x: 0, y: 0}
   __Velocity: {x: 0, y: 0}
   __TargetCoordinates: {x: 0, y: 0}
@@ -214,10 +217,13 @@ MonoBehaviour:
   __CommandTsv: 0
   __HasReachedDestination: 0
   __SquadHasReachedDestination: 0
+  __IsInBounds: 0
   __WeaponTargetShips: []
   __SquadShips: []
   __NearbyShips: []
   __ShipsWarpingHere: []
+  __ShipsOnTopOf: []
+  __SortedTargetingQueue: []
   __ShipsWithinRangeOfWeapons: []
   __PastCommands: []
   __BannedStrats: []
@@ -241,7 +247,7 @@ Rigidbody2D:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 3494651897252040616}
-  m_BodyType: 0
+  m_BodyType: 1
   m_Simulated: 1
   m_UseFullKinematicContacts: 0
   m_UseAutoMass: 0
@@ -404,7 +410,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4949212615178794145, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayer
-      value: 13
+      value: 14
       objectReference: {fileID: 0}
     - target: {fileID: 4949212615178794145, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingOrder
@@ -476,7 +482,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6507568151281305453, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayer
-      value: 13
+      value: 14
       objectReference: {fileID: 0}
     - target: {fileID: 6507568151281305453, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingOrder
@@ -511,7 +517,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 301538961799670568, guid: 03b034f2c8b3a024f82eedca09fb290c, type: 3}
       propertyPath: m_SortingLayer
-      value: 13
+      value: 14
       objectReference: {fileID: 0}
     - target: {fileID: 301538961799670568, guid: 03b034f2c8b3a024f82eedca09fb290c, type: 3}
       propertyPath: m_SortingOrder
@@ -567,7 +573,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8712735557502011637, guid: 03b034f2c8b3a024f82eedca09fb290c, type: 3}
       propertyPath: m_SortingLayer
-      value: 28
+      value: 29
       objectReference: {fileID: 0}
     - target: {fileID: 8712735557502011637, guid: 03b034f2c8b3a024f82eedca09fb290c, type: 3}
       propertyPath: m_SortingLayerID

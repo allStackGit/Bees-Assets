@@ -77,22 +77,28 @@ namespace Assets.Scripts.Level.Commands
         /// <summary>
         /// Finds a target ship for the ship's bomb and then makes that ship the enemy ship to follow as well
         /// </summary>
-        /// <param name="ship"></param>
-        private void GetTarget(Ship ship)
+        /// <param name="bomber"></param>
+        private void GetTarget(Ship bomber)
         {
-            Bomb bomb = (Bomb)ship.Weapons.First();
-            int loops = 0;
+            Bomb bomb = (Bomb)bomber.Weapons.First();
+            //int loops = 0;
             bomb.HasCachedChanged = true;
-            while (!bomb.DetermineTargetShip(bomb.MakeSortedTargetingList(true), true) && loops < 10)
+            List<Ship> targetingList = bomb.MakeSortedTargetingList(true);
+            if (!bomb.DetermineTargetShip(targetingList, true))
             {
-                Squad.DamageSentToEnemyShipsBySquad.Clear();
-                loops++;
+                // Couldn't find a valid target ship, potentially because too much damage has been sent to each ship already
+                bomb.SetRandomTarget(targetingList);
             }
-            ship.TargetEnemyShipToFollow = bomb.TargetShip;
-            if (loops == 10)
-            {
-                Debug.Log($"Looped 10 times while trying to determine a target ship for {bomb.Name}");
-            }
+            //while (!bomb.DetermineTargetShip(bomb.MakeSortedTargetingList(true), true) && loops < 10)
+            //{
+            //    Squad.DamageSentToEnemyShipsBySquad.Clear();
+            //    loops++;
+            //}
+            bomber.TargetEnemyShipToFollow = bomb.TargetShip;
+            //if (loops == 10)
+            //{
+            //    Debug.Log($"Looped 10 times while trying to determine a target ship for {bomb.Name}");
+            //}
         }
         private bool CheckIfStrikersAreDefenseless()
         {

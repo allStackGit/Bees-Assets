@@ -42,6 +42,7 @@ namespace Assets.Scripts.Level
         public HashSet<MiningAsteroid> MiningAsteroids = new HashSet<MiningAsteroid>();
         public HashSet<Ship> MiningShips = new HashSet<Ship>();
         public bool HasWarpGates, IsFireShipExploding, HasSelectedSquads;
+        public List<ShipDamageStatus>[] ShipDamageStatuses = new List<ShipDamageStatus>[] {new List<ShipDamageStatus>(), new List<ShipDamageStatus>() };
         //public bool[] HasMiningShips = new bool[2];
 
         public List<String> __Squads, __SquadsAwaitingCommands, __PastCommands, __Obstacles;
@@ -145,6 +146,26 @@ namespace Assets.Scripts.Level
             ConfigData.__HivemindCommands++;
         }
 
+        /// <summary>
+        /// Finds the damage status entry for this ship in the side's list or creates it if it doesn't exist
+        /// </summary>
+        /// <param name="potentialTargetShip"></param>
+        /// <returns></returns>
+        public ShipDamageStatus GetShipDamageStatus(int side, Ship potentialTargetShip)
+        {
+            ShipDamageStatus shipDamageStatus = null;
+            if (ShipDamageStatuses[side - 1].Count > 0)
+            {
+                shipDamageStatus = ShipDamageStatuses[side - 1].FirstOrDefault(s => s != null && s.Ship != null && s.Ship.Equals(potentialTargetShip));
+            }
+
+            if (shipDamageStatus == null)
+            {
+                shipDamageStatus = new ShipDamageStatus(potentialTargetShip);
+                ShipDamageStatuses[side - 1].Add(shipDamageStatus);
+            }
+            return shipDamageStatus;
+        }
         public List<Obstacle> GetObstacles()
         {
             return Obstacles;

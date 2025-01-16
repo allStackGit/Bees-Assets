@@ -102,7 +102,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             TargetShip = targetShip;
         }
         /// <summary>Goes through the list of ships in the sorted targeting list and sets the weapon to attack whichever ship is first valid</summary>
-        public bool DetermineTargetShip(List<Ship> ships, bool useShipStatus)
+        public bool DetermineTargetShip(List<Ship> ships, bool useShipDamageStatus)
         {
             //Debug.Log($"Determining Target ship with {FleetShip.Name}!");
             bool foundTarget = false;
@@ -119,8 +119,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                         Check to make sure that the damage already sent towards the ship is less than the health of the ship previously
                         calculated.
                          */
-                        ShipDamageStatus shipDamageStatus = Squad.GetShipDamageStatus(potentialTargetShip);
-                        if (useShipStatus)
+                        ShipDamageStatus shipDamageStatus = Level.GetState().GetShipDamageStatus(Side, potentialTargetShip);
+                        if (useShipDamageStatus)
                         {
                             if (shipDamageStatus.TotalDamageSentToShip <= shipDamageStatus.Health)
                             {
@@ -174,6 +174,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
             return foundTarget;
         }
+
         /// <summary>
         /// Checks if the ship is within range
         /// </summary>
@@ -400,7 +401,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             //Debug.Log("Sending basic projectile");
             if (HasTargetShip)
             {
-                ShipDamageStatus shipDamageStatus = Squad.GetShipDamageStatus(TargetShip);
+                ShipDamageStatus shipDamageStatus = Level.GetState().GetShipDamageStatus(Side, TargetShip);
                 shipDamageStatus.TotalDamageSentToShip += Power;
             }
             PlaySoundEffect();

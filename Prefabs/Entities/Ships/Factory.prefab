@@ -81,7 +81,7 @@ SpriteRenderer:
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: -1489320777
-  m_SortingLayer: 9
+  m_SortingLayer: 10
   m_SortingOrder: 1
   m_Sprite: {fileID: 21300000, guid: 14f4d00d7d052d44d9cadf895b3b1b8d, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -127,6 +127,7 @@ MonoBehaviour:
   Speed: 0
   SpecialFirePower: 0
   CurrentSpeed: 0
+  LongestSide: 0
   ShipExplosion: {fileID: 5251504260705199934, guid: 6a4063a718e9d7341ac9460de59edcb0, type: 3}
   HealthBar: {fileID: 7545895268169910673}
   MiniMapIcon: {fileID: 502349875739347533}
@@ -168,9 +169,10 @@ MonoBehaviour:
   HasLeftRocketFlares: 0
   HasCenterRocketFlares: 0
   HasRightRocketFlares: 0
+  HasOnlySideRocketFlares: 1
   HasMovementMarker: 0
   HasWaitingTargetCoordinates: 0
-  HasShatteredShip: 0
+  HasRemainsShip: 0
   HasEnteredMap: 0
   Weapons: []
   ProjectilePrefabs:
@@ -184,9 +186,8 @@ MonoBehaviour:
   - {fileID: 3482078114343712951}
   RightRocketFlares:
   - {fileID: 5726147044797996001}
-  ShatteredShips: []
+  RemainsShips: []
   Brain: {fileID: 0}
-  DroppedShatteredShip: {fileID: 0}
   NearbyAsteroids: []
   Turrets: []
   ProximityCollider: {fileID: 0}
@@ -195,17 +196,20 @@ MonoBehaviour:
   TargetEnemyShipToFollow: {fileID: 0}
   IsCloseEnoughToTargetEnemyShipToFollow: 0
   Killer: {fileID: 0}
+  ShipRemains: {fileID: 0}
   PathfindingThreadComplete: 0
   IsPathfinding: 0
   PathfindingThread: 0
   PrintDebugImage: 0
   __Strategy: 
   __Squad: 
+  __SavedSquad: 
   __SquadStatus: 
   __CommandStatus: 
   __LastStopReason: 
   __EnemySquad: 
   __TargetEnemyShipToFollow: 
+  __SquadColor: 
   __CommandDestination: {x: 0, y: 0}
   __Velocity: {x: 0, y: 0}
   __TargetCoordinates: {x: 0, y: 0}
@@ -219,10 +223,13 @@ MonoBehaviour:
   __CommandTsv: 0
   __HasReachedDestination: 0
   __SquadHasReachedDestination: 0
+  __IsInBounds: 0
   __WeaponTargetShips: []
   __SquadShips: []
   __NearbyShips: []
   __ShipsWarpingHere: []
+  __ShipsOnTopOf: []
+  __SortedTargetingQueue: []
   __ShipsWithinRangeOfWeapons: []
   __PastCommands: []
   __BannedStrats: []
@@ -371,7 +378,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 5842864600162321386, guid: 0d523ac6616e1d840bbc291edb8ac9c7, type: 3}
       propertyPath: m_SortingLayer
-      value: 9
+      value: 10
       objectReference: {fileID: 0}
     - target: {fileID: 5842864600162321386, guid: 0d523ac6616e1d840bbc291edb8ac9c7, type: 3}
       propertyPath: m_SortingLayerID
@@ -545,7 +552,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4949212615178794145, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayer
-      value: 9
+      value: 10
       objectReference: {fileID: 0}
     - target: {fileID: 4949212615178794145, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayerID
@@ -609,7 +616,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6507568151281305453, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayer
-      value: 9
+      value: 10
       objectReference: {fileID: 0}
     - target: {fileID: 6507568151281305453, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
       propertyPath: m_SortingLayerID
@@ -640,7 +647,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 711389237945103311, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
       propertyPath: m_SortingLayer
-      value: 9
+      value: 10
       objectReference: {fileID: 0}
     - target: {fileID: 1905178246923622507, guid: 195753935a4fdfa4e85159ac989011b6, type: 3}
       propertyPath: m_LocalPosition.x
@@ -878,7 +885,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 5842864600162321386, guid: 0d523ac6616e1d840bbc291edb8ac9c7, type: 3}
       propertyPath: m_SortingLayer
-      value: 9
+      value: 10
       objectReference: {fileID: 0}
     - target: {fileID: 5842864600162321386, guid: 0d523ac6616e1d840bbc291edb8ac9c7, type: 3}
       propertyPath: m_SortingLayerID

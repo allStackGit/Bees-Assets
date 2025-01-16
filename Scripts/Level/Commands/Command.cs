@@ -275,11 +275,7 @@ namespace Assets.Scripts.Level.Commands
                 }
                 foreach (Ship ship in ships)
                 {
-                    ShipDamageStatus entry = Squad.DamageSentToEnemyShipsBySquad.Find((entry) => entry.Ship.Equals(ship));
-                    if (entry == null)
-                    {
-                        Squad.DamageSentToEnemyShipsBySquad.Add(new ShipDamageStatus(ship));
-                    }
+                    Level.GetState().GetShipDamageStatus(Side, ship);
                 }
             }
         }

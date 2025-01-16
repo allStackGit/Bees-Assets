@@ -566,7 +566,12 @@ namespace Assets.Scripts
                 return 0;
             }
         }
-
+        /// <summary>
+        /// Checks if the different in angle between the rotation and the entity is within 3
+        /// </summary>
+        /// <param name="entity"></param>
+        /// <param name="rotation"></param>
+        /// <returns></returns>
         public static bool IsRotatedTowards(GameObject entity, float rotation)
         {
             float difference = Mathf.DeltaAngle(entity.transform.eulerAngles.z, rotation);

@@ -142,7 +142,7 @@ namespace Assets.Scripts.Entities.Projectiles
         {
             if (Target != null)
             {
-                ShipDamageStatus status = Shooter.Squad.GetShipDamageStatus(Target);
+                ShipDamageStatus status = Level.GetState().GetShipDamageStatus(Shooter.Side, Target);
                 if (status.TotalDamageSentToShip >= Power)
                 {
                     status.TotalDamageSentToShip -= Power;

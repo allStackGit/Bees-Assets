@@ -21,6 +21,7 @@ using Unity.Mathematics;
 using System.IO;
 using NUnit;
 using System.Threading;
+using static UnityEngine.GraphicsBuffer;
 
 namespace Assets.Scripts.Entities.Ships
 {
@@ -56,7 +57,7 @@ namespace Assets.Scripts.Entities.Ships
         /// </summary>
         public bool IsMobile;
         public bool HasBrain, IsHiveMindControlled, IsMinionShip, HasTargetCoordinates, IsMiningShip, IsWarpGate, HasTargetDirection, HasVision, HasProximityCollider, HasShipAnimation, HasRocketFlares, 
-            HasLeftRocketFlares, HasCenterRocketFlares, HasRightRocketFlares, HasMovementMarker, HasWaitingTargetCoordinates, HasRemainsShip, HasEnteredMap;
+            HasLeftRocketFlares, HasCenterRocketFlares, HasRightRocketFlares, HasOnlySideRocketFlares, HasMovementMarker, HasWaitingTargetCoordinates, HasRemainsShip, HasEnteredMap;
         public List<Weapon> Weapons;
         public List<GameObject> ProjectilePrefabs, WeaponPrefabs, ColoredPrefabs, LeftRocketFlares, CenterRocketFlares, RightRocketFlares, RemainsShips;
         public Brain Brain = null;
@@ -201,7 +202,7 @@ namespace Assets.Scripts.Entities.Ships
             __SquadHasReachedDestination = Squad.HasReachedDestination;
             __SquadShips = Squad.GetShips();
             __BannedStrats = Squad.BannedStrats.ToList();
-            __DamageStatuses = Squad.DamageSentToEnemyShipsBySquad.Select((ds) => $"{ds.TotalDamageSentToShip} damage sent to {ds.Ship.Name} against {ds.Health} health. Current health: {ds.Ship.Health}").ToList();
+            __DamageStatuses = Level.GetState().ShipDamageStatuses[Side - 1].Select((ds) => $"{ds.TotalDamageSentToShip} damage sent to {ds.Ship.Name} against {ds.Health} health. Current health: {ds.Ship.Health}").ToList();
             __TargetEnemyShipToFollow = HasTargetEnemyShipToFollow ? $"Following {TargetEnemyShipToFollow.Name} at {TargetEnemyShipToFollow.GetPosition()}" : "None";
             __CommandTargetingQueue = Squad.HasCommand && Squad.Command.HasEnemy ? Squad.Command.TargetingQueue.Select((ship) =>  ship.Name).ToList() : new List<string>();
             __CurrentSpeed = CurrentSpeed;
@@ -850,7 +851,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             }
             else
             {
-                Debug.Log($"{Name} couldn't find a path to {PathfindingDestination} and so it will try again in 2 seconds");
+                //Debug.Log($"{Name} couldn't find a path to {PathfindingDestination} and so it will try again in 2 seconds");
                 EndDestination("Could not find a path to destination");
                 Invoke(nameof(TryToFindPathAgain), 2);
             }
@@ -1025,7 +1026,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                             flare.SetActive(false);
                         });
                     }
-                    else // moving straight, activate both sides
+                    else if (!HasOnlySideRocketFlares) // moving straight, activate both sides unless they are side rocket flares like with the factory
                     {
                         RightRocketFlares.ForEach((flare) =>
                         {
@@ -1035,6 +1036,18 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                         LeftRocketFlares.ForEach((flare) =>
                         {
                             flare.SetActive(true);
+                        });
+                    }
+                    else // moving straight and only has side rocket flares
+                    {
+                        RightRocketFlares.ForEach((flare) =>
+                        {
+                            flare.SetActive(false);
+                        });
+
+                        LeftRocketFlares.ForEach((flare) =>
+                        {
+                            flare.SetActive(false);
                         });
                     }
                 }
@@ -1366,6 +1379,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         /// </summary>
         public static void LogAttackingDamage(int power, Ship attacker, FleetShip attackerFleetShip, SavedSquad attackerSavedSquad, Ship target) // [damage-method] [note]
         {
+            GameState state = target.Level.GetState();
             if (target.Level.MakeShotsHarmless)
             {
                 power = 0;
@@ -1386,8 +1400,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
                 if (attacker != null)
                 {
-                    ShipDamageStatus status = attacker.Squad.GetShipDamageStatus(target);
-                    attacker.Squad.DamageSentToEnemyShipsBySquad.Remove(status);
+                    state.ShipDamageStatuses[attacker.Side-1].Remove(state.GetShipDamageStatus(attacker.Side, target));
                 }
 
             }
@@ -1397,7 +1410,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 target.UpdateHealthBar();
                 if (attacker != null)
                 {
-                    ShipDamageStatus status = attacker.Squad.GetShipDamageStatus(target);
+                    ShipDamageStatus status = state.GetShipDamageStatus(attacker.Side, target);
                     status.Health = target.Health;
                 }
                 
