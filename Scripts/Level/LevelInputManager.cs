@@ -190,25 +190,68 @@ namespace Assets.Scripts.Level
                     case "Show Ranges":
                         hotKey.SetAction(() =>
                         {
-                            //Debug.Log("Show ranges");
-                            ShowRanges();
+                            if (!IsShowingRanges)
+                            {
+                                //Debug.Log("Show ranges");
+                                ShowRanges();
+                            }
+
                         });
                         hotKey.SetReleaseAction(() =>
                         {
-                            //Debug.Log("Show ranges release");
-                            ShowRanges();
+                            if (IsShowingRanges)
+                            {
+                                //Debug.Log("Show ranges release");
+                                ShowRanges();
+                            }
+
                         });
                         break;
                     case "Manual Fire":
                         hotKey.SetAction(() =>
                         {
-                            //Debug.Log("Manual fire");
-                            ManualFire();
+                            if (!IsFiringManually)
+                            {
+                                //Debug.Log("Manual fire");
+                                ManualFire();
+                            }
+
                         });
                         hotKey.SetReleaseAction(() =>
                         {
-                            //Debug.Log("Manual fire release");
-                            ManualFire();
+                            if (IsFiringManually)
+                            {
+                                //Debug.Log("Manual fire release");
+                                ManualFire();
+                            }
+                        });
+                        break;
+                    case "Show Ranges + Manual Fire":
+                        hotKey.SetAction(() =>
+                        {
+                            //Debug.Log("Show Ranges + Manual Fire");
+                            if (!IsShowingRanges)
+                            {
+                                ShowRanges();
+                            }
+                            if (!IsFiringManually)
+                            {
+                                ManualFire();
+                            }
+                        });
+                        hotKey.SetReleaseAction(() =>
+                        {
+                            //Debug.Log("Show Ranges + Manual Fire release");
+                            ConfigData.GetUserSettingsData().FindKey("Show Ranges").ManuallySetInputRelease(true);
+                            ConfigData.GetUserSettingsData().FindKey("Manual Fire").ManuallySetInputRelease(true);
+                            if (IsShowingRanges && !ConfigData.GetUserSettingsData().FindKey("Show Ranges").HasInput())
+                            {
+                                ShowRanges();
+                            }
+                            if (IsFiringManually && !ConfigData.GetUserSettingsData().FindKey("Manual Fire").HasInput())
+                            {
+                                ManualFire();
+                            }
                         });
                         break;
                     case "Toggle Mini Map":
@@ -585,7 +628,7 @@ namespace Assets.Scripts.Level
                 //{
                 //    Debug.Log($"Checking Match Speed: {hotKey}");
                 //}
-                if (hotKey.Checkinput())
+                if (hotKey.CheckInput())
                 {
                     //Debug.Log($"Input registered from {hotKey}");
                 }

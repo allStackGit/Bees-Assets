@@ -57,7 +57,8 @@ namespace Assets.Scripts.Entities.Ships
         /// </summary>
         public bool IsMobile;
         public bool HasBrain, IsHiveMindControlled, IsMinionShip, HasTargetCoordinates, IsMiningShip, IsWarpGate, HasTargetDirection, HasVision, HasProximityCollider, HasShipAnimation, HasRocketFlares, 
-            HasLeftRocketFlares, HasCenterRocketFlares, HasRightRocketFlares, HasOnlySideRocketFlares, HasMovementMarker, HasWaitingTargetCoordinates, HasRemainsShip, HasEnteredMap;
+            HasLeftRocketFlares, HasCenterRocketFlares, HasRightRocketFlares, HasOnlySideRocketFlares, HasMovementMarker, HasWaitingTargetCoordinates, HasRemainsShip, HasEnteredMap,
+            AreRocketFlaresOutOfSync;
         public List<Weapon> Weapons;
         public List<GameObject> ProjectilePrefabs, WeaponPrefabs, ColoredPrefabs, LeftRocketFlares, CenterRocketFlares, RightRocketFlares, RemainsShips;
         public Brain Brain = null;
@@ -156,9 +157,10 @@ namespace Assets.Scripts.Entities.Ships
 
 
         // Test variables
-        public string __Strategy, __Squad, __SavedSquad, __SquadStatus, __CommandStatus, __LastStopReason, __EnemySquad, __TargetEnemyShipToFollow, __SquadColor;
+        public string __Strategy, __Squad, __SavedSquad, __SquadStatus, __CommandStatus, __LastStopReason, __EnemySquad, __TargetEnemyShipToFollow, __SquadColor, __SquadShootingStrategy;
         public Vector2 __CommandDestination, __Velocity, __TargetCoordinates;
-        public float __Firepower, __DamagePerSecond, __CurrentSpeed, __DegreesToTargetCoordinates, __DistanceToTargetCoordinates, __TurningRadius;
+        public float __Firepower, __DamagePerSecond, __CurrentSpeed, __DegreesToTargetCoordinates, __DistanceToTargetCoordinates, __TurningRadius, __Width, __Height, __SquadWidth, 
+            __SquadHeight;
         public long __Tsv, __CommandTsv;
         public bool __HasReachedDestination, __SquadHasReachedDestination, __IsInBounds;
         public List<Ship> __WeaponTargetShips, __SquadShips, __NearbyShips, __ShipsWarpingHere, __ShipsOnTopOf, __SortedTargetingQueue;
@@ -216,6 +218,11 @@ namespace Assets.Scripts.Entities.Ships
             __ShipsOnTopOf = ShipsOnTopOf.ToList();
             __IsInBounds = IsInBounds();
             __SquadColor = ColorUtility.ToHtmlStringRGB(Squad.Color);
+            __Width = GetWidth();
+            __Height = GetHeight();
+            __SquadShootingStrategy = Squad.GetShootingStrategy();
+            //__SquadWidth = Squad.GetWidth();
+            //__SquadHeight = Squad.GetHeight();
 
             //__BlockedShips = Weapons.Aggregate(new HashSet<Ship>(), (sum, weapon) => {
             //    sum.UnionWith(weapon.BlockedShips.Where((ship) => ship != null && !ship.IsDead));
@@ -1012,6 +1019,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                         {
                             flare.SetActive(false);
                         });
+
+                        AreRocketFlaresOutOfSync = true;
                     }
                     else if (differenceInAngleToPoint < 0)
                     {
@@ -1025,18 +1034,30 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                         {
                             flare.SetActive(false);
                         });
+
+                        AreRocketFlaresOutOfSync = true;
                     }
                     else if (!HasOnlySideRocketFlares) // moving straight, activate both sides unless they are side rocket flares like with the factory
                     {
                         RightRocketFlares.ForEach((flare) =>
                         {
+                            if (AreRocketFlaresOutOfSync)
+                            {
+                                flare.SetActive(false);
+                            }
                             flare.SetActive(true);
                         });
 
                         LeftRocketFlares.ForEach((flare) =>
                         {
+                            if (AreRocketFlaresOutOfSync)
+                            {
+                                flare.SetActive(false);
+                            }
                             flare.SetActive(true);
                         });
+
+                        AreRocketFlaresOutOfSync = false;
                     }
                     else // moving straight and only has side rocket flares
                     {
@@ -1885,7 +1906,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     for (int y = (int) -halfHeight;  y < halfHeight; y++)
                     {
                         randomPoint = basePosition + new Vector2(x, y);
-                        Debug.Log($"Checking to see if {randomPoint} is on {Name}");
+                        //Debug.Log($"Checking to see if {randomPoint} is on {Name}");
                         if (Collider.OverlapPoint(randomPoint))
                         {
                             return randomPoint;

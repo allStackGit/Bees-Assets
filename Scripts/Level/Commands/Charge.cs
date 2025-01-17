@@ -57,22 +57,39 @@ namespace Assets.Scripts.Level.Commands
         {
             Bomb bomb = (Bomb)chargingShip.Weapons.First();
             List<Ship> targetingList = bomb.MakeSortedTargetingList(true);
-            if (!bomb.DetermineTargetShip(targetingList, true))
+            if (targetingList.Count > 0)
             {
-                // Couldn't find a valid target ship, potentially because too much damage has been sent to each ship already
-                bomb.SetRandomTarget(targetingList);
+                if (!bomb.DetermineTargetShip(targetingList, true))
+                {
+                    targetingList = bomb.MakeSortedTargetingList(true);
+                    // Couldn't find a valid target ship, potentially because too much damage has been sent to each ship already
+                    if (targetingList.Count > 0)
+                    {
+                        bomb.SetRandomTarget(targetingList);
+
+                    }
+                    //else
+                    //{
+                    //    SetFinalize("No more enemy ships to target");
+                    //}
+                }
+                //int loops = 0;
+                //while (!bomb.DetermineTargetShip(bomb.MakeSortedTargetingList(true), true) && loops < 10)
+                //{
+                //    Squad.DamageSentToEnemyShipsBySquad.Clear();
+                //    loops++;
+                //}
+                chargingShip.TargetEnemyShipToFollow = bomb.TargetShip;
+                //if (loops == 10)
+                //{
+                //    Debug.Log($"Looped 10 times while trying to determine a target ship for {bomb.Name}");
+                //}
             }
-            //int loops = 0;
-            //while (!bomb.DetermineTargetShip(bomb.MakeSortedTargetingList(true), true) && loops < 10)
-            //{
-            //    Squad.DamageSentToEnemyShipsBySquad.Clear();
-            //    loops++;
-            //}
-            chargingShip.TargetEnemyShipToFollow = bomb.TargetShip;
-            //if (loops == 10)
-            //{
-            //    Debug.Log($"Looped 10 times while trying to determine a target ship for {bomb.Name}");
-            //}
+            else
+            {
+                SetFinalize("No more enemy ships to target");
+            }
+
         } 
         private void SendShipToTarget(Ship ship)
         {

@@ -11,6 +11,9 @@ namespace Assets.Scripts.Level
         public List<KeyCode> Keys;
         public string Name, KeyString;
         public Action Action;
+        /// <summary>
+        /// The action that occurs when the any of the keys is released. Must be set in UserSettingsData.HeldDownInputActions as well
+        /// </summary>
         public Action ReleaseAction;
         private bool _hasInputRelease = true;
         /// <summary>
@@ -60,7 +63,7 @@ namespace Assets.Scripts.Level
             Keys = keys;
             MakeKeyString();
         }
-        public bool Checkinput()
+        public bool CheckInput()
         {
             if (HasInput())
             {

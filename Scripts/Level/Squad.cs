@@ -163,6 +163,7 @@ namespace Assets.Scripts.Level
                     SquadBox = Instantiate(Level.SquadBox, new Vector3(0, 0, 0), Quaternion.identity);
                     SquadBox.transform.parent = Level.Map.transform;
                     SquadBox.SetActive(false);
+                    SquadBox.name = $"{Name} - Squadbox"; // [note] [testing] Only used for testing
                 }
             }
         }
@@ -693,14 +694,14 @@ namespace Assets.Scripts.Level
             if (ConfigData.Configuration.ShootingStrategies.Contains(strategy))
             {
                 _chosenShootingStrategy = strategy;
+                if(HasCommand && Command.HasShootingStrategy)
+                {
+
+                }
             }
         }
         public string GetShootingStrategy()
         {
-            if (HasCommand && Command.HasShootingStrategy)
-            {
-                return Command.ShootingStrategy.Name;
-            }
             return _chosenShootingStrategy;
         }
         public string GetCommandStrategy()

@@ -149,8 +149,8 @@ namespace Assets.Scripts.Scenes
             Setup();
 
 
-            _fleetList = ConfigData.CurrentShips.GetAvailableShips();
             ConfigData.CurrentShips.ReplaceDeadSquadShips();
+            _fleetList = ConfigData.CurrentShips.GetAvailableShips();
             SetupFleetList();
             SetupSavedSquadsList();
 
@@ -1182,11 +1182,20 @@ namespace Assets.Scripts.Scenes
                 SavedSquad originalSquad = _currentSquad;
                 _currentSquad = (SavedSquad)originalSquad.Clone();
                 List<SquadShip> originalSquadShips = _currentSquad.GetSquadShips().ToList();
+                _currentSquad.GetSquadShips().Clear();
                 originalSquadShips.ForEach((originalSquadShip) =>
                 {
-                    _currentSquad.RemoveShipFromSquad(originalSquadShip);
                     FleetShip fleetShip = GetFleetList().Where((s) => s.Type == originalSquadShip.ShipType).FirstOrDefault();
-                    _currentSquad.AddShipToSquad(new SquadShip(fleetShip.Id, fleetShip.Type, originalSquadShip.Offset - originalSquad.StartingPosition, _currentSquad));
+                    if (fleetShip != null)
+                    {
+                        //Debug.Log($"Adding {fleetShip} to duplicated squad {_currentSquad.Name}");
+                        _currentSquad.AddShipToSquad(new SquadShip(fleetShip.Id, fleetShip.Type, originalSquadShip.Offset - originalSquad.StartingPosition, _currentSquad));
+                        GetFleetList().Remove(fleetShip);
+                    }
+                    //else
+                    //{
+                    //    Debug.Log($"Could not add fleetShip to duplicated squad {_currentSquad.Name}");
+                    //}
                 });
                 _currentSquad.Stats = new SquadStatBlock(Utilities.GenerateCommanderName(), 0, 0, 0, 0, 0, 0);
                 _currentSquad.StartingPosition = originalSquad.StartingPosition;

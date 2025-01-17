@@ -135,7 +135,7 @@ namespace Assets.Scripts.Scenes
         public bool DidUserWin => WinningSide == ConfigData.Configuration.UserSide;
         public bool IsPaused => GetState().IsPaused;
 
-        public List<string> __BeeHivemindShips, __HumanHivemindShips, __PastCommands, __PathfindingThreads;
+        public List<string> __BeeHivemindShips, __HumanHivemindShips, __PastCommands, __PathfindingThreads, __CustomLevels;
 
 
         private List<GameObject> _chosenObstacles;
@@ -146,6 +146,7 @@ namespace Assets.Scripts.Scenes
             __BeeHivemindShips = GetState().GetShipsVisibleToHiveMind(ConfigData.Configuration.BeeSide).Select(s => s.ToString()).ToList();
             __HumanHivemindShips = GetState().GetShipsVisibleToHiveMind(ConfigData.Configuration.HumanSide).Select(s => s.ToString()).ToList();
             __PastCommands = GetState().GetPastCommands().Select((c) => $"Command #{c.OutcomeId} - {c.Strategy.Name} for Squad {c.Squad} against [{c.Enemy}] with {c.Tsv} TSV").ToList();
+            __CustomLevels = ConfigData.GetLevelData().GetLevels().Select((level) => level.ToString()).ToList();
             
             if (Pathfinder != null)
             {
@@ -748,11 +749,6 @@ namespace Assets.Scripts.Scenes
                 if (Menus != null && !ConfigData.IsPlayingCampaign)
                 {
                     Menus.UpdateScore(ConfigData.GetUserProgressData().HumanFreePlayWins, ConfigData.GetUserProgressData().BeeFreePlayWins);
-
-                    if (!Menus.IsMiniMapOpen)
-                    {
-                        Menus.ToggleMiniMapDisplay();
-                    }
                 }
 
                 UnPause();
@@ -1308,7 +1304,7 @@ namespace Assets.Scripts.Scenes
 
             }
 
-            
+
 
 
             //StartNew();
@@ -1316,6 +1312,11 @@ namespace Assets.Scripts.Scenes
 
             //Invoke(nameof(StartNew), .1f);
             //Invoke(nameof(ReloadScene), 1f);
+
+            if (HasPlayer && !Menus.IsMiniMapOpen)
+            {
+                Menus.ToggleMiniMapDisplay();
+            }
 
             if (DoesUserHaveController && !IsRestarting)
             {

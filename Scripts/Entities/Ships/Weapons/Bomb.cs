@@ -1,7 +1,6 @@
 ﻿
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Level;
-using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -68,16 +67,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// <param name="ships"></param>
         public void SetRandomTarget(List<Ship> ships)
         {
-            int index = Utilities.RandomInt(ships.Count);
-            try
-            {
-                SetTargetShip(ships[index]);
-            }
-            catch (Exception e)
-            {
-                Debug.Log($"Exception with index {index} and ships list length of {ships.Count}");
-                throw e;
-            }
+            SetTargetShip(ships[Utilities.RandomInt(ships.Count)]);
         }
     }
 }

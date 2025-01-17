@@ -81,6 +81,10 @@ namespace Assets.Scripts.Scenes
             DeselectButton();
             ConfigData.IsPlayingCampaign = true;
             ConfigData.CurrentShips = ConfigData.CampaignShips;
+            if (ConfigData.Configuration.UserSide != ConfigData.Configuration.HumanSide)
+            {
+                ConfigData.SwapSides();
+            }
             SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
         }
 

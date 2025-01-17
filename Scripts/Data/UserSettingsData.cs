@@ -12,6 +12,7 @@ namespace Assets.Scripts.Data
 
 
         public List<HotKey> HotKeys = new List<HotKey>();
+        public Dictionary<string, HotKey> HotKeysByName = new Dictionary<string, HotKey>();
         public List<HotKey> DefaultHotKeys = new List<HotKey>
         {
             new HotKey("Match Speed", new List<KeyCode>{KeyCode.LeftShift, KeyCode.Q}),
@@ -57,6 +58,7 @@ namespace Assets.Scripts.Data
             new HotKey("Open Menu", new List<KeyCode>{KeyCode.Escape}),
             new HotKey("Show Ranges", new List<KeyCode>{KeyCode.R}),
             new HotKey("Manual Fire", new List<KeyCode>{KeyCode.F}),
+            new HotKey("Show Ranges + Manual Fire", new List<KeyCode>{KeyCode.F, KeyCode.R}),
             new HotKey("Toggle Mini Map", new List<KeyCode>{KeyCode.M}),
 
             new HotKey("Move Camera Up", new List<KeyCode>{KeyCode.W}),
@@ -66,7 +68,9 @@ namespace Assets.Scripts.Data
             
         };
 
-        // The Ids of actions that have continuous input
+        /// <summary>
+        /// The Ids of actions that have continuous input
+        /// </summary>
         public HashSet<string> ContinuousInputActions = new HashSet<string>
         {
             "Move Camera Up",
@@ -75,10 +79,14 @@ namespace Assets.Scripts.Data
             "Move Camera Right",
         };
 
+        /// <summary>
+        /// The Ids of actions that must be held down to work
+        /// </summary>
         public HashSet<string> HeldDownInputActions = new HashSet<string>
         {
             "Show Ranges",
             "Manual Fire",
+            "Show Ranges + Manual Fire"
         };
 
 
@@ -92,7 +100,11 @@ namespace Assets.Scripts.Data
                 //Debug.Log("Updated config file");
                 //Debug.Log($"JSON from DataFile: {json}");
                 Dictionary<string, int[]> hotKeys = Utilities.JArrayToDictionary<string, int[]>(json.HotKeys);
-                hotKeys.Keys.ToList().ForEach((hotKeyName) => HotKeys.Add(new HotKey(hotKeyName, hotKeys[hotKeyName].Select((k) => (KeyCode)k).ToList(), ContinuousInputActions.Contains(hotKeyName), HeldDownInputActions.Contains(hotKeyName))));
+                hotKeys.Keys.ToList().ForEach((hotKeyName) => {
+                    HotKey hotKey = new HotKey(hotKeyName, hotKeys[hotKeyName].Select((k) => (KeyCode)k).ToList(), ContinuousInputActions.Contains(hotKeyName), HeldDownInputActions.Contains(hotKeyName));
+                    HotKeys.Add(hotKey);
+                    HotKeysByName.Add(hotKeyName, hotKey);
+                });
             });
 
         }
@@ -110,7 +122,7 @@ namespace Assets.Scripts.Data
 
         public HotKey FindKey(string name)
         {
-            return HotKeys.FirstOrDefault(k => k.Name == name);
+            return HotKeysByName[name];
         }
 
         public HotKey FindKeyByKeyString(string keyString) 

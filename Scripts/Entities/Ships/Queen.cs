@@ -82,6 +82,7 @@ namespace Assets.Scripts.Entities.Ships
             if (squad == null || squad.IsDead)
             {
                 squad = CreateMinionSquad();
+                squad.SetSquadTab();
             }
             int id = Utilities.GetNegativeFleetshipId();
             Vector2 offset = ConfigData.QueenYellowJacketSpawnFormation[shipIndex];

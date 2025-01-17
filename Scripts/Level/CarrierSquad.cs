@@ -26,9 +26,6 @@ namespace Assets.Scripts.Level
             int shipCount = IsDroneSquad ? ConfigData.Configuration.CarrierCarryDroneMax : ConfigData.Configuration.CarrierCarryStrikerMax;
             string formation = "Column";
 
-            // If there are more than 10 drones, a double column might be the best formation, but currently we are using 10 drones and 10 strikers, one column each
-            //    IsDroneSquad ? "Double Column" : "Column";
-
             //Debug.Log($"Setting up {SquadType} ships in {formation} formation");
 
 

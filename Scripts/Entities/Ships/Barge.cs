@@ -1,5 +1,8 @@
-﻿using Assets.Scripts.Entities.Projectiles;
+﻿using Assets.Scripts.Data;
+using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships.Weapons;
+using Assets.Scripts.Level;
+using Assets.Scripts.Scenes;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -22,6 +25,13 @@ namespace Assets.Scripts.Entities.Ships
         public int OriginalPower;
         public Weapon Charge => Weapons.First();
         public HashSet<Ship> ShipsHit = new HashSet<Ship>();
+        public ChargingBar ChargingBar;
+
+        public override void Setup(LevelStage level, long id, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
+        {
+            base.Setup(level, id, fleetShip, squad, offsetFromCenter);
+            ChargingBar.Setup(this, 10);
+        }
 
 
 
@@ -143,6 +153,7 @@ namespace Assets.Scripts.Entities.Ships
 
                 //Debug.Log($"Stopped charging for {Name}");
 
+                ChargingBar.DrainBar();
                 yield return new WaitForSeconds(10);
 
                 FinishCoolDown();

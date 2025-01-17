@@ -122,7 +122,7 @@ namespace Assets.Scripts
             { "Honeybee",       new Vector2Int(160, 160)},
             { "Hornet",         new Vector2Int(160, 160)},
             { "Leafcutter",     new Vector2Int(320, 320)},
-            { "Queen",          new Vector2Int(1600, 1280)},
+            { "Queen",          new Vector2Int(6400, 5120)},
             { "Wasp",           new Vector2Int(240, 240)},
             { "Yellow Jacket",  new Vector2Int(160, 160)},
         };

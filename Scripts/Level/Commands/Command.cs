@@ -125,6 +125,7 @@ namespace Assets.Scripts.Level.Commands
             {
                 Strategy = strategy;
                 ShootingStrategy = shootingStrategy;
+                Squad.SetShootingStrategy(ShootingStrategy.Name);
                 Squad.ClearTargets(); // Clear all old targets before starting the new command
 
                 OutcomeId = commandOutcomeId;

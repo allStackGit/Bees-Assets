@@ -264,7 +264,7 @@ namespace Assets.Scripts.UIComponents
             ConfigData.Configuration.ShootingStrategies.Where(s => !s.StartsWith("Type ")).ToList().ForEach(s =>
             {
                 //Debug.Log($"{s} Button");
-                GameObject buttonLabel = GameObject.Find($"{s} Button");
+                GameObject buttonLabel = GameObject.Find($"{s} Button"); // [effeciency] could be made better by having a dictionary of the buttons
                 if (shootingStrategy == s)
                 {
                     HighlightButton(buttonLabel);
@@ -829,6 +829,10 @@ namespace Assets.Scripts.UIComponents
                 DeselectButton();
                 HighlightSelectedButtons();
             }
+            //else
+            //{
+            //    Debug.Log("No squads to set shooting strategy");
+            //}
 
         }
         public void SetTypeStrategy(int strategy)

@@ -84,21 +84,38 @@ namespace Assets.Scripts.Level.Commands
             //int loops = 0;
             bomb.HasCachedChanged = true;
             List<Ship> targetingList = bomb.MakeSortedTargetingList(true);
-            if (!bomb.DetermineTargetShip(targetingList, true))
+            if (targetingList.Count > 0)
             {
-                // Couldn't find a valid target ship, potentially because too much damage has been sent to each ship already
-                bomb.SetRandomTarget(targetingList);
+                if (!bomb.DetermineTargetShip(targetingList, true))
+                {
+                    targetingList = bomb.MakeSortedTargetingList(true);
+                    // Couldn't find a valid target ship, potentially because too much damage has been sent to each ship already
+                    if (targetingList.Count > 0)
+                    {
+                        bomb.SetRandomTarget(targetingList);
+
+                    }
+                    //else
+                    //{
+                    //    SetFinalize("No more enemy ships to target");
+                    //}
+                }
+                //while (!bomb.DetermineTargetShip(bomb.MakeSortedTargetingList(true), true) && loops < 10)
+                //{
+                //    Squad.DamageSentToEnemyShipsBySquad.Clear();
+                //    loops++;
+                //}
+                bomber.TargetEnemyShipToFollow = bomb.TargetShip;
+                //if (loops == 10)
+                //{
+                //    Debug.Log($"Looped 10 times while trying to determine a target ship for {bomb.Name}");
+                //}
             }
-            //while (!bomb.DetermineTargetShip(bomb.MakeSortedTargetingList(true), true) && loops < 10)
-            //{
-            //    Squad.DamageSentToEnemyShipsBySquad.Clear();
-            //    loops++;
-            //}
-            bomber.TargetEnemyShipToFollow = bomb.TargetShip;
-            //if (loops == 10)
-            //{
-            //    Debug.Log($"Looped 10 times while trying to determine a target ship for {bomb.Name}");
-            //}
+            else
+            {
+                SetFinalize("No more enemy ships to target");
+            }
+
         }
         private bool CheckIfStrikersAreDefenseless()
         {
