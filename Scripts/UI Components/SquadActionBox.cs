@@ -230,7 +230,7 @@ namespace Assets.Scripts.UIComponents
                 GameState state = Level.GetState();
                 ChargeButton.SetActive(state.GetSelectedSquads().Any((squad) => squad.GetShips().Any((ship) => ship.ShipType == "Barge")));
                 DetonateButton.SetActive(state.GetSelectedSquads().Any((squad) => squad.GetShips().Any((ship) => ship.ShipType == "Fire Ship")));
-                DropBeaconButton.SetActive(state.GetSelectedSquads().Any((squad) => squad.GetShips().Any((ship) => ship.ShipType == "Scout")));
+                DropBeaconButton.SetActive(state.GetSelectedSquads().Any((squad) => squad.GetShips().Any((ship) => ship.ShipType == "Scout" && ((Scout)ship).CanDropBeacons)));
 
                 if (IsAction("Patrol"))
                 {

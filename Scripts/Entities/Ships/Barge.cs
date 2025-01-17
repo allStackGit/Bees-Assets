@@ -30,7 +30,10 @@ namespace Assets.Scripts.Entities.Ships
         public override void Setup(LevelStage level, long id, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
         {
             base.Setup(level, id, fleetShip, squad, offsetFromCenter);
-            ChargingBar.Setup(this, 10);
+            if (IsUserControlled)
+            {
+                ChargingBar.Setup(this, 10); // [efficiency] Make this be created instead of starting with every barge, in case it's unneeded
+            }
         }
 
 
@@ -152,8 +155,10 @@ namespace Assets.Scripts.Entities.Ships
                 LogDamage(200);
 
                 //Debug.Log($"Stopped charging for {Name}");
-
-                ChargingBar.DrainBar();
+                if (IsUserControlled)
+                {
+                    ChargingBar.DrainBar();
+                }
                 yield return new WaitForSeconds(10);
 
                 FinishCoolDown();

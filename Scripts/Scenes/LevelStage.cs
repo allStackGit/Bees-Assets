@@ -127,6 +127,7 @@ namespace Assets.Scripts.Scenes
             {2, new Vector2[] { new Vector2(-756, 0), new Vector2(756, 0) } },
             {4, new Vector2[] { new Vector2(-756, 756), new Vector2(756, 756), new Vector2(-756, -756), new Vector2(756, -756) } },
         };
+        public Texture2D TargetingMouseTexture;
 
 
 
@@ -435,7 +436,7 @@ namespace Assets.Scripts.Scenes
                     Menus.UpdateScore(ConfigData.GetUserProgressData().HumanFreePlayWins, ConfigData.GetUserProgressData().BeeFreePlayWins);
                 }
 
-
+                //TargetingMouseTexture = TargetingMouse.sprite.texture;
             }
             else
             {

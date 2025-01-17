@@ -29,7 +29,7 @@ namespace Assets.Scripts.Entities.Projectiles
             {
                 if (!obstacle.IsMapBorder && !HasHitObstacle(obstacle))
                 {
-                    Debug.Log($"{Name} hit {obstacle.Name}");
+                    //Debug.Log($"{Name} hit {obstacle.Name}");
                     if (obstacle.IsCollisionAsteroid)
                     {
                         DamageObstacle(obstacle);

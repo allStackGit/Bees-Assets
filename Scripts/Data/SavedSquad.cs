@@ -81,7 +81,7 @@ namespace Assets.Scripts.Data
             {
                 int id = Utilities.GetNegativeFleetshipId();
 
-                FleetShip fleetShip = new FleetShip(id, Side, $"{squadType} - #{id}", squadType, false, true, false, 0, 0, 0, 0, 0, 0, 0);
+                FleetShip fleetShip = new FleetShip(id, $"{squadType} - #{id}", squadType, false, true, false, 0, 0, 0, 0, 0, 0, 0);
                 Vector2 offset = ConfigData.GeneratedSquadFormationOffsets[shipIndex];
                 SquadShip squadShip = new SquadShip(fleetShip.Id, fleetShip.Type, offset, this);
                 AddShipToSquad(squadShip);
@@ -242,7 +242,7 @@ namespace Assets.Scripts.Data
             GetSquadShips().ForEach((squadShip) =>
             {
                 FleetShip fleetShip = squadShip.GetFleetShip();
-                FleetShip newFleetShip = new FleetShip(Utilities.GetNegativeFleetshipId(), fleetShip.Side, fleetShip.Name, fleetShip.Type, false, true, false, 0, 0, 0, 0, 0, 0, 0);
+                FleetShip newFleetShip = new FleetShip(Utilities.GetNegativeFleetshipId(), fleetShip.Name, fleetShip.Type, false, true, false, 0, 0, 0, 0, 0, 0, 0);
                 SquadShip newSquadShip = new SquadShip(newFleetShip.Id, newFleetShip.Type, squadShip.Offset, convert);
                 convert.AddShipToSquad(newSquadShip);
             });

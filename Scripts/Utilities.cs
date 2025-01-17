@@ -23,7 +23,7 @@ namespace Assets.Scripts
     
     public static class Utilities
     {
-        public static readonly Dictionary<string, string> ShipNamesAndTypes = new Dictionary<string, string>()
+        public static readonly Dictionary<string, string> ShipTypesAndTypeLetters = new Dictionary<string, string>()
         {
             {"A", "Queen" },
             {"B", "Hornet" },
@@ -49,7 +49,7 @@ namespace Assets.Scripts
             {"V", "Warp Gate" },
             {"W", "Beacon" },
         };
-        public static readonly Dictionary<string, int> ShipTypeToInt = new Dictionary<string, int>()
+        public static readonly Dictionary<string, int> ShipTypeLetterToInt = new Dictionary<string, int>()
         {
             {"A", 1 },
             {"B", 2 },
@@ -76,6 +76,86 @@ namespace Assets.Scripts
             {"W", 23 },
         };
 
+        public static readonly Dictionary<string, int> ShipTypeToInt = new Dictionary<string, int>()
+        {
+            {"Queen", 1 },
+            {"Hornet", 2 },
+            {"Dreadnought", 3 },
+            {"Gunship", 4 },
+            {"Scout", 5 },
+            {"Wasp", 6 },
+            {"Bumblebee", 7 },
+            {"Flagship", 8 },
+            {"Honeybee", 9 },
+            {"Carpenter Bee", 10 },
+            {"Leafcutter", 11 },
+            {"Yellow Jacket", 12 },
+            {"Beehive", 13 },
+            {"Frigate", 14 },
+            {"Carrier", 15 },
+            {"Drone", 16 },
+            {"Striker", 17 },
+            {"Factory", 18 },
+            {"Cruiser", 19 },
+            {"Barge", 20 },
+            {"Fire Ship", 21 },
+            {"Warp Gate", 22 },
+            {"Beacon", 23 },
+        };
+
+        public static readonly Dictionary<int, string> ShipIntToType = new Dictionary<int, string>()
+        {
+            {1, "Queen"},
+            {2, "Hornet"},
+            {3, "Dreadnought"},
+            {4, "Gunship"},
+            {5, "Scout"},
+            {6, "Wasp"},
+            {7, "Bumblebee"},
+            {8, "Flagship"},
+            {9, "Honeybee"},
+            {10, "Carpenter Bee"},
+            {11, "Leafcutter"},
+            {12, "Yellow Jacket"},
+            {13, "Beehive"},
+            {14, "Frigate"},
+            {15, "Carrier"},
+            {16, "Drone"},
+            {17, "Striker"},
+            {18, "Factory"},
+            {19, "Cruiser"},
+            {20, "Barge"},
+            {21, "Fire Ship"},
+            {22, "Warp Gate"},
+            {23, "Beacon"},
+        };
+
+        public static readonly Dictionary<string, int> ShipTypeToSide = new Dictionary<string, int>()
+        {
+            {"Queen", 1 },
+            {"Hornet", 1 },
+            {"Dreadnought", 2 },
+            {"Gunship", 2 },
+            {"Scout", 2 },
+            {"Wasp", 1 },
+            {"Bumblebee", 1 },
+            {"Flagship", 2 },
+            {"Honeybee", 1 },
+            {"Carpenter Bee", 1 },
+            {"Leafcutter", 1 },
+            {"Yellow Jacket", 1 },
+            {"Beehive", 1 },
+            {"Frigate", 2 },
+            {"Carrier", 2 },
+            {"Drone", 2 },
+            {"Striker", 2 },
+            {"Factory", 2 },
+            {"Cruiser", 2 },
+            {"Barge", 2 },
+            {"Fire Ship", 2 },
+            {"Warp Gate", 2 },
+            {"Beacon", 2 },
+        };
         private static readonly Random _rnd = new Random();
         public static int Hash()
         {
@@ -186,7 +266,7 @@ namespace Assets.Scripts
             {
                 shipType = shipType.Substring(5);
             }
-            return ShipNamesAndTypes.GetValueOrDefault(shipType);
+            return ShipTypesAndTypeLetters.GetValueOrDefault(shipType);
             
         }
         public static string ConvertShipTypeToPluralName(string shipType)
@@ -207,7 +287,7 @@ namespace Assets.Scripts
         }
         public static string ConvertShipNameToType(string shipName) // [alert] switch to alphabetical order for ship type codes or maybe even drop them entirely
         {
-            return ShipNamesAndTypes.FirstOrDefault((v) => v.Value == shipName).Key;
+            return ShipTypesAndTypeLetters.FirstOrDefault((v) => v.Value == shipName).Key;
         }
         
         public static string GenerateCommanderName()
@@ -671,8 +751,8 @@ namespace Assets.Scripts
         }
         public static int CalculateCarrierAdditionalTsv()
         {
-            FleetShip striker = new FleetShip(-1, ConfigData.Configuration.HumanSide, "", "Striker", false, false, false, 0, 0, 0, 0, 0, 0, 0);
-            FleetShip drone = new FleetShip(-1, ConfigData.Configuration.HumanSide, "", "Drone", false, false, false, 0, 0, 0, 0, 0, 0, 0);
+            FleetShip striker = new FleetShip(-1, "", "Striker", false, false, false, 0, 0, 0, 0, 0, 0, 0);
+            FleetShip drone = new FleetShip(-1, "", "Drone", false, false, false, 0, 0, 0, 0, 0, 0, 0);
 
             return ((striker.GetTsv() * ConfigData.Configuration.CarrierCarryStrikerMax) * ConfigData.Configuration.CarrierSquadCount) + ((drone.GetTsv() * ConfigData.Configuration.CarrierCarryDroneMax) * ConfigData.Configuration.CarrierSquadCount);
         }

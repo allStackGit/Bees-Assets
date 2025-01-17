@@ -24,10 +24,9 @@ namespace Assets.Scripts.Data
        
         public float Firepower => GetFirepower();
 
-        public FleetShip(int id, int side, string name, string type, bool hasCachedSprite, bool isVisibleToUser, bool isDead, int shotsFired, int damageDone, int damageReceived, int kills, int battlesFought, int battlesWon, int mineralsMined)
+        public FleetShip(int id, string name, string type, bool hasCachedSprite, bool isVisibleToUser, bool isDead, int shotsFired, int damageDone, int damageReceived, int kills, int battlesFought, int battlesWon, int mineralsMined)
         {
             Id = id;
-            Side = side;
             Name = name;
             Type = type;
             HasCachedSprite = hasCachedSprite;
@@ -40,7 +39,7 @@ namespace Assets.Scripts.Data
             BattlesFought = battlesFought;
             BattlesWon = battlesWon;
             MineralsMined = mineralsMined;
-
+            Side = Utilities.ShipTypeToSide.GetValueOrDefault(Type);
             GetStats();
         }
         
@@ -59,7 +58,7 @@ namespace Assets.Scripts.Data
             {
                 Debug.Log($"Error while trying to load cached sprites: {e}");
                 throw e;
-                return null;
+                //return null;
             }
         }
 
@@ -165,7 +164,9 @@ namespace Assets.Scripts.Data
         }
         public string ToJson()
         {
-            return JsonUtility.ToJson(this);
+            return $"{{\"i\": {Id}, \"n\": \"{Name}\", \"t\": {Utilities.ShipTypeToInt.GetValueOrDefault(Type)}, \"v\": {(IsVisibleToUser ? 1 : 0)}, \"d\": {(IsDead ? 1 : 0)}," +
+                $"\"s\": {(HasCachedSprite ? 1 : 0)}, \"f\": {ShotsFired}, \"dd\": {DamageDone}, \"r\": {DamageReceived}, \"k\": {Kills}, \"b\": {BattlesFought}, \"w\": {BattlesWon}, " +
+                $"\"m\": {MineralsMined}}}";
         }
           
     }

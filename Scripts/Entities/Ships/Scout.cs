@@ -14,7 +14,18 @@ namespace Assets.Scripts.Entities.Ships
         public float TimeSinceLastBeaconDropped = 0;
         public int BeaconsDropped = 0;
         public List<Squad> MinionSquads = new List<Squad>();
+        public ChargingBar ChargingBar;
+        public bool CanDropBeacons;
 
+        public override void Setup(LevelStage level, long id, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
+        {
+            base.Setup(level, id, fleetShip, squad, offsetFromCenter);
+            if (IsUserControlled)
+            {
+                ChargingBar.Setup(this, ConfigData.MinimumDelayPerBeacon); // [efficiency] Make this be created instead of starting with every barge, in case it's unneeded
+            }
+            CanDropBeacons = true;
+        }
         private Squad CreateMinionSquad()
         {
             GameState state = Level.GetState();
@@ -41,7 +52,7 @@ namespace Assets.Scripts.Entities.Ships
         }
         public void DropBeacon()
         {
-            if (BeaconsDropped < ConfigData.MaxBeaconsDroppedPerScout && Time.realtimeSinceStartup - TimeSinceLastBeaconDropped > ConfigData.MinimumDelayPerBeacon)
+            if (CanDropBeacons && Time.realtimeSinceStartup - TimeSinceLastBeaconDropped > ConfigData.MinimumDelayPerBeacon)
             {
                 //Debug.Log($"{Name} is dropping a beacon");
                 TimeSinceLastBeaconDropped = Time.realtimeSinceStartup;
@@ -58,7 +69,7 @@ namespace Assets.Scripts.Entities.Ships
                     ship.Setup(
                         Level,
                         Level.GetState().GetId(),
-                        new FleetShip(id, Side, $"{Name} -> Beacon #{Id}", "Beacon", false, true, false, 0, 0, 0, 0, 0, 0, 0),
+                        new FleetShip(id, $"{Name} -> Beacon #{Id}", "Beacon", false, true, false, 0, 0, 0, 0, 0, 0, 0),
                         squad,
                         Vector2.zero
                     );
@@ -70,6 +81,18 @@ namespace Assets.Scripts.Entities.Ships
                     ship.MotherSquad = Squad;
                     squad.AddShip(ship);
                     ship.LookForShips();
+
+                    if (BeaconsDropped == ConfigData.MaxBeaconsDroppedPerScout)
+                    {
+                        ChargingBar.gameObject.SetActive(false);
+                        CanDropBeacons = false;
+                    }
+                    else
+                    {
+                        ChargingBar.DrainBar();
+                    }
+
+
                 }
             }
             //else

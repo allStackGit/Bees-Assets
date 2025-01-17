@@ -691,6 +691,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 2518675752222090672}
     m_Modifications:
+    - target: {fileID: 5842864600162321386, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_SortingOrder
+      value: -1
+      objectReference: {fileID: 0}
     - target: {fileID: 6138492006316565239, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
       propertyPath: m_Name
       value: Barge Rocket Flare Inner Right
@@ -1058,6 +1062,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 2518675752222090672}
     m_Modifications:
+    - target: {fileID: 5842864600162321386, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_SortingOrder
+      value: -1
+      objectReference: {fileID: 0}
     - target: {fileID: 6138492006316565239, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
       propertyPath: m_Name
       value: Barge Rocket Flare Left
@@ -1129,6 +1137,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 2518675752222090672}
     m_Modifications:
+    - target: {fileID: 5842864600162321386, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_SortingOrder
+      value: -1
+      objectReference: {fileID: 0}
     - target: {fileID: 6138492006316565239, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
       propertyPath: m_Name
       value: Barge Rocket Flare Inner Left
@@ -1200,6 +1212,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 2518675752222090672}
     m_Modifications:
+    - target: {fileID: 5842864600162321386, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_SortingOrder
+      value: -1
+      objectReference: {fileID: 0}
     - target: {fileID: 6138492006316565239, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
       propertyPath: m_Name
       value: Barge Rocket Flare Right

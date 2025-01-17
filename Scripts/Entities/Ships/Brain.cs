@@ -34,7 +34,7 @@ namespace Assets.Scripts.Entities.Ships
             Id = Utilities.Hash();
             Ship.Level.AgentGroup.RegisterAgent(this);
             BufferSensor = gameObject.GetComponent<BufferSensorComponent>();
-            ShipType = (float)Utilities.ShipTypeToInt[Ship.ShipTypeLetter] / Utilities.ShipNamesAndTypes.Count;
+            ShipType = (float)Utilities.ShipTypeLetterToInt[Ship.ShipTypeLetter] / Utilities.ShipTypesAndTypeLetters.Count;
             SpottedShipIndex = Ship.Side - 1;
         }
         public override void Initialize()

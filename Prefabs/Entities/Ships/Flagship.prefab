@@ -298,10 +298,12 @@ MonoBehaviour:
   HasLeftRocketFlares: 0
   HasCenterRocketFlares: 0
   HasRightRocketFlares: 0
+  HasOnlySideRocketFlares: 0
   HasMovementMarker: 0
   HasWaitingTargetCoordinates: 0
   HasRemainsShip: 0
   HasEnteredMap: 0
+  AreRocketFlaresOutOfSync: 0
   Weapons: []
   ProjectilePrefabs:
   - {fileID: 6428638681076635372, guid: c5d2fa5f5d52d0d4b855fdc29fca6e90, type: 3}
@@ -346,6 +348,7 @@ MonoBehaviour:
   __EnemySquad: 
   __TargetEnemyShipToFollow: 
   __SquadColor: 
+  __SquadShootingStrategy: 
   __CommandDestination: {x: 0, y: 0}
   __Velocity: {x: 0, y: 0}
   __TargetCoordinates: {x: 0, y: 0}
@@ -355,6 +358,10 @@ MonoBehaviour:
   __DegreesToTargetCoordinates: 0
   __DistanceToTargetCoordinates: 0
   __TurningRadius: 0
+  __Width: 0
+  __Height: 0
+  __SquadWidth: 0
+  __SquadHeight: 0
   __Tsv: 0
   __CommandTsv: 0
   __HasReachedDestination: 0
@@ -495,6 +502,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 4525937326214591360}
     m_Modifications:
+    - target: {fileID: 5842864600162321386, guid: 2702d78219a098e47bd878b8d630a95c, type: 3}
+      propertyPath: m_SortingOrder
+      value: -1
+      objectReference: {fileID: 0}
     - target: {fileID: 6138492006316565239, guid: 2702d78219a098e47bd878b8d630a95c, type: 3}
       propertyPath: m_Name
       value: Flagship Rocket Flare
@@ -732,6 +743,10 @@ PrefabInstance:
       value: 9
       objectReference: {fileID: 0}
     - target: {fileID: 5842864600162321386, guid: 5b594686eefc15645add727a7c3f61b7, type: 3}
+      propertyPath: m_SortingOrder
+      value: -1
+      objectReference: {fileID: 0}
+    - target: {fileID: 5842864600162321386, guid: 5b594686eefc15645add727a7c3f61b7, type: 3}
       propertyPath: m_SortingLayerID
       value: -32899415
       objectReference: {fileID: 0}
@@ -888,6 +903,10 @@ PrefabInstance:
     - target: {fileID: 5842864600162321386, guid: 5b594686eefc15645add727a7c3f61b7, type: 3}
       propertyPath: m_SortingLayer
       value: 9
+      objectReference: {fileID: 0}
+    - target: {fileID: 5842864600162321386, guid: 5b594686eefc15645add727a7c3f61b7, type: 3}
+      propertyPath: m_SortingOrder
+      value: -1
       objectReference: {fileID: 0}
     - target: {fileID: 5842864600162321386, guid: 5b594686eefc15645add727a7c3f61b7, type: 3}
       propertyPath: m_SortingLayerID
@@ -1110,6 +1129,10 @@ PrefabInstance:
       value: 9
       objectReference: {fileID: 0}
     - target: {fileID: 5842864600162321386, guid: 5b594686eefc15645add727a7c3f61b7, type: 3}
+      propertyPath: m_SortingOrder
+      value: -1
+      objectReference: {fileID: 0}
+    - target: {fileID: 5842864600162321386, guid: 5b594686eefc15645add727a7c3f61b7, type: 3}
       propertyPath: m_SortingLayerID
       value: -32899415
       objectReference: {fileID: 0}
@@ -1189,6 +1212,10 @@ PrefabInstance:
       value: 9
       objectReference: {fileID: 0}
     - target: {fileID: 5842864600162321386, guid: 5b594686eefc15645add727a7c3f61b7, type: 3}
+      propertyPath: m_SortingOrder
+      value: -1
+      objectReference: {fileID: 0}
+    - target: {fileID: 5842864600162321386, guid: 5b594686eefc15645add727a7c3f61b7, type: 3}
       propertyPath: m_SortingLayerID
       value: -32899415
       objectReference: {fileID: 0}
@@ -1266,6 +1293,10 @@ PrefabInstance:
     - target: {fileID: 5842864600162321386, guid: 5b594686eefc15645add727a7c3f61b7, type: 3}
       propertyPath: m_SortingLayer
       value: 9
+      objectReference: {fileID: 0}
+    - target: {fileID: 5842864600162321386, guid: 5b594686eefc15645add727a7c3f61b7, type: 3}
+      propertyPath: m_SortingOrder
+      value: -1
       objectReference: {fileID: 0}
     - target: {fileID: 5842864600162321386, guid: 5b594686eefc15645add727a7c3f61b7, type: 3}
       propertyPath: m_SortingLayerID
@@ -1444,6 +1475,10 @@ PrefabInstance:
     - target: {fileID: 5842864600162321386, guid: 5b594686eefc15645add727a7c3f61b7, type: 3}
       propertyPath: m_SortingLayer
       value: 9
+      objectReference: {fileID: 0}
+    - target: {fileID: 5842864600162321386, guid: 5b594686eefc15645add727a7c3f61b7, type: 3}
+      propertyPath: m_SortingOrder
+      value: -1
       objectReference: {fileID: 0}
     - target: {fileID: 5842864600162321386, guid: 5b594686eefc15645add727a7c3f61b7, type: 3}
       propertyPath: m_SortingLayerID

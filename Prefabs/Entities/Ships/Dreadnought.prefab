@@ -171,10 +171,12 @@ MonoBehaviour:
   HasLeftRocketFlares: 0
   HasCenterRocketFlares: 0
   HasRightRocketFlares: 0
+  HasOnlySideRocketFlares: 0
   HasMovementMarker: 0
   HasWaitingTargetCoordinates: 0
   HasRemainsShip: 0
   HasEnteredMap: 0
+  AreRocketFlaresOutOfSync: 0
   Weapons: []
   ProjectilePrefabs:
   - {fileID: 3911271517188601395, guid: 3da77696d01a3ea46b81fbca2a24e25d, type: 3}
@@ -212,6 +214,7 @@ MonoBehaviour:
   __EnemySquad: 
   __TargetEnemyShipToFollow: 
   __SquadColor: 
+  __SquadShootingStrategy: 
   __CommandDestination: {x: 0, y: 0}
   __Velocity: {x: 0, y: 0}
   __TargetCoordinates: {x: 0, y: 0}
@@ -221,6 +224,10 @@ MonoBehaviour:
   __DegreesToTargetCoordinates: 0
   __DistanceToTargetCoordinates: 0
   __TurningRadius: 0
+  __Width: 0
+  __Height: 0
+  __SquadWidth: 0
+  __SquadHeight: 0
   __Tsv: 0
   __CommandTsv: 0
   __HasReachedDestination: 0
@@ -412,6 +419,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 4765992002712767474}
     m_Modifications:
+    - target: {fileID: 5842864600162321386, guid: 7182f8cceca687f4ea9bd8f02326395e, type: 3}
+      propertyPath: m_SortingOrder
+      value: -1
+      objectReference: {fileID: 0}
     - target: {fileID: 6138492006316565239, guid: 7182f8cceca687f4ea9bd8f02326395e, type: 3}
       propertyPath: m_Name
       value: Dreadnought Minor Rocket Flare Right
@@ -553,6 +564,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 4765992002712767474}
     m_Modifications:
+    - target: {fileID: 5842864600162321386, guid: 87eecfbb43a8a9543be397ded5e87d49, type: 3}
+      propertyPath: m_SortingOrder
+      value: -1
+      objectReference: {fileID: 0}
     - target: {fileID: 6138492006316565239, guid: 87eecfbb43a8a9543be397ded5e87d49, type: 3}
       propertyPath: m_Name
       value: Dreadnought Rocket Flare Right
@@ -715,6 +730,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 4765992002712767474}
     m_Modifications:
+    - target: {fileID: 5842864600162321386, guid: 87eecfbb43a8a9543be397ded5e87d49, type: 3}
+      propertyPath: m_SortingOrder
+      value: -1
+      objectReference: {fileID: 0}
     - target: {fileID: 6138492006316565239, guid: 87eecfbb43a8a9543be397ded5e87d49, type: 3}
       propertyPath: m_Name
       value: Dreadnought Rocket Flare Left
@@ -976,6 +995,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 4765992002712767474}
     m_Modifications:
+    - target: {fileID: 5842864600162321386, guid: 7182f8cceca687f4ea9bd8f02326395e, type: 3}
+      propertyPath: m_SortingOrder
+      value: -1
+      objectReference: {fileID: 0}
     - target: {fileID: 6138492006316565239, guid: 7182f8cceca687f4ea9bd8f02326395e, type: 3}
       propertyPath: m_Name
       value: Dreadnought Minor Rocket Flare Left

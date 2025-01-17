@@ -308,7 +308,7 @@ namespace Assets.Scripts.Entities.Ships
 
                 RLSide = Side / 2;
                 RLHealth = Health / MaxHealth;
-                RLShipType = (float)Utilities.ShipTypeToInt[ShipTypeLetter] / Utilities.ShipNamesAndTypes.Count;
+                RLShipType = (float)Utilities.ShipTypeLetterToInt[ShipTypeLetter] / Utilities.ShipTypesAndTypeLetters.Count;
             }
 
             if (FleetShip.Id < 0)

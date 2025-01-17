@@ -1,16 +1,11 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
-using System.Xml.Linq;
-using Assets.Scripts;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Entities.Ships.Weapons;
-using Assets.Scripts.Level;
 using Assets.Scripts.Scenes;
 using UnityEngine;
 using UnityEngine.EventSystems;
-using UnityEngine.UIElements;
 
 namespace Assets.Scripts.Level
 {
@@ -330,6 +325,8 @@ namespace Assets.Scripts.Level
                     });
                 });
                 IsFiringManually = true;
+
+                //Cursor.SetCursor(Level.TargetingMouseTexture, Vector2.zero, CursorMode.Auto);
             }
             else
             {
@@ -338,6 +335,7 @@ namespace Assets.Scripts.Level
                     turret.IsFiringManually = false;
                 });
                 IsFiringManually = false;
+                Cursor.SetCursor(null, Vector2.zero, CursorMode.Auto);
             }
         }
         public void SelectSquadByNumber(int squadNumber)

@@ -26,6 +26,13 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public float DamagePerSecond => RateOfFire > 0 ? (Power / RateOfFire) : 0;
         public Vector2 TargetPoint;
         public GameObject TargetingMarker;
+        public CollisionAsteroid TargetAsteroid;
+        public bool HasTargetAsteroid;
+        public bool IsFiringAtAsteroid;
+        /// <summary>
+        /// Whether or not the ship should fire at the asteroid: If it's not cease fire and it has a target asteroid, and it does not have a target ship
+        /// </summary>
+        public bool ShouldFireAtAsteroid => !CeaseFire && HasTargetAsteroid && TargetShip == null && TargetAsteroid != null;
 
         //public override bool ShouldFire => TargetShip != null && !CeaseFire && IsShipValidTarget(TargetShip);
 
@@ -100,8 +107,25 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 SetTargetShipNull();
             }
-        }
 
+            if (TargetShip == null)
+            {
+                TryToFindAsteroidTarget();
+            }
+            
+        }
+        public void TryToFindAsteroidTarget()
+        {
+            if (Ship.NearbyAsteroids.Count > 0)
+            {
+                TargetAsteroid = Ship.NearbyAsteroids[0];
+                HasTargetAsteroid = true;
+            }
+            else
+            {
+                HasTargetAsteroid = false;
+            }
+        }
         protected void SetTargetShipNull()
         {
             TargetShip = null;
@@ -127,6 +151,13 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 {
                     TargetPoint = GetTargetPoint(TargetShip);
                     IsAimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                    IsFiringAtAsteroid = false;
+                }
+                else if (ShouldFireAtAsteroid)
+                {
+                    TargetPoint = TargetAsteroid.GetPosition();
+                    IsAimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                    IsFiringAtAsteroid = true;
                 }
                 else
                 {
@@ -136,6 +167,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                         //Debug.Log($"{Name} has no ships to fire at, returning to default aim");
                         Utilities.TimedRotation(Piece, Ship.GetRotation(), RotationRate);
                     }
+                    IsFiringAtAsteroid = false;
                 }
             }
             MoveTargetingMarker();
@@ -263,7 +295,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         protected void TryToFire()
         {
             //Debug.Log($"{Name} trying to fire");
-            if (IsFiringManually)
+            if (IsFiringManually || IsFiringAtAsteroid)
             {
                 if (IsAimedAtTarget)
                 {

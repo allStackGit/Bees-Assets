@@ -27,7 +27,14 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 {
                     TargetPoint = GetTargetPoint(TargetShip);
                     IsAimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                    IsFiringAtAsteroid = false;
 
+                }
+                else if (ShouldFireAtAsteroid)
+                {
+                    TargetPoint = TargetAsteroid.GetPosition();
+                    IsAimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                    IsFiringAtAsteroid = true;
                 }
                 else
                 {
@@ -37,6 +44,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                         IsAimedAtTarget = false;
                         Utilities.TimedRotation(Piece, Ship.GetRotation(), RotationRate);
                     }
+                    IsFiringAtAsteroid = false;
 
                 }
             }
@@ -67,7 +75,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
                 Level.AddProjectile(ProjectilePrefab, this, GetPosition(), angle);
                 Ship.FleetShip.ShotsFired++;
-                if (!IsFiringManually)
+                if (!IsFiringManually && !IsFiringAtAsteroid)
                 {
                     ShipDamageStatus shipDamageStatus = Level.GetState().GetShipDamageStatus(Side, TargetShip);
                     shipDamageStatus.TotalDamageSentToShip += Power;
