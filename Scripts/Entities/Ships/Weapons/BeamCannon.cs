@@ -1,4 +1,5 @@
 ﻿
+using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Level;
 using System.Collections;
 using UnityEngine;
@@ -73,7 +74,13 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
                 //Debug.Log($"Potential spawn point for laser beam, mapTransformPoint: {mapTransformPoint}, shipOffset: {shipOffset}");
 
-                Level.AddProjectile(ProjectilePrefab, this, GetPosition(), angle);
+                Projectile beam = Level.AddProjectile(ProjectilePrefab, this, GetPosition(), angle);
+
+                if (Ship.Squad.HasCustomColor)
+                {
+                    beam.GetComponent<SpriteRenderer>().color = Ship.Squad.Color;
+                }
+
                 Ship.FleetShip.ShotsFired++;
                 if (!IsFiringManually && !IsFiringAtAsteroid)
                 {

@@ -106,6 +106,13 @@ namespace Assets.Scripts.Scenes
 
 
         }
+        /// <summary>
+        /// Tries to reconnect to the server, called on a timer if there's a disconnection
+        /// </summary>
+        private void AutomaticConnectionRetry()
+        {
+            ConfigData.RetryConnection();
+        }
         // Update is called once per frame
         protected void Update()
         {
@@ -115,6 +122,7 @@ namespace Assets.Scripts.Scenes
             if (ConfigData.Socket.HasClosed && IsSocketManager && !NetworkDisconnection.IsOpen)
             {
                 NetworkDisconnection.Show();
+                InvokeRepeating(nameof(AutomaticConnectionRetry), 10f, 10f);
             }
             else if (ConfigData.Socket.IsOpen && IsSocketManager && NetworkDisconnection.IsOpen && (!IsLevel || ((LevelStage)this).IsLevelConnectedToServer))
             {
@@ -126,7 +134,7 @@ namespace Assets.Scripts.Scenes
               
                 if (!FinalizedScene)
                 {
-                    if (IsSocketManager && ConfigData.AreAllSettingsLoaded && !ConfigData.IsAllUserDataLoaded)
+                    if (IsMainScene && ConfigData.AreAllSettingsLoaded && !ConfigData.IsAllUserDataLoaded)
                     {
                         if (ConfigData.Configuration.IsDeadVersion)
                         {

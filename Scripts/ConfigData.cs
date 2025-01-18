@@ -446,6 +446,9 @@ namespace Assets.Scripts
             return SocketManager != null;
         }
 
+        /// <summary>
+        /// Tries to reconnect to the server
+        /// </summary>
         public static void RetryConnection()
         {
             Socket.MakeSocket();

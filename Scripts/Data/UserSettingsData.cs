@@ -9,8 +9,6 @@ namespace Assets.Scripts.Data
 {
     public class UserSettingsData : UserData
     {
-
-
         public List<HotKey> HotKeys = new List<HotKey>();
         public Dictionary<string, HotKey> HotKeysByName = new Dictionary<string, HotKey>();
         public List<HotKey> DefaultHotKeys = new List<HotKey>
@@ -96,6 +94,7 @@ namespace Assets.Scripts.Data
 
             dynamic json = SetupFile(shouldFileExist, ConfigData.UserSettingsFilename, (json) =>
             {
+                Debug.Log($"Setting up {ConfigData.UserSettingsFilename}");
                 ConfigData.IsUserSettingsDataLoaded = true;
                 //Debug.Log("Updated config file");
                 //Debug.Log($"JSON from DataFile: {json}");

@@ -5259,7 +5259,7 @@ PrefabInstance:
       objectReference: {fileID: 2507697582912947509, guid: 60a6013777594eb47842724022e04add, type: 3}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: DoesUserHaveController
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
       propertyPath: IsCalculatingClearance

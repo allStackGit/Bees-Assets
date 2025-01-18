@@ -11,6 +11,7 @@ namespace Assets.Scripts.Data
         protected DataFile file = null;
         protected string defaultJsonData = "";
         private Action<dynamic> _onceDataIsLoaded;
+        private bool _hasCalledAction;
         public UserData()
         {
         }
@@ -56,8 +57,9 @@ namespace Assets.Scripts.Data
         public void WaitForData()
         {
             //Debug.Log("UserData is waiting for data");
-            if (IsDataLoaded())
+            if (IsDataLoaded() && !_hasCalledAction)
             {
+                _hasCalledAction = true;
                 if (_onceDataIsLoaded != null)
                 {
                     _onceDataIsLoaded(GetDataFile().GetJsonObject());

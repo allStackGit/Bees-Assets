@@ -1408,7 +1408,7 @@ namespace Assets.Scripts.Scenes
             }
         }
         // The SplitterShot class adds it's own projectile [note] [projectile-method]
-        public void AddProjectile(GameObject instance, Weapon weapon, Vector2 startingPosition, float angle)
+        public Projectile AddProjectile(GameObject instance, Weapon weapon, Vector2 startingPosition, float angle)
         {
              //Debug.Log($"Adding projectile {instance.name} at startingPosition: {startingPosition}");
             instance = Instantiate(instance, new Vector2(0, 0), Quaternion.identity);
@@ -1427,6 +1427,7 @@ namespace Assets.Scripts.Scenes
             projectile.Setup(this, shooter.Side, state.GetId(), weapon, shooter, target, startingPosition, angle, weapon.Range, power);
             shooter.ProjectilesInFlight.Add(projectile);
             //Debug.Log($"Position after setup for #{projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
+            return projectile;
         }
         public GameState GetState()
         {
