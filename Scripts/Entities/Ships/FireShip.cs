@@ -8,12 +8,12 @@ using UnityEngine;
 
 namespace Assets.Scripts.Entities.Ships
 {
-    public class FireShip : Ship
+    public class FireBarge : Ship
     {
         public GameObject Explosion;
         public void Detonate()
         {
-            //Debug.Log("Detonating fire ship");
+            //Debug.Log("Detonating Fire Barge");
 
             Kill(null, null, null);
         }
@@ -25,18 +25,18 @@ namespace Assets.Scripts.Entities.Ships
             {
                 IsDead = true;
                 GameState state = Level.GetState();
-                //Debug.Log("Fireship exploding");
+                //Debug.Log("FireBarge exploding");
                 if (!endKill)
                 {
                     Explosion = Instantiate(ShipExplosion, GetPosition(), Quaternion.identity);
                     Explosion.transform.parent = Level.Map.transform;
                     RocketExplosion explosion = (RocketExplosion)Explosion.GetComponent(typeof(RocketExplosion));
                     explosion.Setup(Level, Side, state.GetId(), Bomb, this, null, GetPosition(), 0, 0, Bomb.Power);
-                    state.FireShipExplosions.Add(explosion);
+                    state.FireBargeExplosions.Add(explosion);
                     ProjectilesInFlight.Add(explosion);
 
 
-                    // The Fire ship is killing itself so it takes full damage but there's no shooter so it's just logging damage
+                    // The Fire Barge is killing itself so it takes full damage but there's no shooter so it's just logging damage
                     LogDamage(Health);
 
                   

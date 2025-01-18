@@ -112,7 +112,7 @@ namespace Assets.Scripts.Level
                 //ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 9),  // human squad // 1 Cruiser, #2s
                 //ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 10),  // human squad // 1 Dreadnought, #3
                 //ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 11),  // human squad // 1 Factory, #4
-                ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 20),  // human squad // 1 Fire Ship, #5
+                ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 20),  // human squad // 1 Fire Barge, #5
                 //ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 13),  // human squad // 1 Flagship, #6
                 //ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 14),  // human squad // 1 Frigate, #7
                 //ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 15),  // human squad // 1 Gunship, #8
@@ -155,7 +155,7 @@ namespace Assets.Scripts.Level
                 //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 2),  // human squad // 1 Cruiser, #2
                 //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 3),  // human squad // 1 Dreadnought, #3
                 //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 4),  // human squad // 1 Factory, #4
-                //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 5),  // human squad // 1 Fire Ship, #5
+                //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 5),  // human squad // 1 Fire Barge, #5
                 ConfigData.CurrentShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 6),  // human squad // 1 Flagship, #6
                 //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 7),  // human squad // 1 Frigate, #7
                 //ConfigData.AllShips.GetSavedSquads().FirstOrDefault((s) => s.Side == side && s.Id == 8),  // human squad // 1 Gunship, #8
@@ -569,9 +569,9 @@ namespace Assets.Scripts.Level
                     instance = GameObject.Instantiate(Level.FactoryPrefab, Vector2.zero, Quaternion.identity);
                     ship = instance.GetComponent<Factory>();
                     break;
-                case "Fire Ship":
-                    instance = GameObject.Instantiate(Level.FireShipPrefab, Vector2.zero, Quaternion.identity);
-                    ship = instance.GetComponent<FireShip>();
+                case "Fire Barge":
+                    instance = GameObject.Instantiate(Level.FireBargePrefab, Vector2.zero, Quaternion.identity);
+                    ship = instance.GetComponent<FireBarge>();
                     break;
                 case "Flagship":
                     instance = GameObject.Instantiate(Level.FlagshipPrefab, Vector2.zero, Quaternion.identity);

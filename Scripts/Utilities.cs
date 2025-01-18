@@ -45,7 +45,7 @@ namespace Assets.Scripts
             {"R", "Factory" },
             {"S", "Cruiser" },
             {"T", "Barge" },
-            {"U", "Fire Ship" },
+            {"U", "Fire Barge" },
             {"V", "Warp Gate" },
             {"W", "Beacon" },
         };
@@ -98,7 +98,7 @@ namespace Assets.Scripts
             {"Factory", 18 },
             {"Cruiser", 19 },
             {"Barge", 20 },
-            {"Fire Ship", 21 },
+            {"Fire Barge", 21 },
             {"Warp Gate", 22 },
             {"Beacon", 23 },
         };
@@ -125,7 +125,7 @@ namespace Assets.Scripts
             {18, "Factory"},
             {19, "Cruiser"},
             {20, "Barge"},
-            {21, "Fire Ship"},
+            {21, "Fire Barge"},
             {22, "Warp Gate"},
             {23, "Beacon"},
         };
@@ -152,7 +152,7 @@ namespace Assets.Scripts
             {"Factory", 2 },
             {"Cruiser", 2 },
             {"Barge", 2 },
-            {"Fire Ship", 2 },
+            {"Fire Barge", 2 },
             {"Warp Gate", 2 },
             {"Beacon", 2 },
         };

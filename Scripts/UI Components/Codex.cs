@@ -8,7 +8,7 @@ using UnityEngine;
 
 public class Codex : MonoBehaviour
 {
-    public GameObject CodexBarge, CodexBeacon, CodexCarrier, CodexCruiser, CodexDreadnought, CodexDrone, CodexFactory, CodexFireShip, CodexFlagship, CodexFrigate, CodexGunship, CodexScout,
+    public GameObject CodexBarge, CodexBeacon, CodexCarrier, CodexCruiser, CodexDreadnought, CodexDrone, CodexFactory, CodexFireBarge, CodexFlagship, CodexFrigate, CodexGunship, CodexScout,
              CodexStriker, CodexWarpGate, CodexBeehive, CodexBumblebee, CodexCarpenterBee, CodexHoneybee, CodexHornet, CodexLeafcutter, CodexQueen, CodexWasp, CodexYellowJacket;
     public Dictionary<string, GameObject> CodexShips;
 
@@ -31,7 +31,7 @@ public class Codex : MonoBehaviour
                     {"Dreadnought", CodexDreadnought },
                     {"Drone", CodexDrone },
                     {"Factory", CodexFactory },
-                    {"Fire Ship", CodexFireShip },
+                    {"Fire Barge", CodexFireBarge },
                     {"Flagship", CodexFlagship },
                     {"Frigate", CodexFrigate },
                     {"Gunship", CodexGunship },

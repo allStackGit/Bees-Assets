@@ -396,7 +396,7 @@ namespace Assets.Scripts.Entities.Ships
             {
                 SpecialFirePower = shipStats.Powers[0] / 3;
             }
-            else if (fleetShip.Type == "Fire Ship")
+            else if (fleetShip.Type == "Fire Barge")
             {
                 SpecialFirePower = shipStats.Powers[0] * shipStats.ProjectileValues[0];
             }
@@ -942,9 +942,9 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 {
                     ((YellowJacket)this).TryToDetonate();
                 }
-                else if (ShipType == "Fire Ship")
+                else if (ShipType == "Fire Barge")
                 {
-                    ((FireShip)this).Detonate();
+                    ((FireBarge)this).Detonate();
                 }
             }
             if (Direction == 360)
@@ -1447,7 +1447,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
             // tsvChange is a negative number, -tsvChange is a positive number
 
-            bool isFriendlyFire = false; // So far friendly fire can only occur if a fire ship blows up and kills its own side's ships
+            bool isFriendlyFire = false; // So far friendly fire can only occur if a Fire Barge blows up and kills its own side's ships
             if (attackerFleetShip.Side != target.Side)
             {
                 attackerFleetShip.DamageDone += -tsvChange;
@@ -1459,7 +1459,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             }
             else
             {
-                if (attacker.KillerFleetShip != null) // someone killed the ship that damaged this ship. (e.g. a Bumblebee killing a Fire Ship that exploded and killed this ship) The killer should receive stats for the damage
+                if (attacker.KillerFleetShip != null) // someone killed the ship that damaged this ship. (e.g. a Bumblebee killing a Fire Barge that exploded and killed this ship) The killer should receive stats for the damage
                 {
                     isFriendlyFire = true;
                     //Debug.Log($"{shooter.Killer.Name} has killed {shooter.Name} who has in turn damaged {target.Name} on the same side. {shooter.Killer.Name} has done {-tsvChange} additional damage");

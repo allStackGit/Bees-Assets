@@ -16,7 +16,7 @@ namespace Assets.Scripts.Settings
         public Dictionary<string, int> BeeCampaignStartingShips;
         public List<int> SupplyCapacity; 
         public string DefaultShootingStrategy;
-        public List<string> HumanShipTypes => HumanStartingShips.Keys.ToList(); // Barge, Carrier, Cruiser, Dreadnought, Drone, Factory, Fire Ship, Frigate, Gunship, Scout, Striker, Warp Gate
+        public List<string> HumanShipTypes => HumanStartingShips.Keys.ToList(); // Barge, Carrier, Cruiser, Dreadnought, Drone, Factory, Fire Barge, Frigate, Gunship, Scout, Striker, Warp Gate
         public List<string> BeeShipTypes => BeeStartingShips.Keys.ToList(); // Beehive, Bumblebee, Carpenter Bee, Honeybee, Hornet, Leafcutter, Queen, Wasp, Yellow Jacket
 
         public StartingSettings(int userId) : base("starting-settings", userId)

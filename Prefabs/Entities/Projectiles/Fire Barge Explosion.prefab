@@ -14,7 +14,7 @@ GameObject:
   - component: {fileID: -1155758467170267426}
   - component: {fileID: 6561188998541698932}
   m_Layer: 20
-  m_Name: Fire Ship Explosion
+  m_Name: Fire Barge Explosion
   m_TagString: Projectile
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0

@@ -69,8 +69,8 @@ namespace Assets.Scripts.Entities.Projectiles
             //Debug.Log("Basic rocket collision");
             if (ship != null)
             {
-                // if hit enemy projectile or fire ship explosion. the ships to ignore is for leafcutter split shots
-                if ((!IsFriendly(ship) || (Shooter.ShipType == "Fire Ship" && !Equals(Shooter))) && !ShipsToIgnore.Contains(ship))
+                // if hit enemy projectile or Fire Barge explosion. the ships to ignore is for leafcutter split shots
+                if ((!IsFriendly(ship) || (Shooter.ShipType == "Fire Barge" && !Equals(Shooter))) && !ShipsToIgnore.Contains(ship))
                 {
                     ContactTarget(ship); // don't do damage because the explosion is what does damage
                 }

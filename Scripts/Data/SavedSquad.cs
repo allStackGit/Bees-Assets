@@ -60,7 +60,7 @@ namespace Assets.Scripts.Data
         public void SetupRandomShips(string squadType)
         {
             int shipCount = 10;
-            if ((new List<string> { "Queen", "Fire Ship", "Carrier", "Flagship", "Warp Gate", "Beehive" }).Contains(squadType))
+            if ((new List<string> { "Queen", "Fire Barge", "Carrier", "Flagship", "Warp Gate", "Beehive" }).Contains(squadType))
             {
                 shipCount = 1;
             }

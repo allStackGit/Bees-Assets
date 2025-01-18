@@ -104,11 +104,11 @@ namespace Assets.Scripts.Data
             {
                 SpecialFirePower.Add(shipInfo.Powers.First() / 5);
             }
-            else if (Type == "Fire Ship")
+            else if (Type == "Fire Barge")
             {
                 SpecialFirePower.Add((shipInfo.Powers.First() * shipInfo.ProjectileValues.First()));
             }
-            else if (Type == "Fire Ship")
+            else if (Type == "Fire Barge")
             {
                 SpecialFirePower.Add((shipInfo.Powers.First() * shipInfo.ProjectileValues.First()));
             }

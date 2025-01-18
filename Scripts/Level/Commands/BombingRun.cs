@@ -12,7 +12,7 @@ namespace Assets.Scripts.Level.Commands
     {
         public HashSet<Ship> ShipsCompletedCommand = new HashSet<Ship>();
         /// <summary>
-        /// Only available to Yellow Jackets, Fireships, and Strikers. Sends all ships straight onto the ships of the squad and back to the carrier if applicable
+        /// Only available to Yellow Jackets, FireBarges, and Strikers. Sends all ships straight onto the ships of the squad and back to the carrier if applicable
         /// </summary>
         /// <param name="strategy"></param>
         /// <param name="shootingStrategy"></param>
@@ -199,7 +199,7 @@ namespace Assets.Scripts.Level.Commands
                     YellowJacket yellowJacket = (YellowJacket)ship;
                     return yellowJacket.HasCompletedRun;
                 }
-                else if (ship.ShipType == "Fire Ship")
+                else if (ship.ShipType == "Fire Barge")
                 {
                     return false;
                 }
@@ -233,7 +233,7 @@ namespace Assets.Scripts.Level.Commands
                 //Debug.Log("Bombing timer");
                 Squad.Status = $"In the middle of bombing run against {EnemySquad.Name}";
                 List<Ship> ships = Squad.GetShips();
-                List<long> fireShipsToDetonate = new List<long>();
+                List<long> FireBargesToDetonate = new List<long>();
                 ships.ForEach((ship) =>
                 {
                     if (!ShipsCompletedCommand.Contains(ship))
@@ -242,11 +242,11 @@ namespace Assets.Scripts.Level.Commands
                         {
 
                             SendShipToTarget(ship);
-                            if (Squad.IsHiveMindControlled && ship.ShipType == "Fire Ship" && ship.ProximityCollider.NearbyEnemyShips.Contains(ship.TargetEnemyShipToFollow))
+                            if (Squad.IsHiveMindControlled && ship.ShipType == "Fire Barge" && ship.ProximityCollider.NearbyEnemyShips.Contains(ship.TargetEnemyShipToFollow))
                             {
-                                // if you're a fire ship and within detonation distance of your target, detonate
+                                // if you're a Fire Barge and within detonation distance of your target, detonate
                                 Debug.Log($"{ship.Name} is hivemind controlled and on a bombing run and near its target enemy and so it's going to detonate. ");
-                                fireShipsToDetonate.Add(ship.Id);
+                                FireBargesToDetonate.Add(ship.Id);
                             }
                         }
                         else
@@ -287,10 +287,10 @@ namespace Assets.Scripts.Level.Commands
                     
                 });
 
-                // This is necessary to prevent modifying the list when the fire ship(s) is killed
-                for (int i = 0; i < fireShipsToDetonate.Count; i++)
+                // This is necessary to prevent modifying the list when the Fire Barge(s) is killed
+                for (int i = 0; i < FireBargesToDetonate.Count; i++)
                 {
-                    ((FireShip)Level.GetState().GetShipById(fireShipsToDetonate[i])).Detonate();
+                    ((FireBarge)Level.GetState().GetShipById(FireBargesToDetonate[i])).Detonate();
                 }
 
 

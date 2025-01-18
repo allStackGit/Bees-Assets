@@ -38,10 +38,10 @@ namespace Assets.Scripts.Level
         public HashSet<Ship>[] VisionCache = new HashSet<Ship>[] { new HashSet<Ship>(), new HashSet<Ship>() };
         public Dictionary<long, HashSet<Ship>>[] HivemindShips = new Dictionary<long, HashSet<Ship>>[] { new Dictionary<long, HashSet<Ship>>(), new Dictionary<long, HashSet<Ship>>() };
         public List<ShipRemains> Deadbodies = new List<ShipRemains>();
-        public HashSet<RocketExplosion> FireShipExplosions = new HashSet<RocketExplosion>();
+        public HashSet<RocketExplosion> FireBargeExplosions = new HashSet<RocketExplosion>();
         public HashSet<MiningAsteroid> MiningAsteroids = new HashSet<MiningAsteroid>();
         public HashSet<Ship> MiningShips = new HashSet<Ship>();
-        public bool HasWarpGates, IsFireShipExploding, HasSelectedSquads;
+        public bool HasWarpGates, IsFireBargeExploding, HasSelectedSquads;
         public List<ShipDamageStatus>[] ShipDamageStatuses = new List<ShipDamageStatus>[] {new List<ShipDamageStatus>(), new List<ShipDamageStatus>() };
         //public bool[] HasMiningShips = new bool[2];
 

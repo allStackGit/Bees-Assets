@@ -119,8 +119,8 @@ namespace Assets.Scripts.Data
                 case "Factory":
                     ship = level.gameObject.AddComponent<Factory>();
                     break;
-                case "Fire Ship":
-                    ship = level.gameObject.AddComponent<FireShip>();
+                case "Fire Barge":
+                    ship = level.gameObject.AddComponent<FireBarge>();
                     break;
                 case "Flagship":
                     ship = level.gameObject.AddComponent<Flagship>();

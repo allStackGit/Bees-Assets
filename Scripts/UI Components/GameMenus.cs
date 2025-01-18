@@ -8,6 +8,7 @@ using UnityEngine.Events;
 using Assets.Scripts.Data;
 using System.Linq;
 using System;
+using Assets.Scripts.Entities.Ships;
 
 namespace Assets.Scripts.UIComponents
 {
@@ -109,7 +110,24 @@ namespace Assets.Scripts.UIComponents
             Level.UnPause();
             Level.IsRestarting = true;
             Level.SaveAndEnd();
+        }
+        /// <summary>
+        /// Kills all of the player's ships to end the level
+        /// </summary>
+        public void Surrender()
+        {
+            Level.UnPause();
             MenuContainer.SetActive(false);
+            Ship[] ships = Level.GetState().GetShips(ConfigData.Configuration.UserSide).ToArray(); // need to convert this to an array because killing a ship removes it from the list of ships in the state
+
+            for (int i = 0; i < ships.Length; i++)
+            {
+                Ship ship = ships[i];
+
+                ship.Kill(null, null, null);
+            }
+
+
         }
         public void TryNewLevel()
         {

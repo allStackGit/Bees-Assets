@@ -51,7 +51,7 @@ namespace Assets.Scripts
         // 5 = ml agents rl testing,
         // 6 = standard testing [highest trained]
         // 7 = new NN training version
-        public const int Version = 6; // [alert] should be increased when released
+        public const int Version = 5; // [alert] should be increased when released
         public const string BaseFolder = "SaveData";
         public const string CacheFolder = "SpriteCache";
         public const string PortraitFolder = "Sprites/People";
@@ -108,7 +108,7 @@ namespace Assets.Scripts
             { "Dreadnought",    new Vector2Int(320, 420)},
             { "Drone",          new Vector2Int(160, 160)},
             { "Factory",        new Vector2Int(640, 640)},
-            { "Fire Ship",      new Vector2Int(760, 360)},
+            { "Fire Barge",      new Vector2Int(760, 360)},
             { "Flagship",       new Vector2Int(640, 760)},
             { "Frigate",        new Vector2Int(240, 240)},
             { "Gunship",        new Vector2Int(240, 240)},
@@ -135,7 +135,7 @@ namespace Assets.Scripts
             { "Dreadnought",    new Vector2Int(0, 0)},
             { "Drone",          new Vector2Int(0, 0)},
             { "Factory",        new Vector2Int(0, 0)},
-            { "Fire Ship",      new Vector2Int(0, 0)},
+            { "Fire Barge",      new Vector2Int(0, 0)},
             { "Flagship",       new Vector2Int(0, 0)},
             { "Frigate",        new Vector2Int(0, 0)},
             { "Gunship",        new Vector2Int(420, 420)},
@@ -161,7 +161,7 @@ namespace Assets.Scripts
             { "Dreadnought",    Medium},
             { "Drone",          Tiny},
             { "Factory",        Huge},
-            { "Fire Ship",      Huge},
+            { "Fire Barge",      Huge},
             { "Flagship",       Huge},
             { "Frigate",        Small},
             { "Gunship",        Small},
@@ -187,7 +187,7 @@ namespace Assets.Scripts
             { "Dreadnought", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1)  } },
             { "Drone", new Color[] {new Color(.729f, .729f, .729f, 1) } },
             { "Factory", new Color[] { new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.196f, 0.6f, 0.4f, 1) } },
-            { "Fire Ship", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.235f, 0.753f, 0.498f, 1) } },
+            { "Fire Barge", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.235f, 0.753f, 0.498f, 1) } },
             { "Flagship", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
             { "Frigate", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
 
@@ -225,7 +225,7 @@ namespace Assets.Scripts
             { "Dreadnought", .35f },
             { "Drone", .35f },
             { "Factory", .35f },
-            { "Fire Ship", .35f },
+            { "Fire Barge", .35f },
             { "Flagship", .35f },
             { "Frigate", .35f },
             { "Gunship", .35f },
@@ -252,7 +252,7 @@ namespace Assets.Scripts
         public static readonly HashSet<string> BeeSwarmShips = new HashSet<string> { "Honeybee", "Hornet", "Yellow Jacket" };
         public static readonly HashSet<string> HumanSwarmShips = new HashSet<string> { "Scout", "Carrier", "Gunship" };
         public static readonly HashSet<string> BeePowerfulShips = new HashSet<string> { "Queen", "Bumblebee", "Leafcutter" };
-        public static readonly HashSet<string> HumanPowerfulShips = new HashSet<string> { "Flagship", "Fire Ship", "Cruiser", "Dreadnought" };
+        public static readonly HashSet<string> HumanPowerfulShips = new HashSet<string> { "Flagship", "Fire Barge", "Cruiser", "Dreadnought" };
         public static readonly HashSet<string> SpawnedOnlyShipTypes = new HashSet<string> { "Drone", "Striker", "Beacon" };
         public static readonly HashSet<string> ArmedShipTypes = new HashSet<string> { "Cruiser", "Dreadnought", "Flagship", "Frigate", "Gunship", "Bumblebee", "Hornet", "Leafcutter", "Queen", "Wasp" };
         public static readonly List<Map> Maps = new List<Map> { new Map(0, new Vector2(0, -230), new Vector2(0, 230), "Pluto"), new Map(1, new Vector2(0, -430), new Vector2(0, 430), "Uranus") };
@@ -266,7 +266,7 @@ namespace Assets.Scripts
         public static bool FirstTimePlaying = true; // [alert] should be linked to whether a user has actually played before   
         public const float CloseEnoughCoordinateVariance = 1.5f; // world units
 
-        public const int FireShipExplosionSize = 64;
+        public const int FireBargeExplosionSize = 64;
         public const float RefillDistanceToCarrier = 15;
         public const int MinimumDelayPerBeacon = 10;
         public const int BeaconUpdateFrequency = 5;
@@ -492,7 +492,7 @@ namespace Assets.Scripts
             if (AreAllSettingsLoaded && !IsAllUserDataLoaded && !IsLoadingUserData)
             {
                 IsLoadingUserData = true;
-                //Debug.Log("Setting up user data");
+                Debug.Log("Setting up user data");
 
                 //Debug.Log($"Current Level before loading user data: {GetLevel()}");
                 Dictionary<string, int> allStartingShips = new Dictionary<string, int>();

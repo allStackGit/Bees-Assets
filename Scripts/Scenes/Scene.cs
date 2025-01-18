@@ -126,7 +126,7 @@ namespace Assets.Scripts.Scenes
               
                 if (!FinalizedScene)
                 {
-                    if (ConfigData.AreAllSettingsLoaded && !ConfigData.IsAllUserDataLoaded)
+                    if (IsSocketManager && ConfigData.AreAllSettingsLoaded && !ConfigData.IsAllUserDataLoaded)
                     {
                         if (ConfigData.Configuration.IsDeadVersion)
                         {

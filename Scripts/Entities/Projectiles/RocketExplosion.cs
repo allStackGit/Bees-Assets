@@ -52,7 +52,7 @@ namespace Assets.Scripts.Entities.Projectiles
         public new virtual void Kill()
         {
             //Debug.Log("Killed off the rocket explosion");
-            Level.GetState().FireShipExplosions.Remove(this);
+            Level.GetState().FireBargeExplosions.Remove(this);
             Destroy(gameObject);
         } 
 
@@ -90,8 +90,8 @@ namespace Assets.Scripts.Entities.Projectiles
             //Debug.Log($"Rocket explosion collided with {ship.Name}");
             if (ship != null)
             {
-                // if hit enemy projectile or fire ship explosion
-                if ((!IsFriendly(ship) || (Shooter.ShipType == "Fire Ship" && !Equals(Shooter))))
+                // if hit enemy projectile or Fire Barge explosion
+                if ((!IsFriendly(ship) || (Shooter.ShipType == "Fire Barge" && !Equals(Shooter))))
                 {
                     if (!_isHarmless && !HasHitShip(ship)) // if it's an explosion it should do damage but not if it's already contacted the ship
                     {

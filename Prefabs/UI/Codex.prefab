@@ -293,7 +293,7 @@ MonoBehaviour:
   CodexDreadnought: {fileID: 1210642578672837263}
   CodexDrone: {fileID: 5819483786221471445}
   CodexFactory: {fileID: 802294379545376707}
-  CodexFireShip: {fileID: 6039232065051144220}
+  CodexFireBarge: {fileID: 6039232065051144220}
   CodexFlagship: {fileID: 2797556653053725708}
   CodexFrigate: {fileID: 4620312417591935787}
   CodexGunship: {fileID: 9092569457223692180}
@@ -366,7 +366,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 1, y: 1}
-  m_AnchoredPosition: {x: 0, y: 0.0003321588}
+  m_AnchoredPosition: {x: 0, y: -54.99967}
   m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0, y: 1}
 --- !u!114 &5756806181580180645
@@ -529,8 +529,8 @@ MonoBehaviour:
   m_TargetGraphic: {fileID: 6297352065585256661}
   m_HandleRect: {fileID: 2495186730580031256}
   m_Direction: 2
-  m_Value: 1
-  m_Size: 0.19316565
+  m_Value: 0
+  m_Size: 1
   m_NumberOfSteps: 0
   m_OnValueChanged:
     m_PersistentCalls:
@@ -3088,7 +3088,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4980400393154136308, guid: e5c02d827fe6c37488ecaf4c17bc2324, type: 3}
       propertyPath: m_Name
-      value: Fire Ship
+      value: Fire Barge
       objectReference: {fileID: 0}
     - target: {fileID: 4980400393154136308, guid: e5c02d827fe6c37488ecaf4c17bc2324, type: 3}
       propertyPath: m_IsActive
@@ -3156,7 +3156,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 7088069691235360025, guid: e5c02d827fe6c37488ecaf4c17bc2324, type: 3}
       propertyPath: m_text
-      value: Fire Ship
+      value: Fire Barge
       objectReference: {fileID: 0}
     - target: {fileID: 8432564516334530869, guid: e5c02d827fe6c37488ecaf4c17bc2324, type: 3}
       propertyPath: m_Pivot.x

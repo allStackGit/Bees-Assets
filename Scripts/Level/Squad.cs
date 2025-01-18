@@ -71,7 +71,7 @@ namespace Assets.Scripts.Level
         public bool IsShootingSquad => GetShips().Any((s) => s.Turrets.Any());
         public bool HasOnlyYellowJackets => GetShips().All((s) => s.ShipType == "Yellow Jacket");
         public bool HasOnlyStrikers => GetShips().All((s) => s.ShipType == "Striker");
-        public bool HasOnlyBombers => GetShips().All((s) => s.ShipType == "Striker" || s.ShipType == "Yellow Jacket" || s.ShipType == "Fire Ship");
+        public bool HasOnlyBombers => GetShips().All((s) => s.ShipType == "Striker" || s.ShipType == "Yellow Jacket" || s.ShipType == "Fire Barge");
         public bool HasOnlyBarges => GetShips().All((s) => s.ShipType == "Barge");
         /// <summary>
         /// If this squad belongs to the user side and there is a player
@@ -197,7 +197,7 @@ namespace Assets.Scripts.Level
                 {
                     adjustment *= 1.2f;
                 }
-                else if (ship.ShipType == "Barge" || ship.ShipType == "Fire Ship" || ship.ShipType == "Warp Gate")
+                else if (ship.ShipType == "Barge" || ship.ShipType == "Fire Barge" || ship.ShipType == "Warp Gate")
                 {
                     adjustment *= new Vector2(1.4f, 1);
                 }

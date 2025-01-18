@@ -229,7 +229,7 @@ namespace Assets.Scripts.UIComponents
             {
                 GameState state = Level.GetState();
                 ChargeButton.SetActive(state.GetSelectedSquads().Any((squad) => squad.GetShips().Any((ship) => ship.ShipType == "Barge")));
-                DetonateButton.SetActive(state.GetSelectedSquads().Any((squad) => squad.GetShips().Any((ship) => ship.ShipType == "Fire Ship")));
+                DetonateButton.SetActive(state.GetSelectedSquads().Any((squad) => squad.GetShips().Any((ship) => ship.ShipType == "Fire Barge")));
                 DropBeaconButton.SetActive(state.GetSelectedSquads().Any((squad) => squad.GetShips().Any((ship) => ship.ShipType == "Scout" && ((Scout)ship).CanDropBeacons)));
 
                 if (IsAction("Patrol"))
@@ -437,7 +437,7 @@ namespace Assets.Scripts.UIComponents
                         break;
 
                     case "Detonate":
-                        explanation.text = $"The Fire Ship(s) of the selected squadron(s) will detonate their nuclear cargo, severely damaging or destroying all ships around them.";
+                        explanation.text = $"The Fire Barge(s) of the selected squadron(s) will detonate their nuclear cargo, severely damaging or destroying all ships around them.";
                         break;
 
                     case "Charge":
@@ -535,7 +535,7 @@ namespace Assets.Scripts.UIComponents
                     case "Dreadnoughts":
                     case "Drones":
                     case "Factories":
-                    case "Fire Ships":
+                    case "Fire Barges":
                     case "Flagships":
                     case "Frigates":
                     case "Gunships":
@@ -700,10 +700,10 @@ namespace Assets.Scripts.UIComponents
             {
                 Level.GetState().GetSelectedSquads().ForEach((squad) =>
                 {
-                    squad.GetShips().Where((s) => s.ShipType == "Fire Ship").ToList().ForEach((ship) =>
+                    squad.GetShips().Where((s) => s.ShipType == "Fire Barge").ToList().ForEach((ship) =>
                     {
-                        FireShip fireShip = (FireShip)ship;
-                        fireShip.Detonate();
+                        FireBarge FireBarge = (FireBarge)ship;
+                        FireBarge.Detonate();
                     });
                 });
             }

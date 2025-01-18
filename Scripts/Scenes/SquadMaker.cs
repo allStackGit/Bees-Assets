@@ -32,21 +32,21 @@ namespace Assets.Scripts.Scenes
 
         public GameObject
             BargeDragIcon, BeaconDragIcon, CarrierDragIcon, CruiserDragIcon, DreadnoughtDragIcon, DroneDragIcon,
-            FactoryDragIcon, FireShipDragIcon, FlagshipDragIcon, FrigateDragIcon, GunshipDragIcon, ScoutDragIcon,
+            FactoryDragIcon, FireBargeDragIcon, FlagshipDragIcon, FrigateDragIcon, GunshipDragIcon, ScoutDragIcon,
             StrikerDragIcon, WarpGateDragIcon,
 
             BeehiveDragIcon, BumblebeeDragIcon, CarpenterBeeDragIcon, HoneybeeDragIcon, HornetDragIcon, LeafcutterDragIcon, QueenDragIcon,
             WaspDragIcon, YellowJacketDragIcon,
 
             BargeShipIcon, BeaconShipIcon, CarrierShipIcon, CruiserShipIcon, DreadnoughtShipIcon, DroneShipIcon,
-            FactoryShipIcon, FireShipShipIcon, FlagshipShipIcon, FrigateShipIcon, GunshipShipIcon, ScoutShipIcon,
+            FactoryShipIcon, FireBargeShipIcon, FlagshipShipIcon, FrigateShipIcon, GunshipShipIcon, ScoutShipIcon,
             StrikerShipIcon, WarpGateShipIcon,
 
             BeehiveShipIcon, BumblebeeShipIcon, CarpenterBeeShipIcon, HoneybeeShipIcon, HornetShipIcon, LeafcutterShipIcon, QueenShipIcon,
             WaspShipIcon, YellowJacketShipIcon,
 
             BargeFleetLabel, BeaconFleetLabel, CarrierFleetLabel, CruiserFleetLabel, DreadnoughtFleetLabel, DroneFleetLabel,
-            FactoryFleetLabel, FireShipFleetLabel, FlagshipFleetLabel, FrigateFleetLabel, GunshipFleetLabel, ScoutFleetLabel,
+            FactoryFleetLabel, FireBargeFleetLabel, FlagshipFleetLabel, FrigateFleetLabel, GunshipFleetLabel, ScoutFleetLabel,
             StrikerFleetLabel, WarpGateFleetLabel,
 
             BeehiveFleetLabel, BumblebeeFleetLabel, CarpenterBeeFleetLabel, HoneybeeFleetLabel, HornetFleetLabel, LeafcutterFleetLabel, QueenFleetLabel,
@@ -65,14 +65,14 @@ namespace Assets.Scripts.Scenes
             ChoosingUnsavedSquadAlert, ChoosingDeadSquadAlert, GoBackConfirmation, SquadSavingStatus;
 
         public Sprite
-            BargeSprite, BeaconSprite, CarrierSprite, CruiserSprite, DreadnoughtSprite, DroneSprite, FactorySprite, FireShipSprite, FlagshipSprite, FrigateSprite,
+            BargeSprite, BeaconSprite, CarrierSprite, CruiserSprite, DreadnoughtSprite, DroneSprite, FactorySprite, FireBargeSprite, FlagshipSprite, FrigateSprite,
             GunshipSprite, ScoutSprite, StrikerSprite, WarpGateSprite,
 
             BeehiveSprite, BumblebeeSprite, CarpenterBeeSprite, HoneybeeSprite, HornetSprite, LeafcutterSprite, QueenSprite,
             WaspSprite, YellowJacketSprite;
 
         public Sprite
-            BargeGameSprite, CarrierGameSprite, CruiserGameSprite, CruiserCannonGameSprite, DreadnoughtGameSprite, FactoryGameSprite, FactoryAnimationSprite, FireShipGameSprite, FlagshipGameSprite, FrigateGameSprite,
+            BargeGameSprite, CarrierGameSprite, CruiserGameSprite, CruiserCannonGameSprite, DreadnoughtGameSprite, FactoryGameSprite, FactoryAnimationSprite, FireBargeGameSprite, FlagshipGameSprite, FrigateGameSprite,
             GunshipGameSprite, ScoutGameSprite, WarpGateGameSprite, WarpGateAnimationSprite, WarpGateAnimationLoopSprite;
 
         public Sprite GunshipRemainsSprite;
@@ -391,7 +391,7 @@ namespace Assets.Scripts.Scenes
             _dragIconTypes.Add("Dreadnought", DreadnoughtDragIcon);
             _dragIconTypes.Add("Drone", DroneDragIcon);
             _dragIconTypes.Add("Factory", FactoryDragIcon);
-            _dragIconTypes.Add("Fire Ship", FireShipDragIcon);
+            _dragIconTypes.Add("Fire Barge", FireBargeDragIcon);
             _dragIconTypes.Add("Flagship", FlagshipDragIcon);
             _dragIconTypes.Add("Frigate", FrigateDragIcon);
             _dragIconTypes.Add("Gunship", GunshipDragIcon);
@@ -406,7 +406,7 @@ namespace Assets.Scripts.Scenes
             _spriteTypes.Add("Dreadnought", DreadnoughtSprite);
             _spriteTypes.Add("Drone", DroneSprite);
             _spriteTypes.Add("Factory", FactorySprite);
-            _spriteTypes.Add("Fire Ship", FireShipSprite);
+            _spriteTypes.Add("Fire Barge", FireBargeSprite);
             _spriteTypes.Add("Flagship", FlagshipSprite);
             _spriteTypes.Add("Frigate", FrigateSprite);
             _spriteTypes.Add("Gunship", GunshipSprite);
@@ -422,7 +422,7 @@ namespace Assets.Scripts.Scenes
             _shipPartSprites["Dreadnought"] = new List<Sprite> { DreadnoughtGameSprite };
             //_shipPartSprites["Drone"] = new List<Sprite> { DroneGameSprite }; // no drone because we won't be caching sprites for carrier ships
             _shipPartSprites["Factory"] = new List<Sprite> { FactoryGameSprite, FactoryAnimationSprite };
-            _shipPartSprites["Fire Ship"] = new List<Sprite> { FireShipGameSprite };
+            _shipPartSprites["Fire Barge"] = new List<Sprite> { FireBargeGameSprite };
             _shipPartSprites["Flagship"] = new List<Sprite> { FlagshipGameSprite };
             _shipPartSprites["Frigate"] = new List<Sprite> { FrigateGameSprite };
             _shipPartSprites["Gunship"] = new List<Sprite> { GunshipGameSprite };
@@ -512,8 +512,8 @@ namespace Assets.Scripts.Scenes
                     case "Factory":
                         shipLabel = FactoryFleetLabel;
                         break;
-                    case "Fire Ship":
-                        shipLabel = FireShipFleetLabel;
+                    case "Fire Barge":
+                        shipLabel = FireBargeFleetLabel;
                         break;
                     case "Flagship":
                         shipLabel = FlagshipFleetLabel;
@@ -758,8 +758,8 @@ namespace Assets.Scripts.Scenes
                     return DreadnoughtShipIcon;
                 case "Factory":
                     return FactoryShipIcon;
-                case "Fire Ship":
-                    return FireShipShipIcon;
+                case "Fire Barge":
+                    return FireBargeShipIcon;
                 case "Flagship":
                     return FlagshipShipIcon;
                 case "Frigate":
