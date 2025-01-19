@@ -136,11 +136,11 @@ namespace Assets.Scripts.Entities.Ships
 
             // each hit, add the negative TSV to the target's command and subtract the negative TSV from the shooter's command
 
-            if (attacker.Squad.Command != null)
+            if (attacker.Squad.HasCommand)
             {
                 attacker.Squad.Command.Tsv += -1 * targetTSVChange; // add the TSV to the shooter
             }
-            if (target.Squad.Command != null)
+            if (target.Squad.HasCommand)
             {
                 target.Squad.Command.Tsv += targetTSVChange; // subtract the TSV from the target
             }

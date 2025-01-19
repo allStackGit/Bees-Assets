@@ -324,12 +324,12 @@ namespace Assets.Scripts.Level
             if (SelectedSquads.Count == 0)
             {
                 HasSelectedSquads = false;
-                if (Level.HasPlayer)
+                if (!Level.IsTraining)
                 {
                     Level.Menus.ActionBox.Hide();
                 }
             }
-            else if (Level.HasPlayer)
+            else if (!Level.IsTraining)
             {
                 Level.Menus.ActionBox.SetupForSquad();
             }
@@ -372,7 +372,7 @@ namespace Assets.Scripts.Level
             List<Squad> targetedSquads = new List<Squad>();
             Squads.Where((s) => s.Side == side).ToList().ForEach((s) =>
             {
-                if (s.Command != null && s.Command.EnemySquad != null)
+                if (s.HasCommand && s.Command.EnemySquad != null)
                 {
                     targetedSquads.Add(s.Command.EnemySquad);
                 }

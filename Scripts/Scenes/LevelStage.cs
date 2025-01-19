@@ -405,7 +405,7 @@ namespace Assets.Scripts.Scenes
             _state = gameObject.AddComponent<GameState>();
             _state.Setup(this);
 
-            if (HasPlayer)
+            if (!IsTraining)
             {
 
                 // Setup  Game menu 
@@ -466,7 +466,7 @@ namespace Assets.Scripts.Scenes
             //HalfX = MapX / 2;
             //HalfY = MapY / 2;
 
-            if (HasPlayer && !UnlockCamera)
+            if (!IsTraining && !UnlockCamera)
             {
 
                 Vector2 cameraWorldUnitsSize = Utilities.ScreenPixelsToWorldUnits(new Vector2(MiniMapCamera.pixelWidth, MiniMapCamera.pixelHeight), Camera);
@@ -667,7 +667,7 @@ namespace Assets.Scripts.Scenes
                         Time.timeScale = TimeScale;
                         if (!IsTrainingHiveMind)
                         {
-                            if (HasPlayer)
+                            if (!IsTraining)
                             {
                                 InputManager.Update();
                             }
@@ -1087,11 +1087,11 @@ namespace Assets.Scripts.Scenes
             LevelConstructor.SetupShips(ConfigData.Configuration.AISide);
             LevelConstructor.SetupShips(ConfigData.Configuration.UserSide);
             GameState state = GetState();
-            if (state.GetSquadsBySide(ConfigData.Configuration.UserSide).Count > 0 && state.GetSquadsBySide(ConfigData.Configuration.AISide).Count > 0 && !IsTraining && HasPlayer)
+            if (state.GetSquadsBySide(ConfigData.Configuration.UserSide).Count > 0 && state.GetSquadsBySide(ConfigData.Configuration.AISide).Count > 0 && !IsTraining)
             {
                 state.SelectSquad(state.GetSquadByNumber(ConfigData.Configuration.UserSide, 1));
             }
-            else if (!IsTraining && HasPlayer)
+            else if (!IsTraining)
             {
                 Debug.Log($"User squads: {state.GetSquadsBySide(ConfigData.Configuration.UserSide).Count}, AI squads: {state.GetSquadsBySide(ConfigData.Configuration.AISide).Count}");
                 Pause();
@@ -1126,7 +1126,7 @@ namespace Assets.Scripts.Scenes
             HalfY = MapY / 2;
 
 
-            if (HasPlayer)
+            if (!IsTraining && !UnlockCamera)
             {
                 Camera.orthographicSize = DefaultZoom;
                 Vector2 localizedPosition = DefaultCameraPosition + (Vector2)transform.position;
@@ -1314,7 +1314,7 @@ namespace Assets.Scripts.Scenes
             //Invoke(nameof(StartNew), .1f);
             //Invoke(nameof(ReloadScene), 1f);
 
-            if (HasPlayer && !Menus.IsMiniMapOpen)
+            if (!IsTraining && !Menus.IsMiniMapOpen)
             {
                 Menus.ToggleMiniMapDisplay();
             }

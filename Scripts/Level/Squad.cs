@@ -145,7 +145,7 @@ namespace Assets.Scripts.Level
         {
             if (Side == ConfigData.Configuration.AISide)
             { // ai side
-                if (Level.HasPlayer)
+                if (!Level.IsTraining)
                 {
                     OpponentId = ConfigData.GetUserId();
                 }
@@ -158,7 +158,7 @@ namespace Assets.Scripts.Level
             { // user side
                 OpponentId = 0;
 
-                if (Level.HasPlayer)
+                if (!Level.IsTraining)
                 {
                     SquadBox = Instantiate(Level.SquadBox, new Vector3(0, 0, 0), Quaternion.identity);
                     SquadBox.transform.parent = Level.Map.transform;
@@ -344,11 +344,11 @@ namespace Assets.Scripts.Level
         }
         public bool IsChasing()
         {
-            return Command != null && Command.Type == "Aggressive" && _shouldChase;
+            return HasCommand && Command.Type == "Aggressive" && _shouldChase;
         }
         public void StopChasing()
         {
-            if (Command != null && Command.Type == "Aggressive")
+            if (HasCommand && Command.Type == "Aggressive")
             {
                 Command.SetFinalize("Stopped Chasing");
             }
@@ -932,7 +932,7 @@ namespace Assets.Scripts.Level
         public void RemoveShip(Ship ship)
         {
             _ships.Remove(ship);
-            if (IsSelected && Level.HasPlayer)
+            if (IsSelected && !Level.IsTraining)
             {
                 Level.Menus.ActionBox.SetSquadsText();
             }
@@ -1078,7 +1078,7 @@ namespace Assets.Scripts.Level
         {
             //Debug.Log($"Squad #{squadNumber} is moving and the squad box will have width {GetWidth()}, height {GetHeight()}, and center point {GetCenterPoint()}");
             //Debug.Log($"Right most point {GetRightMostPoint()}, Left most point {GetLeftMostPoint()}, Top most point {GetTopMostPoint()}, Bottom most point {GetBottomMostPoint()}");
-            if (IsSelected && Level.HasPlayer)
+            if (IsSelected && !Level.IsTraining)
             {
                 SquadBox.SetActive(true);
                 SquadBox.transform.localPosition = GetCenterPoint();

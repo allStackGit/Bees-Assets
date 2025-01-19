@@ -111,6 +111,7 @@ namespace Assets.Scripts.Scenes
         /// </summary>
         private void AutomaticConnectionRetry()
         {
+            Debug.Log($"Trying to automatically reconnect to the server with {Name}");
             ConfigData.RetryConnection();
         }
         // Update is called once per frame
@@ -121,6 +122,7 @@ namespace Assets.Scripts.Scenes
 
             if (ConfigData.Socket.HasClosed && IsSocketManager && !NetworkDisconnection.IsOpen)
             {
+                Debug.Log($"Network disconnected!");
                 NetworkDisconnection.Show();
                 InvokeRepeating(nameof(AutomaticConnectionRetry), 10f, 10f);
             }

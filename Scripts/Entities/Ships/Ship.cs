@@ -2027,7 +2027,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         }
         private void OnMouseEnter()
         {
-            if (!ConfigData.SpawnedOnlyShipTypes.Contains(ShipType) && Level.HasPlayer)
+            if (!ConfigData.SpawnedOnlyShipTypes.Contains(ShipType) && !Level.IsTraining)
             {
                 Invoke(nameof(ShowShipStats), 1);
             }
@@ -2036,7 +2036,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         private void OnMouseExit()
         {
             CancelInvoke(nameof(ShowShipStats));
-            if (Level.HasPlayer)
+            if (!Level.IsTraining)
             {
                 Level.Menus.ShipInfoBox.SetActive(false);
             }

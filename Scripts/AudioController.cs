@@ -8,16 +8,16 @@ namespace Assets.Scripts
     public class AudioController : MonoBehaviour
     {
         public AudioSource LocationIntro;
-        public AudioSource CarpenterBeeIntro;
-        public AudioSource HoneybeeIntro;
-        public AudioSource HornetIntro;
-        public AudioSource WaspIntro;
+        //public AudioSource CarpenterBeeIntro;
+        //public AudioSource HoneybeeIntro;
+        //public AudioSource HornetIntro;
+        //public AudioSource WaspIntro;
 
         public AudioSource LocationLoop;
-        public AudioSource CarpenterBeeLoop;
-        public AudioSource HoneybeeLoop;
-        public AudioSource HornetLoop;
-        public AudioSource WaspLoop;
+        //public AudioSource CarpenterBeeLoop;
+        //public AudioSource HoneybeeLoop;
+        //public AudioSource HornetLoop;
+        //public AudioSource WaspLoop;
         public AudioSource HumanLoop;
 
         public AudioSource LightCannonSound;
@@ -42,28 +42,28 @@ namespace Assets.Scripts
         public void Setup(bool playMusic)
         {
             // Setup audio [make audio controller]
-            BeesLoops.Add("Carpenter Bee", CarpenterBeeLoop);
-            BeesLoops.Add("Honeybee", HoneybeeLoop);
-            BeesLoops.Add("Hornet", HornetLoop);
-            BeesLoops.Add("Wasp", WaspLoop);
+            //BeesLoops.Add("Carpenter Bee", CarpenterBeeLoop);
+            //BeesLoops.Add("Honeybee", HoneybeeLoop);
+            //BeesLoops.Add("Hornet", HornetLoop);
+            //BeesLoops.Add("Wasp", WaspLoop);
 
-            BeesIntros.Add("Carpenter Bee", CarpenterBeeIntro);
-            BeesIntros.Add("Honeybee", HoneybeeIntro);
-            BeesIntros.Add("Hornet", HornetIntro);
-            BeesIntros.Add("Wasp", WaspIntro);
+            //BeesIntros.Add("Carpenter Bee", CarpenterBeeIntro);
+            //BeesIntros.Add("Honeybee", HoneybeeIntro);
+            //BeesIntros.Add("Hornet", HornetIntro);
+            //BeesIntros.Add("Wasp", WaspIntro);
 
             Intros.Add(LocationIntro);
 
-            Intros.Add(CarpenterBeeIntro);
-            Intros.Add(HoneybeeIntro);
-            Intros.Add(HornetIntro);
-            Intros.Add(WaspIntro);
+            //Intros.Add(CarpenterBeeIntro);
+            //Intros.Add(HoneybeeIntro);
+            //Intros.Add(HornetIntro);
+            //Intros.Add(WaspIntro);
 
             Loops.Add(LocationLoop);
-            Loops.Add(CarpenterBeeLoop);
-            Loops.Add(HoneybeeLoop);
-            Loops.Add(HornetLoop);
-            Loops.Add(WaspLoop);
+            //Loops.Add(CarpenterBeeLoop);
+            //Loops.Add(HoneybeeLoop);
+            //Loops.Add(HornetLoop);
+            //Loops.Add(WaspLoop);
             Loops.Add(HumanLoop);
 
             WeaponSounds.Add("Light Cannon", new AudioSource[] { LightCannonSound, LightCannonSound2 });
@@ -73,35 +73,35 @@ namespace Assets.Scripts
             ExplosionSounds.Add(ConfigData.Tiny, TinyShipExplosionSounds);
 
             //mute bee intros
-            MuteSource(CarpenterBeeIntro);
-            MuteSource(HoneybeeIntro);
-            MuteSource(HornetIntro);
-            MuteSource(WaspIntro);
+            //MuteSource(CarpenterBeeIntro);
+            //MuteSource(HoneybeeIntro);
+            //MuteSource(HornetIntro);
+            //MuteSource(WaspIntro);
 
 
 
 
             // mute bee loops
-            MuteSource(CarpenterBeeLoop);
-            MuteSource(HoneybeeLoop);
-            MuteSource(HornetLoop);
-            MuteSource(WaspLoop);
+            //MuteSource(CarpenterBeeLoop);
+            //MuteSource(HoneybeeLoop);
+            //MuteSource(HornetLoop);
+            //MuteSource(WaspLoop);
 
             if (playMusic)
             {
                 // play intros
                 PlayIntro(LocationIntro);
-                PlayIntro(CarpenterBeeIntro);
-                PlayIntro(HoneybeeIntro);
-                PlayIntro(HornetIntro);
-                PlayIntro(WaspIntro);
+                //PlayIntro(CarpenterBeeIntro);
+                //PlayIntro(HoneybeeIntro);
+                //PlayIntro(HornetIntro);
+                //PlayIntro(WaspIntro);
 
                 // play loops
                 PlayLoop(IntroLength, LocationLoop);
-                PlayLoop(IntroLength, CarpenterBeeLoop);
-                PlayLoop(IntroLength, HoneybeeLoop);
-                PlayLoop(IntroLength, HornetLoop);
-                PlayLoop(IntroLength, WaspLoop);
+                //PlayLoop(IntroLength, CarpenterBeeLoop);
+                //PlayLoop(IntroLength, HoneybeeLoop);
+                //PlayLoop(IntroLength, HornetLoop);
+                //PlayLoop(IntroLength, WaspLoop);
                 PlayLoop(IntroLength, HumanLoop);
 
                 StartCoroutine(nameof(EndIntro), IntroLength);
