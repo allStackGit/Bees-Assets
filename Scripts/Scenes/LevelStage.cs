@@ -17,12 +17,16 @@ using System.Security.Cryptography;
 using Unity.MLAgents;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.SocialPlatforms;
 using UnityEngine.UI;
 using UnityEngine.UIElements;
 
 namespace Assets.Scripts.Scenes
 {
-    public class LevelStage : Scene
+    /// <summary>
+    /// A container class for the map and all entities in it. Can coexist or be indepdentent with any number of levels. Belongs to a stage.
+    /// </summary>
+    public class LevelStage : MonoBehaviour
     {
         //public float __RotationTest;
         //public Vector2 __OriginalPosition;
@@ -35,25 +39,21 @@ namespace Assets.Scripts.Scenes
         /// Determines whether or not FleetShips get marked as dead when ships die. If this is turned off, stats will still record properly but ships won't die off and be replaced
         /// </summary>
         public bool ReplaceDeadShips;
-        public bool ActivateHiveMind, ActivateBrains, IsTrainingNueralNetwork, IsTrainingHiveMind, IsTraining, UseFullyRandomSquads, UseFullyRandomEnemySquads, UseOverrideSquads, 
-            UseOverrideEnemySquads, RecordStats, DoesUserHaveController, HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateAudio, ActivateLoadingShipsMidLevel, 
-            UseMouseScrolling, IsDebugging, IsTestFiring, MakeEnemyCeaseFire, FullCeaseFire, MakeShotsHarmless, UnlockCamera, HasRandomizedOptions, PlayMusic;
-        public int OverrideMapIndex,OverrideTimeScale, OverrideObstacleMapIndex, OverrideUserSide, SpeedMultiplier, GeneratedSquadCountOverride, InitialCommandDelay, TimeoutTime, StageCount;
+        public bool IsTraining, UseFullyRandomSquads, UseFullyRandomEnemySquads, UseOverrideSquads, 
+            UseOverrideEnemySquads, RecordStats, HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateLoadingShipsMidLevel, 
+            UseMouseScrolling, IsDebugging, IsTestFiring, MakeEnemyCeaseFire, FullCeaseFire, MakeShotsHarmless, HasRandomizedOptions;
+        public int OverrideMapIndex,OverrideTimeScale, OverrideObstacleMapIndex, SpeedMultiplier, GeneratedSquadCountOverride, InitialCommandDelay;
         public List<string> OverrideStrats = new List<string> { };
         public List<string> OverrideBeeShipTypes = new List<string> { };
         public List<string> OverrideHumanShipTypes = new List<string> { };
-        public GameObject UIManager, SelectionBox, MiniMapContainer;
+        
         public UI_Components.Map Map;
-        public AudioController Audio;
-        public Camera MiniMapCamera;
-        public GameMenus Menus;
-        public LevelInputManager InputManager;
-        public Selector Selector;
         public LevelConstructor LevelConstructor;
         public Pathfinder Pathfinder;
-        public Sprite VisonSprite;
         public SimpleMultiAgentGroup AgentGroup;
         public SimpleMultiAgentGroup HumanAgentGroup;
+        public Sprite VisonSprite;
+
        
 
         public GameObject BargePrefab, BeehivePrefab, BumblebeePrefab, CarpenterBeePrefab, CarrierPrefab, CruiserPrefab, DreadnoughtPrefab, DronePrefab,
@@ -99,7 +99,6 @@ namespace Assets.Scripts.Scenes
         /// Whether or not this level is currently connected and setup on the server, regardless of whether other levels are connected
         /// </summary>
         public bool IsLevelConnectedToServer;
-        public bool IsLoaded = false;
         public bool RetriedConnection, IsRestarting;
         public bool HasPlayer;
         /// <summary>
@@ -122,17 +121,13 @@ namespace Assets.Scripts.Scenes
         public LevelOptions CurrentLevelOptions;
         public Data.Map MapData;
         public List<SavedSquad> AllSquads = new List<SavedSquad>();
-        public Dictionary<int, Vector2[]> StageLayouts = new Dictionary<int, Vector2[]>
-        {
-            {2, new Vector2[] { new Vector2(-756, 0), new Vector2(756, 0) } },
-            {4, new Vector2[] { new Vector2(-756, 756), new Vector2(756, 756), new Vector2(-756, -756), new Vector2(756, -756) } },
-        };
+
         public Texture2D TargetingMouseTexture;
+        public string Name;
+        public Stage Stage;
 
 
 
-        public float CurrentZoom => Camera.orthographicSize;
-        public bool HasFoundAllBees => HasBeeTypes.Count == FoundBeeTypes.Count;
         public bool DidUserWin => WinningSide == ConfigData.Configuration.UserSide;
         public bool IsPaused => GetState().IsPaused;
 
@@ -163,33 +158,86 @@ namespace Assets.Scripts.Scenes
             GetState().UpdateDebugVariables();
         }
 
-        new void Start()
+
+        public void Setup(Stage stage)
         {
-            //Debug.Log($"Start level scene");
-            Name = "Level";
-            base.Start();
+            Stage = stage;
 
-            if (IsMainScene && StageCount > 1)
+            if (ConfigData.IsPlayingCampaign)
             {
-                SpawnStages();
+                ReplaceDeadShips = true;
+                RecordStats = true;
             }
-        }
 
-        private void SpawnStages()
-        {
-            Debug.Log($"Spawning level stages");
-            transform.position = StageLayouts[StageCount][0];
-            for (int i = 1; i < StageCount; i++)
+            LevelConstructor = new LevelConstructor(this);
+            LevelConstructor.RequestServerSetup();
+
+            if (Stage.IsTrainingHiveMind || Stage.IsTrainingNueralNetwork)
             {
-                IsMainScene = false;
-                IsSocketManager = false;
-
-                GameObject nextStage = Instantiate(gameObject, transform.parent);
-                nextStage.transform.position = StageLayouts[StageCount][i];
-                IsMainScene = true;
-                IsSocketManager = true;
-
+                IsTraining = true;
             }
+            else
+            {
+                IsTraining = false;
+            }
+
+            if (Stage.DoesUserHaveController)
+            {
+                HasPlayer = true;
+                if (ConfigData.IsUserLoadingCustomSquads)
+                {
+                    UseFullyRandomSquads = false;
+                }
+                if (ConfigData.IsUserLoadingCustomEnemySquads)
+                {
+                    UseFullyRandomEnemySquads = false;
+                }
+            }
+            else
+            {
+                HasPlayer = ConfigData.Configuration.DoesUserHaveController;
+            }
+
+            _obstacleLists = new Dictionary<int, List<GameObject>>()
+            {
+                {0, EmptyObstacleList }, // it's important to have this here so we choose an empty level for testing
+                {1, MazePrefabs },
+                {2, ThreePathsPrefabs },
+                {3, ForestPrefabs },
+                {4, TheWallPrefabs }
+            };
+
+            if (Stage.ActivateBrains)
+            {
+                AgentGroup = new SimpleMultiAgentGroup();
+                HumanAgentGroup = new SimpleMultiAgentGroup();
+
+                if (Stage.IsTrainingNueralNetwork)
+                {
+                    Academy.Instance.OnEnvironmentReset += () =>
+                    {
+                        //Debug.Log($"Reset environment, {Academy.Instance.StepCount}");
+                    };
+
+                }
+            }
+
+
+            // Setup Game State
+            _state = gameObject.AddComponent<GameState>();
+            _state.Setup(this);
+
+            if (IsTraining)
+            {
+                Invoke(nameof(TimeOut), Stage.TimeoutTime);
+            }
+            SetupLevel();
+
+
+
+
+            Name = name;
+            gameObject.name = $"Level - {Name}";
         }
 
         private void RandomizeOptions()
@@ -205,7 +253,7 @@ namespace Assets.Scripts.Scenes
             Map = Instantiate(Maps[CurrentLevelOptions.MapIndex]).GetComponent<UI_Components.Map>();
             Debug.Log($"Playing on the {MapData.Name} ({Map.Name}) at index #{CurrentLevelOptions.MapIndex} map");
 
-            if ((CurrentLevelOptions.ObstacleMapIndex == -1 && Utilities.CoinToss()) || CurrentLevelOptions.ObstacleMapIndex > 0) // User chose random and random chose obstacles OR user chose obstacles
+            if (((CurrentLevelOptions.ObstacleMapIndex == -1 && Utilities.CoinToss()) || CurrentLevelOptions.ObstacleMapIndex > 0) && !IsTraining) // User chose random and random chose obstacles OR user chose obstacles
             {
                 HasObstacles = true;
                 Debug.Log($"The map has obstacles");
@@ -229,7 +277,7 @@ namespace Assets.Scripts.Scenes
             else // either the user chose no obstacles or random chose no obstacles
             {
                 
-                if ((CurrentLevelOptions.AsteroidOption == -1 && Utilities.CoinToss()) || CurrentLevelOptions.AsteroidOption > 0) // User chose random and random chose asteroids OR User chose asteroids
+                if (((CurrentLevelOptions.AsteroidOption == -1 && Utilities.CoinToss()) || CurrentLevelOptions.AsteroidOption > 0) && !IsTraining) // User chose random and random chose asteroids OR User chose asteroids
                 {
                     HasObstacles = true;
                     _chosenObstacles = EmptyObstacleList;
@@ -272,6 +320,10 @@ namespace Assets.Scripts.Scenes
             {
                 ActivateLoadingShipsMidLevel = true;
                 Debug.Log($"The map has ships loading midlevel");
+                //if (CurrentLevelOptions.EnemyReinforcements.Count == 0)
+                //{
+                //    CurrentLevelOptions.EnemyReinforcements = CurrentLevelOptions.EnemySquads.ToList();
+                //}
             }
             else
             {
@@ -328,160 +380,6 @@ namespace Assets.Scripts.Scenes
                 }
             }
 
-        }
-        /// <summary>
-        /// Takes care of any setup that needs to happen the first time the scene is loaded
-        /// </summary>
-        protected override void FinalizeSceneWithUserData()
-        {
-            //Debug.Log($"Finalize scene");
-            //StartTime = Time.realtimeSinceStartup;
-            if (ConfigData.IsPlayingCampaign)
-            {
-                ReplaceDeadShips = true;
-                RecordStats = true;                
-            }
-            
-            LevelConstructor = new LevelConstructor(this);
-            LevelConstructor.RequestServerSetup();
-            base.FinalizeSceneWithUserData();
-            IsLoaded = true;
-
-            if (IsTrainingHiveMind || IsTrainingNueralNetwork)
-            {
-                IsTraining = true;
-            }
-            else
-            {
-                IsTraining = false;
-            }
-
-            if (DoesUserHaveController)
-            {
-                HasPlayer = true;
-                if ((OverrideUserSide == 1 || OverrideUserSide == 2) && OverrideUserSide != ConfigData.Configuration.UserSide)
-                {
-                    ConfigData.SwapSides();
-                }
-                if (ConfigData.IsUserLoadingCustomSquads)
-                {
-                    UseFullyRandomSquads = false;
-                }
-                if (ConfigData.IsUserLoadingCustomEnemySquads)
-                {
-                    UseFullyRandomEnemySquads = false;
-                }
-            }
-            else
-            {
-                HasPlayer = ConfigData.Configuration.DoesUserHaveController;
-            }
-
-            _obstacleLists = new Dictionary<int, List<GameObject>>()
-                {
-                    {0, EmptyObstacleList }, // it's important to have this here so we choose an empty level for testing
-                    {1, MazePrefabs },
-                    {2, ThreePathsPrefabs },
-                    {3, ForestPrefabs },
-                    {4, TheWallPrefabs }
-                };
-
-            if (ActivateBrains)
-            {
-                AgentGroup = new SimpleMultiAgentGroup();
-                HumanAgentGroup = new SimpleMultiAgentGroup();
-
-                if (IsTrainingNueralNetwork)
-                {
-                    Academy.Instance.OnEnvironmentReset += () =>
-                    {
-                        //Debug.Log($"Reset environment, {Academy.Instance.StepCount}");
-                    };
-
-                }
-            }
-
-            // Setup Game State
-            _state = gameObject.AddComponent<GameState>();
-            _state.Setup(this);
-
-            if (!IsTraining)
-            {
-
-                // Setup  Game menu 
-                Menus = UIManager.GetComponentInChildren<GameMenus>();
-                Menus.Setup(this);
-                Menus.ActionBox.Setup(this, EventSystem, ConfigData.Configuration.UserSide);
-
-
-                // Setup Selection Box
-                Selector = SelectionBox.GetComponentInChildren<Selector>();
-                Selector.Setup(this, SelectionBox);
-                // Setup input manager
-                InputManager = new LevelInputManager(this, Selector);
-
-
-                // Setup Squad Action Box
-                if (ActivateAudio && Audio != null)
-                {
-                    Audio.Setup(PlayMusic);
-                }
-
-                if (ConfigData.IsPlayingCampaign)
-                {
-                    Menus.UpdateScore(ConfigData.GetUserProgressData().HumanWins, ConfigData.GetUserProgressData().BeeWins);
-                }
-                else
-                {
-                    Menus.UpdateScore(ConfigData.GetUserProgressData().HumanFreePlayWins, ConfigData.GetUserProgressData().BeeFreePlayWins);
-                }
-
-                //TargetingMouseTexture = TargetingMouse.sprite.texture;
-            }
-            else
-            {
-                Invoke(nameof(TimeOut), TimeoutTime);
-                if (Audio != null)
-                {
-                    Audio.gameObject.SetActive(false);
-                }
-            }
-            SetupLevel();
-
-            //// Setup map bounds
-            //MapWidth = (int)(Mathf.Abs(Map.SpriteRenderer.localBounds.min.x) + Map.SpriteRenderer.localBounds.max.x);
-            //MapHeight = (int)(Mathf.Abs(Map.SpriteRenderer.localBounds.min.y) + Map.SpriteRenderer.localBounds.max.y);
-            //HalfMapWidth = MapWidth / 2;
-            //HalfMapHeight = MapHeight / 2;
-
-
-
-            //MinX = Map.SpriteRenderer.localBounds.min.x + ConfigData.MapEdgePadding.x;
-            //MinY = Map.SpriteRenderer.localBounds.min.y + ConfigData.MapEdgePadding.y;
-            //MaxX = Map.SpriteRenderer.localBounds.max.x - ConfigData.MapEdgePadding.x;
-            //MaxY = Map.SpriteRenderer.localBounds.max.y - ConfigData.MapEdgePadding.y;
-            //MapX = Map.SpriteRenderer.localBounds.max.x * 2;
-            //MapY = Map.SpriteRenderer.localBounds.max.y * 2;
-            //MaxDistance = Mathf.Sqrt(MapX * MapX + MapY * MapY);
-            //HalfX = MapX / 2;
-            //HalfY = MapY / 2;
-
-            if (!IsTraining && !UnlockCamera)
-            {
-
-                Vector2 cameraWorldUnitsSize = Utilities.ScreenPixelsToWorldUnits(new Vector2(MiniMapCamera.pixelWidth, MiniMapCamera.pixelHeight), Camera);
-                Transform colliderContainer = Camera.transform.GetChild(0);
-                colliderContainer.localScale = cameraWorldUnitsSize;
-                Vector2 localizedPosition = DefaultCameraPosition + (Vector2)transform.position;
-                Camera.transform.position = new Vector3(localizedPosition.x, localizedPosition.y, -10);
-
-                InputManager.MaintainScrollBoundary();
-            }
-
-            //SetupLevel();
-
-            //float end = (Time.realtimeSinceStartup - StartTime) * 1000; // seconds to milliseconds
-            //Debug.Log($"It took {Math.Round(end, 2)} ms to set up the level and {Math.Round(Time.realtimeSinceStartup, 2)}s total time.");
         }
         public void CalculateShipClearances()
         {
@@ -628,61 +526,39 @@ namespace Assets.Scripts.Scenes
                 CancelInvoke(nameof(CheckTriggers));
             }
         }
-        new void Update()
+        void Update()
         {
             //GameObject.Find("Rotated Point").transform.position = Utilities.RotatePointAroundPoint(GameObject.Find("Pivot").transform.position, __OriginalPosition, __RotationTest);
-            base.Update();
             //if (UseRLServer)
             //{
             //    RLSocket.Update();
             //}
-            if (IsLoaded)
+            GameState state = GetState();
+            if (state.GameOver && !state.LevelEnded)
             {
-                GameState state = GetState();
-                if (state.GameOver && !state.LevelEnded)
+                if (!state.CanUserKeepMining())
                 {
-                    if (!state.CanUserKeepMining())
-                    {
-                        LevelOver();
-                    }
+                    LevelOver();
+                }
+            }
+
+            if ((state.IsPaused || ConfigData.SocketManager.NetworkDisconnection.IsOpen || !IsLevelConnectedToServer) && !Stage.IsTraining)
+            {
+                if (IsPausedByTester && Stage.InputManager.HasPauseInput() && Time.realtimeSinceStartup - TimePaused > 1)
+                {
+                    IsPausedByTester = false;
+                    TimePaused = Time.realtimeSinceStartup;
+                    UnPause();
+                }
+            }
+            else
+            {
+                if (HasObstacles)
+                {
+                    //Debug.Log($"Calling path finder update again");
+                    Pathfinder.Update();
                 }
 
-                if ((state.IsPaused || ConfigData.SocketManager.NetworkDisconnection.IsOpen || !IsLevelConnectedToServer) && !IsTrainingNueralNetwork)
-                {
-                    Time.timeScale = 0;
-                    if (!IsTraining)
-                    {
-                        if (IsPausedByTester && InputManager.HasPauseInput() && Time.realtimeSinceStartup - TimePaused > 1)
-                        {
-                            IsPausedByTester = false;
-                            TimePaused = Time.realtimeSinceStartup;
-                            UnPause();
-                        }
-                    }
-                }
-                else
-                {
-                    if (!IsTrainingNueralNetwork)
-                    {
-                        Time.timeScale = TimeScale;
-                        if (!IsTrainingHiveMind)
-                        {
-                            if (!IsTraining)
-                            {
-                                InputManager.Update();
-                            }
-                            if (HasObstacles)
-                            {
-                                //Debug.Log($"Calling path finder update again");
-                                Pathfinder.Update();
-                            }
-
-                        }
-                    }
-
-                    //InputManager.Update();
-
-                }
             }
 
         }
@@ -1150,6 +1026,12 @@ namespace Assets.Scripts.Scenes
             }
             else
             {
+                if (IsTraining)
+                {
+                    MiniMapCameraContainer.SetActive(false);
+                    MiniMapDisplayCanvas.SetActive(false);
+                    //Camera.gameObject.SetActive(false);
+                }
                 CancelInvoke(nameof(TimeOut));
                 Invoke(nameof(TimeOut), TimeoutTime);
             }

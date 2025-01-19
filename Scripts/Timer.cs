@@ -8,7 +8,13 @@ namespace Assets.Scripts
 
     {
         public float Length;
+        /// <summary>
+        /// The amount of time in seconds that have elapsed since the last time the action has been run
+        /// </summary>
         public float Elapsed;
+        /// <summary>
+        /// The action to be run after [Elapsed] seconds have elapsed
+        /// </summary>
         Action Action;
 
         /// <summary>

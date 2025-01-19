@@ -60,10 +60,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             ProjectilePrefab = projectilePrefab;
             Name = $"{ship.Name}: {Piece.name}";
             Type = type;
-            if (!Level.IsTraining && Level.Audio.WeaponSounds.ContainsKey(Type))
+            if (!Level.IsTraining && Level.Stage.Audio.WeaponSounds.ContainsKey(Type))
             {
                 HasSoundEffect = true;
-                SoundEffect = Instantiate(Level.Audio.WeaponSounds[Type][Utilities.RandomInt(Level.Audio.WeaponSounds[Type].Length)]);
+                SoundEffect = Instantiate(Level.Stage.Audio.WeaponSounds[Type][Utilities.RandomInt(Level.Stage.Audio.WeaponSounds[Type].Length)]);
                 SoundEffect.transform.parent = piece.transform;
                 SoundEffect.transform.localPosition = Vector2.zero;
 

@@ -22,7 +22,11 @@ namespace Assets.Scripts.Scenes
         //public List<Dialogue> Dialogues = new List<Dialogue>();
         public Dialogue NetworkDisconnection;
         public float TimeScale = 1;
-        public Timer Timer;
+        public Timer SocketTimer, AutomaticReconnectTimer;
+        /// <summary>
+        /// The framerate that the application should try to hit. -1 Means syncing it to the monitor refresh rate.
+        /// </summary>
+        public int TargetFrameRate;
 
 
         public bool IsLevel = false;
@@ -40,7 +44,6 @@ namespace Assets.Scripts.Scenes
         // Start is called before the first frame update
         protected void Start()
         {
-            ConfigData.MaxThreads = SystemInfo.processorCount - 1;
             //Debug.Log($"Starting {Name} scene");
             ConfigData.Scenes.Add(this);
             
@@ -51,9 +54,24 @@ namespace Assets.Scripts.Scenes
                 ConfigData.SocketManager = this;
                 NetworkDisconnection = new Dialogue(DialoguePrefab, "Server disconnected!", "The game needs to be connected to the server in order to function properly.",
                                                new List<string>() { "Retry", "Exit Game" }, new List<UnityAction>() { ConfigData.RetryConnection, Exit });
+
+                ConfigData.MaxThreads = SystemInfo.processorCount - 1;
+
+                if (TargetFrameRate > 0)
+                {
+                    Application.targetFrameRate = TargetFrameRate;
+                    Debug.Log($"Target Frane rate set to {Application.targetFrameRate} fps");
+                }
+                else if (TargetFrameRate == -1)
+                {
+                    QualitySettings.vSyncCount = 1;
+                    Debug.Log($"Target Frane rate set to sync to display at {Screen.currentResolution.refreshRateRatio} fps");
+                }
             }
             InvokeRepeating(nameof(LoadSettingsWhenOpen), .1f, .1f);
-            Timer = new Timer(.1f, ConfigData.Socket.Update);
+            SocketTimer = new Timer(.1f, ConfigData.Socket.Update);
+            AutomaticReconnectTimer = new Timer(10f, AutomaticConnectionRetry);
+
             if (WatchServerRequests)
             {
                 InvokeRepeating(nameof(UpdateTestVariables), 1f, 1f);
@@ -75,19 +93,21 @@ namespace Assets.Scripts.Scenes
             Debug.Log("Exiting game!");
             Application.Quit();
         }
-
+        /// <summary>
+        /// Finishes setting up the scene when all the user data has been loaded from the server
+        /// </summary>
         protected virtual void FinalizeSceneWithUserData()
         {
             //Debug.Log($"Finalizing {Name} Scene");
 
-
-            if (ConfigData.CurrentShips == null)
+            if (IsMainScene)
             {
                 ConfigData.FreePlayShips = new Ships(ConfigData.GetFleetData(), ConfigData.GetSavedSquadsData());
                 ConfigData.CampaignShips = new Ships(ConfigData.GetCampaignFleetData(), ConfigData.GetCampaignSavedSquadsData());
 
                 ConfigData.CurrentShips = ConfigData.FreePlayShips;
             }
+
 
             //ConfigData.Ships.ReplaceDeadSquadShips();
             FinalizedScene = true;
@@ -117,14 +137,17 @@ namespace Assets.Scripts.Scenes
         // Update is called once per frame
         protected void Update()
         {
-            Timer.Update();
+            SocketTimer.Update();
             
-
+            if (ConfigData.Socket.HasClosed && IsSocketManager)
+            {
+                AutomaticReconnectTimer.Update();
+                Debug.Log($"Updating the AutoReconnect Timer. {AutomaticReconnectTimer.Elapsed} seconds have elapses");
+            }
             if (ConfigData.Socket.HasClosed && IsSocketManager && !NetworkDisconnection.IsOpen)
             {
                 Debug.Log($"Network disconnected!");
                 NetworkDisconnection.Show();
-                InvokeRepeating(nameof(AutomaticConnectionRetry), 10f, 10f);
             }
             else if (ConfigData.Socket.IsOpen && IsSocketManager && NetworkDisconnection.IsOpen && (!IsLevel || ((LevelStage)this).IsLevelConnectedToServer))
             {

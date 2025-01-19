@@ -903,7 +903,9 @@ MonoBehaviour:
   FinalizedScene: 0
   WatchServerRequests: 0
   IsSocketManager: 0
+  IsMainScene: 0
   TimeScale: 1
+  TargetFrameRate: 0
   IsLevel: 0
   __PastServerRequests: []
   __SocketLevels: []

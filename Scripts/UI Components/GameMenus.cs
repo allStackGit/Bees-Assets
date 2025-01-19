@@ -18,7 +18,7 @@ namespace Assets.Scripts.UIComponents
             MiniMapTopBorder, MiniMapLeftBorder, MiniMapCameraCollider, MiniMapOutput, HumanScore, BeeScore, ShipInfoBox, KeepGoingButton, ToggleFogOfWarButton, RestartLevelButton,
             ChooseNewSquadsButton, SwitchSidesButton, SaveAsLevelButton, ExitToMainMenuButton, Scoreboard;
         public SquadActionBox ActionBox;
-        public LevelStage Level;
+        public LevelStage CurrentLevel;
         public Dialogue ExitConfirmationDialogue;
         public TMP_Text ShipInfoBoxTitle, ShipInfoBoxStats, TryNewSquadsButtonText;
         public TMP_InputField LevelNameInput, SupplyCapacityInput;
@@ -28,17 +28,17 @@ namespace Assets.Scripts.UIComponents
 
         public bool HoveringOverMiniMapButton;
         public bool IsSquadActionBoxOpen => ActionBox != null && SquadActionBoxUI.activeSelf;
-        public bool HasSquadActionBox => !Level.IsTraining && ActionBox != null;
+        public bool HasSquadActionBox => !CurrentLevel.IsTraining && ActionBox != null;
 
 
         public void Setup(LevelStage level)
         {
-            Level = level;
-            if (!Level.IsTraining)
+            CurrentLevel = level;
+            if (!CurrentLevel.IsTraining)
             {
                 ActionBox = SquadActionBoxUI.GetComponent<SquadActionBox>();
                 Codex.SetupCodex();
-                Settings.SetupSettings(Level);
+                Settings.SetupSettings(CurrentLevel);
                 
                 if (ConfigData.IsPlayingCampaign)
                 {
@@ -53,7 +53,7 @@ namespace Assets.Scripts.UIComponents
 
             IsMiniMapOpen = MiniMapCloseButton.activeSelf;
 
-            ExitConfirmationDialogue = new Dialogue(Level.DialoguePrefab, ConfigData.Configuration.AreYouSureExit, ConfigData.Configuration.LevelProgressLost,
+            ExitConfirmationDialogue = new Dialogue(CurrentLevel.DialoguePrefab, ConfigData.Configuration.AreYouSureExit, ConfigData.Configuration.LevelProgressLost,
                 new List<string>() { ConfigData.Configuration.Yes, ConfigData.Configuration.No }, new List<UnityAction>() { ExitToMainMenu });
             ExitConfirmationDialogue.SetTextBoxHeight(200);
             //Debug.Log($"ActionBox:{ActionBox}");
@@ -61,7 +61,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void OpenMenu()
         {
-            Level.Pause();
+            CurrentLevel.Pause();
             MenuContainer.SetActive(true);
         }
         public void ConfirmExitGame()
@@ -86,7 +86,7 @@ namespace Assets.Scripts.UIComponents
         public void ToggleMiniMapDisplay()
         {
             //Debug.Log("Toggling mini map!");
-            Level.MiniMapContainer.SetActive(!Level.MiniMapContainer.activeSelf);
+            CurrentLevel.MiniMapCameraContainer.SetActive(!CurrentLevel.MiniMapCameraContainer.activeSelf);
             MiniMapCloseButton.SetActive(!MiniMapCloseButton.activeSelf);
             MiniMapOpenButton.SetActive(!MiniMapOpenButton.activeSelf);
             MiniMapLeftBorder.SetActive(!MiniMapLeftBorder.activeSelf);
@@ -103,22 +103,23 @@ namespace Assets.Scripts.UIComponents
             LevelEndedDialogue.SetActive(false);
             SaveLevelDialogue.SetActive(false);
             MenuContainer.SetActive(false);
-            Level.UnPause();
+            CurrentLevel.UnPause();
         }
         public void RestartLevel()
         {
-            Level.UnPause();
-            Level.IsRestarting = true;
-            Level.SaveAndEnd();
+            CurrentLevel.UnPause();
+            CurrentLevel.IsRestarting = true;
+            CurrentLevel.SaveAndEnd();
+            CloseDialogue();
         }
         /// <summary>
         /// Kills all of the player's ships to end the level
         /// </summary>
         public void Surrender()
         {
-            Level.UnPause();
-            MenuContainer.SetActive(false);
-            Ship[] ships = Level.GetState().GetShips(ConfigData.Configuration.UserSide).ToArray(); // need to convert this to an array because killing a ship removes it from the list of ships in the state
+            CurrentLevel.UnPause();
+            CloseDialogue();
+            Ship[] ships = CurrentLevel.GetState().GetShips(ConfigData.Configuration.UserSide).ToArray(); // need to convert this to an array because killing a ship removes it from the list of ships in the state
 
             for (int i = 0; i < ships.Length; i++)
             {
@@ -131,7 +132,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void TryNewLevel()
         {
-            Level.UnPause();
+            CurrentLevel.UnPause();
             ConfigData.SquadMakerSide = ConfigData.Configuration.SquadMakerFirstSide;
             SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
         }
@@ -153,25 +154,25 @@ namespace Assets.Scripts.UIComponents
         }
         public void SwitchSides()
         {
-            Level.UnPause();
+            CurrentLevel.UnPause();
             ConfigData.SwapSides();
             SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
         }
         public void ToggleFogOfWar()
         {
-            Level.Map.FogOfWar.SetActive(!Level.Map.FogOfWar.activeSelf);
+            CurrentLevel.Map.FogOfWar.SetActive(!CurrentLevel.Map.FogOfWar.activeSelf);
         }
         public void OpenLevelEndedDialogue()
         {
-            Level.Pause();
+            CurrentLevel.Pause();
             LevelEndedDialogue.SetActive(true);
-            VictoryLabel.SetActive(Level.DidUserWin);
-            DefeatLabel.SetActive(!Level.DidUserWin);
+            VictoryLabel.SetActive(CurrentLevel.DidUserWin);
+            DefeatLabel.SetActive(!CurrentLevel.DidUserWin);
         }
         public void ExitToMainMenu()
         {
             Debug.Log("Exiting to main menu");
-            Level.UnPause();
+            CurrentLevel.UnPause();
             DeselectButton();
             CloseDialogue();
             SceneManager.LoadSceneAsync("Main Menu", LoadSceneMode.Single);
@@ -204,12 +205,12 @@ namespace Assets.Scripts.UIComponents
         public void PlayNextRound()
         {
             CloseDialogue();
-            Level.SetupLevel();
+            CurrentLevel.SetupLevel();
         }
         public void ShowLevelSaveDialogue()
         {
-            LevelNameInput.text = Level.SaveLevelOptions.Name;
-            SupplyCapacityInput.text = $"{Level.GetState().InitialTsv[ConfigData.Configuration.UserSide - 1]}";
+            LevelNameInput.text = CurrentLevel.SaveLevelOptions.Name;
+            SupplyCapacityInput.text = $"{CurrentLevel.GetState().InitialTsv[ConfigData.Configuration.UserSide - 1]}";
             SaveLevelDialogue.SetActive(true);
         }
         public void SaveLevel()
@@ -222,7 +223,7 @@ namespace Assets.Scripts.UIComponents
             }
 
             //Debug.Log($"LevelData: {LevelData.GetEnemyList()}");
-            LevelOptions level = (LevelOptions)Level.SaveLevelOptions.Clone();
+            LevelOptions level = (LevelOptions)CurrentLevel.SaveLevelOptions.Clone();
             level.Name = LevelNameInput.text;
             level.SupplyCapacity = capacity;
             ConfigData.GetLevelData().AddLevel(level);
@@ -238,7 +239,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void DeselectButton()
         {
-            Level.EventSystem.SetSelectedGameObject(null);
+            CurrentLevel.EventSystem.SetSelectedGameObject(null);
         }
         public void ShowShipStats(FleetShip ship)
         {

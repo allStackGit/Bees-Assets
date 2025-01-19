@@ -299,7 +299,7 @@ namespace Assets.Scripts.Entities.Ships
             }
 
 
-            if (brain != null && Level.ActivateBrains)
+            if (brain != null && Level.Stage.ActivateBrains)
             {
                 //Debug.Log($"Found a brain for {Name}, {brain}");
                 Brain = brain.GetComponent<Brain>();
@@ -575,30 +575,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     if (Level.IsDebugging || ShowDebug) // [alert] [debug] remove this for release
                     {
                         UpdateDebugProperties();
-                    }
-                }
-            }
-        }
-        public void CheckForBees()
-        {
-            List<Ship> beeShips = Level.GetState().GetBeeShips();
-            foreach(Ship bee in beeShips)
-            {
-                if (CanSeeShip(bee))
-                {
-                    if (!Level.FoundBeeTypes.Contains(bee.ShipType))
-                    {
-                        Level.FoundBeeTypes.Add(bee.ShipType);
-                        AudioSource loop = Level.Audio.BeesLoops.GetValueOrDefault(bee.ShipType);
-                        AudioSource intro = Level.Audio.BeesIntros.GetValueOrDefault(bee.ShipType);
-                        if (!Level.Audio.IntroEnded)
-                        {
-                            Level.Audio.UnMuteSource(intro);
-                        }
-                        if (loop != null)
-                        {
-                            Level.Audio.UnMuteSource(loop);
-                        }
                     }
                 }
             }
@@ -1331,7 +1307,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         public void SetCombatTimer()
         {
             // if the combat timer already exists, clear it
-            if (IsUserControlled && Level.ActivateHiveMind) // The combat timer and In Combat are only used for Hivemind Strategies so it only makes sense to use this when those are in use
+            if (IsUserControlled && Level.Stage.ActivateHiveMind) // The combat timer and In Combat are only used for Hivemind Strategies so it only makes sense to use this when those are in use
             {
                 if (_combatTimer)
                 {
@@ -2002,7 +1978,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 explosion.transform.parent = Level.Map.transform;
                 explosion.transform.localPosition = GetPosition();
 
-                if (Level.ActivateAudio)
+                if (Level.Stage.ActivateAudio)
                 {
                     AudioSource soundEffect = explosion.GetComponent<AudioSource>();
 

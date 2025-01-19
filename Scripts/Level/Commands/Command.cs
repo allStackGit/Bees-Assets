@@ -333,14 +333,14 @@ namespace Assets.Scripts.Level.Commands
             {
                 Squad.SetChase(false);
             }
-            if (Squad.IsSelected && Level.Menus != null)
+            if (Squad.IsSelected && Level.Stage.Menus != null)
             {
-                Level.Menus.ActionBox.HighlightSelectedButtons();
+                Level.Stage.Menus.ActionBox.HighlightSelectedButtons();
             }
             Debug.Log($"Setting Squad Command #{OutcomeId} to null for {Squad.Name}");
             Squad.Command = null;
 
-            if (Squad.IsHiveMindControlled && Level.ActivateHiveMind)
+            if (Squad.IsHiveMindControlled && Level.Stage.ActivateHiveMind)
             {
                 Squad.AddToCommandList();
             }
