@@ -1,6 +1,6 @@
 ﻿using Assets.Scripts.Entities.Projectiles;
-using Assets.Scripts.Level;
-using Assets.Scripts.Level.Commands;
+using Assets.Scripts.Levels;
+using Assets.Scripts.Levels.Commands;
 using Assets.Scripts.Scenes;
 using System.Collections;
 using System.Collections.Generic;

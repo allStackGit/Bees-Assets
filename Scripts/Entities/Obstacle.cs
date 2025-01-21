@@ -1,5 +1,6 @@
 ﻿using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships;
+using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
 using System.Collections;
 using UnityEngine;
@@ -15,12 +16,12 @@ namespace Assets.Scripts.Entities
         public int MapPointsIndex;
         public string Name;
         public bool IsCollisionAsteroid, IsMapBorder, HasEnteredMap, IsDead, IsMiningAsteroid, IsRegularObstacle;
-        public LevelStage Level;
+        public Level Level;
         public Collider2D Collider, ProximityCollider, ClearanceMappingCollider;
 
         private int _frameCollisions = 0;
 
-        public void Setup(LevelStage level, int id)
+        public void Setup(Level level, int id)
         {
             Level = level;
             Id = id;

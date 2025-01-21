@@ -1,5 +1,5 @@
 ﻿using Assets.Scripts.Entities;
-using Assets.Scripts.Level;
+using Assets.Scripts.Levels;
 using System.Linq;
 using Assets.Scripts.Entities.Ships.Weapons;
 using UnityEngine;

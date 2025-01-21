@@ -1,6 +1,6 @@
 using Assets.Scripts;
 using Assets.Scripts.Data;
-using Assets.Scripts.Level;
+using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
 using Assets.Scripts.UIComponents;
 using System.Collections;
@@ -122,11 +122,11 @@ public class Stage : Scene
     /// <summary>
     /// The main level that accepts user interaction
     /// </summary>
-    public LevelStage PrimaryLevel;
+    public Level PrimaryLevel;
     /// <summary>
     /// All the levels that this stage has spawned
     /// </summary>
-    public List<LevelStage> Levels;
+    public List<Level> Levels;
     /// <summary>
     /// Only allows Bee ship types as specified here, unless it's empty
     /// </summary>
@@ -166,7 +166,7 @@ public class Stage : Scene
         for (int i = 0; i < LevelCount; i++)
         {
             GameObject nextLevel = Instantiate(Prefabs.LevelPrefab.gameObject, transform.parent);
-            LevelStage level = nextLevel.GetComponent<LevelStage>();
+            Level level = nextLevel.GetComponent<Level>();
             if (i == 0)
             {
                 PrimaryLevel = level;

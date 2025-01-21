@@ -4,8 +4,8 @@ using System.Collections.Generic;
 using System.Linq;
 using Assets.Scripts.Scenes;
 using Assets.Scripts.Data;
-using Assets.Scripts.Level;
-using Assets.Scripts.Level.Commands;
+using Assets.Scripts.Levels;
+using Assets.Scripts.Levels.Commands;
 
 
 using Assets.Scripts.Entities;
@@ -41,7 +41,7 @@ namespace Assets.Scripts.Server
         /// A queue of all messages received from the server
         /// </summary>
         public Queue<byte[]> MessageQueue = new Queue<byte[]>();
-        public List<LevelStage> OpenLevels = new List<LevelStage>();
+        public List<Level> OpenLevels = new List<Level>();
 
 
 
@@ -496,7 +496,7 @@ namespace Assets.Scripts.Server
                     Squad targetSquad = squad.MatchupStrategy.SortSquads();
                     //Debug.Log($"matchup strategy after sorted");
                     //Debugger.LogSquads(level.GetState().GetSquads());
-                    LevelStage level = standingRequest.Level;
+                    Level level = standingRequest.Level;
                     level.HandledRequests.Add(standingRequest.Hash);
                     squad.MakeMatchupAndGetCommand(targetSquad);
                 }
@@ -523,7 +523,7 @@ namespace Assets.Scripts.Server
                 standingRequest.TimeOnQueue = Time.unscaledTime - standingRequest.StartTime;
                 ConfigData.__TotalLatency += standingRequest.TimeOnQueue;
                 Squad squad = standingRequest.Squad;
-                LevelStage level = standingRequest.Level;
+                Level level = standingRequest.Level;
                 level.HandledRequests.Add(standingRequest.Hash);
                 GameState state = level.GetState();
                 string commandType = commandResponse.Name;

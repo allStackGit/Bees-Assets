@@ -1,6 +1,6 @@
 ﻿
 using Assets.Scripts.Entities.Ships;
-using Assets.Scripts.Level;
+using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
 using System;
 using System.Collections.Generic;
@@ -86,7 +86,7 @@ namespace Assets.Scripts.Data
             SquadShip clone = (SquadShip)this.MemberwiseClone();
             return clone;
         }
-        public Ship ToShip(LevelStage level, Squad squad)
+        public Ship ToShip(Level level, Squad squad)
         {
             FleetShip fleetShip = GetFleetShip();
             Ship ship = null;

@@ -9,6 +9,7 @@ using Assets.Scripts.Data;
 using System.Linq;
 using System;
 using Assets.Scripts.Entities.Ships;
+using Assets.Scripts.Levels;
 
 namespace Assets.Scripts.UIComponents
 {
@@ -18,7 +19,7 @@ namespace Assets.Scripts.UIComponents
             MiniMapTopBorder, MiniMapLeftBorder, MiniMapCameraCollider, MiniMapOutput, HumanScore, BeeScore, ShipInfoBox, KeepGoingButton, ToggleFogOfWarButton, RestartLevelButton,
             ChooseNewSquadsButton, SwitchSidesButton, SaveAsLevelButton, ExitToMainMenuButton, Scoreboard;
         public SquadActionBox ActionBox;
-        public LevelStage CurrentLevel;
+        public Level CurrentLevel;
         public Stage Stage;
         public Dialogue ExitConfirmationDialogue;
         public TMP_Text ShipInfoBoxTitle, ShipInfoBoxStats, TryNewSquadsButtonText;

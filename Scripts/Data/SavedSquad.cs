@@ -1,5 +1,5 @@
 ﻿
-using Assets.Scripts.Level;
+using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
 using System;
 using System.Collections.Generic;
@@ -248,7 +248,7 @@ namespace Assets.Scripts.Data
             });
             return convert;
         }
-        public Squad ToSquad(LevelStage level)
+        public Squad ToSquad(Level level)
         {
             Squad squad = level.gameObject.AddComponent<Squad>();
             squad.Setup(

@@ -1,3 +1,4 @@
+using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
 using System;
 
@@ -11,7 +12,7 @@ namespace Assets.Scripts.Entities
         public long Id;
         public long Age;
         public readonly DateTime StartTime = DateTime.Now;
-        public LevelStage Level;
+        public Level Level;
         public Stage Stage;
         public int Side;
 

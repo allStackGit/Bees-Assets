@@ -1,4 +1,5 @@
-﻿using Assets.Scripts.Scenes;
+﻿using Assets.Scripts.Levels;
+using Assets.Scripts.Scenes;
 using System.Collections;
 using UnityEngine;
 
@@ -8,10 +9,10 @@ namespace Assets.Scripts.Server
     {
 
         public new SetupLevel Request = null;
-        public readonly LevelStage Level;
+        public readonly Level Level;
 
 
-        public SetupLevelRequest(SetupLevel request, int maxTimeOnQueue, LevelStage level) : base(maxTimeOnQueue)
+        public SetupLevelRequest(SetupLevel request, int maxTimeOnQueue, Level level) : base(maxTimeOnQueue)
         {
             Type = "setup-level";
             Request = request;

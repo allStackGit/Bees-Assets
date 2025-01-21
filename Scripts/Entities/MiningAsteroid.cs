@@ -1,6 +1,6 @@
 ﻿using Assets.Scripts.Entities.Ships;
-using Assets.Scripts.Level;
-using Assets.Scripts.Level.Commands;
+using Assets.Scripts.Levels;
+using Assets.Scripts.Levels.Commands;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;

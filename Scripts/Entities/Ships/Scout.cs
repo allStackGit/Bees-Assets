@@ -1,6 +1,6 @@
 ﻿using Assets.Scripts.Data;
 using Assets.Scripts.Entities.Ships.Weapons;
-using Assets.Scripts.Level;
+using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
 using System.Collections;
 using System.Collections.Generic;
@@ -17,7 +17,7 @@ namespace Assets.Scripts.Entities.Ships
         public ChargingBar ChargingBar;
         public bool CanDropBeacons;
 
-        public override void Setup(LevelStage level, long id, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
+        public override void Setup(Level level, long id, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
         {
             base.Setup(level, id, fleetShip, squad, offsetFromCenter);
             if (IsUserControlled)

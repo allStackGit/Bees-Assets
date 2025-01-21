@@ -1,6 +1,6 @@
 ﻿
 
-using Assets.Scripts.Level;
+using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
 using System.Collections;
 using System.Linq;
@@ -13,12 +13,12 @@ namespace Assets.Scripts.Server
     public class CommandRequest : ServerRequest
     {
         public readonly Squad Squad, Enemy;
-        public readonly LevelStage Level;
+        public readonly Level Level;
         public readonly string Matchup;
 
         public new GetStrategy Request = null;
         public CommandResponse Response = null;
-        public CommandRequest(GetStrategy request, Squad squad, Squad enemy, LevelStage level, string matchup, int maxTimeOnQueue) : base(maxTimeOnQueue)
+        public CommandRequest(GetStrategy request, Squad squad, Squad enemy, Level level, string matchup, int maxTimeOnQueue) : base(maxTimeOnQueue)
         {
             Type = "get-strategy";
             Request = request;

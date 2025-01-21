@@ -1,6 +1,6 @@
 ﻿using Assets.Scripts.Data;
 using Assets.Scripts.Entities.Projectiles;
-using Assets.Scripts.Level;
+using Assets.Scripts.Levels;
 using System.Collections.Generic;
 using System.Linq;
 

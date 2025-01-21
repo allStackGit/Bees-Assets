@@ -2,7 +2,7 @@
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships.Weapons;
-using Assets.Scripts.Level.Commands;
+using Assets.Scripts.Levels.Commands;
 using System.Collections.Generic;
 using System.Linq;
 

@@ -2,6 +2,7 @@
 using Assets.Scripts.Data;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
+using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
 using Assets.Scripts.UI_Components;
 using Newtonsoft.Json.Linq;
@@ -213,7 +214,7 @@ namespace Assets.Scripts
             return RandomInt(2) == 0;
         }
         // not strictly speaking the maximum and minimum distance, but the max change in x or y
-        public static Vector2 RandomCoordinate(LevelStage level, Vector2 position, Vector2 maxDistance, Vector2 minDistance)
+        public static Vector2 RandomCoordinate(Level level, Vector2 position, Vector2 maxDistance, Vector2 minDistance)
         {
             //Debug.Log($"maxDistance: {maxDistance}, minDistance: {minDistance}");
             Vector2 newLocation = Vector2.zero;
@@ -229,7 +230,7 @@ namespace Assets.Scripts
             return newLocation;
 
         }
-        public static bool VectorInBounds(LevelStage level, Vector2 vector)
+        public static bool VectorInBounds(Level level, Vector2 vector)
         {
             return (vector.x > level.MinX && vector.x < level.MaxX && vector.y > level.MinY && vector.y < level.MaxY);
         }

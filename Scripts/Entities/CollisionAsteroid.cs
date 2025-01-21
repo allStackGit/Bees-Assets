@@ -1,5 +1,5 @@
 ﻿using Assets.Scripts.Entities.Ships;
-using Assets.Scripts.Level;
+using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
 using System.Collections;
 using System.Collections.Generic;
@@ -27,7 +27,7 @@ namespace Assets.Scripts.Entities
         private int _overlaps;
         private bool _isColliding => _overlaps > 0;
         // Use this for initialization
-        public new void Setup(LevelStage level, int id)
+        public new void Setup(Level level, int id)
         {
             base.Setup(level, id);
             Health = ConfigData.CollisionAsteroidHealthIncrement * SizeClass;

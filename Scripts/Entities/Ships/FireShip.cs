@@ -2,7 +2,7 @@
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships.Weapons;
-using Assets.Scripts.Level;
+using Assets.Scripts.Levels;
 using System.Linq;
 using UnityEngine;
 

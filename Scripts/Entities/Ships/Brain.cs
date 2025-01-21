@@ -5,7 +5,7 @@ using Unity.MLAgents.Actuators;
 using Unity.MLAgents.Sensors;
 using System.Linq;
 using System.Collections.Generic;
-using Assets.Scripts.Level;
+using Assets.Scripts.Levels;
 using System;
 
 namespace Assets.Scripts.Entities.Ships

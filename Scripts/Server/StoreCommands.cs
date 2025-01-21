@@ -1,5 +1,5 @@
 ﻿
-using Assets.Scripts.Level;
+using Assets.Scripts.Levels;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;

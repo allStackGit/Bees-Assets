@@ -1,7 +1,7 @@
 ﻿
 
 using Assets.Scripts.Entities.Ships;
-using Assets.Scripts.Level;
+using Assets.Scripts.Levels;
 using System.Collections;
 using UnityEngine;
 using static UnityEngine.GraphicsBuffer;

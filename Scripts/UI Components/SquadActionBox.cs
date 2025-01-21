@@ -3,7 +3,7 @@
 
 using Assets.Scripts.Data;
 using Assets.Scripts.Entities.Ships;
-using Assets.Scripts.Level;
+using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
 using System;
 using System.Collections;
@@ -23,7 +23,7 @@ namespace Assets.Scripts.UIComponents
 
         private EventSystem _eventSystem;
         private SquadMaker _squadMaker = null;
-        private LevelStage Level = null;
+        private Level Level = null;
         private string _blankShipType = "———————";
         private bool _autoSetDropdownValue = false;
         private int Side;
@@ -46,7 +46,7 @@ namespace Assets.Scripts.UIComponents
             ActualSetup();
             
         }
-        public void Setup(LevelStage level, EventSystem eventSystem, int side)
+        public void Setup(Level level, EventSystem eventSystem, int side)
         {
             this.Level = level;
             _eventSystem = eventSystem;

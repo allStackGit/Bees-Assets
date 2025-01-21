@@ -1,5 +1,5 @@
-﻿using Assets.Scripts.Level;
-using Assets.Scripts.Level.Commands;
+﻿using Assets.Scripts.Levels;
+using Assets.Scripts.Levels.Commands;
 using Assets.Scripts.Scenes;
 using System;
 using System.Collections;

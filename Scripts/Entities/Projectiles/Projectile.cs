@@ -5,7 +5,7 @@ using Assets.Scripts.Data;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Entities.Ships.Weapons;
-using Assets.Scripts.Level;
+using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
 
 using UnityEngine;
@@ -31,7 +31,7 @@ namespace Assets.Scripts.Entities.Projectiles
         public string Name;
         public bool HasExplosion, HasSetMovement, ShipIsDead;
         
-        public void Setup(LevelStage level, int side, long id, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power)
+        public void Setup(Level level, int side, long id, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power)
         {
             base.Id = id;
             this.Weapon = weapon;

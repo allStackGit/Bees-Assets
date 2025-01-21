@@ -1,8 +1,8 @@
 ﻿using Assets.Scripts;
 using Assets.Scripts.Data;
 using Assets.Scripts.Entities;
-using Assets.Scripts.Level;
-using Assets.Scripts.Level.Commands;
+using Assets.Scripts.Levels;
+using Assets.Scripts.Levels.Commands;
 using System;
 using System.Collections;
 using System.Collections.Generic;

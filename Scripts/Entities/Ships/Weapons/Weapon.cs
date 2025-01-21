@@ -1,7 +1,7 @@
 ﻿
 
 using Assets.Scripts.Entities.Projectiles;
-using Assets.Scripts.Level;
+using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
 using System.Collections.Generic;
 using System.Linq;
@@ -30,7 +30,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public bool HasTargetShip => TargetShip != null;
         public bool HasShipsWithinRange => ShipsWithinRange.Count > 0;
         public int Id;
-        public LevelStage Level;
+        public Level Level;
         public Stage Stage;
         public RangeCollider RangeCollider;
         /// <summary>
@@ -62,7 +62,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             ProjectilePrefab = projectilePrefab;
             Name = $"{ship.Name}: {Piece.name}";
             Type = type;
-            if (!Level.IsTraining && Level.Stage.Audio.WeaponSounds.ContainsKey(Type))
+            if (!Level.IsTraining && Stage.Audio.WeaponSounds.ContainsKey(Type))
             {
                 HasSoundEffect = true;
                 SoundEffect = Instantiate(Level.Stage.Audio.WeaponSounds[Type][Utilities.RandomInt(Level.Stage.Audio.WeaponSounds[Type].Length)]);

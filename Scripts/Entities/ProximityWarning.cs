@@ -1,4 +1,5 @@
 ﻿using Assets.Scripts.Entities.Ships;
+using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
 using System.Collections;
 using System.Xml.Linq;
@@ -12,7 +13,7 @@ namespace Assets.Scripts.Entities
 {
     public class ProximityWarning : MonoBehaviour
     {
-        public LevelStage Level;
+        public Level Level;
         public CollisionAsteroid Asteroid;
         public void Setup(CollisionAsteroid asteroid)
         {

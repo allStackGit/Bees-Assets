@@ -1,4 +1,5 @@
-﻿using Assets.Scripts.Scenes;
+﻿using Assets.Scripts.Levels;
+using Assets.Scripts.Scenes;
 using System.Collections;
 using UnityEngine;
 
@@ -10,7 +11,7 @@ namespace Assets.Scripts.Entities
         public int Speed;
         public int HalfSeconds;
         public SpriteRenderer SpriteRenderer;
-        public void Setup(LevelStage level, int id, CollisionAsteroid parent)
+        public void Setup(Level level, int id, CollisionAsteroid parent)
         {
             base.Setup(level, id);
             Speed = (Utilities.RandomInt(Level.AsteroidMaxSpeed) + ConfigData.MinimumAsteroidSpeed) + 5;

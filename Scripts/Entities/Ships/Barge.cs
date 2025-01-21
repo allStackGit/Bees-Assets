@@ -1,7 +1,7 @@
 ﻿using Assets.Scripts.Data;
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships.Weapons;
-using Assets.Scripts.Level;
+using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
 using System;
 using System.Collections;
@@ -27,7 +27,7 @@ namespace Assets.Scripts.Entities.Ships
         public HashSet<Ship> ShipsHit = new HashSet<Ship>();
         public ChargingBar ChargingBar;
 
-        public override void Setup(LevelStage level, long id, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
+        public override void Setup(Level level, long id, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
         {
             base.Setup(level, id, fleetShip, squad, offsetFromCenter);
             if (IsUserControlled)

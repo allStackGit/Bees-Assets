@@ -7,12 +7,12 @@ using Vector2 = UnityEngine.Vector2;
 using Vector3 = UnityEngine.Vector3;
 using Assets.Scripts.Settings;
 using Assets.Scripts.Entities;
-using Assets.Scripts.Level;
+using Assets.Scripts.Levels;
 using Assets.Scripts.Data;
 using Assets.Scripts.Scenes;
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships.Weapons;
-using Assets.Scripts.Level.Commands;
+using Assets.Scripts.Levels.Commands;
 using Assets.Scripts.Server;
 using Unity.MLAgents;
 using UnityEngine.UIElements;
@@ -258,7 +258,7 @@ namespace Assets.Scripts.Entities.Ships
 
 
         // setup methods
-        public virtual void Setup(LevelStage level, long id, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter) // [tsv-calculation]
+        public virtual void Setup(Level level, long id, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter) // [tsv-calculation]
         {
             //Debug.Log($"Setting up ship IsCarrierShip: {IsCarrierShip}");
 
