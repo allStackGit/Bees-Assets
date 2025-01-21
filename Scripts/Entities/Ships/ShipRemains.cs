@@ -31,7 +31,7 @@ namespace Assets.Scripts.Entities.Ships
             transform.localPosition = Ship.GetPosition();
             transform.eulerAngles = Ship.transform.eulerAngles;
             gameObject.SetActive(true);
-            Ship.Level.GetState().AddDeadBody(this);
+            Ship.Level.State.AddDeadBody(this);
 
             if (Ship.Squad.HasCustomColor && AnimationController == null)
             {

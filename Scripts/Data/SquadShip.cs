@@ -163,7 +163,7 @@ namespace Assets.Scripts.Data
             {
                 ship.Setup(
                     level,
-                    level.GetState().GetId(),
+                    level.State.GetId(),
                     fleetShip,
                     squad,
                     Offset

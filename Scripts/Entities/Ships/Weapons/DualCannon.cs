@@ -39,7 +39,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             // Set the damage status
             if (!IsFiringManually && !IsFiringAtAsteroid)
             {
-                ShipDamageStatus shipDamageStatus = Level.GetState().GetShipDamageStatus(Side, TargetShip);
+                ShipDamageStatus shipDamageStatus = Level.State.GetShipDamageStatus(Side, TargetShip);
                 shipDamageStatus.TotalDamageSentToShip += Power * 2;
             }
 

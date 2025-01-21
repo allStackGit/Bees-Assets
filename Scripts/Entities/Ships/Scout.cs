@@ -28,7 +28,6 @@ namespace Assets.Scripts.Entities.Ships
         }
         private Squad CreateMinionSquad()
         {
-            GameState state = Level.GetState();
             // Create Squad
             Squad squad = Level.gameObject.AddComponent<Squad>();
             squad.IsImmobile = true;
@@ -41,11 +40,11 @@ namespace Assets.Scripts.Entities.Ships
                 Squad.ShouldChase(),
                 Utilities.GetNegativeSavedSquadId(),
                 Squad.Side,
-                state.OriginalSquadCounts[Side - 1] + 1,
+                Level.State.OriginalSquadCounts[Side - 1] + 1,
                 $"{Squad.Name} - {MinionType} Spawn #{BeaconsDropped}",
                 Squad.Color
             );
-            state.AddSquad(squad);
+            Level.State.AddSquad(squad);
             MinionSquads.Add(squad);
             BeaconsDropped++;
             return squad;
@@ -68,7 +67,7 @@ namespace Assets.Scripts.Entities.Ships
                     Squad squad = CreateMinionSquad();
                     ship.Setup(
                         Level,
-                        Level.GetState().GetId(),
+                        Level.State.GetId(),
                         new FleetShip(id, $"{Name} -> Beacon #{Id}", "Beacon", false, true, false, 0, 0, 0, 0, 0, 0, 0),
                         squad,
                         Vector2.zero

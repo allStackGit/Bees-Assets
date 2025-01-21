@@ -34,7 +34,7 @@ namespace Assets.Scripts.Levels.Commands
             {
 
                 // add this squad to the list for all other guard squads
-                Level.GetState().GetSquadsBySide(Squad.Side).ForEach((guardingSquad) =>
+                Level.State.GetSquadsBySide(Squad.Side).ForEach((guardingSquad) =>
                 {
                     // check if it's a guarding squad and guarding the same squad as this squad
                     if (!guardingSquad.Equals(Squad) && guardingSquad.HasCommand && guardingSquad.Command.HasStrategy &&
@@ -110,7 +110,7 @@ namespace Assets.Scripts.Levels.Commands
         }
         private Squad GetClosestAvailableSquadToGuard()
         {
-            return Level.GetState().GetSquadsBySide(Side)
+            return Level.State.GetSquadsBySide(Side)
                 .Where((s) => !s.Equals(Squad) && (!s.HasCommand || !s.Command.HasStrategy || s.Command.Strategy.Name != "Guard"))
                 .OrderBy(s => s.DistanceToPoint(Squad.GetPosition())).FirstOrDefault();
         }

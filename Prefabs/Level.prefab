@@ -44,134 +44,26 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0a37e78619da5f44ca57fd43e2704d29, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  Name: Base Scene
-  Camera: {fileID: 0}
-  DialoguePrefab: {fileID: 4693076599736100422, guid: cf96c357f9237f545b82628a7c3499b7, type: 3}
-  EventSystem: {fileID: 0}
-  FinalizedScene: 0
-  WatchServerRequests: 0
-  IsSocketManager: 0
-  TimeScale: 1
-  IsLevel: 1
-  __PastServerRequests: []
-  __SocketLevels: []
-  __StandingRequests: []
-  __AverageRequestTime: 0
-  __UsedHashes: 
-  __Updates: 0
-  ReplaceDeadShips: 0
-  ActivateHiveMind: 1
-  ActivateBrains: 0
-  IsTrainingNueralNetwork: 0
-  IsTrainingHiveMind: 0
+  State: {fileID: 0}
   IsTraining: 0
-  UseSemiRandomSquads: 0
-  UseFullyRandomSquads: 1
-  UseFullyRandomEnemySquads: 0
-  RecordStats: 0
-  DoesUserHaveController: 0
   HasObstacles: 0
   ActivateCollisionAsteroids: 0
-  ActivateMining: 1
+  ActivateMining: 0
   ActivateFogOfWar: 0
-  ActivateAudio: 0
   ActivateLoadingShipsMidLevel: 0
-  UseMouseScrolling: 0
-  IsDebugging: 1
-  IsTestFiring: 0
-  MakeEnemyCeaseFire: 0
-  FullCeaseFire: 0
-  MakeShotsHarmless: 0
-  UnlockCamera: 0
-  HasRandomizedOptions: 0
-  PlayMusic: 0
-  OverrideTimeScale: 1
-  OverrideMapIndex: 0
-  OverrideUserSide: 0
-  SpeedMultiplier: 0
-  GeneratedSquadCountOverride: 0
-  InitialCommandDelay: 1
-  TimeoutTime: 420
-  OverrideStrats: []
-  OverrideBeeShipTypes: []
-  OverrideHumanShipTypes: []
-  UIManager: {fileID: 0}
-  SelectionBox: {fileID: 0}
-  MiniMapContainer: {fileID: 0}
-  FogOfWar: {fileID: 0}
-  Audio: {fileID: 0}
-  MiniMapCamera: {fileID: 0}
-  Menus: {fileID: 0}
-  MapRenderer: {fileID: 0}
-  Selector: {fileID: 0}
-  VisonSprite: {fileID: -2413806693520163455, guid: a86470a33a6bf42c4b3595704624658b, type: 3}
-  BargePrefab: {fileID: 2518675752222090675, guid: 8f5aab114dd8d064ca0729e8b3401ec7, type: 3}
-  BeehivePrefab: {fileID: 2518675752222090675, guid: b6da442ecc4c92640b8ef7235b627700, type: 3}
-  BumblebeePrefab: {fileID: 3494651897252040616, guid: 0682a07bac05aeb4ba245b791d4ec956, type: 3}
-  CarpenterBeePrefab: {fileID: 2518675752222090675, guid: 331d86682914f444b9e692abaa0f0f77, type: 3}
-  CarrierPrefab: {fileID: 2518675752222090675, guid: cda01f4aced13964d8fbd73d8899c0f4, type: 3}
-  CruiserPrefab: {fileID: 2518675752222090675, guid: f74a256973f75a542b1d9fd714065f8a, type: 3}
-  DreadnoughtPrefab: {fileID: 4765992002712767473, guid: 9763c9a85c4af844a8511927557baef0, type: 3}
-  DronePrefab: {fileID: 2518675752222090675, guid: 0027b8bd923b4a849a32041a7729084a, type: 3}
-  FactoryPrefab: {fileID: 2518675752222090675, guid: 5b891f998aa3aea489a4b46516460f52, type: 3}
-  FireShipPrefab: {fileID: 2518675752222090675, guid: 21ce29e5a82a1ca43b981ebf324dd25f, type: 3}
-  FlagshipPrefab: {fileID: 4525937326214591363, guid: 655824ef07d8a00429a8030982721672, type: 3}
-  FrigatePrefab: {fileID: 2518675752222090675, guid: 9f3a66f3def008d40a922199911da802, type: 3}
-  GunshipPrefab: {fileID: 4672471954231197362, guid: 3c26030e3f2b73b4481c3035cb538344, type: 3}
-  HoneybeePrefab: {fileID: 731483193027966550, guid: 64176d435ca00d747a94ee563b6ed590, type: 3}
-  HornetPrefab: {fileID: 7216971811449879457, guid: 10f29f0bd91a04b4f8e3198d980c5fd2, type: 3}
-  LeafcutterPrefab: {fileID: 2518675752222090675, guid: f26cf8eae069a6a4089b7e1aaa8e5179, type: 3}
-  QueenPrefab: {fileID: 4725796339288062921, guid: 21ec309ef5524894890a9e3b40472f2a, type: 3}
-  ScoutPrefab: {fileID: 6841957851019292102, guid: 6f656ea558bbb6d4491f62f4fd968aaa, type: 3}
-  StrikerPrefab: {fileID: 2518675752222090675, guid: 908e373307f1b7d458c88480ca898675, type: 3}
-  WarpGatePrefab: {fileID: 2518675752222090675, guid: cadc3a4b614aa074f9bcd02924ca901f, type: 3}
-  WaspPrefab: {fileID: 707182470515144504, guid: 3ca387e48b802ae4c9b7fea5c4bc5622, type: 3}
-  YellowJacketPrefab: {fileID: 2518675752222090675, guid: bb23b0103b9e2e64f944157b23a516df, type: 3}
-  BeaconPrefab: {fileID: 0}
-  ValidPrefab: {fileID: 0}
-  InvalidPrefab: {fileID: 0}
-  MovementMarkerPrefab: {fileID: 0}
-  TargetingMarkerPrefab: {fileID: 0}
   Map: {fileID: 0}
-  SquadBox: {fileID: 4393128050314196725, guid: 606f56cf5efd9f84d9e877d10187ad8b, type: 3}
-  AsteroidMaxSpawnRate: 0
-  AsteroidMinimumSpawnRate: 0
-  AsteroidMaxSpeed: 10
-  EmptyObstacleList: []
-  MazePrefabs: []
-  ThreePathsPrefabs: []
-  ForestPrefabs: []
-  TheWallPrefabs: []
-  ChosenObstaclesIndex: 0
-  MiningAsteroidPrefabs:
-  - {fileID: 7879729711353278377, guid: fe6d0fb0d85c85c479edc717c832af86, type: 3}
-  - {fileID: 7879729711353278377, guid: 3834dda5c834aa449bc5195a6e2d6c11, type: 3}
-  CollisionAsteroidPrefabs:
-  - {fileID: 7879729711353278377, guid: 028d8479ccc194b44824e34bfa029f9c, type: 3}
-  BreakawayAsteroids: []
-  AsteroidPieces: []
   MinX: 0
   MinY: 0
   MaxX: 0
   MaxY: 0
   DefaultZoom: 75
-  MaxZoom: 300
-  MinZoom: 25
   ZoomSpeed: 4
   ScrollSpeed: 25
-  UserStartingPosition: {x: 40, y: -155}
-  AIStartingPosition: {x: 0, y: 155}
-  MouseScrollDistanceFromEdge: {x: 10, y: 10}
-  DefaultCameraPosition: {x: 0, y: -155}
   StartingPositions:
   - {x: 0, y: 0}
   - {x: 0, y: 0}
-  HasBeeTypes: []
-  FoundBeeTypes: []
   IsLevelSetupOnServer: 0
   IsLevelConnectedToServer: 0
-  IsLoaded: 0
-  RetriedConnection: 0
   IsRestarting: 0
   HasPlayer: 0
   IsPausedByTester: 0
@@ -187,13 +79,13 @@ MonoBehaviour:
   HalfMapHeight: 0
   MaximumClearance: 0
   Seconds: 0
-  FixedUpdates: 0
   TriggersActivated: 0
   StartTime: 0
   TimePaused: 0
-  BeeShipTypes: []
-  HumanShipTypes: []
+  Name: Base Scene
+  Stage: {fileID: 0}
   __BeeHivemindShips: []
   __HumanHivemindShips: []
   __PastCommands: []
   __PathfindingThreads: []
+  __CustomLevels: []

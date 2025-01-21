@@ -42,10 +42,9 @@ namespace Assets.Scripts.Entities.Ships
 
         public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false)
         {
-            GameState state = Level.GetState();
-            if (state.GetHumanShips().Where((s) => s.ShipType == ShipType).Count() == 1) // check if this is the last warp gate
+            if (Level.State.GetHumanShips().Where((s) => s.ShipType == ShipType).Count() == 1) // check if this is the last warp gate
             {
-                state.HasWarpGates = false;
+                Level.State.HasWarpGates = false;
             }
             base.Kill(killer, killerFleetShip, killerSavedSquad, endKill);
         }

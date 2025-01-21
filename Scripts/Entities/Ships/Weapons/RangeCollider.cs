@@ -36,7 +36,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 //if (Weapon.Ship.IsHiveMindControlled && Weapon.Ship.HasCommand)
                 //{
                 //    //Debug.Log($"{Weapon.Ship.Name} just saw {ship.Name} and added them to hivemind vision");
-                //    Level.GetState().HivemindShips[Weapon.Side - 1][Weapon.Ship.Id].Add(ship);
+                //    Level.State.HivemindShips[Weapon.Side - 1][Weapon.Ship.Id].Add(ship);
                 //    Weapon.Ship.Squad.Command.Tsv += 100;
                 //    if (Weapon.Squad.Command.Type == "Scouting")
                 //    {
@@ -59,7 +59,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
                 //if (Weapon.Ship.IsHiveMindControlled)
                 //{
-                //    Level.GetState().HivemindShips[Weapon.Side - 1][Weapon.Ship.Id].Remove(ship);
+                //    Level.State.HivemindShips[Weapon.Side - 1][Weapon.Ship.Id].Remove(ship);
                 //}
             }
             else if (collidingThing.CompareTag("Projectile"))

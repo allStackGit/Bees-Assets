@@ -290,7 +290,7 @@ namespace Assets.Scripts.Levels.Commands
                 // This is necessary to prevent modifying the list when the Fire Barge(s) is killed
                 for (int i = 0; i < FireBargesToDetonate.Count; i++)
                 {
-                    ((FireBarge)Level.GetState().GetShipById(FireBargesToDetonate[i])).Detonate();
+                    ((FireBarge)Level.State.GetShipById(FireBargesToDetonate[i])).Detonate();
                 }
 
 

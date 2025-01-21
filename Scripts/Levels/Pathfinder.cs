@@ -363,7 +363,6 @@ namespace Assets.Scripts.Levels
 
             GameObject[] obstacles = GameObject.FindGameObjectsWithTag("Obstacle");
             //Debug.Log($"There are {obstacles.Length} obstacles to map: {Utilities.ListToString(obstacles.ToList())}");
-            GameState state = Level.GetState();
 
             // initialize obstacle points lists
             for (int i = 0; i < ConfigData.MaxThreads; i++)
@@ -378,7 +377,7 @@ namespace Assets.Scripts.Levels
                 Obstacle obstacle = obstacleObject.GetComponent<Obstacle>();
                 //Debug.Log($"Found {obstacleObject.name}: {obstacle}");
 
-                obstacle.Setup(Level, state.GetId());
+                obstacle.Setup(Level, Level.State.GetId());
                 obstacle.MapPointsIndex = AddObstacle(obstacle);
                 ObstaclePoints[0][obstacle.MapPointsIndex] = GetObstaclePoints(obstacle, 0, 0);
 
@@ -442,7 +441,7 @@ namespace Assets.Scripts.Levels
             }
 
             float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
-            Debug.Log($"Initialized map in {end} ms");
+            //Debug.Log($"Initialized map in {end} ms");
 
 
         }

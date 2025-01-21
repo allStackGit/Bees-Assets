@@ -204,6 +204,12 @@ namespace Assets.Scripts.Data
                 $"Supply Capacity: {SupplyCapacity}\n\n" +
                 GetEnemyList();
         }
+        public string GetAllLevelDetails()
+        {
+            return GetLevelDetails()+"\n\n" +
+                $"EnemySquadGenerationCount: {EnemySquadGenerationCount}\n" +
+                $"Chosen Squads: {ChosenSquads.Count}\n";
+        }
         public bool Equals(LevelOptions level)
         {
             return level.Id == Id;

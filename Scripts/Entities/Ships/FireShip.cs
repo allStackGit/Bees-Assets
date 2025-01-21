@@ -24,15 +24,14 @@ namespace Assets.Scripts.Entities.Ships
             if (!IsDead)
             {
                 IsDead = true;
-                GameState state = Level.GetState();
                 //Debug.Log("FireBarge exploding");
                 if (!endKill)
                 {
                     Explosion = Instantiate(ShipExplosion, GetPosition(), Quaternion.identity);
                     Explosion.transform.parent = Level.Map.transform;
                     RocketExplosion explosion = (RocketExplosion)Explosion.GetComponent(typeof(RocketExplosion));
-                    explosion.Setup(Level, Side, state.GetId(), Bomb, this, null, GetPosition(), 0, 0, Bomb.Power);
-                    state.FireBargeExplosions.Add(explosion);
+                    explosion.Setup(Level, Side, Level.State.GetId(), Bomb, this, null, GetPosition(), 0, 0, Bomb.Power);
+                    Level.State.FireBargeExplosions.Add(explosion);
                     ProjectilesInFlight.Add(explosion);
 
 
@@ -48,7 +47,7 @@ namespace Assets.Scripts.Entities.Ships
                         KillerSavedSquad = killer.Squad.SavedSquad;
                         LogKillerStats(KillerFleetShip, KillerSavedSquad);
                     }
-                    if (Level.ReplaceDeadShips && Squad.SavedSquad.HasBeenSavedToStorage)
+                    if (Level.Stage.ReplaceDeadShips && Squad.SavedSquad.HasBeenSavedToStorage)
                     {
                         FleetShip.IsDead = true;
                     }
@@ -60,7 +59,7 @@ namespace Assets.Scripts.Entities.Ships
                     }
                 }
 
-                state.RemoveShip(this);
+                Level.State.RemoveShip(this);
                 Squad.RemoveShip(this);
 
                 if (Squad.GetShips().Count == 0)

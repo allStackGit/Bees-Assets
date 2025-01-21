@@ -16,7 +16,6 @@ namespace Assets.Scripts.Entities.Ships
         public BufferSensorComponent BufferSensor;
         public float ShipType;
         public int SpottedShipIndex;
-        public GameState State;
         public List<Ship> SpottedShips;
         public List<Ship> Ships;
         public float[] BlankObservation = new float[5];
@@ -93,11 +92,10 @@ namespace Assets.Scripts.Entities.Ships
                 sensor.AddObservation(BlankObservation);
                 return;
             }
-            State = Ship.Level.GetState();
 
 
             // find the ships that this ship can see
-            SpottedShips = State.GetShips().Where((s) => s.DistanceTo(Ship) <= Ship.Sight && !s.Equals(Ship)).OrderBy((s) => s.DistanceTo(Ship)).ToList();
+            SpottedShips = Ship.Level.State.GetShips().Where((s) => s.DistanceTo(Ship) <= Ship.Sight && !s.Equals(Ship)).OrderBy((s) => s.DistanceTo(Ship)).ToList();
             Ships = SpottedShips;
 
 
@@ -109,9 +107,9 @@ namespace Assets.Scripts.Entities.Ships
                 //remove spotted ships that this ship previously spotted or have died
                 //state.SpottedShips[SpottedShipIndex] = state.SpottedShips[SpottedShipIndex].Where((s) => s.SpotterId != Ship.Id && !s.Ship.IsDead).ToList();
                 Filtered = new List<SpottedShip>();
-                for (i = 0; i < State.SpottedShips[SpottedShipIndex].Count; i++)
+                for (i = 0; i < Ship.Level.State.SpottedShips[SpottedShipIndex].Count; i++)
                 {
-                    SpottedShip = State.SpottedShips[SpottedShipIndex][i];
+                    SpottedShip = Ship.Level.State.SpottedShips[SpottedShipIndex][i];
                     Contains = false;
                     SpottedShipCount = SpottedShips.Count;
                     for (ss = 0; ss < SpottedShipCount && !Contains; ss++)
@@ -128,7 +126,7 @@ namespace Assets.Scripts.Entities.Ships
                     }
                 }
 
-                State.SpottedShips[SpottedShipIndex] = Filtered;
+                Ship.Level.State.SpottedShips[SpottedShipIndex] = Filtered;
             }
 
             for (i = 0; i < Ships.Count; i++)
@@ -148,7 +146,7 @@ namespace Assets.Scripts.Entities.Ships
 
 
             // add the ships that this ship has personally seen to the central list
-            State.AddSpottedShips(SpottedShips, Ship);
+            Ship.Level.State.AddSpottedShips(SpottedShips, Ship);
 
             // Observe the agent's position (2 observations)
             sensor.AddObservation((Vector2)Ship.transform.position.normalized);

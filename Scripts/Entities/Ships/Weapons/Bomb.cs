@@ -25,7 +25,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 else
                 {
                     //Debug.Log($"Enemy squad {Ship.Squad.Command.Enemy.Name} has NO ({enemyShips.Count}) ships");
-                    queue = Level.GetState().GetAllEnemyShips(Side);
+                    queue = Level.State.GetAllEnemyShips(Side);
                 }
             }
             else
@@ -55,7 +55,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         protected override void SetTargetShip(Ship targetShip)
         {
-            ShipDamageStatus shipDamageStatus = Level.GetState().GetShipDamageStatus(Side, targetShip);
+            ShipDamageStatus shipDamageStatus = Level.State.GetShipDamageStatus(Side, targetShip);
             shipDamageStatus.TotalDamageSentToShip += Power;
             TargetShip = targetShip;
             //Debug.Log($"Setting target ship to {TargetShip.Name} and sending {Power} / {shipDamageStatus.totalDamageSentToShip} damage ");

@@ -77,7 +77,7 @@ namespace Assets.Scripts.UIComponents
             {
                 if (HasLevel)
                 {
-                    int sum = Level.GetState().SelectedSquads.Sum((squad) => squad.GetShips().Count);
+                    int sum = Level.State.SelectedSquads.Sum((squad) => squad.GetShips().Count);
                     string shipCount = $"({sum}) ships";
                     if (sum == 1)
                     {
@@ -105,7 +105,7 @@ namespace Assets.Scripts.UIComponents
             }
             else if (HasLevel)
             {
-                List<Squad> selectedSquads = Level.GetState().GetSelectedSquads();
+                List<Squad> selectedSquads = Level.State.GetSelectedSquads();
                 selectedSquads.ForEach(squad =>
                 {
                     squadNames += $"{squad.Name}, ";
@@ -176,7 +176,7 @@ namespace Assets.Scripts.UIComponents
             }
             else if (HasLevel)
             {
-                List<Squad> selectedSquads = Level.GetState().GetSelectedSquads();
+                List<Squad> selectedSquads = Level.State.GetSelectedSquads();
                 if (selectedSquads.Count > 0)
                 {
                     string shootingStrategy = selectedSquads.First().GetShootingStrategy();
@@ -227,10 +227,9 @@ namespace Assets.Scripts.UIComponents
             }
             if (HasLevel)
             {
-                GameState state = Level.GetState();
-                ChargeButton.SetActive(state.GetSelectedSquads().Any((squad) => squad.GetShips().Any((ship) => ship.ShipType == "Barge")));
-                DetonateButton.SetActive(state.GetSelectedSquads().Any((squad) => squad.GetShips().Any((ship) => ship.ShipType == "Fire Barge")));
-                DropBeaconButton.SetActive(state.GetSelectedSquads().Any((squad) => squad.GetShips().Any((ship) => ship.ShipType == "Scout" && ((Scout)ship).CanDropBeacons)));
+                ChargeButton.SetActive(Level.State.GetSelectedSquads().Any((squad) => squad.GetShips().Any((ship) => ship.ShipType == "Barge")));
+                DetonateButton.SetActive(Level.State.GetSelectedSquads().Any((squad) => squad.GetShips().Any((ship) => ship.ShipType == "Fire Barge")));
+                DropBeaconButton.SetActive(Level.State.GetSelectedSquads().Any((squad) => squad.GetShips().Any((ship) => ship.ShipType == "Scout" && ((Scout)ship).CanDropBeacons)));
 
                 if (IsAction("Patrol"))
                 {
@@ -238,7 +237,7 @@ namespace Assets.Scripts.UIComponents
                 }
                 else
                 {
-                    //Debug.Log($"Not patrolling: {Level.GetState().GetSelectedSquads().First().GetCommandStrategy()}");
+                    //Debug.Log($"Not patrolling: {Level.State.GetSelectedSquads().First().GetCommandStrategy()}");
                     ResetButton(PatrolButton);
                 }
                 if (IsAction("Guard"))
@@ -307,7 +306,7 @@ namespace Assets.Scripts.UIComponents
             }
             else if (HasLevel)
             {
-                List<Squad> selectedSquads = Level.GetState().GetSelectedSquads();
+                List<Squad> selectedSquads = Level.State.GetSelectedSquads();
                 
                 switch (action)
                 {
@@ -571,7 +570,7 @@ namespace Assets.Scripts.UIComponents
             }
             else if (HasLevel)
             {
-                return Level.GetState().HasSelectedSquads;
+                return Level.State.HasSelectedSquads;
             }
             return false;
         }
@@ -663,7 +662,7 @@ namespace Assets.Scripts.UIComponents
         {
             if (HasSquad())
             {
-                Level.GetState().GetSelectedSquads().ForEach((squad) =>
+                Level.State.GetSelectedSquads().ForEach((squad) =>
                 {
                     foreach (Ship ship in squad.GetShips().Where((s) => s.ShipType == "Scout"))
                     {
@@ -677,7 +676,7 @@ namespace Assets.Scripts.UIComponents
         {
             if (HasSquad())
             {
-                Level.GetState().GetSelectedSquads().ForEach((squad) =>
+                Level.State.GetSelectedSquads().ForEach((squad) =>
                 {
                     foreach (Ship ship in squad.GetShips().Where((s) => s.ShipType == "Barge"))
                     {
@@ -698,7 +697,7 @@ namespace Assets.Scripts.UIComponents
         {
             if (HasSquad())
             {
-                Level.GetState().GetSelectedSquads().ForEach((squad) =>
+                Level.State.GetSelectedSquads().ForEach((squad) =>
                 {
                     squad.GetShips().Where((s) => s.ShipType == "Fire Barge").ToList().ForEach((ship) =>
                     {
@@ -713,7 +712,7 @@ namespace Assets.Scripts.UIComponents
         {
             if (HasSquad())
             {
-                Level.GetState().GetSelectedSquads().ForEach((squad) =>
+                Level.State.GetSelectedSquads().ForEach((squad) =>
                 {
                     squad.StopChasing();
                 });
@@ -725,7 +724,7 @@ namespace Assets.Scripts.UIComponents
         {
             if (HasSquad())
             {
-                Level.GetState().GetSelectedSquads().ForEach((squad) =>
+                Level.State.GetSelectedSquads().ForEach((squad) =>
                 {
                     squad.SetChase(true);
                 });
@@ -755,7 +754,7 @@ namespace Assets.Scripts.UIComponents
         {
             if (HasSquad())
             {
-                Level.GetState().GetSelectedSquads().ForEach((squad) =>
+                Level.State.GetSelectedSquads().ForEach((squad) =>
                 {
                     squad.CeaseFire = true;
                 });
@@ -767,7 +766,7 @@ namespace Assets.Scripts.UIComponents
         {
             if (HasSquad())
             {
-                Level.GetState().GetSelectedSquads().ForEach((squad) =>
+                Level.State.GetSelectedSquads().ForEach((squad) =>
                 {
                     squad.CeaseFire = false;
                 });
@@ -779,7 +778,7 @@ namespace Assets.Scripts.UIComponents
         {
             if (HasSquad())
             {
-                List<Squad> squads = Level.GetState().GetSelectedSquads();
+                List<Squad> squads = Level.State.GetSelectedSquads();
                 bool IsMatchingSpeed = squads.All(squad => squad.IsMatchingSpeed);
                 float slowestSpeed = squads.Min(squad => squad.SlowestSpeed);
                 squads.ForEach((squad) =>
@@ -819,7 +818,7 @@ namespace Assets.Scripts.UIComponents
                 }
                 else if (HasLevel)
                 {
-                    Level.GetState().GetSelectedSquads().ForEach((squad) =>
+                    Level.State.GetSelectedSquads().ForEach((squad) =>
                     {
                         //Debug.Log($"Setting the squad to shoot with {strategy}!");
                         squad.SetShootingStrategy(strategy);

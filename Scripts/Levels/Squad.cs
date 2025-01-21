@@ -73,6 +73,7 @@ namespace Assets.Scripts.Levels
         public bool HasOnlyStrikers => GetShips().All((s) => s.ShipType == "Striker");
         public bool HasOnlyBombers => GetShips().All((s) => s.ShipType == "Striker" || s.ShipType == "Yellow Jacket" || s.ShipType == "Fire Barge");
         public bool HasOnlyBarges => GetShips().All((s) => s.ShipType == "Barge");
+        public bool HasOnlyWarpGates => GetShips().All((s) => s.ShipType == "Warp Gate");
         /// <summary>
         /// If this squad belongs to the user side and there is a player
         /// </summary>
@@ -137,7 +138,7 @@ namespace Assets.Scripts.Levels
             {
                 InvokeRepeating(nameof(CheckChase), 5, 1);
             }
-            if (Level.FullCeaseFire || Side == ConfigData.Configuration.AISide && Level.MakeEnemyCeaseFire)
+            if (Stage.FullCeaseFire || Side == ConfigData.Configuration.AISide && Stage.MakeEnemyCeaseFire)
             {
                 CeaseFire = true;
             }
@@ -161,7 +162,7 @@ namespace Assets.Scripts.Levels
 
                 if (!Level.IsTraining)
                 {
-                    SquadBox = Instantiate(Level.SquadBox, new Vector3(0, 0, 0), Quaternion.identity);
+                    SquadBox = Instantiate(Level.Stage.Prefabs.SquadBoxPrefab, new Vector3(0, 0, 0), Quaternion.identity);
                     SquadBox.transform.parent = Level.Map.transform;
                     SquadBox.SetActive(false);
                     SquadBox.name = $"{Name} - Squadbox"; // [note] [testing] Only used for testing
@@ -215,7 +216,7 @@ namespace Assets.Scripts.Levels
         {
             if (IsUserControlled && SquadNumber <= 10)
             {
-                SquadTab = Level.SquadTabs[SquadNumber - 1];
+                SquadTab = Stage.SquadTabs[SquadNumber - 1];
                 HasSquadTab = true;
                 if (HasCustomColor)
                 {
@@ -234,7 +235,7 @@ namespace Assets.Scripts.Levels
         protected void Update()
         {
 
-            if (!Level.IsPaused)
+            if (!Level.State.IsPaused)
             {
                 Age++;
                 if (HasCommand)
@@ -247,7 +248,7 @@ namespace Assets.Scripts.Levels
         }
         public void FixedUpdate()
         {
-            if (IsUserControlled && !Level.IsPaused)
+            if (IsUserControlled && !Level.State.IsPaused)
             {
                 HasMovedBox = false;
             }
@@ -383,7 +384,6 @@ namespace Assets.Scripts.Levels
             if (!IsDead)
             {
                 IsDead = true;
-                GameState state = Level.GetState();
 
 
                 if (!endKill)
@@ -398,16 +398,16 @@ namespace Assets.Scripts.Levels
                         DeactivateSquadBox();
                     }
 
-                    if (state.IsSideKilled(Side))
+                    if (Level.State.IsSideKilled(Side))
                     {
 
-                        state.GameOver = true;
+                        Level.State.GameOver = true;
                     }
                     else
                     {
-                        if (state.GetSelectedSquads().Count == 0)
+                        if (Level.State.GetSelectedSquads().Count == 0)
                         {
-                            state.SelectSquad(state.GetSquadsBySide(Side).First());
+                            Level.State.SelectSquad(Level.State.GetSquadsBySide(Side).First());
                         }
                     }
                 }
@@ -419,7 +419,7 @@ namespace Assets.Scripts.Levels
                         SquadTab.DisableTab();
                     }
                     Destroy(SquadBox);
-                    state.DeselectSquad(this);
+                    Level.State.DeselectSquad(this);
                 }
                 Destroy(this);
             }
@@ -428,12 +428,12 @@ namespace Assets.Scripts.Levels
         }
         public Squad GetClosestEnemySquad()
         {
-            // Debug.Log($"Number of enemy squads {squads.Count}, {_level.GetState().GetSquads()}");
-            return Level.GetState().GetEnemySquads(Side).OrderBy(squad => squad.DistanceToPoint(GetPosition())).FirstOrDefault();
+            // Debug.Log($"Number of enemy squads {squads.Count}, {_Level.State.GetSquads()}");
+            return Level.State.GetEnemySquads(Side).OrderBy(squad => squad.DistanceToPoint(GetPosition())).FirstOrDefault();
         }
         public Squad GetClosestValidFriendlySquad()
         {
-            List<Squad> squads = Level.GetState().GetSquadsBySide(Side).Where(squad => !squad.Equals(this) && (!squad.HasCommand || squad.Command.Type != "Closest Friendly")).ToList();
+            List<Squad> squads = Level.State.GetSquadsBySide(Side).Where(squad => !squad.Equals(this) && (!squad.HasCommand || squad.Command.Type != "Closest Friendly")).ToList();
             return squads.OrderBy(squad => squad.DistanceToPoint(GetPosition())).FirstOrDefault();
         }
         public Squad GetEnemy()
@@ -457,11 +457,11 @@ namespace Assets.Scripts.Levels
         /// <returns></returns>
         public List<Ship> GetEnemyShips()
         {
-            return Level.GetState().GetShipsVisibleToHiveMind(Side).ToList();
+            return Level.State.GetShipsVisibleToHiveMind(Side).ToList();
         }
         public List<Ship> GetFriendlyShips()
         {
-            return Level.GetState().GetShips(Side);
+            return Level.State.GetShips(Side);
         }
         public List<Ship> GetPotentialEnemies(Squad target)
         {
@@ -509,7 +509,7 @@ namespace Assets.Scripts.Levels
         // Command and control methods
         public void AddToCommandList()
         {          
-            Level.GetState().AddToSquadsAwaitingHiveMindCommands(this);
+            Level.State.AddToSquadsAwaitingHiveMindCommands(this);
         }
         public void MakeMatchupStrat()
         {
@@ -519,13 +519,13 @@ namespace Assets.Scripts.Levels
             if (ConfigData.Configuration.UserSide == ConfigData.Configuration.BeeSide)
             {
                 // if you're the bees you can only get available human ship types
-                HashSet<string> enemyShips = Level.GetState().GetHumanShipTypes();
+                HashSet<string> enemyShips = Level.State.GetHumanShipTypes();
                 banned = banned.Where((type) => !enemyShips.Contains(type)).ToHashSet();
             }
             else
             {
                 // if you're the humans you can only get available bee ship types
-                HashSet<string> enemyShips = Level.GetState().GetBeeShipTypes();
+                HashSet<string> enemyShips = Level.State.GetBeeShipTypes();
                 banned = banned.Where((type) => !enemyShips.Contains(type)).ToHashSet();
             }
             
@@ -555,12 +555,12 @@ namespace Assets.Scripts.Levels
         public void MakeMatchupAndGetCommand(Squad enemy = null)
         {
             string matchup = "";
-            if (Level.OverrideStrats.Count > 0) // [debug]
+            if (Level.Stage.OverrideStrats.Count > 0) // [debug]
             {
                 BannedStrats.UnionWith(ConfigData.CommandTypes);
-                BannedStrats = BannedStrats.Except(Level.OverrideStrats).ToHashSet();
+                BannedStrats = BannedStrats.Except(Level.Stage.OverrideStrats).ToHashSet();
 
-                if (Level.OverrideStrats.Contains("Scouting") && Level.GetState().GetShipsVisibleToHiveMind(Side).Count > 0 && Level.OverrideStrats.Count > 1 && !IsDefenseless)
+                if (Level.Stage.OverrideStrats.Contains("Scouting") && Level.State.GetShipsVisibleToHiveMind(Side).Count > 0 && Level.Stage.OverrideStrats.Count > 1 && !IsDefenseless)
                 {
                     BannedStrats.Add("Scouting");
                 }
@@ -650,9 +650,8 @@ namespace Assets.Scripts.Levels
                 banned.Add("In and Out");
             }
 
-            GameState state = Level.GetState();
-            int closestFriendlySquadCount = state.GetSquadsBySide(Side).Where((squad) => squad?.Command?.Strategy.Name == "Closest Friendly").Count();
-            int friendlySquadCount = state.GetSquadsBySide(Side).Count;
+            int closestFriendlySquadCount = Level.State.GetSquadsBySide(Side).Where((squad) => squad?.Command?.Strategy.Name == "Closest Friendly").Count();
+            int friendlySquadCount = Level.State.GetSquadsBySide(Side).Count;
             if (friendlySquadCount - 1  <= friendlySquadCount)
             {
                 banned.Add("Closest Friendly");
@@ -662,7 +661,7 @@ namespace Assets.Scripts.Levels
                 BannedStrats.Add("Mining");
                 banned.Add("Mining");
             }
-            if (!BannedStrats.Contains("Full Retreat") && (Side != ConfigData.Configuration.HumanSide || !state.HasWarpGates))
+            if (!BannedStrats.Contains("Full Retreat") && (Side != ConfigData.Configuration.HumanSide || !Level.State.HasWarpGates || HasOnlyWarpGates))
             {
                 BannedStrats.Add("Full Retreat");
                 banned.Add("Full Retreat");
@@ -719,7 +718,7 @@ namespace Assets.Scripts.Levels
             (Strategy, ShootingStrategy) strategies = MakeUserCommand("Guard", null);
             if (strategies.Item1 != null)
             {
-                ((Guard)Command).Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), true, squad);
+                ((Guard)Command).Execute(strategies.Item1, strategies.Item2, Level.State.AddUserCommand(), true, squad);
             }
             
             if (Level.Stage.DoesUserHaveController)
@@ -733,7 +732,7 @@ namespace Assets.Scripts.Levels
             (Strategy, ShootingStrategy) strategies = MakeUserCommand("Patrol", null);
             if (strategies.Item1 != null)
             {
-                ((Patrol)Command).Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), true, topLeft, bottomRight);
+                ((Patrol)Command).Execute(strategies.Item1, strategies.Item2, Level.State.AddUserCommand(), true, topLeft, bottomRight);
             }
             
             if (Level.Stage.DoesUserHaveController)
@@ -748,7 +747,7 @@ namespace Assets.Scripts.Levels
                 (Strategy, ShootingStrategy) strategies = MakeUserCommand("Mining", null);
                 if (strategies.Item1 != null)
                 {
-                    ((Mining)Command).Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), true, miningAsteroid);
+                    ((Mining)Command).Execute(strategies.Item1, strategies.Item2, Level.State.AddUserCommand(), true, miningAsteroid);
                 }
             }
             else
@@ -765,7 +764,7 @@ namespace Assets.Scripts.Levels
             (Strategy, ShootingStrategy) strategies = MakeUserCommand("Full Retreat", null);
             if (strategies.Item1 != null)
             {
-                ((FullRetreat)Command).Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), true, warpGate);
+                ((FullRetreat)Command).Execute(strategies.Item1, strategies.Item2, Level.State.AddUserCommand(), true, warpGate);
             }
             
 
@@ -786,7 +785,7 @@ namespace Assets.Scripts.Levels
             (Strategy, ShootingStrategy) strategies = MakeUserCommand("Aggressive", enemy);
             if (strategies.Item1 != null)
             {
-                Command.Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), false);
+                Command.Execute(strategies.Item1, strategies.Item2, Level.State.AddUserCommand(), false);
             }
             
         }
@@ -796,7 +795,7 @@ namespace Assets.Scripts.Levels
             (Strategy, ShootingStrategy) strategies = MakeUserCommand("Bombing Run", enemy);
             if (strategies.Item1 != null)
             {
-                ((BombingRun)Command).Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), false);
+                ((BombingRun)Command).Execute(strategies.Item1, strategies.Item2, Level.State.AddUserCommand(), false);
             }
             
         }
@@ -806,7 +805,7 @@ namespace Assets.Scripts.Levels
         //    (Strategy, ShootingStrategy) strategies = MakeUserCommand("Charge", enemy);
         //    if (strategies.Item1 != null)
         //    {
-        //        ((Charge)Command).Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), false);
+        //        ((Charge)Command).Execute(strategies.Item1, strategies.Item2, Level.State.AddUserCommand(), false);
         //    }
         //}
         public (Strategy, ShootingStrategy) MakeUserCommand(string command, Squad enemy)
@@ -899,7 +898,7 @@ namespace Assets.Scripts.Levels
         }
         public MiningAsteroid GetNearestMiningAsteroid()
         {
-            return Level.GetState().MiningAsteroids.OrderBy((o) => DistanceToPoint(o.GetPosition())).FirstOrDefault();
+            return Level.State.MiningAsteroids.OrderBy((o) => DistanceToPoint(o.GetPosition())).FirstOrDefault();
         }
 
 

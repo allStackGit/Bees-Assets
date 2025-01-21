@@ -28,9 +28,9 @@ namespace Assets.Scripts.Levels.Commands
         {
             //Debug.Log("Sorting squads");
             //Debug.Log($"Squad: {Squad}");
-            List<Squad> queue = Level.GetState().GetSquadsVisibleToHiveMind(Side);
+            List<Squad> queue = Level.State.GetSquadsVisibleToHiveMind(Side);
             //Debug.Log($"Squads visible to HiveMind {Side}: {queue.Count}");
-            //Debug.Log($"Ships visible to HiveMind {Side}: {Level.GetState().GetShipsVisibleToHiveMind(Side).Count}");
+            //Debug.Log($"Ships visible to HiveMind {Side}: {Level.State.GetShipsVisibleToHiveMind(Side).Count}");
 
             if (queue.Count == 0)
             {
@@ -75,7 +75,7 @@ namespace Assets.Scripts.Levels.Commands
                 case "In Combat":
                     return queue.OrderByDescending(s => s.InCombat).ThenBy(s => s.MaxRange).FirstOrDefault();
                 case "Gang Up":
-                    List<Squad> targetedSquads = Level.GetState().GetTargetedSquads(Side);
+                    List<Squad> targetedSquads = Level.State.GetTargetedSquads(Side);
                     return targetedSquads.Count > 0 ? targetedSquads.First() : queue.OrderByDescending(s => s.InCombat).ThenBy(s => s.MaxRange).FirstOrDefault(); // In Combat
                 case "Most Valuable":
                     return queue.OrderByDescending(s => s.Tsv).First();

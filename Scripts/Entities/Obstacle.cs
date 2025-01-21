@@ -35,7 +35,7 @@ namespace Assets.Scripts.Entities
             if (!IsDead)
             {
                 IsDead = true;
-                Level.GetState().RemoveObstacle(this);
+                Level.State.RemoveObstacle(this);
                 Destroy(gameObject);
             }
 

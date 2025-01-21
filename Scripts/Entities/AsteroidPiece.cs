@@ -14,7 +14,7 @@ namespace Assets.Scripts.Entities
         public void Setup(Level level, int id, CollisionAsteroid parent)
         {
             base.Setup(level, id);
-            Speed = (Utilities.RandomInt(Level.AsteroidMaxSpeed) + ConfigData.MinimumAsteroidSpeed) + 5;
+            Speed = (Utilities.RandomInt(Level.Stage.AsteroidMaxSpeed) + ConfigData.MinimumAsteroidSpeed) + 5;
 
 
             transform.localPosition = parent.GetPosition();

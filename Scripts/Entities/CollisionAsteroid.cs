@@ -32,7 +32,7 @@ namespace Assets.Scripts.Entities
             base.Setup(level, id);
             Health = ConfigData.CollisionAsteroidHealthIncrement * SizeClass;
             OriginalHealth = Health;
-            Speed = Utilities.RandomInt(Level.AsteroidMaxSpeed) + ConfigData.MinimumAsteroidSpeed;
+            Speed = Utilities.RandomInt(Level.Stage.AsteroidMaxSpeed) + ConfigData.MinimumAsteroidSpeed;
 
             // starting right (+) or left (-)
             Vector2 randomPosition = new Vector2(Utilities.RandomSign() * (Level.HalfMapWidth + ConfigData.MinimumAsteroidSpawnDistance), (Utilities.RandomSign() * (Utilities.RandomInt(Level.HalfMapHeight))));
@@ -299,13 +299,12 @@ namespace Assets.Scripts.Entities
         {
             int asteroidCount = SizeClass < 6 ? 0 : (SizeClass > 6 ? 3 : 2);
             int pieceCount = (int) (SizeClass * 1.5f);
-            GameState state = Level.GetState();
 
             //Debug.Log($"{Name} died and spawned {asteroidCount} asteroids and {pieceCount} pieces");
 
             for (int i = 0; i < asteroidCount; i++)
             {
-                GameObject instance = Instantiate(Level.BreakawayAsteroids[Utilities.RandomInt(Level.BreakawayAsteroids.Count)]);
+                GameObject instance = Instantiate(Level.Stage.Prefabs.BreakawayAsteroids[Utilities.RandomInt(Level.Stage.Prefabs.BreakawayAsteroids.Count)]);
                 CollisionAsteroid asteroid = Level.AddAsteroid(instance);
                 asteroid.transform.localPosition = GetPosition();
                 asteroid.Body.angularVelocity = Body.angularVelocity;
@@ -315,11 +314,11 @@ namespace Assets.Scripts.Entities
 
             for (int i = 0; i < pieceCount; i++)
             {
-                GameObject instance = Instantiate(Level.AsteroidPieces[Utilities.RandomInt(Level.AsteroidPieces.Count)]);
+                GameObject instance = Instantiate(Level.Stage.Prefabs.AsteroidPieces[Utilities.RandomInt(Level.Stage.Prefabs.AsteroidPieces.Count)]);
                 instance.transform.parent = Level.Map.transform;
                 AsteroidPiece asteroid = instance.GetComponent<AsteroidPiece>();
-                state.AddObstacle(asteroid);
-                asteroid.Setup(Level, state.GetId(), this);
+                Level.State.AddObstacle(asteroid);
+                asteroid.Setup(Level, Level.State.GetId(), this);
 
             }
         }

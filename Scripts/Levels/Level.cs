@@ -30,65 +30,22 @@ namespace Assets.Scripts.Levels
     {
         //public float __RotationTest;
         //public Vector2 __OriginalPosition;
-        private GameState _state;
+        public GameState State;
         // If hivemind is activate, get commands from the server
         // If brains are activated, get actions from the nueral network
         // If IsTrainingNueralNetwork, train the neural network. IsTrainingHiveMind, train the hive mind
         // Training Hivemind or Nueral Network then there is no player, levels are reset every time, and the camera position doesn't matter
-        /// <summary>
-        /// Determines whether or not FleetShips get marked as dead when ships die. If this is turned off, stats will still record properly but ships won't die off and be replaced
-        /// </summary>
-        public bool ReplaceDeadShips;
-        public bool IsTraining, UseFullyRandomSquads, UseFullyRandomEnemySquads, UseOverrideSquads, 
-            UseOverrideEnemySquads, RecordStats, HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateLoadingShipsMidLevel, 
-            UseMouseScrolling, IsDebugging, IsTestFiring, MakeEnemyCeaseFire, FullCeaseFire, MakeShotsHarmless, HasRandomizedOptions;
-        public int OverrideMapIndex,OverrideObstacleMapIndex, SpeedMultiplier, InitialCommandDelay;
-        public List<string> OverrideStrats = new List<string> { };
-        
+
+        public bool IsTraining, HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateLoadingShipsMidLevel;
         public UI_Components.Map Map;
         public LevelConstructor LevelConstructor;
         public Pathfinder Pathfinder;
         public SimpleMultiAgentGroup AgentGroup;
         public SimpleMultiAgentGroup HumanAgentGroup;
-        public Sprite VisonSprite;
-
-       
-
-        public GameObject BargePrefab, BeehivePrefab, BumblebeePrefab, CarpenterBeePrefab, CarrierPrefab, CruiserPrefab, DreadnoughtPrefab, DronePrefab,
-            FactoryPrefab, FireBargePrefab, FlagshipPrefab, FrigatePrefab, GunshipPrefab, HoneybeePrefab, HornetPrefab, LeafcutterPrefab, QueenPrefab,
-            ScoutPrefab, StrikerPrefab, WarpGatePrefab, WaspPrefab, YellowJacketPrefab, BeaconPrefab, ValidPrefab, InvalidPrefab, MovementMarkerPrefab, TargetingMarkerPrefab,
-            SquadBox;
-        /// <summary>
-        /// How frequently asteroids spawn in this level. Sets the upper and lower bounds in seconds of the randomly timed spawn
-        /// </summary>
-        public int AsteroidMaxSpawnRate, AsteroidMinimumSpawnRate, CurrentAsteroidMaxSpawnRate, CurrentAsteroidMinimumSpawnRate;
-        /// <summary>
-        /// Sets the upper bounds for how fast an asteroid can move
-        /// </summary>
-        public int AsteroidMaxSpeed;
-        public List<GameObject> EmptyObstacleList, MazePrefabs, ThreePathsPrefabs, ForestPrefabs, TheWallPrefabs = new List<GameObject>();
-        public List<GameObject> MiningAsteroidPrefabs = new List<GameObject>();
-        public List<GameObject> CollisionAsteroidPrefabs = new List<GameObject>();
-        /// <summary>
-        /// Asteroids that can potentially be spawned from larger asteroids breaking apart
-        /// </summary>
-        public List<GameObject> BreakawayAsteroids = new List<GameObject>();
-        /// <summary>
-        /// Asteroid pieces that spawn (and don't collide) from larger asteroids breaking apart
-        /// </summary>
-        public List<GameObject> AsteroidPieces = new List<GameObject>();
-        /// <summary>
-        /// A list of possible maps to load
-        /// </summary>
-        public List<GameObject> Maps = new List<GameObject>();
 
         public float MinX, MinY, MaxX, MaxY;
-        public int DefaultZoom, ZoomSpeed, ScrollSpeed;
-        public Vector2 MouseScrollDistanceFromEdge, DefaultCameraPosition;
         public Vector2[] StartingPositions = new Vector2[2];
 
-        public List<string> HasBeeTypes = new List<string>();
-        public List<string> FoundBeeTypes = new List<string>();
         /// <summary>
         /// Whether or not the level has been setup initially on the server
         /// </summary>
@@ -97,7 +54,7 @@ namespace Assets.Scripts.Levels
         /// Whether or not this level is currently connected and setup on the server, regardless of whether other levels are connected
         /// </summary>
         public bool IsLevelConnectedToServer;
-        public bool RetriedConnection, IsRestarting;
+        public bool IsRestarting;
         public bool HasPlayer;
         /// <summary>
         /// Whether or not a tester pressed the pause key to pause the game
@@ -106,27 +63,25 @@ namespace Assets.Scripts.Levels
         public int WinningSide;
         public float MapX, MapY, MaxDistance, HalfX, HalfY;
         public int MapWidth, MapHeight, HalfMapWidth, HalfMapHeight, MaximumClearance;
-        public Dictionary<string, int> ShipClearances = new Dictionary<string, int>();
 
         public float Seconds;
-        public HashSet<int> HandledRequests = new HashSet<int>();
-        public int FixedUpdates, TriggersActivated;
-        public float StartTime, TimePaused;
+        public int TriggersActivated;
+        public float TimePaused;
         public List<Trigger> Triggers = new List<Trigger>();
-        public List<SquadTab> SquadTabs;
         public LevelOptions SaveLevelOptions;
         public LevelOptions CurrentLevelOptions;
         public Data.Map MapData;
         public List<SavedSquad> AllSquads = new List<SavedSquad>();
-
-        public Texture2D TargetingMouseTexture;
         public string Name;
+        /// <summary>
+        /// All the ids of requests that have been handled by this level. Must be level specific because it's used to remove handled requests from ConfigData
+        /// </summary>
+        public HashSet<int> HandledRequests = new HashSet<int>();
         public Stage Stage;
 
 
 
         public bool DidUserWin => WinningSide == ConfigData.Configuration.UserSide;
-        public bool IsPaused => GetState().IsPaused;
 
         public List<string> __BeeHivemindShips, __HumanHivemindShips, __PastCommands, __PathfindingThreads, __CustomLevels;
 
@@ -136,9 +91,9 @@ namespace Assets.Scripts.Levels
 
         private void UpdateDebugVariables()
         {
-            __BeeHivemindShips = GetState().GetShipsVisibleToHiveMind(ConfigData.Configuration.BeeSide).Select(s => s.ToString()).ToList();
-            __HumanHivemindShips = GetState().GetShipsVisibleToHiveMind(ConfigData.Configuration.HumanSide).Select(s => s.ToString()).ToList();
-            __PastCommands = GetState().GetPastCommands().Select((c) => $"Command #{c.OutcomeId} - {c.Strategy.Name} for Squad {c.Squad} against [{c.Enemy}] with {c.Tsv} TSV").ToList();
+            __BeeHivemindShips = State.GetShipsVisibleToHiveMind(ConfigData.Configuration.BeeSide).Select(s => s.ToString()).ToList();
+            __HumanHivemindShips = State.GetShipsVisibleToHiveMind(ConfigData.Configuration.HumanSide).Select(s => s.ToString()).ToList();
+            __PastCommands = State.GetPastCommands().Select((c) => $"Command #{c.OutcomeId} - {c.Strategy.Name} for Squad {c.Squad} against [{c.Enemy}] with {c.Tsv} TSV").ToList();
             __CustomLevels = ConfigData.GetLevelData().GetLevels().Select((level) => level.ToString()).ToList();
             
             if (Pathfinder != null)
@@ -152,18 +107,20 @@ namespace Assets.Scripts.Levels
             //dest.ReadPixels(new Rect(0, 0, MiniMapTexture.width, MiniMapTexture.height), 0, 0);
             //dest.Apply();
             //File.WriteAllBytes(path, dest.EncodeToPNG());
-            GetState().UpdateDebugVariables();
+            State.UpdateDebugVariables();
         }
 
 
-        public void Setup(Stage stage)
+        public void Setup(Stage stage, string name)
         {
             Stage = stage;
+            Name = name;
+            gameObject.name = $"Level - {Name}";
 
             if (ConfigData.IsPlayingCampaign)
             {
-                ReplaceDeadShips = true;
-                RecordStats = true;
+                Stage.ReplaceDeadShips = true;
+                Stage.RecordStats = true;
             }
 
             LevelConstructor = new LevelConstructor(this);
@@ -183,11 +140,11 @@ namespace Assets.Scripts.Levels
                 HasPlayer = true;
                 if (ConfigData.IsUserLoadingCustomSquads)
                 {
-                    UseFullyRandomSquads = false;
+                    Stage.UseFullyRandomSquads = false;
                 }
                 if (ConfigData.IsUserLoadingCustomEnemySquads)
                 {
-                    UseFullyRandomEnemySquads = false;
+                    Stage.UseFullyRandomEnemySquads = false;
                 }
             }
             else
@@ -197,11 +154,11 @@ namespace Assets.Scripts.Levels
 
             _obstacleLists = new Dictionary<int, List<GameObject>>()
             {
-                {0, EmptyObstacleList }, // it's important to have this here so we choose an empty level for testing
-                {1, MazePrefabs },
-                {2, ThreePathsPrefabs },
-                {3, ForestPrefabs },
-                {4, TheWallPrefabs }
+                {0, Stage.Prefabs.EmptyObstacleList }, // it's important to have this here so we choose an empty level for testing
+                {1, Stage.Prefabs.MazePrefabs },
+                {2, Stage.Prefabs.ThreePathsPrefabs },
+                {3, Stage.Prefabs.ForestPrefabs },
+                {4, Stage.Prefabs.TheWallPrefabs }
             };
 
             if (Stage.ActivateBrains)
@@ -221,33 +178,27 @@ namespace Assets.Scripts.Levels
 
 
             // Setup Game State
-            _state = gameObject.AddComponent<GameState>();
-            _state.Setup(this);
+            State = gameObject.AddComponent<GameState>();
+            State.Setup(this);
 
             if (IsTraining)
             {
                 Invoke(nameof(TimeOut), Stage.TimeoutTime);
             }
             SetupLevel();
-
-
-
-
-            Name = name;
-            gameObject.name = $"Level - {Name}";
         }
 
         private void RandomizeOptions()
         {
-            Debug.Log($"Randomizing options...");
+            //Debug.Log($"Randomizing options...");
             //Debug.Log($"Level selection option: {ConfigData.SelectedLevelMapIndex}");
 
             if (CurrentLevelOptions.MapIndex == -1)
             {
-                CurrentLevelOptions.MapIndex = Utilities.RandomInt(Maps.Count);              
+                CurrentLevelOptions.MapIndex = Utilities.RandomInt(Stage.Prefabs.Maps.Count);              
             }
             MapData = ConfigData.Maps[CurrentLevelOptions.MapIndex];
-            Map = Instantiate(Maps[CurrentLevelOptions.MapIndex]).GetComponent<UI_Components.Map>();
+            Map = Instantiate(Stage.Prefabs.Maps[CurrentLevelOptions.MapIndex]).GetComponent<UI_Components.Map>();
             Debug.Log($"Playing on the {MapData.Name} ({Map.Name}) at index #{CurrentLevelOptions.MapIndex} map");
 
             if (((CurrentLevelOptions.ObstacleMapIndex == -1 && Utilities.CoinToss()) || CurrentLevelOptions.ObstacleMapIndex > 0) && !IsTraining) // User chose random and random chose obstacles OR user chose obstacles
@@ -277,7 +228,7 @@ namespace Assets.Scripts.Levels
                 if (((CurrentLevelOptions.AsteroidOption == -1 && Utilities.CoinToss()) || CurrentLevelOptions.AsteroidOption > 0) && !IsTraining) // User chose random and random chose asteroids OR User chose asteroids
                 {
                     HasObstacles = true;
-                    _chosenObstacles = EmptyObstacleList;
+                    _chosenObstacles = Stage.Prefabs.EmptyObstacleList;
                     CurrentLevelOptions.ObstacleMapIndex = 0;
                     ActivateCollisionAsteroids = true;
                     Debug.Log($"The map has asteroids but not obstacles");
@@ -331,12 +282,12 @@ namespace Assets.Scripts.Levels
         }
         public void CalculateShipClearances()
         {
-            List<Ship> ships = GetState().GetShips();
+            List<Ship> ships = State.GetShips();
             while (ships.Count > 0)
             {
                 string shipType = ships[0].ShipType;
 
-                if (!ShipClearances.ContainsKey(shipType))
+                if (!Stage.ShipClearances.ContainsKey(shipType))
                 {
                     float width = ships[0].GetHalfWidth();
                     float height = ships[0].GetHalfHeight();
@@ -350,7 +301,7 @@ namespace Assets.Scripts.Levels
                     clearance += 2; // 2 for padding
                     clearance = Math.Max(clearance, ConfigData.MinimumClearance);
 
-                    ShipClearances.Add(shipType, clearance);
+                    Stage.ShipClearances.Add(shipType, clearance);
                     ships.ForEach((s) =>
                     {
                         if (s.ShipType == shipType)
@@ -373,58 +324,55 @@ namespace Assets.Scripts.Levels
         }
         private void SpawnObstacles()
         {
-            GameState state = GetState();
-            CurrentAsteroidMaxSpawnRate = AsteroidMaxSpawnRate;
-            CurrentAsteroidMinimumSpawnRate = AsteroidMinimumSpawnRate;
+            Stage.CurrentAsteroidMaxSpawnRate = Stage.AsteroidMaxSpawnRate;
+            Stage.CurrentAsteroidMinimumSpawnRate = Stage.AsteroidMinimumSpawnRate;
             _chosenObstacles.ForEach((prefab) =>
             {
                 Vector2 position = prefab.transform.position;
                 GameObject instance = Instantiate(prefab);
                 instance.transform.parent = Map.transform;
                 instance.transform.localPosition = position;
-                state.AddObstacle(instance.GetComponent<Obstacle>());
+                State.AddObstacle(instance.GetComponent<Obstacle>());
             });
 
             if (ActivateCollisionAsteroids)
             {
                 if (CurrentLevelOptions.AsteroidOption == 2)
                 {
-                    CurrentAsteroidMaxSpawnRate /= 2;
-                    CurrentAsteroidMinimumSpawnRate /= 2;
+                    Stage.CurrentAsteroidMaxSpawnRate /= 2;
+                    Stage.CurrentAsteroidMinimumSpawnRate /= 2;
                 }
-                Invoke(nameof(SpawnAsteroid), AsteroidMinimumSpawnRate + Utilities.RandomInt(CurrentAsteroidMaxSpawnRate - CurrentAsteroidMinimumSpawnRate));
+                Invoke(nameof(SpawnAsteroid), Stage.AsteroidMinimumSpawnRate + Utilities.RandomInt(Stage.CurrentAsteroidMaxSpawnRate - Stage.CurrentAsteroidMinimumSpawnRate));
             }
         }
         private void SpawnMiningAsteroids()
         {
-            GameState state = GetState();
-            MiningAsteroidPrefabs.ForEach((prefab) =>
+            Stage.Prefabs.MiningAsteroidPrefabs.ForEach((prefab) =>
             {
                 Vector2 position = prefab.transform.position;
                 GameObject instance = Instantiate(prefab);
                 instance.transform.parent = Map.transform;
                 instance.transform.localPosition = position;
                 MiningAsteroid asteroid = instance.GetComponent<MiningAsteroid>();
-                state.AddObstacle(asteroid);
-                state.MiningAsteroids.Add(asteroid);
-                asteroid.Setup(this, state.GetId());
+                State.AddObstacle(asteroid);
+                State.MiningAsteroids.Add(asteroid);
+                asteroid.Setup(this, State.GetId());
 
             });
         }
         private void SpawnAsteroid()
         {
-            GameObject instance = Instantiate(CollisionAsteroidPrefabs[Utilities.RandomInt(CollisionAsteroidPrefabs.Count)]);
+            GameObject instance = Instantiate(Stage.Prefabs.CollisionAsteroidPrefabs[Utilities.RandomInt(Stage.Prefabs.CollisionAsteroidPrefabs.Count)]);
             AddAsteroid(instance);
-            Invoke(nameof(SpawnAsteroid), AsteroidMinimumSpawnRate + Utilities.RandomInt(CurrentAsteroidMaxSpawnRate - CurrentAsteroidMinimumSpawnRate));
+            Invoke(nameof(SpawnAsteroid), Stage.AsteroidMinimumSpawnRate + Utilities.RandomInt(Stage.CurrentAsteroidMaxSpawnRate - Stage.CurrentAsteroidMinimumSpawnRate));
         }
 
         public CollisionAsteroid AddAsteroid(GameObject instance)
         {
-            GameState state = GetState();
             instance.transform.parent = Map.transform;
             CollisionAsteroid asteroid = instance.GetComponent<CollisionAsteroid>();
-            state.AddObstacle(asteroid);
-            asteroid.Setup(this, state.GetId());
+            State.AddObstacle(asteroid);
+            asteroid.Setup(this, State.GetId());
 
             asteroid.MapPointsIndex = Pathfinder.AddObstacle(asteroid);
             return asteroid;
@@ -435,7 +383,7 @@ namespace Assets.Scripts.Levels
 
             Triggers.Add(new Trigger(() =>
             {
-                return Time.realtimeSinceStartup - StartTime >= CurrentLevelOptions.EnemyReinforcementDelay;
+                return Time.realtimeSinceStartup - Stage.StartTime >= CurrentLevelOptions.EnemyReinforcementDelay;
             }, () =>
             {
                 Debug.Log($"{CurrentLevelOptions.EnemyReinforcementDelay} seconds have passed, spawning new enemy ships for side {ConfigData.Configuration.AISide}: {Utilities.ListToString(CurrentLevelOptions.EnemyReinforcements)}");
@@ -481,16 +429,15 @@ namespace Assets.Scripts.Levels
             //{
             //    RLSocket.Update();
             //}
-            GameState state = GetState();
-            if (state.GameOver && !state.LevelEnded)
+            if (State.GameOver && !State.LevelEnded)
             {
-                if (!state.CanUserKeepMining())
+                if (!State.CanUserKeepMining())
                 {
                     LevelOver();
                 }
             }
 
-            if ((state.IsPaused || ConfigData.SocketManager.NetworkDisconnection.IsOpen || !IsLevelConnectedToServer) && !Stage.IsTraining)
+            if ((State.IsPaused || ConfigData.SocketManager.NetworkDisconnection.IsOpen || !IsLevelConnectedToServer) && !Stage.IsTraining)
             {
                 if (IsPausedByTester && Stage.InputManager.HasPauseInput() && Time.realtimeSinceStartup - TimePaused > 1)
                 {
@@ -510,10 +457,6 @@ namespace Assets.Scripts.Levels
             }
 
         }
-        private void FixedUpdate()
-        {
-            FixedUpdates++;
-        }
 
         /// <summary>
         /// Ends the level and marks the winner
@@ -524,9 +467,8 @@ namespace Assets.Scripts.Levels
             {
                 Pause();
                 //Debug.Log("LEVEL OVER!");
-                GameState state = GetState();
 
-                state.GetAllSquads().ForEach((squad) =>
+                State.GetAllSquads().ForEach((squad) =>
                 {
                     if (squad.HasCommand)
                     {
@@ -534,17 +476,17 @@ namespace Assets.Scripts.Levels
                     }
                 });
 
-                state.LevelEnded = true;
+                State.LevelEnded = true;
                 float fps = Time.frameCount / Time.unscaledTime;
-                float fups = FixedUpdates / Time.unscaledTime;
-                ConfigData.__TotalLength += Time.realtimeSinceStartup - StartTime;
+                float fups = Stage.FixedUpdates / Time.unscaledTime;
+                ConfigData.__TotalLength += Time.realtimeSinceStartup - Stage.StartTime;
                 ConfigData.__AverageLatency = ConfigData.__TotalLatency / ConfigData.__TotalRequests;
 
                 Debug.Log($"{$"fps: {fps}".PadRight(10).Substring(0, 10)}  {$"fups: {fups}".PadRight(10).Substring(0, 10)}     " +
                       $"{$"latency: {(int)(ConfigData.__AverageLatency * 1000)}ms".PadRight(18)} {$"CPS: {ConfigData.__HivemindCommands / Time.unscaledTime}".PadRight(9).Substring(0, 9)}   " +
                       $"LTO: {ConfigData.__LevelTimeouts} AveLT: {(int)ConfigData.__AverageLength}s");
 
-                if (state.IsSideKilled(ConfigData.Configuration.BeeSide) && !state.IsSideKilled(ConfigData.Configuration.HumanSide))
+                if (State.IsSideKilled(ConfigData.Configuration.BeeSide) && !State.IsSideKilled(ConfigData.Configuration.HumanSide))
                 {
                     WinningSide = ConfigData.Configuration.HumanSide;
                     if (!ConfigData.IsPlayingCampaign)
@@ -553,7 +495,7 @@ namespace Assets.Scripts.Levels
                         ConfigData.GetUserProgressData().Save();
                     }
                 }
-                else if (state.IsSideKilled(ConfigData.Configuration.HumanSide) && !state.IsSideKilled(ConfigData.Configuration.BeeSide))
+                else if (State.IsSideKilled(ConfigData.Configuration.HumanSide) && !State.IsSideKilled(ConfigData.Configuration.BeeSide))
                 {
                     WinningSide = ConfigData.Configuration.BeeSide;
                     if (!ConfigData.IsPlayingCampaign)
@@ -562,7 +504,7 @@ namespace Assets.Scripts.Levels
                         ConfigData.GetUserProgressData().Save();
                     }
                 }
-                else if (state.IsSideKilled(ConfigData.Configuration.HumanSide) && state.IsSideKilled(ConfigData.Configuration.BeeSide))
+                else if (State.IsSideKilled(ConfigData.Configuration.HumanSide) && State.IsSideKilled(ConfigData.Configuration.BeeSide))
                 {
                     Debug.Log("Both sides are dead!");
                 }
@@ -594,7 +536,7 @@ namespace Assets.Scripts.Levels
                 }
                 else
                 {
-                    if (GetState().FireBargeExplosions.Count > 0)
+                    if (State.FireBargeExplosions.Count > 0)
                     {
                         Invoke(nameof(SaveAndEnd), 5f);
 
@@ -620,16 +562,15 @@ namespace Assets.Scripts.Levels
             Academy.Instance.StatsRecorder.Add("Episode Time", Seconds);
 
             //Debug.Log($"Reset level ({Seconds}), Unclamped Bee reward: {BeeCumaltiveReward}, Unclamped Human reward: {HumanCumulativeReward}");
-            GameState state = GetState();
-            Ship[] ships = state.GetShips().ToArray();
+            Ship[] ships = State.GetShips().ToArray();
 
-            state.GameOver = false;
-            state.LevelEnded = false;
+            State.GameOver = false;
+            State.LevelEnded = false;
             float remainingHumanTsv = ships.Where((s) => s.Side == ConfigData.Configuration.HumanSide).Sum((s) => s.Tsv);
-            float remainingHumanTSVPercentage = remainingHumanTsv / state.InitialTsv[ConfigData.Configuration.HumanSide - 1];
+            float remainingHumanTSVPercentage = remainingHumanTsv / State.InitialTsv[ConfigData.Configuration.HumanSide - 1];
 
             float remainingBeeTsv = ships.Where((s) => s.Side == ConfigData.Configuration.BeeSide).Sum((s) => s.Tsv);
-            float remainingBeeTSVPercentage = remainingBeeTsv / state.InitialTsv[ConfigData.Configuration.BeeSide - 1];
+            float remainingBeeTSVPercentage = remainingBeeTsv / State.InitialTsv[ConfigData.Configuration.BeeSide - 1];
 
             //if (Utilities.RandomInt(10) > 7)
             //{
@@ -660,7 +601,7 @@ namespace Assets.Scripts.Levels
 
             if (!isStepTimeout)
             {
-                if (state.IsSideKilled(ConfigData.Configuration.HumanSide) && !state.IsSideKilled(ConfigData.Configuration.BeeSide))
+                if (State.IsSideKilled(ConfigData.Configuration.HumanSide) && !State.IsSideKilled(ConfigData.Configuration.BeeSide))
                 {
                     //WinningSide = ConfigData.Configuration.BeeSide;
                     //Debug.Log($"Bees won! They had {remainingBeeTsv} / {state.InitialTsv[ConfigData.Configuration.BeeSide - 1]} remaining TSV or {remainingBeeTSVPercentage} x of the original.");
@@ -672,7 +613,7 @@ namespace Assets.Scripts.Levels
                     //Debug.Log($"Bees won! Lost {LostBeeShips} bees, reward: {BeeCumaltiveReward}, {HumanCumulativeReward}");
 
                 }
-                else if (state.IsSideKilled(ConfigData.Configuration.BeeSide) && !state.IsSideKilled(ConfigData.Configuration.HumanSide))
+                else if (State.IsSideKilled(ConfigData.Configuration.BeeSide) && !State.IsSideKilled(ConfigData.Configuration.HumanSide))
                 {
                     //Debug.Log($"Humans won! They had {remainingHumanTsv} / {state.InitialTsv[ConfigData.Configuration.HumanSide - 1]} remaining TSV or {remainingHumanTSVPercentage} x of the original.");
 
@@ -694,7 +635,7 @@ namespace Assets.Scripts.Levels
                 HumanAgentGroup.EndGroupEpisode();
             }
 
-            state.SpottedShips = new List<SpottedShip>[] { new List<SpottedShip>(), new List<SpottedShip>() };
+            State.SpottedShips = new List<SpottedShip>[] { new List<SpottedShip>(), new List<SpottedShip>() };
 
 
             for (int i = 0; i < ships.Length; i++)
@@ -712,7 +653,7 @@ namespace Assets.Scripts.Levels
         /// </summary>
         public void SetupLevel()
         {
-            StartTime = Time.realtimeSinceStartup;
+            //StartTime = Time.realtimeSinceStartup;
 
 
             if (ConfigData.ChooseRandomLevel)
@@ -727,6 +668,15 @@ namespace Assets.Scripts.Levels
             else
             {
                 CurrentLevelOptions = (LevelOptions)ConfigData.LevelOptions.Clone();
+            }
+
+            if (Stage.GeneratedSquadCountOverride > 0)
+            {
+                CurrentLevelOptions.EnemySquadGenerationCount = Stage.GeneratedSquadCountOverride;
+            }
+            if (CurrentLevelOptions.EnemySquadGenerationCount > 0)
+            {
+                CurrentLevelOptions.EnemySquadGenerationCount = Utilities.RandomInt(CurrentLevelOptions.EnemySquadGenerationCount) + 1;
             }
 
             // Reset any data that might have changed from a previous level
@@ -748,19 +698,19 @@ namespace Assets.Scripts.Levels
             //Debug.Log($"The AI Starting position is {AIStartingPosition}, the user starting position is {UserStartingPosition}");
 
             //Debug.Log($"Chosen squads: {Utilities.ListToString(CurrentLevelOptions.ChosenSquads)}");
-            if (HasRandomizedOptions)
+            if (Stage.HasRandomizedOptions)
             {
                 RandomizeOptions();
             }
             else
             {
                 Debug.Log($"The map does not have randomized options");
-                CurrentLevelOptions.MapIndex = OverrideMapIndex;
+                CurrentLevelOptions.MapIndex = Stage.OverrideMapIndex;
                 MapData = ConfigData.Maps[CurrentLevelOptions.MapIndex];
-                Map = Instantiate(Maps[CurrentLevelOptions.MapIndex]).GetComponent<UI_Components.Map>();
+                Map = Instantiate(Stage.Prefabs.Maps[CurrentLevelOptions.MapIndex]).GetComponent<UI_Components.Map>();
 
                 
-                CurrentLevelOptions.ObstacleMapIndex = OverrideObstacleMapIndex;
+                CurrentLevelOptions.ObstacleMapIndex = Stage.OverrideObstacleMapIndex;
                 _chosenObstacles = _obstacleLists.GetValueOrDefault(CurrentLevelOptions.ObstacleMapIndex);
             }
             SetupMapAndCamera();
@@ -789,8 +739,8 @@ namespace Assets.Scripts.Levels
 
             SetupHivemind();
 
-            float end = (Time.realtimeSinceStartup - StartTime) * 1000; // seconds to milliseconds
-            Debug.Log($"It took {Math.Round(end, 2)} ms to set up the level and {Math.Round(Time.realtimeSinceStartup, 2)}s total time.");
+            //float end = (Time.realtimeSinceStartup - StartTime) * 1000; // seconds to milliseconds
+            //Debug.Log($"It took {Math.Round(end, 2)} ms to set up the level and {Math.Round(Time.realtimeSinceStartup, 2)}s total time.");
         }
         /// <summary>
         /// Cleans up the game state and requests and deletes the previous map
@@ -798,10 +748,9 @@ namespace Assets.Scripts.Levels
         public void ResetGameData()
         {
             ConfigData.CurrentShips.ReplaceDeadSquadShips();
-            GameState state = GetState();
-            state.ResetState();
-            state.GameOver = false;
-            state.LevelEnded = false;
+            State.ResetState();
+            State.GameOver = false;
+            State.LevelEnded = false;
             Seconds = 0;
             //Socket.StandingRequests.Clear();
             ConfigData.Socket.HandledRequests.Except(HandledRequests);
@@ -823,9 +772,9 @@ namespace Assets.Scripts.Levels
             CancelInvoke(nameof(GetHiveMindCommands));
             if (Stage.ActivateHiveMind)
             {
-                Invoke(nameof(GetHiveMindCommands), InitialCommandDelay);
+                Invoke(nameof(GetHiveMindCommands), Stage.InitialCommandDelay);
             }
-            if (IsDebugging)
+            if (Stage.IsDebugging)
             {
                 InvokeRepeating(nameof(UpdateDebugVariables), 1, 1);
             }
@@ -867,14 +816,13 @@ namespace Assets.Scripts.Levels
             //}
             LevelConstructor.SetupShips(ConfigData.Configuration.AISide);
             LevelConstructor.SetupShips(ConfigData.Configuration.UserSide);
-            GameState state = GetState();
-            if (state.GetSquadsBySide(ConfigData.Configuration.UserSide).Count > 0 && state.GetSquadsBySide(ConfigData.Configuration.AISide).Count > 0 && !IsTraining)
+            if (State.GetSquadsBySide(ConfigData.Configuration.UserSide).Count > 0 && State.GetSquadsBySide(ConfigData.Configuration.AISide).Count > 0 && !IsTraining)
             {
-                state.SelectSquad(state.GetSquadByNumber(ConfigData.Configuration.UserSide, 1));
+                State.SelectSquad(State.GetSquadByNumber(ConfigData.Configuration.UserSide, 1));
             }
             else if (!IsTraining)
             {
-                Debug.Log($"User squads: {state.GetSquadsBySide(ConfigData.Configuration.UserSide).Count}, AI squads: {state.GetSquadsBySide(ConfigData.Configuration.AISide).Count}");
+                Debug.Log($"User squads: {State.GetSquadsBySide(ConfigData.Configuration.UserSide).Count}, AI squads: {State.GetSquadsBySide(ConfigData.Configuration.AISide).Count}");
                 Pause();
                 Stage.Menus.NoAliveShipsAlert.SetActive(true);
             }
@@ -911,7 +859,7 @@ namespace Assets.Scripts.Levels
             {
                 Stage.SetupCamera();
 
-                SquadTabs.ForEach((tab) =>
+                Stage.SquadTabs.ForEach((tab) =>
                 {
                     tab.Background.GetComponent<UnityEngine.UI.Image>().color = Color.white;
                     tab.HideTab();
@@ -959,10 +907,9 @@ namespace Assets.Scripts.Levels
             //Debug.Log($"Saving and ending");
 
 
-            GameState state = GetState();
-            state.StoreCommands();
+            State.StoreCommands();
 
-            if (RecordStats && !IsTraining)
+            if (Stage.RecordStats && !IsTraining)
             {
 
                 for (int i = 0; i < AllSquads.Count; i++)
@@ -1002,38 +949,6 @@ namespace Assets.Scripts.Levels
                     });
 
                 }
-                //for (int i = 0; i < ConfigData.SquadsChosenForLevel.Count; i++)
-                //{
-                //    SavedSquad savedSquad = ConfigData.SquadsChosenForLevel[i];
-                //    if (savedSquad.HasBeenSavedToStorage)
-                //    {
-                //        savedSquad = ConfigData.AllShips.GetSavedSquad(savedSquad.Id);
-                //    }
-                //    else
-                //    {
-                //        Debug.Log($"B: {savedSquad.Name} has not been saved to storage #{savedSquad.Id}");
-                //        continue;
-                //    }
-                //    Debug.Log($"Saving stats for {savedSquad.Name}: " +
-                //    $"Battles Fought: {savedSquad.Stats.BattlesFought} " +
-                //    $"Battles Won: {savedSquad.Stats.BattlesWon} " +
-                //    $"Ships Lost: {savedSquad.Stats.ShipsLost} " +
-                //    $"Damage Done: {savedSquad.Stats.DamageDone} " +
-                //    $"Damage Received: {savedSquad.Stats.DamageReceived} " +
-                //    $"Kills: {savedSquad.Stats.Kills} ");
-
-                //    savedSquad.GetShips().ForEach((squadShip) =>
-                //    {
-                //        FleetShip fleetShip = squadShip.GetFleetShip();
-                //        Debug.Log($"Saving stats for {fleetShip.Name}: " +
-                //        $"Battles Fought: {fleetShip.BattlesFought} " +
-                //        $"Battles Won: {fleetShip.BattlesWon} " +
-                //        $"Damage Done: {fleetShip.DamageDone} " +
-                //        $"Damage Received: {fleetShip.DamageReceived} " +
-                //        $"Shots Fired: {fleetShip.ShotsFired} " +
-                //        $"Kills: {fleetShip.Kills} ");
-                //    });
-                //}
 
                 ConfigData.CurrentShips.SaveFleetData();
                 ConfigData.CurrentShips.SaveSquadData();
@@ -1045,7 +960,7 @@ namespace Assets.Scripts.Levels
                 
             }
             //Debug.Log($"Resetting scene");
-            Ship[] ships = state.GetShips().ToArray(); // need to convert this to an array because killing a ship removes it from the list of ships in the state
+            Ship[] ships = State.GetShips().ToArray(); // need to convert this to an array because killing a ship removes it from the list of ships in the state
 
             for (int i = 0; i < ships.Length; i++)
             {
@@ -1057,7 +972,7 @@ namespace Assets.Scripts.Levels
             {
                 Destroy(command);
             });
-            Obstacle[] obstacles = state.GetObstacles().ToArray();
+            Obstacle[] obstacles = State.GetObstacles().ToArray();
             for (int i = 0; i < obstacles.Length; i++)
             {
                 Obstacle obstacle = obstacles[i];
@@ -1074,10 +989,10 @@ namespace Assets.Scripts.Levels
                 }
             }
 
-            while (state.Deadbodies.Count > 0)
+            while (State.Deadbodies.Count > 0)
             {
-                ShipRemains deadbody = state.Deadbodies[0];
-                state.Deadbodies.Remove(deadbody);
+                ShipRemains deadbody = State.Deadbodies[0];
+                State.Deadbodies.Remove(deadbody);
 
             }
 
@@ -1173,11 +1088,11 @@ namespace Assets.Scripts.Levels
             {
                 Stage.Audio.Pause();
             }
-            GetState().IsPaused = true;
+            State.IsPaused = true;
         }
         public void UnPause()
         {
-            GetState().IsPaused = false;
+            State.IsPaused = false;
             if (Stage.Audio != null && Stage.PlayMusic)
             {
                 Stage.Audio.Play();
@@ -1190,7 +1105,6 @@ namespace Assets.Scripts.Levels
             instance = Instantiate(instance, new Vector2(0, 0), Quaternion.identity);
             instance.transform.parent = Map.transform;
             Projectile projectile = (Projectile) instance.GetComponent(typeof(Projectile));
-            GameState state = GetState();
             Ship shooter = weapon.Ship;
             Ship target = weapon.TargetShip;
             int power = weapon.Power;
@@ -1200,21 +1114,17 @@ namespace Assets.Scripts.Levels
                 power /= 2;
             }
             //Debug.Log($"Position before setup for {projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
-            projectile.Setup(this, shooter.Side, state.GetId(), weapon, shooter, target, startingPosition, angle, weapon.Range, power);
+            projectile.Setup(this, shooter.Side, State.GetId(), weapon, shooter, target, startingPosition, angle, weapon.Range, power);
             shooter.ProjectilesInFlight.Add(projectile);
             //Debug.Log($"Position after setup for #{projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
             return projectile;
         }
-        public GameState GetState()
-        {
-            return _state;
-        }
         private void GetHiveMindCommands()
         {
             //Debug.Log("Giving command");
-            if (!IsPaused && Stage.ActivateHiveMind && IsLevelSetupOnServer)
+            if (!State.IsPaused && Stage.ActivateHiveMind && IsLevelSetupOnServer)
             {
-                Queue<Squad> squads = GetState().GetSquadsAwaitingHiveMindCommands();  
+                Queue<Squad> squads = State.GetSquadsAwaitingHiveMindCommands();  
                 while (squads.Count > 0)
                 {
                     Squad squad = squads.Dequeue();

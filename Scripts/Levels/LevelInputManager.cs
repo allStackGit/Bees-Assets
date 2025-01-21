@@ -289,7 +289,7 @@ namespace Assets.Scripts.Levels
         {
             if (!IsShowingRanges)
             {
-                Level.GetState().GetSelectedSquads().ForEach(s => {
+                Level.State.GetSelectedSquads().ForEach(s => {
                     if (!s.IsShowingRanges)
                     {
                         s.ShowSquadRanges();
@@ -299,7 +299,7 @@ namespace Assets.Scripts.Levels
             }
             else
             {
-                Level.GetState().GetSelectedSquads().ForEach(s => {
+                Level.State.GetSelectedSquads().ForEach(s => {
                     if (s.IsShowingRanges)
                     {
                         s.HideSquadRanges();
@@ -312,7 +312,7 @@ namespace Assets.Scripts.Levels
         {
             if (!IsFiringManually)
             {
-                Level.GetState().GetSelectedSquads().ForEach(squad => {
+                Level.State.GetSelectedSquads().ForEach(squad => {
                     squad.GetShips().ForEach((ship) =>
                     {
                         ship.Turrets.ForEach((turret) =>
@@ -347,15 +347,14 @@ namespace Assets.Scripts.Levels
                 squadNumber = 10;
             }
 
-            GameState state = Level.GetState();
-            int friendlySquads = state.OriginalSquadCounts[ConfigData.Configuration.UserSide - 1];
+            int friendlySquads = Level.State.OriginalSquadCounts[ConfigData.Configuration.UserSide - 1];
             squadNumber %= friendlySquads;
             if (squadNumber == 0)
             {
                 squadNumber = friendlySquads;
             }
 
-            Squad squad = state.GetSquadByNumber(ConfigData.Configuration.UserSide, squadNumber);
+            Squad squad = Level.State.GetSquadByNumber(ConfigData.Configuration.UserSide, squadNumber);
             if (squad != null)
             {
                 Vector2 position = squad.GetPosition();
@@ -364,7 +363,7 @@ namespace Assets.Scripts.Levels
                 MaintainScrollBoundary();
             }
             //Debug.Log("Pressed " + squadNumber);
-            state.SelectSquad(squad);
+            Level.State.SelectSquad(squad);
         }
         public void Update()
         {
@@ -481,18 +480,18 @@ namespace Assets.Scripts.Levels
                 _scrollNegative = true;
             }
 
-            if (mouse.x < Utilities.WorldUnitsToScreenPixels(Level.MouseScrollDistanceFromEdge, Stage.Camera).x)   
+            if (mouse.x < Utilities.WorldUnitsToScreenPixels(Stage.MouseScrollDistanceFromEdge, Stage.Camera).x)   
             {
                 _mouseAtLeftEdge = true;
-            }else if (mouse.x >= ConfigData.ScreenWidth - Utilities.WorldUnitsToScreenPixels(Level.MouseScrollDistanceFromEdge, Stage.Camera).x)
+            }else if (mouse.x >= ConfigData.ScreenWidth - Utilities.WorldUnitsToScreenPixels(Stage.MouseScrollDistanceFromEdge, Stage.Camera).x)
             {
                 _mouseAtRightEdge = true;
             }
 
-            if (mouse.y < Utilities.WorldUnitsToScreenPixels(Level.MouseScrollDistanceFromEdge, Stage.Camera).y)
+            if (mouse.y < Utilities.WorldUnitsToScreenPixels(Stage.MouseScrollDistanceFromEdge, Stage.Camera).y)
             {
                 _mouseAtBottomEdge = true;
-            }else if (mouse.y >= ConfigData.ScreenHeight - Utilities.WorldUnitsToScreenPixels(Level.MouseScrollDistanceFromEdge, Stage.Camera).y)
+            }else if (mouse.y >= ConfigData.ScreenHeight - Utilities.WorldUnitsToScreenPixels(Stage.MouseScrollDistanceFromEdge, Stage.Camera).y)
             {
                 _mouseAtTopEdge = true;
             }
@@ -520,7 +519,7 @@ namespace Assets.Scripts.Levels
         {
             if (Stage.Camera.orthographicSize == Level.Map.MaxZoom)
             {
-                Stage.Camera.orthographicSize = Level.DefaultZoom;
+                Stage.Camera.orthographicSize = Stage.DefaultZoom;
             }
             else
             {
@@ -635,7 +634,7 @@ namespace Assets.Scripts.Levels
             }
             if (HasPauseInput())
             {
-                if (!Level.IsPaused && Time.realtimeSinceStartup - Level.TimePaused > 1)
+                if (!Level.State.IsPaused && Time.realtimeSinceStartup - Level.TimePaused > 1)
                 {
                     Level.IsPausedByTester = true;
                     Level.TimePaused = Time.realtimeSinceStartup;
@@ -645,7 +644,7 @@ namespace Assets.Scripts.Levels
                 }
             }
             
-            if (!Level.IsPaused)
+            if (!Level.State.IsPaused)
             {
                 //Debug.Log($"EVS: {EventSystem.IsPointerOverGameObject()}");
                 CheckClickCollision();
@@ -733,9 +732,9 @@ namespace Assets.Scripts.Levels
                     }
                 }
 
-                float mouseScrollSpeed = Level.ScrollSpeed * 5 * Time.deltaTime;
+                float mouseScrollSpeed = Stage.ScrollSpeed * 5 * Time.deltaTime;
 
-                if (Level.UseMouseScrolling)
+                if (Stage.UseMouseScrolling)
                 {
                     if (_mouseAtLeftEdge)
                     {
@@ -780,7 +779,7 @@ namespace Assets.Scripts.Levels
         private void SetSelectingGuard(Ship ship)
         {
             //Debug.Log($"Selecting {ship.name} for guarding");
-            Level.GetState().GetSelectedSquads().ForEach((squad) =>
+            Level.State.GetSelectedSquads().ForEach((squad) =>
             {
                 squad.UserGuard(ship.Squad); // make all selected ships guard this squad
             });
@@ -789,8 +788,7 @@ namespace Assets.Scripts.Levels
         private bool CheckForSelectingSquad()
         {
             //Debug.Log("Didn't click on a ship, looking for nearby ships");
-            GameState state = Level.GetState();
-            List<Ship> ships = state.GetShips(ConfigData.Configuration.UserSide);
+            List<Ship> ships = Level.State.GetShips(ConfigData.Configuration.UserSide);
             Squad potentialSquad = null;
             Vector2 levelPosition = _mousePosition - Level.GetPosition();
 
@@ -807,15 +805,15 @@ namespace Assets.Scripts.Levels
             {
                 if (HasEitherControlKey())
                 {
-                    state.AddSelectedSquad(potentialSquad);
+                    Level.State.AddSelectedSquad(potentialSquad);
                 }
                 else if (_leftMouseDoubleClicked)
                 {
-                    Level.GetState().SelectSquadsByShipType(_clickedShip.ShipType);
+                    Level.State.SelectSquadsByShipType(_clickedShip.ShipType);
                 }
                 else
                 {
-                    state.SelectSquad(potentialSquad);
+                    Level.State.SelectSquad(potentialSquad);
                 }
                 //Debug.Log($"Mouse was close enough to ${potentialSquad.Name}");
                 return true;
@@ -824,8 +822,7 @@ namespace Assets.Scripts.Levels
         }
         private bool CheckForAttackAISquad()
         {
-            GameState state = Level.GetState();
-            List<Ship> ships = state.GetShips(ConfigData.Configuration.AISide);
+            List<Ship> ships = Level.State.GetShips(ConfigData.Configuration.AISide);
             Squad potentialSquad = null;
             Vector2 levelPosition = _mousePosition - Level.GetPosition();
 
@@ -849,7 +846,7 @@ namespace Assets.Scripts.Levels
         }
         private void MoveSquads(Vector2 targetPosition)
         {
-            Level.GetState().GetSelectedSquads().ForEach((squad) =>
+            Level.State.GetSelectedSquads().ForEach((squad) =>
             {
                 Vector2 localized = targetPosition - Level.GetPosition();
                 //Debug.Log($"Squad: {squad.Name} World point target position: {targetPosition}, localized: {localized}");
@@ -869,14 +866,14 @@ namespace Assets.Scripts.Levels
         }
         private void SetSquadsToMine(MiningAsteroid asteroid)
         {
-            Level.GetState().GetSelectedSquads().ForEach((squad) =>
+            Level.State.GetSelectedSquads().ForEach((squad) =>
             {
                 squad.UserMining(asteroid);
             });
         }
         private void SetSquadsToFullRetreat(WarpGate warpGate)
         {
-            Level.GetState().GetSelectedSquads().ForEach((squad) =>
+            Level.State.GetSelectedSquads().ForEach((squad) =>
             {
                 if (squad.GetShips().Any((s) => s.ShipType != "Warp Gate"))
                 {
@@ -889,8 +886,7 @@ namespace Assets.Scripts.Levels
             //Debug.Log($"Checking to select for patrol area: {_selectingPatrolArea}");
             if (_selectingPatrolArea)
             {
-                GameState state = Level.GetState();
-                state.GetSelectedSquads().ForEach((squad) =>
+                Level.State.GetSelectedSquads().ForEach((squad) =>
                 {
                     Vector2 startingPosition = _mouseDownPosition - Level.GetPosition();
                     Vector2 endingPosition = _mousePosition - Level.GetPosition();
@@ -974,7 +970,7 @@ namespace Assets.Scripts.Levels
                 //Debug.Log($"_clickedShip is not null, running click action");
                 if (_leftMouseDoubleClicked)
                 {
-                    Level.GetState().SelectSquadsByShipType(_clickedShip.ShipType);
+                    Level.State.SelectSquadsByShipType(_clickedShip.ShipType);
                 }
                 else
                 {
@@ -1004,7 +1000,7 @@ namespace Assets.Scripts.Levels
         {
             if (scrollSpeed == 0)
             {
-                scrollSpeed = Level.ScrollSpeed;
+                scrollSpeed = Stage.ScrollSpeed;
             }
             Vector3 position = Stage.Camera.transform.position;
             Stage.Camera.transform.position = new Vector3(position.x + scrollSpeed, position.y, -10);
@@ -1015,7 +1011,7 @@ namespace Assets.Scripts.Levels
         {
             if (scrollSpeed == 0)
             {
-                scrollSpeed = Level.ScrollSpeed;
+                scrollSpeed = Stage.ScrollSpeed;
             }
             Vector3 position = Stage.Camera.transform.position;
             Stage.Camera.transform.position = new Vector3(position.x - scrollSpeed, position.y, -10);
@@ -1026,7 +1022,7 @@ namespace Assets.Scripts.Levels
         {
             if (scrollSpeed == 0)
             {
-                scrollSpeed = Level.ScrollSpeed;
+                scrollSpeed = Stage.ScrollSpeed;
             }
             Vector3 position = Stage.Camera.transform.position;
             Stage.Camera.transform.position = new Vector3(position.x, position.y + scrollSpeed, -10);
@@ -1037,7 +1033,7 @@ namespace Assets.Scripts.Levels
         {
             if (scrollSpeed == 0)
             {
-                scrollSpeed = Level.ScrollSpeed;
+                scrollSpeed = Stage.ScrollSpeed;
             }
             Vector3 position = Stage.Camera.transform.position;
             Stage.Camera.transform.position = new Vector3(position.x, position.y - scrollSpeed, -10);
@@ -1046,7 +1042,7 @@ namespace Assets.Scripts.Levels
         }
         private void ZoomIn()
         {
-            float difference = -1 * Level.ZoomSpeed;
+            float difference = -1 * Stage.ZoomSpeed;
             if ((Stage.Camera.orthographicSize + difference) < Level.Map.MinZoom)
             {
                 difference = Stage.Camera.orthographicSize - Level.Map.MinZoom;
@@ -1057,7 +1053,7 @@ namespace Assets.Scripts.Levels
         }
         private void ZoomOut()
         {
-            float difference = Level.ZoomSpeed;
+            float difference = Stage.ZoomSpeed;
             if ((Stage.Camera.orthographicSize + difference) > Level.Map.MaxZoom)
             {
                 difference = Stage.Camera.orthographicSize - Level.Map.MaxZoom;

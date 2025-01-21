@@ -55,9 +55,8 @@ namespace Assets.Scripts.Entities
 
                     }
                 });
-                GameState state = Level.GetState();
-                state.RemoveObstacle(this);
-                state.MiningAsteroids.Remove(this);
+                Level.State.RemoveObstacle(this);
+                Level.State.MiningAsteroids.Remove(this);
                 Destroy(gameObject);
             }
 

@@ -204,7 +204,7 @@ namespace Assets.Scripts.Entities.Ships
             __SquadHasReachedDestination = Squad.HasReachedDestination;
             __SquadShips = Squad.GetShips();
             __BannedStrats = Squad.BannedStrats.ToList();
-            __DamageStatuses = Level.GetState().ShipDamageStatuses[Side - 1].Select((ds) => $"{ds.TotalDamageSentToShip} damage sent to {ds.Ship.Name} against {ds.Health} health. Current health: {ds.Ship.Health}").ToList();
+            __DamageStatuses = Level.State.ShipDamageStatuses[Side - 1].Select((ds) => $"{ds.TotalDamageSentToShip} damage sent to {ds.Ship.Name} against {ds.Health} health. Current health: {ds.Ship.Health}").ToList();
             __TargetEnemyShipToFollow = HasTargetEnemyShipToFollow ? $"Following {TargetEnemyShipToFollow.Name} at {TargetEnemyShipToFollow.GetPosition()}" : "None";
             __CommandTargetingQueue = Squad.HasCommand && Squad.Command.HasEnemy ? Squad.Command.TargetingQueue.Select((ship) =>  ship.Name).ToList() : new List<string>();
             __CurrentSpeed = CurrentSpeed;
@@ -213,7 +213,7 @@ namespace Assets.Scripts.Entities.Ships
             __DistanceToTargetCoordinates = DistanceToPoint(TargetCoordinates);
             __TurningRadius = ConfigData.ShipTurningRadius;
             __NearbyShips = HasProximityCollider ? ProximityCollider.NearbyEnemyShips.ToList() : new List<Ship>();
-            __HivemindShips = Level.GetState().GetShipsVisibleToHiveMind(Side).Select(s => s.ToString()).ToList();
+            __HivemindShips = Level.State.GetShipsVisibleToHiveMind(Side).Select(s => s.ToString()).ToList();
             __Clearance = GetClearance();
             __ShipsOnTopOf = ShipsOnTopOf.ToList();
             __IsInBounds = IsInBounds();
@@ -277,7 +277,7 @@ namespace Assets.Scripts.Entities.Ships
 
             Health = shipStats.Health;
             OriginalHealth = Health;
-            Clearance = Level.ShipClearances.GetValueOrDefault(ShipType);
+            Clearance = Stage.ShipClearances.GetValueOrDefault(ShipType);
             Name = $"{ShipType} #{Id}";
             gameObject.name = Name;
             _healthBarFiller = HealthBar.transform.GetChild(0);
@@ -291,12 +291,10 @@ namespace Assets.Scripts.Entities.Ships
             RotationSpeed = Speed * ConfigData.Configuration.RotationMultiplier;
 
 
-            GameState state = Level.GetState();
-
             if (!IsUserControlled)
             {
                 IsHiveMindControlled = true;
-                state.HivemindShips[Side - 1].Add(Id, new HashSet<Ship>());
+                Level.State.HivemindShips[Side - 1].Add(Id, new HashSet<Ship>());
             }
 
 
@@ -412,7 +410,7 @@ namespace Assets.Scripts.Entities.Ships
             else if (fleetShip.Type == "Warp Gate")
             {
                 IsWarpGate = true;
-                state.HasWarpGates = true;
+                Level.State.HasWarpGates = true;
             }
             for (int i = 0; i < shipStats.ProjectileValues.Count; i++)
             {
@@ -495,7 +493,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             // The beehive has an edge collider so it doesn't give accurate measurement of the size of the ship
             _size = ConfigData.ShipSizes[ShipType] / ConfigData.PixelsPerUnit;
             //squad.AddShip(this);
-            state.AddShip(this);
+            Level.State.AddShip(this);
             SetToDefaultAngle();
             SetCurrentSpeed(Speed);
 
@@ -503,7 +501,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             {
                 if (IsMobile)
                 {
-                    MovementMarker = Instantiate(Level.MovementMarkerPrefab, Vector2.zero, Quaternion.identity);
+                    MovementMarker = Instantiate(Level.Stage.Prefabs.MovementMarkerPrefab, Vector2.zero, Quaternion.identity);
                     MovementMarker.transform.SetParent(Level.Map.transform);
                     MovementMarker.SetActive(false);
                     MovementMarker.name = $"{Name}'s Movement Marker";
@@ -546,7 +544,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
             if (ConfigData.Configuration.UserSide == Side && (ShipType == "Factory" || ShipType == "Carpenter Bee"))
             {
-                state.MiningShips.Add(this);
+                Level.State.MiningShips.Add(this);
             }
 
         }
@@ -562,21 +560,12 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 MergePathfindingPaths();
                 PathfindingThreadComplete = false;
             }
-            if (!Level.IsPaused)
+            if (!Level.State.IsPaused)
             {
                 Move();
-                if (!Level.IsTraining)
+                if (Stage.IsDebugging || ShowDebug) // [alert] [debug] remove this for release
                 {
-                    // We've removed the use of Bee tracks so this isn't needed anymore
-                    //if (Side == ConfigData.Configuration.HumanSide && Level.HasPlayer && !Level.HasFoundAllBees && Level.Audio != null)
-                    //{
-                    //    CheckForBees();
-                    //}
-
-                    if (Level.IsDebugging || ShowDebug) // [alert] [debug] remove this for release
-                    {
-                        UpdateDebugProperties();
-                    }
+                    UpdateDebugProperties();
                 }
             }
         }
@@ -952,7 +941,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         }
         public void SetMovementVelocity()
         {
-            float maxSpeed = Level.IsDebugging ? CurrentSpeed * Level.SpeedMultiplier : CurrentSpeed;
+            float maxSpeed = Stage.IsDebugging ? CurrentSpeed * Stage.SpeedMultiplier : CurrentSpeed;
 
             // Set the velocity of the ship
             float rotation;
@@ -1090,7 +1079,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         /// <returns></returns>
         private bool IsBelowOtherShips()
         {
-            return Level.GetState().GetShips(Side).Where((ship) => ship.ShipType == ShipType).ToList().Any((ship) =>
+            return Level.State.GetShips(Side).Where((ship) => ship.ShipType == ShipType).ToList().Any((ship) =>
             {
                 return ship.ShipsOnTopOf.Contains(this);
             });
@@ -1142,7 +1131,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 IsCloseEnoughToTargetEnemyShipToFollow = true;
                 //EndDestination($"A target ship is within our range");
                 SetCurrentSpeed(TargetEnemyShipToFollow.CurrentSpeed);
-                if (Level.FixedUpdates % 10 == 0 && DistanceTo(TargetEnemyShipToFollow) < HalfMaxRange)
+                if (Level.Stage.FixedUpdates % 10 == 0 && DistanceTo(TargetEnemyShipToFollow) < HalfMaxRange)
                 {
                     EndDestination($"A target ship is within our range");
                 }
@@ -1247,11 +1236,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         }
         public void Clicked(int mouseButton, bool isCtrlClick = false)
         {
-            GameState state = Level.GetState();
             if (!IsUserControlled && mouseButton == LevelInputManager.RightClick) // when this ship has been right clicked on and this ship *is not* user controlled
             {
                 //Debug.Log($"Targeted squad #{Squad.SquadNumber}");
-                state.GetSelectedSquads().ForEach((selectedSquad) =>
+                Level.State.GetSelectedSquads().ForEach((selectedSquad) =>
                 {
                     //selectedSquad.UserTargetSquad(squad);
 
@@ -1264,11 +1252,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 {
                     if (isCtrlClick)
                     {
-                        state.AddSelectedSquad(Squad);
+                        Level.State.AddSelectedSquad(Squad);
                     }
                     else
                     {
-                        state.SelectSquad(Squad);
+                        Level.State.SelectSquad(Squad);
                     }
                 }
 
@@ -1294,7 +1282,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         }
         private void CombatTimer()
         {
-            if (!Level.IsPaused)
+            if (!Level.State.IsPaused)
             {
                 InCombat = false;
                 CancelInvoke(nameof(CombatTimer));
@@ -1377,8 +1365,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         /// </summary>
         public static void LogAttackingDamage(int power, Ship attacker, FleetShip attackerFleetShip, SavedSquad attackerSavedSquad, Ship target) // [damage-method] [note]
         {
-            GameState state = target.Level.GetState();
-            if (target.Level.MakeShotsHarmless)
+            if (target.Level.Stage.MakeShotsHarmless)
             {
                 power = 0;
             }
@@ -1398,7 +1385,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
                 if (attacker != null)
                 {
-                    state.ShipDamageStatuses[attacker.Side-1].Remove(state.GetShipDamageStatus(attacker.Side, target));
+                    attacker.Level.State.ShipDamageStatuses[attacker.Side-1].Remove(attacker.Level.State.GetShipDamageStatus(attacker.Side, target));
                 }
 
             }
@@ -1408,7 +1395,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 target.UpdateHealthBar();
                 if (attacker != null)
                 {
-                    ShipDamageStatus status = state.GetShipDamageStatus(attacker.Side, target);
+                    ShipDamageStatus status = target.Level.State.GetShipDamageStatus(attacker.Side, target);
                     status.Health = target.Health;
                 }
                 
@@ -1473,7 +1460,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
                 if (target.Stage.IsTrainingNueralNetwork)
                 {
-                    int[] initialTsv = target.Level.GetState().InitialTsv;
+                    int[] initialTsv = target.Level.State.InitialTsv;
                     //Debug.Log($"Initial TSV: {initialTsv[0]}, {initialTsv[1]}");
                     float percentageTsvDestroyed = (float)Math.Round(((-1.0f * tsvChange) / initialTsv[target.Side - 1]), 3);
                     //Debug.Log($"{shooter.Name} destroyed {percentageTsvDestroyed}  {tsvChange} / {initialTsv[target.Side - 1]} of the total initial tsv of the enemy");
@@ -1508,7 +1495,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         }
         protected void LogKilledStats() // [stats-method]
         {
-            if (Level.ReplaceDeadShips && !IsCarrierShip && !IsMinionShip && Squad.SavedSquad.HasBeenSavedToStorage)
+            if (Level.Stage.ReplaceDeadShips && !IsCarrierShip && !IsMinionShip && Squad.SavedSquad.HasBeenSavedToStorage)
             {
                 FleetShip.IsDead = true;
             }
@@ -1534,7 +1521,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             {
                 IsDead = true;
                 //Debug.Log($"Killing ship {Name} with size Factor {ConfigData.GetShipSizeFactor(ShipType)}");
-                GameState state = Level.GetState();
                 if (IsPathfinding)
                 {
                     Debug.Log($"{Name} got killed while pathfinding on #{PathfindingThread}");
@@ -1566,18 +1552,18 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 }
 
 
-                state.RemoveShip(this);
+                Level.State.RemoveShip(this);
                 Squad.RemoveShip(this);
 
 
                 // If this is a carrier, get all strikers that belonged to this carrier and mark the last spot the carrier was at
                 if (this is Carrier)
                 {
-                    Carrier nextCarrier = (Carrier)state.GetHumanShips().FirstOrDefault((s) => s is Carrier);
+                    Carrier nextCarrier = (Carrier)Level.State.GetHumanShips().FirstOrDefault((s) => s is Carrier);
                     if (nextCarrier != null)
                     {
 
-                        state.GetHumanShips().ForEach((ship) =>
+                        Level.State.GetHumanShips().ForEach((ship) =>
                         {
                             if (ship.ShipType == "Striker" || ship.ShipType == "Drone")
                             {
@@ -1900,7 +1886,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             if (clearance == 0)
             {
                 Level.CalculateShipClearances();
-                clearance = Level.ShipClearances.GetValueOrDefault(ShipType);
+                clearance = Stage.ShipClearances.GetValueOrDefault(ShipType);
             }
             return clearance;
         }

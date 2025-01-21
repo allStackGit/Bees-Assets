@@ -27,7 +27,7 @@ namespace Assets.Scripts.Levels
         }
         public void SetCarrierShipFleetships()
         {
-            Level.GetState().GetSquadsBySide(ConfigData.Configuration.HumanSide).ForEach((squad) =>
+            Level.State.GetSquadsBySide(ConfigData.Configuration.HumanSide).ForEach((squad) =>
             {
                 if (squad is CarrierSquad)
                 {
@@ -47,7 +47,7 @@ namespace Assets.Scripts.Levels
         /// <param name="side"></param>
         public void AddRandomSquads(int side)
         {
-            Debug.Log($"Adding random squads for side {side}");
+            //Debug.Log($"Adding random squads for side {side}");
             for (int option = 0; option < (Level.ActivateLoadingShipsMidLevel ? 2 : 1); option++)
             {
                 bool hasArmedSquads = false;
@@ -85,12 +85,12 @@ namespace Assets.Scripts.Levels
                 {
                     if (side == ConfigData.Configuration.AISide)
                     {
-                        Debug.Log($"Adding randomly generated enemy squads");
+                        //Debug.Log($"Adding randomly generated enemy squads");
                         Level.CurrentLevelOptions.EnemySquads.AddRange(squadsList);
                     }
                     else
                     {
-                        Debug.Log($"Adding randomly generated chosen squads");
+                        //Debug.Log($"Adding randomly generated chosen squads");
                         Level.CurrentLevelOptions.ChosenSquads.AddRange(squadsList);
                     }
 
@@ -99,7 +99,7 @@ namespace Assets.Scripts.Levels
                 {
                     if (side == ConfigData.Configuration.AISide)
                     {
-                        Debug.Log($"Adding randomly generated enemy reinforcement squads");
+                        //Debug.Log($"Adding randomly generated enemy reinforcement squads");
                         Level.CurrentLevelOptions.EnemyReinforcements.AddRange(squadsList);
                     }
                 }
@@ -218,27 +218,27 @@ namespace Assets.Scripts.Levels
         {
             //ConfigData.CurrentShips = new Ships(ConfigData.GetFleetData(), ConfigData.GetSavedSquadsData());
 
-            Debug.Log($"Stage: {Stage}, Level: {Level.Name}, CurrentLevelOptions: {Level.CurrentLevelOptions}");
-            if (Stage.IsTrainingNueralNetwork || Level.UseFullyRandomSquads || ((Level.UseFullyRandomEnemySquads || Level.CurrentLevelOptions.EnemySquadGenerationCount > 0) && side == ConfigData.Configuration.AISide))
+            //Debug.Log($"Stage: {Stage}, Level: {Level.Name}, CurrentLevelOptions: {Level.CurrentLevelOptions.GetAllLevelDetails()}");
+            if (Stage.IsTrainingNueralNetwork || Stage.UseFullyRandomSquads || ((Stage.UseFullyRandomEnemySquads || Level.CurrentLevelOptions.EnemySquadGenerationCount > 0) && side == ConfigData.Configuration.AISide))
             {
                 AddRandomSquads(side);
             }
-            else if ((Level.UseOverrideSquads && side == ConfigData.Configuration.UserSide) || (Level.UseOverrideEnemySquads && side == ConfigData.Configuration.AISide))
+            else if ((Stage.UseOverrideSquads && side == ConfigData.Configuration.UserSide) || (Stage.UseOverrideEnemySquads && side == ConfigData.Configuration.AISide))
             {
                 AddOverrideSquads(side);
             }
 
             // Setup entities on the level
-            Debug.Log($"Setting up ships for {side} at {Level.StartingPositions[side - 1]}");
+            //Debug.Log($"Setting up ships for {side} at {Level.StartingPositions[side - 1]}");
             //Debug.Log($"Chosen squads: {Utilities.ListToString(Level.CurrentLevelOptions.ChosenSquads)}");
             if (side == ConfigData.Configuration.AISide)
             {
-                Debug.Log($"Squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.EnemySquads)}");
+                //Debug.Log($"Squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.EnemySquads)}");
                 SpawnShipsAndSquads(Level.CurrentLevelOptions.EnemySquads, Level.StartingPositions[side - 1], Vector2.zero);
             }
             else
             {
-                Debug.Log($"Squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.ChosenSquads)}");
+                //Debug.Log($"Squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.ChosenSquads)}");
                 SpawnShipsAndSquads(Level.CurrentLevelOptions.ChosenSquads, Level.StartingPositions[side - 1], Vector2.zero);
             }
 
@@ -250,7 +250,6 @@ namespace Assets.Scripts.Levels
         }
         public void SpawnShipsAndSquads(List<SavedSquad> squads, Vector2 startingPosition, Vector2 moveToPoint)
         {
-            GameState state = Level.GetState();
             List<Squad> setupSquads = new List<Squad>();
             List<Ship> carriers = new List<Ship>();
             squads.ForEach((savedSquad) =>
@@ -266,9 +265,9 @@ namespace Assets.Scripts.Levels
                 if (ships.Count > 0)  
                 {
                     //Debug.Log($"There are {ships.Count} ships in {squad.Name}");
-                    squad.SquadNumber = state.OriginalSquadCounts[squad.Side - 1] + 1;
+                    squad.SquadNumber = Level.State.OriginalSquadCounts[squad.Side - 1] + 1;
                     squad.SetSquadTab();
-                    state.AddSquad(squad);
+                    Level.State.AddSquad(squad);
 
                     // loop through the squadships in each saved squad 
 
@@ -276,14 +275,6 @@ namespace Assets.Scripts.Levels
                     ships.ForEach((squadShip) =>
                     {
                         //Debug.Log($"This ship is {squadShip.ShipType}");
-                        // log bees in the level
-                        if (squad.Side == ConfigData.Configuration.BeeSide)
-                        {
-                            if (!Level.HasBeeTypes.Contains(squadShip.ShipType))
-                            {
-                                Level.HasBeeTypes.Add(squadShip.ShipType);
-                            }
-                        }
 
                         FleetShip fleetShip = squadShip.GetFleetShip();
 
@@ -297,7 +288,7 @@ namespace Assets.Scripts.Levels
                         ship = tuple.Item2;
                         ship.Setup(
                                 Level,
-                                state.GetId(),
+                                Level.State.GetId(),
                                 fleetShip,
                                 squad,
                                 squadShip.Offset
@@ -323,7 +314,7 @@ namespace Assets.Scripts.Levels
                         squad.MatchSpeed();
                     }
                     // set initial tsv
-                    state.InitialTsv[squad.Side - 1] += squad.Tsv;
+                    Level.State.InitialTsv[squad.Side - 1] += squad.Tsv;
                     //Debug.Log($"Increase side TSV by {squad.Tsv} / {state.InitialTsv[squad.Side - 1]}");
                 }
             });
@@ -344,11 +335,11 @@ namespace Assets.Scripts.Levels
                         carrier.Squad.ShouldChase(),
                         Utilities.GetNegativeSavedSquadId(),
                         carrier.Squad.Side,
-                        state.OriginalSquadCounts[carrier.Side - 1] + 1,
+                        Level.State.OriginalSquadCounts[carrier.Side - 1] + 1,
                         $"{carrier.Squad.Name} - Drone Force #{i + 1}",
                         carrier.Squad.Color
                     );
-                    state.AddSquad(droneSquad);
+                    Level.State.AddSquad(droneSquad);
                     setupSquads.Add(droneSquad);
                     droneSquad.SetupCarrierSquad((Carrier)carrier, "Drone");
 
@@ -363,11 +354,11 @@ namespace Assets.Scripts.Levels
                         carrier.Squad.ShouldChase(),
                         Utilities.GetNegativeSavedSquadId(),
                         carrier.Squad.Side,
-                        state.OriginalSquadCounts[carrier.Side - 1] + 1,
+                        Level.State.OriginalSquadCounts[carrier.Side - 1] + 1,
                         $"{carrier.Squad.Name} - Striker Force #{i + 1}",
                         carrier.Squad.Color
                     );
-                    state.AddSquad(strikerSquad);
+                    Level.State.AddSquad(strikerSquad);
                     setupSquads.Add(strikerSquad);
 
                     strikerSquad.SetupCarrierSquad((Carrier)carrier, "Striker");
@@ -384,8 +375,8 @@ namespace Assets.Scripts.Levels
             PositionSquads(setupSquads, startingPosition, moveToPoint);
 
 
-            //Debug.Log($"Initial TSV is Humans: {Level.GetState().InitialTsv[ConfigData.Configuration.HumanSide-1]}, " +
-            //    $"Bees: {Level.GetState().InitialTsv[ConfigData.Configuration.BeeSide-1]}");
+            //Debug.Log($"Initial TSV is Humans: {Level.State.InitialTsv[ConfigData.Configuration.HumanSide-1]}, " +
+            //    $"Bees: {Level.State.InitialTsv[ConfigData.Configuration.BeeSide-1]}");
             //Debugger.PrintList(HasBeeTypes);
         }
         private void PositionSquads(List<Squad> squads, Vector2 startingPosition, Vector2 moveToPoint)
@@ -535,95 +526,95 @@ namespace Assets.Scripts.Levels
             switch (type)
             {
                 case "Barge":
-                    instance = GameObject.Instantiate(Level.BargePrefab, Vector2.zero, Quaternion.identity);
+                    instance = GameObject.Instantiate(Level.Stage.Prefabs.BargePrefab, Vector2.zero, Quaternion.identity);
                     ship = instance.GetComponent<Barge>();
                     break;
                 case "Beacon":
-                    instance = GameObject.Instantiate(Level.BeaconPrefab, Vector2.zero, Quaternion.identity);
+                    instance = GameObject.Instantiate(Level.Stage.Prefabs.BeaconPrefab, Vector2.zero, Quaternion.identity);
                     ship = instance.GetComponent<Beacon>();
                     break;
                 case "Beehive":
-                    instance = GameObject.Instantiate(Level.BeehivePrefab, Vector2.zero, Quaternion.identity);
+                    instance = GameObject.Instantiate(Level.Stage.Prefabs.BeehivePrefab, Vector2.zero, Quaternion.identity);
                     ship = instance.GetComponent<Beehive>();
                     break;
                 case "Bumblebee":
-                    instance = GameObject.Instantiate(Level.BumblebeePrefab, Vector2.zero, Quaternion.identity);
+                    instance = GameObject.Instantiate(Level.Stage.Prefabs.BumblebeePrefab, Vector2.zero, Quaternion.identity);
                     ship = instance.GetComponent<Bumblebee>();
                     break;
                 case "Carpenter Bee":
-                    instance = GameObject.Instantiate(Level.CarpenterBeePrefab, Vector2.zero, Quaternion.identity);
+                    instance = GameObject.Instantiate(Level.Stage.Prefabs.CarpenterBeePrefab, Vector2.zero, Quaternion.identity);
                     ship = instance.GetComponent<CarpenterBee>();
                     break;
                 case "Carrier":
-                    instance = GameObject.Instantiate(Level.CarrierPrefab, Vector2.zero, Quaternion.identity);
+                    instance = GameObject.Instantiate(Level.Stage.Prefabs.CarrierPrefab, Vector2.zero, Quaternion.identity);
                     ship = instance.GetComponent<Carrier>();
                     break;
                 case "Cruiser":
-                    instance = GameObject.Instantiate(Level.CruiserPrefab, Vector2.zero, Quaternion.identity);
+                    instance = GameObject.Instantiate(Level.Stage.Prefabs.CruiserPrefab, Vector2.zero, Quaternion.identity);
                     ship = instance.GetComponent<Cruiser>();
                     break;
                 case "Dreadnought":
-                    instance = GameObject.Instantiate(Level.DreadnoughtPrefab, Vector2.zero, Quaternion.identity);
+                    instance = GameObject.Instantiate(Level.Stage.Prefabs.DreadnoughtPrefab, Vector2.zero, Quaternion.identity);
                     ship = instance.GetComponent<Dreadnought>();
                     break;
                 case "Drone":
-                    instance = GameObject.Instantiate(Level.DronePrefab, Vector2.zero, Quaternion.identity);
+                    instance = GameObject.Instantiate(Level.Stage.Prefabs.DronePrefab, Vector2.zero, Quaternion.identity);
                     ship = instance.GetComponent<Drone>();
                     break;
                 case "Factory":
-                    instance = GameObject.Instantiate(Level.FactoryPrefab, Vector2.zero, Quaternion.identity);
+                    instance = GameObject.Instantiate(Level.Stage.Prefabs.FactoryPrefab, Vector2.zero, Quaternion.identity);
                     ship = instance.GetComponent<Factory>();
                     break;
                 case "Fire Barge":
-                    instance = GameObject.Instantiate(Level.FireBargePrefab, Vector2.zero, Quaternion.identity);
+                    instance = GameObject.Instantiate(Level.Stage.Prefabs.FireBargePrefab, Vector2.zero, Quaternion.identity);
                     ship = instance.GetComponent<FireBarge>();
                     break;
                 case "Flagship":
-                    instance = GameObject.Instantiate(Level.FlagshipPrefab, Vector2.zero, Quaternion.identity);
+                    instance = GameObject.Instantiate(Level.Stage.Prefabs.FlagshipPrefab, Vector2.zero, Quaternion.identity);
                     ship = instance.GetComponent<Flagship>();
                     break;
                 case "Frigate":
-                    instance = GameObject.Instantiate(Level.FrigatePrefab, Vector2.zero, Quaternion.identity);
+                    instance = GameObject.Instantiate(Level.Stage.Prefabs.FrigatePrefab, Vector2.zero, Quaternion.identity);
                     ship = instance.GetComponent<Frigate>();
                     break;
                 case "Gunship":
-                    instance = GameObject.Instantiate(Level.GunshipPrefab, Vector2.zero, Quaternion.identity);
+                    instance = GameObject.Instantiate(Level.Stage.Prefabs.GunshipPrefab, Vector2.zero, Quaternion.identity);
                     ship = instance.GetComponent<Gunship>();
                     break;
                 case "Honeybee":
-                    instance = GameObject.Instantiate(Level.HoneybeePrefab, Vector2.zero, Quaternion.identity);
+                    instance = GameObject.Instantiate(Level.Stage.Prefabs.HoneybeePrefab, Vector2.zero, Quaternion.identity);
                     ship = instance.GetComponent<Honeybee>();
                     break;
                 case "Hornet":
-                    instance = GameObject.Instantiate(Level.HornetPrefab, Vector2.zero, Quaternion.identity);
+                    instance = GameObject.Instantiate(Level.Stage.Prefabs.HornetPrefab, Vector2.zero, Quaternion.identity);
                     ship = instance.GetComponent<Hornet>();
                     break;
                 case "Leafcutter":
-                    instance = GameObject.Instantiate(Level.LeafcutterPrefab, Vector2.zero, Quaternion.identity);
+                    instance = GameObject.Instantiate(Level.Stage.Prefabs.LeafcutterPrefab, Vector2.zero, Quaternion.identity);
                     ship = instance.GetComponent<Leafcutter>();
                     break;
                 case "Queen":
-                    instance = GameObject.Instantiate(Level.QueenPrefab, Vector2.zero, Quaternion.identity);
+                    instance = GameObject.Instantiate(Level.Stage.Prefabs.QueenPrefab, Vector2.zero, Quaternion.identity);
                     ship = instance.GetComponent<Queen>();
                     break;
                 case "Scout":
-                    instance = GameObject.Instantiate(Level.ScoutPrefab, Vector2.zero, Quaternion.identity);
+                    instance = GameObject.Instantiate(Level.Stage.Prefabs.ScoutPrefab, Vector2.zero, Quaternion.identity);
                     ship = instance.GetComponent<Scout>();
                     break;
                 case "Striker":
-                    instance = GameObject.Instantiate(Level.StrikerPrefab, Vector2.zero, Quaternion.identity);
+                    instance = GameObject.Instantiate(Level.Stage.Prefabs.StrikerPrefab, Vector2.zero, Quaternion.identity);
                     ship = instance.GetComponent<Striker>();
                     break;
                 case "Warp Gate":
-                    instance = GameObject.Instantiate(Level.WarpGatePrefab, Vector2.zero, Quaternion.identity);
+                    instance = GameObject.Instantiate(Level.Stage.Prefabs.WarpGatePrefab, Vector2.zero, Quaternion.identity);
                     ship = instance.GetComponent<WarpGate>();
                     break;
                 case "Wasp":
-                    instance = GameObject.Instantiate(Level.WaspPrefab, Vector2.zero, Quaternion.identity);
+                    instance = GameObject.Instantiate(Level.Stage.Prefabs.WaspPrefab, Vector2.zero, Quaternion.identity);
                     ship = instance.GetComponent<Wasp>();
                     break;
                 case "Yellow Jacket":
-                    instance = GameObject.Instantiate(Level.YellowJacketPrefab, Vector2.zero, Quaternion.identity);
+                    instance = GameObject.Instantiate(Level.Stage.Prefabs.YellowJacketPrefab, Vector2.zero, Quaternion.identity);
                     ship = instance.GetComponent<YellowJacket>();
                     break;
                 default:

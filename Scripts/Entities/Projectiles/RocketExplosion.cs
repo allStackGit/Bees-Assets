@@ -52,7 +52,7 @@ namespace Assets.Scripts.Entities.Projectiles
         public new virtual void Kill()
         {
             //Debug.Log("Killed off the rocket explosion");
-            Level.GetState().FireBargeExplosions.Remove(this);
+            Level.State.FireBargeExplosions.Remove(this);
             Destroy(gameObject);
         } 
 
@@ -68,7 +68,7 @@ namespace Assets.Scripts.Entities.Projectiles
         }
         protected override void FixedUpdate()
         {
-            if (!Level.IsPaused)
+            if (!Level.State.IsPaused)
             {
                 if (CollidingQueue.Count > 0)
                 {

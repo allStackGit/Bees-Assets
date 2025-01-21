@@ -84,7 +84,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 Ship.FleetShip.ShotsFired++;
                 if (!IsFiringManually && !IsFiringAtAsteroid)
                 {
-                    ShipDamageStatus shipDamageStatus = Level.GetState().GetShipDamageStatus(Side, TargetShip);
+                    ShipDamageStatus shipDamageStatus = Level.State.GetShipDamageStatus(Side, TargetShip);
                     shipDamageStatus.TotalDamageSentToShip += Power;
                     LaserBeamTarget = TargetShip;
                 }

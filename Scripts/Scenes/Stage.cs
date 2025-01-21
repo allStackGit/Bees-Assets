@@ -2,7 +2,9 @@ using Assets.Scripts;
 using Assets.Scripts.Data;
 using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
+using Assets.Scripts.UI_Components;
 using Assets.Scripts.UIComponents;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -22,6 +24,10 @@ public class Stage : Scene
     /// Whether or not the user is playing the game and controlling a side
     /// </summary>
     public bool DoesUserHaveController;
+    /// <summary>
+    /// Whether or not the game is being debugged and should log a lot of debugging data
+    /// </summary>
+    public bool IsDebugging;
     /// <summary>
     /// Whether or not the Neural Network is being trained
     /// </summary>
@@ -55,6 +61,54 @@ public class Stage : Scene
     /// </summary>
     public bool UnlockCamera;
     /// <summary>
+    /// Determines whether or not FleetShips get marked as dead when ships die. If this is turned off, stats will still record properly but ships won't die off and be replaced
+    /// </summary>
+    public bool ReplaceDeadShips;
+    /// <summary>
+    /// Whether or not stats will be recorded
+    /// </summary>
+    public bool RecordStats;
+    /// <summary>
+    /// Whether or not all squads will be randomly generated
+    /// </summary>
+    public bool UseFullyRandomSquads;
+    /// <summary>
+    /// Whether or not enemy squads will be randomly generated
+    /// </summary>
+    public bool UseFullyRandomEnemySquads;
+    /// <summary>
+    /// Whether or not override squads (Specific squads created in the squad maker) will be used
+    /// </summary>
+    public bool UseOverrideSquads;
+    /// <summary>
+    /// Whether or not enemy override squads (Specific squads created in the squad maker) will be used
+    /// </summary>
+    public bool UseOverrideEnemySquads;
+    /// <summary>
+    /// Turns on/off camera scrolling when the mouse is at the edge of the screen
+    /// </summary>
+    public bool UseMouseScrolling;
+    /// <summary>
+    /// Makes the player's selected ships fire towards the mouse
+    /// </summary>
+    public bool IsTestFiring;
+    /// <summary>
+    /// Makes the enemy not shoot
+    /// </summary>
+    public bool MakeEnemyCeaseFire;
+    /// <summary>
+    /// Prevents all ships from shooting except for manual fire
+    /// </summary>
+    public bool FullCeaseFire;
+    /// <summary>
+    /// Makes all projectiles inflict zero damage
+    /// </summary>
+    public bool MakeShotsHarmless;
+    /// <summary>
+    /// Whether or not to allow randomized options for the levels
+    /// </summary>
+    public bool HasRandomizedOptions;
+    /// <summary>
     /// Overrides the user side with either 1 (Bees) or 2 (Humans)
     /// </summary>
     public int OverrideUserSide;
@@ -71,6 +125,62 @@ public class Stage : Scene
     /// </summary>
     public int GeneratedSquadCountOverride;
     /// <summary>
+    /// Forces all levels to use a particular map
+    /// </summary>
+    public int OverrideMapIndex;
+    /// <summary>
+    /// Forces all levels to use a particular set of obstacles
+    /// </summary>
+    public int OverrideObstacleMapIndex;
+    /// <summary>
+    /// Multiplies the speed of ships
+    /// </summary>
+    public int SpeedMultiplier;
+    /// <summary>
+    /// Initial delay before hive mind commands are requested
+    /// </summary>
+    public int InitialCommandDelay;
+    /// <summary>
+    /// How frequently asteroids spawn in this level. Sets the upper and lower bounds in seconds of the randomly timed spawn
+    /// </summary>
+    public int AsteroidMaxSpawnRate, AsteroidMinimumSpawnRate, CurrentAsteroidMaxSpawnRate, CurrentAsteroidMinimumSpawnRate;
+    /// <summary>
+    /// Sets the upper bounds for how fast an asteroid can move
+    /// </summary>
+    public int AsteroidMaxSpeed;
+    /// <summary>
+    /// The default zoom level for the camera
+    /// </summary>
+    public int DefaultZoom;
+    /// <summary>
+    /// How fast the camera zooms in and out 
+    /// </summary>
+    public int ZoomSpeed;
+    /// <summary>
+    /// How fast the camera scrolls side to side or up and down
+    /// </summary>
+    public int ScrollSpeed;
+    /// <summary>
+    /// How close the mouse needs to be to the edge for the camera to start scrolling
+    /// </summary>
+    public Vector2 MouseScrollDistanceFromEdge;
+    /// <summary>
+    /// The default position for the camera before it's repositioned
+    /// </summary>
+    public Vector2 DefaultCameraPosition;
+    /// <summary>
+    /// Only allows Bee ship types as specified here, unless it's empty
+    /// </summary>
+    public List<string> OverrideBeeShipTypes = new List<string> { };
+    /// <summary>
+    /// Only allows Human ship types as specified here, unless it's empty
+    /// </summary>
+    public List<string> OverrideHumanShipTypes = new List<string> { };
+    /// <summary>
+    /// Only allows Hive Mind strats of the types specified here, unless it's empty
+    /// </summary>
+    public List<string> OverrideStrats = new List<string> { };
+    /// <summary>
     /// The set of positions for each level depending on the number of levels on the stage
     /// </summary>
     public Dictionary<int, Vector2[]> LevelLayouts = new Dictionary<int, Vector2[]>
@@ -79,6 +189,14 @@ public class Stage : Scene
         {2, new Vector2[] { new Vector2(-756, 0), new Vector2(756, 0) } },
         {4, new Vector2[] { new Vector2(-756, 756), new Vector2(756, 756), new Vector2(-756, -756), new Vector2(756, -756) } },
     };
+    /// <summary>
+    /// All the clearances for all the ships, calculated in levels dynamically when needed but shared between all the levels
+    /// </summary>
+    public Dictionary<string, int> ShipClearances = new Dictionary<string, int>();
+    /// <summary>
+    /// The sprite used for user ship vision to clear the fog of war
+    /// </summary>
+    public Sprite VisonSprite;
     /// <summary>
     /// Holds all the entity prefabs for the game (Ships, projectiles, Obstacles, Asteroids, etc.)
     /// </summary>
@@ -120,6 +238,10 @@ public class Stage : Scene
     /// </summary>
     public GameObject MiniMapDisplayCanvas;
     /// <summary>
+    /// The list of squad tabs across the top of the UI
+    /// </summary>
+    public List<SquadTab> SquadTabs;
+    /// <summary>
     /// The main level that accepts user interaction
     /// </summary>
     public Level PrimaryLevel;
@@ -128,14 +250,6 @@ public class Stage : Scene
     /// </summary>
     public List<Level> Levels;
     /// <summary>
-    /// Only allows Bee ship types as specified here, unless it's empty
-    /// </summary>
-    public List<string> OverrideBeeShipTypes = new List<string> { };
-    /// <summary>
-    /// Only allows Human ship types as specified here, unless it's empty
-    /// </summary>
-    public List<string> OverrideHumanShipTypes = new List<string> { };
-    /// <summary>
     /// The current Bee ship types available for the levels
     /// </summary>
     public List<string> BeeShipTypes = new List<string>();
@@ -143,6 +257,15 @@ public class Stage : Scene
     /// The current Human ship types available for the levels
     /// </summary>
     public List<string> HumanShipTypes = new List<string>();
+    /// <summary>
+    /// How many fixed updates have passed since the stage spawned
+    /// </summary>
+    public int FixedUpdates;
+    /// <summary>
+    /// The time in seconds when the stage started up
+    /// </summary>
+    public float StartTime;
+
 
 
 
@@ -152,6 +275,7 @@ public class Stage : Scene
     // Start is called before the first frame update
     new void Start()
     {
+        StartTime = Time.realtimeSinceStartup;
         Debug.Log($"Start level stage");
         Name = "Level";
         base.Start();
@@ -181,13 +305,12 @@ public class Stage : Scene
     {
         for (int i = 0; i < Levels.Count; i++)
         {
-            Levels[i].Setup(this);
+            Levels[i].Setup(this, $"Level - #{i}");
         }
     }
     protected override void FinalizeSceneWithUserData()
     {
         Debug.Log($"Finalize scene");
-        //StartTime = Time.realtimeSinceStartup;
 
 
         base.FinalizeSceneWithUserData();
@@ -262,7 +385,7 @@ public class Stage : Scene
             Vector2 cameraWorldUnitsSize = Utilities.ScreenPixelsToWorldUnits(new Vector2(MiniMapCamera.pixelWidth, MiniMapCamera.pixelHeight), Camera);
             Transform colliderContainer = Camera.transform.GetChild(0);
             colliderContainer.localScale = cameraWorldUnitsSize;
-            Vector2 localizedPosition = PrimaryLevel.DefaultCameraPosition + PrimaryLevel.GetPosition();
+            Vector2 localizedPosition = DefaultCameraPosition + PrimaryLevel.GetPosition();
             Camera.transform.position = new Vector3(localizedPosition.x, localizedPosition.y, -10);
 
             InputManager.MaintainScrollBoundary();
@@ -270,16 +393,16 @@ public class Stage : Scene
 
         SetupLevels();
 
-        //float end = (Time.realtimeSinceStartup - StartTime) * 1000; // seconds to milliseconds
-        //Debug.Log($"It took {Math.Round(end, 2)} ms to set up the level and {Math.Round(Time.realtimeSinceStartup, 2)}s total time.");
+        float end = (Time.realtimeSinceStartup - StartTime) * 1000; // seconds to milliseconds
+        Debug.Log($"It took {Math.Round(end, 2)} ms to set up the stage and {Math.Round(Time.realtimeSinceStartup, 2)}s total time.");
     }
     /// <summary>
     /// Sets up the camera for the Primary Level once the primary level is ready for it
     /// </summary>
     public void SetupCamera()
     {
-        Camera.orthographicSize = PrimaryLevel.DefaultZoom;
-        Vector2 localizedPosition = PrimaryLevel.DefaultCameraPosition + (Vector2)transform.position;
+        Camera.orthographicSize = DefaultZoom;
+        Vector2 localizedPosition = DefaultCameraPosition + (Vector2)transform.position;
         Camera.transform.position = new Vector3(localizedPosition.x, localizedPosition.y, -10);
         InputManager.MaintainScrollBoundary();
         if ((OverrideUserSide == 1 || OverrideUserSide == 2) && OverrideUserSide != ConfigData.Configuration.UserSide)
@@ -353,7 +476,7 @@ public class Stage : Scene
         }
         else if (PrimaryLevel.CurrentLevelOptions.EnemyShipTypeOption == 0)
         {
-            Debug.Log($"The map does not have a singular enemy ship type");
+            //Debug.Log($"The map does not have a singular enemy ship type");
             if (OverrideBeeShipTypes.Count > 0)
             {
                 BeeShipTypes = OverrideBeeShipTypes;
@@ -399,5 +522,9 @@ public class Stage : Scene
                 InputManager.Update();
             }
         }
+    }
+    void FixedUpdate()
+    {
+        FixedUpdates++;
     }
 }

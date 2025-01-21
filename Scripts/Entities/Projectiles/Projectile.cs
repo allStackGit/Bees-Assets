@@ -118,7 +118,7 @@ namespace Assets.Scripts.Entities.Projectiles
         
         protected virtual void FixedUpdate()
         {
-            if (!Level.IsPaused)
+            if (!Level.State.IsPaused)
             {
                 if (CollidingQueue.Count > 0)
                 {
@@ -142,7 +142,7 @@ namespace Assets.Scripts.Entities.Projectiles
         {
             if (Target != null)
             {
-                ShipDamageStatus status = Level.GetState().GetShipDamageStatus(Shooter.Side, Target);
+                ShipDamageStatus status = Level.State.GetShipDamageStatus(Shooter.Side, Target);
                 if (status.TotalDamageSentToShip >= Power)
                 {
                     status.TotalDamageSentToShip -= Power;

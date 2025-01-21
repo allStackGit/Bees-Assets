@@ -92,7 +92,7 @@ namespace Assets.Scripts.Entities.Ships
                 Charge.Power -= damage;
                 //Debug.Log($"{Name} hit {ship.Name} and did {damage} damage");
 
-                if ((Charge.Power == 0 || Level.GetState().GameOver) && gameObject.activeSelf) // if ran out of power or we killed the last ship stop the charge immediately
+                if ((Charge.Power == 0 || Level.State.GameOver) && gameObject.activeSelf) // if ran out of power or we killed the last ship stop the charge immediately
                 {
                     StartCoroutine(StopCharge());
                 }

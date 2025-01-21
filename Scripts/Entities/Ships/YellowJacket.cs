@@ -95,10 +95,10 @@ namespace Assets.Scripts.Entities.Ships
         {
             DropExplosionAnimation();
 
-            Level.GetState().RemoveShip(this);
+            Level.State.RemoveShip(this);
             Squad.RemoveShip(this);
 
-            if (Level.ReplaceDeadShips && Squad.SavedSquad.HasBeenSavedToStorage)
+            if (Stage.ReplaceDeadShips && Squad.SavedSquad.HasBeenSavedToStorage)
             {
                 FleetShip.IsDead = true;
             }

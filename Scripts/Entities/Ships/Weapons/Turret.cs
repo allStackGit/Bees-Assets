@@ -49,7 +49,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
             if (Ship.IsUserControlled)
             {
-                TargetingMarker = Instantiate(Level.TargetingMarkerPrefab, Vector2.zero, Quaternion.identity);
+                TargetingMarker = Instantiate(Level.Stage.Prefabs.TargetingMarkerPrefab, Vector2.zero, Quaternion.identity);
                 TargetingMarker.transform.SetParent(Level.Map.transform);
                 TargetingMarker.SetActive(false);
                 TargetingMarker.name = $"{Name}'s Targeting Marker";

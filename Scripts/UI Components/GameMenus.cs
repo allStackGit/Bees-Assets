@@ -122,7 +122,7 @@ namespace Assets.Scripts.UIComponents
         {
             CurrentLevel.UnPause();
             CloseDialogue();
-            Ship[] ships = CurrentLevel.GetState().GetShips(ConfigData.Configuration.UserSide).ToArray(); // need to convert this to an array because killing a ship removes it from the list of ships in the state
+            Ship[] ships = CurrentLevel.State.GetShips(ConfigData.Configuration.UserSide).ToArray(); // need to convert this to an array because killing a ship removes it from the list of ships in the state
 
             for (int i = 0; i < ships.Length; i++)
             {
@@ -213,7 +213,7 @@ namespace Assets.Scripts.UIComponents
         public void ShowLevelSaveDialogue()
         {
             LevelNameInput.text = CurrentLevel.SaveLevelOptions.Name;
-            SupplyCapacityInput.text = $"{CurrentLevel.GetState().InitialTsv[ConfigData.Configuration.UserSide - 1]}";
+            SupplyCapacityInput.text = $"{CurrentLevel.State.InitialTsv[ConfigData.Configuration.UserSide - 1]}";
             SaveLevelDialogue.SetActive(true);
         }
         public void SaveLevel()

@@ -41,7 +41,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     range = Ship.MaxRange * 2;
                 }
                 FogIlluminator = gameObject.AddComponent<SpriteMask>();
-                FogIlluminator.sprite = Ship.Level.VisonSprite;
+                FogIlluminator.sprite = Ship.Level.Stage.VisonSprite;
                 FogIlluminator.alphaCutoff = .5f;
                 transform.localScale = new Vector3(range, range, 0);
                 gameObject.layer = ConfigData.FogOfWarLayer;
@@ -56,10 +56,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 Ship ship = collider.GetComponent<Ship>();
                 //Debug.Log($"{Ship.Name} from {Ship.Level.gameObject.name} just saw {ship.Name} and added them to hivemind vision");
-                if (!Ship.Level.GetState().VisionCache[Ship.Side - 1].Contains(ship))
+                if (!Ship.Level.State.VisionCache[Ship.Side - 1].Contains(ship))
                 {
                     Ship.Squad.Command.Tsv += (int)Math.Min(Math.Max(ship.Tsv * ConfigData.TsvMultiplierForVision, ConfigData.MinimumTsvValueForSeeingAShip), ConfigData.MaximumTsvValueForSeeingAShip);
-                    Ship.Level.GetState().HivemindShips[Ship.Side - 1][Ship.Id].Add(ship);
+                    Ship.Level.State.HivemindShips[Ship.Side - 1][Ship.Id].Add(ship);
                     if (Ship.Squad.Command.Type == "Scouting")
                     {
                         ((Scouting)Ship.Squad.Command).FoundShips();
@@ -69,10 +69,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }else if (Ship.ShipType == "Beacon" && Ship.MotherSquad.HasCommand){
                 Ship ship = collider.GetComponent<Ship>();
                 //Debug.Log($"{Ship.Name} from {Ship.Level.gameObject.name} just saw {ship.Name} and added them to hivemind vision");
-                if (!Ship.Level.GetState().VisionCache[Ship.Side - 1].Contains(ship))
+                if (!Ship.Level.State.VisionCache[Ship.Side - 1].Contains(ship))
                 {
                     Ship.MotherSquad.Command.Tsv += (int)Math.Min(Math.Max(ship.Tsv * ConfigData.TsvMultiplierForVision, ConfigData.MinimumTsvValueForSeeingAShip), ConfigData.MaximumTsvValueForSeeingAShip);
-                    Ship.Level.GetState().HivemindShips[Ship.Side - 1][Ship.Id].Add(ship);
+                    Ship.Level.State.HivemindShips[Ship.Side - 1][Ship.Id].Add(ship);
                     if (Ship.MotherSquad.Command.Type == "Scouting")
                     {
                         ((Scouting)Ship.MotherSquad.Command).FoundShips();
@@ -103,7 +103,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         //    if (Ship.IsHiveMindControlled && collidingThing.CompareTag("Ship"))
         //    {
         //        Ship ship = collidingThing.GetComponent<Ship>();
-        //        Ship.Level.GetState().HivemindShips[Ship.Side - 1][Ship.Id].Remove(ship);
+        //        Ship.Level.State.HivemindShips[Ship.Side - 1][Ship.Id].Remove(ship);
         //    }
 
         //}

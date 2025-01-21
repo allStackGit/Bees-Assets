@@ -52,7 +52,7 @@ namespace Assets.Scripts.Levels
                 {
                     ship.Setup(
                         Level,
-                        Level.GetState().GetId(),
+                        Level.State.GetId(),
                         new FleetShip(id, $"Carrier {SquadType} - #{id}", SquadType, false, true, false, 0, 0, 0, 0, 0, 0, 0),
                         this,
                         offset

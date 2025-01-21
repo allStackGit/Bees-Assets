@@ -49,7 +49,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             Ship = ship;
             Level = Ship.Level;
             Stage = Level.Stage;
-            Id = Level.GetState().GetId();
+            Id = Level.State.GetId();
             Range = range;
             Power = power;
             SpecialFirepower = specialFirePower;
@@ -121,7 +121,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                         Check to make sure that the damage already sent towards the ship is less than the health of the ship previously
                         calculated.
                          */
-                        ShipDamageStatus shipDamageStatus = Level.GetState().GetShipDamageStatus(Side, potentialTargetShip);
+                        ShipDamageStatus shipDamageStatus = Level.State.GetShipDamageStatus(Side, potentialTargetShip);
                         if (useShipDamageStatus)
                         {
                             if (shipDamageStatus.TotalDamageSentToShip <= shipDamageStatus.Health)
@@ -193,7 +193,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             //Debug.Log($"Targeting! with {Ship.FleetShip.Name}");
 
             TargetShip = null;
-            if (!Level.IsPaused && !CeaseFire)
+            if (!Level.State.IsPaused && !CeaseFire)
             {
                 if (Ship.IsUserControlled) // user controlled fire sequence
                 {
@@ -403,7 +403,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             //Debug.Log("Sending basic projectile");
             if (HasTargetShip)
             {
-                ShipDamageStatus shipDamageStatus = Level.GetState().GetShipDamageStatus(Side, TargetShip);
+                ShipDamageStatus shipDamageStatus = Level.State.GetShipDamageStatus(Side, TargetShip);
                 shipDamageStatus.TotalDamageSentToShip += Power;
             }
             PlaySoundEffect();

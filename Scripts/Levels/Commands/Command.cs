@@ -33,7 +33,7 @@ namespace Assets.Scripts.Levels.Commands
         /// The list of ships (in order) that this squad's ships should follow after, modified each time a ship takes an enemy ship off the queue and follows it
         /// </summary>
         public Queue<Ship> TargetingQueue;
-
+        public Stage Stage;
 
         private List<Vector2> _destinations = new List<Vector2>();
 
@@ -50,6 +50,7 @@ namespace Assets.Scripts.Levels.Commands
 
         public void Setup(Squad squad, bool isHiveMindCommand, Squad enemy, string matchup)
         {
+            Stage = squad.Level.Stage;
             Squad = squad;
             EnemySquad = enemy;
             Matchup = matchup;
@@ -133,7 +134,7 @@ namespace Assets.Scripts.Levels.Commands
                 {
                     Squad.PastCommands.Add(new StoredCommand(this));
                 }
-                Level.GetState().AddCommand(this);
+                Level.State.AddCommand(this);
 
                 Squad.Status = $"Executing Command #{OutcomeId}";
                 //Debug.Log("Set status for command");
@@ -276,7 +277,7 @@ namespace Assets.Scripts.Levels.Commands
                 }
                 foreach (Ship ship in ships)
                 {
-                    Level.GetState().GetShipDamageStatus(Side, ship);
+                    Level.State.GetShipDamageStatus(Side, ship);
                 }
             }
         }
@@ -333,20 +334,20 @@ namespace Assets.Scripts.Levels.Commands
             {
                 Squad.SetChase(false);
             }
-            if (Squad.IsSelected && Level.Stage.Menus != null)
+            if (Squad.IsSelected && Stage.Menus != null)
             {
-                Level.Stage.Menus.ActionBox.HighlightSelectedButtons();
+                Stage.Menus.ActionBox.HighlightSelectedButtons();
             }
-            Debug.Log($"Setting Squad Command #{OutcomeId} to null for {Squad.Name}");
+            Debug.Log($"Finalizing and setting Squad Command #{OutcomeId}:{Strategy?.Name} to null for {Squad.Name} because of {FinalizationCause}");
             Squad.Command = null;
 
-            if (Squad.IsHiveMindControlled && Level.Stage.ActivateHiveMind)
+            if (Squad.IsHiveMindControlled && Stage.ActivateHiveMind)
             {
                 Squad.AddToCommandList();
             }
-            if (Level.IsDebugging)
+            if (Stage.IsDebugging)
             {
-                StoredCommand storedCommand = Level.GetState().GetPastCommands().FirstOrDefault(c => c.OutcomeId == OutcomeId);
+                StoredCommand storedCommand = Level.State.GetPastCommands().FirstOrDefault(c => c.OutcomeId == OutcomeId);
                 if (storedCommand != null)
                 {
                     if (storedCommand.IsStored)

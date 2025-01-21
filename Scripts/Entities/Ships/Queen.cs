@@ -50,7 +50,6 @@ namespace Assets.Scripts.Entities.Ships
 
         private Squad CreateMinionSquad()
         {
-            GameState state = Level.GetState();
             // Create Squad
             Squad squad = Level.gameObject.AddComponent<Squad>();
             squad.Setup(
@@ -62,11 +61,11 @@ namespace Assets.Scripts.Entities.Ships
                 Squad.ShouldChase(),
                 Utilities.GetNegativeSavedSquadId(),
                 Squad.Side,
-                state.OriginalSquadCounts[Side - 1] + 1,
+                Level.State.OriginalSquadCounts[Side - 1] + 1,
                 $"{Squad.Name} - {MinionType} Spawn #{MinionSquadsCount}",
                 Squad.Color
             );
-            state.AddSquad(squad);
+            Level.State.AddSquad(squad);
             CurrentMinionSquad = squad;
             MinionSquads.Add(squad);
             MinionSquadsCount++;
@@ -96,7 +95,7 @@ namespace Assets.Scripts.Entities.Ships
             {
                 ship.Setup(
                     Level,
-                    Level.GetState().GetId(),
+                    Level.State.GetId(),
                     new FleetShip(id, $"{ShipType} Minion {MinionType} - #{id}", MinionType, false, true, false, 0, 0, 0, 0, 0, 0, 0),
                     squad,
                     offset

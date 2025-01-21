@@ -495,7 +495,7 @@ namespace Assets.Scripts.Server
                     //squad.Command.MatchupStrategy = squad.MatchupStrategy;
                     Squad targetSquad = squad.MatchupStrategy.SortSquads();
                     //Debug.Log($"matchup strategy after sorted");
-                    //Debugger.LogSquads(level.GetState().GetSquads());
+                    //Debugger.LogSquads(Level.State.GetSquads());
                     Level level = standingRequest.Level;
                     level.HandledRequests.Add(standingRequest.Hash);
                     squad.MakeMatchupAndGetCommand(targetSquad);
@@ -525,11 +525,10 @@ namespace Assets.Scripts.Server
                 Squad squad = standingRequest.Squad;
                 Level level = standingRequest.Level;
                 level.HandledRequests.Add(standingRequest.Hash);
-                GameState state = level.GetState();
                 string commandType = commandResponse.Name;
                 //Debug.Log($"strategic command response");
                 //Debug.Log(squad.damageSentToEnemyShipsBySquad);
-                if (squad != null && !state.GameOver && !squad.IsDead)
+                if (squad != null && !level.State.GameOver && !squad.IsDead)
                 {
                     //Debug.Log("squad is not null");
                     Command command = null;
@@ -679,7 +678,7 @@ namespace Assets.Scripts.Server
                     else if (commandType == "Full Retreat")
                     {
                         Vector2 position = squad.GetPosition();
-                        WarpGate warpGate = (WarpGate) state.GetHumanShips().Where((s) => s.IsWarpGate).OrderBy((s) => s.DistanceToPoint(position)).FirstOrDefault();
+                        WarpGate warpGate = (WarpGate) level.State.GetHumanShips().Where((s) => s.IsWarpGate).OrderBy((s) => s.DistanceToPoint(position)).FirstOrDefault();
                         ((FullRetreat)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true, warpGate);
                     }
                     else

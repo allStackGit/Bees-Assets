@@ -82,7 +82,7 @@ namespace Assets.Scripts.Levels
                     //Debug.Log($"Selecting #{ship.Squad.SquadNumber} squad");
                 }
             });
-            Level.GetState().SelectSquads(squads);
+            Level.State.SelectSquads(squads);
             ClearSelectedShips();
         }
     }
