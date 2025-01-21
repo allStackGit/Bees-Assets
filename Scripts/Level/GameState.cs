@@ -35,6 +35,7 @@ namespace Assets.Scripts.Level
         public List<SpottedShip>[] SpottedShips = new List<SpottedShip>[] { new List<SpottedShip>(), new List<SpottedShip>() };
         public int[] OriginalSquadCounts = new int[] { 0, 0 };
         public LevelStage Level;
+        public Stage Stage;
         public HashSet<Ship>[] VisionCache = new HashSet<Ship>[] { new HashSet<Ship>(), new HashSet<Ship>() };
         public Dictionary<long, HashSet<Ship>>[] HivemindShips = new Dictionary<long, HashSet<Ship>>[] { new Dictionary<long, HashSet<Ship>>(), new Dictionary<long, HashSet<Ship>>() };
         public List<ShipRemains> Deadbodies = new List<ShipRemains>();
@@ -59,6 +60,7 @@ namespace Assets.Scripts.Level
         public void Setup(LevelStage level)
         {
             Level = level;
+            Stage = Level.Stage;
             // Debug.Log("Game State has been setup");
         }
         public void ResetState()
@@ -251,7 +253,7 @@ namespace Assets.Scripts.Level
                 SelectedSquads.Add(squad);
                 squad.IsSelected = true;
                 squad.MoveSquadBox();
-                Level.Menus.ActionBox.SetupForSquad();
+                Stage.Menus.ActionBox.SetupForSquad();
                 squad.GetShips().ForEach((ship) =>
                 {
                     if (ship.HasTargetCoordinates)
@@ -326,12 +328,12 @@ namespace Assets.Scripts.Level
                 HasSelectedSquads = false;
                 if (!Level.IsTraining)
                 {
-                    Level.Menus.ActionBox.Hide();
+                    Stage.Menus.ActionBox.Hide();
                 }
             }
             else if (!Level.IsTraining)
             {
-                Level.Menus.ActionBox.SetupForSquad();
+                Stage.Menus.ActionBox.SetupForSquad();
             }
         }
         public Squad GetSquadByNumber(int side, int squadNumber)

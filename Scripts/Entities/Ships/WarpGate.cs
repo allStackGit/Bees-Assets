@@ -21,7 +21,7 @@ namespace Assets.Scripts.Entities.Ships
                 //Debug.Log("Striker hit selection box");
                 if (IsUserControlled)
                 {
-                    Level.Selector.SelectShip(this);
+                    Stage.Selector.SelectShip(this);
                 }
             }
             else if (collider.gameObject.CompareTag("Ship"))

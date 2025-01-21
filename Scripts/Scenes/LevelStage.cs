@@ -42,10 +42,8 @@ namespace Assets.Scripts.Scenes
         public bool IsTraining, UseFullyRandomSquads, UseFullyRandomEnemySquads, UseOverrideSquads, 
             UseOverrideEnemySquads, RecordStats, HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateLoadingShipsMidLevel, 
             UseMouseScrolling, IsDebugging, IsTestFiring, MakeEnemyCeaseFire, FullCeaseFire, MakeShotsHarmless, HasRandomizedOptions;
-        public int OverrideMapIndex,OverrideTimeScale, OverrideObstacleMapIndex, SpeedMultiplier, GeneratedSquadCountOverride, InitialCommandDelay;
+        public int OverrideMapIndex,OverrideObstacleMapIndex, SpeedMultiplier, InitialCommandDelay;
         public List<string> OverrideStrats = new List<string> { };
-        public List<string> OverrideBeeShipTypes = new List<string> { };
-        public List<string> OverrideHumanShipTypes = new List<string> { };
         
         public UI_Components.Map Map;
         public LevelConstructor LevelConstructor;
@@ -115,7 +113,6 @@ namespace Assets.Scripts.Scenes
         public int FixedUpdates, TriggersActivated;
         public float StartTime, TimePaused;
         public List<Trigger> Triggers = new List<Trigger>();
-        public List<string> BeeShipTypes, HumanShipTypes = new List<string>();
         public List<SquadTab> SquadTabs;
         public LevelOptions SaveLevelOptions;
         public LevelOptions CurrentLevelOptions;
@@ -294,7 +291,7 @@ namespace Assets.Scripts.Scenes
                 }
             }
 
-            if (DoesUserHaveController && ((CurrentLevelOptions.FogOfWar == -1 && Utilities.CoinToss()) || CurrentLevelOptions.FogOfWar == 1))
+            if (Stage.DoesUserHaveController && ((CurrentLevelOptions.FogOfWar == -1 && Utilities.CoinToss()) || CurrentLevelOptions.FogOfWar == 1))
             {
                 ActivateFogOfWar = true;
                 Debug.Log($"The map has fog of war");
@@ -329,55 +326,6 @@ namespace Assets.Scripts.Scenes
             {
                 ActivateLoadingShipsMidLevel = false;
                 Debug.Log($"The map does not have ships loading midlevel");
-            }
-
-            if (CurrentLevelOptions.EnemyShipTypeOption == -1)
-            {
-                if (ConfigData.Configuration.AISide == ConfigData.Configuration.BeeSide)
-                {
-                    BeeShipTypes = new List<string>() { BeeShipTypes[Utilities.RandomInt(BeeShipTypes.Count)] };
-                    Debug.Log($"The user has selected randomized enemy ship type: {BeeShipTypes[0]}");
-                }
-                else
-                {
-                    HumanShipTypes = new List<string>() { HumanShipTypes[Utilities.RandomInt(HumanShipTypes.Count)] };
-                    Debug.Log($"The user has selected randomized enemy ship type: {HumanShipTypes[0]}");
-                }
-
-            }
-            else if (CurrentLevelOptions.EnemyShipTypeOption == 0)
-            {
-                Debug.Log($"The map does not have a singular enemy ship type");
-                if (OverrideBeeShipTypes.Count > 0)
-                {
-                    BeeShipTypes = OverrideBeeShipTypes;
-                }
-                else
-                {
-                    BeeShipTypes = ConfigData.BeeShipTypes.ToList();
-                }
-
-                if (OverrideHumanShipTypes.Count > 0)
-                {
-                    HumanShipTypes = OverrideHumanShipTypes;
-                }
-                else
-                {
-                    HumanShipTypes = ConfigData.HumanShipTypes.ToList();
-                }
-            }
-            else
-            {
-                if (ConfigData.Configuration.AISide == ConfigData.Configuration.BeeSide)
-                {
-                    BeeShipTypes = new List<string>() { BeeShipTypes[CurrentLevelOptions.EnemyShipTypeOption-1] };
-                    Debug.Log($"The user has selected enemy ship type: {BeeShipTypes[0]}");
-                }
-                else
-                {
-                    HumanShipTypes = new List<string>() { HumanShipTypes[CurrentLevelOptions.EnemyShipTypeOption-1] };
-                    Debug.Log($"The user has selected enemy ship type: {HumanShipTypes[0]}");
-                }
             }
 
         }
@@ -572,7 +520,7 @@ namespace Assets.Scripts.Scenes
         /// </summary>
         public void LevelOver() // [stats-method] [note]
         {
-            if (!IsTrainingNueralNetwork)
+            if (!Stage.IsTrainingNueralNetwork)
             {
                 Pause();
                 //Debug.Log("LEVEL OVER!");
@@ -623,23 +571,23 @@ namespace Assets.Scripts.Scenes
                     Debug.Log("Neither side is dead!");
                 }
 
-                if (Menus != null && !ConfigData.IsPlayingCampaign)
+                if (Stage.Menus != null && !ConfigData.IsPlayingCampaign)
                 {
-                    Menus.UpdateScore(ConfigData.GetUserProgressData().HumanFreePlayWins, ConfigData.GetUserProgressData().BeeFreePlayWins);
+                    Stage.Menus.UpdateScore(ConfigData.GetUserProgressData().HumanFreePlayWins, ConfigData.GetUserProgressData().BeeFreePlayWins);
                 }
 
                 UnPause();
             }
             
 
-            if (IsTrainingNueralNetwork)
+            if (Stage.IsTrainingNueralNetwork)
             {
                 
                 ResetLevel(false);
             }
             else
             {
-                if (IsTrainingHiveMind)
+                if (Stage.IsTrainingHiveMind)
                 {
                     SaveAndEnd();
 
@@ -794,7 +742,7 @@ namespace Assets.Scripts.Scenes
 
             Debug.Log($"Playing level: {CurrentLevelOptions.Name} with squads: {Utilities.ListToString(CurrentLevelOptions.ChosenSquads)}");
             // Check settings and config variables
-            SetConfigOptionsAndOverrides();
+            Stage.SetConfigOptionsAndOverrides();
 
             //Debug.Log($"The human side is {ConfigData.Configuration.HumanSide}, the Bee side is {ConfigData.Configuration.BeeSide}, the AI side is {ConfigData.Configuration.AISide}, the user side is {ConfigData.Configuration.UserSide}");
             //Debug.Log($"The AI Starting position is {AIStartingPosition}, the user starting position is {UserStartingPosition}");
@@ -844,49 +792,6 @@ namespace Assets.Scripts.Scenes
             float end = (Time.realtimeSinceStartup - StartTime) * 1000; // seconds to milliseconds
             Debug.Log($"It took {Math.Round(end, 2)} ms to set up the level and {Math.Round(Time.realtimeSinceStartup, 2)}s total time.");
         }
-        public void SetConfigOptionsAndOverrides()
-        {
-            if (TimeoutTime == 0)
-            {
-                TimeoutTime = int.MaxValue;
-            }
-
-            if (OverrideTimeScale == 0)
-            {
-                TimeScale = ConfigData.Configuration.TimeScale;
-            }
-            else
-            {
-                TimeScale = OverrideTimeScale;
-
-            }
-            if (GeneratedSquadCountOverride > 0)
-            {
-                CurrentLevelOptions.EnemySquadGenerationCount = GeneratedSquadCountOverride;
-            }
-            if (CurrentLevelOptions.EnemySquadGenerationCount > 0)
-            {
-                CurrentLevelOptions.EnemySquadGenerationCount = Utilities.RandomInt(CurrentLevelOptions.EnemySquadGenerationCount) + 1;
-            }
-
-            if (OverrideBeeShipTypes.Count > 0)
-            {
-                BeeShipTypes = OverrideBeeShipTypes;
-            }
-            else
-            {
-                BeeShipTypes = ConfigData.BeeShipTypes.ToList();
-            }
-
-            if (OverrideHumanShipTypes.Count > 0)
-            {
-                HumanShipTypes = OverrideHumanShipTypes;
-            }
-            else
-            {
-                HumanShipTypes = ConfigData.HumanShipTypes.ToList();
-            }
-        }
         /// <summary>
         /// Cleans up the game state and requests and deletes the previous map
         /// </summary>
@@ -901,7 +806,7 @@ namespace Assets.Scripts.Scenes
             //Socket.StandingRequests.Clear();
             ConfigData.Socket.HandledRequests.Except(HandledRequests);
             HandledRequests.Clear();
-            if (!WatchServerRequests)
+            if (!Stage.WatchServerRequests)
             {
                 ConfigData.__PastServerRequests.Clear();
             }
@@ -916,7 +821,7 @@ namespace Assets.Scripts.Scenes
         public void SetupHivemind()
         {
             CancelInvoke(nameof(GetHiveMindCommands));
-            if (ActivateHiveMind)
+            if (Stage.ActivateHiveMind)
             {
                 Invoke(nameof(GetHiveMindCommands), InitialCommandDelay);
             }
@@ -971,7 +876,7 @@ namespace Assets.Scripts.Scenes
             {
                 Debug.Log($"User squads: {state.GetSquadsBySide(ConfigData.Configuration.UserSide).Count}, AI squads: {state.GetSquadsBySide(ConfigData.Configuration.AISide).Count}");
                 Pause();
-                Menus.NoAliveShipsAlert.SetActive(true);
+                Stage.Menus.NoAliveShipsAlert.SetActive(true);
             }
             CalculateShipClearances();
         }
@@ -1002,20 +907,9 @@ namespace Assets.Scripts.Scenes
             HalfY = MapY / 2;
 
 
-            if (!IsTraining && !UnlockCamera)
+            if (!IsTraining && !Stage.UnlockCamera && Stage.PrimaryLevel == this)
             {
-                Camera.orthographicSize = DefaultZoom;
-                Vector2 localizedPosition = DefaultCameraPosition + (Vector2)transform.position;
-                Camera.transform.position = new Vector3(localizedPosition.x, localizedPosition.y, -10);
-                InputManager.MaintainScrollBoundary();
-                if ((OverrideUserSide == 1 || OverrideUserSide == 2) && OverrideUserSide != ConfigData.Configuration.UserSide)
-                {
-                    ConfigData.SwapSides();
-                    Menus.ActionBox.Setup(this, EventSystem, ConfigData.Configuration.UserSide);
-                }
-
-                MiniMapCamera.gameObject.SetActive(true);
-                MiniMapCamera.orthographicSize = Map.MiniMapCameraSize;
+                Stage.SetupCamera();
 
                 SquadTabs.ForEach((tab) =>
                 {
@@ -1028,12 +922,12 @@ namespace Assets.Scripts.Scenes
             {
                 if (IsTraining)
                 {
-                    MiniMapCameraContainer.SetActive(false);
-                    MiniMapDisplayCanvas.SetActive(false);
+                    Stage.MiniMapCameraContainer.SetActive(false);
+                    Stage.MiniMapDisplayCanvas.SetActive(false);
                     //Camera.gameObject.SetActive(false);
                 }
                 CancelInvoke(nameof(TimeOut));
-                Invoke(nameof(TimeOut), TimeoutTime);
+                Invoke(nameof(TimeOut), Stage.TimeoutTime);
             }
 
 
@@ -1196,12 +1090,12 @@ namespace Assets.Scripts.Scenes
             //Invoke(nameof(StartNew), .1f);
             //Invoke(nameof(ReloadScene), 1f);
 
-            if (!IsTraining && !Menus.IsMiniMapOpen)
+            if (!IsTraining && !Stage.Menus.IsMiniMapOpen)
             {
-                Menus.ToggleMiniMapDisplay();
+                Stage.Menus.ToggleMiniMapDisplay();
             }
 
-            if (DoesUserHaveController && !IsRestarting)
+            if (Stage.DoesUserHaveController && !IsRestarting)
             {
                 Invoke(nameof(LevelEndedDialogue), 1f);
             }
@@ -1251,42 +1145,42 @@ namespace Assets.Scripts.Scenes
 
             progress.Save();
 
-            if (Menus != null)
+            if (Stage.Menus != null)
             {
-                Menus.UpdateScore(ConfigData.GetUserProgressData().HumanWins, ConfigData.GetUserProgressData().BeeWins);
+                Stage.Menus.UpdateScore(ConfigData.GetUserProgressData().HumanWins, ConfigData.GetUserProgressData().BeeWins);
             }
         }
         private void LevelEndedDialogue()
         {
-            Menus.OpenLevelEndedDialogue();
+            Stage.Menus.OpenLevelEndedDialogue();
 
             if (ConfigData.IsPlayingCampaign)
             {
                 if (WinningSide == ConfigData.Configuration.UserSide)
                 {
-                    Menus.TryNewSquadsButtonText.text = "Play next level";
+                    Stage.Menus.TryNewSquadsButtonText.text = "Play next level";
                 }
                 else
                 {
-                    Menus.TryNewSquadsButtonText.text = "Try again";
+                    Stage.Menus.TryNewSquadsButtonText.text = "Try again";
                 }
-                Menus.KeepGoingButton.SetActive(false);
+                Stage.Menus.KeepGoingButton.SetActive(false);
             }
         }
         public void Pause()
         {
-            if (Audio != null)
+            if (Stage.Audio != null)
             {
-                Audio.Pause();
+                Stage.Audio.Pause();
             }
             GetState().IsPaused = true;
         }
         public void UnPause()
         {
             GetState().IsPaused = false;
-            if (Audio != null && PlayMusic)
+            if (Stage.Audio != null && Stage.PlayMusic)
             {
-                Audio.Play();
+                Stage.Audio.Play();
             }
         }
         // The SplitterShot class adds it's own projectile [note] [projectile-method]
@@ -1318,7 +1212,7 @@ namespace Assets.Scripts.Scenes
         private void GetHiveMindCommands()
         {
             //Debug.Log("Giving command");
-            if (!IsPaused && ActivateHiveMind && IsLevelSetupOnServer)
+            if (!IsPaused && Stage.ActivateHiveMind && IsLevelSetupOnServer)
             {
                 Queue<Squad> squads = GetState().GetSquadsAwaitingHiveMindCommands();  
                 while (squads.Count > 0)

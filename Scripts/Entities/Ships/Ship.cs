@@ -266,6 +266,7 @@ namespace Assets.Scripts.Entities.Ships
             Squad = squad;
             Side = squad.Side;
             Level = level;
+            Stage = Level.Stage;
             FleetShip = fleetShip;
             ShipType = FleetShip.Type;
             OffsetFromCenter = offsetFromCenter;
@@ -1335,7 +1336,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 //Debug.Log("Hit selection box");
                 if (IsUserControlled)
                 {
-                    Level.Selector.SelectShip(this);
+                    Stage.Selector.SelectShip(this);
                 }
             }
             //else if (collidingThing.CompareTag("Obstacle") && BumperCollider.IsTouching(collider))
@@ -1470,7 +1471,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     targetSquad.Command.Tsv += tsvChange; // add the negative TSV to the target command because it took damage
                 }
 
-                if (target.Level.IsTrainingNueralNetwork)
+                if (target.Stage.IsTrainingNueralNetwork)
                 {
                     int[] initialTsv = target.Level.GetState().InitialTsv;
                     //Debug.Log($"Initial TSV: {initialTsv[0]}, {initialTsv[1]}");
@@ -1520,7 +1521,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
             if (collidingThing.name == ("Selection Box") && IsUserControlled)
             {
-               Level.Selector.DeselectShip(this);
+               Stage.Selector.DeselectShip(this);
             }
         }
         public void EndKill()
@@ -1999,7 +2000,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         }
         public void ShowShipStats()
         {
-            Level.Menus.ShowShipStats(FleetShip);
+            Stage.Menus.ShowShipStats(FleetShip);
         }
         private void OnMouseEnter()
         {
@@ -2014,7 +2015,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             CancelInvoke(nameof(ShowShipStats));
             if (!Level.IsTraining)
             {
-                Level.Menus.ShipInfoBox.SetActive(false);
+                Stage.Menus.ShipInfoBox.SetActive(false);
             }
 
         }

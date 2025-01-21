@@ -13,9 +13,11 @@ namespace Assets.Scripts.Level
     public class LevelConstructor
     {
         public LevelStage Level;
+        public Stage Stage;
         public LevelConstructor(LevelStage level)
         {
             Level = level;
+            Stage = Level.Stage;
         }
         public void RequestServerSetup()
         {
@@ -52,14 +54,14 @@ namespace Assets.Scripts.Level
                 List<SavedSquad> squadsList = new List<SavedSquad>();
                 for (int i = 0; i < Level.CurrentLevelOptions.EnemySquadGenerationCount; i++)
                 {
-                    string type = Level.BeeShipTypes.ElementAt(Random.Range(0, Level.BeeShipTypes.Count));
+                    string type = Stage.BeeShipTypes.ElementAt(Random.Range(0, Stage.BeeShipTypes.Count));
                     if (side == ConfigData.Configuration.HumanSide)
                     {
-                        type = Level.HumanShipTypes.ElementAt(Random.Range(0, Level.HumanShipTypes.Count));
+                        type = Stage.HumanShipTypes.ElementAt(Random.Range(0, Stage.HumanShipTypes.Count));
                     }
-                    while (Level.HasObstacles && side == ConfigData.Configuration.BeeSide && type == "Queen" && Level.BeeShipTypes.Count > 1)
+                    while (Level.HasObstacles && side == ConfigData.Configuration.BeeSide && type == "Queen" && Stage.BeeShipTypes.Count > 1)
                     {
-                        type = Level.BeeShipTypes.ElementAt(Random.Range(0, Level.BeeShipTypes.Count));
+                        type = Stage.BeeShipTypes.ElementAt(Random.Range(0, Stage.BeeShipTypes.Count));
                     }
                     int squadId = Utilities.GetNegativeSavedSquadId();
                     SavedSquad savedSquad = new SavedSquad(squadId, side, $"{type}s #{squadId}", Vector2.zero, false, false,
@@ -67,8 +69,8 @@ namespace Assets.Scripts.Level
                     savedSquad.SetupRandomShips(type);
                     squadsList.Add(savedSquad);
 
-                    if (ConfigData.ArmedShipTypes.Contains(type) || (side == ConfigData.Configuration.BeeSide && Level.OverrideBeeShipTypes.Count > 0)
-                        || (side == ConfigData.Configuration.HumanSide && Level.OverrideHumanShipTypes.Count > 0) || Level.CurrentLevelOptions.EnemyShipTypeOption != 0)
+                    if (ConfigData.ArmedShipTypes.Contains(type) || (side == ConfigData.Configuration.BeeSide && Stage.OverrideBeeShipTypes.Count > 0)
+                        || (side == ConfigData.Configuration.HumanSide && Stage.OverrideHumanShipTypes.Count > 0) || Level.CurrentLevelOptions.EnemyShipTypeOption != 0)
                     {
                         hasArmedSquads = true;
                     }
@@ -216,8 +218,8 @@ namespace Assets.Scripts.Level
         {
             //ConfigData.CurrentShips = new Ships(ConfigData.GetFleetData(), ConfigData.GetSavedSquadsData());
 
-
-            if (Level.IsTrainingNueralNetwork || Level.UseFullyRandomSquads || ((Level.UseFullyRandomEnemySquads || Level.CurrentLevelOptions.EnemySquadGenerationCount > 0) && side == ConfigData.Configuration.AISide))
+            Debug.Log($"Stage: {Stage}, Level: {Level.Name}, CurrentLevelOptions: {Level.CurrentLevelOptions}");
+            if (Stage.IsTrainingNueralNetwork || Level.UseFullyRandomSquads || ((Level.UseFullyRandomEnemySquads || Level.CurrentLevelOptions.EnemySquadGenerationCount > 0) && side == ConfigData.Configuration.AISide))
             {
                 AddRandomSquads(side);
             }
@@ -227,16 +229,16 @@ namespace Assets.Scripts.Level
             }
 
             // Setup entities on the level
-            //Debug.Log($"Setting up ships for {side} at {Level.StartingPositions[side - 1]}");
+            Debug.Log($"Setting up ships for {side} at {Level.StartingPositions[side - 1]}");
             //Debug.Log($"Chosen squads: {Utilities.ListToString(Level.CurrentLevelOptions.ChosenSquads)}");
             if (side == ConfigData.Configuration.AISide)
             {
-                //Debug.Log($"Squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.EnemySquads)}");
+                Debug.Log($"Squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.EnemySquads)}");
                 SpawnShipsAndSquads(Level.CurrentLevelOptions.EnemySquads, Level.StartingPositions[side - 1], Vector2.zero);
             }
             else
             {
-                //Debug.Log($"Squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.ChosenSquads)}");
+                Debug.Log($"Squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.ChosenSquads)}");
                 SpawnShipsAndSquads(Level.CurrentLevelOptions.ChosenSquads, Level.StartingPositions[side - 1], Vector2.zero);
             }
 
@@ -408,7 +410,7 @@ namespace Assets.Scripts.Level
                 squad.SetStartingPosition(startingPosition);
                 squad.NameSquadShips();
             });
-            if (Level.IsTrainingNueralNetwork)
+            if (Stage.IsTrainingNueralNetwork)
             {
                 return; // [alert] [rl-training] only do this for rl learning
             }

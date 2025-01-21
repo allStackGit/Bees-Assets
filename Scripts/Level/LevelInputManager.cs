@@ -50,11 +50,12 @@ namespace Assets.Scripts.Level
 
         public Selector Selector;
         public LevelStage Level;
+        public Stage Stage;
         public const int RightClick = 1;
         public const int LeftClick = 0;
         public List<Timer> Timers = new List<Timer>();
         public List<Turret> TurretsFiringManually = new List<Turret>();
-        public EventSystem EventSystem => Level.EventSystem;
+        public EventSystem EventSystem => Stage.EventSystem;
 
         // these are booleans for user inputs that are held down so that we don't need to fire the action the entire time they're held down
 
@@ -64,10 +65,11 @@ namespace Assets.Scripts.Level
         
 
 
-        public LevelInputManager(LevelStage level, Selector selector)
+        public LevelInputManager(Stage stage, Selector selector)
         {
-            Level = level;
-            _mousePosition = Level.Camera.ScreenToWorldPoint(Input.mousePosition);
+            Stage = stage;
+            Level = stage.PrimaryLevel;
+            _mousePosition = Stage.Camera.ScreenToWorldPoint(Input.mousePosition);
             Selector = selector;
 
             LoadHotKeySettings();
@@ -102,68 +104,68 @@ namespace Assets.Scripts.Level
                         hotKey.SetAction(() =>
                         {
                             //Debug.Log($"Match speed action!");
-                            Level.Menus.ActionBox.MatchSpeed();
+                            Stage.Menus.ActionBox.MatchSpeed();
                         });
                         break;
                     case "Attack on Sight":
                         hotKey.SetAction(() =>
                         {
-                            Level.Menus.ActionBox.AttackOnSight();
+                            Stage.Menus.ActionBox.AttackOnSight();
                         });
                         break;
                     case "Cease Fire":
                         hotKey.SetAction(() =>
                         {
-                            Level.Menus.ActionBox.CeaseFire();
+                            Stage.Menus.ActionBox.CeaseFire();
                         });
                         break;
                     case "Patrol":
                         hotKey.SetAction(() =>
                         {
-                            Level.Menus.ActionBox.Patrol();
+                            Stage.Menus.ActionBox.Patrol();
                         });
                         break;
                     case "Guard":
                         hotKey.SetAction(() =>
                         {
-                            Level.Menus.ActionBox.Guard();
+                            Stage.Menus.ActionBox.Guard();
                         });
                         break;
                     case "Chase":
                         hotKey.SetAction(() =>
                         {
-                            Level.Menus.ActionBox.Chase();
+                            Stage.Menus.ActionBox.Chase();
                         });
                         break;
                     case "Hold":
                         hotKey.SetAction(() =>
                         {
-                            Level.Menus.ActionBox.Hold();
+                            Stage.Menus.ActionBox.Hold();
                         });
                         break;
                     case "Detonate":
                         hotKey.SetAction(() =>
                         {
-                            Level.Menus.ActionBox.Detonate();
+                            Stage.Menus.ActionBox.Detonate();
                         });
                         break;
                     case "Charge":
                         hotKey.SetAction(() =>
                         {
-                            Level.Menus.ActionBox.Charge();
+                            Stage.Menus.ActionBox.Charge();
                         });
                         break;
                     case "Drop Beacon":
                         hotKey.SetAction(() =>
                         {
-                            Level.Menus.ActionBox.DropBeacon();
+                            Stage.Menus.ActionBox.DropBeacon();
                         });
                         break;
 
                     case var _ when ConfigData.Configuration.ShootingStrategies.Contains(hotKey.Name):
                         hotKey.SetAction(() =>
                         {
-                            Level.Menus.ActionBox.SetShootingStrategy(hotKey.Name);
+                            Stage.Menus.ActionBox.SetShootingStrategy(hotKey.Name);
                         });
                         break;
 
@@ -178,7 +180,7 @@ namespace Assets.Scripts.Level
                     case "Open Menu":
                         hotKey.SetAction(() =>
                         {
-                            Level.Menus.OpenMenu();
+                            Stage.Menus.OpenMenu();
                             hotKey.ManuallySetInputRelease(true);
                         });
                         break;
@@ -252,7 +254,7 @@ namespace Assets.Scripts.Level
                     case "Toggle Mini Map":
                         hotKey.SetAction(() =>
                         {
-                            Level.Menus.ToggleMiniMapDisplay();
+                            Stage.Menus.ToggleMiniMapDisplay();
                         });
                         break;
                     case "Move Camera Up":
@@ -357,7 +359,7 @@ namespace Assets.Scripts.Level
             if (squad != null)
             {
                 Vector2 position = squad.GetPosition();
-                Level.Camera.transform.position = new Vector3(position.x, position.y, -10) + Level.Get3DPosition();
+                Stage.Camera.transform.position = new Vector3(position.x, position.y, -10) + Level.Get3DPosition();
                 //ToggleZoom();
                 MaintainScrollBoundary();
             }
@@ -397,7 +399,7 @@ namespace Assets.Scripts.Level
 
             _previousMousePosition = _mousePosition;
             Vector2 mouse = Input.mousePosition;
-            _mousePosition = Level.Camera.ScreenToWorldPoint(mouse);
+            _mousePosition = Stage.Camera.ScreenToWorldPoint(mouse);
 
             // A test to see which keys are being pressed
             //if (Input.anyKeyDown)
@@ -479,18 +481,18 @@ namespace Assets.Scripts.Level
                 _scrollNegative = true;
             }
 
-            if (mouse.x < Utilities.WorldUnitsToScreenPixels(Level.MouseScrollDistanceFromEdge, Level.Camera).x)   
+            if (mouse.x < Utilities.WorldUnitsToScreenPixels(Level.MouseScrollDistanceFromEdge, Stage.Camera).x)   
             {
                 _mouseAtLeftEdge = true;
-            }else if (mouse.x >= ConfigData.ScreenWidth - Utilities.WorldUnitsToScreenPixels(Level.MouseScrollDistanceFromEdge, Level.Camera).x)
+            }else if (mouse.x >= ConfigData.ScreenWidth - Utilities.WorldUnitsToScreenPixels(Level.MouseScrollDistanceFromEdge, Stage.Camera).x)
             {
                 _mouseAtRightEdge = true;
             }
 
-            if (mouse.y < Utilities.WorldUnitsToScreenPixels(Level.MouseScrollDistanceFromEdge, Level.Camera).y)
+            if (mouse.y < Utilities.WorldUnitsToScreenPixels(Level.MouseScrollDistanceFromEdge, Stage.Camera).y)
             {
                 _mouseAtBottomEdge = true;
-            }else if (mouse.y >= ConfigData.ScreenHeight - Utilities.WorldUnitsToScreenPixels(Level.MouseScrollDistanceFromEdge, Level.Camera).y)
+            }else if (mouse.y >= ConfigData.ScreenHeight - Utilities.WorldUnitsToScreenPixels(Level.MouseScrollDistanceFromEdge, Stage.Camera).y)
             {
                 _mouseAtTopEdge = true;
             }
@@ -516,13 +518,13 @@ namespace Assets.Scripts.Level
         }
         private void ToggleZoom()
         {
-            if (Level.Camera.orthographicSize == Level.Map.MaxZoom)
+            if (Stage.Camera.orthographicSize == Level.Map.MaxZoom)
             {
-                Level.Camera.orthographicSize = Level.DefaultZoom;
+                Stage.Camera.orthographicSize = Level.DefaultZoom;
             }
             else
             {
-                Level.Camera.orthographicSize = Level.Map.MaxZoom;
+                Stage.Camera.orthographicSize = Level.Map.MaxZoom;
             }
         }
         private void SetRightMouseDownLongEnoughForDragging()
@@ -583,7 +585,7 @@ namespace Assets.Scripts.Level
             if (_rightMouseButtonUp)
             {
                 //Debug.Log($"right up: {_rightMouseButtonUp}");
-                RaycastHit2D[] hits = Physics2D.RaycastAll(Level.Camera.ScreenToWorldPoint(Input.mousePosition), Vector2.zero);
+                RaycastHit2D[] hits = Physics2D.RaycastAll(Stage.Camera.ScreenToWorldPoint(Input.mousePosition), Vector2.zero);
                 for (int i = 0; i < hits.Length; i++)
                 {
                     RaycastHit2D hit = hits[i];
@@ -651,7 +653,7 @@ namespace Assets.Scripts.Level
                 if (HasDragMoveSquadsInput())
                 {
                     //Debug.Log("Has drag input");
-                    MoveSquads(Level.Camera.ScreenToWorldPoint(Input.mousePosition));
+                    MoveSquads(Stage.Camera.ScreenToWorldPoint(Input.mousePosition));
                 }
                 else if (HasSelectingGuardShipInput())
                 {
@@ -674,7 +676,7 @@ namespace Assets.Scripts.Level
                 else if (HasMoveSquadsInput())
                 {
                     //Debug.Log("Has move input");
-                    MoveSquads(Level.Camera.ScreenToWorldPoint(Input.mousePosition));
+                    MoveSquads(Stage.Camera.ScreenToWorldPoint(Input.mousePosition));
                 }
                 else if (_leftMouseButtonUp)
                 {
@@ -903,7 +905,7 @@ namespace Assets.Scripts.Level
         {
             if (_leftMouseButtonUp || _rightMouseButtonUp)
             {
-                RaycastHit2D[] hits = Physics2D.RaycastAll(Level.Camera.ScreenToWorldPoint(Input.mousePosition), Vector2.zero);
+                RaycastHit2D[] hits = Physics2D.RaycastAll(Stage.Camera.ScreenToWorldPoint(Input.mousePosition), Vector2.zero);
                 for (int i = 0; i < hits.Length; i++)
                 {
                     RaycastHit2D hit = hits[i];
@@ -922,7 +924,7 @@ namespace Assets.Scripts.Level
         }
         private void CheckForMiniMapNavigation(int mouseButton)
         {
-            if (!Level.Menus.HoveringOverMiniMapButton)
+            if (!Stage.Menus.HoveringOverMiniMapButton)
             {
                 PointerEventData eventData = new PointerEventData(EventSystem.current);
                 eventData.position = new Vector2(Input.mousePosition.x, Input.mousePosition.y);
@@ -939,7 +941,7 @@ namespace Assets.Scripts.Level
                     {
                         Vector2 miniMapPoint = hit.gameObject.transform.InverseTransformPoint(hit.screenPosition);
                         Vector2 viewPortPoint = miniMapPoint + new Vector2(.5f, .5f);
-                        Vector2 viewPortWorldPoint = Level.MiniMapCamera.ViewportToWorldPoint(viewPortPoint);
+                        Vector2 viewPortWorldPoint = Stage.MiniMapCamera.ViewportToWorldPoint(viewPortPoint);
                         Vector2 localized = viewPortWorldPoint - Level.GetPosition();
 
                         //Debug.Log($"Hit: Screen position: {hit.screenPosition}, Mini Map position: {miniMapPoint}, View port position: {viewPortPoint}, Viewport World Point: {viewPortWorldPoint}," +
@@ -951,7 +953,7 @@ namespace Assets.Scripts.Level
                         }
                         else
                         {
-                            Level.Camera.transform.localPosition = new Vector3(localized.x, localized.y, -10);
+                            Stage.Camera.transform.localPosition = new Vector3(localized.x, localized.y, -10);
                             MaintainScrollBoundary();
                         }
 
@@ -1004,8 +1006,8 @@ namespace Assets.Scripts.Level
             {
                 scrollSpeed = Level.ScrollSpeed;
             }
-            Vector3 position = Level.Camera.transform.position;
-            Level.Camera.transform.position = new Vector3(position.x + scrollSpeed, position.y, -10);
+            Vector3 position = Stage.Camera.transform.position;
+            Stage.Camera.transform.position = new Vector3(position.x + scrollSpeed, position.y, -10);
             MaintainScrollBoundary();
 
         }
@@ -1015,8 +1017,8 @@ namespace Assets.Scripts.Level
             {
                 scrollSpeed = Level.ScrollSpeed;
             }
-            Vector3 position = Level.Camera.transform.position;
-            Level.Camera.transform.position = new Vector3(position.x - scrollSpeed, position.y, -10);
+            Vector3 position = Stage.Camera.transform.position;
+            Stage.Camera.transform.position = new Vector3(position.x - scrollSpeed, position.y, -10);
             MaintainScrollBoundary();
 
         }
@@ -1026,8 +1028,8 @@ namespace Assets.Scripts.Level
             {
                 scrollSpeed = Level.ScrollSpeed;
             }
-            Vector3 position = Level.Camera.transform.position;
-            Level.Camera.transform.position = new Vector3(position.x, position.y + scrollSpeed, -10);
+            Vector3 position = Stage.Camera.transform.position;
+            Stage.Camera.transform.position = new Vector3(position.x, position.y + scrollSpeed, -10);
             MaintainScrollBoundary();
 
         }
@@ -1037,41 +1039,41 @@ namespace Assets.Scripts.Level
             {
                 scrollSpeed = Level.ScrollSpeed;
             }
-            Vector3 position = Level.Camera.transform.position;
-            Level.Camera.transform.position = new Vector3(position.x, position.y - scrollSpeed, -10);
+            Vector3 position = Stage.Camera.transform.position;
+            Stage.Camera.transform.position = new Vector3(position.x, position.y - scrollSpeed, -10);
             MaintainScrollBoundary();
 
         }
         private void ZoomIn()
         {
             float difference = -1 * Level.ZoomSpeed;
-            if ((Level.Camera.orthographicSize + difference) < Level.Map.MinZoom)
+            if ((Stage.Camera.orthographicSize + difference) < Level.Map.MinZoom)
             {
-                difference = Level.Camera.orthographicSize - Level.Map.MinZoom;
+                difference = Stage.Camera.orthographicSize - Level.Map.MinZoom;
             }
-            Level.Camera.orthographicSize += difference; // orthographic size decreases, zooming in
+            Stage.Camera.orthographicSize += difference; // orthographic size decreases, zooming in
 
             MaintainScrollBoundary();
         }
         private void ZoomOut()
         {
             float difference = Level.ZoomSpeed;
-            if ((Level.Camera.orthographicSize + difference) > Level.Map.MaxZoom)
+            if ((Stage.Camera.orthographicSize + difference) > Level.Map.MaxZoom)
             {
-                difference = Level.Camera.orthographicSize - Level.Map.MaxZoom;
+                difference = Stage.Camera.orthographicSize - Level.Map.MaxZoom;
             }
-            Level.Camera.orthographicSize += difference; // orthographic size increases, zooming out
+            Stage.Camera.orthographicSize += difference; // orthographic size increases, zooming out
 
             MaintainScrollBoundary();
         }
         public void MaintainScrollBoundary()
         {
             //Level.MiniMapCamera.transform.position = new Vector3(0, 0, -10);
-            if (Level.HasPlayer && !Level.UnlockCamera)
+            if (Level.HasPlayer && !Stage.UnlockCamera)
             {
-                MaintainHorizontalScrollBoundary(Level.Camera);
+                MaintainHorizontalScrollBoundary(Stage.Camera);
                 //MaintainHorizontalScrollBoundary(Level.MiniMapCamera);
-                MaintainVerticalScrollBoundary(Level.Camera);
+                MaintainVerticalScrollBoundary(Stage.Camera);
                 //MaintainVerticalScrollBoundary(Level.MiniMapCamera);
             }
 

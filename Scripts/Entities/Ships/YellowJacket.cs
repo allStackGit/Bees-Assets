@@ -22,7 +22,7 @@ namespace Assets.Scripts.Entities.Ships
             {
                 if (IsUserControlled)
                 {
-                    Level.Selector.SelectShip(this);
+                    Stage.Selector.SelectShip(this);
                 }
             }
             else if (collidingThing.CompareTag("Ship") && Collider.IsTouching(collider))
@@ -56,7 +56,7 @@ namespace Assets.Scripts.Entities.Ships
             }
             else if (collidingThing.name == ("Selection Box") && IsUserControlled)
             {
-                Level.Selector.DeselectShip(this);
+                Stage.Selector.DeselectShip(this);
             }
         }
         public void TryToDetonate()

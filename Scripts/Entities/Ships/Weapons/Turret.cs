@@ -142,7 +142,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             if (IsFiringManually)
             {
-                TargetPoint = Level.InputManager.GetMousePosition();
+                TargetPoint = Stage.InputManager.GetMousePosition();
                 IsAimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
             }
             else

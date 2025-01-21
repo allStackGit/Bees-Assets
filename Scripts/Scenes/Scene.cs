@@ -18,7 +18,7 @@ namespace Assets.Scripts.Scenes
         public Camera Camera;
         public GameObject DialoguePrefab;
         public EventSystem EventSystem;
-        public bool FinalizedScene, WatchServerRequests, IsSocketManager, IsMainScene;
+        public bool IsFinalized, WatchServerRequests, IsSocketManager, IsMainScene;
         //public List<Dialogue> Dialogues = new List<Dialogue>();
         public Dialogue NetworkDisconnection;
         public float TimeScale = 1;
@@ -27,10 +27,6 @@ namespace Assets.Scripts.Scenes
         /// The framerate that the application should try to hit. -1 Means syncing it to the monitor refresh rate.
         /// </summary>
         public int TargetFrameRate;
-
-
-        public bool IsLevel = false;
-
 
         public List<string> __PastServerRequests, __SocketLevels, __StandingRequests;
         /// <summary>
@@ -110,7 +106,7 @@ namespace Assets.Scripts.Scenes
 
 
             //ConfigData.Ships.ReplaceDeadSquadShips();
-            FinalizedScene = true;
+            IsFinalized = true;
         }
         protected void UpdateTestVariables()
         {
@@ -149,15 +145,15 @@ namespace Assets.Scripts.Scenes
                 Debug.Log($"Network disconnected!");
                 NetworkDisconnection.Show();
             }
-            else if (ConfigData.Socket.IsOpen && IsSocketManager && NetworkDisconnection.IsOpen && (!IsLevel || ((LevelStage)this).IsLevelConnectedToServer))
-            {
-                //NetworkDisconnection.Hide();
-            }
+            //else if (ConfigData.Socket.IsOpen && IsSocketManager && NetworkDisconnection.IsOpen && (!IsLevel || ((LevelStage)this).IsLevelConnectedToServer))
+            //{
+            //    //NetworkDisconnection.Hide();
+            //}
             if (!ConfigData.SocketManager.NetworkDisconnection.IsOpen)
             {
                 // [alert] [debug]
               
-                if (!FinalizedScene)
+                if (!IsFinalized)
                 {
                     if (IsMainScene && ConfigData.AreAllSettingsLoaded && !ConfigData.IsAllUserDataLoaded)
                     {
@@ -174,7 +170,7 @@ namespace Assets.Scripts.Scenes
                             ConfigData.SquadMakerSide = ConfigData.Configuration.SquadMakerFirstSide;
                         }
                     }
-                    else if (ConfigData.AreAllSettingsLoaded && ConfigData.IsAllUserDataLoaded && !FinalizedScene)
+                    else if (ConfigData.AreAllSettingsLoaded && ConfigData.IsAllUserDataLoaded && !IsFinalized)
                     {
 
                         FinalizeSceneWithUserData();

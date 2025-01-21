@@ -19,6 +19,7 @@ namespace Assets.Scripts.UIComponents
             ChooseNewSquadsButton, SwitchSidesButton, SaveAsLevelButton, ExitToMainMenuButton, Scoreboard;
         public SquadActionBox ActionBox;
         public LevelStage CurrentLevel;
+        public Stage Stage;
         public Dialogue ExitConfirmationDialogue;
         public TMP_Text ShipInfoBoxTitle, ShipInfoBoxStats, TryNewSquadsButtonText;
         public TMP_InputField LevelNameInput, SupplyCapacityInput;
@@ -31,14 +32,15 @@ namespace Assets.Scripts.UIComponents
         public bool HasSquadActionBox => !CurrentLevel.IsTraining && ActionBox != null;
 
 
-        public void Setup(LevelStage level)
+        public void Setup(Stage stage)
         {
-            CurrentLevel = level;
+            Stage = stage;
+            CurrentLevel = stage.PrimaryLevel;
             if (!CurrentLevel.IsTraining)
             {
                 ActionBox = SquadActionBoxUI.GetComponent<SquadActionBox>();
                 Codex.SetupCodex();
-                Settings.SetupSettings(CurrentLevel);
+                Settings.SetupSettings(Stage);
                 
                 if (ConfigData.IsPlayingCampaign)
                 {
@@ -53,7 +55,7 @@ namespace Assets.Scripts.UIComponents
 
             IsMiniMapOpen = MiniMapCloseButton.activeSelf;
 
-            ExitConfirmationDialogue = new Dialogue(CurrentLevel.DialoguePrefab, ConfigData.Configuration.AreYouSureExit, ConfigData.Configuration.LevelProgressLost,
+            ExitConfirmationDialogue = new Dialogue(Stage.DialoguePrefab, ConfigData.Configuration.AreYouSureExit, ConfigData.Configuration.LevelProgressLost,
                 new List<string>() { ConfigData.Configuration.Yes, ConfigData.Configuration.No }, new List<UnityAction>() { ExitToMainMenu });
             ExitConfirmationDialogue.SetTextBoxHeight(200);
             //Debug.Log($"ActionBox:{ActionBox}");
@@ -86,7 +88,7 @@ namespace Assets.Scripts.UIComponents
         public void ToggleMiniMapDisplay()
         {
             //Debug.Log("Toggling mini map!");
-            CurrentLevel.MiniMapCameraContainer.SetActive(!CurrentLevel.MiniMapCameraContainer.activeSelf);
+            CurrentLevel.Stage.MiniMapCameraContainer.SetActive(!CurrentLevel.Stage.MiniMapCameraContainer.activeSelf);
             MiniMapCloseButton.SetActive(!MiniMapCloseButton.activeSelf);
             MiniMapOpenButton.SetActive(!MiniMapOpenButton.activeSelf);
             MiniMapLeftBorder.SetActive(!MiniMapLeftBorder.activeSelf);
@@ -239,7 +241,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void DeselectButton()
         {
-            CurrentLevel.EventSystem.SetSelectedGameObject(null);
+            CurrentLevel.Stage.EventSystem.SetSelectedGameObject(null);
         }
         public void ShowShipStats(FleetShip ship)
         {

@@ -31,6 +31,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public bool HasShipsWithinRange => ShipsWithinRange.Count > 0;
         public int Id;
         public LevelStage Level;
+        public Stage Stage;
         public RangeCollider RangeCollider;
         /// <summary>
         /// Whether a weapon has a target ship and is not cease fire and therefore *should* fire at a target. It may still not be *able* to fire at a target, if for instance it's a turret and not aimed at the target.
@@ -47,6 +48,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             Ship = ship;
             Level = Ship.Level;
+            Stage = Level.Stage;
             Id = Level.GetState().GetId();
             Range = range;
             Power = power;

@@ -523,7 +523,7 @@ namespace Assets.Scripts
         {
             if (!AreAllSettingsLoaded)
             {
-                //Debug.Log("Trying to load settings");
+                Debug.Log("Trying to load settings");
                 ShipInfo = new ShipStats(GetUserId());
                 Configuration = new Configuration(GetUserId());
                 StartingSettings = new StartingSettings(GetUserId());

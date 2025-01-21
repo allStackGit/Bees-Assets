@@ -737,7 +737,7 @@ namespace Assets.Scripts.UIComponents
         {
             if (HasSquad())
             {
-                Level.InputManager.SetSelectGuardTargetActive();
+                Level.Stage.InputManager.SetSelectGuardTargetActive();
                 HighlightSelectedButtons();
             }
 
@@ -746,7 +746,7 @@ namespace Assets.Scripts.UIComponents
         {
             if (HasSquad())
             {
-                Level.InputManager.SetPatrolAreaActive();
+                Level.Stage.InputManager.SetPatrolAreaActive();
                 HighlightSelectedButtons();
             }
 

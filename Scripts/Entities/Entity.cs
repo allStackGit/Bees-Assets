@@ -12,6 +12,7 @@ namespace Assets.Scripts.Entities
         public long Age;
         public readonly DateTime StartTime = DateTime.Now;
         public LevelStage Level;
+        public Stage Stage;
         public int Side;
 
         public Collider2D Collider;

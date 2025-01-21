@@ -19,6 +19,7 @@ namespace Assets.Scripts.Level
     public class Squad : MonoBehaviour
     {
         public LevelStage Level;
+        public Stage Stage;
         public int Side, SquadNumber, OpponentId, Id;
         public long Age;
         public Command Command;
@@ -98,6 +99,7 @@ namespace Assets.Scripts.Level
             int id, int side, int squadNumber, string name, Color color)
         {
             Level = level;
+            Stage = Level.Stage;
             SavedSquad = savedSquad;
             Id = id;
             Side = side;
@@ -287,9 +289,9 @@ namespace Assets.Scripts.Level
             //        ship.TargetCoordinates = new Vector2(x, y);
             //    });
             //}
-            if (Level.DoesUserHaveController && IsSelected)
+            if (Level.Stage.DoesUserHaveController && IsSelected)
             {
-                Level.Menus.ActionBox.HighlightSelectedButtons();
+                Level.Stage.Menus.ActionBox.HighlightSelectedButtons();
             }
             //float start = Time.realtimeSinceStartup;
             List<Ship> ships = GetShips();
@@ -721,9 +723,9 @@ namespace Assets.Scripts.Level
                 ((Guard)Command).Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), true, squad);
             }
             
-            if (Level.DoesUserHaveController)
+            if (Level.Stage.DoesUserHaveController)
             {
-                Level.Menus.ActionBox.HighlightSelectedButtons();
+                Level.Stage.Menus.ActionBox.HighlightSelectedButtons();
             }
         }
         public void UserPatrol(Vector2 topLeft, Vector2 bottomRight)
@@ -735,9 +737,9 @@ namespace Assets.Scripts.Level
                 ((Patrol)Command).Execute(strategies.Item1, strategies.Item2, Level.GetState().AddUserCommand(), true, topLeft, bottomRight);
             }
             
-            if (Level.DoesUserHaveController)
+            if (Level.Stage.DoesUserHaveController)
             {
-                Level.Menus.ActionBox.HighlightSelectedButtons();
+                Level.Stage.Menus.ActionBox.HighlightSelectedButtons();
             }
         }
         public void UserMining(MiningAsteroid miningAsteroid)
@@ -934,7 +936,7 @@ namespace Assets.Scripts.Level
             _ships.Remove(ship);
             if (IsSelected && !Level.IsTraining)
             {
-                Level.Menus.ActionBox.SetSquadsText();
+                Stage.Menus.ActionBox.SetSquadsText();
             }
         }       
 

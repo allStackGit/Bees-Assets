@@ -14,7 +14,7 @@ public class SettingsMenu : MonoBehaviour
 {
     public GameObject ControlsList, Entry;
     public List<HotKey> HotKeys;
-    public LevelStage Level;
+    public Stage Stage;
     private readonly Dictionary<char, KeyCode> _keycodeCache = new Dictionary<char, KeyCode>();
     private HotKey _currentHotKey;
     private TMP_InputField _currentEntry;
@@ -74,7 +74,7 @@ public class SettingsMenu : MonoBehaviour
         {
             //Debug.Log("Saving settings");
             ConfigData.GetUserSettingsData().Save();
-            Level.InputManager.LoadHotKeySettings();
+            Stage.InputManager.LoadHotKeySettings();
         }
         gameObject.SetActive(false);
     }
@@ -86,9 +86,9 @@ public class SettingsMenu : MonoBehaviour
     {
         return _entryInputs.FirstOrDefault((e) => e.text == keyString);
     }
-    public void SetupSettings(LevelStage level)
+    public void SetupSettings(Stage stage)
     {
-        Level = level;
+        Stage = stage;
         HotKeys = ConfigData.GetUserSettingsData().HotKeys;
         HotKeys.ForEach(key =>
         {
