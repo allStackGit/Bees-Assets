@@ -366,7 +366,17 @@ namespace Assets.Scripts.Server
         {
             //Debug.Log("Got user data from server");
             UserDataResponse userDataResponse = JsonUtility.FromJson<UserDataResponse>(message);
-            DataFileRequest standingRequest = (DataFileRequest)GetStandingRequest(userDataResponse.Hash);
+            DataFileRequest standingRequest;
+            try
+            {
+                standingRequest = (DataFileRequest)GetStandingRequest(userDataResponse.Hash);
+            }
+            catch (Exception e)
+            {
+                Debug.Log($"Error trying to get standing request #{userDataResponse.Hash}");
+                Debug.Log($"Standing requests: {Utilities.ListToString(StandingRequests.ToList())}");
+                throw e;
+            }
             if (standingRequest != null)
             {
                 standingRequest.TimeOnQueue = Time.unscaledTime - standingRequest.StartTime;

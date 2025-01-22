@@ -34,5 +34,9 @@ namespace Assets.Scripts.Server
         {
             return Hash;
         }
+        public override string ToString()
+        {
+            return $"SR #{Hash}:{Type}";
+        }
     }
 }

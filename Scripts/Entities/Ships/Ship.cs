@@ -97,6 +97,10 @@ namespace Assets.Scripts.Entities.Ships
         /// The set of all ships that are visually and spatially below this ship
         /// </summary>
         public HashSet<Ship> ShipsOnTopOf = new HashSet<Ship>();
+        /// <summary>
+        /// All the weapon that have this ship within range
+        /// </summary>
+        public HashSet<Weapon> WeaponsThatHaveUsWithinRange = new HashSet<Weapon>();
 
 
 
@@ -1548,6 +1552,15 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     if (HasVision)
                     {
                         Vision.Kill(0);
+                    }
+
+                    if (WeaponsThatHaveUsWithinRange.Count > 0)
+                    {
+                        List<Weapon> weapons = WeaponsThatHaveUsWithinRange.ToList();
+                        for (int i = 0; i < WeaponsThatHaveUsWithinRange.Count; i++)
+                        {
+                            weapons[i].ShipsWithinRange.Remove(this);
+                        }
                     }
                 }
 

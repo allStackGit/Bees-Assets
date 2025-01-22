@@ -3,6 +3,7 @@
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -304,7 +305,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     case "First Seen":
                         return queue;
                     case "Random":
-                        queue.Sort((a, b) => Utilities.RandomSign());
+                        queue.Shuffle();
                         break;
                         return queue.OrderBy(s => Utilities.RandomInt(2)).ToList();
                     case "Revenge":
@@ -433,7 +434,15 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         }
         public float DistanceTo(Entity entity)
         {
-            return DistanceToPoint(entity.Collider.ClosestPoint(GetPosition()));
+            try
+            {
+                return DistanceToPoint(entity.Collider.ClosestPoint(GetPosition()));
+            }
+            catch (Exception e)
+            {
+                Debug.Log($"Entity: {entity}, entity name: {entity.name}, Collider: {entity.Collider}");
+                throw e;
+            }
         }
         public Vector2 GetPosition()
         {

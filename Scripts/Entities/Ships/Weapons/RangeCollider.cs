@@ -31,6 +31,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 Ship ship = collidingThing.GetComponent<Ship>();
                 Weapon.ShipsWithinRange.Add(ship);
+                ship.WeaponsThatHaveUsWithinRange.Add(Weapon);
                 Weapon.HasCachedChanged = true;
 
                 //if (Weapon.Ship.IsHiveMindControlled && Weapon.Ship.HasCommand)
@@ -55,6 +56,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 Ship ship = collidingThing.GetComponent<Ship>();
                 //Debug.Log($"{ship.Name} is no longer in {Weapon.Ship.Name} range");
                 Weapon.ShipsWithinRange.Remove(ship);
+                ship.WeaponsThatHaveUsWithinRange.Remove(Weapon);
                 Weapon.HasCachedChanged = true;
 
                 //if (Weapon.Ship.IsHiveMindControlled)

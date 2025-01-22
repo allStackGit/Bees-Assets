@@ -484,7 +484,8 @@ namespace Assets.Scripts.Levels
 
                 Debug.Log($"{$"fps: {fps}".PadRight(10).Substring(0, 10)}  {$"fups: {fups}".PadRight(10).Substring(0, 10)}     " +
                       $"{$"latency: {(int)(ConfigData.__AverageLatency * 1000)}ms".PadRight(18)} {$"CPS: {ConfigData.__HivemindCommands / Time.unscaledTime}".PadRight(9).Substring(0, 9)}   " +
-                      $"LTO: {ConfigData.__LevelTimeouts} AveLT: {(int)ConfigData.__AverageLength}s");
+                      $"LTO: {ConfigData.__LevelTimeouts} AveLT: {(int)ConfigData.__AverageLength}s"
+                );
 
                 if (State.IsSideKilled(ConfigData.Configuration.BeeSide) && !State.IsSideKilled(ConfigData.Configuration.HumanSide))
                 {

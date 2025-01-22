@@ -1,5 +1,6 @@
 using Assets.Scripts;
 using Assets.Scripts.Data;
+using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
 using Assets.Scripts.UI_Components;
@@ -10,6 +11,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Unity.MLAgents;
 using UnityEngine;
+using UnityEngine.Pool;
 
 /// <summary>
 /// Container scene for 1 or more Levels. Handles scene level variables and communication with the server
@@ -265,12 +267,25 @@ public class Stage : Scene
     /// The time in seconds when the stage started up
     /// </summary>
     public float StartTime;
+    public ObjectPool<Barge> BargePool;
 
 
 
 
+    public Barge CreatePooledBarge()
+    {
 
+    }
 
+    public void TakeFromPool(Ship ship)
+    {
+
+    }
+
+    public void ReturnToPool(Ship ship)
+    {
+
+    }
 
     // Start is called before the first frame update
     new void Start()
@@ -317,6 +332,7 @@ public class Stage : Scene
 
         if (IsMainScene && LevelCount > 0)
         {
+            BargePool = new ObjectPool<Barge>(CreatePooledShip, TakeFromPool, ReturnToPool, null, true);
             SpawnLevels();
         }
 
