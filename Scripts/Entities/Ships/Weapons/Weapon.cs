@@ -44,13 +44,11 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         public string __NotShootingReason;
         public List<Ship> __ShipsWithinRange;
-        public virtual void Setup(Ship ship, string type, int range, int power, float specialFirePower, float rateOfFire, float projectileValue, GameObject piece, 
+        public virtual void Create(Ship ship, string type, int range, int power, float specialFirePower, float rateOfFire, float projectileValue, GameObject piece,
             GameObject projectilePrefab)
         {
             Ship = ship;
-            Level = Ship.Level;
-            Stage = Level.Stage;
-            Id = Level.State.GetId();
+            Stage = Ship.Stage;
             Range = range;
             Power = power;
             SpecialFirepower = specialFirePower;
@@ -61,18 +59,36 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             //Piece.transform.localScale = Ship.RelativeSizeScale();
             Piece = piece;
             ProjectilePrefab = projectilePrefab;
-            Name = $"{ship.Name}: {Piece.name}";
             Type = type;
-            if (!Level.IsTraining && Stage.Audio.WeaponSounds.ContainsKey(Type))
+
+            if (!Stage.IsTraining && Stage.Audio.WeaponSounds.ContainsKey(Type))
             {
                 HasSoundEffect = true;
-                SoundEffect = Instantiate(Level.Stage.Audio.WeaponSounds[Type][Utilities.RandomInt(Level.Stage.Audio.WeaponSounds[Type].Length)]);
-                SoundEffect.transform.parent = piece.transform;
+                SoundEffect = Instantiate(Stage.Audio.WeaponSounds[Type][Utilities.RandomInt(Stage.Audio.WeaponSounds[Type].Length)]);
+                SoundEffect.transform.parent = Piece.transform;
                 SoundEffect.transform.localPosition = Vector2.zero;
 
             }
 
             SetupRangeCircleAndCollider();
+        }
+        /// <summary>
+        /// Sets the weapon up for the level, clears out any old data
+        /// </summary>
+        public virtual void Setup()
+        {
+            Level = Ship.Level;
+            Id = Level.State.GetId();
+            
+            Name = $"{Ship.Name}: {Piece.name}";
+            TargetShip = null;
+            CachedTargetingQueue.Clear();
+            ShipsWithinRange.Clear();
+            CachedShootingStrategy = null;
+            IsUsingCachedTargetingQueue = false;
+            HasCachedChanged = false;
+
+            
             //Piece.transform.parent = ship.transform;
             //Piece.transform.localPosition = (Vector2)piece.transform.position;
 

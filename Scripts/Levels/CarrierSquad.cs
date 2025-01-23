@@ -43,10 +43,7 @@ namespace Assets.Scripts.Levels
                 }
 
                 //Debug.Log($"Offset: {offset}");
-                CarrierShip ship;
-                (GameObject, CarrierShip) tuple = ((GameObject, CarrierShip))Level.LevelConstructor.InstantiateShip(SquadType);
-                ship = tuple.Item2;
-
+                CarrierShip ship = (CarrierShip)Level.LevelConstructor.InstantiateShip(SquadType);
 
                 if (ship != null)
                 {

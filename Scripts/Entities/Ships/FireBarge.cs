@@ -3,6 +3,7 @@ using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Levels;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
@@ -57,6 +58,15 @@ namespace Assets.Scripts.Entities.Ships
                     {
                         Vision.Kill(3);
                     }
+
+                    if (WeaponsThatHaveUsWithinRange.Count > 0)
+                    {
+                        List<Weapon> weapons = WeaponsThatHaveUsWithinRange.ToList();
+                        for (int i = 0; i < WeaponsThatHaveUsWithinRange.Count; i++)
+                        {
+                            weapons[i].ShipsWithinRange.Remove(this);
+                        }
+                    }
                 }
 
                 Level.State.RemoveShip(this);
@@ -71,11 +81,11 @@ namespace Assets.Scripts.Entities.Ships
                 {
                     Squad.SetOffsets();
                 }
-                if (!Level.IsTraining)
-                {
-                    Destroy(MovementMarker);
-                }
-                gameObject.SetActive(false);
+                //if (!Stage.IsTraining)
+                //{
+                //    Destroy(MovementMarker);
+                //}
+                //gameObject.SetActive(false);
                 Invoke(nameof(DelayedKill), 5);
 
             }

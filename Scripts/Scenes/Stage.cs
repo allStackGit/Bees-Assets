@@ -267,24 +267,283 @@ public class Stage : Scene
     /// The time in seconds when the stage started up
     /// </summary>
     public float StartTime;
+
     public ObjectPool<Barge> BargePool;
+    public ObjectPool<Beacon> BeaconPool;
+    public ObjectPool<Beehive> BeehivePool;
+    public ObjectPool<Bumblebee> BumblebeePool;
+    public ObjectPool<CarpenterBee> CarpenterBeePool;
+    public ObjectPool<Carrier> CarrierPool;
+    public ObjectPool<Cruiser> CruiserPool;
+    public ObjectPool<Dreadnought> DreadnoughtPool;
+    public ObjectPool<Drone> DronePool;
+    public ObjectPool<Factory> FactoryPool;
+    public ObjectPool<FireBarge> FireBargePool;
+    public ObjectPool<Flagship> FlagshipPool;
+    public ObjectPool<Frigate> FrigatePool;
+    public ObjectPool<Gunship> GunshipPool;
+    public ObjectPool<Honeybee> HoneybeePool;
+    public ObjectPool<Hornet> HornetPool;
+    public ObjectPool<Leafcutter> LeafcutterPool;
+    public ObjectPool<Queen> QueenPool;
+    public ObjectPool<Scout> ScoutPool;
+    public ObjectPool<Striker> StrikerPool;
+    public ObjectPool<WarpGate> WarpGatePool;
+    public ObjectPool<Wasp> WaspPool;
+    public ObjectPool<YellowJacket> YellowJacketPool;
+
 
 
 
 
     public Barge CreatePooledBarge()
     {
-
+        Barge barge = Instantiate(Prefabs.BargePrefab, Vector2.zero, Quaternion.identity).GetComponent<Barge>();
+        barge.Create(this, "Barge");
+        return barge;
+    }
+    public Beacon CreatePooledBeacon()
+    {
+        Beacon beacon = Instantiate(Prefabs.BeaconPrefab, Vector2.zero, Quaternion.identity).GetComponent<Beacon>();
+        beacon.Create(this, "Beacon");
+        return beacon;
+    }
+    public Beehive CreatePooledBeehive()
+    {
+        Beehive Beehive = Instantiate(Prefabs.BeehivePrefab, Vector2.zero, Quaternion.identity).GetComponent<Beehive>();
+        Beehive.Create(this, "Beehive");
+        return Beehive;
+    }
+    public Bumblebee CreatePooledBumblebee()
+    {
+        Bumblebee Bumblebee = Instantiate(Prefabs.BumblebeePrefab, Vector2.zero, Quaternion.identity).GetComponent<Bumblebee>();
+        Bumblebee.Create(this, "Bumblebee");
+        return Bumblebee;
+    }
+    public CarpenterBee CreatePooledCarpenterBee()
+    {
+        CarpenterBee CarpenterBee = Instantiate(Prefabs.CarpenterBeePrefab, Vector2.zero, Quaternion.identity).GetComponent<CarpenterBee>();
+        CarpenterBee.Create(this, "Carpenter Bee");
+        return CarpenterBee;
+    }
+    public Carrier CreatePooledCarrier()
+    {
+        Carrier Carrier = Instantiate(Prefabs.CarrierPrefab, Vector2.zero, Quaternion.identity).GetComponent<Carrier>();
+        Carrier.Create(this, "Carrier");
+        return Carrier;
+    }
+    public Cruiser CreatePooledCruiser()
+    {
+        Cruiser Cruiser = Instantiate(Prefabs.CruiserPrefab, Vector2.zero, Quaternion.identity).GetComponent<Cruiser>();
+        Cruiser.Create(this, "Cruiser");
+        return Cruiser;
+    }
+    public Dreadnought CreatePooledDreadnought()
+    {
+        Dreadnought Dreadnought = Instantiate(Prefabs.DreadnoughtPrefab, Vector2.zero, Quaternion.identity).GetComponent<Dreadnought>();
+        Dreadnought.Create(this, "Dreadnought");
+        return Dreadnought;
+    }
+    public Drone CreatePooledDrone()
+    {
+        Drone Drone = Instantiate(Prefabs.DronePrefab, Vector2.zero, Quaternion.identity).GetComponent<Drone>();
+        Drone.Create(this, "Drone");
+        return Drone;
+    }
+    public Factory CreatePooledFactory()
+    {
+        Factory Factory = Instantiate(Prefabs.FactoryPrefab, Vector2.zero, Quaternion.identity).GetComponent<Factory>();
+        Factory.Create(this, "Factory");
+        return Factory;
+    }
+    public FireBarge CreatePooledFireBarge()
+    {
+        FireBarge FireBarge = Instantiate(Prefabs.FireBargePrefab, Vector2.zero, Quaternion.identity).GetComponent<FireBarge>();
+        FireBarge.Create(this, "Fire Barge");
+        return FireBarge;
+    }
+    public Flagship CreatePooledFlagship()
+    {
+        Flagship Flagship = Instantiate(Prefabs.FlagshipPrefab, Vector2.zero, Quaternion.identity).GetComponent<Flagship>();
+        Flagship.Create(this, "Flagship");
+        return Flagship;
+    }
+    public Frigate CreatePooledFrigate()
+    {
+        Frigate Frigate = Instantiate(Prefabs.FrigatePrefab, Vector2.zero, Quaternion.identity).GetComponent<Frigate>();
+        Frigate.Create(this, "Frigate");
+        return Frigate;
+    }
+    public Gunship CreatePooledGunship()
+    {
+        Gunship Gunship = Instantiate(Prefabs.GunshipPrefab, Vector2.zero, Quaternion.identity).GetComponent<Gunship>();
+        Gunship.Create(this, "Gunship");
+        return Gunship;
+    }
+    public Honeybee CreatePooledHoneybee()
+    {
+        Honeybee Honeybee = Instantiate(Prefabs.HoneybeePrefab, Vector2.zero, Quaternion.identity).GetComponent<Honeybee>();
+        Honeybee.Create(this, "Honeybee");
+        return Honeybee;
+    }
+    public Hornet CreatePooledHornet()
+    {
+        Hornet Hornet = Instantiate(Prefabs.HornetPrefab, Vector2.zero, Quaternion.identity).GetComponent<Hornet>();
+        Hornet.Create(this, "Hornet");
+        return Hornet;
+    }
+    public Leafcutter CreatePooledLeafcutter()
+    {
+        Leafcutter Leafcutter = Instantiate(Prefabs.LeafcutterPrefab, Vector2.zero, Quaternion.identity).GetComponent<Leafcutter>();
+        Leafcutter.Create(this, "Leafcutter");
+        return Leafcutter;
+    }
+    public Queen CreatePooledQueen()
+    {
+        Queen Queen = Instantiate(Prefabs.QueenPrefab, Vector2.zero, Quaternion.identity).GetComponent<Queen>();
+        Queen.Create(this, "Queen");
+        return Queen;
+    }
+    public Scout CreatePooledScout()
+    {
+        Scout Scout = Instantiate(Prefabs.ScoutPrefab, Vector2.zero, Quaternion.identity).GetComponent<Scout>();
+        Scout.Create(this, "Scout");
+        return Scout;
+    }
+    public Striker CreatePooledStriker()
+    {
+        Striker Striker = Instantiate(Prefabs.StrikerPrefab, Vector2.zero, Quaternion.identity).GetComponent<Striker>();
+        Striker.Create(this, "Striker");
+        return Striker;
+    }
+    public WarpGate CreatePooledWarpGate()
+    {
+        WarpGate WarpGate = Instantiate(Prefabs.WarpGatePrefab, Vector2.zero, Quaternion.identity).GetComponent<WarpGate>();
+        WarpGate.Create(this, "Warp Gate");
+        return WarpGate;
+    }
+    public Wasp CreatePooledWasp()
+    {
+        Wasp Wasp = Instantiate(Prefabs.WaspPrefab, Vector2.zero, Quaternion.identity).GetComponent<Wasp>();
+        Wasp.Create(this, "Wasp");
+        return Wasp;
+    }
+    public YellowJacket CreatePooledYellowJacket()
+    {
+        YellowJacket YelllowJacket = Instantiate(Prefabs.YellowJacketPrefab, Vector2.zero, Quaternion.identity).GetComponent<YellowJacket>();
+        YelllowJacket.Create(this, "Yellow Jacket");
+        return YelllowJacket;
     }
 
-    public void TakeFromPool(Ship ship)
+    public void OnTakeFromPool(Ship ship)
     {
-
+        Debug.Log($"{ship.name} was taken from the pool");
     }
 
-    public void ReturnToPool(Ship ship)
+    public void OnReturnToPool(Ship ship)
+    {
+        Debug.Log($"{ship.Name} was returned to the pool");
+    }
+
+    public void ReturnShipToPool(Ship ship)
     {
 
+        ship.gameObject.SetActive(false);
+        switch (ship.ShipType)
+        {
+            case "Barge":
+                BargePool.Release((Barge)ship);
+                break;
+
+            case "Beacon":
+                BeaconPool.Release((Beacon)ship);
+                break;
+
+            case "Beehive":
+                BeehivePool.Release((Beehive)ship);
+                break;
+
+            case "Bumblebee":
+                BumblebeePool.Release((Bumblebee)ship);
+                break;
+
+            case "CarpenterBee":
+                CarpenterBeePool.Release((CarpenterBee)ship);
+                break;
+
+            case "Carrier":
+                CarrierPool.Release((Carrier)ship);
+                break;
+
+            case "Cruiser":
+                CruiserPool.Release((Cruiser)ship);
+                break;
+
+            case "Dreadnought":
+                DreadnoughtPool.Release((Dreadnought)ship);
+                break;
+
+            case "Drone":
+                DronePool.Release((Drone)ship);
+                break;
+
+            case "Factory":
+                FactoryPool.Release((Factory)ship);
+                break;
+
+            case "FireBarge":
+                FireBargePool.Release((FireBarge)ship);
+                break;
+
+            case "Flagship":
+                FlagshipPool.Release((Flagship)ship);
+                break;
+
+            case "Frigate":
+                FrigatePool.Release((Frigate)ship);
+                break;
+
+            case "Gunship":
+                GunshipPool.Release((Gunship)ship);
+                break;
+
+            case "Honeybee":
+                HoneybeePool.Release((Honeybee)ship);
+                break;
+
+            case "Hornet":
+                HornetPool.Release((Hornet)ship);
+                break;
+
+            case "Leafcutter":
+                LeafcutterPool.Release((Leafcutter)ship);
+                break;
+
+            case "Queen":
+                QueenPool.Release((Queen)ship);
+                break;
+
+            case "Scout":
+                ScoutPool.Release((Scout)ship);
+                break;
+
+            case "Striker":
+                StrikerPool.Release((Striker)ship);
+                break;
+
+            case "WarpGate":
+                WarpGatePool.Release((WarpGate)ship);
+                break;
+
+            case "Wasp":
+                WaspPool.Release((Wasp)ship);
+                break;
+
+            case "YellowJacket":
+                YellowJacketPool.Release((YellowJacket)ship);
+                break;
+
+        }
     }
 
     // Start is called before the first frame update
@@ -332,7 +591,29 @@ public class Stage : Scene
 
         if (IsMainScene && LevelCount > 0)
         {
-            BargePool = new ObjectPool<Barge>(CreatePooledShip, TakeFromPool, ReturnToPool, null, true);
+            BargePool = new ObjectPool<Barge>(CreatePooledBarge, OnTakeFromPool, OnReturnToPool, null, true);
+            BeaconPool = new ObjectPool<Beacon>(CreatePooledBeacon, OnTakeFromPool, OnReturnToPool, null, true);
+            BeehivePool = new ObjectPool<Beehive>(CreatePooledBeehive, OnTakeFromPool, OnReturnToPool, null, true);
+            BumblebeePool = new ObjectPool<Bumblebee>(CreatePooledBumblebee, OnTakeFromPool, OnReturnToPool, null, true);
+            CarpenterBeePool = new ObjectPool<CarpenterBee>(CreatePooledCarpenterBee, OnTakeFromPool, OnReturnToPool, null, true);
+            CarrierPool = new ObjectPool<Carrier>(CreatePooledCarrier, OnTakeFromPool, OnReturnToPool, null, true);
+            CruiserPool = new ObjectPool<Cruiser>(CreatePooledCruiser, OnTakeFromPool, OnReturnToPool, null, true);
+            DreadnoughtPool = new ObjectPool<Dreadnought>(CreatePooledDreadnought, OnTakeFromPool, OnReturnToPool, null, true);
+            DronePool = new ObjectPool<Drone>(CreatePooledDrone, OnTakeFromPool, OnReturnToPool, null, true);
+            FactoryPool = new ObjectPool<Factory>(CreatePooledFactory, OnTakeFromPool, OnReturnToPool, null, true);
+            FireBargePool = new ObjectPool<FireBarge>(CreatePooledFireBarge, OnTakeFromPool, OnReturnToPool, null, true);
+            FlagshipPool = new ObjectPool<Flagship>(CreatePooledFlagship, OnTakeFromPool, OnReturnToPool, null, true);
+            FrigatePool = new ObjectPool<Frigate>(CreatePooledFrigate, OnTakeFromPool, OnReturnToPool, null, true);
+            GunshipPool = new ObjectPool<Gunship>(CreatePooledGunship, OnTakeFromPool, OnReturnToPool, null, true);
+            HoneybeePool = new ObjectPool<Honeybee>(CreatePooledHoneybee, OnTakeFromPool, OnReturnToPool, null, true);
+            HornetPool = new ObjectPool<Hornet>(CreatePooledHornet, OnTakeFromPool, OnReturnToPool, null, true);
+            LeafcutterPool = new ObjectPool<Leafcutter>(CreatePooledLeafcutter, OnTakeFromPool, OnReturnToPool, null, true);
+            QueenPool = new ObjectPool<Queen>(CreatePooledQueen, OnTakeFromPool, OnReturnToPool, null, true);
+            ScoutPool = new ObjectPool<Scout>(CreatePooledScout, OnTakeFromPool, OnReturnToPool, null, true);
+            StrikerPool = new ObjectPool<Striker>(CreatePooledStriker, OnTakeFromPool, OnReturnToPool, null, true);
+            WarpGatePool = new ObjectPool<WarpGate>(CreatePooledWarpGate, OnTakeFromPool, OnReturnToPool, null, true);
+            WaspPool = new ObjectPool<Wasp>(CreatePooledWasp, OnTakeFromPool, OnReturnToPool, null, true);
+            YellowJacketPool = new ObjectPool<YellowJacket>(CreatePooledYellowJacket, OnTakeFromPool, OnReturnToPool, null, true);
             SpawnLevels();
         }
 

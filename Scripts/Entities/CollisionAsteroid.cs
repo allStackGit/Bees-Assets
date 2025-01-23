@@ -258,7 +258,7 @@ namespace Assets.Scripts.Entities
         /// </summary>
         private void ShowCollisionAnimation()
         {
-            if (!Level.IsTraining && HasCollisionAnimation)
+            if (!Level.Stage.IsTraining && HasCollisionAnimation)
             {
                 GameObject explosion = Instantiate(ExplosionAnimation, Vector2.zero, Quaternion.identity);
                 explosion.transform.parent = Level.Map.transform;

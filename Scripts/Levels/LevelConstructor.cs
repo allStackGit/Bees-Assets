@@ -280,12 +280,7 @@ namespace Assets.Scripts.Levels
 
                         
 
-                        Ship ship = null;
-                        GameObject instance = null;
-
-                        (GameObject, Ship) tuple = InstantiateShip(fleetShip.Type);
-                        instance = tuple.Item1;
-                        ship = tuple.Item2;
+                        Ship ship = InstantiateShip(fleetShip.Type);
                         ship.Setup(
                                 Level,
                                 Level.State.GetId(),
@@ -519,110 +514,86 @@ namespace Assets.Scripts.Levels
                 }
             });
         }
-        public (GameObject, Ship) InstantiateShip(string type)
+        public Ship InstantiateShip(string type)
         {
             Ship ship = null;
-            GameObject instance = null;
             switch (type)
             {
                 case "Barge":
-                    instance = GameObject.Instantiate(Level.Stage.Prefabs.BargePrefab, Vector2.zero, Quaternion.identity);
-                    ship = instance.GetComponent<Barge>();
+                    ship = Stage.BargePool.Get();
                     break;
                 case "Beacon":
-                    instance = GameObject.Instantiate(Level.Stage.Prefabs.BeaconPrefab, Vector2.zero, Quaternion.identity);
-                    ship = instance.GetComponent<Beacon>();
+                    ship = Stage.BeaconPool.Get();
                     break;
                 case "Beehive":
-                    instance = GameObject.Instantiate(Level.Stage.Prefabs.BeehivePrefab, Vector2.zero, Quaternion.identity);
-                    ship = instance.GetComponent<Beehive>();
+                    ship = Stage.BeehivePool.Get();
                     break;
                 case "Bumblebee":
-                    instance = GameObject.Instantiate(Level.Stage.Prefabs.BumblebeePrefab, Vector2.zero, Quaternion.identity);
-                    ship = instance.GetComponent<Bumblebee>();
+                    ship = Stage.BumblebeePool.Get();
                     break;
                 case "Carpenter Bee":
-                    instance = GameObject.Instantiate(Level.Stage.Prefabs.CarpenterBeePrefab, Vector2.zero, Quaternion.identity);
-                    ship = instance.GetComponent<CarpenterBee>();
+                    ship = Stage.CarpenterBeePool.Get();
                     break;
                 case "Carrier":
-                    instance = GameObject.Instantiate(Level.Stage.Prefabs.CarrierPrefab, Vector2.zero, Quaternion.identity);
-                    ship = instance.GetComponent<Carrier>();
+                    ship = Stage.CarrierPool.Get();
                     break;
                 case "Cruiser":
-                    instance = GameObject.Instantiate(Level.Stage.Prefabs.CruiserPrefab, Vector2.zero, Quaternion.identity);
-                    ship = instance.GetComponent<Cruiser>();
+                    ship = Stage.CruiserPool.Get();
                     break;
                 case "Dreadnought":
-                    instance = GameObject.Instantiate(Level.Stage.Prefabs.DreadnoughtPrefab, Vector2.zero, Quaternion.identity);
-                    ship = instance.GetComponent<Dreadnought>();
+                    ship = Stage.DreadnoughtPool.Get();
                     break;
                 case "Drone":
-                    instance = GameObject.Instantiate(Level.Stage.Prefabs.DronePrefab, Vector2.zero, Quaternion.identity);
-                    ship = instance.GetComponent<Drone>();
+                    ship = Stage.DronePool.Get();
                     break;
                 case "Factory":
-                    instance = GameObject.Instantiate(Level.Stage.Prefabs.FactoryPrefab, Vector2.zero, Quaternion.identity);
-                    ship = instance.GetComponent<Factory>();
+                    ship = Stage.FactoryPool.Get();
                     break;
                 case "Fire Barge":
-                    instance = GameObject.Instantiate(Level.Stage.Prefabs.FireBargePrefab, Vector2.zero, Quaternion.identity);
-                    ship = instance.GetComponent<FireBarge>();
+                    ship = Stage.FireBargePool.Get();
                     break;
                 case "Flagship":
-                    instance = GameObject.Instantiate(Level.Stage.Prefabs.FlagshipPrefab, Vector2.zero, Quaternion.identity);
-                    ship = instance.GetComponent<Flagship>();
+                    ship = Stage.FlagshipPool.Get();
                     break;
                 case "Frigate":
-                    instance = GameObject.Instantiate(Level.Stage.Prefabs.FrigatePrefab, Vector2.zero, Quaternion.identity);
-                    ship = instance.GetComponent<Frigate>();
+                    ship = Stage.FrigatePool.Get();
                     break;
                 case "Gunship":
-                    instance = GameObject.Instantiate(Level.Stage.Prefabs.GunshipPrefab, Vector2.zero, Quaternion.identity);
-                    ship = instance.GetComponent<Gunship>();
+                    ship = Stage.GunshipPool.Get();
                     break;
                 case "Honeybee":
-                    instance = GameObject.Instantiate(Level.Stage.Prefabs.HoneybeePrefab, Vector2.zero, Quaternion.identity);
-                    ship = instance.GetComponent<Honeybee>();
+                    ship = Stage.HoneybeePool.Get();
                     break;
                 case "Hornet":
-                    instance = GameObject.Instantiate(Level.Stage.Prefabs.HornetPrefab, Vector2.zero, Quaternion.identity);
-                    ship = instance.GetComponent<Hornet>();
+                    ship = Stage.HornetPool.Get();
                     break;
                 case "Leafcutter":
-                    instance = GameObject.Instantiate(Level.Stage.Prefabs.LeafcutterPrefab, Vector2.zero, Quaternion.identity);
-                    ship = instance.GetComponent<Leafcutter>();
+                    ship = Stage.LeafcutterPool.Get();
                     break;
                 case "Queen":
-                    instance = GameObject.Instantiate(Level.Stage.Prefabs.QueenPrefab, Vector2.zero, Quaternion.identity);
-                    ship = instance.GetComponent<Queen>();
+                    ship = Stage.QueenPool.Get();
                     break;
                 case "Scout":
-                    instance = GameObject.Instantiate(Level.Stage.Prefabs.ScoutPrefab, Vector2.zero, Quaternion.identity);
-                    ship = instance.GetComponent<Scout>();
+                    ship = Stage.ScoutPool.Get();
                     break;
                 case "Striker":
-                    instance = GameObject.Instantiate(Level.Stage.Prefabs.StrikerPrefab, Vector2.zero, Quaternion.identity);
-                    ship = instance.GetComponent<Striker>();
+                    ship = Stage.StrikerPool.Get();
                     break;
                 case "Warp Gate":
-                    instance = GameObject.Instantiate(Level.Stage.Prefabs.WarpGatePrefab, Vector2.zero, Quaternion.identity);
-                    ship = instance.GetComponent<WarpGate>();
+                    ship = Stage.WarpGatePool.Get();
                     break;
                 case "Wasp":
-                    instance = GameObject.Instantiate(Level.Stage.Prefabs.WaspPrefab, Vector2.zero, Quaternion.identity);
-                    ship = instance.GetComponent<Wasp>();
+                    ship = Stage.WaspPool.Get();
                     break;
                 case "Yellow Jacket":
-                    instance = GameObject.Instantiate(Level.Stage.Prefabs.YellowJacketPrefab, Vector2.zero, Quaternion.identity);
-                    ship = instance.GetComponent<YellowJacket>();
+                    ship = Stage.YellowJacketPool.Get();
                     break;
                 default:
                     Debugger.Exception($"Tried to instanstiate a ship type ({type}) that doesn't exist");
                     break;
             }
-            instance.transform.SetParent(Level.Map.transform);
-            return (instance, ship);
+            ship.transform.SetParent(Level.Map.transform);
+            return ship;
         }
     }
 }

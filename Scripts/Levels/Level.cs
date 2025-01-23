@@ -36,7 +36,7 @@ namespace Assets.Scripts.Levels
         // If IsTrainingNueralNetwork, train the neural network. IsTrainingHiveMind, train the hive mind
         // Training Hivemind or Nueral Network then there is no player, levels are reset every time, and the camera position doesn't matter
 
-        public bool IsTraining, HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateLoadingShipsMidLevel;
+        public bool HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateLoadingShipsMidLevel;
         public UI_Components.Map Map;
         public LevelConstructor LevelConstructor;
         public Pathfinder Pathfinder;
@@ -126,15 +126,6 @@ namespace Assets.Scripts.Levels
             LevelConstructor = new LevelConstructor(this);
             LevelConstructor.RequestServerSetup();
 
-            if (Stage.IsTrainingHiveMind || Stage.IsTrainingNueralNetwork)
-            {
-                IsTraining = true;
-            }
-            else
-            {
-                IsTraining = false;
-            }
-
             if (Stage.DoesUserHaveController)
             {
                 HasPlayer = true;
@@ -181,7 +172,7 @@ namespace Assets.Scripts.Levels
             State = gameObject.AddComponent<GameState>();
             State.Setup(this);
 
-            if (IsTraining)
+            if (Stage.IsTraining)
             {
                 Invoke(nameof(TimeOut), Stage.TimeoutTime);
             }
@@ -201,7 +192,7 @@ namespace Assets.Scripts.Levels
             Map = Instantiate(Stage.Prefabs.Maps[CurrentLevelOptions.MapIndex]).GetComponent<UI_Components.Map>();
             Debug.Log($"Playing on the {MapData.Name} ({Map.Name}) at index #{CurrentLevelOptions.MapIndex} map");
 
-            if (((CurrentLevelOptions.ObstacleMapIndex == -1 && Utilities.CoinToss()) || CurrentLevelOptions.ObstacleMapIndex > 0) && !IsTraining) // User chose random and random chose obstacles OR user chose obstacles
+            if (((CurrentLevelOptions.ObstacleMapIndex == -1 && Utilities.CoinToss()) || CurrentLevelOptions.ObstacleMapIndex > 0) && !Stage.IsTraining) // User chose random and random chose obstacles OR user chose obstacles
             {
                 HasObstacles = true;
                 Debug.Log($"The map has obstacles");
@@ -225,7 +216,7 @@ namespace Assets.Scripts.Levels
             else // either the user chose no obstacles or random chose no obstacles
             {
                 
-                if (((CurrentLevelOptions.AsteroidOption == -1 && Utilities.CoinToss()) || CurrentLevelOptions.AsteroidOption > 0) && !IsTraining) // User chose random and random chose asteroids OR User chose asteroids
+                if (((CurrentLevelOptions.AsteroidOption == -1 && Utilities.CoinToss()) || CurrentLevelOptions.AsteroidOption > 0) && !Stage.IsTraining) // User chose random and random chose asteroids OR User chose asteroids
                 {
                     HasObstacles = true;
                     _chosenObstacles = Stage.Prefabs.EmptyObstacleList;
@@ -817,11 +808,11 @@ namespace Assets.Scripts.Levels
             //}
             LevelConstructor.SetupShips(ConfigData.Configuration.AISide);
             LevelConstructor.SetupShips(ConfigData.Configuration.UserSide);
-            if (State.GetSquadsBySide(ConfigData.Configuration.UserSide).Count > 0 && State.GetSquadsBySide(ConfigData.Configuration.AISide).Count > 0 && !IsTraining)
+            if (State.GetSquadsBySide(ConfigData.Configuration.UserSide).Count > 0 && State.GetSquadsBySide(ConfigData.Configuration.AISide).Count > 0 && !Stage.IsTraining)
             {
                 State.SelectSquad(State.GetSquadByNumber(ConfigData.Configuration.UserSide, 1));
             }
-            else if (!IsTraining)
+            else if (!Stage.IsTraining)
             {
                 Debug.Log($"User squads: {State.GetSquadsBySide(ConfigData.Configuration.UserSide).Count}, AI squads: {State.GetSquadsBySide(ConfigData.Configuration.AISide).Count}");
                 Pause();
@@ -856,7 +847,7 @@ namespace Assets.Scripts.Levels
             HalfY = MapY / 2;
 
 
-            if (!IsTraining && !Stage.UnlockCamera && Stage.PrimaryLevel == this)
+            if (!Stage.IsTraining && !Stage.UnlockCamera && Stage.PrimaryLevel == this)
             {
                 Stage.SetupCamera();
 
@@ -869,7 +860,7 @@ namespace Assets.Scripts.Levels
             }
             else
             {
-                if (IsTraining)
+                if (Stage.IsTraining)
                 {
                     Stage.MiniMapCameraContainer.SetActive(false);
                     Stage.MiniMapDisplayCanvas.SetActive(false);
@@ -910,7 +901,7 @@ namespace Assets.Scripts.Levels
 
             State.StoreCommands();
 
-            if (Stage.RecordStats && !IsTraining)
+            if (Stage.RecordStats && !Stage.IsTraining)
             {
 
                 for (int i = 0; i < AllSquads.Count; i++)
@@ -1006,7 +997,7 @@ namespace Assets.Scripts.Levels
             //Invoke(nameof(StartNew), .1f);
             //Invoke(nameof(ReloadScene), 1f);
 
-            if (!IsTraining && !Stage.Menus.IsMiniMapOpen)
+            if (!Stage.IsTraining && !Stage.Menus.IsMiniMapOpen)
             {
                 Stage.Menus.ToggleMiniMapDisplay();
             }

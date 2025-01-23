@@ -147,7 +147,7 @@ namespace Assets.Scripts.Levels
         {
             if (Side == ConfigData.Configuration.AISide)
             { // ai side
-                if (!Level.IsTraining)
+                if (!Stage.IsTraining)
                 {
                     OpponentId = ConfigData.GetUserId();
                 }
@@ -160,7 +160,7 @@ namespace Assets.Scripts.Levels
             { // user side
                 OpponentId = 0;
 
-                if (!Level.IsTraining)
+                if (!Stage.IsTraining)
                 {
                     SquadBox = Instantiate(Level.Stage.Prefabs.SquadBoxPrefab, new Vector3(0, 0, 0), Quaternion.identity);
                     SquadBox.transform.parent = Level.Map.transform;
@@ -216,6 +216,7 @@ namespace Assets.Scripts.Levels
         {
             if (IsUserControlled && SquadNumber <= 10)
             {
+                Debug.Log($"Stage: {Stage}, SquadNumber: {SquadNumber}");
                 SquadTab = Stage.SquadTabs[SquadNumber - 1];
                 HasSquadTab = true;
                 if (HasCustomColor)
@@ -932,7 +933,7 @@ namespace Assets.Scripts.Levels
         public void RemoveShip(Ship ship)
         {
             _ships.Remove(ship);
-            if (IsSelected && !Level.IsTraining)
+            if (IsSelected && !Stage.IsTraining)
             {
                 Stage.Menus.ActionBox.SetSquadsText();
             }
@@ -1078,7 +1079,7 @@ namespace Assets.Scripts.Levels
         {
             //Debug.Log($"Squad #{squadNumber} is moving and the squad box will have width {GetWidth()}, height {GetHeight()}, and center point {GetCenterPoint()}");
             //Debug.Log($"Right most point {GetRightMostPoint()}, Left most point {GetLeftMostPoint()}, Top most point {GetTopMostPoint()}, Bottom most point {GetBottomMostPoint()}");
-            if (IsSelected && !Level.IsTraining)
+            if (IsSelected && !Stage.IsTraining)
             {
                 SquadBox.SetActive(true);
                 SquadBox.transform.localPosition = GetCenterPoint();

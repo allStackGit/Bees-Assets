@@ -130,7 +130,7 @@ namespace Assets.Scripts.Levels.Commands
                 Squad.ClearTargets(); // Clear all old targets before starting the new command
 
                 OutcomeId = commandOutcomeId;
-                if (!Level.IsTraining)
+                if (!Stage.IsTraining)
                 {
                     Squad.PastCommands.Add(new StoredCommand(this));
                 }

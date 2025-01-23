@@ -30,14 +30,14 @@ namespace Assets.Scripts.UIComponents
 
         public bool HoveringOverMiniMapButton;
         public bool IsSquadActionBoxOpen => ActionBox != null && SquadActionBoxUI.activeSelf;
-        public bool HasSquadActionBox => !CurrentLevel.IsTraining && ActionBox != null;
+        public bool HasSquadActionBox => !Stage.IsTraining && ActionBox != null;
 
 
         public void Setup(Stage stage)
         {
             Stage = stage;
             CurrentLevel = stage.PrimaryLevel;
-            if (!CurrentLevel.IsTraining)
+            if (!Stage.IsTraining)
             {
                 ActionBox = SquadActionBoxUI.GetComponent<SquadActionBox>();
                 Codex.SetupCodex();

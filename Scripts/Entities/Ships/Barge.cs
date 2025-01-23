@@ -10,7 +10,6 @@ using System.Linq;
 using Unity.Mathematics;
 
 using UnityEngine;
-using static UnityEngine.GraphicsBuffer;
 
 namespace Assets.Scripts.Entities.Ships
 {
@@ -26,16 +25,28 @@ namespace Assets.Scripts.Entities.Ships
         public Weapon Charge => Weapons.First();
         public HashSet<Ship> ShipsHit = new HashSet<Ship>();
         public ChargingBar ChargingBar;
-
-        public override void Setup(Level level, long id, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
+        public override void Create(Stage stage, string shipType)
         {
-            base.Setup(level, id, fleetShip, squad, offsetFromCenter);
+            base.Create(stage, shipType);
             if (IsUserControlled)
             {
                 ChargingBar.Setup(this, 10); // [efficiency] Make this be created instead of starting with every barge, in case it's unneeded
             }
         }
 
+        public override void Setup(Level level, long id, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
+        {
+            base.Setup(level, id, fleetShip, squad, offsetFromCenter);
+        }
+        public override void ClearData()
+        {
+            base.ClearData();
+            ShipsHit.Clear();
+            IsCharging = false;
+            HasStartedCharging = false;
+            WaitingForNewCharge = false;
+            HasCompletedRun = false;
+        }
 
 
         protected override void UpdateDebugProperties()

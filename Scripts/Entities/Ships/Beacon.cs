@@ -12,7 +12,7 @@ namespace Assets.Scripts.Entities.Ships
         public Sprite StandardSprite, EnemySprite;
         public void LookForShips()
         {
-            if (!Level.IsTraining && IsUserControlled)
+            if (!Stage.IsTraining && IsUserControlled)
             {
                 InvokeRepeating(nameof(SetBeaconStatus), ConfigData.BeaconUpdateFrequency, ConfigData.BeaconUpdateFrequency);
             }

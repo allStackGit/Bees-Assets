@@ -33,6 +33,7 @@ namespace Assets.Scripts.Entities.Projectiles
         
         public void Setup(Level level, int side, long id, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power)
         {
+            Stage = level.Stage;
             base.Id = id;
             this.Weapon = weapon;
             this.Shooter = shooter;
@@ -76,7 +77,7 @@ namespace Assets.Scripts.Entities.Projectiles
         }
         public virtual void KillSequence()
         {
-            if (!Level.IsTraining && HasExplosion)
+            if (!Stage.IsTraining && HasExplosion)
             {
                 Explosion = Instantiate(ExplosionAnimationPrefab, Vector2.zero, Quaternion.identity);
                 Explosion.transform.parent = Level.Map.transform;

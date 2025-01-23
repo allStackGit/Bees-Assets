@@ -21,7 +21,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             //Debug.Log($"{ship.Name} : {gameObject.name} Collider.radius: {Collider.radius}, Sight: {ship.Sight}");
             Ship = ship;
-            gameObject.name = $"{Ship.Name} -> Vision";
             if (Ship.IsHiveMindControlled)
             {
                 Collider = gameObject.AddComponent<CircleCollider2D>();
@@ -41,7 +40,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     range = Ship.MaxRange * 2;
                 }
                 FogIlluminator = gameObject.AddComponent<SpriteMask>();
-                FogIlluminator.sprite = Ship.Level.Stage.VisonSprite;
+                FogIlluminator.sprite = Ship.Stage.VisonSprite;
                 FogIlluminator.alphaCutoff = .5f;
                 transform.localScale = new Vector3(range, range, 0);
                 gameObject.layer = ConfigData.FogOfWarLayer;
@@ -93,7 +92,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             transform.localScale *= ConfigData.VisionShrinkingMultiplier;
             if (transform.localScale.x < 3)
             {
-                Destroy(gameObject);
+                //Destroy(gameObject);
+                CancelInvoke(nameof(ShrinkVision));
             }
         }
 

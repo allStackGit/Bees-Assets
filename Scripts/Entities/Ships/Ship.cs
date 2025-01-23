@@ -40,14 +40,18 @@ namespace Assets.Scripts.Entities.Ships
         public float DefaultAngle, TargetDirection;
         public int LastKilled;
         public FleetShip FleetShip = null;
-        public string ShipType, Name;
-        public bool FireAtFrontOfShip, InCombat, IsFollowingPath, CannotChangeMovementOrders, IsSpawnedShip;
+        public string Name;
+        public string ShipType;
         public Vision Vision;
         public SpriteRenderer SpriteRenderer;
         /// <summary>
         /// A ship can be killed at some point of the frame and still exist until the end of the frame. Check this to see if a ship is dead but not yet destroyed.
         /// </summary>
         public bool IsDead;
+        /// <summary>
+        /// A ship can be created but held in the pool and therefor not alive yet. This checks whether a ship is active and alive in the game
+        /// </summary>
+        public bool IsAlive;
         /// <summary>
         /// This has the same side as the user and the user has a controller
         /// </summary>
@@ -56,9 +60,15 @@ namespace Assets.Scripts.Entities.Ships
         /// Is this ship capable of movement?
         /// </summary>
         public bool IsMobile;
+        /// <summary>
+        /// Settings that are set when the ship is created and do not change
+        /// </summary>
         public bool HasBrain, IsHiveMindControlled, IsMinionShip, HasTargetCoordinates, IsMiningShip, IsWarpGate, HasTargetDirection, HasVision, HasProximityCollider, HasShipAnimation, HasRocketFlares, 
-            HasLeftRocketFlares, HasCenterRocketFlares, HasRightRocketFlares, HasOnlySideRocketFlares, HasMovementMarker, HasWaitingTargetCoordinates, HasRemainsShip, HasEnteredMap,
-            AreRocketFlaresOutOfSync;
+            HasLeftRocketFlares, HasCenterRocketFlares, HasRightRocketFlares, HasOnlySideRocketFlares, HasMovementMarker, HasWaitingTargetCoordinates, HasRemainsShip, FireAtFrontOfShip, IsSpawnedShip;
+        /// <summary>
+        /// Settings that change over the lifetime of the ship
+        /// </summary>
+        public bool HasEnteredMap, AreRocketFlaresOutOfSync, InCombat, IsFollowingPath, CannotChangeMovementOrders;
         public List<Weapon> Weapons;
         public List<GameObject> ProjectilePrefabs, WeaponPrefabs, ColoredPrefabs, LeftRocketFlares, CenterRocketFlares, RightRocketFlares, RemainsShips;
         public Brain Brain = null;
@@ -78,7 +88,6 @@ namespace Assets.Scripts.Entities.Ships
         /// The ship that this ship is following after in order to target it. The primary enemy ship. This is NOT necessarily the ship that this ship is firing at. The weapon(s) have that information
         /// </summary>
         public Ship TargetEnemyShipToFollow;
-        public bool IsCloseEnoughToTargetEnemyShipToFollow;
         /// <summary>
         /// The ship that killed this ship
         /// </summary>
@@ -94,15 +103,9 @@ namespace Assets.Scripts.Entities.Ships
         /// </summary>
         public ShipRemains ShipRemains;
         /// <summary>
-        /// The set of all ships that are visually and spatially below this ship
-        /// </summary>
-        public HashSet<Ship> ShipsOnTopOf = new HashSet<Ship>();
-        /// <summary>
         /// All the weapon that have this ship within range
         /// </summary>
         public HashSet<Weapon> WeaponsThatHaveUsWithinRange = new HashSet<Weapon>();
-
-
 
         public volatile bool PathfindingThreadComplete, IsPathfinding;
         public volatile Pathfinder.Path PathfindingValue;
@@ -219,7 +222,6 @@ namespace Assets.Scripts.Entities.Ships
             __NearbyShips = HasProximityCollider ? ProximityCollider.NearbyEnemyShips.ToList() : new List<Ship>();
             __HivemindShips = Level.State.GetShipsVisibleToHiveMind(Side).Select(s => s.ToString()).ToList();
             __Clearance = GetClearance();
-            __ShipsOnTopOf = ShipsOnTopOf.ToList();
             __IsInBounds = IsInBounds();
             __SquadColor = ColorUtility.ToHtmlStringRGB(Squad.Color);
             __Width = GetWidth();
@@ -262,67 +264,42 @@ namespace Assets.Scripts.Entities.Ships
 
 
         // setup methods
-        public virtual void Setup(Level level, long id, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter) // [tsv-calculation]
+        /// <summary>
+        /// Sets up a ship for the Ship pool so it is ready to go regardless of which level it's in and other identifying factors
+        /// </summary>
+        public virtual void Create(Stage stage, string shipType)
         {
-            //Debug.Log($"Setting up ship IsCarrierShip: {IsCarrierShip}");
-
-            Id = id;
-            Squad = squad;
-            Side = squad.Side;
-            Level = level;
-            Stage = Level.Stage;
-            FleetShip = fleetShip;
-            ShipType = FleetShip.Type;
-            OffsetFromCenter = offsetFromCenter;
+            ShipType = shipType;
+            Side = Utilities.ShipTypeToSide.GetValueOrDefault(ShipType);
+            Stage = stage;
             Body = GetComponent<Rigidbody2D>();
             Collider = GetComponent<Collider2D>();
-
-            ShipStatBlock shipStats = ConfigData.GetShipInfo(fleetShip.Type);
-
-            Health = shipStats.Health;
-            OriginalHealth = Health;
-            Clearance = Stage.ShipClearances.GetValueOrDefault(ShipType);
-            Name = $"{ShipType} #{Id}";
-            gameObject.name = Name;
-            _healthBarFiller = HealthBar.transform.GetChild(0);
-            _healthBarFillerSprite = HealthBar.transform.GetChild(0).GetComponent<SpriteRenderer>();
-            IsUserControlled = Side == ConfigData.Configuration.UserSide && Level.HasPlayer;
-            Transform brain = transform.Find("Brain");
+            ShipStatBlock shipStats = ConfigData.GetShipInfo(ShipType);
             AdditionalTsv = shipStats.AdditionalTsv;
             Sight = shipStats.Sight;
             Speed = shipStats.Speed;
-            MaxHealth = FleetShip.MaxHealth;
+            OriginalHealth = Health;
+            MaxHealth = Health;
+            Clearance = Stage.ShipClearances.GetValueOrDefault(ShipType);
+            _healthBarFiller = HealthBar.transform.GetChild(0);
+            _healthBarFillerSprite = HealthBar.transform.GetChild(0).GetComponent<SpriteRenderer>();
+            IsUserControlled = Side == ConfigData.Configuration.UserSide && Stage.DoesUserHaveController;
             RotationSpeed = Speed * ConfigData.Configuration.RotationMultiplier;
+            IsMobile = Speed > 0;
 
 
-            if (!IsUserControlled)
-            {
-                IsHiveMindControlled = true;
-                Level.State.HivemindShips[Side - 1].Add(Id, new HashSet<Ship>());
-            }
+            //Transform brain = transform.Find("Brain");
+            //if (brain != null && Level.Stage.ActivateBrains)
+            //{
+            //    //Debug.Log($"Found a brain for {Name}, {brain}");
+            //    Brain = brain.GetComponent<Brain>();
+            //    Brain.Setup(this);
+            //    HasBrain = true;
 
-
-            if (brain != null && Level.Stage.ActivateBrains)
-            {
-                //Debug.Log($"Found a brain for {Name}, {brain}");
-                Brain = brain.GetComponent<Brain>();
-                Brain.Setup(this);
-                HasBrain = true;
-
-                RLSide = Side / 2;
-                RLHealth = Health / MaxHealth;
-                RLShipType = (float)Utilities.ShipTypeLetterToInt[ShipTypeLetter] / Utilities.ShipTypesAndTypeLetters.Count;
-            }
-
-            if (FleetShip.Id < 0)
-            {
-                IsSpawnedShip = true;
-            }
-
-            if (Speed > 0)
-            {
-                IsMobile = true;
-            }
+            //    RLSide = Side / 2;
+            //    RLHealth = Health / MaxHealth;
+            //    RLShipType = (float)Utilities.ShipTypeLetterToInt[ShipTypeLetter] / Utilities.ShipTypesAndTypeLetters.Count;
+            //}
 
             if (ProximityCollider != null)
             {
@@ -330,8 +307,7 @@ namespace Assets.Scripts.Entities.Ships
                 HasProximityCollider = true;
             }
 
-
-            if (!Level.IsTraining)
+            if (!Stage.IsTraining)
             {
                 if (Side == ConfigData.Configuration.HumanSide)
                 {
@@ -376,46 +352,32 @@ namespace Assets.Scripts.Entities.Ships
                     HasRemainsShip = true;
                     GameObject remains = Instantiate(RemainsShips.GetRange(Utilities.RandomInt(RemainsShips.Count), 1).First(), Vector2.zero, Quaternion.identity);
                     ShipRemains = remains.AddComponent<ShipRemains>();
-                    ShipRemains.Setup(this);
+                    ShipRemains.Create(this);
                 }
             }
 
-
-
-            if (squad.HasCustomColor)
-            {
-                Utilities.SetUIColor(MiniMapIcon, squad.Color);
-            }
-            else if (Side == ConfigData.Configuration.HumanSide)
-            {
-                Utilities.SetUIColor(MiniMapIcon, ConfigData.GetUIColor("human"));
-            }
-            else if (Side == ConfigData.Configuration.BeeSide)
-            {
-                Utilities.SetUIColor(MiniMapIcon, ConfigData.GetUIColor("bee"));
-            }
-
-            if (fleetShip.Type == "Striker" || fleetShip.Type == "Barge")
+            if (ShipType == "Striker" || ShipType == "Barge")
             {
                 SpecialFirePower = shipStats.Powers[0] / 3;
             }
-            else if (fleetShip.Type == "Fire Barge")
+            else if (ShipType == "Fire Barge")
             {
                 SpecialFirePower = shipStats.Powers[0] * shipStats.ProjectileValues[0];
             }
-            else if (fleetShip.Type == "Yellow Jacket")
+            else if (ShipType == "Yellow Jacket")
             {
                 SpecialFirePower = shipStats.Powers[0] / 5;
             }
-            else if (fleetShip.Type == "Carpenter Bee" || fleetShip.Type == "Factory")
+            else if (ShipType == "Carpenter Bee" || ShipType == "Factory")
             {
                 IsMiningShip = true;
             }
-            else if (fleetShip.Type == "Warp Gate")
+            else if (ShipType == "Warp Gate")
             {
                 IsWarpGate = true;
-                Level.State.HasWarpGates = true;
             }
+
+
             for (int i = 0; i < shipStats.ProjectileValues.Count; i++)
             {
                 string weaponType = shipStats.WeaponTypes[i];
@@ -459,21 +421,22 @@ namespace Assets.Scripts.Entities.Ships
                     //Debug.Log($"it's a turret!");
                     if (weapon is Eye)
                     {
-                        ((Eye)weapon).Setup(this, weaponType, shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
+                        ((Eye)weapon).Create(this, weaponType, shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
 shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFrontOfShip, shipStats.RotationRates[i]);
-                    }else if (weapon is LaserBuilder)
+                    }
+                    else if (weapon is LaserBuilder)
                     {
-                        ((LaserBuilder)weapon).Setup(this, weaponType, shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
+                        ((LaserBuilder)weapon).Create(this, weaponType, shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
 shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFrontOfShip, shipStats.RotationRates[i]);
                     }
                     else if (weapon is FullShipTurret)
                     {
-                        ((FullShipTurret)weapon).Setup(this, weaponType, shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
+                        ((FullShipTurret)weapon).Create(this, weaponType, shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
 shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFrontOfShip, shipStats.RotationRates[i]);
                     }
                     else
                     {
-                        ((Turret)weapon).Setup(this, weaponType, shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
+                        ((Turret)weapon).Create(this, weaponType, shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
 shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFrontOfShip, shipStats.RotationRates[i]);
                     }
 
@@ -481,7 +444,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 else
                 {
                     //Debug.Log($"{weapon.GetType()} -- {typeof(Turret)}");
-                    weapon.Setup(this, weaponType, shipStats.Ranges[i], shipStats.Powers[i], SpecialFirePower, shipStats.RatesOfFire[i],
+                    weapon.Create(this, weaponType, shipStats.Ranges[i], shipStats.Powers[i], SpecialFirePower, shipStats.RatesOfFire[i],
                     shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i]);
                 }
 
@@ -491,43 +454,21 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             Turrets = Weapons.Where((w) => w is Turret).ToList().ConvertAll((w) => (Turret)w);
             MaxRange = HasWeapons ? Weapons.Max((w) => w.Range) : 0;
             HalfMaxRange = MaxRange / 2;
-
             OriginalTsv = Utilities.CalculateMaxTsv(this);
 
-            // The beehive has an edge collider so it doesn't give accurate measurement of the size of the ship
             _size = ConfigData.ShipSizes[ShipType] / ConfigData.PixelsPerUnit;
-            //squad.AddShip(this);
-            Level.State.AddShip(this);
-            SetToDefaultAngle();
+
             SetCurrentSpeed(Speed);
+            SetToDefaultAngle();
 
             if (IsUserControlled)
             {
                 if (IsMobile)
                 {
-                    MovementMarker = Instantiate(Level.Stage.Prefabs.MovementMarkerPrefab, Vector2.zero, Quaternion.identity);
-                    MovementMarker.transform.SetParent(Level.Map.transform);
+                    MovementMarker = Instantiate(Stage.Prefabs.MovementMarkerPrefab, Vector2.zero, Quaternion.identity);
                     MovementMarker.SetActive(false);
-                    MovementMarker.name = $"{Name}'s Movement Marker";
                     HasMovementMarker = true;
-
-                    if (Squad.HasCustomColor)
-                    {
-                        MovementMarker.GetComponent<SpriteRenderer>().color = Squad.Color;
-                    }
-                    else
-                    {
-                        if (Side == ConfigData.Configuration.HumanSide)
-                        {
-                            MovementMarker.GetComponent<SpriteRenderer>().color = ConfigData.GetUIColor("human");
-                        }
-                        else
-                        {
-                            MovementMarker.GetComponent<SpriteRenderer>().color = ConfigData.GetUIColor("bee");
-                        }
-                    }
                 }
-
 
                 HasVision = true;
                 Vision.Setup(this);
@@ -546,11 +487,127 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 LongestSide = GetHeight();
             }
 
+            gameObject.SetActive(false);
+        }
+        /// <summary>
+        /// Sets up a hip for a level with a squad, fleetship, and other identifying factores
+        /// </summary>
+        /// <param name="level"></param>
+        /// <param name="id"></param>
+        /// <param name="fleetShip"></param>
+        /// <param name="squad"></param>
+        /// <param name="offsetFromCenter"></param>
+        public virtual void Setup(Level level, long id, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter) // [tsv-calculation]
+        {
+            //Debug.Log($"Setting up ship IsCarrierShip: {IsCarrierShip}");
+            Id = id;
+            Squad = squad;
+            Level = level;
+            FleetShip = fleetShip;
+            OffsetFromCenter = offsetFromCenter;
+            IsAlive = true;
+            Health = OriginalHealth;
+            Name = $"{ShipType} #{Id}";
+            gameObject.name = Name;
+            ClearData();
+
+            if (!IsUserControlled)
+            {
+                IsHiveMindControlled = true;
+                Level.State.HivemindShips[Side - 1].Add(Id, new HashSet<Ship>());
+            }
+
+
+            if (FleetShip.Id < 0)
+            {
+                IsSpawnedShip = true;
+            }
+
+
+            if (squad.HasCustomColor)
+            {
+                Utilities.SetUIColor(MiniMapIcon, squad.Color);
+            }
+            else if (Side == ConfigData.Configuration.HumanSide)
+            {
+                Utilities.SetUIColor(MiniMapIcon, ConfigData.GetUIColor("human"));
+            }
+            else if (Side == ConfigData.Configuration.BeeSide)
+            {
+                Utilities.SetUIColor(MiniMapIcon, ConfigData.GetUIColor("bee"));
+            }
+
+            
+            //squad.AddShip(this);
+            Level.State.AddShip(this);
+
+            if (ShipType == "Warp Gate")
+            {
+                Level.State.HasWarpGates = true;
+            }
+
+            if (IsUserControlled)
+            {
+                if (IsMobile)
+                {
+                    MovementMarker.transform.SetParent(Level.Map.transform);
+                    MovementMarker.name = $"{Name}'s Movement Marker";
+
+                    if (Squad.HasCustomColor)
+                    {
+                        MovementMarker.GetComponent<SpriteRenderer>().color = Squad.Color;
+                    }
+                    else
+                    {
+                        if (Side == ConfigData.Configuration.HumanSide)
+                        {
+                            MovementMarker.GetComponent<SpriteRenderer>().color = ConfigData.GetUIColor("human");
+                        }
+                        else
+                        {
+                            MovementMarker.GetComponent<SpriteRenderer>().color = ConfigData.GetUIColor("bee");
+                        }
+                    }
+                }
+
+            }
+
+            Weapons.ForEach((weapon) =>
+            {
+                weapon.Setup();
+            });
+
+            if (HasRemainsShip)
+            {
+                ShipRemains.Setup();
+            }
+
             if (ConfigData.Configuration.UserSide == Side && (ShipType == "Factory" || ShipType == "Carpenter Bee"))
             {
                 Level.State.MiningShips.Add(this);
             }
-
+            gameObject.SetActive(true);
+        }
+        public virtual void ClearData()
+        {
+            PathfindingDestination = Vector2.zero;
+            TargetCoordinates = Vector2.zero;
+            FinalDestination = Vector2.zero;
+            LastKilled = 0;
+            CannotChangeMovementOrders = false;
+            IsFollowingPath = false;
+            InCombat = false;
+            IsDead = false;
+            AreRocketFlaresOutOfSync = false;
+            HasEnteredMap = false;
+            DestinationQueue.Clear();
+            NearbyAsteroids.Clear();
+            TargetEnemyShipToFollow = null;
+            Killer = null;
+            KillerFleetShip = null;
+            KillerSavedSquad = null;
+            ProjectilesInFlight.Clear();
+            WeaponsThatHaveUsWithinRange.Clear();
         }
         protected void FixedUpdate()
         {
@@ -1056,38 +1113,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         /// Returns the number of ships of the same type that are visually and spatially below this ship. Also keeps track of which ships those are
         /// </summary>
         /// <returns></returns>
-        private int GetCountOfSameShipsBelowThisShip()
-        {
-            ShipsOnTopOf.Clear();
-            int shipsHit = 0;
-            RaycastHit2D[] hits = Physics2D.RaycastAll(GetPosition(), Vector2.zero);
-            for (int i = 0; i < hits.Length; i++)
-            {
-                if (hits[i].collider != null)
-                {
-                    Ship ship = hits[i].collider.gameObject.GetComponent<Ship>();
-                    if (ship != null && ship.ShipType == ShipType && !Equals(ship))
-                    {
-                        shipsHit++;
-                        ShipsOnTopOf.Add(ship);
-                        //Debug.Log($"hit: {ship.Name} #{shipsHit}");
-                    }
 
-                }
-            }
-            return shipsHit;
-        }
-        /// <summary>
-        /// Checks if this ship is below any other ship of the same type
-        /// </summary>
-        /// <returns></returns>
-        private bool IsBelowOtherShips()
-        {
-            return Level.State.GetShips(Side).Where((ship) => ship.ShipType == ShipType).ToList().Any((ship) =>
-            {
-                return ship.ShipsOnTopOf.Contains(this);
-            });
-        }
         private void MoveToTargetCoordinates()
         {
 
@@ -1132,7 +1158,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 //{
                 //    SetCurrentSpeed(Squad.Command.Enemy.MaxSpeed);
                 //}
-                IsCloseEnoughToTargetEnemyShipToFollow = true;
                 //EndDestination($"A target ship is within our range");
                 SetCurrentSpeed(TargetEnemyShipToFollow.CurrentSpeed);
                 if (Level.Stage.FixedUpdates % 10 == 0 && DistanceTo(TargetEnemyShipToFollow) < HalfMaxRange)
@@ -1141,7 +1166,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 }
                 return;
             }
-            IsCloseEnoughToTargetEnemyShipToFollow = false;
             if (Squad.IsMatchingSpeed)
             {
                 SetCurrentSpeed(Squad.CurrentSpeed);
@@ -1524,6 +1548,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             if (!IsDead)
             {
                 IsDead = true;
+                IsAlive = false;
                 //Debug.Log($"Killing ship {Name} with size Factor {ConfigData.GetShipSizeFactor(ShipType)}");
                 if (IsPathfinding)
                 {
@@ -1538,7 +1563,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                         if (killer != null)
                         {
                             killer.LastKilled = Time.frameCount;
-                            killer.IsCloseEnoughToTargetEnemyShipToFollow = false;
                         }
                         LogKillerStats(killerFleetShip, killerSavedSquad);
                     }
@@ -1616,22 +1640,23 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 {
                     Squad.SetOffsets();
                 }
+                Debug.Log($"{Name} has been killed and will be returned");
+                Stage.ReturnShipToPool(this);
+                //if (!Level.IsTraining && IsUserControlled)
+                //{
+                //    Turrets.ForEach((turret) =>
+                //    {
+                //        Destroy(turret.TargetingMarker);
+                //    });
+                //    //Debug.Log($"Destroying movement marker for {Name}");
+                //    Destroy(MovementMarker);
+                //}
+                ////Destroy(DroppedRemainsShip);
+                //Destroy(gameObject);
+                //if (HasRemainsShip) // [debug] all ships should eventually have remains ships
+                //{
 
-                if (!Level.IsTraining && IsUserControlled)
-                {
-                    Turrets.ForEach((turret) =>
-                    {
-                        Destroy(turret.TargetingMarker);
-                    });
-                    //Debug.Log($"Destroying movement marker for {Name}");
-                    Destroy(MovementMarker);
-                }
-                //Destroy(DroppedRemainsShip);
-                Destroy(gameObject);
-                if (HasRemainsShip) // [debug] all ships should eventually have remains ships
-                {
-
-                }
+                //}
 
 
                 // Delayed kill code
@@ -1654,7 +1679,9 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         {
             //Debug.Log($"{Name} delay killed");
             //Destroy(DroppedRemainsShip);
-            Destroy(gameObject);
+            //Destroy(gameObject);
+            Debug.Log($"{Name} has been killed and will be returned");
+            Stage.ReturnShipToPool(this);
         }
         /// <summary>
         /// Returns the target enemy ship to follow for this ship. The Target enemy ship will be the first in the targeting queue for this ship's squad's command. This is different from which ship its weapons are targeting
@@ -1972,7 +1999,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         /// </summary>
         protected void DropExplosionAnimation()
         {
-            if (!Level.IsTraining)
+            if (!Stage.IsTraining)
             {
                 GameObject explosion = Instantiate(ShipExplosion, Vector2.zero, Quaternion.identity);
                 explosion.transform.parent = Level.Map.transform;
@@ -2003,7 +2030,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         }
         private void OnMouseEnter()
         {
-            if (!ConfigData.SpawnedOnlyShipTypes.Contains(ShipType) && !Level.IsTraining)
+            if (!ConfigData.SpawnedOnlyShipTypes.Contains(ShipType) && !Stage.IsTraining)
             {
                 Invoke(nameof(ShowShipStats), 1);
             }
@@ -2012,7 +2039,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         private void OnMouseExit()
         {
             CancelInvoke(nameof(ShowShipStats));
-            if (!Level.IsTraining)
+            if (!Stage.IsTraining)
             {
                 Stage.Menus.ShipInfoBox.SetActive(false);
             }

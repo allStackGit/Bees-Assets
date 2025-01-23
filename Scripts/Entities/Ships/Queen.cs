@@ -86,10 +86,7 @@ namespace Assets.Scripts.Entities.Ships
             int id = Utilities.GetNegativeFleetshipId();
             Vector2 offset = ConfigData.QueenYellowJacketSpawnFormation[shipIndex];
 
-            Ship ship;
-            (GameObject, Ship) tuple = Level.LevelConstructor.InstantiateShip(MinionType);
-            ship = tuple.Item2;
-
+            Ship ship = Level.LevelConstructor.InstantiateShip(MinionType);
 
             if (ship != null)
             {

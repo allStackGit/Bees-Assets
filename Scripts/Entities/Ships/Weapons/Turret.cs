@@ -36,12 +36,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         //public override bool ShouldFire => TargetShip != null && !CeaseFire && IsShipValidTarget(TargetShip);
 
-
-
-        public virtual void Setup(Ship ship, string type, int range, int power, float rateOfFire, float projectileValue, GameObject piece,
-            GameObject projectilePrefab, bool fireAtFrontOfShip, float rotationRate)
+        public virtual void Create(Ship ship, string type, int range, int power, float rateOfFire, float projectileValue, GameObject piece, GameObject projectilePrefab,
+            bool fireAtFrontOfShip, float rotationRate)
         {
-            base.Setup(ship, type, range, power, 0, rateOfFire, projectileValue, piece, projectilePrefab);
+            base.Create(ship, type, range, power, 0, rateOfFire, projectileValue, piece, projectilePrefab);
             ShouldFireAtFrontOfShip = fireAtFrontOfShip;
             PassesPerFire = 3;
             TargetingRate = RateOfFire / PassesPerFire;
@@ -49,11 +47,19 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
             if (Ship.IsUserControlled)
             {
-                TargetingMarker = Instantiate(Level.Stage.Prefabs.TargetingMarkerPrefab, Vector2.zero, Quaternion.identity);
-                TargetingMarker.transform.SetParent(Level.Map.transform);
+                TargetingMarker = Instantiate(Stage.Prefabs.TargetingMarkerPrefab, Vector2.zero, Quaternion.identity);
                 TargetingMarker.SetActive(false);
-                TargetingMarker.name = $"{Name}'s Targeting Marker";
                 HasTargetingMarker = true;
+            }
+        }
+
+        public override void Setup()
+        {
+            base.Setup();
+            if (Ship.IsUserControlled)
+            {
+                TargetingMarker.transform.SetParent(Level.Map.transform);
+                TargetingMarker.name = $"{Name}'s Targeting Marker";
             }
 
         }

@@ -326,12 +326,12 @@ namespace Assets.Scripts.Levels
             if (SelectedSquads.Count == 0)
             {
                 HasSelectedSquads = false;
-                if (!Level.IsTraining)
+                if (!Level.Stage.IsTraining)
                 {
                     Stage.Menus.ActionBox.Hide();
                 }
             }
-            else if (!Level.IsTraining)
+            else if (!Level.Stage.IsTraining)
             {
                 Stage.Menus.ActionBox.SetupForSquad();
             }

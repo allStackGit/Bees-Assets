@@ -12,19 +12,22 @@ namespace Assets.Scripts.Entities.Ships
         /// Controls the animation and recoloring of sprites if the ship has ship remains
         /// </summary>
         public RemainsAnimationController AnimationController;
-        public void Setup(Ship ship)
+        public void Create(Ship ship)
         {
             Ship = ship;
-            name = $"Remains - {ship.Name}"; // [debug] not necessary for anything else
-            AnimationController = GetComponent<RemainsAnimationController>();
-            transform.parent = Ship.Level.Map.transform;
             gameObject.SetActive(false);
-
+            AnimationController = GetComponent<RemainsAnimationController>();
             if (AnimationController != null)
             {
                 AnimationController.Ship = Ship;
                 AnimationController.RecolorAnimationSprites();
             }
+        }
+        public void Setup()
+        {
+            name = $"Remains - {Ship.Name}"; // [debug] not necessary for anything else
+            transform.parent = Ship.Level.Map.transform;
+            
         }
         public void Place()
         {
