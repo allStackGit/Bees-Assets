@@ -292,7 +292,37 @@ public class Stage : Scene
     public ObjectPool<Wasp> WaspPool;
     public ObjectPool<YellowJacket> YellowJacketPool;
 
+    //public GameObject PoolShips;
 
+    public int __BargePoolSize, __BeaconPoolSize, __BeehivePoolSize, __BumblebeePoolSize, __CarpenterBeePoolSize, __CarrierPoolSize, __CruiserPoolSize, __DreadnoughtPoolSize,
+        __DronePoolSize, __FactoryPoolSize, __FireBargePoolSize, __FlagshipPoolSize, __FrigatePoolSize, __GunshipPoolSize, __HoneybeePoolSize, __HornetPoolSize, __LeafcutterPoolSize,
+        __QueenPoolSize, __ScoutPoolSize, __StrikerPoolSize, __WarpGatePoolSize, __WaspPoolSize, __YellowJacketPoolSize;
+    public void DebugLogger()
+    {
+        __BargePoolSize = BargePool.CountAll;
+        __BeaconPoolSize = BeaconPool.CountAll;
+        __BeehivePoolSize = BeehivePool.CountAll;
+        __BumblebeePoolSize = BumblebeePool.CountAll;
+        __CarpenterBeePoolSize = CarpenterBeePool.CountAll;
+        __CarrierPoolSize = CarrierPool.CountAll;
+        __CruiserPoolSize = CruiserPool.CountAll;
+        __DreadnoughtPoolSize = DreadnoughtPool.CountAll;
+        __DronePoolSize = DronePool.CountAll;
+        __FactoryPoolSize = FactoryPool.CountAll;
+        __FireBargePoolSize = FireBargePool.CountAll;
+        __FlagshipPoolSize = FlagshipPool.CountAll;
+        __FrigatePoolSize = FrigatePool.CountAll;
+        __GunshipPoolSize = GunshipPool.CountAll;
+        __HoneybeePoolSize = HoneybeePool.CountAll;
+        __HornetPoolSize = HornetPool.CountAll;
+        __LeafcutterPoolSize = LeafcutterPool.CountAll;
+        __QueenPoolSize = QueenPool.CountAll;
+        __ScoutPoolSize = ScoutPool.CountAll;
+        __StrikerPoolSize = StrikerPool.CountAll;
+        __WarpGatePoolSize = WarpGatePool.CountAll;
+        __WaspPoolSize = WarpGatePool.CountAll;
+        __YellowJacketPoolSize = YellowJacketPool.CountAll;
+    }
 
 
 
@@ -438,11 +468,15 @@ public class Stage : Scene
     public void OnTakeFromPool(Ship ship)
     {
         Debug.Log($"{ship.name} was taken from the pool");
+        //ship.transform.parent = PoolShips.transform;
+        //ship.transform.localPosition = Vector2.zero;
     }
 
     public void OnReturnToPool(Ship ship)
     {
         Debug.Log($"{ship.Name} was returned to the pool");
+        //ship.transform.parent = PoolShips.transform;
+        //ship.transform.localPosition = Vector2.zero;
     }
 
     public void ReturnShipToPool(Ship ship)
@@ -569,6 +603,7 @@ public class Stage : Scene
             {
                 PrimaryLevel = level;
             }
+            nextLevel.transform.parent = transform;
             nextLevel.SetActive(true);
             nextLevel.transform.position = LevelLayouts[LevelCount][i];
             Levels.Add(level);
@@ -580,6 +615,47 @@ public class Stage : Scene
         for (int i = 0; i < Levels.Count; i++)
         {
             Levels[i].Setup(this, $"Level - #{i}");
+        }
+    }
+    private void FillPools()
+    {
+        int fillSizeSmall = 15 * LevelCount;
+        int fillSizeMedium = 10 * LevelCount;
+        int fillSizeLarge = 5 * LevelCount;
+
+        for (int i = 0; i < fillSizeSmall; i++)
+        {
+            BeaconPool.Get();
+            DronePool.Get();
+            HoneybeePool.Get();
+            HornetPool.Get();
+            ScoutPool.Get();
+            StrikerPool.Get();
+            YellowJacketPool.Get();
+        }
+
+        for (int i = 0; i < fillSizeMedium; i++)
+        {
+            BargePool.Get();
+            BumblebeePool.Get();
+            CarpenterBeePool.Get();
+            CarrierPool.Get();
+            CruiserPool.Get();
+            DreadnoughtPool.Get();
+            FrigatePool.Get();
+            GunshipPool.Get();
+            LeafcutterPool.Get();
+            WaspPool.Get();
+        }
+
+        for (int i = 0; i < fillSizeLarge; i++)
+        {
+            BeehivePool.Get();
+            FactoryPool.Get();
+            FireBargePool.Get();
+            FlagshipPool.Get();
+            QueenPool.Get();
+            WarpGatePool.Get();
         }
     }
     protected override void FinalizeSceneWithUserData()
@@ -614,6 +690,8 @@ public class Stage : Scene
             WarpGatePool = new ObjectPool<WarpGate>(CreatePooledWarpGate, OnTakeFromPool, OnReturnToPool, null, true);
             WaspPool = new ObjectPool<Wasp>(CreatePooledWasp, OnTakeFromPool, OnReturnToPool, null, true);
             YellowJacketPool = new ObjectPool<YellowJacket>(CreatePooledYellowJacket, OnTakeFromPool, OnReturnToPool, null, true);
+
+            FillPools();
             SpawnLevels();
         }
 
@@ -818,6 +896,11 @@ public class Stage : Scene
             {
                 InputManager.Update();
             }
+        }
+
+        if (IsDebugging && FixedUpdates > 1000)
+        {
+            DebugLogger();
         }
     }
     void FixedUpdate()

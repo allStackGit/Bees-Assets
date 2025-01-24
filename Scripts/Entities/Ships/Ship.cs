@@ -341,10 +341,6 @@ namespace Assets.Scripts.Entities.Ships
                 if (ShipAnimation != null)
                 {
                     HasShipAnimation = true;
-                    if (Squad.HasCustomColor)
-                    {
-                        ShipAnimationController.RecolorAnimationSprites();
-                    }
                 }
 
                 if (RemainsShips.Count > 0) // [testing] all ships should have multiple shattered ships eventually
@@ -527,6 +523,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             if (squad.HasCustomColor)
             {
                 Utilities.SetUIColor(MiniMapIcon, squad.Color);
+                if (HasShipAnimation)
+                {
+                    ShipAnimationController.RecolorAnimationSprites();
+                }
             }
             else if (Side == ConfigData.Configuration.HumanSide)
             {
