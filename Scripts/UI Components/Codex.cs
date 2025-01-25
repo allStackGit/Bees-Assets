@@ -10,7 +10,7 @@ public class Codex : MonoBehaviour
 {
     public GameObject CodexBarge, CodexBeacon, CodexCarrier, CodexCruiser, CodexDreadnought, CodexDrone, CodexFactory, CodexFireBarge, CodexFlagship, CodexFrigate, CodexGunship, CodexScout,
              CodexStriker, CodexWarpGate, CodexBeehive, CodexBumblebee, CodexCarpenterBee, CodexHoneybee, CodexHornet, CodexLeafcutter, CodexQueen, CodexWasp, CodexYellowJacket;
-    public Dictionary<string, GameObject> CodexShips;
+    public Dictionary<ConfigData.ShipTypes, GameObject> CodexShips;
 
     public void ViewCodex()
     {
@@ -23,38 +23,38 @@ public class Codex : MonoBehaviour
     }
     public void SetupCodex()
     {
-        CodexShips = new Dictionary<string, GameObject> {
-                    {"Barge", CodexBarge },
-                    {"Beacon", CodexBeacon },
-                    {"Carrier", CodexCarrier },
-                    {"Cruiser", CodexCruiser },
-                    {"Dreadnought", CodexDreadnought },
-                    {"Drone", CodexDrone },
-                    {"Factory", CodexFactory },
-                    {"Fire Barge", CodexFireBarge },
-                    {"Flagship", CodexFlagship },
-                    {"Frigate", CodexFrigate },
-                    {"Gunship", CodexGunship },
-                    {"Scout", CodexScout },
-                    {"Striker", CodexStriker },
-                    {"Warp Gate", CodexWarpGate },
-                    {"Beehive", CodexBeehive },
-                    {"Bumblebee", CodexBumblebee },
-                    {"Carpenter Bee", CodexCarpenterBee },
-                    {"Honeybee", CodexHoneybee },
-                    {"Hornet", CodexHornet },
-                    {"Leafcutter", CodexLeafcutter },
-                    {"Queen", CodexQueen },
-                    {"Wasp", CodexWasp },
-                    {"Yellow Jacket", CodexYellowJacket }
+        CodexShips = new Dictionary<ConfigData.ShipTypes, GameObject> {
+                    {ConfigData.ShipTypes.Barge, CodexBarge },
+                    {ConfigData.ShipTypes.Beacon, CodexBeacon },
+                    {ConfigData.ShipTypes.Carrier, CodexCarrier },
+                    {ConfigData.ShipTypes.Cruiser, CodexCruiser },
+                    {ConfigData.ShipTypes.Dreadnought, CodexDreadnought },
+                    {ConfigData.ShipTypes.Drone, CodexDrone },
+                    {ConfigData.ShipTypes.Factory, CodexFactory },
+                    {ConfigData.ShipTypes.FireBarge, CodexFireBarge },
+                    {ConfigData.ShipTypes.Flagship, CodexFlagship },
+                    {ConfigData.ShipTypes.Frigate, CodexFrigate },
+                    {ConfigData.ShipTypes.Gunship, CodexGunship },
+                    {ConfigData.ShipTypes.Scout, CodexScout },
+                    {ConfigData.ShipTypes.Striker, CodexStriker },
+                    {ConfigData.ShipTypes.WarpGate, CodexWarpGate },
+                    {ConfigData.ShipTypes.Beehive, CodexBeehive },
+                    {ConfigData.ShipTypes.Bumblebee, CodexBumblebee },
+                    {ConfigData.ShipTypes.CarpenterBee, CodexCarpenterBee },
+                    {ConfigData.ShipTypes.Honeybee, CodexHoneybee },
+                    {ConfigData.ShipTypes.Hornet, CodexHornet },
+                    {ConfigData.ShipTypes.Leafcutter, CodexLeafcutter },
+                    {ConfigData.ShipTypes.Queen, CodexQueen },
+                    {ConfigData.ShipTypes.Wasp, CodexWasp },
+                    {ConfigData.ShipTypes.YellowJacket, CodexYellowJacket }
                 };
 
-        foreach (KeyValuePair<string, GameObject> ship in CodexShips)
+        foreach (KeyValuePair<ConfigData.ShipTypes, GameObject> ship in CodexShips)
         {
             if (!ConfigData.Configuration.VisibleShipTypes.Contains(ship.Key) && !ConfigData.SpawnedOnlyShipTypes.Contains(ship.Key))
             {
                 ship.Value.SetActive(false);
-                if (ship.Key == "Carrier")
+                if (ship.Key == ConfigData.ShipTypes.Carrier)
                 {
                     CodexDrone.SetActive(false);
                     CodexStriker.SetActive(false);

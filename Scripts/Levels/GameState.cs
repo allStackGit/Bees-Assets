@@ -200,7 +200,7 @@ namespace Assets.Scripts.Levels
         {
             Deadbodies.Add(body);
         }
-        public HashSet<string> GetHumanShipTypes()
+        public HashSet<ConfigData.ShipTypes> GetHumanShipTypes()
         {
             return GetHumanShips().Select((s) => s.ShipType).ToHashSet();
         }
@@ -208,7 +208,7 @@ namespace Assets.Scripts.Levels
         {
             return GetShips(ConfigData.Configuration.BeeSide);
         }
-        public HashSet<string> GetBeeShipTypes()
+        public HashSet<ConfigData.ShipTypes> GetBeeShipTypes()
         {
             return GetBeeShips().Select((s) => s.ShipType).ToHashSet();
         }
@@ -277,7 +277,7 @@ namespace Assets.Scripts.Levels
                 AddSelectedSquad(squad);
             });
         }
-        public void SelectSquadsByShipType(string type)
+        public void SelectSquadsByShipType(ConfigData.ShipTypes type)
         {
             ClearSelectedSquads();
             foreach (Squad squad in GetSquadsBySide(ConfigData.Configuration.UserSide).Where((squad) => squad.GetShips().Any((ship) => ship.ShipType == type)))

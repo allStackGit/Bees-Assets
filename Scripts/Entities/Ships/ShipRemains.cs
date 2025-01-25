@@ -56,7 +56,8 @@ namespace Assets.Scripts.Entities.Ships
 
         public void Kill()
         {
-            Destroy(gameObject);
+            //Destroy(gameObject);
+            gameObject.SetActive(false);
         }
     }
 }

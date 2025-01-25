@@ -116,7 +116,9 @@ namespace Assets.Scripts.Entities.Ships
             {
                 Squad.SetOffsets();
             }
-            Destroy(gameObject);
+            //Destroy(gameObject);
+            Debug.Log($"{Name} has been killed and will be returned");
+            Stage.ReturnShipToPool(this);
 
         }
 

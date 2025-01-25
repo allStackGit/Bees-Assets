@@ -135,7 +135,7 @@ namespace Assets.Scripts.UIComponents
                 }
             });
         }
-        private List<string> ShipTypes()
+        private List<ConfigData.ShipTypes> ShipTypes()
         {
 
             if (Side == ConfigData.Configuration.BeeSide)
@@ -804,9 +804,10 @@ namespace Assets.Scripts.UIComponents
                 
                 ShipTypes().ToList().ForEach((shipType) =>
                 {
-                    if (strategy.Contains(shipType) || (strategy == "Factories" && shipType == "Factory"))
+                    string shipName = ConfigData.ShipTypeNames[shipType];
+                    if (strategy.Contains(shipName) || (strategy == "Factories" && shipType == ConfigData.ShipTypes.Factory))
                     {
-                        strategy = $"Type {Utilities.ConvertShipNameToType(shipType)}";
+                        strategy = $"Type {Utilities.ConvertShipNameToTypeLetter(shipType)}";
                     }
                 });
 

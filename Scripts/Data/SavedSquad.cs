@@ -57,22 +57,22 @@ namespace Assets.Scripts.Data
             }
         }
 
-        public void SetupRandomShips(string squadType)
+        public void SetupRandomShips(ConfigData.ShipTypes squadType)
         {
             int shipCount = 10;
-            if ((new List<string> { "Queen", "Fire Barge", "Carrier", "Flagship", "Warp Gate", "Beehive" }).Contains(squadType))
+            if ((new List<ConfigData.ShipTypes> { ConfigData.ShipTypes.Queen, ConfigData.ShipTypes.FireBarge, ConfigData.ShipTypes.Carrier, ConfigData.ShipTypes.Flagship, ConfigData.ShipTypes.WarpGate, ConfigData.ShipTypes.Beehive }).Contains(squadType))
             {
                 shipCount = 1;
             }
-            else if ((new List<string> { "Bumblebee", "Barge", "Carpenter Bee", "Factory", "Honeybee", "Scout" }).Contains(squadType))
+            else if ((new List<ConfigData.ShipTypes> { ConfigData.ShipTypes.Bumblebee, ConfigData.ShipTypes.Barge, ConfigData.ShipTypes.CarpenterBee, ConfigData.ShipTypes.Factory, ConfigData.ShipTypes.Honeybee, ConfigData.ShipTypes.Scout }).Contains(squadType))
             {
                 shipCount = UnityEngine.Random.Range(1, 4);
             }
-            else if ((new List<string> { "Leafcutter", "Wasp", "Cruiser", "Dreadnought", "Frigate", "Gunship" }).Contains(squadType))
+            else if ((new List<ConfigData.ShipTypes> { ConfigData.ShipTypes.Leafcutter, ConfigData.ShipTypes.Wasp, ConfigData.ShipTypes.Cruiser, ConfigData.ShipTypes.Dreadnought, ConfigData.ShipTypes.Frigate, ConfigData.ShipTypes.Gunship }).Contains(squadType))
             {
                 shipCount = UnityEngine.Random.Range(2, 8);
             }
-            else if ((new List<string> { "Hornet", "Yellow Jacket" }).Contains(squadType))
+            else if ((new List<ConfigData.ShipTypes> { ConfigData.ShipTypes.Hornet, ConfigData.ShipTypes.YellowJacket }).Contains(squadType))
             {
                 shipCount = UnityEngine.Random.Range(4, 10);
             }

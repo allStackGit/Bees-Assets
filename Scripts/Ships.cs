@@ -47,15 +47,15 @@ namespace Assets.Scripts
         {
             return GetFleetShips().Where((ship) => ship.IsVisibleToUser).ToList();
         }
-        public List<FleetShip> GetShipsOfType(string type)
+        public List<FleetShip> GetShipsOfType(ConfigData.ShipTypes type)
         {
             return GetFleetShips().Where((ship) => ship.Type == type).ToList();
         }
-        public List<FleetShip> GetAvailableShipsOfType(string type)
+        public List<FleetShip> GetAvailableShipsOfType(ConfigData.ShipTypes type)
         {
             return GetAvailableShips().Where((ship) => ship.Type == type).ToList();
         }
-        public List<FleetShip> GetVisibleAndAliveShipsOfType(string type)
+        public List<FleetShip> GetVisibleAndAliveShipsOfType(ConfigData.ShipTypes type)
         {
             return GetVisibleAndAliveShips().Where((ship) => ship.Type == type).ToList();
         }

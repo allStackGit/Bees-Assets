@@ -64,13 +64,13 @@ namespace Assets.Scripts.Settings
 
         // [alert] Should probably be based off of user progress at some point
 
-        public HashSet<string> VisibleBeeShipTypes;
-        public HashSet<string> VisibleHumanShipTypes;
-        public HashSet<string> InvisibleBeeShipTypes;
-        public HashSet<string> InvisibleHumanShipTypes;
-        public HashSet<string> VisibleShipTypes;
-        public HashSet<string> InvisibleShipTypes;
-        public HashSet<string> AllShipTypes;
+        public HashSet<ConfigData.ShipTypes> VisibleBeeShipTypes;
+        public HashSet<ConfigData.ShipTypes> VisibleHumanShipTypes;
+        public HashSet<ConfigData.ShipTypes> InvisibleBeeShipTypes;
+        public HashSet<ConfigData.ShipTypes> InvisibleHumanShipTypes;
+        public HashSet<ConfigData.ShipTypes> VisibleShipTypes;
+        public HashSet<ConfigData.ShipTypes> InvisibleShipTypes;
+        public HashSet<ConfigData.ShipTypes> AllShipTypes;
         public int AISide; // [alert]  // depends on whether the user is playing as the humans or the bees
         public int UserSide;
         public int SquadMakerFirstSide;
@@ -189,17 +189,17 @@ namespace Assets.Scripts.Settings
 
             CensoredWords = new HashSet<string>(Utilities.JArrayToList<string>(so.CensoredWords));
             ShootingStrategies = new HashSet<string>(Utilities.JArrayToList<string>(so.ShootingStrategies));
-            VisibleBeeShipTypes = new HashSet<string>(Utilities.JArrayToList<string>(so.VisibleBeeShipTypes));
-            VisibleHumanShipTypes = new HashSet<string>(Utilities.JArrayToList<string>(so.VisibleHumanShipTypes));
-            InvisibleBeeShipTypes = new HashSet<string>(Utilities.JArrayToList<string>(so.InvisibleBeeShipTypes));
-            InvisibleHumanShipTypes = new HashSet<string>(Utilities.JArrayToList<string>(so.InvisibleHumanShipTypes));
+            VisibleBeeShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToList<ConfigData.ShipTypes>(so.VisibleBeeShipTypes));
+            VisibleHumanShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToList<ConfigData.ShipTypes>(so.VisibleHumanShipTypes));
+            InvisibleBeeShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToList<ConfigData.ShipTypes>(so.InvisibleBeeShipTypes));
+            InvisibleHumanShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToList<ConfigData.ShipTypes>(so.InvisibleHumanShipTypes));
             Tooltips = Utilities.JArrayToDictionary<string, string>(so.Tooltips);
 
           
 
-            VisibleShipTypes = new HashSet<string>(VisibleHumanShipTypes.Union(VisibleBeeShipTypes));
-            InvisibleShipTypes = new HashSet<string>(InvisibleHumanShipTypes.Union(VisibleBeeShipTypes));
-            AllShipTypes = new HashSet<string>(InvisibleBeeShipTypes.Union(VisibleShipTypes).Union(InvisibleShipTypes));
+            VisibleShipTypes = new HashSet<ConfigData.ShipTypes>(VisibleHumanShipTypes.Union(VisibleBeeShipTypes));
+            InvisibleShipTypes = new HashSet<ConfigData.ShipTypes>(InvisibleHumanShipTypes.Union(VisibleBeeShipTypes));
+            AllShipTypes = new HashSet<ConfigData.ShipTypes>(InvisibleBeeShipTypes.Union(VisibleShipTypes).Union(InvisibleShipTypes));
 
             ConfigData.BeeShipTypes = VisibleBeeShipTypes;
             ConfigData.HumanShipTypes = VisibleHumanShipTypes;

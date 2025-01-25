@@ -516,7 +516,7 @@ namespace Assets.Scripts.UIComponents
 
 
         // Check dragging location validity
-        private bool CheckValidDropLocation(Vector2 position, bool shouldSnapPosition, SquadShip ship, string shipType)
+        private bool CheckValidDropLocation(Vector2 position, bool shouldSnapPosition, SquadShip ship, ConfigData.ShipTypes shipType)
         {
 
             if (HasHitDropBox(position))             // check if it's in the squad composition box
@@ -528,7 +528,7 @@ namespace Assets.Scripts.UIComponents
                     //Vector2 tooClose = new Vector2(Mathf.Abs(_scene.BaseWorldPoint.x - screenPoint.x)-.1f, Mathf.Abs(_scene.BaseWorldPoint.y - screenPoint.y)-.1f);
 
                     //Vector2 screenPixels = Utilities.WorldUnitsToScreenPixels(ConfigData.GetShipOffsetInWorldUnits(_scene.Camera), _scene.Camera) * _scene.ScreenScaleFactor;
-                    Vector2 tooClose = Utilities.WorldUnitsToScreenPixels(ConfigData.GetShipOffset(shipType), _scene.Camera);
+                    Vector2 tooClose = Utilities.WorldUnitsToScreenPixels(ConfigData.GetShipOffset(), _scene.Camera);
 
                     //Debug.Log($"Ship offset world units: {ConfigData.ShipOffset}, screen pixels {screenPixels}, tooClose {tooClose}");
                     //Debug.Log($"Offset Vector: {ConfigData.ShipOffset}, Offset change: {tooClose}, Offset VectorToScreen: {screenPoint}, Base World Point:{_scene.BaseWorldPoint}");

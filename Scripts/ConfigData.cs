@@ -72,6 +72,82 @@ namespace Assets.Scripts
         public static bool[] IsSavedSquadsDataLoaded = new bool[] { false, false };
         public static bool[] IsFleetDataLoaded = new bool[] { false, false };
 
+        public enum ShipTypes
+        {
+            Barge,
+            Beacon,
+            Beehive,
+            Bumblebee,
+            CarpenterBee,
+            Carrier,
+            Cruiser,
+            Dreadnought,
+            Drone,
+            Factory,
+            FireBarge,
+            Flagship,
+            Frigate,
+            Gunship,
+            Honeybee,
+            Hornet,
+            Leafcutter,
+            Queen,
+            Scout,
+            Striker,
+            WarpGate,
+            Wasp,
+            YellowJacket,
+        }
+        public enum WeaponTypes
+        {
+
+        }
+
+        public enum ProjectileTypes
+        {
+            BeeSmall,
+            BeeMedium,
+            BumblebeeShot,
+            FlagshipShot,
+            Rocket,
+            HumanSmall,
+            HumanMedium,
+            Beam,
+            SplitShot,
+            QueenSmall,
+            QueenLarge,
+            StrikerBomb,
+            RocketExplosion,
+            FireBargeExplosion
+
+        }
+
+        public static Dictionary<ShipTypes, string> ShipTypeNames = new Dictionary<ShipTypes, string>
+        {
+            {ShipTypes.Barge, "Barge"},
+            {ShipTypes.Beacon, "Beacon"},
+            {ShipTypes.Beehive, "Beehive"},
+            {ShipTypes.Bumblebee, "Bumblebee"},
+            {ShipTypes.CarpenterBee, "Carpenter Bee"},
+            {ShipTypes.Carrier, "Carrier"},
+            {ShipTypes.Cruiser, "Cruiser"},
+            {ShipTypes.Dreadnought, "Dreadnought"},
+            {ShipTypes.Drone, "Drone"},
+            {ShipTypes.Factory, "Factory"},
+            {ShipTypes.FireBarge, "Fire Barge"},
+            {ShipTypes.Flagship, "Flagship"},
+            {ShipTypes.Frigate, "Frigate"},
+            {ShipTypes.Gunship, "Gunship"},
+            {ShipTypes.Honeybee, "Honeybee"},
+            {ShipTypes.Hornet, "Hornet"},
+            {ShipTypes.Leafcutter, "Leafcutter"},
+            {ShipTypes.Queen, "Queen"},
+            {ShipTypes.Scout, "Scout"},
+            {ShipTypes.Striker, "Striker"},
+            {ShipTypes.WarpGate, "Warp Gate"},
+            {ShipTypes.Wasp, "Wasp"},
+            {ShipTypes.YellowJacket, "Yellow Jacket"},
+        };
 
         /// <summary>
         /// Size class 3 in the spreeadsheet
@@ -102,161 +178,162 @@ namespace Assets.Scripts
         /// </summary>
         public const int Unfathomable = 32;
 
-        public static readonly Dictionary<string, Vector2Int> ShipSizes = new Dictionary<string, Vector2Int>() {
-            { "Barge",          new Vector2Int(760, 360)},
-            { "Beacon",         new Vector2Int(90, 80)},
-            { "Carrier",        new Vector2Int(480, 560)},
-            { "Cruiser",        new Vector2Int(320, 360)},
-            { "Dreadnought",    new Vector2Int(320, 420)},
-            { "Drone",          new Vector2Int(160, 160)},
-            { "Factory",        new Vector2Int(640, 640)},
-            { "Fire Barge",      new Vector2Int(760, 360)},
-            { "Flagship",       new Vector2Int(640, 760)},
-            { "Frigate",        new Vector2Int(240, 240)},
-            { "Gunship",        new Vector2Int(240, 240)},
-            { "Scout",          new Vector2Int(200, 160)},
-            { "Striker",        new Vector2Int(160, 160)},
-            { "Warp Gate",      new Vector2Int(1120, 640)},
+        public static readonly Dictionary<ShipTypes, Vector2Int> ShipSizes = new Dictionary<ShipTypes, Vector2Int>() {
+            { ShipTypes.Barge,          new Vector2Int(760, 360)},
+            { ShipTypes.Beacon,         new Vector2Int(90, 80)},
+            { ShipTypes.Carrier,        new Vector2Int(480, 560)},
+            { ShipTypes.Cruiser,        new Vector2Int(320, 360)},
+            { ShipTypes.Dreadnought,    new Vector2Int(320, 420)},
+            { ShipTypes.Drone,          new Vector2Int(160, 160)},
+            { ShipTypes.Factory,        new Vector2Int(640, 640)},
+            { ShipTypes.FireBarge,      new Vector2Int(760, 360)},
+            { ShipTypes.Flagship,       new Vector2Int(640, 760)},
+            { ShipTypes.Frigate,        new Vector2Int(240, 240)},
+            { ShipTypes.Gunship,        new Vector2Int(240, 240)},
+            { ShipTypes.Scout,          new Vector2Int(200, 160)},
+            { ShipTypes.Striker,        new Vector2Int(160, 160)},
+            { ShipTypes.WarpGate,       new Vector2Int(1120, 640)},
 
-            { "Beehive",        new Vector2Int(1360, 1360)},
-            { "Bumblebee",      new Vector2Int(680, 480)},
-            { "Carpenter Bee",  new Vector2Int(640, 640)},
-            { "Honeybee",       new Vector2Int(160, 160)},
-            { "Hornet",         new Vector2Int(160, 160)},
-            { "Leafcutter",     new Vector2Int(320, 320)},
-            { "Queen",          new Vector2Int(6400, 5120)},
-            { "Wasp",           new Vector2Int(240, 240)},
-            { "Yellow Jacket",  new Vector2Int(160, 160)},
+            { ShipTypes.Beehive,        new Vector2Int(1360, 1360)},
+            { ShipTypes.Bumblebee,      new Vector2Int(680, 480)},
+            { ShipTypes.CarpenterBee,   new Vector2Int(640, 640)},
+            { ShipTypes.Honeybee,       new Vector2Int(160, 160)},
+            { ShipTypes.Hornet,         new Vector2Int(160, 160)},
+            { ShipTypes.Leafcutter,     new Vector2Int(320, 320)},
+            { ShipTypes.Queen,          new Vector2Int(6400, 5120)},
+            { ShipTypes.Wasp,           new Vector2Int(240, 240)},
+            { ShipTypes.YellowJacket,   new Vector2Int(160, 160)},
         };
 
-        public static readonly Dictionary<string, Vector2Int> ShipRemainsSizes = new Dictionary<string, Vector2Int>() {
-            { "Barge",          new Vector2Int(0, 0)},
-            { "Beacon",         new Vector2Int(0, 0)},
-            { "Carrier",        new Vector2Int(0, 0)},
-            { "Cruiser",        new Vector2Int(0, 0)},
-            { "Dreadnought",    new Vector2Int(0, 0)},
-            { "Drone",          new Vector2Int(0, 0)},
-            { "Factory",        new Vector2Int(0, 0)},
-            { "Fire Barge",      new Vector2Int(0, 0)},
-            { "Flagship",       new Vector2Int(0, 0)},
-            { "Frigate",        new Vector2Int(0, 0)},
-            { "Gunship",        new Vector2Int(420, 420)},
-            { "Scout",          new Vector2Int(0, 0)},
-            { "Striker",        new Vector2Int(0, 0)},
-            { "Warp Gate",      new Vector2Int(0, 0)},
+        public static readonly Dictionary<ShipTypes, Vector2Int> ShipRemainsSizes = new Dictionary<ShipTypes, Vector2Int>() {
+            { ShipTypes.Barge,         new Vector2Int(0, 0)},
+            { ShipTypes.Beacon,        new Vector2Int(0, 0)},
+            { ShipTypes.Carrier,       new Vector2Int(0, 0)},
+            { ShipTypes.Cruiser,       new Vector2Int(0, 0)},
+            { ShipTypes.Dreadnought,   new Vector2Int(0, 0)},
+            { ShipTypes.Drone,         new Vector2Int(0, 0)},
+            { ShipTypes.Factory,       new Vector2Int(0, 0)},
+            { ShipTypes.FireBarge,     new Vector2Int(0, 0)},
+            { ShipTypes.Flagship,      new Vector2Int(0, 0)},
+            { ShipTypes.Frigate,       new Vector2Int(0, 0)},
+            { ShipTypes.Gunship,       new Vector2Int(420, 420)},
+            { ShipTypes.Scout,         new Vector2Int(0, 0)},
+            { ShipTypes.Striker,       new Vector2Int(0, 0)},
+            { ShipTypes.WarpGate,      new Vector2Int(0, 0)},
 
-            { "Beehive",        new Vector2Int(0, 0)},
-            { "Bumblebee",      new Vector2Int(0, 0)},
-            { "Carpenter Bee",  new Vector2Int(0, 0)},
-            { "Honeybee",       new Vector2Int(0, 0)},
-            { "Hornet",         new Vector2Int(0, 0)},
-            { "Leafcutter",     new Vector2Int(0, 0)},
-            { "Queen",          new Vector2Int(0, 0)},
-            { "Wasp",           new Vector2Int(0, 0)},
-            { "Yellow Jacket",  new Vector2Int(0, 0)},
+            { ShipTypes.Beehive,       new Vector2Int(0, 0)},
+            { ShipTypes.Bumblebee,     new Vector2Int(0, 0)},
+            { ShipTypes.CarpenterBee,  new Vector2Int(0, 0)},
+            { ShipTypes.Honeybee,      new Vector2Int(0, 0)},
+            { ShipTypes.Hornet,        new Vector2Int(0, 0)},
+            { ShipTypes.Leafcutter,    new Vector2Int(0, 0)},
+            { ShipTypes.Queen,         new Vector2Int(0, 0)},
+            { ShipTypes.Wasp,          new Vector2Int(0, 0)},
+            { ShipTypes.YellowJacket,  new Vector2Int(0, 0)},
         };
-        public static readonly Dictionary<string, float> ShipSizeFactor = new Dictionary<string, float>() {
-            { "Barge",          Huge},
-            { "Beacon",         Tiny},
-            { "Carrier",        Large},
-            { "Cruiser",        Medium},
-            { "Dreadnought",    Medium},
-            { "Drone",          Tiny},
-            { "Factory",        Huge},
-            { "Fire Barge",      Huge},
-            { "Flagship",       Huge},
-            { "Frigate",        Small},
-            { "Gunship",        Small},
-            { "Scout",          Tiny},
-            { "Striker",        Tiny},
-            { "Warp Gate",      Huge},
+        public static readonly Dictionary<ShipTypes, float> ShipSizeFactor = new Dictionary<ShipTypes, float>() {
+            { ShipTypes.Barge,         Huge},
+            { ShipTypes.Beacon,        Tiny},
+            { ShipTypes.Carrier,       Large},
+            { ShipTypes.Cruiser,       Medium},
+            { ShipTypes.Dreadnought,   Medium},
+            { ShipTypes.Drone,         Tiny},
+            { ShipTypes.Factory,       Huge},
+            { ShipTypes.FireBarge,     Huge},
+            { ShipTypes.Flagship,      Huge},
+            { ShipTypes.Frigate,       Small},
+            { ShipTypes.Gunship,       Small},
+            { ShipTypes.Scout,         Tiny},
+            { ShipTypes.Striker,       Tiny},
+            { ShipTypes.WarpGate,      Huge},
 
-            { "Beehive",        Enormous},
-            { "Bumblebee",      Large},
-            { "Carpenter Bee",  Huge},
-            { "Honeybee",       Tiny},
-            { "Hornet",         Tiny},
-            { "Leafcutter",     Medium},
-            { "Queen",          Unfathomable},
-            { "Wasp",           Small},
-            { "Yellow Jacket",  Tiny},
+            { ShipTypes.Beehive,       Enormous},
+            { ShipTypes.Bumblebee,     Large},
+            { ShipTypes.CarpenterBee,  Huge},
+            { ShipTypes.Honeybee,      Tiny},
+            { ShipTypes.Hornet,        Tiny},
+            { ShipTypes.Leafcutter,    Medium},
+            { ShipTypes.Queen,         Unfathomable},
+            { ShipTypes.Wasp,          Small},
+            { ShipTypes.YellowJacket,  Tiny},
         };
-        public static readonly Dictionary<string, Color[]> ChangeableShipColors = new Dictionary<string, Color[]>() {
-            { "Barge", new Color[] {new Color(0.235f, 0.753f, 0.498f, 1), new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.196f, 0.6f, 0.4f, 1) } },
-            { "Beacon", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
-            { "Carrier", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
-            { "Cruiser", new Color[] {new Color(0.184f, 0.569f, 0.380f, 1), new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.196f, 0.6f, 0.4f, 1) } },
-            { "Dreadnought", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1)  } },
-            { "Drone", new Color[] {new Color(.729f, .729f, .729f, 1) } },
-            { "Factory", new Color[] { new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.196f, 0.6f, 0.4f, 1) } },
-            { "Fire Barge", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.235f, 0.753f, 0.498f, 1) } },
-            { "Flagship", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
-            { "Frigate", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
+        public static readonly Dictionary<ShipTypes, Color[]> ChangeableShipColors = new Dictionary<ShipTypes, Color[]>() {
+            { ShipTypes.Barge, new Color[] {new Color(0.235f, 0.753f, 0.498f, 1), new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.196f, 0.6f, 0.4f, 1) } },
+            { ShipTypes.Beacon, new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
+            { ShipTypes.Carrier, new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
+            { ShipTypes.Cruiser, new Color[] {new Color(0.184f, 0.569f, 0.380f, 1), new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.196f, 0.6f, 0.4f, 1) } },
+            { ShipTypes.Dreadnought, new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1)  } },
+            { ShipTypes.Drone, new Color[] {new Color(.729f, .729f, .729f, 1) } },
+            { ShipTypes.Factory, new Color[] { new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.196f, 0.6f, 0.4f, 1) } },
+            { ShipTypes.FireBarge, new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.235f, 0.753f, 0.498f, 1) } },
+            { ShipTypes.Flagship, new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
+            { ShipTypes.Frigate, new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
 
 
-            { "Gunship", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.1843f, 0.5686f, 0.3725f, 1),
+            { ShipTypes.Gunship, new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.1843f, 0.5686f, 0.3725f, 1),
                 new Color(0.1607f, 0.4823f, 0.3215f, 1), new Color(0.1921f, 0.6039f, 0.3960f, 1), new Color(0.1607f, 0.5098f, 0.3215f, 1),
             new Color(0.1450f, 0.4588f, 0.2941f, 1)} },
 
 
-            { "Scout", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
-            { "Striker", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
-            { "Warp Gate", new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
+            { ShipTypes.Scout, new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
+            { ShipTypes.Striker, new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
+            { ShipTypes.WarpGate, new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
 
             // Set the bees to the unset color because none of their colors will change ... Unless the player is the bees?
-            { "Beehive",        new Color[] {UnsetColor } },
-            { "Bumblebee",      new Color[] {UnsetColor } },
-            { "Carpenter Bee",  new Color[] {UnsetColor } },
-            { "Honeybee",       new Color[] {UnsetColor } },
-            { "Hornet",         new Color[] {UnsetColor } },
-            { "Leafcutter",     new Color[] {UnsetColor } },
-            { "Queen",          new Color[] {UnsetColor } },
-            { "Wasp",           new Color[] {UnsetColor } },
-            { "Yellow Jacket",  new Color[] {UnsetColor } },
+            { ShipTypes.Beehive,        new Color[] {UnsetColor } },
+            { ShipTypes.Bumblebee,      new Color[] {UnsetColor } },
+            { ShipTypes.CarpenterBee,   new Color[] {UnsetColor } },
+            { ShipTypes.Honeybee,       new Color[] {UnsetColor } },
+            { ShipTypes.Hornet,         new Color[] {UnsetColor } },
+            { ShipTypes.Leafcutter,     new Color[] {UnsetColor } },
+            { ShipTypes.Queen,          new Color[] {UnsetColor } },
+            { ShipTypes.Wasp,           new Color[] {UnsetColor } },
+            { ShipTypes.YellowJacket,   new Color[] {UnsetColor } },
         };
 
         /// <summary>
         /// Offset in world units from the front of a ship when aiming at the front of a ship
         /// </summary>
-        public static readonly Dictionary<string, float> OffsetFromFrontOfShip = new Dictionary<string, float>()
+        public static readonly Dictionary<ShipTypes, float> OffsetFromFrontOfShip = new Dictionary<ShipTypes, float>()
         {
-            { "Barge", .35f },
-            { "Beacon", .35f },
-            { "Carrier", .35f },
-            { "Cruiser", .35f },
-            { "Dreadnought", .35f },
-            { "Drone", .35f },
-            { "Factory", .35f },
-            { "Fire Barge", .35f },
-            { "Flagship", .35f },
-            { "Frigate", .35f },
-            { "Gunship", .35f },
-            { "Scout", .35f },
-            { "Striker", .35f },
-            { "Warp Gate", 13f },
+            { ShipTypes.Barge, .35f },
+            { ShipTypes.Beacon, .35f },
+            { ShipTypes.Carrier, .35f },
+            { ShipTypes.Cruiser, .35f },
+            { ShipTypes.Dreadnought, .35f },
+            { ShipTypes.Drone, .35f },
+            { ShipTypes.Factory, .35f },
+            { ShipTypes.FireBarge, .35f },
+            { ShipTypes.Flagship, .35f },
+            { ShipTypes.Frigate, .35f },
+            { ShipTypes.Gunship, .35f },
+            { ShipTypes.Scout, .35f },
+            { ShipTypes.Striker, .35f },
+            { ShipTypes.WarpGate, 13f },
 
-            { "Beehive", 4f },
-            { "Bumblebee", .35f },
-            { "Carpenter Bee", .35f },
-            { "Honeybee", .35f },
-            { "Hornet", .35f },
-            { "Leafcutter", .35f },
-            { "Queen", .35f },
-            { "Wasp", .35f },
-            { "Yellow Jacket", .35f },
+            { ShipTypes.Beehive, 4f },
+            { ShipTypes.Bumblebee, .35f },
+            { ShipTypes.CarpenterBee, .35f },
+            { ShipTypes.Honeybee, .35f },
+            { ShipTypes.Hornet, .35f },
+            { ShipTypes.Leafcutter, .35f },
+            { ShipTypes.Queen, .35f },
+            { ShipTypes.Wasp, .35f },
+            { ShipTypes.YellowJacket, .35f },
         };
 
         public static readonly HashSet<string> CommandTypes = new HashSet<string> { "Aggressive", "Defensive", "Random", "Circle", "Right Swipe", "Left Swipe", "Closest Friendly",
         "In and Out", "Patrol", "Guard", "Scouting", "Mining", "Full Retreat" };
 
-        public static HashSet<string> BeeShipTypes = new HashSet<string>();
-        public static HashSet<string> HumanShipTypes = new HashSet<string>();
-        public static readonly HashSet<string> BeeSwarmShips = new HashSet<string> { "Honeybee", "Hornet", "Yellow Jacket" };
-        public static readonly HashSet<string> HumanSwarmShips = new HashSet<string> { "Scout", "Carrier", "Gunship" };
-        public static readonly HashSet<string> BeePowerfulShips = new HashSet<string> { "Queen", "Bumblebee", "Leafcutter" };
-        public static readonly HashSet<string> HumanPowerfulShips = new HashSet<string> { "Flagship", "Fire Barge", "Cruiser", "Dreadnought" };
-        public static readonly HashSet<string> SpawnedOnlyShipTypes = new HashSet<string> { "Drone", "Striker", "Beacon" };
-        public static readonly HashSet<string> ArmedShipTypes = new HashSet<string> { "Cruiser", "Dreadnought", "Flagship", "Frigate", "Gunship", "Bumblebee", "Hornet", "Leafcutter", "Queen", "Wasp" };
+        public static HashSet<ShipTypes> BeeShipTypes = new HashSet<ShipTypes>();
+        public static HashSet<ShipTypes> HumanShipTypes = new HashSet<ShipTypes>();
+        public static readonly HashSet<ShipTypes> BeeSwarmShips = new HashSet<ShipTypes> { ShipTypes.Honeybee, ShipTypes.Hornet, ShipTypes.YellowJacket };
+        public static readonly HashSet<ShipTypes> HumanSwarmShips = new HashSet<ShipTypes> { ShipTypes.Scout, ShipTypes.Carrier, ShipTypes.Gunship };
+        public static readonly HashSet<ShipTypes> BeePowerfulShips = new HashSet<ShipTypes> { ShipTypes.Queen, ShipTypes.Bumblebee, ShipTypes.Leafcutter };
+        public static readonly HashSet<ShipTypes> HumanPowerfulShips = new HashSet<ShipTypes> { ShipTypes.Flagship, ShipTypes.FireBarge, ShipTypes.Cruiser, ShipTypes.Dreadnought };
+        public static readonly HashSet<ShipTypes> SpawnedOnlyShipTypes = new HashSet<ShipTypes> { ShipTypes.Drone, ShipTypes.Striker, ShipTypes.Beacon };
+        public static readonly HashSet<ShipTypes> ArmedShipTypes = new HashSet<ShipTypes> { ShipTypes.Cruiser, ShipTypes.Dreadnought, ShipTypes.Flagship, ShipTypes.Frigate, ShipTypes.Gunship, ShipTypes.Bumblebee, ShipTypes.Hornet,
+            ShipTypes.Leafcutter, ShipTypes.Queen, ShipTypes.Wasp };
         public static readonly List<Map> Maps = new List<Map> { new Map(0, new Vector2(0, -230), new Vector2(0, 230), "Pluto"), new Map(1, new Vector2(0, -430), new Vector2(0, 430), "Uranus") };
         public static readonly List<ObstacleMap> ObstacleMaps = new List<ObstacleMap> { new ObstacleMap(0, "None"), new ObstacleMap(1, "Maze") , new ObstacleMap(2, "Three Paths") , 
             new ObstacleMap(0, "Forest"), new ObstacleMap(0, "The Wall") };
@@ -500,11 +577,11 @@ namespace Assets.Scripts
                 Debug.Log("Setting up user data");
 
                 //Debug.Log($"Current Level before loading user data: {GetLevel()}");
-                Dictionary<string, int> allStartingShips = new Dictionary<string, int>();
+                Dictionary<ConfigData.ShipTypes, int> allStartingShips = new Dictionary<ConfigData.ShipTypes, int>();
                 StartingSettings.HumanStartingShips.ToList().ForEach((s) => allStartingShips.Add(s.Key, s.Value));
                 StartingSettings.BeeStartingShips.ToList().ForEach((s) => allStartingShips.Add(s.Key, s.Value));
 
-                Dictionary<string, int> allCampaignStartingShips = new Dictionary<string, int>();
+                Dictionary<ConfigData.ShipTypes, int> allCampaignStartingShips = new Dictionary<ConfigData.ShipTypes, int>();
                 StartingSettings.HumanCampaignStartingShips.ToList().ForEach((s) => allCampaignStartingShips.Add(s.Key, s.Value));
                 StartingSettings.BeeCampaignStartingShips.ToList().ForEach((s) => allCampaignStartingShips.Add(s.Key, s.Value));
 
@@ -530,7 +607,7 @@ namespace Assets.Scripts
             }
 
         }
-        public static ShipStatBlock GetShipInfo(string shipType)
+        public static ShipStatBlock GetShipInfo(ConfigData.ShipTypes shipType)
         {
             if (ShipInfo != null)
             {
@@ -543,13 +620,7 @@ namespace Assets.Scripts
             return null;
         }
 
-        public static Vector2 GetShipOffset(string shipType)
-        {
-            //return ShipOffset * (ShipSizes.GetValueOrDefault(shipType) / BaseShipSize);
-            return ShipOffset;
-        }
-
-        public static float GetShipSizeFactor(string shipType)
+        public static float GetShipSizeFactor(ConfigData.ShipTypes shipType)
         {
             return ShipSizeFactor.GetValueOrDefault(shipType);
         }
@@ -674,11 +745,11 @@ namespace Assets.Scripts
         {
             return _campaignLevelData;
         }
-        public static void SetupCampaignFleetData(bool shouldFileExist, Dictionary<string, int> startingShips)
+        public static void SetupCampaignFleetData(bool shouldFileExist, Dictionary<ShipTypes, int> startingShips)
         {
             _campaignFleetData = new FleetData(shouldFileExist, startingShips, 0);
         }
-        public static void SetupFleetData(bool shouldFileExist, Dictionary<string, int> startingShips)
+        public static void SetupFleetData(bool shouldFileExist, Dictionary<ShipTypes, int> startingShips)
         {
             _fleetData = new FleetData(shouldFileExist, startingShips, 1);
         }

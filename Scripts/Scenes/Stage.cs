@@ -4,7 +4,6 @@ using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
 using Assets.Scripts.UI_Components;
-using Assets.Scripts.UIComponents;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -12,6 +11,9 @@ using System.Linq;
 using Unity.MLAgents;
 using UnityEngine;
 using UnityEngine.Pool;
+using Assets.Scripts.UIComponents;
+using System.Security.Cryptography;
+using Assets.Scripts.Entities.Projectiles;
 
 /// <summary>
 /// Container scene for 1 or more Levels. Handles scene level variables and communication with the server
@@ -173,11 +175,11 @@ public class Stage : Scene
     /// <summary>
     /// Only allows Bee ship types as specified here, unless it's empty
     /// </summary>
-    public List<string> OverrideBeeShipTypes = new List<string> { };
+    public List<ConfigData.ShipTypes> OverrideBeeShipTypes = new List<ConfigData.ShipTypes> { };
     /// <summary>
     /// Only allows Human ship types as specified here, unless it's empty
     /// </summary>
-    public List<string> OverrideHumanShipTypes = new List<string> { };
+    public List<ConfigData.ShipTypes> OverrideHumanShipTypes = new List<ConfigData.ShipTypes> { };
     /// <summary>
     /// Only allows Hive Mind strats of the types specified here, unless it's empty
     /// </summary>
@@ -254,11 +256,11 @@ public class Stage : Scene
     /// <summary>
     /// The current Bee ship types available for the levels
     /// </summary>
-    public List<string> BeeShipTypes = new List<string>();
+    public List<ConfigData.ShipTypes> BeeShipTypes = new List<ConfigData.ShipTypes>();
     /// <summary>
     /// The current Human ship types available for the levels
     /// </summary>
-    public List<string> HumanShipTypes = new List<string>();
+    public List<ConfigData.ShipTypes> HumanShipTypes = new List<ConfigData.ShipTypes>();
     /// <summary>
     /// How many fixed updates have passed since the stage spawned
     /// </summary>
@@ -292,11 +294,15 @@ public class Stage : Scene
     public ObjectPool<Wasp> WaspPool;
     public ObjectPool<YellowJacket> YellowJacketPool;
 
-    //public GameObject PoolShips;
+
+    public ObjectPool<Assets.Scripts.UI_Components.Map> PlutoMapPool;
+    public ObjectPool<Assets.Scripts.UI_Components.Map> UranusMapPool;
+
+    public ObjectPool<Projectile> BeeMediumProjectilePool;
 
     public int __BargePoolSize, __BeaconPoolSize, __BeehivePoolSize, __BumblebeePoolSize, __CarpenterBeePoolSize, __CarrierPoolSize, __CruiserPoolSize, __DreadnoughtPoolSize,
         __DronePoolSize, __FactoryPoolSize, __FireBargePoolSize, __FlagshipPoolSize, __FrigatePoolSize, __GunshipPoolSize, __HoneybeePoolSize, __HornetPoolSize, __LeafcutterPoolSize,
-        __QueenPoolSize, __ScoutPoolSize, __StrikerPoolSize, __WarpGatePoolSize, __WaspPoolSize, __YellowJacketPoolSize;
+        __QueenPoolSize, __ScoutPoolSize, __StrikerPoolSize, __WarpGatePoolSize, __WaspPoolSize, __YellowJacketPoolSize, __PlutoMapPoolSize, __UranusMapPoolSize, __BeeMediumProjectilePoolSize;
     public void DebugLogger()
     {
         __BargePoolSize = BargePool.CountAll;
@@ -322,6 +328,9 @@ public class Stage : Scene
         __WarpGatePoolSize = WarpGatePool.CountAll;
         __WaspPoolSize = WarpGatePool.CountAll;
         __YellowJacketPoolSize = YellowJacketPool.CountAll;
+        __PlutoMapPoolSize = PlutoMapPool.CountAll;
+        __UranusMapPoolSize = UranusMapPool.CountAll;
+        __BeeMediumProjectilePoolSize = BeeMediumProjectilePool.CountAll;
     }
 
 
@@ -465,118 +474,207 @@ public class Stage : Scene
         return YelllowJacket;
     }
 
-    public void OnTakeFromPool(Ship ship)
+    public Assets.Scripts.UI_Components.Map CreatePooledPlutoMap()
+    {
+        return CreatePooledMap(0);
+    }
+
+    public Assets.Scripts.UI_Components.Map CreatePooledUranusMap()
+    {
+        return CreatePooledMap(1);
+    }
+
+    public Projectile CreatedPooledBeeMediumProjectile()
+    {
+        Projectile projectile = Instantiate(Prefabs.BeeMediumLaserShotPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+        return projectile;
+    }
+
+    public Assets.Scripts.UI_Components.Map CreatePooledMap(int index)
+    {
+        Assets.Scripts.UI_Components.Map map = Instantiate(Prefabs.Maps[index]).GetComponent<Assets.Scripts.UI_Components.Map>();
+        map.Setup(index, ConfigData.Maps[index].Name, ConfigData.Maps[index].UserStartingPosition, ConfigData.Maps[index].AIStartingPosition);
+        map.name = map.Name;
+        return map;
+    }
+
+    public void OnTakeShipFromPool(Ship ship)
     {
         Debug.Log($"{ship.name} was taken from the pool");
         //ship.transform.parent = PoolShips.transform;
         //ship.transform.localPosition = Vector2.zero;
     }
 
-    public void OnReturnToPool(Ship ship)
+    public void OnReturnShipToPool(Ship ship)
     {
-        Debug.Log($"{ship.Name} was returned to the pool");
+        Debug.Log($"{ship.name} was returned to the pool");
         //ship.transform.parent = PoolShips.transform;
         //ship.transform.localPosition = Vector2.zero;
+    }
+
+    public void OnTakeProjectileFromPool(Projectile projectile)
+    {
+        Debug.Log($"{projectile.name} was taken from the pool");
+    }
+
+    public void OnReturnProjectileToPool(Projectile projectile)
+    {
+        Debug.Log($"{projectile.name} was returned to the pool");
     }
 
     public void ReturnShipToPool(Ship ship)
     {
 
         ship.gameObject.SetActive(false);
+
         switch (ship.ShipType)
         {
-            case "Barge":
+            case ConfigData.ShipTypes.Barge:
                 BargePool.Release((Barge)ship);
                 break;
 
-            case "Beacon":
+            case ConfigData.ShipTypes.Beacon:
                 BeaconPool.Release((Beacon)ship);
                 break;
 
-            case "Beehive":
+            case ConfigData.ShipTypes.Beehive:
                 BeehivePool.Release((Beehive)ship);
                 break;
 
-            case "Bumblebee":
+            case ConfigData.ShipTypes.Bumblebee:
                 BumblebeePool.Release((Bumblebee)ship);
                 break;
 
-            case "CarpenterBee":
+            case ConfigData.ShipTypes.CarpenterBee:
                 CarpenterBeePool.Release((CarpenterBee)ship);
                 break;
 
-            case "Carrier":
+            case ConfigData.ShipTypes.Carrier:
                 CarrierPool.Release((Carrier)ship);
                 break;
 
-            case "Cruiser":
+            case ConfigData.ShipTypes.Cruiser:
                 CruiserPool.Release((Cruiser)ship);
                 break;
 
-            case "Dreadnought":
+            case ConfigData.ShipTypes.Dreadnought:
                 DreadnoughtPool.Release((Dreadnought)ship);
                 break;
 
-            case "Drone":
+            case ConfigData.ShipTypes.Drone:
                 DronePool.Release((Drone)ship);
                 break;
 
-            case "Factory":
+            case ConfigData.ShipTypes.Factory:
                 FactoryPool.Release((Factory)ship);
                 break;
 
-            case "FireBarge":
+            case ConfigData.ShipTypes.FireBarge:
                 FireBargePool.Release((FireBarge)ship);
                 break;
 
-            case "Flagship":
+            case ConfigData.ShipTypes.Flagship:
                 FlagshipPool.Release((Flagship)ship);
                 break;
 
-            case "Frigate":
+            case ConfigData.ShipTypes.Frigate:
                 FrigatePool.Release((Frigate)ship);
                 break;
 
-            case "Gunship":
+            case ConfigData.ShipTypes.Gunship:
                 GunshipPool.Release((Gunship)ship);
                 break;
 
-            case "Honeybee":
+            case ConfigData.ShipTypes.Honeybee:
                 HoneybeePool.Release((Honeybee)ship);
                 break;
 
-            case "Hornet":
+            case ConfigData.ShipTypes.Hornet:
                 HornetPool.Release((Hornet)ship);
                 break;
 
-            case "Leafcutter":
+            case ConfigData.ShipTypes.Leafcutter:
                 LeafcutterPool.Release((Leafcutter)ship);
                 break;
 
-            case "Queen":
+            case ConfigData.ShipTypes.Queen:
                 QueenPool.Release((Queen)ship);
                 break;
 
-            case "Scout":
+            case ConfigData.ShipTypes.Scout:
                 ScoutPool.Release((Scout)ship);
                 break;
 
-            case "Striker":
+            case ConfigData.ShipTypes.Striker:
                 StrikerPool.Release((Striker)ship);
                 break;
 
-            case "WarpGate":
+            case ConfigData.ShipTypes.WarpGate:
                 WarpGatePool.Release((WarpGate)ship);
                 break;
 
-            case "Wasp":
+            case ConfigData.ShipTypes.Wasp:
                 WaspPool.Release((Wasp)ship);
                 break;
 
-            case "YellowJacket":
+            case ConfigData.ShipTypes.YellowJacket:
                 YellowJacketPool.Release((YellowJacket)ship);
                 break;
 
+            default:
+                Debug.LogError($"The returned ship type {ship.ShipType} does not match a pool");
+                break;
+
+
+
+        }
+    }
+    public Assets.Scripts.UI_Components.Map GetPooledMap(int index)
+    {
+        Debug.Log($"Getting map from pool");
+
+        switch (index)
+        {
+            case 0:
+                return PlutoMapPool.Get();
+            case 1:
+                return UranusMapPool.Get();
+            default:
+                Debug.LogError($"Map index is invalid: {index}");
+                break;
+        }
+        Debug.LogError($"Invalid map index: {index}");
+        return null;
+    }
+    public void ReturnMapToPool(Assets.Scripts.UI_Components.Map map)
+    {
+        Debug.Log($"Returning {map.Name} to pool");
+        switch (map.Index)
+        {
+            case 0:
+                PlutoMapPool.Release(map); 
+                break;
+
+            case 1:
+                UranusMapPool.Release(map);
+                break;
+
+            default:
+                Debug.LogError($"Map index is invalid: {map.Index}");
+                break;
+        }
+    }
+
+    public Projectile GetProjectileFromPool(ConfigData.ProjectileTypes type)
+    {
+        switch (type)
+        {
+            case ConfigData.ProjectileTypes.BeeMedium:
+                return BeeMediumProjectilePool.Get();
+
+            default:
+                Debug.LogError($"Projectile type is invalid: {type}");
+                return null;
         }
     }
 
@@ -619,44 +717,52 @@ public class Stage : Scene
     }
     private void FillPools()
     {
-        int fillSizeSmall = 15 * LevelCount;
-        int fillSizeMedium = 10 * LevelCount;
-        int fillSizeLarge = 5 * LevelCount;
+        int fillSizeSmall = 15 * LevelCount / 2;
+        int fillSizeMedium = 10 * LevelCount / 2;
+        int fillSizeLarge = 5 * LevelCount / 2;
+        List<Ship> spawnedShips = new List<Ship>();
 
         for (int i = 0; i < fillSizeSmall; i++)
         {
-            BeaconPool.Get();
-            DronePool.Get();
-            HoneybeePool.Get();
-            HornetPool.Get();
-            ScoutPool.Get();
-            StrikerPool.Get();
-            YellowJacketPool.Get();
+            spawnedShips.Add(BeaconPool.Get());
+            spawnedShips.Add(DronePool.Get());
+            spawnedShips.Add(HoneybeePool.Get());
+            spawnedShips.Add(HornetPool.Get());
+            spawnedShips.Add(ScoutPool.Get());
+            spawnedShips.Add(StrikerPool.Get());
+            spawnedShips.Add(YellowJacketPool.Get());
+
         }
 
         for (int i = 0; i < fillSizeMedium; i++)
         {
-            BargePool.Get();
-            BumblebeePool.Get();
-            CarpenterBeePool.Get();
-            CarrierPool.Get();
-            CruiserPool.Get();
-            DreadnoughtPool.Get();
-            FrigatePool.Get();
-            GunshipPool.Get();
-            LeafcutterPool.Get();
-            WaspPool.Get();
+            spawnedShips.Add(BargePool.Get());
+            spawnedShips.Add(BumblebeePool.Get());
+            spawnedShips.Add(CarpenterBeePool.Get());
+            spawnedShips.Add(CarrierPool.Get());
+            spawnedShips.Add(CruiserPool.Get());
+            spawnedShips.Add(DreadnoughtPool.Get());
+            spawnedShips.Add(FrigatePool.Get());
+            spawnedShips.Add(GunshipPool.Get());
+            spawnedShips.Add(LeafcutterPool.Get());
+            spawnedShips.Add(WaspPool.Get());
         }
 
         for (int i = 0; i < fillSizeLarge; i++)
         {
-            BeehivePool.Get();
-            FactoryPool.Get();
-            FireBargePool.Get();
-            FlagshipPool.Get();
-            QueenPool.Get();
-            WarpGatePool.Get();
+            spawnedShips.Add(BeehivePool.Get());
+            spawnedShips.Add(FactoryPool.Get());
+            spawnedShips.Add(FireBargePool.Get());
+            spawnedShips.Add(FlagshipPool.Get());
+            spawnedShips.Add(QueenPool.Get());
+            spawnedShips.Add(WarpGatePool.Get());
         }
+
+        spawnedShips.ForEach((ship) =>
+        {
+            ReturnShipToPool(ship);
+        });
+        
     }
     protected override void FinalizeSceneWithUserData()
     {
@@ -667,29 +773,35 @@ public class Stage : Scene
 
         if (IsMainScene && LevelCount > 0)
         {
-            BargePool = new ObjectPool<Barge>(CreatePooledBarge, OnTakeFromPool, OnReturnToPool, null, true);
-            BeaconPool = new ObjectPool<Beacon>(CreatePooledBeacon, OnTakeFromPool, OnReturnToPool, null, true);
-            BeehivePool = new ObjectPool<Beehive>(CreatePooledBeehive, OnTakeFromPool, OnReturnToPool, null, true);
-            BumblebeePool = new ObjectPool<Bumblebee>(CreatePooledBumblebee, OnTakeFromPool, OnReturnToPool, null, true);
-            CarpenterBeePool = new ObjectPool<CarpenterBee>(CreatePooledCarpenterBee, OnTakeFromPool, OnReturnToPool, null, true);
-            CarrierPool = new ObjectPool<Carrier>(CreatePooledCarrier, OnTakeFromPool, OnReturnToPool, null, true);
-            CruiserPool = new ObjectPool<Cruiser>(CreatePooledCruiser, OnTakeFromPool, OnReturnToPool, null, true);
-            DreadnoughtPool = new ObjectPool<Dreadnought>(CreatePooledDreadnought, OnTakeFromPool, OnReturnToPool, null, true);
-            DronePool = new ObjectPool<Drone>(CreatePooledDrone, OnTakeFromPool, OnReturnToPool, null, true);
-            FactoryPool = new ObjectPool<Factory>(CreatePooledFactory, OnTakeFromPool, OnReturnToPool, null, true);
-            FireBargePool = new ObjectPool<FireBarge>(CreatePooledFireBarge, OnTakeFromPool, OnReturnToPool, null, true);
-            FlagshipPool = new ObjectPool<Flagship>(CreatePooledFlagship, OnTakeFromPool, OnReturnToPool, null, true);
-            FrigatePool = new ObjectPool<Frigate>(CreatePooledFrigate, OnTakeFromPool, OnReturnToPool, null, true);
-            GunshipPool = new ObjectPool<Gunship>(CreatePooledGunship, OnTakeFromPool, OnReturnToPool, null, true);
-            HoneybeePool = new ObjectPool<Honeybee>(CreatePooledHoneybee, OnTakeFromPool, OnReturnToPool, null, true);
-            HornetPool = new ObjectPool<Hornet>(CreatePooledHornet, OnTakeFromPool, OnReturnToPool, null, true);
-            LeafcutterPool = new ObjectPool<Leafcutter>(CreatePooledLeafcutter, OnTakeFromPool, OnReturnToPool, null, true);
-            QueenPool = new ObjectPool<Queen>(CreatePooledQueen, OnTakeFromPool, OnReturnToPool, null, true);
-            ScoutPool = new ObjectPool<Scout>(CreatePooledScout, OnTakeFromPool, OnReturnToPool, null, true);
-            StrikerPool = new ObjectPool<Striker>(CreatePooledStriker, OnTakeFromPool, OnReturnToPool, null, true);
-            WarpGatePool = new ObjectPool<WarpGate>(CreatePooledWarpGate, OnTakeFromPool, OnReturnToPool, null, true);
-            WaspPool = new ObjectPool<Wasp>(CreatePooledWasp, OnTakeFromPool, OnReturnToPool, null, true);
-            YellowJacketPool = new ObjectPool<YellowJacket>(CreatePooledYellowJacket, OnTakeFromPool, OnReturnToPool, null, true);
+
+            BargePool = new ObjectPool<Barge>(CreatePooledBarge, OnTakeShipFromPool, OnReturnShipToPool, null, true);
+            BeaconPool = new ObjectPool<Beacon>(CreatePooledBeacon, OnTakeShipFromPool, OnReturnShipToPool, null, true);
+            BeehivePool = new ObjectPool<Beehive>(CreatePooledBeehive, OnTakeShipFromPool, OnReturnShipToPool, null, true);
+            BumblebeePool = new ObjectPool<Bumblebee>(CreatePooledBumblebee, OnTakeShipFromPool, OnReturnShipToPool, null, true);
+            CarpenterBeePool = new ObjectPool<CarpenterBee>(CreatePooledCarpenterBee, OnTakeShipFromPool, OnReturnShipToPool, null, true);
+            CarrierPool = new ObjectPool<Carrier>(CreatePooledCarrier, OnTakeShipFromPool, OnReturnShipToPool, null, true);
+            CruiserPool = new ObjectPool<Cruiser>(CreatePooledCruiser, OnTakeShipFromPool, OnReturnShipToPool, null, true);
+            DreadnoughtPool = new ObjectPool<Dreadnought>(CreatePooledDreadnought, OnTakeShipFromPool, OnReturnShipToPool, null, true);
+            DronePool = new ObjectPool<Drone>(CreatePooledDrone, OnTakeShipFromPool, OnReturnShipToPool, null, true);
+            FactoryPool = new ObjectPool<Factory>(CreatePooledFactory, OnTakeShipFromPool, OnReturnShipToPool, null, true);
+            FireBargePool = new ObjectPool<FireBarge>(CreatePooledFireBarge, OnTakeShipFromPool, OnReturnShipToPool, null, true);
+            FlagshipPool = new ObjectPool<Flagship>(CreatePooledFlagship, OnTakeShipFromPool, OnReturnShipToPool, null, true);
+            FrigatePool = new ObjectPool<Frigate>(CreatePooledFrigate, OnTakeShipFromPool, OnReturnShipToPool, null, true);
+            GunshipPool = new ObjectPool<Gunship>(CreatePooledGunship, OnTakeShipFromPool, OnReturnShipToPool, null, true);
+            HoneybeePool = new ObjectPool<Honeybee>(CreatePooledHoneybee, OnTakeShipFromPool, OnReturnShipToPool, null, true);
+            HornetPool = new ObjectPool<Hornet>(CreatePooledHornet, OnTakeShipFromPool, OnReturnShipToPool, null, true);
+            LeafcutterPool = new ObjectPool<Leafcutter>(CreatePooledLeafcutter, OnTakeShipFromPool, OnReturnShipToPool, null, true);
+            QueenPool = new ObjectPool<Queen>(CreatePooledQueen, OnTakeShipFromPool, OnReturnShipToPool, null, true);
+            ScoutPool = new ObjectPool<Scout>(CreatePooledScout, OnTakeShipFromPool, OnReturnShipToPool, null, true);
+            StrikerPool = new ObjectPool<Striker>(CreatePooledStriker, OnTakeShipFromPool, OnReturnShipToPool, null, true);
+            WarpGatePool = new ObjectPool<WarpGate>(CreatePooledWarpGate, OnTakeShipFromPool, OnReturnShipToPool, null, true);
+            WaspPool = new ObjectPool<Wasp>(CreatePooledWasp, OnTakeShipFromPool, OnReturnShipToPool, null, true);
+            YellowJacketPool = new ObjectPool<YellowJacket>(CreatePooledYellowJacket, OnTakeShipFromPool, OnReturnShipToPool, null, true);
+
+            PlutoMapPool = new ObjectPool<Assets.Scripts.UI_Components.Map>(CreatePooledPlutoMap, null, null, null, true);
+            UranusMapPool = new ObjectPool<Assets.Scripts.UI_Components.Map>(CreatePooledUranusMap, null, null, null, true);
+
+            BeeMediumProjectilePool = new ObjectPool<Projectile>(CreatedPooledBeeMediumProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
 
             FillPools();
             SpawnLevels();
@@ -839,12 +951,12 @@ public class Stage : Scene
         {
             if (ConfigData.Configuration.AISide == ConfigData.Configuration.BeeSide)
             {
-                BeeShipTypes = new List<string>() { BeeShipTypes[Utilities.RandomInt(BeeShipTypes.Count)] };
+                BeeShipTypes = new List<ConfigData.ShipTypes>() { BeeShipTypes[Utilities.RandomInt(BeeShipTypes.Count)] };
                 Debug.Log($"The user has selected randomized enemy ship type: {BeeShipTypes[0]}");
             }
             else
             {
-                HumanShipTypes = new List<string>() { HumanShipTypes[Utilities.RandomInt(HumanShipTypes.Count)] };
+                HumanShipTypes = new List<ConfigData.ShipTypes>() { HumanShipTypes[Utilities.RandomInt(HumanShipTypes.Count)] };
                 Debug.Log($"The user has selected randomized enemy ship type: {HumanShipTypes[0]}");
             }
 
@@ -874,12 +986,12 @@ public class Stage : Scene
         {
             if (ConfigData.Configuration.AISide == ConfigData.Configuration.BeeSide)
             {
-                BeeShipTypes = new List<string>() { BeeShipTypes[PrimaryLevel.CurrentLevelOptions.EnemyShipTypeOption - 1] };
+                BeeShipTypes = new List<ConfigData.ShipTypes>() { BeeShipTypes[PrimaryLevel.CurrentLevelOptions.EnemyShipTypeOption - 1] };
                 Debug.Log($"The user has selected enemy ship type: {BeeShipTypes[0]}");
             }
             else
             {
-                HumanShipTypes = new List<string>() { HumanShipTypes[PrimaryLevel.CurrentLevelOptions.EnemyShipTypeOption - 1] };
+                HumanShipTypes = new List<ConfigData.ShipTypes>() { HumanShipTypes[PrimaryLevel.CurrentLevelOptions.EnemyShipTypeOption - 1] };
                 Debug.Log($"The user has selected enemy ship type: {HumanShipTypes[0]}");
             }
         }

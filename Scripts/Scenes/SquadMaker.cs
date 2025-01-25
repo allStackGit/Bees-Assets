@@ -3,7 +3,6 @@ using Assets.Scripts.Data;
 using Assets.Scripts.Settings;
 using Assets.Scripts.UI_Components;
 using Assets.Scripts.UIComponents;
-using Google.Protobuf.WellKnownTypes;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -86,15 +85,15 @@ namespace Assets.Scripts.Scenes
 
 
 
-        private Dictionary<string, GameObject> _dragIconTypes = new Dictionary<string, GameObject>();
-        private Dictionary<string, Sprite> _spriteTypes = new Dictionary<string, Sprite>();
-        private Dictionary<string, List<Sprite>> _shipPartSprites = new Dictionary<string, List<Sprite>>();
-        private Dictionary<string, List<Sprite>> _shipRemainsSprites = new Dictionary<string, List<Sprite>>();
+        private Dictionary<ConfigData.ShipTypes, GameObject> _dragIconTypes = new Dictionary<ConfigData.ShipTypes, GameObject>();
+        private Dictionary<ConfigData.ShipTypes, Sprite> _spriteTypes = new Dictionary<ConfigData.ShipTypes, Sprite>();
+        private Dictionary<ConfigData.ShipTypes, List<Sprite>> _shipPartSprites = new Dictionary<ConfigData.ShipTypes, List<Sprite>>();
+        private Dictionary<ConfigData.ShipTypes, List<Sprite>> _shipRemainsSprites = new Dictionary<ConfigData.ShipTypes, List<Sprite>>();
         private Dropper _dropper;
         private List<GameObject> _deadShipBoxes = new List<GameObject>();
         private List<SavedSquad> _chosenSquads = new List<SavedSquad>();
         private List<FleetShip> _fleetList = null;
-        private List<string> _shipTypes = new List<string>();
+        private List<ConfigData.ShipTypes> _shipTypes = new List<ConfigData.ShipTypes>();
         private SavedSquad _currentSquad = null;
         private SavedSquad _squadToLoad = null;
         private SavedSquad _squadToChoose = null;
@@ -338,25 +337,25 @@ namespace Assets.Scripts.Scenes
             //Debug.Log($"Setting up for Bees!");
             ActionBox = null;
 
-            _dragIconTypes.Add("Beehive", BeehiveDragIcon);
-            _dragIconTypes.Add("Bumblebee", BumblebeeDragIcon);
-            _dragIconTypes.Add("Carpenter Bee", CarpenterBeeDragIcon);
-            _dragIconTypes.Add("Honeybee", HoneybeeDragIcon);
-            _dragIconTypes.Add("Hornet", HornetDragIcon);
-            _dragIconTypes.Add("Leafcutter", LeafcutterDragIcon);
-            _dragIconTypes.Add("Queen", QueenDragIcon);
-            _dragIconTypes.Add("Wasp", WaspDragIcon);
-            _dragIconTypes.Add("Yellow Jacket", YellowJacketDragIcon);
+            _dragIconTypes.Add(ConfigData.ShipTypes.Beehive, BeehiveDragIcon);
+            _dragIconTypes.Add(ConfigData.ShipTypes.Bumblebee, BumblebeeDragIcon);
+            _dragIconTypes.Add(ConfigData.ShipTypes.CarpenterBee, CarpenterBeeDragIcon);
+            _dragIconTypes.Add(ConfigData.ShipTypes.Honeybee, HoneybeeDragIcon);
+            _dragIconTypes.Add(ConfigData.ShipTypes.Hornet, HornetDragIcon);
+            _dragIconTypes.Add(ConfigData.ShipTypes.Leafcutter, LeafcutterDragIcon);
+            _dragIconTypes.Add(ConfigData.ShipTypes.Queen, QueenDragIcon);
+            _dragIconTypes.Add(ConfigData.ShipTypes.Wasp, WaspDragIcon);
+            _dragIconTypes.Add(ConfigData.ShipTypes.YellowJacket, YellowJacketDragIcon);
 
-            _spriteTypes.Add("Beehive", BeehiveSprite);
-            _spriteTypes.Add("Bumblebee", BumblebeeSprite);
-            _spriteTypes.Add("Carpenter Bee", CarpenterBeeSprite);
-            _spriteTypes.Add("Honeybee", HoneybeeSprite);
-            _spriteTypes.Add("Hornet", HornetSprite);
-            _spriteTypes.Add("Leafcutter", LeafcutterSprite);
-            _spriteTypes.Add("Queen", QueenSprite);
-            _spriteTypes.Add("Wasp", WaspSprite);
-            _spriteTypes.Add("Yellow Jacket", YellowJacketSprite);
+            _spriteTypes.Add(ConfigData.ShipTypes.Beehive, BeehiveSprite);
+            _spriteTypes.Add(ConfigData.ShipTypes.Bumblebee, BumblebeeSprite);
+            _spriteTypes.Add(ConfigData.ShipTypes.CarpenterBee, CarpenterBeeSprite);
+            _spriteTypes.Add(ConfigData.ShipTypes.Honeybee, HoneybeeSprite);
+            _spriteTypes.Add(ConfigData.ShipTypes.Hornet, HornetSprite);
+            _spriteTypes.Add(ConfigData.ShipTypes.Leafcutter, LeafcutterSprite);
+            _spriteTypes.Add(ConfigData.ShipTypes.Queen, QueenSprite);
+            _spriteTypes.Add(ConfigData.ShipTypes.Wasp, WaspSprite);
+            _spriteTypes.Add(ConfigData.ShipTypes.YellowJacket, YellowJacketSprite);
 
             ActionBox = SquadActionBox.GetComponent<SquadActionBox>();
             ActionBox.Setup(this, EventSystem, ConfigData.Configuration.BeeSide);
@@ -384,57 +383,57 @@ namespace Assets.Scripts.Scenes
             //Debug.Log("Setting up for Humans!");
             _colorPicker = ColorPicker.GetComponent<ColorPicker>();
 
-            _dragIconTypes.Add("Barge", BargeDragIcon);
-            _dragIconTypes.Add("Beacon", BeaconDragIcon);
-            _dragIconTypes.Add("Carrier", CarrierDragIcon);
-            _dragIconTypes.Add("Cruiser", CruiserDragIcon);
-            _dragIconTypes.Add("Dreadnought", DreadnoughtDragIcon);
-            _dragIconTypes.Add("Drone", DroneDragIcon);
-            _dragIconTypes.Add("Factory", FactoryDragIcon);
-            _dragIconTypes.Add("Fire Barge", FireBargeDragIcon);
-            _dragIconTypes.Add("Flagship", FlagshipDragIcon);
-            _dragIconTypes.Add("Frigate", FrigateDragIcon);
-            _dragIconTypes.Add("Gunship", GunshipDragIcon);
-            _dragIconTypes.Add("Scout", ScoutDragIcon);
-            _dragIconTypes.Add("Striker", StrikerDragIcon);
-            _dragIconTypes.Add("Warp Gate", WarpGateDragIcon);
+            _dragIconTypes.Add(ConfigData.ShipTypes.Barge, BargeDragIcon);
+            _dragIconTypes.Add(ConfigData.ShipTypes.Beacon, BeaconDragIcon);
+            _dragIconTypes.Add(ConfigData.ShipTypes.Carrier, CarrierDragIcon);
+            _dragIconTypes.Add(ConfigData.ShipTypes.Cruiser, CruiserDragIcon);
+            _dragIconTypes.Add(ConfigData.ShipTypes.Dreadnought, DreadnoughtDragIcon);
+            _dragIconTypes.Add(ConfigData.ShipTypes.Drone, DroneDragIcon);
+            _dragIconTypes.Add(ConfigData.ShipTypes.Factory, FactoryDragIcon);
+            _dragIconTypes.Add(ConfigData.ShipTypes.FireBarge, FireBargeDragIcon);
+            _dragIconTypes.Add(ConfigData.ShipTypes.Flagship, FlagshipDragIcon);
+            _dragIconTypes.Add(ConfigData.ShipTypes.Frigate, FrigateDragIcon);
+            _dragIconTypes.Add(ConfigData.ShipTypes.Gunship, GunshipDragIcon);
+            _dragIconTypes.Add(ConfigData.ShipTypes.Scout, ScoutDragIcon);
+            _dragIconTypes.Add(ConfigData.ShipTypes.Striker, StrikerDragIcon);
+            _dragIconTypes.Add(ConfigData.ShipTypes.WarpGate, WarpGateDragIcon);
 
-            _spriteTypes.Add("Barge", BargeSprite);
-            _spriteTypes.Add("Beacon", BeaconSprite);
-            _spriteTypes.Add("Carrier", CarrierSprite);
-            _spriteTypes.Add("Cruiser", CruiserSprite);
-            _spriteTypes.Add("Dreadnought", DreadnoughtSprite);
-            _spriteTypes.Add("Drone", DroneSprite);
-            _spriteTypes.Add("Factory", FactorySprite);
-            _spriteTypes.Add("Fire Barge", FireBargeSprite);
-            _spriteTypes.Add("Flagship", FlagshipSprite);
-            _spriteTypes.Add("Frigate", FrigateSprite);
-            _spriteTypes.Add("Gunship", GunshipSprite);
-            _spriteTypes.Add("Scout", ScoutSprite);
-            _spriteTypes.Add("Striker", StrikerSprite);
-            _spriteTypes.Add("Warp Gate", WarpGateSprite);
+            _spriteTypes.Add(ConfigData.ShipTypes.Barge, BargeSprite);
+            _spriteTypes.Add(ConfigData.ShipTypes.Beacon, BeaconSprite);
+            _spriteTypes.Add(ConfigData.ShipTypes.Carrier, CarrierSprite);
+            _spriteTypes.Add(ConfigData.ShipTypes.Cruiser, CruiserSprite);
+            _spriteTypes.Add(ConfigData.ShipTypes.Dreadnought, DreadnoughtSprite);
+            _spriteTypes.Add(ConfigData.ShipTypes.Drone, DroneSprite);
+            _spriteTypes.Add(ConfigData.ShipTypes.Factory, FactorySprite);
+            _spriteTypes.Add(ConfigData.ShipTypes.FireBarge, FireBargeSprite);
+            _spriteTypes.Add(ConfigData.ShipTypes.Flagship, FlagshipSprite);
+            _spriteTypes.Add(ConfigData.ShipTypes.Frigate, FrigateSprite);
+            _spriteTypes.Add(ConfigData.ShipTypes.Gunship, GunshipSprite);
+            _spriteTypes.Add(ConfigData.ShipTypes.Scout, ScoutSprite);
+            _spriteTypes.Add(ConfigData.ShipTypes.Striker, StrikerSprite);
+            _spriteTypes.Add(ConfigData.ShipTypes.WarpGate, WarpGateSprite);
 
 
-            _shipPartSprites["Barge"] = new List<Sprite> { BargeGameSprite };
-            //_shipPartSprites["Beacon"] = new List<Sprite> { BeaconGameSprite }; // no beacon because we won't be caching sprites for scout ships
-            _shipPartSprites["Carrier"] = new List<Sprite> { CarrierGameSprite };
-            _shipPartSprites["Cruiser"] = new List<Sprite> { CruiserGameSprite, CruiserCannonGameSprite };
-            _shipPartSprites["Dreadnought"] = new List<Sprite> { DreadnoughtGameSprite };
-            //_shipPartSprites["Drone"] = new List<Sprite> { DroneGameSprite }; // no drone because we won't be caching sprites for carrier ships
-            _shipPartSprites["Factory"] = new List<Sprite> { FactoryGameSprite, FactoryAnimationSprite };
-            _shipPartSprites["Fire Barge"] = new List<Sprite> { FireBargeGameSprite };
-            _shipPartSprites["Flagship"] = new List<Sprite> { FlagshipGameSprite };
-            _shipPartSprites["Frigate"] = new List<Sprite> { FrigateGameSprite };
-            _shipPartSprites["Gunship"] = new List<Sprite> { GunshipGameSprite };
-            _shipPartSprites["Scout"] = new List<Sprite> { ScoutGameSprite };
-            //_shipPartSprites["Striker"] = new List<Sprite> { StrikerGameSprite }; // no striker because we won't be caching sprites for carrier ships
-            _shipPartSprites["Warp Gate"] = new List<Sprite> { WarpGateGameSprite, WarpGateAnimationSprite, WarpGateAnimationLoopSprite };
+            _shipPartSprites[ConfigData.ShipTypes.Barge] = new List<Sprite> { BargeGameSprite };
+            //_shipPartSprites[ConfigData.ShipTypes.Beacon] = new List<Sprite> { BeaconGameSprite }; // no beacon because we won't be caching sprites for scout ships
+            _shipPartSprites[ConfigData.ShipTypes.Carrier] = new List<Sprite> { CarrierGameSprite };
+            _shipPartSprites[ConfigData.ShipTypes.Cruiser] = new List<Sprite> { CruiserGameSprite, CruiserCannonGameSprite };
+            _shipPartSprites[ConfigData.ShipTypes.Dreadnought] = new List<Sprite> { DreadnoughtGameSprite };
+            //_shipPartSprites[ConfigData.ShipTypes.Drone] = new List<Sprite> { DroneGameSprite }; // no drone because we won't be caching sprites for carrier ships
+            _shipPartSprites[ConfigData.ShipTypes.Factory] = new List<Sprite> { FactoryGameSprite, FactoryAnimationSprite };
+            _shipPartSprites[ConfigData.ShipTypes.FireBarge] = new List<Sprite> { FireBargeGameSprite };
+            _shipPartSprites[ConfigData.ShipTypes.Flagship] = new List<Sprite> { FlagshipGameSprite };
+            _shipPartSprites[ConfigData.ShipTypes.Frigate] = new List<Sprite> { FrigateGameSprite };
+            _shipPartSprites[ConfigData.ShipTypes.Gunship] = new List<Sprite> { GunshipGameSprite };
+            _shipPartSprites[ConfigData.ShipTypes.Scout] = new List<Sprite> { ScoutGameSprite };
+            //_shipPartSprites[ConfigData.ShipTypes.Striker] = new List<Sprite> { StrikerGameSprite }; // no striker because we won't be caching sprites for carrier ships
+            _shipPartSprites[ConfigData.ShipTypes.WarpGate] = new List<Sprite> { WarpGateGameSprite, WarpGateAnimationSprite, WarpGateAnimationLoopSprite };
 
 
             // No bee sprites because those don't change colors
 
             // Same thing as above but for ship remains animations
-            _shipRemainsSprites["Gunship"] = new List<Sprite> { GunshipRemainsSprite };
+            _shipRemainsSprites[ConfigData.ShipTypes.Gunship] = new List<Sprite> { GunshipRemainsSprite };
 
             ActionBox = SquadActionBox.GetComponent<SquadActionBox>();
             ActionBox.Setup(this, EventSystem, ConfigData.Configuration.HumanSide);
@@ -1326,7 +1325,7 @@ namespace Assets.Scripts.Scenes
 
 
         // Drag icons and placement
-        public GameObject GetDragIconPrefab(string type)
+        public GameObject GetDragIconPrefab(ConfigData.ShipTypes type)
         {
             return _dragIconTypes.GetValueOrDefault(type);
         }
@@ -1406,9 +1405,10 @@ namespace Assets.Scripts.Scenes
         {
             if (!GetDropper().IsDragging)
             {
+                ConfigData.ShipTypes shipType = (ConfigData.ShipTypes)Enum.Parse(typeof(ConfigData.ShipTypes), ship);
                 TMP_Text titleText = ShipInfoBoxTitle.GetComponent<TMP_Text>();
                 TMP_Text detaislText = ShipInfoBoxDetails.GetComponent<TMP_Text>();
-                ShipStatBlock shipInfo = ConfigData.GetShipInfo(ship);
+                ShipStatBlock shipInfo = ConfigData.GetShipInfo(shipType); 
 
                 titleText.text = $"{ship} Details";
                 detaislText.text = $"{shipInfo.Description}\n\n" +
@@ -1417,7 +1417,7 @@ namespace Assets.Scripts.Scenes
                     $"Power: {shipInfo.PrintPower()}\n" +
                     $"Rate of Fire: {shipInfo.PrintRateOfFire()}\n" +
                     $"Speed: {shipInfo.Speed}\n" +
-                    $"Capacity: {(ship != "Drone" && ship != "Striker" && ship != "Beacon" ? ConfigData.CurrentShips.GetShipsOfType(ship).First().GetMaxCapacity().ToString("N0") : "N/A")}";
+                    $"Capacity: {(ship != "Drone" && ship != "Striker" && ship != "Beacon" ? ConfigData.CurrentShips.GetShipsOfType(shipType).First().GetMaxCapacity().ToString("N0") : "N/A")}";
 
                 UnityEngine.UI.Image image = ShipInfoBoxIcon.GetComponent<UnityEngine.UI.Image>();
                 image.sprite = _spriteTypes.GetValueOrDefault(ship);

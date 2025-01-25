@@ -1,25 +1,16 @@
-using Assets.Scripts;
 using Assets.Scripts.Data;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Entities.Ships.Weapons;
-using Assets.Scripts.Levels;
 using Assets.Scripts.Levels.Commands;
-using Assets.Scripts.Server;
 using Assets.Scripts.UI_Components;
 using Assets.Scripts.UIComponents;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
 using Unity.MLAgents;
 using UnityEngine;
-using UnityEngine.SceneManagement;
-using UnityEngine.SocialPlatforms;
-using UnityEngine.UI;
-using UnityEngine.UIElements;
 
 namespace Assets.Scripts.Levels
 {
@@ -189,7 +180,8 @@ namespace Assets.Scripts.Levels
                 CurrentLevelOptions.MapIndex = Utilities.RandomInt(Stage.Prefabs.Maps.Count);              
             }
             MapData = ConfigData.Maps[CurrentLevelOptions.MapIndex];
-            Map = Instantiate(Stage.Prefabs.Maps[CurrentLevelOptions.MapIndex]).GetComponent<UI_Components.Map>();
+            //Map = Instantiate(Stage.Prefabs.Maps[CurrentLevelOptions.MapIndex]).GetComponent<UI_Components.Map>();
+            Map = Stage.GetPooledMap(CurrentLevelOptions.MapIndex);
             Debug.Log($"Playing on the {MapData.Name} ({Map.Name}) at index #{CurrentLevelOptions.MapIndex} map");
 
             if (((CurrentLevelOptions.ObstacleMapIndex == -1 && Utilities.CoinToss()) || CurrentLevelOptions.ObstacleMapIndex > 0) && !Stage.IsTraining) // User chose random and random chose obstacles OR user chose obstacles
@@ -754,7 +746,7 @@ namespace Assets.Scripts.Levels
 
             if (Map != null)
             {
-                Destroy(Map.gameObject);
+                Stage.ReturnMapToPool(Map);
             }
             AllSquads.Clear();
             CurrentLevelOptions.ChosenSquads.Clear();
@@ -822,8 +814,6 @@ namespace Assets.Scripts.Levels
         }
         public void SetupMapAndCamera()
         {
-            Map.Setup(ConfigData.Maps[CurrentLevelOptions.MapIndex].Name, ConfigData.Maps[CurrentLevelOptions.MapIndex].UserStartingPosition, ConfigData.Maps[CurrentLevelOptions.MapIndex].AIStartingPosition);
-            Map.name = Map.Name;
             Map.transform.parent = this.transform;
             Map.transform.localPosition = Vector2.zero;
 
@@ -1091,16 +1081,15 @@ namespace Assets.Scripts.Levels
             }
         }
         // The SplitterShot class adds it's own projectile [note] [projectile-method]
-        public Projectile AddProjectile(GameObject instance, Weapon weapon, Vector2 startingPosition, float angle)
+        public Projectile AddProjectile(ConfigData.ProjectileTypes type, Weapon weapon, Vector2 startingPosition, float angle)
         {
-             //Debug.Log($"Adding projectile {instance.name} at startingPosition: {startingPosition}");
-            instance = Instantiate(instance, new Vector2(0, 0), Quaternion.identity);
-            instance.transform.parent = Map.transform;
-            Projectile projectile = (Projectile) instance.GetComponent(typeof(Projectile));
+            //Debug.Log($"Adding projectile {instance.name} at startingPosition: {startingPosition}");
+            Projectile projectile = Stage.GetProjectileFromPool(type);
+            projectile.transform.parent = Map.transform;
             Ship shooter = weapon.Ship;
             Ship target = weapon.TargetShip;
             int power = weapon.Power;
-            if (weapon is DualCannon)
+            if (weapon.Type == "Dual Cannon")
             {
                 //Debug.Log("This is a dual cannon, splitting the power");
                 power /= 2;

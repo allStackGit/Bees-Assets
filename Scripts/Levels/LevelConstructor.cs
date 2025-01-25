@@ -54,12 +54,12 @@ namespace Assets.Scripts.Levels
                 List<SavedSquad> squadsList = new List<SavedSquad>();
                 for (int i = 0; i < Level.CurrentLevelOptions.EnemySquadGenerationCount; i++)
                 {
-                    string type = Stage.BeeShipTypes.ElementAt(Random.Range(0, Stage.BeeShipTypes.Count));
+                    ConfigData.ShipTypes type = Stage.BeeShipTypes.ElementAt(Random.Range(0, Stage.BeeShipTypes.Count));
                     if (side == ConfigData.Configuration.HumanSide)
                     {
                         type = Stage.HumanShipTypes.ElementAt(Random.Range(0, Stage.HumanShipTypes.Count));
                     }
-                    while (Level.HasObstacles && side == ConfigData.Configuration.BeeSide && type == "Queen" && Stage.BeeShipTypes.Count > 1)
+                    while (Level.HasObstacles && side == ConfigData.Configuration.BeeSide && type == ConfigData.ShipTypes.Queen && Stage.BeeShipTypes.Count > 1)
                     {
                         type = Stage.BeeShipTypes.ElementAt(Random.Range(0, Stage.BeeShipTypes.Count));
                     }
@@ -336,7 +336,7 @@ namespace Assets.Scripts.Levels
                     );
                     Level.State.AddSquad(droneSquad);
                     setupSquads.Add(droneSquad);
-                    droneSquad.SetupCarrierSquad((Carrier)carrier, "Drone");
+                    droneSquad.SetupCarrierSquad((Carrier)carrier, ConfigData.ShipTypes.Drone);
 
                     // spawn strikers
                     CarrierSquad strikerSquad = Level.gameObject.AddComponent<CarrierSquad>();
@@ -356,7 +356,7 @@ namespace Assets.Scripts.Levels
                     Level.State.AddSquad(strikerSquad);
                     setupSquads.Add(strikerSquad);
 
-                    strikerSquad.SetupCarrierSquad((Carrier)carrier, "Striker");
+                    strikerSquad.SetupCarrierSquad((Carrier)carrier, ConfigData.ShipTypes.Striker);
 
                     if (squad.IsMatchingSpeed)
                     {
@@ -514,78 +514,78 @@ namespace Assets.Scripts.Levels
                 }
             });
         }
-        public Ship InstantiateShip(string type)
+        public Ship InstantiateShip(ConfigData.ShipTypes type)
         {
             Ship ship = null;
             switch (type)
             {
-                case "Barge":
+                case ConfigData.ShipTypes.Barge:
                     ship = Stage.BargePool.Get();
                     break;
-                case "Beacon":
+                case ConfigData.ShipTypes.Beacon:
                     ship = Stage.BeaconPool.Get();
                     break;
-                case "Beehive":
+                case ConfigData.ShipTypes.Beehive:
                     ship = Stage.BeehivePool.Get();
                     break;
-                case "Bumblebee":
+                case ConfigData.ShipTypes.Bumblebee:
                     ship = Stage.BumblebeePool.Get();
                     break;
-                case "Carpenter Bee":
+                case ConfigData.ShipTypes.CarpenterBee:
                     ship = Stage.CarpenterBeePool.Get();
                     break;
-                case "Carrier":
+                case ConfigData.ShipTypes.Carrier:
                     ship = Stage.CarrierPool.Get();
                     break;
-                case "Cruiser":
+                case ConfigData.ShipTypes.Cruiser:
                     ship = Stage.CruiserPool.Get();
                     break;
-                case "Dreadnought":
+                case ConfigData.ShipTypes.Dreadnought:
                     ship = Stage.DreadnoughtPool.Get();
                     break;
-                case "Drone":
+                case ConfigData.ShipTypes.Drone:
                     ship = Stage.DronePool.Get();
                     break;
-                case "Factory":
+                case ConfigData.ShipTypes.Factory:
                     ship = Stage.FactoryPool.Get();
                     break;
-                case "Fire Barge":
+                case ConfigData.ShipTypes.FireBarge:
                     ship = Stage.FireBargePool.Get();
                     break;
-                case "Flagship":
+                case ConfigData.ShipTypes.Flagship:
                     ship = Stage.FlagshipPool.Get();
                     break;
-                case "Frigate":
+                case ConfigData.ShipTypes.Frigate:
                     ship = Stage.FrigatePool.Get();
                     break;
-                case "Gunship":
+                case ConfigData.ShipTypes.Gunship:
                     ship = Stage.GunshipPool.Get();
                     break;
-                case "Honeybee":
+                case ConfigData.ShipTypes.Honeybee:
                     ship = Stage.HoneybeePool.Get();
                     break;
-                case "Hornet":
+                case ConfigData.ShipTypes.Hornet:
                     ship = Stage.HornetPool.Get();
                     break;
-                case "Leafcutter":
+                case ConfigData.ShipTypes.Leafcutter:
                     ship = Stage.LeafcutterPool.Get();
                     break;
-                case "Queen":
+                case ConfigData.ShipTypes.Queen:
                     ship = Stage.QueenPool.Get();
                     break;
-                case "Scout":
+                case ConfigData.ShipTypes.Scout:
                     ship = Stage.ScoutPool.Get();
                     break;
-                case "Striker":
+                case ConfigData.ShipTypes.Striker:
                     ship = Stage.StrikerPool.Get();
                     break;
-                case "Warp Gate":
+                case ConfigData.ShipTypes.WarpGate:
                     ship = Stage.WarpGatePool.Get();
                     break;
-                case "Wasp":
+                case ConfigData.ShipTypes.Wasp:
                     ship = Stage.WaspPool.Get();
                     break;
-                case "Yellow Jacket":
+                case ConfigData.ShipTypes.YellowJacket:
                     ship = Stage.YellowJacketPool.Get();
                     break;
                 default:

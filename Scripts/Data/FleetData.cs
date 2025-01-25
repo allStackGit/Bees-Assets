@@ -14,7 +14,7 @@ namespace Assets.Scripts.Data
         private List<FleetShip> _shipList = new List<FleetShip>();
 
 
-        public FleetData(bool shouldFileExist, Dictionary<string, int> startingShips, int type) : base()
+        public FleetData(bool shouldFileExist, Dictionary<ConfigData.ShipTypes, int> startingShips, int type) : base()
         {
             defaultJsonData = MakeDefaultList(startingShips);
 
@@ -27,9 +27,9 @@ namespace Assets.Scripts.Data
             });
 
         }
-        private string MakeDefaultList(Dictionary<string, int> startingShips)
+        private string MakeDefaultList(Dictionary<ConfigData.ShipTypes, int> startingShips)
         {
-            List<string> shipTypes = startingShips.Keys.ToList();
+            List<ConfigData.ShipTypes> shipTypes = startingShips.Keys.ToList();
             int id = 0;
             shipTypes.ForEach((shipType) =>
             {
@@ -62,7 +62,7 @@ namespace Assets.Scripts.Data
         {
             jsonShips.ForEach((ship) =>
             {
-                AddShipToFleet(new FleetShip((int) ship.i, (string) ship.n, Utilities.ShipIntToType.GetValueOrDefault((int) ship.t), ((int)ship.s == 1 ? true : false), ((int) ship.v == 1 ? true : false),
+                AddShipToFleet(new FleetShip((int) ship.i, (string) ship.n, (ConfigData.ShipTypes) ship.t, ((int)ship.s == 1 ? true : false), ((int) ship.v == 1 ? true : false),
                     ((int)ship.d == 1 ? true : false), (int) ship.f, (int) ship.dd, (int) ship.r, (int) ship.k, (int) ship.b, (int) ship.w, (int)ship.m));
             });
         }

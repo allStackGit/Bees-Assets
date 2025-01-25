@@ -24,31 +24,31 @@ namespace Assets.Scripts
     
     public static class Utilities
     {
-        public static readonly Dictionary<string, string> ShipTypesAndTypeLetters = new Dictionary<string, string>()
+        public static readonly Dictionary<string, ConfigData.ShipTypes> ShipTypesAndTypeLetters = new Dictionary<string, ConfigData.ShipTypes>()
         {
-            {"A", "Queen" },
-            {"B", "Hornet" },
-            {"C", "Dreadnought" },
-            {"D", "Gunship" },
-            {"E", "Scout" },
-            {"F", "Wasp" },
-            {"G", "Bumblebee" },
-            {"H", "Flagship" },
-            {"I", "Honeybee" },
-            {"J", "Carpenter Bee" },
-            {"K", "Leafcutter" },
-            {"L", "Yellow Jacket" },
-            {"M", "Beehive" },
-            {"N", "Frigate" },
-            {"O", "Carrier" },
-            {"P", "Drone" },
-            {"Q", "Striker" },
-            {"R", "Factory" },
-            {"S", "Cruiser" },
-            {"T", "Barge" },
-            {"U", "Fire Barge" },
-            {"V", "Warp Gate" },
-            {"W", "Beacon" },
+            {"A", ConfigData.ShipTypes.Queen },
+            {"B", ConfigData.ShipTypes.Hornet },
+            {"C", ConfigData.ShipTypes.Dreadnought },
+            {"D", ConfigData.ShipTypes.Gunship },
+            {"E", ConfigData.ShipTypes.Scout },
+            {"F", ConfigData.ShipTypes.Wasp },
+            {"G", ConfigData.ShipTypes.Bumblebee },
+            {"H", ConfigData.ShipTypes.Flagship },
+            {"I", ConfigData.ShipTypes.Honeybee },
+            {"J", ConfigData.ShipTypes.CarpenterBee },
+            {"K", ConfigData.ShipTypes.Leafcutter },
+            {"L", ConfigData.ShipTypes.YellowJacket },
+            {"M", ConfigData.ShipTypes.Beehive },
+            {"N", ConfigData.ShipTypes.Frigate },
+            {"O", ConfigData.ShipTypes.Carrier },
+            {"P", ConfigData.ShipTypes.Drone },
+            {"Q", ConfigData.ShipTypes.Striker },
+            {"R", ConfigData.ShipTypes.Factory },
+            {"S", ConfigData.ShipTypes.Cruiser },
+            {"T", ConfigData.ShipTypes.Barge },
+            {"U", ConfigData.ShipTypes.FireBarge },
+            {"V", ConfigData.ShipTypes.WarpGate },
+            {"W", ConfigData.ShipTypes.Beacon },
         };
         public static readonly Dictionary<string, int> ShipTypeLetterToInt = new Dictionary<string, int>()
         {
@@ -77,85 +77,31 @@ namespace Assets.Scripts
             {"W", 23 },
         };
 
-        public static readonly Dictionary<string, int> ShipTypeToInt = new Dictionary<string, int>()
+        public static readonly Dictionary<ConfigData.ShipTypes, int> ShipTypeToSide = new Dictionary<ConfigData.ShipTypes, int>()
         {
-            {"Queen", 1 },
-            {"Hornet", 2 },
-            {"Dreadnought", 3 },
-            {"Gunship", 4 },
-            {"Scout", 5 },
-            {"Wasp", 6 },
-            {"Bumblebee", 7 },
-            {"Flagship", 8 },
-            {"Honeybee", 9 },
-            {"Carpenter Bee", 10 },
-            {"Leafcutter", 11 },
-            {"Yellow Jacket", 12 },
-            {"Beehive", 13 },
-            {"Frigate", 14 },
-            {"Carrier", 15 },
-            {"Drone", 16 },
-            {"Striker", 17 },
-            {"Factory", 18 },
-            {"Cruiser", 19 },
-            {"Barge", 20 },
-            {"Fire Barge", 21 },
-            {"Warp Gate", 22 },
-            {"Beacon", 23 },
-        };
-
-        public static readonly Dictionary<int, string> ShipIntToType = new Dictionary<int, string>()
-        {
-            {1, "Queen"},
-            {2, "Hornet"},
-            {3, "Dreadnought"},
-            {4, "Gunship"},
-            {5, "Scout"},
-            {6, "Wasp"},
-            {7, "Bumblebee"},
-            {8, "Flagship"},
-            {9, "Honeybee"},
-            {10, "Carpenter Bee"},
-            {11, "Leafcutter"},
-            {12, "Yellow Jacket"},
-            {13, "Beehive"},
-            {14, "Frigate"},
-            {15, "Carrier"},
-            {16, "Drone"},
-            {17, "Striker"},
-            {18, "Factory"},
-            {19, "Cruiser"},
-            {20, "Barge"},
-            {21, "Fire Barge"},
-            {22, "Warp Gate"},
-            {23, "Beacon"},
-        };
-
-        public static readonly Dictionary<string, int> ShipTypeToSide = new Dictionary<string, int>()
-        {
-            {"Queen", 1 },
-            {"Hornet", 1 },
-            {"Dreadnought", 2 },
-            {"Gunship", 2 },
-            {"Scout", 2 },
-            {"Wasp", 1 },
-            {"Bumblebee", 1 },
-            {"Flagship", 2 },
-            {"Honeybee", 1 },
-            {"Carpenter Bee", 1 },
-            {"Leafcutter", 1 },
-            {"Yellow Jacket", 1 },
-            {"Beehive", 1 },
-            {"Frigate", 2 },
-            {"Carrier", 2 },
-            {"Drone", 2 },
-            {"Striker", 2 },
-            {"Factory", 2 },
-            {"Cruiser", 2 },
-            {"Barge", 2 },
-            {"Fire Barge", 2 },
-            {"Warp Gate", 2 },
-            {"Beacon", 2 },
+            {ConfigData.ShipTypes.Queen, 1 },
+            {ConfigData.ShipTypes.Hornet, 1 },
+            {ConfigData.ShipTypes.Dreadnought, 2 },
+            {ConfigData.ShipTypes.Gunship, 2 },
+            {ConfigData.ShipTypes.Scout, 2 },
+            {ConfigData.ShipTypes.Wasp, 1 },
+            {ConfigData.ShipTypes.Bumblebee, 1 },
+            {ConfigData.ShipTypes.Flagship, 2 },
+            {ConfigData.ShipTypes.Honeybee, 1 },
+            {ConfigData.ShipTypes.CarpenterBee, 1 },
+            {ConfigData.ShipTypes.Leafcutter, 1 },
+            {ConfigData.ShipTypes.YellowJacket, 1 },
+            {ConfigData.ShipTypes.Beehive, 1 },
+            {ConfigData.ShipTypes.Frigate, 2 },
+            {ConfigData.ShipTypes.Carrier, 2 },
+            {ConfigData.ShipTypes.Drone, 2 },
+            {ConfigData.ShipTypes.Striker, 2 },
+            {ConfigData.ShipTypes.Factory, 2 },
+            {ConfigData.ShipTypes.Cruiser, 2 },
+            {ConfigData.ShipTypes.Barge, 2 },
+            {ConfigData.ShipTypes.FireBarge, 2 },
+            {ConfigData.ShipTypes.WarpGate, 2 },
+            {ConfigData.ShipTypes.Beacon, 2 },
         };
         private static readonly Random _rnd = new Random();
         public static int Hash()
@@ -298,7 +244,7 @@ namespace Assets.Scripts
                 return $"{name}s";
             }
         }
-        public static string ConvertShipNameToType(string shipName) // [alert] switch to alphabetical order for ship type codes or maybe even drop them entirely
+        public static string ConvertShipNameToTypeLetter(ConfigData.ShipTypes shipName) // [alert] switch to alphabetical order for ship type codes or maybe even drop them entirely
         {
             return ShipTypesAndTypeLetters.FirstOrDefault((v) => v.Value == shipName).Key;
         }
@@ -415,7 +361,7 @@ namespace Assets.Scripts
                 ships.ForEach((ship) =>
                 {
 
-                    savedSquad.AddShipToSquad(new SquadShip((int)ship.FleetId, (string)ship.ShipType, new Vector2((float)ship.Offset.x, (float)ship.Offset.y),
+                    savedSquad.AddShipToSquad(new SquadShip((int)ship.FleetId, (ConfigData.ShipTypes)ship.ShipType, new Vector2((float)ship.Offset.x, (float)ship.Offset.y),
                      savedSquad));
 
                 });
@@ -428,7 +374,7 @@ namespace Assets.Scripts
             return savedSquads;
         }
 
-        public static IEnumerator CacheSquadCustomSprites(SavedSquad squad, Dictionary<string, List<Sprite>> shipPartSprites, string type, Dictionary<string, Vector2Int> sizes, Dialogue dialogue = null)
+        public static IEnumerator CacheSquadCustomSprites(SavedSquad squad, Dictionary<ConfigData.ShipTypes, List<Sprite>> shipPartSprites, string type, Dictionary<ConfigData.ShipTypes, Vector2Int> sizes, Dialogue dialogue = null)
         {
             float start = Time.realtimeSinceStartup;
             if (squad.HasCustomColor)
@@ -452,7 +398,7 @@ namespace Assets.Scripts
                             //Debug.Log($"The current sprite is {sprite.name} which is {j} / {shipPartSprites[squadShip.ShipType].Count} for {squadShip.ShipType}");
 
 
-                            if (((squadShip.ShipType == "Factory" || squadShip.ShipType == "Warp Gate") && index > 0) || type == "remains")
+                            if (((squadShip.ShipType == ConfigData.ShipTypes.Factory || squadShip.ShipType == ConfigData.ShipTypes.WarpGate) && index > 0) || type == "remains")
                             {
                                 int[] changeablePixels = SetChangablePixelsForImage(colors, sprite);
                                 //Debug.Log($"Changable pixels for {squadShip.ShipType}: {changeablePixels.Length}");
@@ -764,8 +710,8 @@ namespace Assets.Scripts
         }
         public static int CalculateCarrierAdditionalTsv()
         {
-            FleetShip striker = new FleetShip(-1, "", "Striker", false, false, false, 0, 0, 0, 0, 0, 0, 0);
-            FleetShip drone = new FleetShip(-1, "", "Drone", false, false, false, 0, 0, 0, 0, 0, 0, 0);
+            FleetShip striker = new FleetShip(-1, "", ConfigData.ShipTypes.Striker, false, false, false, 0, 0, 0, 0, 0, 0, 0);
+            FleetShip drone = new FleetShip(-1, "", ConfigData.ShipTypes.Drone, false, false, false, 0, 0, 0, 0, 0, 0, 0);
 
             return ((striker.GetTsv() * ConfigData.Configuration.CarrierCarryStrikerMax) * ConfigData.Configuration.CarrierSquadCount) + ((drone.GetTsv() * ConfigData.Configuration.CarrierCarryDroneMax) * ConfigData.Configuration.CarrierSquadCount);
         }

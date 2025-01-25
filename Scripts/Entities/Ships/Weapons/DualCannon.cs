@@ -32,8 +32,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             Vector2 rotatedRightCannonPosition = Utilities.RotatePointAroundPoint(shipPosition, rightCannonPosition, cannonAngle);
 
             // instantiate the projectiles
-            Level.AddProjectile(ProjectilePrefab, this, rotatedLeftCannonPosition, angle);
-            Level.AddProjectile(ProjectilePrefab, this, rotatedRightCannonPosition, angle);
+            Level.AddProjectile(ConfigData.ProjectileTypes.HumanSmall, this, rotatedLeftCannonPosition, angle);
+            Level.AddProjectile(ConfigData.ProjectileTypes.HumanSmall, this, rotatedRightCannonPosition, angle);
             Ship.FleetShip.ShotsFired += 2;
 
             // Set the damage status

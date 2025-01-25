@@ -14,7 +14,7 @@ namespace Assets.Scripts.Entities.Ships
 {
     public class Queen : Ship
     {
-        public string MinionType;
+        public ConfigData.ShipTypes MinionType = ConfigData.ShipTypes.YellowJacket;
         public int MinionCount;
         public Vector2 SpawnPoint;
         public int SpawnFrequency;

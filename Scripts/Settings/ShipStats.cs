@@ -14,7 +14,7 @@ namespace Assets.Scripts.Settings
 {
     public class ShipStats : ServerSettings
     {
-        public Dictionary<string, ShipStatBlock> ShipStatsList = new Dictionary<string, ShipStatBlock>();
+        public Dictionary<ConfigData.ShipTypes, ShipStatBlock> ShipStatsList = new Dictionary<ConfigData.ShipTypes, ShipStatBlock>();
 
         public ShipStats(int userId) : base("ship-stats", userId)
         {
@@ -32,7 +32,7 @@ namespace Assets.Scripts.Settings
                 List<float> rotationRates = Utilities.JArrayToList<float>(ship.RotationRates);
                 List<string> types = Utilities.JArrayToList<string>(ship.WeaponTypes);
 
-                ShipStatsList.Add((string)ship.ShipType, new ShipStatBlock((string)ship.ShipType, (string)ship.Description, (string)ship.CodexDescription, (int)ship.Health,
+                ShipStatsList.Add((ConfigData.ShipTypes)Enum.Parse(typeof(ConfigData.ShipTypes), ship.ShipType), new ShipStatBlock((string)ship.ShipType, (string)ship.Description, (string)ship.CodexDescription, (int)ship.Health,
                     range, power, (int)ship.Sight, (int)ship.AdditionalTsv, ProjectileValue,
                     rateOfFire, rotationRates, (float)ship.Speed, types));
                  

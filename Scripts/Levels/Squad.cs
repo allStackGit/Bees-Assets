@@ -515,22 +515,22 @@ namespace Assets.Scripts.Levels
         public void MakeMatchupStrat()
         {
             // Can't get any invisible ship types and start by blocking the visible ship types too
-            HashSet<string> banned = ConfigData.Configuration.AllShipTypes.ToHashSet();
+            HashSet<ConfigData.ShipTypes> banned = ConfigData.Configuration.AllShipTypes.ToHashSet();
 
             if (ConfigData.Configuration.UserSide == ConfigData.Configuration.BeeSide)
             {
                 // if you're the bees you can only get available human ship types
-                HashSet<string> enemyShips = Level.State.GetHumanShipTypes();
+                HashSet<ConfigData.ShipTypes> enemyShips = Level.State.GetHumanShipTypes();
                 banned = banned.Where((type) => !enemyShips.Contains(type)).ToHashSet();
             }
             else
             {
                 // if you're the humans you can only get available bee ship types
-                HashSet<string> enemyShips = Level.State.GetBeeShipTypes();
+                HashSet<ConfigData.ShipTypes> enemyShips = Level.State.GetBeeShipTypes();
                 banned = banned.Where((type) => !enemyShips.Contains(type)).ToHashSet();
             }
             
-            string[] bannedTypes = banned.Select((ship) => $"Type {(Utilities.ConvertShipNameToType(ship))}").ToArray();
+            string[] bannedTypes = banned.Select((ship) => $"Type {(Utilities.ConvertShipNameToTypeLetter(ship))}").ToArray();
 
             ConfigData.Socket.SendRequest(new MatchupStrategyRequest(new GetMatchupStrategy(AddToMatchup(GetShips()), OpponentId, bannedTypes),
                 this, Level, ConfigData.StandardMaxTimeOnQueue));

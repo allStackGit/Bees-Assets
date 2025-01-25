@@ -21,6 +21,7 @@ using Unity.Mathematics;
 using System.IO;
 using NUnit;
 using System.Threading;
+using UnityEngine.Pool;
 using static UnityEngine.GraphicsBuffer;
 
 namespace Assets.Scripts.Entities.Ships
@@ -41,7 +42,8 @@ namespace Assets.Scripts.Entities.Ships
         public int LastKilled;
         public FleetShip FleetShip = null;
         public string Name;
-        public string ShipType;
+        public ConfigData.ShipTypes ShipType;
+        public string ShipTypeName;
         public Vision Vision;
         public SpriteRenderer SpriteRenderer;
         /// <summary>
@@ -126,7 +128,7 @@ namespace Assets.Scripts.Entities.Ships
         public float Firepower => HasWeapons ? Weapons.Sum(w => w.Firepower) : SpecialFirePower;
         public float DamagePerSecond => Turrets.Sum(t => t.DamagePerSecond);
         public int Tsv => Utilities.CalculateTsv(this);
-        public string ShipTypeLetter => Utilities.ConvertShipNameToType(ShipType);
+        public string ShipTypeLetter => Utilities.ConvertShipNameToTypeLetter(ShipType);
         public bool HasWeapons => Weapons.Count > 0;
         /// <summary>
         /// Does this ship have ship(s) that it's weapon(s) are targeting?
@@ -137,7 +139,7 @@ namespace Assets.Scripts.Entities.Ships
         /// </summary>
         public bool HasReachedDestination => !HasTargetCoordinates;
         public bool IsMoving => Body.velocity != Vector2.zero;
-        public bool IsCarrierShip => ShipType == "Striker" || ShipType == "Drone";
+        public bool IsCarrierShip => ShipType == ConfigData.ShipTypes.Striker || ShipType == ConfigData.ShipTypes.Drone;
         public string ShootingStrategy => HasBrain ? RLShootingStrategy : Squad.GetShootingStrategy();
         /// <summary>
         /// A list of all the ships that this ship's weapons are targeting
@@ -352,23 +354,23 @@ namespace Assets.Scripts.Entities.Ships
                 }
             }
 
-            if (ShipType == "Striker" || ShipType == "Barge")
+            if (ShipType == ConfigData.ShipTypes.Striker || ShipType == ConfigData.ShipTypes.Barge)
             {
                 SpecialFirePower = shipStats.Powers[0] / 3;
             }
-            else if (ShipType == "Fire Barge")
+            else if (ShipType == ConfigData.ShipTypes.FireBarge)
             {
                 SpecialFirePower = shipStats.Powers[0] * shipStats.ProjectileValues[0];
             }
-            else if (ShipType == "Yellow Jacket")
+            else if (ShipType == ConfigData.ShipTypes.YellowJacket)
             {
                 SpecialFirePower = shipStats.Powers[0] / 5;
             }
-            else if (ShipType == "Carpenter Bee" || ShipType == "Factory")
+            else if (ShipType == ConfigData.ShipTypes.CarpenterBee || ShipType == ConfigData.ShipTypes.Factory)
             {
                 IsMiningShip = true;
             }
-            else if (ShipType == "Warp Gate")
+            else if (ShipType == ConfigData.ShipTypes.WarpGate)
             {
                 IsWarpGate = true;
             }
@@ -376,15 +378,42 @@ namespace Assets.Scripts.Entities.Ships
 
             for (int i = 0; i < shipStats.ProjectileValues.Count; i++)
             {
+                ConfigData.ProjectileTypes projectileType = 0;
                 string weaponType = shipStats.WeaponTypes[i];
                 Weapon weapon = null;
-                if (weaponType == "Turret" || weaponType == "Light Cannon" || weaponType == "Rocket Turret")
+                if (weaponType == "Turret")
                 {
                     weapon = gameObject.AddComponent<Turret>();
+                    if (ShipType == ConfigData.ShipTypes.Drone || ShipType == ConfigData.ShipTypes.Flagship)
+                    {
+                        projectileType = ConfigData.ProjectileTypes.HumanSmall;
+                    }
+                    else if (ShipType == ConfigData.ShipTypes.Bumblebee)
+                    {
+                        projectileType = ConfigData.ProjectileTypes.BumblebeeShot;
+                    }
+                }
+                else if (weaponType == "Light Cannon")
+                {
+                    weapon = gameObject.AddComponent<Turret>();
+                    projectileType = ConfigData.ProjectileTypes.HumanMedium;
+                }
+                else if (weaponType == "Rocket Turret")
+                {
+                    weapon = gameObject.AddComponent<Turret>();
+                    projectileType = ConfigData.ProjectileTypes.Rocket;
                 }
                 else if (weaponType == "Eye")
                 {
                     weapon = gameObject.AddComponent<Eye>();
+                    if (ShipType == ConfigData.ShipTypes.Hornet)
+                    {
+                        projectileType = ConfigData.ProjectileTypes.BeeSmall;
+                    }
+                    else if (ShipType == ConfigData.ShipTypes.Queen)
+                    {
+
+                    }
                 }
                 else if (weaponType == "Bomb")
                 {
@@ -393,18 +422,22 @@ namespace Assets.Scripts.Entities.Ships
                 else if (weaponType == "Split Shot")
                 {
                     weapon = gameObject.AddComponent<LaserBuilder>();
+                    projectileType = ConfigData.ProjectileTypes.SplitShot;
                 }
                 else if (weaponType == "Dual Cannon")
                 {
                     weapon = gameObject.AddComponent<DualCannon>();
+                    projectileType = ConfigData.ProjectileTypes.HumanSmall;
                 }
                 else if (weaponType == "Beam Cannon")
                 {
                     weapon = gameObject.AddComponent<BeamCannon>();
+                    projectileType = ConfigData.ProjectileTypes.Beam;
                 }
                 else if (weaponType == "Full Ship Turret")
                 {
                     weapon = gameObject.AddComponent<FullShipTurret>();
+                    projectileType = ConfigData.ProjectileTypes.FlagshipShot;
                 }
                 else
                 {
@@ -441,7 +474,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 {
                     //Debug.Log($"{weapon.GetType()} -- {typeof(Turret)}");
                     weapon.Create(this, weaponType, shipStats.Ranges[i], shipStats.Powers[i], SpecialFirePower, shipStats.RatesOfFire[i],
-                    shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i]);
+                    shipStats.ProjectileValues[i], WeaponPrefabs[i], projectileType);
                 }
 
                 Weapons.Add(weapon);
@@ -2046,6 +2079,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
         }
 
+        //private void OnDestroy()
+        //{
+        //    Debug.LogError($"{Name} has been destroyed but it shouldn't be");
+        //}
 
     }
 

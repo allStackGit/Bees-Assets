@@ -74,7 +74,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
                 //Debug.Log($"Potential spawn point for laser beam, mapTransformPoint: {mapTransformPoint}, shipOffset: {shipOffset}");
 
-                Projectile beam = Level.AddProjectile(ProjectilePrefab, this, GetPosition(), angle);
+                Projectile beam = Level.AddProjectile(ConfigData.ProjectileTypes.Beam, this, GetPosition(), angle);
 
                 if (Ship.Squad.HasCustomColor)
                 {

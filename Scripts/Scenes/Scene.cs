@@ -145,10 +145,10 @@ namespace Assets.Scripts.Scenes
                 Debug.Log($"Network disconnected!");
                 NetworkDisconnection.Show();
             }
-            //else if (ConfigData.Socket.IsOpen && IsSocketManager && NetworkDisconnection.IsOpen && (!IsLevel || ((LevelStage)this).IsLevelConnectedToServer))
-            //{
-            //    //NetworkDisconnection.Hide();
-            //}
+            else if (ConfigData.Socket.IsOpen && IsSocketManager && NetworkDisconnection.IsOpen)
+            {
+                NetworkDisconnection.Hide();
+            }
             if (!ConfigData.SocketManager.NetworkDisconnection.IsOpen)
             {
                 // [alert] [debug]

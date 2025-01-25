@@ -11,14 +11,14 @@ namespace Assets.Scripts.Data
     public class SquadShip : ICloneable
     {
         public int FleetId;
-        public string ShipType;
+        public ConfigData.ShipTypes ShipType;
         public Vector2 Offset;
 
         private SavedSquad _squad;
         private Vector2 _size => ConfigData.ShipSizes.GetValueOrDefault(GetFleetShip().Type);
 
 
-        public SquadShip(int fleetId, string shipType, Vector2 offset, SavedSquad squad)
+        public SquadShip(int fleetId, ConfigData.ShipTypes shipType, Vector2 offset, SavedSquad squad)
         {
             FleetId = fleetId;
             ShipType = shipType;
@@ -92,70 +92,70 @@ namespace Assets.Scripts.Data
             Ship ship = null;
             switch (fleetShip.Type)
             {
-                case "Barge":
+                case ConfigData.ShipTypes.Barge:
                     ship = level.gameObject.AddComponent<Barge>();
                     break;
-                case "Beehive":
+                case ConfigData.ShipTypes.Beehive:
                     ship = level.gameObject.AddComponent<Beehive>();
                     break;
-                case "Bumblebee":
+                case ConfigData.ShipTypes.Bumblebee:
                     ship = level.gameObject.AddComponent<Bumblebee>();
                     break;
-                case "Carpenter Bee":
+                case ConfigData.ShipTypes.CarpenterBee:
                     ship = level.gameObject.AddComponent<CarpenterBee>();
                     break;
-                case "Carrier":
+                case ConfigData.ShipTypes.Carrier:
                     ship = level.gameObject.AddComponent<Carrier>();
                     break;
-                case "Cruiser":
+                case ConfigData.ShipTypes.Cruiser:
                     ship = level.gameObject.AddComponent<Cruiser>();
                     break;
-                case "Dreadnought":
+                case ConfigData.ShipTypes.Dreadnought:
                     ship = level.gameObject.AddComponent<Dreadnought>();
                     break;
-                case "Drone":
+                case ConfigData.ShipTypes.Drone:
                     ship = level.gameObject.AddComponent<Drone>();
                     break;
-                case "Factory":
+                case ConfigData.ShipTypes.Factory:
                     ship = level.gameObject.AddComponent<Factory>();
                     break;
-                case "Fire Barge":
+                case ConfigData.ShipTypes.FireBarge:
                     ship = level.gameObject.AddComponent<FireBarge>();
                     break;
-                case "Flagship":
+                case ConfigData.ShipTypes.Flagship:
                     ship = level.gameObject.AddComponent<Flagship>();
                     break;
-                case "Frigate":
+                case ConfigData.ShipTypes.Frigate:
                     ship = level.gameObject.AddComponent<Frigate>();
                     break;
-                case "Gunship":
+                case ConfigData.ShipTypes.Gunship:
                     ship = level.gameObject.AddComponent<Gunship>();
                     break;
-                case "Honeybee":
+                case ConfigData.ShipTypes.Honeybee:
                     ship = level.gameObject.AddComponent<Honeybee>();
                     break;
-                case "Hornet":
+                case ConfigData.ShipTypes.Hornet:
                     ship = level.gameObject.AddComponent<Hornet>();
                     break;
-                case "Leafcutter":
+                case ConfigData.ShipTypes.Leafcutter:
                     ship = level.gameObject.AddComponent<Leafcutter>();
                     break;
-                case "Queen":
+                case ConfigData.ShipTypes.Queen:
                     ship = level.gameObject.AddComponent<Queen>();
                     break;
-                case "Scout":
+                case ConfigData.ShipTypes.Scout:
                     ship = level.gameObject.AddComponent<Scout>();
                     break;
-                case "Striker":
+                case ConfigData.ShipTypes.Striker:
                     ship = level.gameObject.AddComponent<Striker>();
                     break;
-                case "Warp Gate":
+                case ConfigData.ShipTypes.WarpGate:
                     ship = level.gameObject.AddComponent<WarpGate>();
                     break;
-                case "Wasp":
+                case ConfigData.ShipTypes.Wasp:
                     ship = level.gameObject.AddComponent<Wasp>();
                     break;
-                case "Yellow Jacket":
+                case ConfigData.ShipTypes.YellowJacket:
                     ship = level.gameObject.AddComponent<YellowJacket>();
                     break;
             }

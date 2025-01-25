@@ -16,7 +16,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public Ship Ship, TargetShip;
         public int Range, Power; 
         public float RateOfFire, ProjectileValue, RotationRate, SpecialFirepower;
-        public GameObject Piece, ProjectilePrefab, RangeCircle;
+        public GameObject Piece, RangeCircle;
+        public ConfigData.ProjectileTypes ProjectileType;
         public List<Ship> CachedTargetingQueue = new List<Ship>();
         public HashSet<Ship> ShipsWithinRange = new HashSet<Ship>();
         public string CachedShootingStrategy, Name, Type;
@@ -45,7 +46,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public string __NotShootingReason;
         public List<Ship> __ShipsWithinRange;
         public virtual void Create(Ship ship, string type, int range, int power, float specialFirePower, float rateOfFire, float projectileValue, GameObject piece,
-            GameObject projectilePrefab)
+            ConfigData.ProjectileTypes projectileType)
         {
             Ship = ship;
             Stage = Ship.Stage;
@@ -58,7 +59,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             //Piece =  Instantiate(piece, Vector2.zero, Quaternion.identity);
             //Piece.transform.localScale = Ship.RelativeSizeScale();
             Piece = piece;
-            ProjectilePrefab = projectilePrefab;
+            ProjectileType = projectileType;
             Type = type;
 
             if (!Stage.IsTraining && Stage.Audio.WeaponSounds.ContainsKey(Type))

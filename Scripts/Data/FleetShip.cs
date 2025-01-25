@@ -11,7 +11,8 @@ namespace Assets.Scripts.Data
     public class FleetShip 
     {
         public int Id, Side;
-        public string Name, Type;
+        public string Name;
+        public ConfigData.ShipTypes Type;
         public bool IsVisibleToUser, IsDead, HasCachedSprite;
         public int ShotsFired, DamageDone, DamageReceived, Kills, BattlesFought, BattlesWon, MineralsMined, MineralsMinedThisLevel;
         public int BattlesLost => BattlesFought - BattlesWon;
@@ -24,7 +25,7 @@ namespace Assets.Scripts.Data
        
         public float Firepower => GetFirepower();
 
-        public FleetShip(int id, string name, string type, bool hasCachedSprite, bool isVisibleToUser, bool isDead, int shotsFired, int damageDone, int damageReceived, int kills, int battlesFought, int battlesWon, int mineralsMined)
+        public FleetShip(int id, string name, ConfigData.ShipTypes type, bool hasCachedSprite, bool isVisibleToUser, bool isDead, int shotsFired, int damageDone, int damageReceived, int kills, int battlesFought, int battlesWon, int mineralsMined)
         {
             Id = id;
             Name = name;
@@ -91,24 +92,20 @@ namespace Assets.Scripts.Data
             RateOfFire = shipInfo.RatesOfFire;
             Speed = shipInfo.Speed;
 
-            if (Type == "Carrier")
+            if (Type == ConfigData.ShipTypes.Carrier)
             {
                 AdditionalTsv = Utilities.CalculateCarrierAdditionalTsv();
                 //Debug.Log($"AdditionalTSV for Carrier is {AdditionalTsv}. {drone.GetTsv()} for each drone and {striker.GetTsv()} for each striker");
             }
-            else if (Type == "Striker" || Type == "Barge")
+            else if (Type == ConfigData.ShipTypes.Striker || Type == ConfigData.ShipTypes.Barge)
             {
                 SpecialFirePower.Add(shipInfo.Powers.First()/3);
             }
-            else if (Type == "Yellow Jacket")
+            else if (Type == ConfigData.ShipTypes.YellowJacket)
             {
                 SpecialFirePower.Add(shipInfo.Powers.First() / 5);
             }
-            else if (Type == "Fire Barge")
-            {
-                SpecialFirePower.Add((shipInfo.Powers.First() * shipInfo.ProjectileValues.First()));
-            }
-            else if (Type == "Fire Barge")
+            else if (Type == ConfigData.ShipTypes.FireBarge)
             {
                 SpecialFirePower.Add((shipInfo.Powers.First() * shipInfo.ProjectileValues.First()));
             }
@@ -164,7 +161,7 @@ namespace Assets.Scripts.Data
         }
         public string ToJson()
         {
-            return $"{{\"i\": {Id}, \"n\": \"{Name}\", \"t\": {Utilities.ShipTypeToInt.GetValueOrDefault(Type)}, \"v\": {(IsVisibleToUser ? 1 : 0)}, \"d\": {(IsDead ? 1 : 0)}," +
+            return $"{{\"i\": {Id}, \"n\": \"{Name}\", \"t\": {(int) Type}, \"v\": {(IsVisibleToUser ? 1 : 0)}, \"d\": {(IsDead ? 1 : 0)}," +
                 $"\"s\": {(HasCachedSprite ? 1 : 0)}, \"f\": {ShotsFired}, \"dd\": {DamageDone}, \"r\": {DamageReceived}, \"k\": {Kills}, \"b\": {BattlesFought}, \"w\": {BattlesWon}, " +
                 $"\"m\": {MineralsMined}}}";
         }

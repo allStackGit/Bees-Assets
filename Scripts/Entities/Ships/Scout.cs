@@ -10,7 +10,7 @@ namespace Assets.Scripts.Entities.Ships
 {
     public class Scout : Ship
     {
-        public string MinionType = "Beacon";
+        public ConfigData.ShipTypes MinionType = ConfigData.ShipTypes.Beacon;
         public float TimeSinceLastBeaconDropped = 0;
         public int BeaconsDropped = 0;
         public List<Squad> MinionSquads = new List<Squad>();
@@ -62,7 +62,7 @@ namespace Assets.Scripts.Entities.Ships
                 TimeSinceLastBeaconDropped = Time.realtimeSinceStartup;
 
                 int id = Utilities.GetNegativeFleetshipId();
-                Beacon ship = (Beacon)Level.LevelConstructor.InstantiateShip("Beacon");
+                Beacon ship = (Beacon)Level.LevelConstructor.InstantiateShip(MinionType);
 
 
                 if (ship != null)
@@ -71,7 +71,7 @@ namespace Assets.Scripts.Entities.Ships
                     ship.Setup(
                         Level,
                         Level.State.GetId(),
-                        new FleetShip(id, $"{Name} -> Beacon #{Id}", "Beacon", false, true, false, 0, 0, 0, 0, 0, 0, 0),
+                        new FleetShip(id, $"{Name} -> {MinionType} #{Id}", MinionType, false, true, false, 0, 0, 0, 0, 0, 0, 0),
                         squad,
                         Vector2.zero
                     );
@@ -79,7 +79,7 @@ namespace Assets.Scripts.Entities.Ships
                     ship.IsMinionShip = true;
                     ship.SetColor();
                     ship.FleetShip = FleetShip;
-                    ship.transform.position = GetPosition();
+                    ship.transform.localPosition = GetPosition();
                     ship.MotherSquad = Squad;
                     squad.AddShip(ship);
                     ship.LookForShips();

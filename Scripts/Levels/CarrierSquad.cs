@@ -9,11 +9,11 @@ namespace Assets.Scripts.Levels
 {
     public class CarrierSquad : Squad
     {
-        public string SquadType;
+        public ConfigData.ShipTypes SquadType;
         public Carrier Carrier;
-        public bool IsDroneSquad => SquadType == "Drone" ? true : false;
-        public bool IsStrikerSquad => SquadType == "Striker" ? true: false;
-        public void SetupCarrierSquad(Carrier carrier, string squadType)
+        public bool IsDroneSquad => SquadType == ConfigData.ShipTypes.Drone ? true : false;
+        public bool IsStrikerSquad => SquadType == ConfigData.ShipTypes.Striker ? true: false;
+        public void SetupCarrierSquad(Carrier carrier, ConfigData.ShipTypes squadType)
         {
             Carrier = carrier;
             SquadType = squadType;
