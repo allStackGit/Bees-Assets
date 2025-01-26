@@ -72,7 +72,7 @@ namespace Assets.Scripts.Entities.Ships
         /// </summary>
         public bool HasEnteredMap, AreRocketFlaresOutOfSync, InCombat, IsFollowingPath, CannotChangeMovementOrders;
         public List<Weapon> Weapons;
-        public List<GameObject> ProjectilePrefabs, WeaponPrefabs, ColoredPrefabs, LeftRocketFlares, CenterRocketFlares, RightRocketFlares, RemainsShips;
+        public List<GameObject> WeaponPrefabs, ColoredPrefabs, LeftRocketFlares, CenterRocketFlares, RightRocketFlares, RemainsShips;
         public Brain Brain = null;
         public Queue<Vector2> DestinationQueue = new Queue<Vector2>();
         public List<CollisionAsteroid> NearbyAsteroids = new List<CollisionAsteroid>();
@@ -108,6 +108,10 @@ namespace Assets.Scripts.Entities.Ships
         /// All the weapon that have this ship within range
         /// </summary>
         public HashSet<Weapon> WeaponsThatHaveUsWithinRange = new HashSet<Weapon>();
+        /// <summary>
+        /// An enum (int) representation of the ship type letter
+        /// </summary>
+        public ConfigData.ShipTypeLetters ShipTypeLetter;
 
         public volatile bool PathfindingThreadComplete, IsPathfinding;
         public volatile Pathfinder.Path PathfindingValue;
@@ -124,11 +128,11 @@ namespace Assets.Scripts.Entities.Ships
 
 
 
+
         // [tsv-calculation] [note]
         public float Firepower => HasWeapons ? Weapons.Sum(w => w.Firepower) : SpecialFirePower;
         public float DamagePerSecond => Turrets.Sum(t => t.DamagePerSecond);
         public int Tsv => Utilities.CalculateTsv(this);
-        public string ShipTypeLetter => Utilities.ConvertShipNameToTypeLetter(ShipType);
         public bool HasWeapons => Weapons.Count > 0;
         /// <summary>
         /// Does this ship have ship(s) that it's weapon(s) are targeting?
@@ -181,14 +185,14 @@ namespace Assets.Scripts.Entities.Ships
         // Neural network
         public int Direction;
         public bool ShouldDetonate;
-        public string RLShootingStrategy;
+        public ConfigData.ShootingStrategyTypes RLShootingStrategy;
         public float RLSide;
         public float RLHealth;
         public float RLShipType;
 
         protected virtual void UpdateDebugProperties()
         {
-            __Strategy = $"{Squad?.Command?.Strategy?.Name} - {Squad?.Command?.OutcomeId}";
+            __Strategy = $"{Squad?.Command?.Strategy?.CommandType} - {Squad?.Command?.OutcomeId}";
             __EnemySquad =  Squad.HasEnemy ? Squad.Command.EnemySquad.Name : "-";
             __WeaponTargetShips = WeaponsTargetShips;
             __ShipsWithinRangeOfWeapons = ShipsWithinRange.Select((ship) => ship.Name).ToList();
@@ -206,13 +210,13 @@ namespace Assets.Scripts.Entities.Ships
             __Tsv = Tsv;
             __DamagePerSecond = DamagePerSecond;
             __CommandTsv = Squad.HasCommand ? Squad.Command.Tsv : 0;
-            __PastCommands = Squad.PastCommands.Select((c) => $"Command #{c.OutcomeId} - {c.Strategy.Name} against {c.Enemy} ended with {c.Tsv}" +
+            __PastCommands = Squad.PastCommands.Select((c) => $"Command #{c.OutcomeId} - {c.Strategy.CommandType} against {c.Enemy} ended with {c.Tsv}" +
             $" TSV due to \"{c.FinalizationCause}\" and took {c.Age} ticks").ToList();
 
             __HasReachedDestination = HasReachedDestination;
             __SquadHasReachedDestination = Squad.HasReachedDestination;
             __SquadShips = Squad.GetShips();
-            __BannedStrats = Squad.BannedStrats.ToList();
+            __BannedStrats = Squad.BannedStrats.Select((b) => b.ToString()).ToList();
             __DamageStatuses = Level.State.ShipDamageStatuses[Side - 1].Select((ds) => $"{ds.TotalDamageSentToShip} damage sent to {ds.Ship.Name} against {ds.Health} health. Current health: {ds.Ship.Health}").ToList();
             __TargetEnemyShipToFollow = HasTargetEnemyShipToFollow ? $"Following {TargetEnemyShipToFollow.Name} at {TargetEnemyShipToFollow.GetPosition()}" : "None";
             __CommandTargetingQueue = Squad.HasCommand && Squad.Command.HasEnemy ? Squad.Command.TargetingQueue.Select((ship) =>  ship.Name).ToList() : new List<string>();
@@ -242,7 +246,7 @@ namespace Assets.Scripts.Entities.Ships
                 return sum;
             }).ToList();
 
-            if (ShipType == "Warp Gate")
+            if (ShipType == ConfigData.ShipTypes.WarpGate)
             {
                 __ShipsWarpingHere = ((WarpGate)this).ShipsWarpingHere.ToList();
             }
@@ -269,10 +273,11 @@ namespace Assets.Scripts.Entities.Ships
         /// <summary>
         /// Sets up a ship for the Ship pool so it is ready to go regardless of which level it's in and other identifying factors
         /// </summary>
-        public virtual void Create(Stage stage, string shipType)
+        public virtual void Create(Stage stage, string shipName)
         {
-            ShipType = shipType;
-            Side = Utilities.ShipTypeToSide.GetValueOrDefault(ShipType);
+            ShipType = Utilities.ConvertShipNameToShipType[shipName];
+            ShipTypeLetter = Utilities.ConvertShipTypeToShipTypeLetter[ShipType];
+            Side = Utilities.ConvertShipTypeToSide.GetValueOrDefault(ShipType);
             Stage = stage;
             Body = GetComponent<Rigidbody2D>();
             Collider = GetComponent<Collider2D>();
@@ -378,70 +383,46 @@ namespace Assets.Scripts.Entities.Ships
 
             for (int i = 0; i < shipStats.ProjectileValues.Count; i++)
             {
-                ConfigData.ProjectileTypes projectileType = 0;
-                string weaponType = shipStats.WeaponTypes[i];
                 Weapon weapon = null;
-                if (weaponType == "Turret")
+                if (shipStats.WeaponTypes[i] == ConfigData.WeaponTypes.Turret)
                 {
                     weapon = gameObject.AddComponent<Turret>();
-                    if (ShipType == ConfigData.ShipTypes.Drone || ShipType == ConfigData.ShipTypes.Flagship)
-                    {
-                        projectileType = ConfigData.ProjectileTypes.HumanSmall;
-                    }
-                    else if (ShipType == ConfigData.ShipTypes.Bumblebee)
-                    {
-                        projectileType = ConfigData.ProjectileTypes.BumblebeeShot;
-                    }
                 }
-                else if (weaponType == "Light Cannon")
+                else if (shipStats.WeaponTypes[i] == ConfigData.WeaponTypes.LightCannon)
                 {
                     weapon = gameObject.AddComponent<Turret>();
-                    projectileType = ConfigData.ProjectileTypes.HumanMedium;
                 }
-                else if (weaponType == "Rocket Turret")
+                else if (shipStats.WeaponTypes[i] == ConfigData.WeaponTypes.RocketTurret)
                 {
                     weapon = gameObject.AddComponent<Turret>();
-                    projectileType = ConfigData.ProjectileTypes.Rocket;
                 }
-                else if (weaponType == "Eye")
+                else if (shipStats.WeaponTypes[i] == ConfigData.WeaponTypes.Eye)
                 {
                     weapon = gameObject.AddComponent<Eye>();
-                    if (ShipType == ConfigData.ShipTypes.Hornet)
-                    {
-                        projectileType = ConfigData.ProjectileTypes.BeeSmall;
-                    }
-                    else if (ShipType == ConfigData.ShipTypes.Queen)
-                    {
-
-                    }
                 }
-                else if (weaponType == "Bomb")
+                else if (shipStats.WeaponTypes[i] == ConfigData.WeaponTypes.Bomb)
                 {
                     weapon = gameObject.AddComponent<Bomb>();
                 }
-                else if (weaponType == "Split Shot")
+                else if (shipStats.WeaponTypes[i] == ConfigData.WeaponTypes.SplitShot)
                 {
                     weapon = gameObject.AddComponent<LaserBuilder>();
-                    projectileType = ConfigData.ProjectileTypes.SplitShot;
                 }
-                else if (weaponType == "Dual Cannon")
+                else if (shipStats.WeaponTypes[i] == ConfigData.WeaponTypes.DualCannon)
                 {
                     weapon = gameObject.AddComponent<DualCannon>();
-                    projectileType = ConfigData.ProjectileTypes.HumanSmall;
                 }
-                else if (weaponType == "Beam Cannon")
+                else if (shipStats.WeaponTypes[i] == ConfigData.WeaponTypes.BeamCannon)
                 {
                     weapon = gameObject.AddComponent<BeamCannon>();
-                    projectileType = ConfigData.ProjectileTypes.Beam;
                 }
-                else if (weaponType == "Full Ship Turret")
+                else if (shipStats.WeaponTypes[i] == ConfigData.WeaponTypes.FullShipTurret)
                 {
                     weapon = gameObject.AddComponent<FullShipTurret>();
-                    projectileType = ConfigData.ProjectileTypes.FlagshipShot;
                 }
                 else
                 {
-                    Debugger.Exception($"{Name}'s weapon #{i} doesn't have a proper weapon type: {weaponType}");
+                    Debug.LogError($"{Name}'s weapon #{i} doesn't have a proper weapon type: {shipStats.WeaponTypes[i]}");
                 }
 
 
@@ -450,31 +431,31 @@ namespace Assets.Scripts.Entities.Ships
                     //Debug.Log($"it's a turret!");
                     if (weapon is Eye)
                     {
-                        ((Eye)weapon).Create(this, weaponType, shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
-shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFrontOfShip, shipStats.RotationRates[i]);
+                        ((Eye)weapon).Create(this, shipStats.WeaponTypes[i], shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
+shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], FireAtFrontOfShip, shipStats.RotationRates[i]);
                     }
                     else if (weapon is LaserBuilder)
                     {
-                        ((LaserBuilder)weapon).Create(this, weaponType, shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
-shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFrontOfShip, shipStats.RotationRates[i]);
+                        ((LaserBuilder)weapon).Create(this, shipStats.WeaponTypes[i], shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
+shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], FireAtFrontOfShip, shipStats.RotationRates[i]);
                     }
                     else if (weapon is FullShipTurret)
                     {
-                        ((FullShipTurret)weapon).Create(this, weaponType, shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
-shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFrontOfShip, shipStats.RotationRates[i]);
+                        ((FullShipTurret)weapon).Create(this, shipStats.WeaponTypes[i], shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
+shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], FireAtFrontOfShip, shipStats.RotationRates[i]);
                     }
                     else
                     {
-                        ((Turret)weapon).Create(this, weaponType, shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
-shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFrontOfShip, shipStats.RotationRates[i]);
+                        ((Turret)weapon).Create(this, shipStats.WeaponTypes[i], shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
+shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], FireAtFrontOfShip, shipStats.RotationRates[i]);
                     }
 
                 }
                 else
                 {
                     //Debug.Log($"{weapon.GetType()} -- {typeof(Turret)}");
-                    weapon.Create(this, weaponType, shipStats.Ranges[i], shipStats.Powers[i], SpecialFirePower, shipStats.RatesOfFire[i],
-                    shipStats.ProjectileValues[i], WeaponPrefabs[i], projectileType);
+                    weapon.Create(this, shipStats.WeaponTypes[i], shipStats.Ranges[i], shipStats.Powers[i], SpecialFirePower, shipStats.RatesOfFire[i],
+                    shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i]);
                 }
 
                 Weapons.Add(weapon);
@@ -574,7 +555,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             //squad.AddShip(this);
             Level.State.AddShip(this);
 
-            if (ShipType == "Warp Gate")
+            if (ShipType == ConfigData.ShipTypes.WarpGate)
             {
                 Level.State.HasWarpGates = true;
             }
@@ -615,7 +596,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                 ShipRemains.Setup();
             }
 
-            if (ConfigData.Configuration.UserSide == Side && (ShipType == "Factory" || ShipType == "Carpenter Bee"))
+            if (ConfigData.Configuration.UserSide == Side && (ShipType == ConfigData.ShipTypes.Factory || ShipType == ConfigData.ShipTypes.CarpenterBee))
             {
                 Level.State.MiningShips.Add(this);
             }
@@ -994,15 +975,15 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         {
             if (ShouldDetonate)
             {
-                if (ShipType == "Striker")
+                if (ShipType == ConfigData.ShipTypes.Striker)
                 {
                     ((Striker)this).TryToDropBombs();
                 }
-                else if (ShipType == "Yellow Jacket")
+                else if (ShipType == ConfigData.ShipTypes.YellowJacket)
                 {
                     ((YellowJacket)this).TryToDetonate();
                 }
-                else if (ShipType == "Fire Barge")
+                else if (ShipType == ConfigData.ShipTypes.FireBarge)
                 {
                     ((FireBarge)this).Detonate();
                 }
@@ -1172,8 +1153,9 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
             //if any of the target ship(s) if your weapons are not dead and are within range
             else if (
                 HasTargetEnemyShipToFollow &&
-                !(Squad.HasCommand && (Squad.Command.Type == "Circle" || Squad.Command.Type == "Right Swipe" ||  Squad.Command.Type == "Left Swipe") ||
-                Squad.Command.Type == "In and Out" || Squad.Command.Type == "Bombing Run") &&  // Squad must either not have a command or not have a command of a certain type
+                !(Squad.HasCommand && (Squad.Command.CommandType == ConfigData.CommandTypes.Circle || Squad.Command.CommandType == ConfigData.CommandTypes.RightSwipe ||  
+                Squad.Command.CommandType == ConfigData.CommandTypes.LeftSwipe) || Squad.Command.CommandType == ConfigData.CommandTypes.InAndOut || 
+                Squad.Command.CommandType == ConfigData.CommandTypes.BombingRun) &&  // Squad must either not have a command or not have a command of a certain type
 
                 //TargetShips.Any((ship) => ship != null && (!HasTargetEnemy || TargetEnemy.Equals(ship)) && IsShipWithinRange(ship)) // Ship must have target ships within range and they must be the target enemy or there must not be a target enemy 
 
@@ -1237,7 +1219,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
         /// <returns></returns>
         private bool IsCloseEnoughToTargetCoordinates(float distance)
         {
-            return distance < ConfigData.ShipTurningRadius && !(!IsFollowingPath && HasTargetEnemyShipToFollow && HasCommand && Squad.Command.Type == "Bombing Run" && ProximityCollider.NearbyEnemyShips.Contains(TargetEnemyShipToFollow));
+            return distance < ConfigData.ShipTurningRadius && !(!IsFollowingPath && HasTargetEnemyShipToFollow && HasCommand && Squad.Command.CommandType == ConfigData.CommandTypes.BombingRun
+                && ProximityCollider.NearbyEnemyShips.Contains(TargetEnemyShipToFollow));
         }
         /// <summary>
         /// Stop the ship from moving at all
@@ -1601,7 +1584,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     }
 
 
-                    if (ShipType != "Beacon") // Losing a beacon doesn't count as losing a ship
+                    if (ShipType != ConfigData.ShipTypes.Beacon) // Losing a beacon doesn't count as losing a ship
                     {
                         LogKilledStats();
                     }
@@ -1635,7 +1618,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
 
                         Level.State.GetHumanShips().ForEach((ship) =>
                         {
-                            if (ship.ShipType == "Striker" || ship.ShipType == "Drone")
+                            if (ship.ShipType == ConfigData.ShipTypes.Striker || ship.ShipType == ConfigData.ShipTypes.Drone)
                             {
                                 CarrierShip carrierShip = (CarrierShip)ship;
 
@@ -1648,7 +1631,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], ProjectilePrefabs[i], FireAtFro
                     }
                     else
                     {
-                        Squad.GetShips().Where((ship) => ship.ShipType == "Striker").ToList().ForEach((ship) => {
+                        Squad.GetShips().Where((ship) => ship.ShipType == ConfigData.ShipTypes.Striker).ToList().ForEach((ship) => {
                             ((Striker)ship).LastCarrierPosition = GetPosition();
                         });
                     }

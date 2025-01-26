@@ -53,7 +53,7 @@ namespace Assets.Scripts
         // 5 = ml agents rl testing,
         // 6 = standard testing [highest trained]
         // 7 = new NN training version
-        public const int Version = 5; // [alert] should be increased when released
+        public const int Version = 6; // [alert] should be increased when released
         public const string BaseFolder = "SaveData";
         public const string CacheFolder = "SpriteCache";
         public const string PortraitFolder = "Sprites/People";
@@ -98,9 +98,43 @@ namespace Assets.Scripts
             Wasp,
             YellowJacket,
         }
+        public enum ShipTypeLetters
+        {
+            A,
+            B,
+            C,
+            D,
+            E,
+            F,
+            G,
+            H,
+            I,
+            J,
+            K,
+            L,
+            M,
+            N,
+            O,
+            P,
+            Q,
+            R,
+            S,
+            T,
+            U,
+            V,
+            W
+        }
         public enum WeaponTypes
         {
-
+            Bomb,
+            BeamCannon,
+            LightCannon,
+            Turret,
+            FullShipTurret,
+            RocketTurret,
+            DualCannon,
+            Eye,
+            SplitShot
         }
 
         public enum ProjectileTypes
@@ -119,36 +153,117 @@ namespace Assets.Scripts
             StrikerBomb,
             RocketExplosion,
             FireBargeExplosion
-
+        }
+        public enum CommandTypes
+        {
+            Uninitialized, // Not an actual command
+            Matchup, // Not an actual command
+            Shooting, // Not an actual command
+            Aggressive,
+            BombingRun,
+            Charge,
+            Defensive,
+            Random,
+            Circle,
+            RightSwipe,
+            LeftSwipe,
+            ClosestFriendly,
+            InAndOut,
+            Patrol,
+            Guard,
+            Scouting,
+            Mining,
+            FullRetreat
         }
 
-        public static Dictionary<ShipTypes, string> ShipTypeNames = new Dictionary<ShipTypes, string>
+        public enum ShootingStrategyTypes
         {
-            {ShipTypes.Barge, "Barge"},
-            {ShipTypes.Beacon, "Beacon"},
-            {ShipTypes.Beehive, "Beehive"},
-            {ShipTypes.Bumblebee, "Bumblebee"},
-            {ShipTypes.CarpenterBee, "Carpenter Bee"},
-            {ShipTypes.Carrier, "Carrier"},
-            {ShipTypes.Cruiser, "Cruiser"},
-            {ShipTypes.Dreadnought, "Dreadnought"},
-            {ShipTypes.Drone, "Drone"},
-            {ShipTypes.Factory, "Factory"},
-            {ShipTypes.FireBarge, "Fire Barge"},
-            {ShipTypes.Flagship, "Flagship"},
-            {ShipTypes.Frigate, "Frigate"},
-            {ShipTypes.Gunship, "Gunship"},
-            {ShipTypes.Honeybee, "Honeybee"},
-            {ShipTypes.Hornet, "Hornet"},
-            {ShipTypes.Leafcutter, "Leafcutter"},
-            {ShipTypes.Queen, "Queen"},
-            {ShipTypes.Scout, "Scout"},
-            {ShipTypes.Striker, "Striker"},
-            {ShipTypes.WarpGate, "Warp Gate"},
-            {ShipTypes.Wasp, "Wasp"},
-            {ShipTypes.YellowJacket, "Yellow Jacket"},
-        };
+            FirstSeen, // 0
+            Random,
+            Revenge,
+            MostDangerous,
+            MostHealth,
+            LeastHealth,
+            MostPowerful,
+            LeastPowerful,
+            Closest,
+            Furthest,
+            MostRange,
+            LeastRange,
+            Fastest,
+            Slowest,
+            MostValuable,
+            LeastValuable, // 15
+            TypeA,
+            TypeB,
+            TypeC,
+            TypeD,
+            TypeE,
+            TypeF,
+            TypeG,
+            TypeH,
+            TypeI,
+            TypeJ,
+            TypeK,
+            TypeL,
+            TypeM,
+            TypeN,
+            TypeO,
+            TypeP,
+            TypeQ,
+            TypeR,
+            TypeS,
+            TypeT,
+            TypeU,
+            TypeV,
+            TypeW,
+        }
 
+        public enum MatchupStrategyTypes
+        {
+            Random,
+            Revenge,
+            MostDangerous,
+            LeastHealth,
+            MostHealth,
+            MostPowerful,
+            LeastPowerful,
+            Closest,
+            Furthest,
+            MostRange,
+            LeastRange,
+            Fastest,
+            Slowest,
+            InCombat,
+            GangUp,
+            MostValuable,
+            LeastValuable,
+            TypeA,
+            TypeB,
+            TypeC,
+            TypeD,
+            TypeE,
+            TypeF,
+            TypeG,
+            TypeH,
+            TypeI,
+            TypeJ,
+            TypeK,
+            TypeL,
+            TypeM,
+            TypeN,
+            TypeO,
+            TypeP,
+            TypeQ,
+            TypeR,
+            TypeS,
+            TypeT,
+            TypeU,
+            TypeV,
+            TypeW
+        }
+
+        
         /// <summary>
         /// Size class 3 in the spreeadsheet
         /// </summary>
@@ -322,8 +437,62 @@ namespace Assets.Scripts
             { ShipTypes.YellowJacket, .35f },
         };
 
-        public static readonly HashSet<string> CommandTypes = new HashSet<string> { "Aggressive", "Defensive", "Random", "Circle", "Right Swipe", "Left Swipe", "Closest Friendly",
-        "In and Out", "Patrol", "Guard", "Scouting", "Mining", "Full Retreat" };
+        public static readonly HashSet<CommandTypes> TypesOfCommands = new HashSet<CommandTypes> { CommandTypes.Aggressive, CommandTypes.BombingRun, CommandTypes.Charge,
+            CommandTypes.Defensive, CommandTypes.Random, CommandTypes.Circle, CommandTypes.RightSwipe, CommandTypes.LeftSwipe, CommandTypes.ClosestFriendly, CommandTypes.InAndOut,
+            CommandTypes.Patrol, CommandTypes.Guard, CommandTypes.Scouting, CommandTypes.Mining, CommandTypes.FullRetreat };
+
+        public static readonly List<ShootingStrategyTypes> TypesOfShootingStrategies = new List<ShootingStrategyTypes>
+        {
+            ShootingStrategyTypes.FirstSeen, // 0
+            ShootingStrategyTypes.Random,
+            ShootingStrategyTypes.Revenge,
+            ShootingStrategyTypes.MostDangerous,
+            ShootingStrategyTypes.MostHealth,
+            ShootingStrategyTypes.LeastHealth,
+            ShootingStrategyTypes.MostPowerful,
+            ShootingStrategyTypes.LeastPowerful,
+            ShootingStrategyTypes.Closest,
+            ShootingStrategyTypes.Furthest,
+            ShootingStrategyTypes.MostRange,
+            ShootingStrategyTypes.LeastRange,
+            ShootingStrategyTypes.Fastest,
+            ShootingStrategyTypes.Slowest,
+            ShootingStrategyTypes.MostValuable,
+            ShootingStrategyTypes.LeastValuable, // 15
+            ShootingStrategyTypes.TypeA,
+            ShootingStrategyTypes.TypeB,
+            ShootingStrategyTypes.TypeC,
+            ShootingStrategyTypes.TypeD,
+            ShootingStrategyTypes.TypeE,
+            ShootingStrategyTypes.TypeF,
+            ShootingStrategyTypes.TypeG,
+            ShootingStrategyTypes.TypeH,
+            ShootingStrategyTypes.TypeI,
+            ShootingStrategyTypes.TypeJ,
+            ShootingStrategyTypes.TypeK,
+            ShootingStrategyTypes.TypeL,
+            ShootingStrategyTypes.TypeM,
+            ShootingStrategyTypes.TypeN,
+            ShootingStrategyTypes.TypeO,
+            ShootingStrategyTypes.TypeP,
+            ShootingStrategyTypes.TypeQ,
+            ShootingStrategyTypes.TypeR,
+            ShootingStrategyTypes.TypeS,
+            ShootingStrategyTypes.TypeT,
+            ShootingStrategyTypes.TypeU,
+            ShootingStrategyTypes.TypeV,
+            ShootingStrategyTypes.TypeW,
+        };
+
+        public static ShootingStrategyTypes DefaultShootingStrategy = ShootingStrategyTypes.FirstSeen;
+
+        public static HashSet<string> ShootingStrategyNames = new HashSet<string>
+        {
+            "First Seen", "Random", "Revenge", "Most Dangerous", "Most Health", "Least Health", "Most Powerful", "Least Powerful", "Closest", "Furthest",
+ "Most Range", "Least Range", "Fastest",
+ "Slowest", "Most Valuable", "Least Valuable", "Type A", "Type B", "Type C", "Type D", "Type E", "Type F", "Type G", "Type H", "Type I", "Type J", "Type K", "Type L",
+ "Type M", "Type N", "Type O", "Type P", "Type Q", "Type R", "Type S", "Type T", "Type U", "Type V, Type W"
+        };
 
         public static HashSet<ShipTypes> BeeShipTypes = new HashSet<ShipTypes>();
         public static HashSet<ShipTypes> HumanShipTypes = new HashSet<ShipTypes>();

@@ -24,7 +24,7 @@ namespace Assets.Scripts.Levels
         public Command Command;
         public List<StoredCommand> PastCommands = new List<StoredCommand>();
         public MatchupStrategy MatchupStrategy; // the matchup strategy belongs to the squad and not the command because it is used to determine the command by making the matchup
-        public HashSet<string> BannedStrats = new HashSet<string>();
+        public HashSet<ConfigData.CommandTypes> BannedStrats = new HashSet<ConfigData.CommandTypes>();
         public string Status;
         public string Name;
         public Color Color;
@@ -46,7 +46,7 @@ namespace Assets.Scripts.Levels
 
         private List<Ship> _ships = new List<Ship>();
         private bool _shouldChase = false;
-        private string _chosenShootingStrategy; // there is a shooting strategy attached to the squad because users attach shooting strategies to the squad whereas the AI attaches them to the command
+        private ConfigData.ShootingStrategyTypes _chosenShootingStrategy; // there is a shooting strategy attached to the squad because users attach shooting strategies to the squad whereas the AI attaches them to the command
 
         public int LastKilled => GetShips().Max(s => s.LastKilled);
         public int DamageDone => GetShips().Sum(s => s.FleetShip.DamageDone);
@@ -69,11 +69,12 @@ namespace Assets.Scripts.Levels
         public bool Holding => !ShouldChase();
         public bool IsCarrierSquad => this is CarrierSquad;
         public bool IsShootingSquad => GetShips().Any((s) => s.Turrets.Any());
-        public bool HasOnlyYellowJackets => GetShips().All((s) => s.ShipType == "Yellow Jacket");
-        public bool HasOnlyStrikers => GetShips().All((s) => s.ShipType == "Striker");
-        public bool HasOnlyBombers => GetShips().All((s) => s.ShipType == "Striker" || s.ShipType == "Yellow Jacket" || s.ShipType == "Fire Barge");
-        public bool HasOnlyBarges => GetShips().All((s) => s.ShipType == "Barge");
-        public bool HasOnlyWarpGates => GetShips().All((s) => s.ShipType == "Warp Gate");
+        public bool HasOnlyYellowJackets => GetShips().All((s) => s.ShipType == ConfigData.ShipTypes.YellowJacket);
+        public bool HasOnlyStrikers => GetShips().All((s) => s.ShipType == ConfigData.ShipTypes.Striker);
+        public bool HasOnlyBombers => GetShips().All((s) => s.ShipType == ConfigData.ShipTypes.Striker || s.ShipType == ConfigData.ShipTypes.YellowJacket || 
+        s.ShipType == ConfigData.ShipTypes.FireBarge || s.ShipType == ConfigData.ShipTypes.Barge);
+        public bool HasOnlyBarges => GetShips().All((s) => s.ShipType == ConfigData.ShipTypes.Barge);
+        public bool HasOnlyWarpGates => GetShips().All((s) => s.ShipType == ConfigData.ShipTypes.WarpGate);
         /// <summary>
         /// If this squad belongs to the user side and there is a player
         /// </summary>
@@ -95,7 +96,7 @@ namespace Assets.Scripts.Levels
         public List<Ship> __Ships;
 
         // Setup methods
-        public void Setup(Level level, SavedSquad savedSquad, string shootingStrategy, bool ceaseFire, bool isMatchingSpeed, bool shouldChase,
+        public void Setup(Level level, SavedSquad savedSquad, ConfigData.ShootingStrategyTypes shootingStrategy, bool ceaseFire, bool isMatchingSpeed, bool shouldChase,
             int id, int side, int squadNumber, string name, Color color)
         {
             Level = level;
@@ -347,11 +348,11 @@ namespace Assets.Scripts.Levels
         }
         public bool IsChasing()
         {
-            return HasCommand && Command.Type == "Aggressive" && _shouldChase;
+            return HasCommand && Command.CommandType == ConfigData.CommandTypes.Aggressive && _shouldChase;
         }
         public void StopChasing()
         {
-            if (HasCommand && Command.Type == "Aggressive")
+            if (HasCommand && Command.CommandType == ConfigData.CommandTypes.Aggressive)
             {
                 Command.SetFinalize("Stopped Chasing");
             }
@@ -368,7 +369,7 @@ namespace Assets.Scripts.Levels
         private void CheckChase()
         {
             //Debug.Log($"Checking if {Name} should chase.");
-            if (_shouldChase && Command?.Strategy.Name != "Aggressive")
+            if (_shouldChase && Command?.CommandType != ConfigData.CommandTypes.Aggressive)
             {
                 Squad closestSquad = GetClosestEnemySquad();
                 //Debug.Log($"The closest Enemy to {Name} is {closestSquad.Name}");
@@ -434,7 +435,7 @@ namespace Assets.Scripts.Levels
         }
         public Squad GetClosestValidFriendlySquad()
         {
-            List<Squad> squads = Level.State.GetSquadsBySide(Side).Where(squad => !squad.Equals(this) && (!squad.HasCommand || squad.Command.Type != "Closest Friendly")).ToList();
+            List<Squad> squads = Level.State.GetSquadsBySide(Side).Where(squad => !squad.Equals(this) && (!squad.HasCommand || squad.Command.CommandType != ConfigData.CommandTypes.ClosestFriendly)).ToList();
             return squads.OrderBy(squad => squad.DistanceToPoint(GetPosition())).FirstOrDefault();
         }
         public Squad GetEnemy()
@@ -530,7 +531,7 @@ namespace Assets.Scripts.Levels
                 banned = banned.Where((type) => !enemyShips.Contains(type)).ToHashSet();
             }
             
-            string[] bannedTypes = banned.Select((ship) => $"Type {(Utilities.ConvertShipNameToTypeLetter(ship))}").ToArray();
+            string[] bannedTypes = banned.Select((ship) => $"Type {(Utilities.ConvertShipTypeToShipTypeLetter[ship])}").ToArray();
 
             ConfigData.Socket.SendRequest(new MatchupStrategyRequest(new GetMatchupStrategy(AddToMatchup(GetShips()), OpponentId, bannedTypes),
                 this, Level, ConfigData.StandardMaxTimeOnQueue));
@@ -539,7 +540,7 @@ namespace Assets.Scripts.Levels
         {
             //string unsorted = "";
             //StringBuilder stringBuilder = new StringBuilder();
-            char[] letters = ships.Select(s => s.ShipTypeLetter.First()).ToArray();
+            char[] letters = ships.Select(s => (char) s.ShipTypeLetter).ToArray();
             //ships.ForEach((ship) =>
             //{
             //    //unsorted += ship.ShipTypeLetter;
@@ -556,17 +557,17 @@ namespace Assets.Scripts.Levels
         public void MakeMatchupAndGetCommand(Squad enemy = null)
         {
             string matchup = "";
-            if (Level.Stage.OverrideStrats.Count > 0) // [debug]
+            if (Level.Stage.OverriddenStrats.Count > 0) // [debug]
             {
-                BannedStrats.UnionWith(ConfigData.CommandTypes);
-                BannedStrats = BannedStrats.Except(Level.Stage.OverrideStrats).ToHashSet();
+                BannedStrats.UnionWith(ConfigData.TypesOfCommands);
+                BannedStrats = BannedStrats.Except(Level.Stage.OverriddenStrats).ToHashSet();
 
-                if (Level.Stage.OverrideStrats.Contains("Scouting") && Level.State.GetShipsVisibleToHiveMind(Side).Count > 0 && Level.Stage.OverrideStrats.Count > 1 && !IsDefenseless)
+                if (Level.Stage.OverriddenStrats.Contains(ConfigData.CommandTypes.Scouting) && Level.State.GetShipsVisibleToHiveMind(Side).Count > 0 && Level.Stage.OverriddenStrats.Count > 1 && !IsDefenseless)
                 {
-                    BannedStrats.Add("Scouting");
+                    BannedStrats.Add(ConfigData.CommandTypes.Scouting);
                 }
             }
-            HashSet<string> banned = BannedStrats.ToHashSet(); // the ToHashSet is important to prevent modification of the original set
+            HashSet<ConfigData.CommandTypes> banned = BannedStrats.ToHashSet(); // the ToHashSet is important to prevent modification of the original set
 
             if (enemy != null)
             {
@@ -643,29 +644,29 @@ namespace Assets.Scripts.Levels
             }
             else
             {
-                banned.Add("Aggressive");
-                banned.Add("Defensive");
-                banned.Add("Circle");
-                banned.Add("Right Swipe");
-                banned.Add("Left Swipe");
-                banned.Add("In and Out");
+                banned.Add(ConfigData.CommandTypes.Aggressive);
+                banned.Add(ConfigData.CommandTypes.Defensive);
+                banned.Add(ConfigData.CommandTypes.Circle);
+                banned.Add(ConfigData.CommandTypes.RightSwipe);
+                banned.Add(ConfigData.CommandTypes.LeftSwipe);
+                banned.Add(ConfigData.CommandTypes.InAndOut);
             }
 
-            int closestFriendlySquadCount = Level.State.GetSquadsBySide(Side).Where((squad) => squad?.Command?.Strategy.Name == "Closest Friendly").Count();
+            int closestFriendlySquadCount = Level.State.GetSquadsBySide(Side).Where((squad) => squad?.Command?.Strategy.CommandType == ConfigData.CommandTypes.ClosestFriendly).Count();
             int friendlySquadCount = Level.State.GetSquadsBySide(Side).Count;
             if (friendlySquadCount - 1  <= friendlySquadCount)
             {
-                banned.Add("Closest Friendly");
+                banned.Add(ConfigData.CommandTypes.ClosestFriendly);
             }
-            if (!BannedStrats.Contains("Mining") && (!HasMiningShips || !Level.ActivateMining))
+            if (!BannedStrats.Contains(ConfigData.CommandTypes.Mining) && (!HasMiningShips || !Level.ActivateMining))
             {
-                BannedStrats.Add("Mining");
-                banned.Add("Mining");
+                BannedStrats.Add(ConfigData.CommandTypes.Mining);
+                banned.Add(ConfigData.CommandTypes.Mining);
             }
-            if (!BannedStrats.Contains("Full Retreat") && (Side != ConfigData.Configuration.HumanSide || !Level.State.HasWarpGates || HasOnlyWarpGates))
+            if (!BannedStrats.Contains(ConfigData.CommandTypes.FullRetreat) && (Side != ConfigData.Configuration.HumanSide || !Level.State.HasWarpGates || HasOnlyWarpGates))
             {
-                BannedStrats.Add("Full Retreat");
-                banned.Add("Full Retreat");
+                BannedStrats.Add(ConfigData.CommandTypes.FullRetreat);
+                banned.Add(ConfigData.CommandTypes.FullRetreat);
             }
 
             //if (HasOnlyYellowJackets)
@@ -678,7 +679,7 @@ namespace Assets.Scripts.Levels
             //}
 
 
-            ConfigData.Socket.SendRequest(new CommandRequest(new GetStrategy(matchup, OpponentId, banned.ToArray()),
+            ConfigData.Socket.SendRequest(new CommandRequest(new GetStrategy(matchup, OpponentId, banned.Select(b => Utilities.ConvertCommandTypeToName[b]).ToArray()),
                 this, enemy, Level, matchup, ConfigData.StandardMaxTimeOnQueue));
 
 
@@ -690,33 +691,30 @@ namespace Assets.Scripts.Levels
                 ship.ClearTargets();
             });
         }
-        public void SetShootingStrategy(string strategy)
+        public void SetShootingStrategy(ConfigData.ShootingStrategyTypes strategy)
         {
-            if (ConfigData.Configuration.ShootingStrategies.Contains(strategy))
+            _chosenShootingStrategy = strategy;
+            if (HasCommand && Command.HasShootingStrategy)
             {
-                _chosenShootingStrategy = strategy;
-                if(HasCommand && Command.HasShootingStrategy)
-                {
-
-                }
+                Command.ShootingStrategy.ShootingStrategyType = strategy;
             }
         }
-        public string GetShootingStrategy()
+        public ConfigData.ShootingStrategyTypes GetShootingStrategy()
         {
             return _chosenShootingStrategy;
         }
-        public string GetCommandStrategy()
+        public ConfigData.CommandTypes GetCommandStrategy()
         {
             if (HasCommand && Command.HasStrategy)
             {
-                return Command.Strategy.Name;
+                return Command.Strategy.CommandType;
             }
-            return null;
+            return ConfigData.CommandTypes.Uninitialized;
         }
         public void UserGuard(Squad squad)
         {
 
-            (Strategy, ShootingStrategy) strategies = MakeUserCommand("Guard", null);
+            (Strategy, ShootingStrategy) strategies = MakeUserCommand(ConfigData.CommandTypes.Guard, null);
             if (strategies.Item1 != null)
             {
                 ((Guard)Command).Execute(strategies.Item1, strategies.Item2, Level.State.AddUserCommand(), true, squad);
@@ -730,7 +728,7 @@ namespace Assets.Scripts.Levels
         public void UserPatrol(Vector2 topLeft, Vector2 bottomRight)
         {
             //Debug.Log($"Selecting patrol area for {Name}");
-            (Strategy, ShootingStrategy) strategies = MakeUserCommand("Patrol", null);
+            (Strategy, ShootingStrategy) strategies = MakeUserCommand(ConfigData.CommandTypes.Patrol, null);
             if (strategies.Item1 != null)
             {
                 ((Patrol)Command).Execute(strategies.Item1, strategies.Item2, Level.State.AddUserCommand(), true, topLeft, bottomRight);
@@ -745,7 +743,7 @@ namespace Assets.Scripts.Levels
         {
             if (HasMiningShips)
             {
-                (Strategy, ShootingStrategy) strategies = MakeUserCommand("Mining", null);
+                (Strategy, ShootingStrategy) strategies = MakeUserCommand(ConfigData.CommandTypes.Mining, null);
                 if (strategies.Item1 != null)
                 {
                     ((Mining)Command).Execute(strategies.Item1, strategies.Item2, Level.State.AddUserCommand(), true, miningAsteroid);
@@ -762,7 +760,7 @@ namespace Assets.Scripts.Levels
         }
         public void UserFullRetreat(WarpGate warpGate)
         {
-            (Strategy, ShootingStrategy) strategies = MakeUserCommand("Full Retreat", null);
+            (Strategy, ShootingStrategy) strategies = MakeUserCommand(ConfigData.CommandTypes.FullRetreat, null);
             if (strategies.Item1 != null)
             {
                 ((FullRetreat)Command).Execute(strategies.Item1, strategies.Item2, Level.State.AddUserCommand(), true, warpGate);
@@ -783,7 +781,7 @@ namespace Assets.Scripts.Levels
             //    return;
             //}
             //Debug.Log($"Creating \"Aggressive\" command for {Name} against {enemy.Name}");
-            (Strategy, ShootingStrategy) strategies = MakeUserCommand("Aggressive", enemy);
+            (Strategy, ShootingStrategy) strategies = MakeUserCommand(ConfigData.CommandTypes.Aggressive, enemy);
             if (strategies.Item1 != null)
             {
                 Command.Execute(strategies.Item1, strategies.Item2, Level.State.AddUserCommand(), false);
@@ -793,7 +791,7 @@ namespace Assets.Scripts.Levels
         public void UserBombingRun(Squad enemy)
         {
             //Debug.Log($"Creating \"Bombing Run\" command for {Name} against {enemy.Name}");
-            (Strategy, ShootingStrategy) strategies = MakeUserCommand("Bombing Run", enemy);
+            (Strategy, ShootingStrategy) strategies = MakeUserCommand(ConfigData.CommandTypes.BombingRun, enemy);
             if (strategies.Item1 != null)
             {
                 ((BombingRun)Command).Execute(strategies.Item1, strategies.Item2, Level.State.AddUserCommand(), false);
@@ -809,7 +807,7 @@ namespace Assets.Scripts.Levels
         //        ((Charge)Command).Execute(strategies.Item1, strategies.Item2, Level.State.AddUserCommand(), false);
         //    }
         //}
-        public (Strategy, ShootingStrategy) MakeUserCommand(string command, Squad enemy)
+        public (Strategy, ShootingStrategy) MakeUserCommand(ConfigData.CommandTypes command, Squad enemy)
         {
             //Debug.Log($"{Name} now has command against {enemy.Name}");
 
@@ -819,29 +817,29 @@ namespace Assets.Scripts.Levels
 
                 switch (command)
                 {
-                    case "Aggressive":
+                    case ConfigData.CommandTypes.Aggressive:
                         Command = gameObject.AddComponent<Aggressive>();
                         break;
-                    case "Bombing Run":
+                    case ConfigData.CommandTypes.BombingRun:
                         Command = gameObject.AddComponent<BombingRun>();
                         break;
-                    //case "Charge":
+                    //case ConfigData.CommandTypes.Charge:
                     //    Command = gameObject.AddComponent<Charge>();
                     //    break;
-                    case "Guard":
+                    case ConfigData.CommandTypes.Guard:
                         Command = gameObject.AddComponent<Guard>();
                         break;
-                    case "Patrol":
+                    case ConfigData.CommandTypes.Patrol:
                         Command = gameObject.AddComponent<Patrol>();
                         break;
-                    case "Mining":
+                    case ConfigData.CommandTypes.Mining:
                         Command = gameObject.AddComponent<Mining>();
                         break;
-                    case "Full Retreat":
+                    case ConfigData.CommandTypes.FullRetreat:
                         Command = gameObject.AddComponent<FullRetreat>();
                         break;
                     default:
-                        Debugger.Exception($"Invalid command {command} issued to user squad");
+                        Debug.LogError($"Invalid command {command} issued to user squad");
                         break;
                 }
 
@@ -882,7 +880,7 @@ namespace Assets.Scripts.Levels
                 //{
                 //    Debug.Log($"Can't finalize command for {Name}, the squad is charging");
                 //}
-                if (Command.Type == "Guard")
+                if (Command.CommandType == ConfigData.CommandTypes.Guard)
                 {
                     UnmatchSpeed();
                     ((Guard)Command).GetGuardingSquads().ForEach((squad) =>
@@ -914,19 +912,19 @@ namespace Assets.Scripts.Levels
             _ships.Add(ship);
             if (IsDefenseless)
             {
-                BannedStrats.Add("Aggressive");
-                BannedStrats.Add("Circle");
-                BannedStrats.Add("Right Swipe");
-                BannedStrats.Add("Left Swipe");
-                BannedStrats.Add("In and Out");
+                BannedStrats.Add(ConfigData.CommandTypes.Aggressive);
+                BannedStrats.Add(ConfigData.CommandTypes.Circle);
+                BannedStrats.Add(ConfigData.CommandTypes.RightSwipe);
+                BannedStrats.Add(ConfigData.CommandTypes.LeftSwipe);
+                BannedStrats.Add(ConfigData.CommandTypes.InAndOut);
             }
             else
             {
-                BannedStrats.Remove("Aggressive");
-                BannedStrats.Remove("Circle");
-                BannedStrats.Remove("Right Swipe");
-                BannedStrats.Remove("Left Swipe");
-                BannedStrats.Remove("In and Out");
+                BannedStrats.Remove(ConfigData.CommandTypes.Aggressive);
+                BannedStrats.Remove(ConfigData.CommandTypes.Circle);
+                BannedStrats.Remove(ConfigData.CommandTypes.RightSwipe);
+                BannedStrats.Remove(ConfigData.CommandTypes.LeftSwipe);
+                BannedStrats.Remove(ConfigData.CommandTypes.InAndOut);
             }
             HasAddedShips = true;
         }

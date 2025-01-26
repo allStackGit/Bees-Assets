@@ -51,7 +51,7 @@ namespace Assets.Scripts.Levels
         {
             __Squads = Squads.Select(s => s.ToString()).ToList();
             __SquadsAwaitingCommands = SquadsAwaitingCommands.Select(s => s.ToString()).ToList();
-            __PastCommands = PastCommands.Select((c) => $"Command #{c.OutcomeId} - {c.Strategy.Name} against {c.Enemy} ended with {c.Tsv}" +
+            __PastCommands = PastCommands.Select((c) => $"Command #{c.OutcomeId} - {c.Strategy.CommandType} against {c.Enemy} ended with {c.Tsv}" +
             $" TSV due to \"{c.FinalizationCause}\" and took {c.Age} ticks").ToList();
 
             __Obstacles = Obstacles.Select((o) => $"{o.Name} at {o.GetPosition()} with {o.Health} health").ToList();

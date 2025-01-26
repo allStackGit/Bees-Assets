@@ -454,7 +454,7 @@ namespace Assets.Scripts.Server
             }
             else
             {
-                Debugger.Exception($"Counldn't find a matching request for {userDataResponse.Hash}");
+                Debug.LogError($"Counldn't find a matching request for {userDataResponse.Hash}");
             }
             
         }
@@ -475,14 +475,14 @@ namespace Assets.Scripts.Server
                 }
                 else
                 {
-                    Debugger.Exception($"Null response when requesting settings from the server. {userDataResponse}");
+                    Debug.LogError($"Null response when requesting settings from the server. {userDataResponse}");
 
                 }
 
             }
             else
             {
-                Debugger.Exception($"Couldn't find a matching request for {userDataResponse.Hash}");
+                Debug.LogError($"Couldn't find a matching request for {userDataResponse.Hash}");
             }
 
         }
@@ -535,7 +535,7 @@ namespace Assets.Scripts.Server
                 Squad squad = standingRequest.Squad;
                 Level level = standingRequest.Level;
                 level.HandledRequests.Add(standingRequest.Hash);
-                string commandType = commandResponse.Name;
+                ConfigData.CommandTypes commandType = Utilities.ConvertCommandNameToType[commandResponse.Name];
                 //Debug.Log($"strategic command response");
                 //Debug.Log(squad.damageSentToEnemyShipsBySquad);
                 if (squad != null && !level.State.GameOver && !squad.IsDead)
@@ -548,16 +548,16 @@ namespace Assets.Scripts.Server
                     //}
                     switch (commandType)
                     {
-                        case "Aggressive":
+                        case ConfigData.CommandTypes.Aggressive:
                             if (squad.HasOnlyBombers)
                             {
                                 command = squad.gameObject.AddComponent<BombingRun>();
-                                commandType = "Bombing Run";
+                                commandType = ConfigData.CommandTypes.BombingRun;
                             }
                             else if (squad.HasOnlyBarges)
                             {
                                 command = squad.gameObject.AddComponent<Charge>();
-                                commandType = "Charge";
+                                commandType = ConfigData.CommandTypes.Charge;
                             }
                             else
                             {
@@ -565,24 +565,24 @@ namespace Assets.Scripts.Server
                             }
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
-                        case "Defensive":
+                        case ConfigData.CommandTypes.Defensive:
                             command = squad.gameObject.AddComponent<Retreat>();
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
-                        case "Random":
+                        case ConfigData.CommandTypes.Random:
                             command = squad.gameObject.AddComponent<MoveToRandom>();
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
-                        case "Circle":
+                        case ConfigData.CommandTypes.Circle:
                             if (squad.HasOnlyBombers)
                             {
                                 command = squad.gameObject.AddComponent<BombingRun>();
-                                commandType = "Bombing Run";
+                                commandType = ConfigData.CommandTypes.BombingRun;
                             }
                             else if (squad.HasOnlyBarges)
                             {
                                 command = squad.gameObject.AddComponent<Charge>();
-                                commandType = "Charge";
+                                commandType = ConfigData.CommandTypes.Charge;
                             }
                             else
                             {
@@ -590,17 +590,17 @@ namespace Assets.Scripts.Server
                             }
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
-                        case "Right Swipe":
-                        case "Left Swipe":
+                        case ConfigData.CommandTypes.RightSwipe:
+                        case ConfigData.CommandTypes.LeftSwipe:
                             if (squad.HasOnlyBombers)
                             {
                                 command = squad.gameObject.AddComponent<BombingRun>();
-                                commandType = "Bombing Run";
+                                commandType = ConfigData.CommandTypes.BombingRun;
                             }
                             else if (squad.HasOnlyBarges)
                             {
                                 command = squad.gameObject.AddComponent<Charge>();
-                                commandType = "Charge";
+                                commandType = ConfigData.CommandTypes.Charge;
                             }
                             else
                             {
@@ -608,20 +608,20 @@ namespace Assets.Scripts.Server
                             }
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
-                        case "Closest Friendly":
+                        case ConfigData.CommandTypes.ClosestFriendly:
                             command = squad.gameObject.AddComponent<ClosestFriendly>();
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
-                        case "In and Out":
+                        case ConfigData.CommandTypes.InAndOut:
                             if (squad.HasOnlyBombers)
                             {
                                 command = squad.gameObject.AddComponent<BombingRun>();
-                                commandType = "Bombing Run";
+                                commandType = ConfigData.CommandTypes.BombingRun;
                             }
                             else if (squad.HasOnlyBarges)
                             {
                                 command = squad.gameObject.AddComponent<Charge>();
-                                commandType = "Charge";
+                                commandType = ConfigData.CommandTypes.Charge;
                             }
                             else
                             {
@@ -629,23 +629,23 @@ namespace Assets.Scripts.Server
                             }
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
-                        case "Patrol":
+                        case ConfigData.CommandTypes.Patrol:
                             command = squad.gameObject.AddComponent<Patrol>();
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
-                        case "Guard":
+                        case ConfigData.CommandTypes.Guard:
                             command = squad.gameObject.AddComponent<Guard>();
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
-                        case "Scouting":
+                        case ConfigData.CommandTypes.Scouting:
                             command = squad.gameObject.AddComponent<Scouting>();
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
-                        case "Mining":
+                        case ConfigData.CommandTypes.Mining:
                             command = squad.gameObject.AddComponent<Mining>();
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
-                        case "Full Retreat":
+                        case ConfigData.CommandTypes.FullRetreat:
                             command = squad.gameObject.AddComponent<FullRetreat>();
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
@@ -658,34 +658,34 @@ namespace Assets.Scripts.Server
                     squad.Command.MatchupStrategy = squad.MatchupStrategy;
 
                     Strategy strategy = new Strategy(squad.Command, commandType, commandResponse.MatchupString, commandResponse.MatchupId, commandResponse.OutcomeId);
-                    ShootingStrategy shootingStrategy = new ShootingStrategy(squad.Command, commandResponse.ShootingStrategyName, commandResponse.ShootingStrategyMatchupString, commandResponse.ShootingStrategyMatchupId, commandResponse.ShootingStrategyOutcomeId);
+                    ShootingStrategy shootingStrategy = new ShootingStrategy(squad.Command, Utilities.ConvertShootingStrategyNameToType[commandResponse.ShootingStrategyName], commandResponse.ShootingStrategyMatchupString, commandResponse.ShootingStrategyMatchupId, commandResponse.ShootingStrategyOutcomeId);
                     
-                    if (commandType == "Patrol")
+                    if (commandType == ConfigData.CommandTypes.Patrol)
                     {
-                        //Debug.Log("Got a patrol");
+                        //Debug.Log("Got a patrol);
                         ((Patrol)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true, Vector2.zero, Vector2.zero);
                     }
-                    else if (commandType == "Guard")
+                    else if (commandType == ConfigData.CommandTypes.Guard)
                     {
                         ((Guard)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true, null);
                     }
-                    else if (commandType == "Closest Friendly")
+                    else if (commandType == ConfigData.CommandTypes.ClosestFriendly)
                     {
                         ((ClosestFriendly)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true);
                     }
-                    else if (commandType == "Random")
+                    else if (commandType == ConfigData.CommandTypes.Random)
                     {
                         ((MoveToRandom)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true);
                     }
-                    else if (commandType == "Scouting")
+                    else if (commandType == ConfigData.CommandTypes.Scouting)
                     {
                         ((Scouting)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true);
                     }
-                    else if (commandType == "Mining")
+                    else if (commandType == ConfigData.CommandTypes.Mining)
                     {
                         ((Mining)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true, squad.GetNearestMiningAsteroid());
                     }
-                    else if (commandType == "Full Retreat")
+                    else if (commandType == ConfigData.CommandTypes.FullRetreat)
                     {
                         Vector2 position = squad.GetPosition();
                         WarpGate warpGate = (WarpGate) level.State.GetHumanShips().Where((s) => s.IsWarpGate).OrderBy((s) => s.DistanceToPoint(position)).FirstOrDefault();

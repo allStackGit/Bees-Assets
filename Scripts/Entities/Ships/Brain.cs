@@ -33,7 +33,7 @@ namespace Assets.Scripts.Entities.Ships
             Id = Utilities.Hash();
             Ship.Level.AgentGroup.RegisterAgent(this);
             BufferSensor = gameObject.GetComponent<BufferSensorComponent>();
-            ShipType = (float)Utilities.ShipTypeLetterToInt[Ship.ShipTypeLetter] / Utilities.ShipTypesAndTypeLetters.Count;
+            ShipType = Ship.ShipTypeLetter;
             SpottedShipIndex = Ship.Side - 1;
         }
         public override void Initialize()
@@ -72,7 +72,7 @@ namespace Assets.Scripts.Entities.Ships
             {
                 //Ship.transform.eulerAngles = new Vector3(0, 0, vectorAction.DiscreteActions[0] * 20);
                 Ship.Direction = vectorAction.DiscreteActions[0] * 20;
-                Ship.RLShootingStrategy = ConfigData.Configuration.ShootingStrategies.ElementAt(vectorAction.DiscreteActions[1]);
+                Ship.RLShootingStrategy = ConfigData.TypesOfShootingStrategies[vectorAction.DiscreteActions[1]];
                 //Debug.Log($"Chosen shooting strategy for {Ship.Name} is {Ship.ShootingStrategy}.");
                 Ship.ShouldDetonate = vectorAction.DiscreteActions[2] == 1;
 

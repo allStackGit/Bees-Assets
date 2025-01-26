@@ -19,7 +19,7 @@ namespace Assets.Scripts.Data
         public Color Color;
         public Vector2 StartingPosition;
         public bool CeaseFire, IsMatchingSpeed, IsSetToChase, HasBeenSavedToStorage, HasCustomColor;
-        public string ChosenShootingStrategy = ConfigData.StartingSettings.DefaultShootingStrategy;
+        public ConfigData.ShootingStrategyTypes ChosenShootingStrategy = ConfigData.DefaultShootingStrategy;
         public SquadStatBlock Stats;
         private List<SquadShip> _ships = new List<SquadShip>();
         private bool _hasChanged;
@@ -31,8 +31,8 @@ namespace Assets.Scripts.Data
         public bool HasAliveShips => GetDeadShips().Count < GetSquadShips().Count;
         public bool HasShips => GetSquadShips().Any();
 
-        public SavedSquad(int id, int side, string name, Vector2 startingPosition, bool ceaseFire, bool isMatchingSpeed, 
-            string chosenShootingStrategy, Color color, SquadStatBlock stats = null)
+        public SavedSquad(int id, int side, string name, Vector2 startingPosition, bool ceaseFire, bool isMatchingSpeed,
+            ConfigData.ShootingStrategyTypes chosenShootingStrategy, Color color, SquadStatBlock stats = null)
         {
             this.Id = id;
             this.Side = side;

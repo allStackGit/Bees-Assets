@@ -190,7 +190,7 @@ namespace Assets.Scripts.Entities.Projectiles
             if (ship != null)
             {
                 // if hit enemy projectile or Fire Barge explosion. the ships to ignore is for leafcutter split shots
-                if ((!IsFriendly(ship) || (Shooter.ShipType == "Fire Barge" && !Equals(Shooter))) && !ShipsToIgnore.Contains(ship))
+                if ((!IsFriendly(ship) || (Shooter.ShipType == ConfigData.ShipTypes.FireBarge && !Equals(Shooter))) && !ShipsToIgnore.Contains(ship))
                 {
                     int originalPower = Power;
                     ContactTarget(ship);

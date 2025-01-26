@@ -14,6 +14,7 @@ using UnityEngine.Pool;
 using Assets.Scripts.UIComponents;
 using System.Security.Cryptography;
 using Assets.Scripts.Entities.Projectiles;
+using UnityEditor.Tilemaps;
 
 /// <summary>
 /// Container scene for 1 or more Levels. Handles scene level variables and communication with the server
@@ -181,9 +182,13 @@ public class Stage : Scene
     /// </summary>
     public List<ConfigData.ShipTypes> OverrideHumanShipTypes = new List<ConfigData.ShipTypes> { };
     /// <summary>
-    /// Only allows Hive Mind strats of the types specified here, unless it's empty
+    /// Only allows Hive Mind strats of the types specified here, unless it's empty. Gets converted to OverridenStrats which has the enum of every strategy type
     /// </summary>
     public List<string> OverrideStrats = new List<string> { };
+    /// <summary>
+    /// The enum version of OVerrideStrats
+    /// </summary>
+    public List<ConfigData.CommandTypes> OverriddenStrats = new List<ConfigData.CommandTypes>();
     /// <summary>
     /// The set of positions for each level depending on the number of levels on the stage
     /// </summary>
@@ -196,7 +201,7 @@ public class Stage : Scene
     /// <summary>
     /// All the clearances for all the ships, calculated in levels dynamically when needed but shared between all the levels
     /// </summary>
-    public Dictionary<string, int> ShipClearances = new Dictionary<string, int>();
+    public Dictionary<ConfigData.ShipTypes, int> ShipClearances = new Dictionary<ConfigData.ShipTypes, int>();
     /// <summary>
     /// The sprite used for user ship vision to clear the fog of war
     /// </summary>
@@ -478,18 +483,10 @@ public class Stage : Scene
     {
         return CreatePooledMap(0);
     }
-
     public Assets.Scripts.UI_Components.Map CreatePooledUranusMap()
     {
         return CreatePooledMap(1);
     }
-
-    public Projectile CreatedPooledBeeMediumProjectile()
-    {
-        Projectile projectile = Instantiate(Prefabs.BeeMediumLaserShotPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
-        return projectile;
-    }
-
     public Assets.Scripts.UI_Components.Map CreatePooledMap(int index)
     {
         Assets.Scripts.UI_Components.Map map = Instantiate(Prefabs.Maps[index]).GetComponent<Assets.Scripts.UI_Components.Map>();
@@ -497,6 +494,15 @@ public class Stage : Scene
         map.name = map.Name;
         return map;
     }
+
+
+    public Projectile CreatedPooledBeeMediumProjectile()
+    {
+        Projectile projectile = Instantiate(Prefabs.BeeMediumLaserShotPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+        return projectile;
+    }
+
+
 
     public void OnTakeShipFromPool(Ship ship)
     {
@@ -806,6 +812,11 @@ public class Stage : Scene
             FillPools();
             SpawnLevels();
         }
+
+        OverrideStrats.ForEach((strategy) =>
+        {
+            OverriddenStrats.Add(Utilities.ConvertCommandNameToType[strategy]);
+        });
 
         if (DoesUserHaveController)
         {

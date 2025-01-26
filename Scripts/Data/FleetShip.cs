@@ -40,7 +40,7 @@ namespace Assets.Scripts.Data
             BattlesFought = battlesFought;
             BattlesWon = battlesWon;
             MineralsMined = mineralsMined;
-            Side = Utilities.ShipTypeToSide.GetValueOrDefault(Type);
+            Side = Utilities.ConvertShipTypeToSide.GetValueOrDefault(Type);
             GetStats();
         }
         

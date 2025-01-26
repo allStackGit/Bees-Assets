@@ -13,7 +13,8 @@ namespace Assets.Scripts.Levels.Commands
         // matchupID is the id of the ship matchup
         // stratID is the id of the type of strat [ no longer in use ]
         // outcomeID is the id of the specific strategic outcome for this usage
-        public string Name, MatchupString;
+        public string MatchupString;
+        public ConfigData.CommandTypes CommandType;
         public long MatchupId, OutcomeId;
         public bool Banned;
         public Command Command;
@@ -21,10 +22,10 @@ namespace Assets.Scripts.Levels.Commands
         public int Side => Squad.Side;
         public Level Level => Squad.Level;
         
-        public Strategy(Command command, string name, string matchupString, long matchupId, long outcomeId)
+        public Strategy(Command command, ConfigData.CommandTypes commandType, string matchupString, long matchupId, long outcomeId)
         {
             Command = command;
-            this.Name = name;
+            this.CommandType = commandType;
             this.MatchupString = matchupString; // the string of the matchup e.g. GG|DDDDCC|0|2|0
             this.MatchupId = matchupId; 
             this.OutcomeId = outcomeId; 

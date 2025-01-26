@@ -13,9 +13,12 @@ namespace Assets.Scripts.Levels.Commands
         public new Squad Squad;
         public new int Side => Squad.Side;
         public new Level Level => Squad.Level;
-        public MatchupStrategy(Command command, Squad squad, string name, string matchupString, long matchupId, long outcomeId): base(command, name, matchupString, matchupId, outcomeId)
+        public ConfigData.MatchupStrategyTypes MatchupType;
+
+        public MatchupStrategy(Command command, Squad squad, ConfigData.MatchupStrategyTypes type, string matchupString, long matchupId, long outcomeId): base(command, ConfigData.CommandTypes.Matchup, matchupString, matchupId, outcomeId)
         {
             Squad = squad;
+            MatchupType = type;
             //Command = command;
             //this.Name = name;
             //this.MatchupString = matchupString; // the string of the matchup e.g. GG|DDDDCC|0|2|0
@@ -40,75 +43,75 @@ namespace Assets.Scripts.Levels.Commands
 
             Vector2 location;
 
-            switch (Name)
+            switch (MatchupType)
             {
-                case "Random":
+                case ConfigData.MatchupStrategyTypes.Random:
                     return queue.OrderBy(s => Utilities.RandomInt(2)).First();
-                case "Revenge":
+                case ConfigData.MatchupStrategyTypes.Revenge:
                     return queue.OrderByDescending(s => s.LastKilled).First();
-                case "Most Dangerous":
+                case ConfigData.MatchupStrategyTypes.MostDangerous:
                     return queue.OrderByDescending(s => s.DamageDone).First();
-                case "Least Health":
+                case ConfigData.MatchupStrategyTypes.LeastHealth:
                     return queue.OrderBy(s => s.Health).First();
-                case "Most Health":
+                case ConfigData.MatchupStrategyTypes.MostHealth:
                     return queue.OrderByDescending(s => s.Health).First();
-                case "Most Powerful":
+                case ConfigData.MatchupStrategyTypes.MostPowerful:
                     return queue.OrderByDescending(s => s.Firepower).First();
-                case "Least Powerful":
+                case ConfigData.MatchupStrategyTypes.LeastPowerful:
                     return queue.OrderBy(s => s.Firepower).First();
-                case "Closest":
+                case ConfigData.MatchupStrategyTypes.Closest:
                     location = Squad.GetPosition();
                     queue.Sort((a, b) => (int)(a.DistanceToPoint(location) - b.DistanceToPoint(location)));
                     return queue.First();
-                case "Furthest":
+                case ConfigData.MatchupStrategyTypes.Furthest:
                     location = Squad.GetPosition();
                     queue.Sort((a, b) => (int)(b.DistanceToPoint(location) - a.DistanceToPoint(location)));
                     return queue.First();
-                case "Most Range":
+                case ConfigData.MatchupStrategyTypes.MostRange:
                     return queue.OrderByDescending(s => s.MaxRange).First();
-                case "Least Range":
+                case ConfigData.MatchupStrategyTypes.LeastRange:
                     return queue.OrderBy(s => s.MaxRange).First();
-                case "Fastest":
+                case ConfigData.MatchupStrategyTypes.Fastest:
                     return queue.OrderByDescending(s => s.TotalSpeed).First();
-                case "Slowest":
+                case ConfigData.MatchupStrategyTypes.Slowest:
                     return queue.OrderBy(s => s.TotalSpeed).First();
-                case "In Combat":
+                case ConfigData.MatchupStrategyTypes.InCombat:
                     return queue.OrderByDescending(s => s.InCombat).ThenBy(s => s.MaxRange).FirstOrDefault();
-                case "Gang Up":
+                case ConfigData.MatchupStrategyTypes.GangUp:
                     List<Squad> targetedSquads = Level.State.GetTargetedSquads(Side);
                     return targetedSquads.Count > 0 ? targetedSquads.First() : queue.OrderByDescending(s => s.InCombat).ThenBy(s => s.MaxRange).FirstOrDefault(); // In Combat
-                case "Most Valuable":
+                case ConfigData.MatchupStrategyTypes.MostValuable:
                     return queue.OrderByDescending(s => s.Tsv).First();
-                case "Least Valuable":
+                case ConfigData.MatchupStrategyTypes.LeastValuable:
                     return queue.OrderBy(s => s.Tsv).First();
-                case "Type A":
-                case "Type B":
-                case "Type C":
-                case "Type D":
-                case "Type E":
-                case "Type F":
-                case "Type G":
-                case "Type H":
-                case "Type I":
-                case "Type J":
-                case "Type K":
-                case "Type L":
-                case "Type M":
-                case "Type N":
-                case "Type O":
-                case "Type P":
-                case "Type Q":
-                case "Type R":
-                case "Type S":
-                case "Type T":
-                case "Type U":
-                case "Type V":
-                case "Type W":
-                    string type = Name.Substring(5);
+                case ConfigData.MatchupStrategyTypes.TypeA:
+                case ConfigData.MatchupStrategyTypes.TypeB:
+                case ConfigData.MatchupStrategyTypes.TypeC:
+                case ConfigData.MatchupStrategyTypes.TypeD:
+                case ConfigData.MatchupStrategyTypes.TypeE:
+                case ConfigData.MatchupStrategyTypes.TypeF:
+                case ConfigData.MatchupStrategyTypes.TypeG:
+                case ConfigData.MatchupStrategyTypes.TypeH:
+                case ConfigData.MatchupStrategyTypes.TypeI:
+                case ConfigData.MatchupStrategyTypes.TypeJ:
+                case ConfigData.MatchupStrategyTypes.TypeK:
+                case ConfigData.MatchupStrategyTypes.TypeL:
+                case ConfigData.MatchupStrategyTypes.TypeM:
+                case ConfigData.MatchupStrategyTypes.TypeN:
+                case ConfigData.MatchupStrategyTypes.TypeO:
+                case ConfigData.MatchupStrategyTypes.TypeP:
+                case ConfigData.MatchupStrategyTypes.TypeQ:
+                case ConfigData.MatchupStrategyTypes.TypeR:
+                case ConfigData.MatchupStrategyTypes.TypeS:
+                case ConfigData.MatchupStrategyTypes.TypeT:
+                case ConfigData.MatchupStrategyTypes.TypeU:
+                case ConfigData.MatchupStrategyTypes.TypeV:
+                case ConfigData.MatchupStrategyTypes.TypeW:
+                    ConfigData.ShipTypes type = Utilities.ConvertMatchupStrategyToShipType[MatchupType];
                     queue.Sort((a, b) =>
                     {
-                        int aShipsOfType = a.GetShips().Where(s => s.ShipTypeLetter == type).ToList().Count;
-                        int bShipsofType = b.GetShips().Where(s => s.ShipTypeLetter == type).ToList().Count;
+                        int aShipsOfType = a.GetShips().Where(s => s.ShipType == type).ToList().Count;
+                        int bShipsofType = b.GetShips().Where(s => s.ShipType == type).ToList().Count;
                         if (aShipsOfType > bShipsofType)
                         {
                             return -1;

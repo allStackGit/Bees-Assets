@@ -9,8 +9,10 @@ namespace Assets.Scripts.Levels.Commands
 {
     public class ShootingStrategy : Strategy
     {
-        public ShootingStrategy(Command command, string name, string matchupString, long matchupId, long outcomeId): base(command, name, matchupString, matchupId, outcomeId)
+        public ConfigData.ShootingStrategyTypes ShootingStrategyType;
+        public ShootingStrategy(Command command, ConfigData.ShootingStrategyTypes type, string matchupString, long matchupId, long outcomeId): base(command, ConfigData.CommandTypes.Shooting, matchupString, matchupId, outcomeId)
         {
+            ShootingStrategyType = type;
             //Command = command;
             //this.Name = name;
             //this.MatchupString = matchupString; // the string of the matchup e.g. GG|DDDDCC|0|2|0

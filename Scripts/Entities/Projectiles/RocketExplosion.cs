@@ -91,7 +91,7 @@ namespace Assets.Scripts.Entities.Projectiles
             if (ship != null)
             {
                 // if hit enemy projectile or Fire Barge explosion
-                if ((!IsFriendly(ship) || (Shooter.ShipType == "Fire Barge" && !Equals(Shooter))))
+                if ((!IsFriendly(ship) || (Shooter.ShipType == ConfigData.ShipTypes.FireBarge && !Equals(Shooter))))
                 {
                     if (!_isHarmless && !HasHitShip(ship)) // if it's an explosion it should do damage but not if it's already contacted the ship
                     {

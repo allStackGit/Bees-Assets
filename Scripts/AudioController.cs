@@ -29,9 +29,9 @@ namespace Assets.Scripts
 
         public List<AudioSource> TinyShipExplosionSounds;
 
-        public Dictionary<string, AudioSource> BeesIntros = new Dictionary<string, AudioSource>();
-        public Dictionary<string, AudioSource> BeesLoops = new Dictionary<string, AudioSource>();
-        public Dictionary<string, AudioSource[]> WeaponSounds = new Dictionary<string, AudioSource[]>();
+        //public Dictionary<string, AudioSource> BeesIntros = new Dictionary<string, AudioSource>();
+        //public Dictionary<string, AudioSource> BeesLoops = new Dictionary<string, AudioSource>();
+        public Dictionary<ConfigData.WeaponTypes, AudioSource[]> WeaponSounds = new Dictionary<ConfigData.WeaponTypes, AudioSource[]>();
         public Dictionary<float, List<AudioSource>> ExplosionSounds = new Dictionary<float, List<AudioSource>>();
         public List<AudioSource> Loops = new List<AudioSource>();
         public List<AudioSource> Intros = new List<AudioSource>();
@@ -66,9 +66,9 @@ namespace Assets.Scripts
             //Loops.Add(WaspLoop);
             Loops.Add(HumanLoop);
 
-            WeaponSounds.Add("Light Cannon", new AudioSource[] { LightCannonSound, LightCannonSound2 });
-            WeaponSounds.Add("Turret", new AudioSource[] { SmallCannonSound, SmallCannonSound2 });
-            WeaponSounds.Add("Full Ship Turret", new AudioSource[] { BigCannonSound, BigCannonSound2 });
+            WeaponSounds.Add(ConfigData.WeaponTypes.LightCannon, new AudioSource[] { LightCannonSound, LightCannonSound2 });
+            WeaponSounds.Add(ConfigData.WeaponTypes.Turret, new AudioSource[] { SmallCannonSound, SmallCannonSound2 });
+            WeaponSounds.Add(ConfigData.WeaponTypes.FullShipTurret, new AudioSource[] { BigCannonSound, BigCannonSound2 });
 
             ExplosionSounds.Add(ConfigData.Tiny, TinyShipExplosionSounds);
 

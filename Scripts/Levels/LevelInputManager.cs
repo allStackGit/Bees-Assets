@@ -162,7 +162,7 @@ namespace Assets.Scripts.Levels
                         });
                         break;
 
-                    case var _ when ConfigData.Configuration.ShootingStrategies.Contains(hotKey.Name):
+                    case var _ when ConfigData.ShootingStrategyNames.Contains(hotKey.Name):
                         hotKey.SetAction(() =>
                         {
                             Stage.Menus.ActionBox.SetShootingStrategy(hotKey.Name);
@@ -875,7 +875,7 @@ namespace Assets.Scripts.Levels
         {
             Level.State.GetSelectedSquads().ForEach((squad) =>
             {
-                if (squad.GetShips().Any((s) => s.ShipType != "Warp Gate"))
+                if (squad.GetShips().Any((s) => s.ShipType != ConfigData.ShipTypes.WarpGate))
                 {
                     squad.UserFullRetreat(warpGate);
                 }

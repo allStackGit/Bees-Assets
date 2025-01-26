@@ -14,10 +14,10 @@ namespace Assets.Scripts.Entities.Ships
         public LaserBuilderControl LaserBuilderControl;
         public GameObject LaserBuilderAnimation;
 
-        public override void Create(Ship ship, string type, int range, int power, float rateOfFire, float projectileValue, GameObject piece,
-            GameObject projectilePrefab, bool fireAtFrontOfShip, float rotationRate)
+        public override void Create(Ship ship, ConfigData.WeaponTypes type, int range, int power, float rateOfFire, float projectileValue, GameObject piece,
+            ConfigData.ProjectileTypes projectileType, bool fireAtFrontOfShip, float rotationRate)
         {
-            base.Create(ship, type, range, power, rateOfFire, projectileValue, piece, projectilePrefab, fireAtFrontOfShip, rotationRate);
+            base.Create(ship, type, range, power, rateOfFire, projectileValue, piece, projectileType, fireAtFrontOfShip, rotationRate);
             LaserBuilderAnimation = Piece.transform.Find("Laser Animation").gameObject;
             LaserBuilderControl = LaserBuilderAnimation.GetComponent<LaserBuilderControl>();
             LaserBuilderControl.Setup(this);

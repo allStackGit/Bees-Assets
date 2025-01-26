@@ -12,6 +12,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using Unity.Mathematics;
 
 using UnityEngine;
@@ -24,60 +25,60 @@ namespace Assets.Scripts
     
     public static class Utilities
     {
-        public static readonly Dictionary<string, ConfigData.ShipTypes> ShipTypesAndTypeLetters = new Dictionary<string, ConfigData.ShipTypes>()
+        public static readonly Dictionary<ConfigData.ShipTypeLetters, ConfigData.ShipTypes> ConvertShipTypeLetterToShipType = new Dictionary<ConfigData.ShipTypeLetters, ConfigData.ShipTypes>()
         {
-            {"A", ConfigData.ShipTypes.Queen },
-            {"B", ConfigData.ShipTypes.Hornet },
-            {"C", ConfigData.ShipTypes.Dreadnought },
-            {"D", ConfigData.ShipTypes.Gunship },
-            {"E", ConfigData.ShipTypes.Scout },
-            {"F", ConfigData.ShipTypes.Wasp },
-            {"G", ConfigData.ShipTypes.Bumblebee },
-            {"H", ConfigData.ShipTypes.Flagship },
-            {"I", ConfigData.ShipTypes.Honeybee },
-            {"J", ConfigData.ShipTypes.CarpenterBee },
-            {"K", ConfigData.ShipTypes.Leafcutter },
-            {"L", ConfigData.ShipTypes.YellowJacket },
-            {"M", ConfigData.ShipTypes.Beehive },
-            {"N", ConfigData.ShipTypes.Frigate },
-            {"O", ConfigData.ShipTypes.Carrier },
-            {"P", ConfigData.ShipTypes.Drone },
-            {"Q", ConfigData.ShipTypes.Striker },
-            {"R", ConfigData.ShipTypes.Factory },
-            {"S", ConfigData.ShipTypes.Cruiser },
-            {"T", ConfigData.ShipTypes.Barge },
-            {"U", ConfigData.ShipTypes.FireBarge },
-            {"V", ConfigData.ShipTypes.WarpGate },
-            {"W", ConfigData.ShipTypes.Beacon },
+            {ConfigData.ShipTypeLetters.A, ConfigData.ShipTypes.Queen },
+            {ConfigData.ShipTypeLetters.B, ConfigData.ShipTypes.Hornet },
+            {ConfigData.ShipTypeLetters.C, ConfigData.ShipTypes.Dreadnought },
+            {ConfigData.ShipTypeLetters.D, ConfigData.ShipTypes.Gunship },
+            {ConfigData.ShipTypeLetters.E, ConfigData.ShipTypes.Scout },
+            {ConfigData.ShipTypeLetters.F, ConfigData.ShipTypes.Wasp },
+            {ConfigData.ShipTypeLetters.G, ConfigData.ShipTypes.Bumblebee },
+            {ConfigData.ShipTypeLetters.H, ConfigData.ShipTypes.Flagship },
+            {ConfigData.ShipTypeLetters.I, ConfigData.ShipTypes.Honeybee },
+            {ConfigData.ShipTypeLetters.J, ConfigData.ShipTypes.CarpenterBee },
+            {ConfigData.ShipTypeLetters.K, ConfigData.ShipTypes.Leafcutter },
+            {ConfigData.ShipTypeLetters.L, ConfigData.ShipTypes.YellowJacket },
+            {ConfigData.ShipTypeLetters.M, ConfigData.ShipTypes.Beehive },
+            {ConfigData.ShipTypeLetters.N, ConfigData.ShipTypes.Frigate },
+            {ConfigData.ShipTypeLetters.O, ConfigData.ShipTypes.Carrier },
+            {ConfigData.ShipTypeLetters.P, ConfigData.ShipTypes.Drone },
+            {ConfigData.ShipTypeLetters.Q, ConfigData.ShipTypes.Striker },
+            {ConfigData.ShipTypeLetters.R, ConfigData.ShipTypes.Factory },
+            {ConfigData.ShipTypeLetters.S, ConfigData.ShipTypes.Cruiser },
+            {ConfigData.ShipTypeLetters.T, ConfigData.ShipTypes.Barge },
+            {ConfigData.ShipTypeLetters.U, ConfigData.ShipTypes.FireBarge },
+            {ConfigData.ShipTypeLetters.V, ConfigData.ShipTypes.WarpGate },
+            {ConfigData.ShipTypeLetters.W, ConfigData.ShipTypes.Beacon },
         };
-        public static readonly Dictionary<string, int> ShipTypeLetterToInt = new Dictionary<string, int>()
+        public static readonly Dictionary<ConfigData.ShipTypes, ConfigData.ShipTypeLetters> ConvertShipTypeToShipTypeLetter = new Dictionary<ConfigData.ShipTypes, ConfigData.ShipTypeLetters>()
         {
-            {"A", 1 },
-            {"B", 2 },
-            {"C", 3 },
-            {"D", 4 },
-            {"E", 5 },
-            {"F", 6 },
-            {"G", 7 },
-            {"H", 8 },
-            {"I", 9 },
-            {"J", 10 },
-            {"K", 11 },
-            {"L", 12 },
-            {"M", 13 },
-            {"N", 14 },
-            {"O", 15 },
-            {"P", 16 },
-            {"Q", 17 },
-            {"R", 18 },
-            {"S", 19 },
-            {"T", 20 },
-            {"U", 21 },
-            {"V", 22 },
-            {"W", 23 },
+            {ConfigData.ShipTypes.Queen, ConfigData.ShipTypeLetters.A },
+            {ConfigData.ShipTypes.Hornet, ConfigData.ShipTypeLetters.B },
+            {ConfigData.ShipTypes.Dreadnought, ConfigData.ShipTypeLetters.C },
+            {ConfigData.ShipTypes.Gunship, ConfigData.ShipTypeLetters.D },
+            {ConfigData.ShipTypes.Scout, ConfigData.ShipTypeLetters.E },
+            {ConfigData.ShipTypes.Wasp, ConfigData.ShipTypeLetters.F },
+            {ConfigData.ShipTypes.Bumblebee, ConfigData.ShipTypeLetters.G },
+            {ConfigData.ShipTypes.Flagship, ConfigData.ShipTypeLetters.H },
+            {ConfigData.ShipTypes.Honeybee, ConfigData.ShipTypeLetters.I },
+            {ConfigData.ShipTypes.CarpenterBee, ConfigData.ShipTypeLetters.J },
+            {ConfigData.ShipTypes.Leafcutter, ConfigData.ShipTypeLetters.K },
+            {ConfigData.ShipTypes.YellowJacket, ConfigData.ShipTypeLetters.L },
+            {ConfigData.ShipTypes.Beehive, ConfigData.ShipTypeLetters.M },
+            {ConfigData.ShipTypes.Frigate, ConfigData.ShipTypeLetters.N },
+            {ConfigData.ShipTypes.Carrier, ConfigData.ShipTypeLetters.O },
+            {ConfigData.ShipTypes.Drone, ConfigData.ShipTypeLetters.P },
+            {ConfigData.ShipTypes.Striker, ConfigData.ShipTypeLetters.Q },
+            {ConfigData.ShipTypes.Factory, ConfigData.ShipTypeLetters.R },
+            {ConfigData.ShipTypes.Cruiser, ConfigData.ShipTypeLetters.S },
+            {ConfigData.ShipTypes.Barge, ConfigData.ShipTypeLetters.T },
+            {ConfigData.ShipTypes.FireBarge, ConfigData.ShipTypeLetters.U },
+            {ConfigData.ShipTypes.WarpGate, ConfigData.ShipTypeLetters.V },
+            {ConfigData.ShipTypes.Beacon, ConfigData.ShipTypeLetters.W },
         };
 
-        public static readonly Dictionary<ConfigData.ShipTypes, int> ShipTypeToSide = new Dictionary<ConfigData.ShipTypes, int>()
+        public static readonly Dictionary<ConfigData.ShipTypes, int> ConvertShipTypeToSide = new Dictionary<ConfigData.ShipTypes, int>()
         {
             {ConfigData.ShipTypes.Queen, 1 },
             {ConfigData.ShipTypes.Hornet, 1 },
@@ -103,7 +104,296 @@ namespace Assets.Scripts
             {ConfigData.ShipTypes.WarpGate, 2 },
             {ConfigData.ShipTypes.Beacon, 2 },
         };
+        public static Dictionary<ConfigData.ShipTypes, string> ConvertShipTypeToName = new Dictionary<ConfigData.ShipTypes, string>
+        {
+            {ConfigData.ShipTypes.Barge, "Barge"},
+            {ConfigData.ShipTypes.Beacon, "Beacon"},
+            {ConfigData.ShipTypes.Beehive, "Beehive"},
+            {ConfigData.ShipTypes.Bumblebee, "Bumblebee"},
+            {ConfigData.ShipTypes.CarpenterBee, "Carpenter Bee"},
+            {ConfigData.ShipTypes.Carrier, "Carrier"},
+            {ConfigData.ShipTypes.Cruiser, "Cruiser"},
+            {ConfigData.ShipTypes.Dreadnought, "Dreadnought"},
+            {ConfigData.ShipTypes.Drone, "Drone"},
+            {ConfigData.ShipTypes.Factory, "Factory"},
+            {ConfigData.ShipTypes.FireBarge, "Fire Barge"},
+            {ConfigData.ShipTypes.Flagship, "Flagship"},
+            {ConfigData.ShipTypes.Frigate, "Frigate"},
+            {ConfigData.ShipTypes.Gunship, "Gunship"},
+            {ConfigData.ShipTypes.Honeybee, "Honeybee"},
+            {ConfigData.ShipTypes.Hornet, "Hornet"},
+            {ConfigData.ShipTypes.Leafcutter, "Leafcutter"},
+            {ConfigData.ShipTypes.Queen, "Queen"},
+            {ConfigData.ShipTypes.Scout, "Scout"},
+            {ConfigData.ShipTypes.Striker, "Striker"},
+            {ConfigData.ShipTypes.WarpGate, "Warp Gate"},
+            {ConfigData.ShipTypes.Wasp, "Wasp"},
+            {ConfigData.ShipTypes.YellowJacket, "Yellow Jacket"},
+        };
+
+        public static Dictionary<string, ConfigData.ShipTypes> ConvertShipNameToShipType = new Dictionary<string, ConfigData.ShipTypes>
+        {
+            {"Barge", ConfigData.ShipTypes.Barge},
+            {"Beacon", ConfigData.ShipTypes.Beacon},
+            {"Beehive", ConfigData.ShipTypes.Beehive},
+            {"Bumblebee", ConfigData.ShipTypes.Bumblebee},
+            {"Carpenter Bee", ConfigData.ShipTypes.CarpenterBee},
+            {"Carrier", ConfigData.ShipTypes.Carrier},
+            {"Cruiser", ConfigData.ShipTypes.Cruiser},
+            {"Dreadnought", ConfigData.ShipTypes.Dreadnought},
+            {"Drone", ConfigData.ShipTypes.Drone},
+            {"Factory", ConfigData.ShipTypes.Factory},
+            {"Fire Barge", ConfigData.ShipTypes.FireBarge},
+            {"Flagship", ConfigData.ShipTypes.Flagship},
+            {"Frigate", ConfigData.ShipTypes.Frigate},
+            {"Gunship", ConfigData.ShipTypes.Gunship},
+            {"Honeybee", ConfigData.ShipTypes.Honeybee},
+            {"Hornet", ConfigData.ShipTypes.Hornet},
+            {"Leafcutter", ConfigData.ShipTypes.Leafcutter},
+            {"Queen", ConfigData.ShipTypes.Queen},
+            {"Scout", ConfigData.ShipTypes.Scout},
+            {"Striker", ConfigData.ShipTypes.Striker},
+            {"Warp Gate", ConfigData.ShipTypes.WarpGate},
+            {"Wasp", ConfigData.ShipTypes.Wasp},
+            {"Yellow Jacket", ConfigData.ShipTypes.YellowJacket},
+        };
+
+        public static Dictionary<string, ConfigData.ShipTypes> ConvertPluralNameToShipType = new Dictionary<string, ConfigData.ShipTypes>
+        {
+            {"Barges", ConfigData.ShipTypes.Barge},
+            {"Beacons", ConfigData.ShipTypes.Beacon},
+            {"Beehives", ConfigData.ShipTypes.Beehive},
+            {"Bumblebees", ConfigData.ShipTypes.Bumblebee},
+            {"Carpenter Bees", ConfigData.ShipTypes.CarpenterBee},
+            {"Carriers", ConfigData.ShipTypes.Carrier},
+            {"Cruisers", ConfigData.ShipTypes.Cruiser},
+            {"Dreadnoughts", ConfigData.ShipTypes.Dreadnought},
+            {"Drones", ConfigData.ShipTypes.Drone},
+            {"Factories", ConfigData.ShipTypes.Factory},
+            {"Fire Barges", ConfigData.ShipTypes.FireBarge},
+            {"Flagships", ConfigData.ShipTypes.Flagship},
+            {"Frigates", ConfigData.ShipTypes.Frigate},
+            {"Gunships", ConfigData.ShipTypes.Gunship},
+            {"Honeybees", ConfigData.ShipTypes.Honeybee},
+            {"Hornets", ConfigData.ShipTypes.Hornet},
+            {"Leafcutters", ConfigData.ShipTypes.Leafcutter},
+            {"Queen", ConfigData.ShipTypes.Queen},
+            {"Scouts", ConfigData.ShipTypes.Scout},
+            {"Strikers", ConfigData.ShipTypes.Striker},
+            {"Warp Gates", ConfigData.ShipTypes.WarpGate},
+            {"Wasps", ConfigData.ShipTypes.Wasp},
+            {"Yellow Jackets", ConfigData.ShipTypes.YellowJacket},
+        };
+
+        public static Dictionary<ConfigData.ShipTypes, string> ConvertShipTypeToPluralName = new Dictionary<ConfigData.ShipTypes, string>
+        {
+            {ConfigData.ShipTypes.Barge, "Barges"},
+            {ConfigData.ShipTypes.Beacon, "Beacons"},
+            {ConfigData.ShipTypes.Beehive, "Beehives"},
+            {ConfigData.ShipTypes.Bumblebee, "Bumblebees"},
+            {ConfigData.ShipTypes.CarpenterBee, "Carpenter Bees"},
+            {ConfigData.ShipTypes.Carrier, "Carriers"},
+            {ConfigData.ShipTypes.Cruiser, "Cruisers"},
+            {ConfigData.ShipTypes.Dreadnought, "Dreadnoughts"},
+            {ConfigData.ShipTypes.Drone, "Drones"},
+            {ConfigData.ShipTypes.Factory, "Factories"},
+            {ConfigData.ShipTypes.FireBarge, "Fire Barges"},
+            {ConfigData.ShipTypes.Flagship, "Flagships"},
+            {ConfigData.ShipTypes.Frigate, "Frigates"},
+            {ConfigData.ShipTypes.Gunship, "Gunships"},
+            {ConfigData.ShipTypes.Honeybee, "Honeybees"},
+            {ConfigData.ShipTypes.Hornet, "Hornets"},
+            {ConfigData.ShipTypes.Leafcutter, "Leafcutters"},
+            {ConfigData.ShipTypes.Queen, "Queens"},
+            {ConfigData.ShipTypes.Scout, "Scouts"},
+            {ConfigData.ShipTypes.Striker, "Strikers"},
+            {ConfigData.ShipTypes.WarpGate, "Warp Gates"},
+            {ConfigData.ShipTypes.Wasp, "Wasps"},
+            {ConfigData.ShipTypes.YellowJacket, "Yellow Jackets"},
+        };
+
+        public static Dictionary<string, ConfigData.CommandTypes> ConvertCommandNameToType = new Dictionary<string, ConfigData.CommandTypes>
+        {
+            {"Aggressive", ConfigData.CommandTypes.Aggressive },
+            {"Bombing Run", ConfigData.CommandTypes.BombingRun },
+            {"Charge", ConfigData.CommandTypes.Charge },
+            {"Defensive", ConfigData.CommandTypes.Defensive },
+            {"Random", ConfigData.CommandTypes.Random },
+            {"Circle", ConfigData.CommandTypes.Circle },
+            {"Right Swipe", ConfigData.CommandTypes.RightSwipe },
+            {"Left Swipe", ConfigData.CommandTypes.LeftSwipe },
+            {"Closest Friendly", ConfigData.CommandTypes.ClosestFriendly },
+            {"In and Out", ConfigData.CommandTypes.InAndOut },
+            {"Patrol", ConfigData.CommandTypes.Patrol },
+            {"Guard", ConfigData.CommandTypes.Guard },
+            {"Scouting", ConfigData.CommandTypes.Scouting },
+            {"Mining", ConfigData.CommandTypes.Mining },
+            {"Full Retreat", ConfigData.CommandTypes.FullRetreat },
+        };
+
+        public static Dictionary<ConfigData.CommandTypes, string> ConvertCommandTypeToName = new Dictionary<ConfigData.CommandTypes, string>
+        {
+            {ConfigData.CommandTypes.Aggressive, "Aggressive" },
+            {ConfigData.CommandTypes.BombingRun, "Bombing Run" },
+            {ConfigData.CommandTypes.Charge, "Charge" },
+            {ConfigData.CommandTypes.Defensive, "Defensive" },
+            {ConfigData.CommandTypes.Random, "Random" },
+            {ConfigData.CommandTypes.Circle, "Circle" },
+            {ConfigData.CommandTypes.RightSwipe, "Right Swipe" },
+            {ConfigData.CommandTypes.LeftSwipe, "Left Swipe" },
+            {ConfigData.CommandTypes.ClosestFriendly, "Closest Friendly" },
+            {ConfigData.CommandTypes.InAndOut, "In and Out" },
+            {ConfigData.CommandTypes.Patrol, "Patrol" },
+            {ConfigData.CommandTypes.Guard, "Guard" },
+            {ConfigData.CommandTypes.Scouting, "Scouting" },
+            {ConfigData.CommandTypes.Mining, "Mining" },
+            {ConfigData.CommandTypes.FullRetreat, "Full Retreat" },
+        };
+        public static Dictionary<ConfigData.MatchupStrategyTypes, ConfigData.ShipTypes> ConvertMatchupStrategyToShipType = new Dictionary<ConfigData.MatchupStrategyTypes, ConfigData.ShipTypes>
+        {
+            { ConfigData.MatchupStrategyTypes.TypeA, ConfigData.ShipTypes.Queen },
+            { ConfigData.MatchupStrategyTypes.TypeB, ConfigData.ShipTypes.Hornet },
+            { ConfigData.MatchupStrategyTypes.TypeC, ConfigData.ShipTypes.Dreadnought },
+            { ConfigData.MatchupStrategyTypes.TypeD, ConfigData.ShipTypes.Gunship },
+            { ConfigData.MatchupStrategyTypes.TypeE, ConfigData.ShipTypes.Scout },
+            { ConfigData.MatchupStrategyTypes.TypeF, ConfigData.ShipTypes.Wasp },
+            { ConfigData.MatchupStrategyTypes.TypeG, ConfigData.ShipTypes.Bumblebee },
+            { ConfigData.MatchupStrategyTypes.TypeH, ConfigData.ShipTypes.Flagship },
+            { ConfigData.MatchupStrategyTypes.TypeI, ConfigData.ShipTypes.Honeybee },
+            { ConfigData.MatchupStrategyTypes.TypeJ, ConfigData.ShipTypes.CarpenterBee },
+            { ConfigData.MatchupStrategyTypes.TypeK, ConfigData.ShipTypes.Leafcutter },
+            { ConfigData.MatchupStrategyTypes.TypeL, ConfigData.ShipTypes.YellowJacket },
+            { ConfigData.MatchupStrategyTypes.TypeM, ConfigData.ShipTypes.Beehive },
+            { ConfigData.MatchupStrategyTypes.TypeN, ConfigData.ShipTypes.Frigate },
+            { ConfigData.MatchupStrategyTypes.TypeO, ConfigData.ShipTypes.Carrier },
+            { ConfigData.MatchupStrategyTypes.TypeP, ConfigData.ShipTypes.Drone },
+            { ConfigData.MatchupStrategyTypes.TypeQ, ConfigData.ShipTypes.Striker },
+            { ConfigData.MatchupStrategyTypes.TypeR, ConfigData.ShipTypes.Factory },
+            { ConfigData.MatchupStrategyTypes.TypeS, ConfigData.ShipTypes.Cruiser },
+            { ConfigData.MatchupStrategyTypes.TypeT, ConfigData.ShipTypes.Barge },
+            { ConfigData.MatchupStrategyTypes.TypeU, ConfigData.ShipTypes.FireBarge },
+            { ConfigData.MatchupStrategyTypes.TypeV, ConfigData.ShipTypes.WarpGate },
+            { ConfigData.MatchupStrategyTypes.TypeW, ConfigData.ShipTypes.Beacon },
+
+        };
+
+        public static Dictionary<ConfigData.ShootingStrategyTypes, ConfigData.ShipTypes> ConvertShootingStrategyToShipType = new Dictionary<ConfigData.ShootingStrategyTypes, ConfigData.ShipTypes>
+        {
+            { ConfigData.ShootingStrategyTypes.TypeA, ConfigData.ShipTypes.Queen },
+            { ConfigData.ShootingStrategyTypes.TypeB, ConfigData.ShipTypes.Hornet },
+            { ConfigData.ShootingStrategyTypes.TypeC, ConfigData.ShipTypes.Dreadnought },
+            { ConfigData.ShootingStrategyTypes.TypeD, ConfigData.ShipTypes.Gunship },
+            { ConfigData.ShootingStrategyTypes.TypeE, ConfigData.ShipTypes.Scout },
+            { ConfigData.ShootingStrategyTypes.TypeF, ConfigData.ShipTypes.Wasp },
+            { ConfigData.ShootingStrategyTypes.TypeG, ConfigData.ShipTypes.Bumblebee },
+            { ConfigData.ShootingStrategyTypes.TypeH, ConfigData.ShipTypes.Flagship },
+            { ConfigData.ShootingStrategyTypes.TypeI, ConfigData.ShipTypes.Honeybee },
+            { ConfigData.ShootingStrategyTypes.TypeJ, ConfigData.ShipTypes.CarpenterBee },
+            { ConfigData.ShootingStrategyTypes.TypeK, ConfigData.ShipTypes.Leafcutter },
+            { ConfigData.ShootingStrategyTypes.TypeL, ConfigData.ShipTypes.YellowJacket },
+            { ConfigData.ShootingStrategyTypes.TypeM, ConfigData.ShipTypes.Beehive },
+            { ConfigData.ShootingStrategyTypes.TypeN, ConfigData.ShipTypes.Frigate },
+            { ConfigData.ShootingStrategyTypes.TypeO, ConfigData.ShipTypes.Carrier },
+            { ConfigData.ShootingStrategyTypes.TypeP, ConfigData.ShipTypes.Drone },
+            { ConfigData.ShootingStrategyTypes.TypeQ, ConfigData.ShipTypes.Striker },
+            { ConfigData.ShootingStrategyTypes.TypeR, ConfigData.ShipTypes.Factory },
+            { ConfigData.ShootingStrategyTypes.TypeS, ConfigData.ShipTypes.Cruiser },
+            { ConfigData.ShootingStrategyTypes.TypeT, ConfigData.ShipTypes.Barge },
+            { ConfigData.ShootingStrategyTypes.TypeU, ConfigData.ShipTypes.FireBarge },
+            { ConfigData.ShootingStrategyTypes.TypeV, ConfigData.ShipTypes.WarpGate },
+            { ConfigData.ShootingStrategyTypes.TypeW, ConfigData.ShipTypes.Beacon },
+
+        };
+
+        public static Dictionary<string, ConfigData.ShootingStrategyTypes> ConvertShootingStrategyNameToType = new Dictionary<string, ConfigData.ShootingStrategyTypes>
+        {
+            { "First Seen", ConfigData.ShootingStrategyTypes.FirstSeen}, 
+            { "Random", ConfigData.ShootingStrategyTypes.Random},
+            { "Revenge", ConfigData.ShootingStrategyTypes.Revenge},
+            { "Most Dangerous", ConfigData.ShootingStrategyTypes.MostDangerous},
+            { "Most Health", ConfigData.ShootingStrategyTypes.MostHealth},
+            { "Least Health", ConfigData.ShootingStrategyTypes.LeastHealth},
+            { "Most Powerful", ConfigData.ShootingStrategyTypes.MostPowerful},
+            { "Least Powerful", ConfigData.ShootingStrategyTypes.LeastPowerful},
+            { "Closest", ConfigData.ShootingStrategyTypes.Closest},
+            { "Furthest", ConfigData.ShootingStrategyTypes.Furthest},
+            { "Most Range", ConfigData.ShootingStrategyTypes.MostRange},
+            { "Least Range", ConfigData.ShootingStrategyTypes.LeastRange},
+            { "Fastest", ConfigData.ShootingStrategyTypes.Fastest},
+            { "Slowest", ConfigData.ShootingStrategyTypes.Slowest},
+            { "Most Valuable", ConfigData.ShootingStrategyTypes.MostValuable},
+            { "Least Valuable", ConfigData.ShootingStrategyTypes.LeastValuable}, 
+            { "Type A", ConfigData.ShootingStrategyTypes.TypeA},
+            { "Type B", ConfigData.ShootingStrategyTypes.TypeB},
+            { "Type C", ConfigData.ShootingStrategyTypes.TypeC},
+            { "Type D", ConfigData.ShootingStrategyTypes.TypeD},
+            { "Type E", ConfigData.ShootingStrategyTypes.TypeE},
+            { "Type F", ConfigData.ShootingStrategyTypes.TypeF},
+            { "Type G", ConfigData.ShootingStrategyTypes.TypeG},
+            { "Type H", ConfigData.ShootingStrategyTypes.TypeH},
+            { "Type I", ConfigData.ShootingStrategyTypes.TypeI},
+            { "Type J", ConfigData.ShootingStrategyTypes.TypeJ},
+            { "Type K", ConfigData.ShootingStrategyTypes.TypeK},
+            { "Type L", ConfigData.ShootingStrategyTypes.TypeL},
+            { "Type M", ConfigData.ShootingStrategyTypes.TypeM},
+            { "Type N", ConfigData.ShootingStrategyTypes.TypeN},
+            { "Type O", ConfigData.ShootingStrategyTypes.TypeO},
+            { "Type P", ConfigData.ShootingStrategyTypes.TypeP},
+            { "Type Q", ConfigData.ShootingStrategyTypes.TypeQ},
+            { "Type R", ConfigData.ShootingStrategyTypes.TypeR},
+            { "Type S", ConfigData.ShootingStrategyTypes.TypeS},
+            { "Type T", ConfigData.ShootingStrategyTypes.TypeT},
+            { "Type U", ConfigData.ShootingStrategyTypes.TypeU},
+            { "Type V", ConfigData.ShootingStrategyTypes.TypeV},
+            { "Type W", ConfigData.ShootingStrategyTypes.TypeW}
+        };
+
+        public static Dictionary<ConfigData.ShootingStrategyTypes, string> ConvertShootingStrategyTypeToName = new Dictionary<ConfigData.ShootingStrategyTypes, string>
+        {
+            { ConfigData.ShootingStrategyTypes.FirstSeen, "First Seen" },
+            { ConfigData.ShootingStrategyTypes.Random, "Random" },
+            { ConfigData.ShootingStrategyTypes.Revenge, "Revenge" },
+            { ConfigData.ShootingStrategyTypes.MostDangerous, "Most Dangerous" },
+            { ConfigData.ShootingStrategyTypes.MostHealth, "Most Health" },
+            { ConfigData.ShootingStrategyTypes.LeastHealth, "Least Health" },
+            { ConfigData.ShootingStrategyTypes.MostPowerful, "Most Powerful" },
+            { ConfigData.ShootingStrategyTypes.LeastPowerful, "Least Powerful" },
+            { ConfigData.ShootingStrategyTypes.Closest, "Closest" },
+            { ConfigData.ShootingStrategyTypes.Furthest, "Furthest" },
+            { ConfigData.ShootingStrategyTypes.MostRange, "Most Range" },
+            { ConfigData.ShootingStrategyTypes.LeastRange, "Least Range" },
+            { ConfigData.ShootingStrategyTypes.Fastest, "Fastest" },
+            { ConfigData.ShootingStrategyTypes.Slowest, "Slowest" },
+            { ConfigData.ShootingStrategyTypes.MostValuable, "Most Valuable" },
+            { ConfigData.ShootingStrategyTypes.LeastValuable, "Least Valuable" },
+            { ConfigData.ShootingStrategyTypes.TypeA, "Type A" },
+            { ConfigData.ShootingStrategyTypes.TypeB, "Type B" },
+            { ConfigData.ShootingStrategyTypes.TypeC, "Type C" },
+            { ConfigData.ShootingStrategyTypes.TypeD, "Type D" },
+            { ConfigData.ShootingStrategyTypes.TypeE, "Type E" },
+            { ConfigData.ShootingStrategyTypes.TypeF, "Type F" },
+            { ConfigData.ShootingStrategyTypes.TypeG, "Type G" },
+            { ConfigData.ShootingStrategyTypes.TypeH, "Type H" },
+            { ConfigData.ShootingStrategyTypes.TypeI, "Type I" },
+            { ConfigData.ShootingStrategyTypes.TypeJ, "Type J" },
+            { ConfigData.ShootingStrategyTypes.TypeK, "Type K" },
+            { ConfigData.ShootingStrategyTypes.TypeL, "Type L" },
+            { ConfigData.ShootingStrategyTypes.TypeM, "Type M" },
+            { ConfigData.ShootingStrategyTypes.TypeN, "Type N" },
+            { ConfigData.ShootingStrategyTypes.TypeO, "Type O" },
+            { ConfigData.ShootingStrategyTypes.TypeP, "Type P" },
+            { ConfigData.ShootingStrategyTypes.TypeQ, "Type Q" },
+            { ConfigData.ShootingStrategyTypes.TypeR, "Type R" },
+            { ConfigData.ShootingStrategyTypes.TypeS, "Type S" },
+            { ConfigData.ShootingStrategyTypes.TypeT, "Type T" },
+            { ConfigData.ShootingStrategyTypes.TypeU, "Type U" },
+            { ConfigData.ShootingStrategyTypes.TypeV, "Type V" },
+            { ConfigData.ShootingStrategyTypes.TypeW, "Type W" }
+        };
+
+
         private static readonly Random _rnd = new Random();
+
         public static int Hash()
         {
             return RandomInt(); 
@@ -216,37 +506,6 @@ namespace Assets.Scripts
         public static float AngleBetweenThreePoints(Vector2 a, Vector2 b, Vector2 c)
         {
             return AngleBetweenPoints(c, a) - AngleBetweenPoints(b, a);
-        }
-
-        public static string ConvertShipTypeToName(string shipType)
-        {
-            
-            if (shipType.StartsWith("Type "))
-            {
-                shipType = shipType.Substring(5);
-            }
-            return ShipTypesAndTypeLetters.GetValueOrDefault(shipType);
-            
-        }
-        public static string ConvertShipTypeToPluralName(string shipType)
-        {
-            string name = ConvertShipTypeToName(shipType);
-            if (name == "Queen")
-            {
-                return name;
-            }
-            else if (name == "Factory")
-            {
-                return "Factories";
-            }
-            else
-            {
-                return $"{name}s";
-            }
-        }
-        public static string ConvertShipNameToTypeLetter(ConfigData.ShipTypes shipName) // [alert] switch to alphabetical order for ship type codes or maybe even drop them entirely
-        {
-            return ShipTypesAndTypeLetters.FirstOrDefault((v) => v.Value == shipName).Key;
         }
         
         public static string GenerateCommanderName()

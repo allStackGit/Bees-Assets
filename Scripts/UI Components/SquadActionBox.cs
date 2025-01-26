@@ -122,17 +122,8 @@ namespace Assets.Scripts.UIComponents
             ShipTypes().ToList().ForEach(ship =>
             {
                 //Debug.Log("Setting drop down option");
-                if (ship == "Queen")
-                {
-                    dropdown.options.Add(new TMP_Dropdown.OptionData($"{ship}"));
-                }else if (ship == "Factory")
-                {
-                    dropdown.options.Add(new TMP_Dropdown.OptionData($"Factories"));
-                }
-                else
-                {
-                    dropdown.options.Add(new TMP_Dropdown.OptionData($"{ship}s"));
-                }
+
+                dropdown.options.Add(new TMP_Dropdown.OptionData(Utilities.ConvertShipTypeToPluralName[ship]));
             });
         }
         private List<ConfigData.ShipTypes> ShipTypes()
@@ -147,13 +138,13 @@ namespace Assets.Scripts.UIComponents
         private void SetDropdownValue()
         {
             
-            string shootingStrategy = GetShootingStrategy();
+            ConfigData.ShootingStrategyTypes shootingStrategy = GetShootingStrategy();
             TMP_Dropdown dropdown = TypeSelector.GetComponentInChildren<TMP_Dropdown>();
             _autoSetDropdownValue = true;
 
-            if (shootingStrategy.StartsWith("Type "))
+            if ((int) shootingStrategy > 15)
             {
-                string shipName = Utilities.ConvertShipTypeToPluralName(shootingStrategy);
+                string shipName = Utilities.ConvertShipTypeToPluralName[Utilities.ConvertShootingStrategyToShipType[shootingStrategy]];
                 //Debug.Log($"Ship name is {shipName}");
                 dropdown.value = dropdown.options.FindIndex(option => option.text == shipName);
             }
@@ -164,7 +155,7 @@ namespace Assets.Scripts.UIComponents
             _autoSetDropdownValue = false;
 
         }
-        private string GetShootingStrategy()
+        private ConfigData.ShootingStrategyTypes GetShootingStrategy()
         {
             if (HasSquadMaker)
             {
@@ -258,9 +249,9 @@ namespace Assets.Scripts.UIComponents
                 }
             }
 
-            string shootingStrategy = GetShootingStrategy();
+            ConfigData.ShootingStrategyTypes shootingStrategy = GetShootingStrategy();
             //Debug.Log($"Squad(s) shooting strategy: {shootingStrategy}");
-            ConfigData.Configuration.ShootingStrategies.Where(s => !s.StartsWith("Type ")).ToList().ForEach(s =>
+            ConfigData.TypesOfShootingStrategies.Where(s => (int) s > 15).ToList().ForEach(s =>
             {
                 //Debug.Log($"{s} Button");
                 GameObject buttonLabel = GameObject.Find($"{s} Button"); // [effeciency] could be made better by having a dictionary of the buttons
@@ -274,7 +265,7 @@ namespace Assets.Scripts.UIComponents
                 }
             });
 
-            if (shootingStrategy.StartsWith("Type "))
+            if ((int) shootingStrategy > 15)
             {
                 HighlightButton(TypeSelector);
             }
@@ -804,25 +795,27 @@ namespace Assets.Scripts.UIComponents
                 
                 ShipTypes().ToList().ForEach((shipType) =>
                 {
-                    string shipName = ConfigData.ShipTypeNames[shipType];
-                    if (strategy.Contains(shipName) || (strategy == "Factories" && shipType == ConfigData.ShipTypes.Factory))
+                    if (strategy == Utilities.ConvertShipTypeToPluralName[shipType])
                     {
-                        strategy = $"Type {Utilities.ConvertShipNameToTypeLetter(shipType)}";
+                        strategy = $"Type {Utilities.ConvertShipTypeToShipTypeLetter[shipType]}";
                     }
                 });
+
+                ConfigData.ShootingStrategyTypes shootingStrategy = Utilities.ConvertShootingStrategyNameToType[strategy];
+
 
                 if (HasSquadMaker)
                 {
                     SavedSquad currentSquad = _squadMaker.GetCurrentSquad();
                     currentSquad.SetChanged(true);
-                    currentSquad.ChosenShootingStrategy = strategy;
+                    currentSquad.ChosenShootingStrategy = shootingStrategy;
                 }
                 else if (HasLevel)
                 {
                     Level.State.GetSelectedSquads().ForEach((squad) =>
                     {
                         //Debug.Log($"Setting the squad to shoot with {strategy}!");
-                        squad.SetShootingStrategy(strategy);
+                        squad.SetShootingStrategy(shootingStrategy);
                     });
                 }
                 SetDropdownValue();

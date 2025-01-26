@@ -127,11 +127,11 @@ namespace Assets.Scripts.Levels.Commands
                     return !striker.IsBombReady && striker.Carrier == null;
                 }))
                 {
-                    Squad.BannedStrats.Add("Aggressive");
-                    Squad.BannedStrats.Add("Circle");
-                    Squad.BannedStrats.Add("Right Swipe");
-                    Squad.BannedStrats.Add("Left Swipe");
-                    Squad.BannedStrats.Add("In and Out");
+                    Squad.BannedStrats.Add(ConfigData.CommandTypes.Aggressive);
+                    Squad.BannedStrats.Add(ConfigData.CommandTypes.Circle);
+                    Squad.BannedStrats.Add(ConfigData.CommandTypes.RightSwipe);
+                    Squad.BannedStrats.Add(ConfigData.CommandTypes.LeftSwipe);
+                    Squad.BannedStrats.Add(ConfigData.CommandTypes.InAndOut);
 
                     //Debug.Log("Strikers are defenseless, cancelling bombing run");
                     SetFinalize("Strikers are defenseless, cancelling bombing run");
@@ -149,7 +149,7 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (ship.HasTargetEnemyShipToFollow) // if the ship has target ships and they're not all dead
             {
-                if (ship.ShipType == "Striker")
+                if (ship.ShipType == ConfigData.ShipTypes.Striker)
                 {
                     Striker striker = (Striker)ship;
                     return striker.IsBombReady; // if it's a striker and its bombs are ready 

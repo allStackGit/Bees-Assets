@@ -31,7 +31,7 @@ namespace Assets.Scripts.Levels.Commands
             {
                 if (EnemySquad != null && !EnemySquad.IsDead)
                 {
-                    Squad.Status = $"Targeting enemy squad {EnemySquad.Name} #{EnemySquad.Id} with {Strategy.Name}";
+                    Squad.Status = $"Targeting enemy squad {EnemySquad.Name} #{EnemySquad.Id} with {Strategy.CommandType}";
 
                     if (!_gotToEnemy && !Squad.AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad)) // if we haven't reached the enemy yet
                     {
@@ -45,11 +45,11 @@ namespace Assets.Scripts.Levels.Commands
                         _gotToEnemy = true;
                         //SetFinalize("Reached the enemy");
                         //return;
-                        Squad.Status = $"Using {Strategy.Name} against enemy squad {EnemySquad.Name} #{EnemySquad.Id}";
+                        Squad.Status = $"Using {Strategy.CommandType} against enemy squad {EnemySquad.Name} #{EnemySquad.Id}";
                         Vector2 enemyPosition = EnemySquad.GetPosition();
                         float angle = Squad.AngleToPoint(enemyPosition);
 
-                        if (Strategy.Name == "Right Swipe")
+                        if (Strategy.CommandType == ConfigData.CommandTypes.RightSwipe)
                         {
                             angle += .25f * Mathf.PI;
 

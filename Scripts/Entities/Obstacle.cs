@@ -49,7 +49,7 @@ namespace Assets.Scripts.Entities
         public virtual void ShipCollision(Ship ship)
         {
             //Debug.Log($"{Name} was hit by {ship.Name}");
-            if (ship.ShipType == "Barge")
+            if (ship.ShipType == ConfigData.ShipTypes.Barge)
             {
                 Barge barge = ((Barge)ship);
                 if (barge.IsCharging)

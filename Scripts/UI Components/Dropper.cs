@@ -278,7 +278,7 @@ namespace Assets.Scripts.UIComponents
                 //Vector2 screenPoint = Camera.WorldToScreenPoint(ConfigData.ShipOffset);
                 //Vector2 change = new Vector2(Mathf.Abs(BaseWorldPoint.x - screenPoint.x), Mathf.Abs(BaseWorldPoint.y - screenPoint.y));
 
-                Vector2 change = Utilities.WorldUnitsToScreenPixels(ConfigData.GetShipOffset(dragIcon.GetFleetShip().Type), _scene.Camera) * 1.05f;
+                Vector2 change = Utilities.WorldUnitsToScreenPixels(ConfigData.ShipOffset, _scene.Camera) * 1.05f;
 
                 //Debug.Log($"Ship offset world units for auto placing: {ConfigData.ShipOffset}, screen pixels {change}");
 
@@ -528,7 +528,7 @@ namespace Assets.Scripts.UIComponents
                     //Vector2 tooClose = new Vector2(Mathf.Abs(_scene.BaseWorldPoint.x - screenPoint.x)-.1f, Mathf.Abs(_scene.BaseWorldPoint.y - screenPoint.y)-.1f);
 
                     //Vector2 screenPixels = Utilities.WorldUnitsToScreenPixels(ConfigData.GetShipOffsetInWorldUnits(_scene.Camera), _scene.Camera) * _scene.ScreenScaleFactor;
-                    Vector2 tooClose = Utilities.WorldUnitsToScreenPixels(ConfigData.GetShipOffset(), _scene.Camera);
+                    Vector2 tooClose = Utilities.WorldUnitsToScreenPixels(ConfigData.ShipOffset, _scene.Camera);
 
                     //Debug.Log($"Ship offset world units: {ConfigData.ShipOffset}, screen pixels {screenPixels}, tooClose {tooClose}");
                     //Debug.Log($"Offset Vector: {ConfigData.ShipOffset}, Offset change: {tooClose}, Offset VectorToScreen: {screenPoint}, Base World Point:{_scene.BaseWorldPoint}");
@@ -645,13 +645,13 @@ namespace Assets.Scripts.UIComponents
         }
         private bool TooCloseToX(Vector2 position, SquadShip ship, float tooClose)
         {
-            float placedShipTooClose = Utilities.WorldUnitsToScreenPixels(ConfigData.GetShipOffset(ship.ShipType), _scene.Camera).x;
+            float placedShipTooClose = Utilities.WorldUnitsToScreenPixels(ConfigData.ShipOffset, _scene.Camera).x;
             float absolutePosition = Mathf.Abs(ship.GetOffsetInScreenPixels(_scene.Camera).x - position.x);
             return absolutePosition < tooClose || absolutePosition < placedShipTooClose;
         }
         private bool TooCloseToY(Vector2 position, SquadShip ship, float tooClose)
         {
-            float placedShipTooClose = Utilities.WorldUnitsToScreenPixels(ConfigData.GetShipOffset(ship.ShipType), _scene.Camera).y;
+            float placedShipTooClose = Utilities.WorldUnitsToScreenPixels(ConfigData.ShipOffset, _scene.Camera).y;
             float absolutePosition = Mathf.Abs(ship.GetOffsetInScreenPixels(_scene.Camera).y - position.y);
             return absolutePosition < tooClose || absolutePosition < placedShipTooClose;
         }

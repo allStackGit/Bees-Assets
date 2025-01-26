@@ -38,7 +38,7 @@ namespace Assets.Scripts.Levels.Commands
                 {
                     // check if it's a guarding squad and guarding the same squad as this squad
                     if (!guardingSquad.Equals(Squad) && guardingSquad.HasCommand && guardingSquad.Command.HasStrategy &&
-                    guardingSquad.Command.Strategy.Name == "Guard" && ((Guard)guardingSquad.Command)._guardedSquad.Equals(_guardedSquad))
+                    guardingSquad.Command.Strategy.CommandType == ConfigData.CommandTypes.Guard && ((Guard)guardingSquad.Command)._guardedSquad.Equals(_guardedSquad))
                     {
                         ((Guard)guardingSquad.Command).OtherGuardSquads.Add(Squad);
                         OtherGuardSquads.Add(guardingSquad);
@@ -56,7 +56,7 @@ namespace Assets.Scripts.Levels.Commands
             }
             else
             {
-                Squad.BannedStrats.Add(Strategy.Name);
+                Squad.BannedStrats.Add(Strategy.CommandType);
                 SetFinalize("There are no squads to guard");
             }
 
@@ -111,7 +111,7 @@ namespace Assets.Scripts.Levels.Commands
         private Squad GetClosestAvailableSquadToGuard()
         {
             return Level.State.GetSquadsBySide(Side)
-                .Where((s) => !s.Equals(Squad) && (!s.HasCommand || !s.Command.HasStrategy || s.Command.Strategy.Name != "Guard"))
+                .Where((s) => !s.Equals(Squad) && (!s.HasCommand || !s.Command.HasStrategy || s.Command.Strategy.CommandType != ConfigData.CommandTypes.Guard))
                 .OrderBy(s => s.DistanceToPoint(Squad.GetPosition())).FirstOrDefault();
         }
         public List<Squad> GetGuardingSquads()
@@ -120,7 +120,7 @@ namespace Assets.Scripts.Levels.Commands
             {
                 List<Squad> otherGuardSquads = OtherGuardSquads.Where(
                 (squad) => squad.HasCommand && squad.Command.HasStrategy && !squad.Equals(Squad)
-                && squad.Command.Strategy.Name == "Guard").ToList();
+                && squad.Command.Strategy.CommandType == ConfigData.CommandTypes.Guard).ToList();
 
                 if (otherGuardSquads.Count > 0)
                 {

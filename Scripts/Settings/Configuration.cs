@@ -35,7 +35,6 @@ namespace Assets.Scripts.Settings
         public int CarrierCarryDroneMax;
         public int CarrierCarryStrikerMax;
         public int CarrierSquadCount;
-        public HashSet<string> ShootingStrategies;
         public Dictionary<string, string> Tooltips;
 
         public string Yes;
@@ -188,7 +187,6 @@ namespace Assets.Scripts.Settings
             }
 
             CensoredWords = new HashSet<string>(Utilities.JArrayToList<string>(so.CensoredWords));
-            ShootingStrategies = new HashSet<string>(Utilities.JArrayToList<string>(so.ShootingStrategies));
             VisibleBeeShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToList<ConfigData.ShipTypes>(so.VisibleBeeShipTypes));
             VisibleHumanShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToList<ConfigData.ShipTypes>(so.VisibleHumanShipTypes));
             InvisibleBeeShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToList<ConfigData.ShipTypes>(so.InvisibleBeeShipTypes));

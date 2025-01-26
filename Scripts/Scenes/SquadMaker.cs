@@ -490,75 +490,75 @@ namespace Assets.Scripts.Scenes
                 GameObject shipLabel = null;
                 switch (type)
                 {
-                    case "Barge":
+                    case ConfigData.ShipTypes.Barge:
                         shipLabel = BargeFleetLabel;
                         break;
-                    case "Beacon":
+                    case ConfigData.ShipTypes.Beacon:
                         shipLabel = BeaconFleetLabel;
                         break;
-                    case "Carrier":
+                    case ConfigData.ShipTypes.Carrier:
                         shipLabel = CarrierFleetLabel;
                         break;
-                    case "Cruiser":
+                    case ConfigData.ShipTypes.Cruiser:
                         shipLabel = CruiserFleetLabel;
                         break;
-                    case "Dreadnought":
+                    case ConfigData.ShipTypes.Dreadnought:
                         shipLabel = DreadnoughtFleetLabel;
                         break;
-                    case "Drone":
+                    case ConfigData.ShipTypes.Drone:
                         shipLabel = DroneFleetLabel;
                         break;
-                    case "Factory":
+                    case ConfigData.ShipTypes.Factory:
                         shipLabel = FactoryFleetLabel;
                         break;
-                    case "Fire Barge":
+                    case ConfigData.ShipTypes.FireBarge:
                         shipLabel = FireBargeFleetLabel;
                         break;
-                    case "Flagship":
+                    case ConfigData.ShipTypes.Flagship:
                         shipLabel = FlagshipFleetLabel;
                         break;
-                    case "Frigate":
+                    case ConfigData.ShipTypes.Frigate:
                         shipLabel = FrigateFleetLabel;
                         break;
-                    case "Gunship":
+                    case ConfigData.ShipTypes.Gunship:
                         shipLabel = GunshipFleetLabel;
                         break;
-                    case "Scout":
+                    case ConfigData.ShipTypes.Scout:
                         shipLabel = ScoutFleetLabel;
                         break;
-                    case "Striker":
+                    case ConfigData.ShipTypes.Striker:
                         shipLabel = StrikerFleetLabel;
                         break;
-                    case "Warp Gate":
+                    case ConfigData.ShipTypes.WarpGate:
                         shipLabel = WarpGateFleetLabel;
                         break;
 
 
-                    case "Beehive":
+                    case ConfigData.ShipTypes.Beehive:
                         shipLabel = BeehiveFleetLabel;
                         break;
-                    case "Bumblebee":
+                    case ConfigData.ShipTypes.Bumblebee:
                         shipLabel = BumblebeeFleetLabel;
                         break;
-                    case "Carpenter Bee":
+                    case ConfigData.ShipTypes.CarpenterBee:
                         shipLabel = CarpenterBeeFleetLabel;
                         break;
-                    case "Honeybee":
+                    case ConfigData.ShipTypes.Honeybee:
                         shipLabel = HoneybeeFleetLabel;
                         break;
-                    case "Hornet":
+                    case ConfigData.ShipTypes.Hornet:
                         shipLabel = HornetFleetLabel;
                         break;
-                    case "Leafcutter":
+                    case ConfigData.ShipTypes.Leafcutter:
                         shipLabel = LeafcutterFleetLabel;
                         break;
-                    case "Queen":
+                    case ConfigData.ShipTypes.Queen:
                         shipLabel = QueenFleetLabel;
                         break;
-                    case "Wasp":
+                    case ConfigData.ShipTypes.Wasp:
                         shipLabel = WaspFleetLabel;
                         break;
-                    case "Yellow Jacket":
+                    case ConfigData.ShipTypes.YellowJacket:
                         shipLabel = YellowJacketFleetLabel;
                         break;
                 }
@@ -741,56 +741,56 @@ namespace Assets.Scripts.Scenes
 
 
         // UI Methods
-        private GameObject GetShipIconContainer(string shipType)
+        private GameObject GetShipIconContainer(ConfigData.ShipTypes shipType)
         {
             switch (shipType)
             {
-                case "Barge":
+                case ConfigData.ShipTypes.Barge:
                     return BargeShipIcon;
-                case "Beacon":
+                case ConfigData.ShipTypes.Beacon:
                     return BeaconShipIcon;
-                case "Carrier":
+                case ConfigData.ShipTypes.Carrier:
                     return CarrierShipIcon;
-                case "Cruiser":
+                case ConfigData.ShipTypes.Cruiser:
                     return CruiserShipIcon;
-                case "Dreadnought":
+                case ConfigData.ShipTypes.Dreadnought:
                     return DreadnoughtShipIcon;
-                case "Factory":
+                case ConfigData.ShipTypes.Factory:
                     return FactoryShipIcon;
-                case "Fire Barge":
+                case ConfigData.ShipTypes.FireBarge:
                     return FireBargeShipIcon;
-                case "Flagship":
+                case ConfigData.ShipTypes.Flagship:
                     return FlagshipShipIcon;
-                case "Frigate":
+                case ConfigData.ShipTypes.Frigate:
                     return FrigateShipIcon;
-                case "Gunship":
+                case ConfigData.ShipTypes.Gunship:
                     return GunshipShipIcon;
-                case "Scout":
+                case ConfigData.ShipTypes.Scout:
                     return ScoutShipIcon;
-                case "Warp Gate":
+                case ConfigData.ShipTypes.WarpGate:
                     return WarpGateShipIcon;
-                case "Drone":
+                case ConfigData.ShipTypes.Drone:
                     return DroneShipIcon;
-                case "Striker":
+                case ConfigData.ShipTypes.Striker:
                     return StrikerShipIcon;
 
-                case "Beehive":
+                case ConfigData.ShipTypes.Beehive:
                     return BeehiveShipIcon;
-                case "Bumblebee":
+                case ConfigData.ShipTypes.Bumblebee:
                     return BumblebeeShipIcon;
-                case "Carpenter Bee":
+                case ConfigData.ShipTypes.CarpenterBee:
                     return CarpenterBeeShipIcon;
-                case "Honeybee":
+                case ConfigData.ShipTypes.Honeybee:
                     return HoneybeeShipIcon;
-                case "Hornet":
+                case ConfigData.ShipTypes.Hornet:
                     return HornetShipIcon;
-                case "Leafcutter":
+                case ConfigData.ShipTypes.Leafcutter:
                     return LeafcutterShipIcon;
-                case "Queen":
+                case ConfigData.ShipTypes.Queen:
                     return QueenShipIcon;
-                case "Wasp":
+                case ConfigData.ShipTypes.Wasp:
                     return WaspShipIcon;
-                case "Yellow Jacket":
+                case ConfigData.ShipTypes.YellowJacket:
                     return YellowJacketShipIcon;
             }
             return null;
@@ -801,7 +801,7 @@ namespace Assets.Scripts.Scenes
             SavedSquadPrefab.SetActive(true);
             GameObject squadLabel = Instantiate(SavedSquadPrefab);
             squadLabel.name = $"Saved Squad - {savedSquad.Name} #{savedSquad.Id}";
-            string shipType = savedSquad.GetMostValuableShip().GetFleetShip().Type;
+            ConfigData.ShipTypes shipType = savedSquad.GetMostValuableShip().GetFleetShip().Type;
 
 
             GameObject nameLabel = squadLabel.transform.Find("Squad Name").gameObject;
@@ -840,7 +840,7 @@ namespace Assets.Scripts.Scenes
             ChosenSquadPrefab.SetActive(true);
             GameObject squadLabel = Instantiate(ChosenSquadPrefab);
             squadLabel.name = $"Chosen Squad - {chosenSquad.Name} #{chosenSquad.Id}";
-            string shipType = chosenSquad.GetMostValuableShip().GetFleetShip().Type;
+            ConfigData.ShipTypes shipType = chosenSquad.GetMostValuableShip().GetFleetShip().Type;
 
 
             GameObject nameLabel = squadLabel.transform.Find("Squad Name").gameObject;
@@ -880,7 +880,7 @@ namespace Assets.Scripts.Scenes
             Transform squadLabel = iconContainer.transform.parent;
 
             TMP_Text nameLabelText = nameLabel.GetComponent<TMP_Text>();
-            string shipType = savedSquad.GetMostValuableShip().GetFleetShip().Type;
+            ConfigData.ShipTypes shipType = savedSquad.GetMostValuableShip().GetFleetShip().Type;
 
             //Destroy old icon container
             Destroy(iconContainer);
@@ -1084,10 +1084,10 @@ namespace Assets.Scripts.Scenes
 
             if (savedSquad != null)
             {
-                List<string> updatedShipTypes = new List<string>();
+                List<ConfigData.ShipTypes> updatedShipTypes = new List<ConfigData.ShipTypes>();
                 savedSquad.GetSquadShips().ForEach((ship) =>
                 {
-                    string shipType = ship.ShipType;
+                    ConfigData.ShipTypes shipType = ship.ShipType;
                     if (!updatedShipTypes.Contains(shipType))
                     {
                         updatedShipTypes.Add(shipType);

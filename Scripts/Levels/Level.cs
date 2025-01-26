@@ -84,7 +84,7 @@ namespace Assets.Scripts.Levels
         {
             __BeeHivemindShips = State.GetShipsVisibleToHiveMind(ConfigData.Configuration.BeeSide).Select(s => s.ToString()).ToList();
             __HumanHivemindShips = State.GetShipsVisibleToHiveMind(ConfigData.Configuration.HumanSide).Select(s => s.ToString()).ToList();
-            __PastCommands = State.GetPastCommands().Select((c) => $"Command #{c.OutcomeId} - {c.Strategy.Name} for Squad {c.Squad} against [{c.Enemy}] with {c.Tsv} TSV").ToList();
+            __PastCommands = State.GetPastCommands().Select((c) => $"Command #{c.OutcomeId} - {c.Strategy.CommandType} for Squad {c.Squad} against [{c.Enemy}] with {c.Tsv} TSV").ToList();
             __CustomLevels = ConfigData.GetLevelData().GetLevels().Select((level) => level.ToString()).ToList();
             
             if (Pathfinder != null)
@@ -268,7 +268,7 @@ namespace Assets.Scripts.Levels
             List<Ship> ships = State.GetShips();
             while (ships.Count > 0)
             {
-                string shipType = ships[0].ShipType;
+                ConfigData.ShipTypes shipType = ships[0].ShipType;
 
                 if (!Stage.ShipClearances.ContainsKey(shipType))
                 {

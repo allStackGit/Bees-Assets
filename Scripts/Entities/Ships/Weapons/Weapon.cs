@@ -20,7 +20,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public ConfigData.ProjectileTypes ProjectileType;
         public List<Ship> CachedTargetingQueue = new List<Ship>();
         public HashSet<Ship> ShipsWithinRange = new HashSet<Ship>();
-        public string CachedShootingStrategy, Name, Type;
+        public string CachedShootingStrategy, Name;
+        public ConfigData.WeaponTypes Type;
         public bool IsUsingCachedTargetingQueue, HasCachedChanged, HasRangeCircle, HasRangeCollider, HasSoundEffect;
         public AudioSource SoundEffect;
         /// <summary>
@@ -45,7 +46,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         public string __NotShootingReason;
         public List<Ship> __ShipsWithinRange;
-        public virtual void Create(Ship ship, string type, int range, int power, float specialFirePower, float rateOfFire, float projectileValue, GameObject piece,
+        public virtual void Create(Ship ship, ConfigData.WeaponTypes type, int range, int power, float specialFirePower, float rateOfFire, float projectileValue, GameObject piece,
             ConfigData.ProjectileTypes projectileType)
         {
             Ship = ship;

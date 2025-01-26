@@ -41,7 +41,7 @@ namespace Assets.Scripts.Entities
                 if (ship.HasTargetDirection)
                 {
                     //Debug.Log($"{Name} hit the map border while moving in a direction");
-                    if (ship.ShipType == "Barge")
+                    if (ship.ShipType == ConfigData.ShipTypes.Barge)
                     {
                         Barge barge = (Barge)ship;
                         if (barge.IsCharging)
