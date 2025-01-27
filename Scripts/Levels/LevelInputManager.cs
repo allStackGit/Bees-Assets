@@ -320,7 +320,7 @@ namespace Assets.Scripts.Levels
                             turret.IsFiringManually = true;
                             TurretsFiringManually.Add(turret);
                         });
-                        if (ship.ShipType == "Flagship")
+                        if (ship.ShipType == ConfigData.ShipTypes.Flagship)
                         {
                             ship.StopMoving("Flagship is manually firing");
                         }

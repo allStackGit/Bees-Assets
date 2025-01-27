@@ -51,14 +51,14 @@ namespace Assets.Scripts.Levels.Commands
             foreach (Ship ship in ships)
             {
                 //Debug.Log("Looping through all ships in bombing squad");
-                if (ship.ShipType == "Striker")
+                if (ship.ShipType == ConfigData.ShipTypes.Striker)
                 {
                     Striker striker = (Striker)ship;
                     striker.HasCompletedRun = false;
                     striker.HasDroppedBomb = false;
                     striker.HasReturnedToCarrier = false;
                 }
-                else if (ship.ShipType == "Yellow Jacket")
+                else if (ship.ShipType == ConfigData.ShipTypes.YellowJacket)
                 {
                     YellowJacket yellowJacket = (YellowJacket)ship;
                     yellowJacket.HasCompletedRun = false;
@@ -177,7 +177,7 @@ namespace Assets.Scripts.Levels.Commands
         {
             return Squad.GetShips().All((ship) =>
             {
-                return ship.ProximityCollider.NearbyEnemyShips.Contains(ship.TargetEnemyShipToFollow) || (ship.ShipType == "Striker" && ((Striker)ship).HasCompletedRun);
+                return ship.ProximityCollider.NearbyEnemyShips.Contains(ship.TargetEnemyShipToFollow) || (ship.ShipType == ConfigData.ShipTypes.Striker && ((Striker)ship).HasCompletedRun);
             }) && Squad.GetShips().Any((ship) => ship.ProximityCollider.NearbyEnemyShips.Contains(ship.TargetEnemyShipToFollow));
         }
         /// <summary>
@@ -189,17 +189,17 @@ namespace Assets.Scripts.Levels.Commands
         {
             return ships.All((ship) => // if all of the ships have completed their run and are either yellow jackets or are strikers who have reloaded or have no carrier
             {
-                if (ship.ShipType == "Striker")
+                if (ship.ShipType == ConfigData.ShipTypes.Striker)
                 {
                     Striker striker = (Striker)ship;
                     return striker.HasCompletedRun && (striker.HasReturnedToCarrier || !striker.HasCarrier);
                 }
-                else if (ship.ShipType == "Yellow Jacket")
+                else if (ship.ShipType == ConfigData.ShipTypes.YellowJacket)
                 {
                     YellowJacket yellowJacket = (YellowJacket)ship;
                     return yellowJacket.HasCompletedRun;
                 }
-                else if (ship.ShipType == "Fire Barge")
+                else if (ship.ShipType == ConfigData.ShipTypes.FireBarge)
                 {
                     return false;
                 }
@@ -210,12 +210,12 @@ namespace Assets.Scripts.Levels.Commands
         {
             return ships.All((ship) => // if all of the ships have completed their run and are either yellow jackets or are strikers who have reloaded or have no carrier
             {
-                if (ship.ShipType == "Striker")
+                if (ship.ShipType == ConfigData.ShipTypes.Striker)
                 {
                     Striker striker = (Striker)ship;
                     return striker.HasCompletedRun;
                 }
-                else if (ship.ShipType == "Yellow Jacket")
+                else if (ship.ShipType == ConfigData.ShipTypes.YellowJacket)
                 {
                     YellowJacket yellowJacket = (YellowJacket)ship;
                     return yellowJacket.HasCompletedRun;
@@ -242,7 +242,7 @@ namespace Assets.Scripts.Levels.Commands
                         {
 
                             SendShipToTarget(ship);
-                            if (Squad.IsHiveMindControlled && ship.ShipType == "Fire Barge" && ship.ProximityCollider.NearbyEnemyShips.Contains(ship.TargetEnemyShipToFollow))
+                            if (Squad.IsHiveMindControlled && ship.ShipType == ConfigData.ShipTypes.FireBarge && ship.ProximityCollider.NearbyEnemyShips.Contains(ship.TargetEnemyShipToFollow))
                             {
                                 // if you're a Fire Barge and within detonation distance of your target, detonate
                                 Debug.Log($"{ship.Name} is hivemind controlled and on a bombing run and near its target enemy and so it's going to detonate. ");
@@ -253,7 +253,7 @@ namespace Assets.Scripts.Levels.Commands
                         {
 
                             //Debug.Log($"{ship.Name} should not pursure its target ({ship.TargetEnemyShipToFollow}) and so it's going back to its carrier");
-                            if (ship.ShipType == "Striker")
+                            if (ship.ShipType == ConfigData.ShipTypes.Striker)
                             {
                                 Striker striker = (Striker)ship;
                                 if (EnemySquad.IsDead)
@@ -265,7 +265,7 @@ namespace Assets.Scripts.Levels.Commands
                                     GetTarget(ship);
                                 }
                             }
-                            else if (ship.ShipType == "Yellow Jacket")
+                            else if (ship.ShipType == ConfigData.ShipTypes.YellowJacket)
                             {
                                 YellowJacket yellowJacket = (YellowJacket)ship;
                                 if (EnemySquad.IsDead)
@@ -278,7 +278,7 @@ namespace Assets.Scripts.Levels.Commands
                                 }
                             }
                         }
-                        if (ship.ShipType == "Striker")
+                        if (ship.ShipType == ConfigData.ShipTypes.Striker)
                         {
                             Striker striker = (Striker)ship;
                             striker.ReturnToCarrierIfNecessary();

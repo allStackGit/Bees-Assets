@@ -51,7 +51,7 @@ namespace Assets.Scripts.UIComponents
 
 
         // Drag icon flow
-        public void PullNewDragIcon(string shipType)
+        public void PullNewDragIcon(ConfigData.ShipTypes shipType)
         {
             FleetShip fleetShip = FleetList.Where((s) => s.Type == shipType).FirstOrDefault();
 
@@ -128,7 +128,7 @@ namespace Assets.Scripts.UIComponents
             IsValidDropLocation = CheckValidDropLocation(position, false, ship, _currentDragIcon.GetFleetShip().Type);
             return IsValidDropLocation;
         }
-        public void AutoPlaceShip(string shipType)
+        public void AutoPlaceShip(ConfigData.ShipTypes shipType)
         {
             if (!_isDragging)
             {
@@ -219,7 +219,7 @@ namespace Assets.Scripts.UIComponents
 
                         //Debug.Log($"Ship transform position {_currentDragIcon.transform.position}, ship position in box {positionWithinBox}");
                         _scene.SetCurentSquad(new SavedSquad(-1, _scene.Side, _scene.GetSquadName(), worldPointPosition, 
-                            false, false, ConfigData.StartingSettings.DefaultShootingStrategy, squadColor));
+                            false, false, ConfigData.DefaultShootingStrategy, squadColor));
 
                         CurrentSquad.SetChanged(true);
                         CurrentSquad.AddShipToSquad(new SquadShip(fleetShip.Id, fleetShip.Type, worldPointPosition, CurrentSquad));

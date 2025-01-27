@@ -206,7 +206,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             //Debug.Log("Sending turret projectile");
             float angle = AngleToPoint(TargetPoint);
 
-            Level.AddProjectile(ProjectilePrefab, this, GetPosition(), angle);
+            Level.AddProjectile(ProjectileType, this, GetPosition(), angle);
             Ship.FleetShip.ShotsFired++;
 
         }

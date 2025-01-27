@@ -27,7 +27,7 @@ namespace Assets.Scripts.Data
                 if (shouldFileExist)
                 {
                     // throw error back to user if it does not, not because we can't make it but because it's missing
-                    Debugger.Exception(new Exception("The user save data file is missing"));
+                    Debug.LogError("The user save data file is missing");
                 }
                 Debug.Log($"DataFile {filename} doesn't exist");
             }

@@ -47,7 +47,7 @@ namespace Assets.Scripts.UI_Components
             }
             else
             {
-                Debugger.Exception($"{buttonLabels.Count} button labels given and {buttonActions.Count} button actions were given while making a new dialogue box");
+                Debug.LogError($"{buttonLabels.Count} button labels given and {buttonActions.Count} button actions were given while making a new dialogue box");
             }
             GameObject.Destroy(_buttonPrefab);
             Hide();

@@ -277,6 +277,52 @@ namespace Assets.Scripts
 
         };
 
+        public static Dictionary<string, ConfigData.MatchupStrategyTypes> ConvertMatchupStrategyNameToType = new Dictionary<string, ConfigData.MatchupStrategyTypes>
+        {
+            { "Random", ConfigData.MatchupStrategyTypes.Random },
+            { "Revenge", ConfigData.MatchupStrategyTypes.Revenge },
+            { "Most Dangerous", ConfigData.MatchupStrategyTypes.MostDangerous },
+            { "Least Health", ConfigData.MatchupStrategyTypes.LeastHealth },
+            { "Most Health", ConfigData.MatchupStrategyTypes.MostHealth },
+            { "Most Powerful", ConfigData.MatchupStrategyTypes.MostPowerful },
+            { "Least Powerful", ConfigData.MatchupStrategyTypes.LeastPowerful },
+            { "Closest", ConfigData.MatchupStrategyTypes.Closest },
+            { "Furthest", ConfigData.MatchupStrategyTypes.Furthest },
+            { "Most Range", ConfigData.MatchupStrategyTypes.MostRange },
+            { "Least Range", ConfigData.MatchupStrategyTypes.LeastRange },
+            { "Fastest", ConfigData.MatchupStrategyTypes.Fastest },
+            { "Slowest", ConfigData.MatchupStrategyTypes.Slowest },
+            { "In Combat", ConfigData.MatchupStrategyTypes.InCombat },
+            { "Gang up", ConfigData.MatchupStrategyTypes.GangUp },
+            { "Most Valuable", ConfigData.MatchupStrategyTypes.MostValuable },
+            { "Least Valuable", ConfigData.MatchupStrategyTypes.LeastValuable },
+            { "Type A", ConfigData.MatchupStrategyTypes.TypeA },
+            { "Type B", ConfigData.MatchupStrategyTypes.TypeB },
+            { "Type C", ConfigData.MatchupStrategyTypes.TypeC },
+            { "Type D", ConfigData.MatchupStrategyTypes.TypeD },
+            { "Type E", ConfigData.MatchupStrategyTypes.TypeE },
+            { "Type F", ConfigData.MatchupStrategyTypes.TypeF },
+            { "Type G", ConfigData.MatchupStrategyTypes.TypeG },
+            { "Type H", ConfigData.MatchupStrategyTypes.TypeH },
+            { "Type I", ConfigData.MatchupStrategyTypes.TypeI },
+            { "Type J", ConfigData.MatchupStrategyTypes.TypeJ },
+            { "Type K", ConfigData.MatchupStrategyTypes.TypeK },
+            { "Type L", ConfigData.MatchupStrategyTypes.TypeL },
+            { "Type M", ConfigData.MatchupStrategyTypes.TypeM },
+            { "Type N", ConfigData.MatchupStrategyTypes.TypeN },
+            { "Type O", ConfigData.MatchupStrategyTypes.TypeO },
+            { "Type P", ConfigData.MatchupStrategyTypes.TypeP },
+            { "Type Q", ConfigData.MatchupStrategyTypes.TypeQ },
+            { "Type R", ConfigData.MatchupStrategyTypes.TypeR },
+            { "Type S", ConfigData.MatchupStrategyTypes.TypeS },
+            { "Type T", ConfigData.MatchupStrategyTypes.TypeT },
+            { "Type U", ConfigData.MatchupStrategyTypes.TypeU },
+            { "Type V", ConfigData.MatchupStrategyTypes.TypeV },
+            { "Type W", ConfigData.MatchupStrategyTypes.TypeW },
+
+
+        };
+
         public static Dictionary<ConfigData.ShootingStrategyTypes, ConfigData.ShipTypes> ConvertShootingStrategyToShipType = new Dictionary<ConfigData.ShootingStrategyTypes, ConfigData.ShipTypes>
         {
             { ConfigData.ShootingStrategyTypes.TypeA, ConfigData.ShipTypes.Queen },
@@ -389,6 +435,17 @@ namespace Assets.Scripts
             { ConfigData.ShootingStrategyTypes.TypeU, "Type U" },
             { ConfigData.ShootingStrategyTypes.TypeV, "Type V" },
             { ConfigData.ShootingStrategyTypes.TypeW, "Type W" }
+        };
+
+        public static Dictionary<string, ConfigData.SquadActions> ConvertSquadActionNameToType = new Dictionary<string, ConfigData.SquadActions>
+        {
+            { "IsMatchingSpeed", ConfigData.SquadActions.IsMatchingSpeed },
+            { "CeaseFire", ConfigData.SquadActions.CeaseFire },
+            { "Attack on Sight", ConfigData.SquadActions.AttackOnSight },
+            { "Patrol", ConfigData.SquadActions.Patrol },
+            { "Guard", ConfigData.SquadActions.Guard },
+            { "Chase", ConfigData.SquadActions.Chase },
+            { "Hold", ConfigData.SquadActions.Hold },
         };
 
 
@@ -612,7 +669,7 @@ namespace Assets.Scripts
                 SquadStatBlock Stats = new SquadStatBlock((string)squad.Stats.Commander, (int)squad.Stats.BattlesFought, (int)squad.Stats.BattlesWon,
                     (int)squad.Stats.ShipsLost, (int)squad.Stats.DamageDone, (int)squad.Stats.DamageReceived, (int)squad.Stats.Kills);
                 SavedSquad savedSquad = new SavedSquad((int)squad.Id, (int)squad.Side, (string)squad.Name, new Vector2((float)squad.StartingPosition.x, (float)squad.StartingPosition.y),
-                    (bool)squad.CeaseFire, (bool)squad.IsMatchingSpeed, (string)squad.ChosenShootingStrategy, color, Stats);
+                    (bool)squad.CeaseFire, (bool)squad.IsMatchingSpeed, ConvertShootingStrategyNameToType[(string)squad.ChosenShootingStrategy], color, Stats);
                 //Debug.Log($"Squad ships, {savedSquad.Name}, {squad.Ships}");
                 //Vector2 startingPosition = new Vector2(savedSquad.StartingPosition.x, savedSquad.StartingPosition.y);
                 List<dynamic> ships = squad.Ships.ToObject<List<dynamic>>();
@@ -929,7 +986,7 @@ namespace Assets.Scripts
                 }
                 else
                 {
-                    Debugger.Exception($"Tried to set the color of {gameObject.name} which doesn't have a UI image.");
+                    Debug.LogError($"Tried to set the color of {gameObject.name} which doesn't have a UI image.");
                 }
             }
             

@@ -14,7 +14,6 @@ using UnityEngine.Pool;
 using Assets.Scripts.UIComponents;
 using System.Security.Cryptography;
 using Assets.Scripts.Entities.Projectiles;
-using UnityEditor.Tilemaps;
 
 /// <summary>
 /// Container scene for 1 or more Levels. Handles scene level variables and communication with the server

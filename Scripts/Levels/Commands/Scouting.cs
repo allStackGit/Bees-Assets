@@ -29,7 +29,7 @@ namespace Assets.Scripts.Levels.Commands
             {
                 Squad.GetShips().ForEach((ship) =>
                 {
-                    if (ship.ShipType == "Scout")
+                    if (ship.ShipType == ConfigData.ShipTypes.Scout)
                     {
                         Scouts.Add((Scout)ship);
                     }

@@ -238,7 +238,7 @@ namespace Assets.Scripts.Scenes
             }
             else
             {
-                Debugger.Exception($"Side ({Side}) does not match Bee Side ({ConfigData.Configuration.BeeSide}) or Human Side ({ConfigData.Configuration.HumanSide})");
+                Debug.LogError($"Side ({Side}) does not match Bee Side ({ConfigData.Configuration.BeeSide}) or Human Side ({ConfigData.Configuration.HumanSide})");
             }
             if (Side != ConfigData.Configuration.UserSide)
             {
@@ -1329,7 +1329,7 @@ namespace Assets.Scripts.Scenes
         {
             return _dragIconTypes.GetValueOrDefault(type);
         }
-        public void AutoPlaceShip(string shipType)
+        public void AutoPlaceShip(ConfigData.ShipTypes shipType)
         {
             _dropper.AutoPlaceShip(shipType);
         }
@@ -1363,7 +1363,7 @@ namespace Assets.Scripts.Scenes
                 }
             }
         }
-        public void FleetDragStart(string shipType)
+        public void FleetDragStart(ConfigData.ShipTypes shipType)
         {
 
             Dropper dropper = GetDropper();
@@ -1405,7 +1405,7 @@ namespace Assets.Scripts.Scenes
         {
             if (!GetDropper().IsDragging)
             {
-                ConfigData.ShipTypes shipType = (ConfigData.ShipTypes)Enum.Parse(typeof(ConfigData.ShipTypes), ship);
+                ConfigData.ShipTypes shipType = Utilities.ConvertShipNameToShipType[ship];
                 TMP_Text titleText = ShipInfoBoxTitle.GetComponent<TMP_Text>();
                 TMP_Text detaislText = ShipInfoBoxDetails.GetComponent<TMP_Text>();
                 ShipStatBlock shipInfo = ConfigData.GetShipInfo(shipType); 
@@ -1420,7 +1420,7 @@ namespace Assets.Scripts.Scenes
                     $"Capacity: {(ship != "Drone" && ship != "Striker" && ship != "Beacon" ? ConfigData.CurrentShips.GetShipsOfType(shipType).First().GetMaxCapacity().ToString("N0") : "N/A")}";
 
                 UnityEngine.UI.Image image = ShipInfoBoxIcon.GetComponent<UnityEngine.UI.Image>();
-                image.sprite = _spriteTypes.GetValueOrDefault(ship);
+                image.sprite = _spriteTypes.GetValueOrDefault(shipType);
                 image.SetNativeSize();
                 image.transform.localScale = new Vector3(.1f, .1f, 0);
 
@@ -1517,7 +1517,7 @@ namespace Assets.Scripts.Scenes
                         $"Damage Done: {_currentShipInfo.DamageDone.ToString("N0")}     (#{ConfigData.CurrentShips.GetShipRanking(_currentShipInfo, "DamageDone")})\n" +
                         $"Damage Received: {_currentShipInfo.DamageReceived.ToString("N0")}     (#{ConfigData.CurrentShips.GetShipRanking(_currentShipInfo, "DamageReceived")})\n" +
                         $"Kills: {_currentShipInfo.Kills.ToString("N0")}    (#{ConfigData.CurrentShips.GetShipRanking(_currentShipInfo, "Kills")})\n" +
-                        $"{(_currentShipInfo.Type == "Carpenter Bee" || _currentShipInfo.Type == "Factory" ? $"Minerals Mined: {_currentShipInfo.MineralsMined.ToString("N0")}  (#{ConfigData.CurrentShips.GetShipRanking(_currentShipInfo, "Minerals Mined")})" : "\n")}";
+                        $"{(_currentShipInfo.Type == ConfigData.ShipTypes.CarpenterBee || _currentShipInfo.Type == ConfigData.ShipTypes.Factory ? $"Minerals Mined: {_currentShipInfo.MineralsMined.ToString("N0")}  (#{ConfigData.CurrentShips.GetShipRanking(_currentShipInfo, "Minerals Mined")})" : "\n")}";
 
 
                     ShipStatsBox.SetActive(true);

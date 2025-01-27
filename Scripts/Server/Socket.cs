@@ -215,7 +215,7 @@ namespace Assets.Scripts.Server
                         HandleSettingsResponse(message);
                         return;
                     default:
-                        Debugger.Exception($"No response type from {response}");
+                        Debug.LogError($"No response type from {response}");
                         return;
                 }
             }
@@ -296,7 +296,7 @@ namespace Assets.Scripts.Server
                     Send(((SettingsRequest)serverRequest).Request);
                     return;
                 default:
-                    Debugger.Exception($"No request type from {serverRequest}");
+                    Debug.LogError($"No request type from {serverRequest}");
                     return;
             }
             
@@ -500,7 +500,8 @@ namespace Assets.Scripts.Server
                 {
                     //squad.Command = squad.gameObject.AddComponent<Command>();
                     //squad.Command.Setup(squad, true);
-                    squad.MatchupStrategy = new MatchupStrategy(null, squad, matchupResponse.Name, matchupResponse.MatchupString, matchupResponse.MatchupId, matchupResponse.OutcomeId);
+
+                    squad.MatchupStrategy = new MatchupStrategy(null, squad, Utilities.ConvertMatchupStrategyNameToType[matchupResponse.Name], matchupResponse.MatchupString, matchupResponse.MatchupId, matchupResponse.OutcomeId);
 
                     //squad.Command.MatchupStrategy = squad.MatchupStrategy;
                     Squad targetSquad = squad.MatchupStrategy.SortSquads();

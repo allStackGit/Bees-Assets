@@ -192,15 +192,15 @@ namespace Assets.Scripts.Levels
 
                 Vector2 adjustment = ship.OffsetFromCenter;
 
-                if (ship.ShipType == "Queen")
+                if (ship.ShipType == ConfigData.ShipTypes.Queen)
                 {
                     adjustment *= new Vector2(2.75f, 2); // Need larger spacing between the Queen(s) because it's so large
                 }
-                else if (ship.ShipType == "Bumblebee")
+                else if (ship.ShipType == ConfigData.ShipTypes.Bumblebee)
                 {
                     adjustment *= 1.2f;
                 }
-                else if (ship.ShipType == "Barge" || ship.ShipType == "Fire Barge" || ship.ShipType == "Warp Gate")
+                else if (ship.ShipType == ConfigData.ShipTypes.Barge || ship.ShipType == ConfigData.ShipTypes.FireBarge || ship.ShipType == ConfigData.ShipTypes.WarpGate)
                 {
                     adjustment *= new Vector2(1.4f, 1);
                 }
@@ -698,6 +698,10 @@ namespace Assets.Scripts.Levels
             {
                 Command.ShootingStrategy.ShootingStrategyType = strategy;
             }
+            GetShips().ForEach((ship) =>
+            {
+                ship.ShootingStrategy = _chosenShootingStrategy;
+            });
         }
         public ConfigData.ShootingStrategyTypes GetShootingStrategy()
         {

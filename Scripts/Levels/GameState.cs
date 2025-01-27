@@ -233,10 +233,6 @@ namespace Assets.Scripts.Levels
         {
             return Ships.FirstOrDefault(ship => ship.Id == id);
         }
-        public bool IsShipExtinct(string shipType)
-        {
-            return !GetShips().Any((s) => s.ShipType == shipType);
-        }
 
         public List<Squad> GetSquadsVisibleToHiveMind(int side = 0)
         {

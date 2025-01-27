@@ -170,7 +170,7 @@ namespace Assets.Scripts.UIComponents
                 List<Squad> selectedSquads = Level.State.GetSelectedSquads();
                 if (selectedSquads.Count > 0)
                 {
-                    string shootingStrategy = selectedSquads.First().GetShootingStrategy();
+                    ConfigData.ShootingStrategyTypes shootingStrategy = selectedSquads.First().GetShootingStrategy();
                     //Debug.Log($"Shooting strategy is {shootingStrategy}");
                     if (selectedSquads.All(s => s.GetShootingStrategy() == shootingStrategy))
                     {
@@ -179,12 +179,12 @@ namespace Assets.Scripts.UIComponents
                 }
 
             }
-            return "";
+            return 0;
         }
         public void HighlightSelectedButtons()
         {
 
-            if (IsAction("IsMatchingSpeed"))
+            if (IsAction(ConfigData.SquadActions.IsMatchingSpeed))
             {
                 HighlightButton(MatchSpeedButton);
             }
@@ -192,7 +192,7 @@ namespace Assets.Scripts.UIComponents
             {
                 ResetButton(MatchSpeedButton);
             }
-            if (IsAction("CeaseFire"))
+            if (IsAction(ConfigData.SquadActions.CeaseFire))
             {
                 HighlightButton(CeaseFireButton);
             }
@@ -200,7 +200,7 @@ namespace Assets.Scripts.UIComponents
             {
                 ResetButton(CeaseFireButton);
             }
-            if (IsAction("Attack on Sight"))
+            if (IsAction(ConfigData.SquadActions.AttackOnSight))
             {
                 HighlightButton(AttackOnSightButton);
             }
@@ -208,7 +208,7 @@ namespace Assets.Scripts.UIComponents
             {
                 ResetButton(AttackOnSightButton);
             }
-            if (IsAction("Chase"))
+            if (IsAction(ConfigData.SquadActions.Chase))
             {
                 HighlightButton(ChaseButton);
             }
@@ -218,20 +218,20 @@ namespace Assets.Scripts.UIComponents
             }
             if (HasLevel)
             {
-                ChargeButton.SetActive(Level.State.GetSelectedSquads().Any((squad) => squad.GetShips().Any((ship) => ship.ShipType == "Barge")));
-                DetonateButton.SetActive(Level.State.GetSelectedSquads().Any((squad) => squad.GetShips().Any((ship) => ship.ShipType == "Fire Barge")));
-                DropBeaconButton.SetActive(Level.State.GetSelectedSquads().Any((squad) => squad.GetShips().Any((ship) => ship.ShipType == "Scout" && ((Scout)ship).CanDropBeacons)));
+                ChargeButton.SetActive(Level.State.GetSelectedSquads().Any((squad) => squad.GetShips().Any((ship) => ship.ShipType == ConfigData.ShipTypes.Barge)));
+                DetonateButton.SetActive(Level.State.GetSelectedSquads().Any((squad) => squad.GetShips().Any((ship) => ship.ShipType == ConfigData.ShipTypes.FireBarge)));
+                DropBeaconButton.SetActive(Level.State.GetSelectedSquads().Any((squad) => squad.GetShips().Any((ship) => ship.ShipType == ConfigData.ShipTypes.Scout && ((Scout)ship).CanDropBeacons)));
 
-                if (IsAction("Patrol"))
+                if (IsAction(ConfigData.SquadActions.Patrol))
                 {
                     HighlightButton(PatrolButton);
                 }
                 else
                 {
-                    //Debug.Log($"Not patrolling: {Level.State.GetSelectedSquads().First().GetCommandStrategy()}");
+                    //Debug.Log($"Not patrolling: {Level.State.GetSelectedSquads().First().GetCommandStrategy()});
                     ResetButton(PatrolButton);
                 }
-                if (IsAction("Guard"))
+                if (IsAction(ConfigData.SquadActions.Guard))
                 {
                     HighlightButton(GuardButton);
                 }
@@ -239,7 +239,7 @@ namespace Assets.Scripts.UIComponents
                 {
                     ResetButton(GuardButton);
                 }
-                if (IsAction("Hold"))
+                if (IsAction(ConfigData.SquadActions.Hold))
                 {
                     HighlightButton(HoldButton);
                 }
@@ -275,7 +275,7 @@ namespace Assets.Scripts.UIComponents
             }
         }
 
-        private bool IsAction(string action)
+        private bool IsAction(ConfigData.SquadActions action)
         {
             if (HasSquadMaker)
             {
@@ -284,13 +284,13 @@ namespace Assets.Scripts.UIComponents
                 {
                     switch(action)
                     {
-                        case "IsMatchingSpeed":
+                        case ConfigData.SquadActions.IsMatchingSpeed:
                             return currentSquad.IsMatchingSpeed;
-                        case "CeaseFire":
+                        case ConfigData.SquadActions.CeaseFire:
                             return currentSquad.CeaseFire;
-                        case "Attack on Sight":
+                        case ConfigData.SquadActions.AttackOnSight:
                             return !currentSquad.CeaseFire;
-                        case "Chase":
+                        case ConfigData.SquadActions.Chase:
                             return currentSquad.IsSetToChase;
                     }
                 }
@@ -301,19 +301,19 @@ namespace Assets.Scripts.UIComponents
                 
                 switch (action)
                 {
-                    case "IsMatchingSpeed":
+                    case ConfigData.SquadActions.IsMatchingSpeed:
                         return selectedSquads.All((s) => s.IsMatchingSpeed);
-                    case "CeaseFire":
+                    case ConfigData.SquadActions.CeaseFire:
                         return selectedSquads.All((s) => s.CeaseFire);
-                    case "Attack on Sight":
+                    case ConfigData.SquadActions.AttackOnSight:
                         return selectedSquads.All((s) => s.AttackOnSight);
-                    case "Patrol":
-                        return selectedSquads.All((s) => s.GetCommandStrategy() == "Patrol");
-                    case "Guard":
-                        return selectedSquads.All((s) => s.GetCommandStrategy() == "Guard");
-                    case "Chase":
+                    case ConfigData.SquadActions.Patrol:
+                        return selectedSquads.All((s) => s.GetCommandStrategy() == ConfigData.CommandTypes.Patrol);
+                    case ConfigData.SquadActions.Guard:
+                        return selectedSquads.All((s) => s.GetCommandStrategy() == ConfigData.CommandTypes.Guard);
+                    case ConfigData.SquadActions.Chase:
                         return selectedSquads.All((s) => s.ShouldChase());
-                    case "Hold":
+                    case ConfigData.SquadActions.Hold:
                         return selectedSquads.All((s) => s.Holding);
                 }
             }
@@ -655,7 +655,7 @@ namespace Assets.Scripts.UIComponents
             {
                 Level.State.GetSelectedSquads().ForEach((squad) =>
                 {
-                    foreach (Ship ship in squad.GetShips().Where((s) => s.ShipType == "Scout"))
+                    foreach (Ship ship in squad.GetShips().Where((s) => s.ShipType == ConfigData.ShipTypes.Scout))
                     {
                         ((Scout)ship).DropBeacon();
                     }
@@ -669,7 +669,7 @@ namespace Assets.Scripts.UIComponents
             {
                 Level.State.GetSelectedSquads().ForEach((squad) =>
                 {
-                    foreach (Ship ship in squad.GetShips().Where((s) => s.ShipType == "Barge"))
+                    foreach (Ship ship in squad.GetShips().Where((s) => s.ShipType == ConfigData.ShipTypes.Barge))
                     {
                         if (!ship.CannotChangeMovementOrders)
                         {
@@ -690,10 +690,9 @@ namespace Assets.Scripts.UIComponents
             {
                 Level.State.GetSelectedSquads().ForEach((squad) =>
                 {
-                    squad.GetShips().Where((s) => s.ShipType == "Fire Barge").ToList().ForEach((ship) =>
+                    squad.GetShips().Where((s) => s.ShipType == ConfigData.ShipTypes.FireBarge).ToList().ForEach((ship) =>
                     {
-                        FireBarge FireBarge = (FireBarge)ship;
-                        FireBarge.Detonate();
+                        ((FireBarge)ship).Detonate();
                     });
                 });
             }

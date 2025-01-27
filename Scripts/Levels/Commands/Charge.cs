@@ -37,7 +37,7 @@ namespace Assets.Scripts.Levels.Commands
             {
 
                 // loop through all the ships in the target squad
-                if (ship.ShipType == "Barge")
+                if (ship.ShipType == ConfigData.ShipTypes.Barge)
                 {
                     Barge barge = (Barge) ship;
                     barge.HasCompletedRun = false;

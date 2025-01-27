@@ -65,7 +65,7 @@ namespace Assets.Scripts.Levels
                     }
                     int squadId = Utilities.GetNegativeSavedSquadId();
                     SavedSquad savedSquad = new SavedSquad(squadId, side, $"{type}s #{squadId}", Vector2.zero, false, false,
-                        ConfigData.StartingSettings.DefaultShootingStrategy, ConfigData.UnsetColor, null);
+                        ConfigData.DefaultShootingStrategy, ConfigData.UnsetColor, null);
                     savedSquad.SetupRandomShips(type);
                     squadsList.Add(savedSquad);
 
@@ -294,13 +294,9 @@ namespace Assets.Scripts.Levels
                         squad.AddShip(ship);
                         ship.SetColor();
 
-                        if (ship.ShipType == "Carrier")
+                        if (ship.ShipType == ConfigData.ShipTypes.Carrier)
                         {
                             carriers.Add(ship);
-                            //Debug.Log("Spawned a carrier");
-
-                           
-
                         }
 
                     });
@@ -589,7 +585,7 @@ namespace Assets.Scripts.Levels
                     ship = Stage.YellowJacketPool.Get();
                     break;
                 default:
-                    Debugger.Exception($"Tried to instanstiate a ship type ({type}) that doesn't exist");
+                    Debug.LogError($"Tried to instanstiate a ship type ({type}) that doesn't exist");
                     break;
             }
             ship.transform.SetParent(Level.Map.transform);

@@ -253,7 +253,7 @@ namespace Assets.Scripts.UIComponents
                 $"Damage Done: {ship.DamageDone.ToString("N0")}     (#{ConfigData.CurrentShips.GetShipRanking(ship, "DamageDone")})\n" +
                 $"Damage Received: {ship.DamageReceived.ToString("N0")}     (#{ConfigData.CurrentShips.GetShipRanking(ship, "DamageReceived")})\n" +
                 $"Kills: {ship.Kills.ToString("N0")}    (#{ConfigData.CurrentShips.GetShipRanking(ship, "Kills")})\n" +
-                $"{(ship.Type == "Carpenter Bee" || ship.Type == "Factory" ? $"Minerals Mined: {(ship.MineralsMinedThisLevel + ship.MineralsMined).ToString("N0")}  (#{ConfigData.CurrentShips.GetShipRanking(ship, "Minerals Mined")})" : "\n")}";
+                $"{(ship.Type == ConfigData.ShipTypes.CarpenterBee || ship.Type == ConfigData.ShipTypes.Factory ? $"Minerals Mined: {(ship.MineralsMinedThisLevel + ship.MineralsMined).ToString("N0")}  (#{ConfigData.CurrentShips.GetShipRanking(ship, "Minerals Mined")})" : "\n")}";
 
 
             ShipInfoBox.SetActive(true);

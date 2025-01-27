@@ -7606,7 +7606,7 @@ PrefabInstance:
       objectReference: {fileID: 1128415138}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: IsDebugging
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: RecordStats
@@ -8921,6 +8921,7 @@ MonoBehaviour:
   WaspPrefab: {fileID: 707182470515144504, guid: 3ca387e48b802ae4c9b7fea5c4bc5622, type: 3}
   YellowJacketPrefab: {fileID: 2518675752222090675, guid: bb23b0103b9e2e64f944157b23a516df, type: 3}
   BeaconPrefab: {fileID: 641683768750393639, guid: 799add807972d1b429b4376b4f871f10, type: 3}
+  BeeMediumLaserShotPrefab: {fileID: 0}
   MovementMarkerPrefab: {fileID: 2507697582912947509, guid: d5ee77a24c7f6a6499324a8a600b4943, type: 3}
   TargetingMarkerPrefab: {fileID: 2507697582912947509, guid: 60a6013777594eb47842724022e04add, type: 3}
   SquadBoxPrefab: {fileID: 4393128050314196725, guid: 606f56cf5efd9f84d9e877d10187ad8b, type: 3}

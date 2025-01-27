@@ -1089,7 +1089,7 @@ namespace Assets.Scripts.Levels
             Ship shooter = weapon.Ship;
             Ship target = weapon.TargetShip;
             int power = weapon.Power;
-            if (weapon.Type == "Dual Cannon")
+            if (weapon.Type == ConfigData.WeaponTypes.DualCannon)
             {
                 //Debug.Log("This is a dual cannon, splitting the power");
                 power /= 2;

@@ -156,105 +156,87 @@ namespace Assets.Scripts.Levels.Commands
         {
 
             List<Ship> queue = EnemySquad.GetShips();
-            string strategy = Squad.GetShootingStrategy();
-            if (strategy != null)
+            ConfigData.ShootingStrategyTypes strategy = Squad.GetShootingStrategy();
+            //Debug.Log($"Making targeting queue for {Ship.Name}. The squad is using {Squad.GetShootingStrategy()}");
+            switch (strategy)
             {
-                //Debug.Log($"Making targeting queue for {Ship.Name}. The squad is using {Squad.GetShootingStrategy()}");
-                switch (strategy)
-                {
-                    case "First Seen":
-                        return queue;
-                    case "Random":
-                        queue.Sort((a, b) => Utilities.RandomSign());
-                        break;
-                        //return queue.OrderBy(s => Utilities.RandomInt(2)).ToList();
-                    case "Revenge":
-                        queue.Sort((a, b) => b.LastKilled - a.LastKilled);
-                        break;
-                        //return queue.OrderByDescending(s => s.LastKilled).ToList();
-                    case "Most Dangerous":
-                        queue.Sort((a, b) => b.FleetShip.DamageDone - a.FleetShip.DamageDone);
-                        break;
-                        //return queue.OrderByDescending(s => s.FleetShip.DamageDone).ToList();
-                    case "Least Health":
-                        queue.Sort((a, b) => a.Health - b.Health);
-                        break;
-                        //return queue.OrderBy(s => s.Health).ToList();
-                    case "Most Health":
-                        queue.Sort((a, b) => b.Health - a.Health);
-                        break;
-                        //return queue.OrderByDescending(s => s.Health).ToList();
-                    case "Most Powerful":
-                        queue.Sort((a, b) => (int) (b.Firepower - a.Firepower));
-                        break;
-                        //return queue.OrderByDescending(s => s.Firepower).ToList();
-                    case "Least Powerful":
-                        queue.Sort((a, b) => (int) (a.Firepower - b.Firepower));
-                        break;
-                        //return queue.OrderBy(s => s.Firepower).ToList();
-                    case "Closest":
-                        queue.Sort((a, b) => (int)(Squad.DistanceToPoint(a.GetPosition()) - Squad.DistanceToPoint(b.GetPosition())));
-                        break;
-                        //return queue.ToList();
-                    case "Furthest":
-                        queue.Sort((a, b) => (int)(Squad.DistanceToPoint(b.GetPosition()) - Squad.DistanceToPoint(a.GetPosition())));
-                        break;
-                        //return queue.ToList();
-                    case "Most Range":
-                        queue.Sort((a, b) => b.MaxRange - a.MaxRange);
-                        break;
-                        //return queue.OrderByDescending(s => s.MaxRange).ToList();
-                    case "Least Range":
-                        queue.Sort((a, b) => a.MaxRange - b.MaxRange);
-                        break;
-                        //return queue.OrderBy(s => s.MaxRange).ToList();
-                    case "Fastest":
-                        queue.Sort((a, b) => (int) (b.Speed - a.Speed));
-                        break;
-                        //return queue.OrderByDescending(s => s.Speed).ToList();
-                    case "Slowest":
-                        queue.Sort((a, b) => (int)(a.Speed - b.Speed));
-                        break;
-                        //return queue.OrderBy(s => s.Speed).ToList();
-                    case "Most Valuable":
-                        queue.Sort((a, b) => b.Tsv - a.Tsv);
-                        break;
-                        //return queue.OrderByDescending(s => s.Tsv).ToList();
-                    case "Least Valuable":
-                        queue.Sort((a, b) => a.Tsv - b.Tsv);
-                        break;
-                        //return queue.OrderBy(s => s.Tsv).ToList();
-                    default:
-                        if (strategy.StartsWith("Type "))
+                case ConfigData.ShootingStrategyTypes.FirstSeen:
+                    return queue;
+                case ConfigData.ShootingStrategyTypes.Random:
+                    queue.Shuffle();
+                    break;
+                case ConfigData.ShootingStrategyTypes.Revenge:
+                    queue.Sort((a, b) => b.LastKilled - a.LastKilled);
+                    break;
+                case ConfigData.ShootingStrategyTypes.MostDangerous:
+                    queue.Sort((a, b) => b.FleetShip.DamageDone - a.FleetShip.DamageDone);
+                    break;
+                case ConfigData.ShootingStrategyTypes.LeastHealth:
+                    queue.Sort((a, b) => a.Health - b.Health);
+                    break;
+                case ConfigData.ShootingStrategyTypes.MostHealth:
+                    queue.Sort((a, b) => b.Health - a.Health);
+                    break;
+                case ConfigData.ShootingStrategyTypes.MostPowerful:
+                    queue.Sort((a, b) => (int)(b.Firepower - a.Firepower));
+                    break;
+                case ConfigData.ShootingStrategyTypes.LeastPowerful:
+                    queue.Sort((a, b) => (int)(a.Firepower - b.Firepower));
+                    break;
+                case ConfigData.ShootingStrategyTypes.Closest:
+                    queue.Sort((a, b) => (int)(Squad.DistanceToPoint(a.GetPosition()) - Squad.DistanceToPoint(b.GetPosition())));
+                    break;
+                case ConfigData.ShootingStrategyTypes.Furthest:
+                    queue.Sort((a, b) => (int)(Squad.DistanceToPoint(b.GetPosition()) - Squad.DistanceToPoint(a.GetPosition())));
+                    break;
+                case ConfigData.ShootingStrategyTypes.MostRange:
+                    queue.Sort((a, b) => b.MaxRange - a.MaxRange);
+                    break;
+                case ConfigData.ShootingStrategyTypes.LeastRange:
+                    queue.Sort((a, b) => a.MaxRange - b.MaxRange);
+                    break;
+                case ConfigData.ShootingStrategyTypes.Fastest:
+                    queue.Sort((a, b) => (int)(b.Speed - a.Speed));
+                    break;
+                case ConfigData.ShootingStrategyTypes.Slowest:
+                    queue.Sort((a, b) => (int)(a.Speed - b.Speed));
+                    break;
+                case ConfigData.ShootingStrategyTypes.MostValuable:
+                    queue.Sort((a, b) => b.Tsv - a.Tsv);
+                    break;
+                case ConfigData.ShootingStrategyTypes.LeastValuable:
+                    queue.Sort((a, b) => a.Tsv - b.Tsv);
+                    break;
+                default:
+                    if ((int)strategy > 15)
+                    {
+                        ConfigData.ShipTypeLetters type = Utilities.ConvertShipTypeToShipTypeLetter[Utilities.ConvertShootingStrategyToShipType[strategy]];
+                        queue.Sort((a, b) =>
                         {
-                            string type = strategy.Substring(5);
-                            queue.Sort((a, b) =>
+                            //Debug.Log($"Strategy: {strategy}, Type: {type}, A ShipTypeLetter: {a.ShipTypeLetter}, B ShipTypeLetter: {b.ShipTypeLetter}");
+                            if (a.ShipTypeLetter == type && b.ShipTypeLetter != type)
                             {
-                                //Debug.Log($"Strategy: {strategy}, Type: {type}, A ShipTypeLetter: {a.ShipTypeLetter}, B ShipTypeLetter: {b.ShipTypeLetter}");
-                                if (a.ShipTypeLetter == type && b.ShipTypeLetter != type)
-                                {
-                                    return -1;
-                                }
-                                else if (b.ShipTypeLetter == type && a.ShipTypeLetter != type)
-                                {
-                                    return 1;
-                                }
-                                else
-                                {
-                                    return 0;
-                                }
-                            });
-                            //if (queue.Count > 0)
-                            //{
-                            //    Debug.Log($"The first entry in the sorted queue is {queue.First().Name}");
-                            //}
-                            return queue;
-                        }
-                        else
-                        {
-                            return queue;
-                        }
-                }
+                                return -1;
+                            }
+                            else if (b.ShipTypeLetter == type && a.ShipTypeLetter != type)
+                            {
+                                return 1;
+                            }
+                            else
+                            {
+                                return 0;
+                            }
+                        });
+                        //if (queue.Count > 0)
+                        //{
+                        //    Debug.Log($"The first entry in the sorted queue is {queue.First().Name}");
+                        //}
+                        return queue;
+                    }
+                    else
+                    {
+                        return queue;
+                    }
             }
             return queue;
         }

@@ -219,6 +219,17 @@ namespace Assets.Scripts
             TypeW,
         }
 
+        public enum SquadActions
+        {
+            IsMatchingSpeed,
+            CeaseFire,
+            AttackOnSight,
+            Patrol,
+            Guard,
+            Chase,
+            Hold,
+        }
+
         public enum MatchupStrategyTypes
         {
             Random,
@@ -734,7 +745,7 @@ namespace Assets.Scripts
             }
             else
             {
-                Debugger.Exception(new Exception($"Tried to get unknown color name: {name} from list of colors."));
+                Debug.LogError($"Tried to get unknown color name: {name} from list of colors.");
                 return Colors.GetValueOrDefault("error");
             }
         }
@@ -784,7 +795,7 @@ namespace Assets.Scripts
             }
             else
             {
-                Debugger.Exception("Tried to get ship info before it was loaded");
+                Debug.LogError("Tried to get ship info before it was loaded");
             }
             return null;
         }

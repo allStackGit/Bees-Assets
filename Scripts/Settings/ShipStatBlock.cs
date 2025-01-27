@@ -11,7 +11,8 @@ namespace Assets.Scripts.Settings
         /*
          Container for setting stats for a ship
          */
-        public string Type, Description, CodexDescription;
+        public string Description, CodexDescription;
+        public ConfigData.ShipTypes Type;
         public int Health, Sight, AdditionalTsv;
         public float Speed;
         public List<int> Ranges, Powers;
@@ -19,7 +20,7 @@ namespace Assets.Scripts.Settings
         public List<ConfigData.WeaponTypes> WeaponTypes;
         public List<ConfigData.ProjectileTypes> ProjectileTypes;
 
-        public ShipStatBlock(string type, string description, string codexDescription, int health, List<int> ranges, List<int> powers, int sight, int additionalTsv, 
+        public ShipStatBlock(ConfigData.ShipTypes type, string description, string codexDescription, int health, List<int> ranges, List<int> powers, int sight, int additionalTsv, 
             List<float> projectileValues, List<float> ratesOfFire, List<float> rotationRates, float speed, List<ConfigData.WeaponTypes> weaponTypes, List<ConfigData.ProjectileTypes> projectileTypes)
         {
             Type = type;

@@ -20,7 +20,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public ConfigData.ProjectileTypes ProjectileType;
         public List<Ship> CachedTargetingQueue = new List<Ship>();
         public HashSet<Ship> ShipsWithinRange = new HashSet<Ship>();
-        public string CachedShootingStrategy, Name;
+        public ConfigData.ShootingStrategyTypes CachedShootingStrategy;
+        public string Name;
         public ConfigData.WeaponTypes Type;
         public bool IsUsingCachedTargetingQueue, HasCachedChanged, HasRangeCircle, HasRangeCollider, HasSoundEffect;
         public AudioSource SoundEffect;
@@ -86,7 +87,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             TargetShip = null;
             CachedTargetingQueue.Clear();
             ShipsWithinRange.Clear();
-            CachedShootingStrategy = null;
             IsUsingCachedTargetingQueue = false;
             HasCachedChanged = false;
 
@@ -311,81 +311,66 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             
             List<Ship> queue = GetPotentialEnemyTargetShips(disregardRange);
-            string strategy = Ship.ShootingStrategy;
+            ConfigData.ShootingStrategyTypes strategy = Ship.ShootingStrategy;
             CachedShootingStrategy = strategy;
             CachedTargetingQueue = queue;
             HasCachedChanged = false;
-            if (strategy != null && !IsUsingCachedTargetingQueue)
+            if (!IsUsingCachedTargetingQueue)
             {
                 //Debug.Log($"Making targeting queue for {Ship.Name}. The squad is using {Squad.GetShootingStrategy()}");
                 switch (strategy)
                 {
-                    case "First Seen":
+                    case ConfigData.ShootingStrategyTypes.FirstSeen:
                         return queue;
-                    case "Random":
+                    case ConfigData.ShootingStrategyTypes.Random:
                         queue.Shuffle();
                         break;
-                        return queue.OrderBy(s => Utilities.RandomInt(2)).ToList();
-                    case "Revenge":
+                    case ConfigData.ShootingStrategyTypes.Revenge:
                         queue.Sort((a, b) => b.LastKilled - a.LastKilled);
                         break;
-                        return queue.OrderByDescending(s => s.LastKilled).ToList();
-                    case "Most Dangerous":
+                    case ConfigData.ShootingStrategyTypes.MostDangerous:
                         queue.Sort((a, b) => b.FleetShip.DamageDone - a.FleetShip.DamageDone);
                         break;
-                        return queue.OrderByDescending(s => s.FleetShip.DamageDone).ToList();
-                    case "Least Health":
+                    case ConfigData.ShootingStrategyTypes.LeastHealth:
                         queue.Sort((a, b) => a.Health - b.Health);
                         break;
-                        return queue.OrderBy(s => s.Health).ToList();
-                    case "Most Health":
+                    case ConfigData.ShootingStrategyTypes.MostHealth:
                         queue.Sort((a, b) => b.Health - a.Health);
                         break;
-                        return queue.OrderByDescending(s => s.Health).ToList();
-                    case "Most Powerful":
+                    case ConfigData.ShootingStrategyTypes.MostPowerful:
                         queue.Sort((a, b) => (int) (b.Firepower - a.Firepower));
                         break;
-                        return queue.OrderByDescending(s => s.Firepower).ToList();
-                    case "Least Powerful":
+                    case ConfigData.ShootingStrategyTypes.LeastPowerful:
                         queue.Sort((a, b) => (int) (a.Firepower - b.Firepower));
                         break;
-                        return queue.OrderBy(s => s.Firepower).ToList();
-                    case "Closest":
+                    case ConfigData.ShootingStrategyTypes.Closest:
                         queue.Sort((a, b) => (int)(DistanceTo(a) - DistanceTo(b)));
                         break;
-                        return queue.ToList();
-                    case "Furthest":
+                    case ConfigData.ShootingStrategyTypes.Furthest:
                         queue.Sort((a, b) => (int)(DistanceTo(b) - DistanceTo(a)));
                         break;
-                        return queue.ToList();
-                    case "Most Range":
+                    case ConfigData.ShootingStrategyTypes.MostRange:
                         queue.Sort((a, b) => b.MaxRange - a.MaxRange);
                         break;
-                        return queue.OrderByDescending(s => s.MaxRange).ToList();
-                    case "Least Range":
+                    case ConfigData.ShootingStrategyTypes.LeastRange:
                         queue.Sort((a, b) => a.MaxRange - b.MaxRange);
                         break;
-                        return queue.OrderBy(s => s.MaxRange).ToList();
-                    case "Fastest":
+                    case ConfigData.ShootingStrategyTypes.Fastest:
                         queue.Sort((a, b) => (int) (b.Speed - a.Speed));
                         break;
-                        return queue.OrderByDescending(s => s.Speed).ToList();
-                    case "Slowest":
+                    case ConfigData.ShootingStrategyTypes.Slowest:
                         queue.Sort((a, b) => (int)(a.Speed - b.Speed));
                         break;
-                        return queue.OrderBy(s => s.Speed).ToList();
-                    case "Most Valuable":
+                    case ConfigData.ShootingStrategyTypes.MostValuable:
                         queue.Sort((a, b) => b.Tsv - a.Tsv);
                         break;
-                        return queue.OrderByDescending(s => s.Tsv).ToList();
-                    case "Least Valuable":
+                    case ConfigData.ShootingStrategyTypes.LeastValuable:
                         queue.Sort((a, b) => a.Tsv - b.Tsv);
                         break;
-                        return queue.OrderBy(s => s.Tsv).ToList();
                     default:
-                        if (strategy.StartsWith("Type "))
+                        if ((int) strategy > 15)
                         {
-                            string type = strategy.Substring(5);
+                            ConfigData.ShipTypeLetters type = Utilities.ConvertShipTypeToShipTypeLetter[Utilities.ConvertShootingStrategyToShipType[strategy]];
                             queue.Sort((a, b) =>
                             {
                                 //Debug.Log($"Strategy: {strategy}, Type: {type}, A ShipTypeLetter: {a.ShipTypeLetter}, B ShipTypeLetter: {b.ShipTypeLetter}");

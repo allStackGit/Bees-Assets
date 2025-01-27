@@ -112,6 +112,10 @@ namespace Assets.Scripts.Entities.Ships
         /// An enum (int) representation of the ship type letter
         /// </summary>
         public ConfigData.ShipTypeLetters ShipTypeLetter;
+        /// <summary>
+        /// The chosen shooting strategy of this ship which should in turn match the squad
+        /// </summary>
+        public ConfigData.ShootingStrategyTypes ShootingStrategy;
 
         public volatile bool PathfindingThreadComplete, IsPathfinding;
         public volatile Pathfinder.Path PathfindingValue;
@@ -144,7 +148,6 @@ namespace Assets.Scripts.Entities.Ships
         public bool HasReachedDestination => !HasTargetCoordinates;
         public bool IsMoving => Body.velocity != Vector2.zero;
         public bool IsCarrierShip => ShipType == ConfigData.ShipTypes.Striker || ShipType == ConfigData.ShipTypes.Drone;
-        public string ShootingStrategy => HasBrain ? RLShootingStrategy : Squad.GetShootingStrategy();
         /// <summary>
         /// A list of all the ships that this ship's weapons are targeting
         /// </summary>
@@ -232,7 +235,7 @@ namespace Assets.Scripts.Entities.Ships
             __SquadColor = ColorUtility.ToHtmlStringRGB(Squad.Color);
             __Width = GetWidth();
             __Height = GetHeight();
-            __SquadShootingStrategy = Squad.GetShootingStrategy();
+            __SquadShootingStrategy = Squad.GetShootingStrategy().ToString();
             //__SquadWidth = Squad.GetWidth();
             //__SquadHeight = Squad.GetHeight();
 

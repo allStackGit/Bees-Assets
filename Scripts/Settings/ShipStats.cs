@@ -30,11 +30,12 @@ namespace Assets.Scripts.Settings
                 List<float> ProjectileValue = Utilities.JArrayToList<float>(ship.ProjectileValue);
                 List<float> rateOfFire = Utilities.JArrayToList<float>(ship.RateOfFire);
                 List<float> rotationRates = Utilities.JArrayToList<float>(ship.RotationRates);
-                List<string> types = Utilities.JArrayToList<string>(ship.WeaponTypes);
+                List<ConfigData.WeaponTypes> weaponTypes = Utilities.JArrayToList<ConfigData.WeaponTypes>(ship.WeaponTypes);
+                List<ConfigData.ProjectileTypes> projectileTypes = Utilities.JArrayToList<ConfigData.ProjectileTypes>(ship.ProjectileTypes);
 
-                ShipStatsList.Add((ConfigData.ShipTypes)Enum.Parse(typeof(ConfigData.ShipTypes), ship.ShipType), new ShipStatBlock((string)ship.ShipType, (string)ship.Description, (string)ship.CodexDescription, (int)ship.Health,
+                ShipStatsList.Add(Utilities.ConvertShipNameToShipType[ship.ShipType], new ShipStatBlock(Utilities.ConvertShipNameToShipType[ship.ShipType], (string)ship.Description, (string)ship.CodexDescription, (int)ship.Health,
                     range, power, (int)ship.Sight, (int)ship.AdditionalTsv, ProjectileValue,
-                    rateOfFire, rotationRates, (float)ship.Speed, types));
+                    rateOfFire, rotationRates, (float)ship.Speed, weaponTypes, projectileTypes));
                  
             });
         }
