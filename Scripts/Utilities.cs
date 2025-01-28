@@ -293,7 +293,7 @@ namespace Assets.Scripts
             { "Fastest", ConfigData.MatchupStrategyTypes.Fastest },
             { "Slowest", ConfigData.MatchupStrategyTypes.Slowest },
             { "In Combat", ConfigData.MatchupStrategyTypes.InCombat },
-            { "Gang up", ConfigData.MatchupStrategyTypes.GangUp },
+            { "Gang Up", ConfigData.MatchupStrategyTypes.GangUp },
             { "Most Valuable", ConfigData.MatchupStrategyTypes.MostValuable },
             { "Least Valuable", ConfigData.MatchupStrategyTypes.LeastValuable },
             { "Type A", ConfigData.MatchupStrategyTypes.TypeA },
@@ -446,6 +446,38 @@ namespace Assets.Scripts
             { "Guard", ConfigData.SquadActions.Guard },
             { "Chase", ConfigData.SquadActions.Chase },
             { "Hold", ConfigData.SquadActions.Hold },
+        };
+
+        public static Dictionary<string, ConfigData.WeaponTypes> ConvertWeaponNameToType = new Dictionary<string, ConfigData.WeaponTypes>
+        {
+            { "Bomb", ConfigData.WeaponTypes.Bomb },
+            { "Beam Cannon", ConfigData.WeaponTypes.BeamCannon },
+            { "Light Cannon", ConfigData.WeaponTypes.LightCannon },
+            { "Turret", ConfigData.WeaponTypes.Turret },
+            { "Full Ship Turret", ConfigData.WeaponTypes.FullShipTurret },
+            { "Rocket Turret", ConfigData.WeaponTypes.RocketTurret },
+            { "Dual Cannon", ConfigData.WeaponTypes.DualCannon },
+            { "Eye", ConfigData.WeaponTypes.Eye },
+            { "Split Shot", ConfigData.WeaponTypes.SplitShot },
+        };
+
+        public static Dictionary<string, ConfigData.ProjectileTypes> ConvertProjectileNameToType = new Dictionary<string, ConfigData.ProjectileTypes>
+        {
+            { "None", ConfigData.ProjectileTypes.None },
+            { "Bee Small", ConfigData.ProjectileTypes.BeeSmall },
+            { "Bee Medium", ConfigData.ProjectileTypes.BeeMedium },
+            { "Bumblebee Shot", ConfigData.ProjectileTypes.BumblebeeShot },
+            { "Flagship Shot", ConfigData.ProjectileTypes.FlagshipShot },
+            { "Rocket", ConfigData.ProjectileTypes.Rocket },
+            { "Human Small", ConfigData.ProjectileTypes.HumanSmall },
+            { "Human Medium", ConfigData.ProjectileTypes.HumanMedium },
+            { "Beam", ConfigData.ProjectileTypes.Beam },
+            { "Split Shot", ConfigData.ProjectileTypes.SplitShot },
+            { "Queen Small", ConfigData.ProjectileTypes.QueenSmall },
+            { "Queen Large", ConfigData.ProjectileTypes.QueenLarge },
+            { "Striker Bomb", ConfigData.ProjectileTypes.StrikerBomb },
+            { "Rocket Explosion", ConfigData.ProjectileTypes.RocketExplosion },
+            { "Fire Barge Explosion", ConfigData.ProjectileTypes.FireBargeExplosion },
         };
 
 
@@ -677,7 +709,7 @@ namespace Assets.Scripts
                 ships.ForEach((ship) =>
                 {
 
-                    savedSquad.AddShipToSquad(new SquadShip((int)ship.FleetId, (ConfigData.ShipTypes)ship.ShipType, new Vector2((float)ship.Offset.x, (float)ship.Offset.y),
+                    savedSquad.AddShipToSquad(new SquadShip((int)ship.FleetId, ConvertShipNameToShipType[(string)ship.ShipType], new Vector2((float)ship.Offset.x, (float)ship.Offset.y),
                      savedSquad));
 
                 });
@@ -1013,6 +1045,23 @@ namespace Assets.Scripts
         {
            return ((JArray)jArray).ToList<dynamic>().ConvertAll((item) => (T)item);
         }
+
+        public static List<ConfigData.WeaponTypes> JArrayToWeaponTypes(dynamic jArray)
+        {
+            List<string> weaponList = JArrayToList<string>(jArray);
+            return weaponList.ConvertAll((item) => ConvertWeaponNameToType[item]);
+        }
+
+        public static List<ConfigData.ProjectileTypes> JArrayToProjectileTypes(dynamic jArray)
+        {
+            List<string> projectileList = JArrayToList<string>(jArray);
+            return projectileList.ConvertAll((item) => ConvertProjectileNameToType[item]);
+        }
+        public static List<ConfigData.ShipTypes> JArrayToShipTypes(dynamic jArray)
+        {
+            List<string> ShipList = JArrayToList<string>(jArray);
+            return ShipList.ConvertAll((item) => ConvertShipNameToShipType[item]);
+        }
         public static Dictionary<K, V> JArrayToDictionary<K, V>(dynamic jArray)
         {
             Dictionary<K, V> dictionary = new Dictionary<K, V>();
@@ -1021,6 +1070,17 @@ namespace Assets.Scripts
             {
                 Dictionary<K, V> d = ((JObject)item).ToObject<Dictionary<K, V>>();
                 dictionary.Add(d.Keys.First(), d.Values.First());
+            });
+            return dictionary;
+        }
+        public static Dictionary<ConfigData.ShipTypes, int> JArrayToShipTypeDictionary(dynamic jArray)
+        {
+            Dictionary<ConfigData.ShipTypes, int> dictionary = new Dictionary<ConfigData.ShipTypes, int>();
+            List<dynamic> list = JArrayToList<dynamic>(jArray);
+            list.ForEach((item) =>
+            {
+                Dictionary<string, int> d = ((JObject)item).ToObject<Dictionary<string, int>>();
+                dictionary.Add(ConvertShipNameToShipType[d.Keys.First()], d.Values.First());
             });
             return dictionary;
         }

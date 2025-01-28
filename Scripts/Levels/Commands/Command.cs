@@ -51,7 +51,7 @@ namespace Assets.Scripts.Levels.Commands
         {
             Stage = squad.Level.Stage;
             Level = squad.Level;
-            Side = Squad.Side;
+            Side = squad.Side;
             Squad = squad;
             EnemySquad = enemy;
             Matchup = matchup;

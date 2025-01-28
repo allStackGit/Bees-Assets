@@ -29,19 +29,21 @@ namespace Assets.Scripts.Entities.Projectiles
         public Queue<Ship> CollidingQueue = new Queue<Ship>();
         public Queue<Obstacle> CollidingObstacleQueue = new Queue<Obstacle>();
         public string Name;
+        public ConfigData.ProjectileTypes Type;
         public bool HasExplosion, HasSetMovement, ShipIsDead;
         
-        public void Setup(Level level, int side, long id, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power)
+        public void Setup(Level level, ConfigData.ProjectileTypes type, int side, long id, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power)
         {
+            Type = type;
             Stage = level.Stage;
-            base.Id = id;
-            this.Weapon = weapon;
-            this.Shooter = shooter;
-            this.Target = target;
-            this.Range = range;
-            this.Side = side;
-            this.Power = power;
-            this.Angle = angle;
+            Id = id;
+            Weapon = weapon;
+            Shooter = shooter;
+            Target = target;
+            Range = range;
+            Side = side;
+            Power = power;
+            Angle = angle;
             Name = $"{Shooter.Name}: {name} - #{Id}";
             gameObject.name = Name;
             StartingPosition = startingPosition;
@@ -67,7 +69,9 @@ namespace Assets.Scripts.Entities.Projectiles
             {
                 Shooter.ProjectilesInFlight.Remove(this);
             }
-            Destroy(gameObject);
+            Debug.Log($"{Name} has been killed and will be returned");
+            Stage.ReturnProjectileToPool(this);
+            //Destroy(gameObject);
         }
 
         public virtual void ContactTarget(Ship target)

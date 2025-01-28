@@ -30,10 +30,10 @@ namespace Assets.Scripts.Settings
                 List<float> ProjectileValue = Utilities.JArrayToList<float>(ship.ProjectileValue);
                 List<float> rateOfFire = Utilities.JArrayToList<float>(ship.RateOfFire);
                 List<float> rotationRates = Utilities.JArrayToList<float>(ship.RotationRates);
-                List<ConfigData.WeaponTypes> weaponTypes = Utilities.JArrayToList<ConfigData.WeaponTypes>(ship.WeaponTypes);
-                List<ConfigData.ProjectileTypes> projectileTypes = Utilities.JArrayToList<ConfigData.ProjectileTypes>(ship.ProjectileTypes);
+                List<ConfigData.WeaponTypes> weaponTypes = Utilities.JArrayToWeaponTypes(ship.WeaponTypes);
+                List<ConfigData.ProjectileTypes> projectileTypes = Utilities.JArrayToProjectileTypes(ship.ProjectileTypes);
 
-                ShipStatsList.Add(Utilities.ConvertShipNameToShipType[ship.ShipType], new ShipStatBlock(Utilities.ConvertShipNameToShipType[ship.ShipType], (string)ship.Description, (string)ship.CodexDescription, (int)ship.Health,
+                ShipStatsList.Add(Utilities.ConvertShipNameToShipType[(string) ship.ShipType], new ShipStatBlock(Utilities.ConvertShipNameToShipType[(string) ship.ShipType], (string)ship.Description, (string)ship.CodexDescription, (int)ship.Health,
                     range, power, (int)ship.Sight, (int)ship.AdditionalTsv, ProjectileValue,
                     rateOfFire, rotationRates, (float)ship.Speed, weaponTypes, projectileTypes));
                  

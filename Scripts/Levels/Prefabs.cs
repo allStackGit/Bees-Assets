@@ -19,8 +19,9 @@ namespace Assets.Scripts.Levels
         public GameObject BargePrefab, BeehivePrefab, BumblebeePrefab, CarpenterBeePrefab, CarrierPrefab, CruiserPrefab, DreadnoughtPrefab, DronePrefab,
     FactoryPrefab, FireBargePrefab, FlagshipPrefab, FrigatePrefab, GunshipPrefab, HoneybeePrefab, HornetPrefab, LeafcutterPrefab, QueenPrefab,
     ScoutPrefab, StrikerPrefab, WarpGatePrefab, WaspPrefab, YellowJacketPrefab, BeaconPrefab,
-            
-            BeeMediumLaserShotPrefab;
+
+            BeeSmallLaserShotPrefab, BeeMediumLaserShotPrefab, BumblebeeShotPrefab, FlagshipShotPrefab, RocketPrefab, HumanSmallPrefab, HumanMediumPrefab, BeamPrefab,
+            SplitShotPrefab, QueenSmallPrefab, QueenLargePrefab, StrikerBombPrefab, RocketExplosionPrefab, FireBargeExplosionPrefab;
         /// <summary>
         /// UI Prefabs
         /// </summary>

@@ -19404,12 +19404,12 @@ MonoBehaviour:
   Camera: {fileID: 663776983}
   DialoguePrefab: {fileID: 4693076599736100422, guid: cf96c357f9237f545b82628a7c3499b7, type: 3}
   EventSystem: {fileID: 155230033}
-  FinalizedScene: 0
+  IsFinalized: 0
   WatchServerRequests: 0
   IsSocketManager: 0
   IsMainScene: 0
   TimeScale: 1
-  IsLevel: 0
+  TargetFrameRate: 0
   __PastServerRequests: []
   __SocketLevels: []
   __StandingRequests: []
@@ -19567,7 +19567,7 @@ MonoBehaviour:
   DreadnoughtGameSprite: {fileID: 21300000, guid: 9d1da2457f17a044aaafc79785166d43, type: 3}
   FactoryGameSprite: {fileID: 21300000, guid: 14f4d00d7d052d44d9cadf895b3b1b8d, type: 3}
   FactoryAnimationSprite: {fileID: 133110120, guid: ad7cd14d465132d4bac615c7c4626be7, type: 3}
-  FireBargeGameSprite: {fileID: 0}
+  FireBargeGameSprite: {fileID: 21300000, guid: c2d50367ba7668e428d971aed684feb2, type: 3}
   FlagshipGameSprite: {fileID: 21300000, guid: 4ffefbee413778f40943ae6240ca6071, type: 3}
   FrigateGameSprite: {fileID: 21300000, guid: 98a7996dce48e4e458fafc0e7a3d5f94, type: 3}
   GunshipGameSprite: {fileID: 21300000, guid: 8ef5bc21746b9bc4f9254b84f7ab4ece, type: 3}

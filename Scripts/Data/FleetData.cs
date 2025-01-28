@@ -48,7 +48,7 @@ namespace Assets.Scripts.Data
                     {
                         isVisible = true;
                     }
-                    AddShipToFleet(new FleetShip(id, $"{shipType} #{id}", shipType, false, isVisible, false, 0, 0, 0, 0, 0, 0, 0));
+                    AddShipToFleet(new FleetShip(id, $"{Utilities.ConvertShipTypeToName[shipType]} #{id}", shipType, false, isVisible, false, 0, 0, 0, 0, 0, 0, 0));
                     id++;
                 }
             });

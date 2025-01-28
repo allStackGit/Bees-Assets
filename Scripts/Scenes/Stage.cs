@@ -302,11 +302,27 @@ public class Stage : Scene
     public ObjectPool<Assets.Scripts.UI_Components.Map> PlutoMapPool;
     public ObjectPool<Assets.Scripts.UI_Components.Map> UranusMapPool;
 
+    public ObjectPool<Projectile> BeeSmallProjectilePool;
     public ObjectPool<Projectile> BeeMediumProjectilePool;
+    public ObjectPool<Projectile> BumblebeeShotProjectilePool;
+    public ObjectPool<Projectile> FlagshipShotProjectilePool;
+    public ObjectPool<Projectile> RocketProjectilePool;
+    public ObjectPool<Projectile> HumanSmallProjectilePool;
+    public ObjectPool<Projectile> HumanMediumProjectilePool;
+    public ObjectPool<Projectile> BeamProjectilePool;
+    public ObjectPool<Projectile> SplitShotProjectilePool;
+    public ObjectPool<Projectile> QueenSmallProjectilePool;
+    public ObjectPool<Projectile> QueenLargeProjectilePool;
+    public ObjectPool<Projectile> StrikerBombProjectilePool;
+    public ObjectPool<Projectile> RocketExplosionProjectilePool;
+    public ObjectPool<Projectile> FireBargeExplosionProjectilePool;
 
     public int __BargePoolSize, __BeaconPoolSize, __BeehivePoolSize, __BumblebeePoolSize, __CarpenterBeePoolSize, __CarrierPoolSize, __CruiserPoolSize, __DreadnoughtPoolSize,
         __DronePoolSize, __FactoryPoolSize, __FireBargePoolSize, __FlagshipPoolSize, __FrigatePoolSize, __GunshipPoolSize, __HoneybeePoolSize, __HornetPoolSize, __LeafcutterPoolSize,
-        __QueenPoolSize, __ScoutPoolSize, __StrikerPoolSize, __WarpGatePoolSize, __WaspPoolSize, __YellowJacketPoolSize, __PlutoMapPoolSize, __UranusMapPoolSize, __BeeMediumProjectilePoolSize;
+        __QueenPoolSize, __ScoutPoolSize, __StrikerPoolSize, __WarpGatePoolSize, __WaspPoolSize, __YellowJacketPoolSize, __PlutoMapPoolSize, __UranusMapPoolSize, __BeeSmallProjectilePoolSize,
+        __BeeMediumProjectilePoolSize, __BumblebeeShotProjectilePoolSize, __FlagshipShotProjectilePoolSize, __RocketProjectilePoolSize, __HumanSmallProjectilePoolSize, __HumanMediumProjectilePoolSize,
+        __BeamProjectilePoolSize, __SplitShotProjectilePoolSize, __QueenSmallProjectilePoolSize, __QueenLargeProjectilePoolSize, __StrikerBombProjectilePoolSize, __RocketExplosionProjectilePoolSize,
+        __FireBargeExplosionProjectilePoolSize;
     public void DebugLogger()
     {
         __BargePoolSize = BargePool.CountAll;
@@ -334,7 +350,20 @@ public class Stage : Scene
         __YellowJacketPoolSize = YellowJacketPool.CountAll;
         __PlutoMapPoolSize = PlutoMapPool.CountAll;
         __UranusMapPoolSize = UranusMapPool.CountAll;
+        __BeeSmallProjectilePoolSize = BeeSmallProjectilePool.CountAll;
         __BeeMediumProjectilePoolSize = BeeMediumProjectilePool.CountAll;
+        __BumblebeeShotProjectilePoolSize = BumblebeeShotProjectilePool.CountAll;
+        __FlagshipShotProjectilePoolSize = FlagshipShotProjectilePool.CountAll;
+        __RocketProjectilePoolSize = RocketProjectilePool.CountAll;
+        __HumanSmallProjectilePoolSize = HumanSmallProjectilePool.CountAll;
+        __HumanMediumProjectilePoolSize = HumanMediumProjectilePool.CountAll;
+        __BeamProjectilePoolSize = BeamProjectilePool.CountAll;
+        __SplitShotProjectilePoolSize = SplitShotProjectilePool.CountAll;
+        __QueenSmallProjectilePoolSize = QueenSmallProjectilePool.CountAll;
+        __QueenLargeProjectilePoolSize = QueenLargeProjectilePool.CountAll;
+        __StrikerBombProjectilePoolSize = StrikerBombProjectilePool.CountAll;
+        __RocketExplosionProjectilePoolSize = RocketExplosionProjectilePool.CountAll;
+        __FireBargeExplosionProjectilePoolSize = FireBargeExplosionProjectilePool.CountAll;
     }
 
 
@@ -494,15 +523,62 @@ public class Stage : Scene
         return map;
     }
 
-
+    public Projectile CreatedPooledBeeSmallProjectile()
+    {
+        return Instantiate(Prefabs.BeeSmallLaserShotPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+    }
     public Projectile CreatedPooledBeeMediumProjectile()
     {
-        Projectile projectile = Instantiate(Prefabs.BeeMediumLaserShotPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
-        return projectile;
+        return Instantiate(Prefabs.BeeMediumLaserShotPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
     }
-
-
-
+    public Projectile CreatedPooledBumblebeeShotProjectile()
+    {
+        return Instantiate(Prefabs.BumblebeeShotPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+    }
+    public Projectile CreatedPooledFlagshipShotProjectile()
+    {
+        return Instantiate(Prefabs.FlagshipShotPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+    }
+    public Projectile CreatedPooledRocketProjectile()
+    {
+        return Instantiate(Prefabs.RocketPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+    }
+    public Projectile CreatedPooledHumanSmallProjectile()
+    {
+        return Instantiate(Prefabs.HumanSmallPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+    }
+    public Projectile CreatedPooledHumanMediumProjectile()
+    {
+        return Instantiate(Prefabs.HumanMediumPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+    }
+    public Projectile CreatedPooledBeamProjectile()
+    {
+        return Instantiate(Prefabs.BeamPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+    }
+    public Projectile CreatedPooledSplitShotProjectile()
+    {
+        return Instantiate(Prefabs.SplitShotPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+    }
+    public Projectile CreatedPooledQueenSmallProjectile()
+    {
+        return Instantiate(Prefabs.QueenSmallPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+    }
+    public Projectile CreatedPooledQueenLargeProjectile()
+    {
+        return Instantiate(Prefabs.QueenLargePrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+    }
+    public Projectile CreatedPooledStrikerBombProjectile()
+    {
+        return Instantiate(Prefabs.StrikerBombPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+    }
+    public Projectile CreatedPooledRocketExplosionProjectile()
+    {
+        return Instantiate(Prefabs.RocketExplosionPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+    }
+    public Projectile CreatedPooledFireBargeExplosionProjectile()
+    {
+        return Instantiate(Prefabs.FireBargeExplosionPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+    }
     public void OnTakeShipFromPool(Ship ship)
     {
         Debug.Log($"{ship.name} was taken from the pool");
@@ -674,12 +750,102 @@ public class Stage : Scene
     {
         switch (type)
         {
+            case ConfigData.ProjectileTypes.BeeSmall:
+                return BeeSmallProjectilePool.Get();
+
             case ConfigData.ProjectileTypes.BeeMedium:
                 return BeeMediumProjectilePool.Get();
+
+            case ConfigData.ProjectileTypes.BumblebeeShot:
+                return BumblebeeShotProjectilePool.Get();
+
+            case ConfigData.ProjectileTypes.FlagshipShot:
+                return FlagshipShotProjectilePool.Get();
+
+            case ConfigData.ProjectileTypes.Rocket:
+                return RocketProjectilePool.Get();
+
+            case ConfigData.ProjectileTypes.HumanSmall:
+                return HumanSmallProjectilePool.Get();
+
+            case ConfigData.ProjectileTypes.HumanMedium:
+                return HumanMediumProjectilePool.Get();
+
+            case ConfigData.ProjectileTypes.Beam:
+                return BeamProjectilePool.Get();
+
+            case ConfigData.ProjectileTypes.SplitShot:
+                return SplitShotProjectilePool.Get();
+
+            case ConfigData.ProjectileTypes.QueenSmall:
+                return QueenSmallProjectilePool.Get();
+
+            case ConfigData.ProjectileTypes.QueenLarge:
+                return QueenLargeProjectilePool.Get();
+
+            case ConfigData.ProjectileTypes.StrikerBomb:
+                return StrikerBombProjectilePool.Get();
+
+            case ConfigData.ProjectileTypes.RocketExplosion:
+                return RocketExplosionProjectilePool.Get();
+
+            case ConfigData.ProjectileTypes.FireBargeExplosion:
+                return FireBargeExplosionProjectilePool.Get();
 
             default:
                 Debug.LogError($"Projectile type is invalid: {type}");
                 return null;
+        }
+    }
+    public void ReturnProjectileToPool(Projectile projectile)
+    {
+        switch (projectile.Type)
+        {
+            case ConfigData.ProjectileTypes.BeeSmall:
+                BeeSmallProjectilePool.Release(projectile);
+                break;
+            case ConfigData.ProjectileTypes.BeeMedium:
+                BeeMediumProjectilePool.Release(projectile);
+                break;
+            case ConfigData.ProjectileTypes.BumblebeeShot:
+                BumblebeeShotProjectilePool.Release(projectile);
+                break;
+            case ConfigData.ProjectileTypes.FlagshipShot:
+                FlagshipShotProjectilePool.Release(projectile);
+                break;
+            case ConfigData.ProjectileTypes.Rocket:
+                RocketProjectilePool.Release(projectile);
+                break;
+            case ConfigData.ProjectileTypes.HumanSmall:
+                HumanSmallProjectilePool.Release(projectile);
+                break;
+            case ConfigData.ProjectileTypes.HumanMedium:
+                HumanMediumProjectilePool.Release(projectile);
+                break;
+            case ConfigData.ProjectileTypes.Beam:
+                BeamProjectilePool.Release(projectile);
+                break;
+            case ConfigData.ProjectileTypes.SplitShot:
+                SplitShotProjectilePool.Release(projectile);
+                break;
+            case ConfigData.ProjectileTypes.QueenSmall:
+                QueenSmallProjectilePool.Release(projectile);
+                break;
+            case ConfigData.ProjectileTypes.QueenLarge:
+                QueenLargeProjectilePool.Release(projectile);
+                break;
+            case ConfigData.ProjectileTypes.StrikerBomb:
+                StrikerBombProjectilePool.Release(projectile);
+                break;
+            case ConfigData.ProjectileTypes.RocketExplosion:
+                RocketExplosionProjectilePool.Release(projectile);
+                break;
+            case ConfigData.ProjectileTypes.FireBargeExplosion:
+                FireBargeExplosionProjectilePool.Release(projectile);
+                break;
+            default:
+                Debug.LogError($"Projectile type is invalid: {projectile}");
+                break;
         }
     }
 
@@ -807,6 +973,7 @@ public class Stage : Scene
             UranusMapPool = new ObjectPool<Assets.Scripts.UI_Components.Map>(CreatePooledUranusMap, null, null, null, true);
 
             BeeMediumProjectilePool = new ObjectPool<Projectile>(CreatedPooledBeeMediumProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
+            BumblebeeShotProjectilePool = new ObjectPool<Projectile>(CreatedPooledBumblebeeShotProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
 
             FillPools();
             SpawnLevels();

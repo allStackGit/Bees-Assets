@@ -174,7 +174,7 @@ namespace Assets.Scripts.Data
         }
         public string ToJson()
         {
-            return JsonUtility.ToJson(this);
+            return $"{{\"FleetId\": {FleetId}, \"ShipType\": \"{Utilities.ConvertShipTypeToName[ShipType]}\", \"Offset\": {{ \"x\": {Offset.x}, \"y\": {Offset.y} }}}}";
         }
         public bool Equals (SquadShip other)
         {

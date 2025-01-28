@@ -187,10 +187,10 @@ namespace Assets.Scripts.Settings
             }
 
             CensoredWords = new HashSet<string>(Utilities.JArrayToList<string>(so.CensoredWords));
-            VisibleBeeShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToList<ConfigData.ShipTypes>(so.VisibleBeeShipTypes));
-            VisibleHumanShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToList<ConfigData.ShipTypes>(so.VisibleHumanShipTypes));
-            InvisibleBeeShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToList<ConfigData.ShipTypes>(so.InvisibleBeeShipTypes));
-            InvisibleHumanShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToList<ConfigData.ShipTypes>(so.InvisibleHumanShipTypes));
+            VisibleBeeShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(so.VisibleBeeShipTypes));
+            VisibleHumanShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(so.VisibleHumanShipTypes));
+            InvisibleBeeShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(so.InvisibleBeeShipTypes));
+            InvisibleHumanShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(so.InvisibleHumanShipTypes));
             Tooltips = Utilities.JArrayToDictionary<string, string>(so.Tooltips);
 
           

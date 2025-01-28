@@ -296,7 +296,7 @@ namespace Assets.Scripts.Entities.Ships
             IsUserControlled = Side == ConfigData.Configuration.UserSide && Stage.DoesUserHaveController;
             RotationSpeed = Speed * ConfigData.Configuration.RotationMultiplier;
             IsMobile = Speed > 0;
-
+            IsDead = true;
 
             //Transform brain = transform.Find("Brain");
             //if (brain != null && Level.Stage.ActivateBrains)
@@ -518,7 +518,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             Level = level;
             FleetShip = fleetShip;
             OffsetFromCenter = offsetFromCenter;
-            IsAlive = true;
             Health = OriginalHealth;
             Name = $"{ShipType} #{Id}";
             gameObject.name = Name;
@@ -1567,7 +1566,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             if (!IsDead)
             {
                 IsDead = true;
-                IsAlive = false;
                 //Debug.Log($"Killing ship {Name} with size Factor {ConfigData.GetShipSizeFactor(ShipType)}");
                 if (IsPathfinding)
                 {

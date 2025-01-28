@@ -56,7 +56,7 @@ namespace Assets.Scripts.Scenes
                 if (TargetFrameRate > 0)
                 {
                     Application.targetFrameRate = TargetFrameRate;
-                    Debug.Log($"Target Frane rate set to {Application.targetFrameRate} fps");
+                    Debug.Log($"Target Frame rate set to {Application.targetFrameRate} fps");
                 }
                 else if (TargetFrameRate == -1)
                 {
@@ -96,11 +96,10 @@ namespace Assets.Scripts.Scenes
         {
             //Debug.Log($"Finalizing {Name} Scene");
 
-            if (IsMainScene)
+            if (IsMainScene && ConfigData.CurrentShips == null)
             {
                 ConfigData.FreePlayShips = new Ships(ConfigData.GetFleetData(), ConfigData.GetSavedSquadsData());
                 ConfigData.CampaignShips = new Ships(ConfigData.GetCampaignFleetData(), ConfigData.GetCampaignSavedSquadsData());
-
                 ConfigData.CurrentShips = ConfigData.FreePlayShips;
             }
 

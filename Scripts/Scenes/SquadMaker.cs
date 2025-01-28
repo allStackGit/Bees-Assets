@@ -1329,9 +1329,9 @@ namespace Assets.Scripts.Scenes
         {
             return _dragIconTypes.GetValueOrDefault(type);
         }
-        public void AutoPlaceShip(ConfigData.ShipTypes shipType)
+        public void AutoPlaceShip(string ship)
         {
-            _dropper.AutoPlaceShip(shipType);
+            _dropper.AutoPlaceShip(Utilities.ConvertShipNameToShipType[ship]);
         }
         public Dropper GetDropper()
         {
@@ -1363,9 +1363,9 @@ namespace Assets.Scripts.Scenes
                 }
             }
         }
-        public void FleetDragStart(ConfigData.ShipTypes shipType)
+        public void FleetDragStart(string ship)
         {
-
+            ConfigData.ShipTypes shipType = Utilities.ConvertShipNameToShipType[ship];
             Dropper dropper = GetDropper();
             dropper.PullNewDragIcon(shipType);
             dropper.SetupActiveDragging(Input.mousePosition, false);
@@ -1417,7 +1417,7 @@ namespace Assets.Scripts.Scenes
                     $"Power: {shipInfo.PrintPower()}\n" +
                     $"Rate of Fire: {shipInfo.PrintRateOfFire()}\n" +
                     $"Speed: {shipInfo.Speed}\n" +
-                    $"Capacity: {(ship != "Drone" && ship != "Striker" && ship != "Beacon" ? ConfigData.CurrentShips.GetShipsOfType(shipType).First().GetMaxCapacity().ToString("N0") : "N/A")}";
+                    $"Capacity: {(shipType != ConfigData.ShipTypes.Drone && shipType != ConfigData.ShipTypes.Striker && shipType != ConfigData.ShipTypes.Beacon ? ConfigData.CurrentShips.GetShipsOfType(shipType).First().GetMaxCapacity().ToString("N0") : "N/A")}";
 
                 UnityEngine.UI.Image image = ShipInfoBoxIcon.GetComponent<UnityEngine.UI.Image>();
                 image.sprite = _spriteTypes.GetValueOrDefault(shipType);

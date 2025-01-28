@@ -53,7 +53,7 @@ namespace Assets.Scripts
         // 5 = ml agents rl testing,
         // 6 = standard testing [highest trained]
         // 7 = new NN training version
-        public const int Version = 6; // [alert] should be increased when released
+        public const int Version = 5; // [alert] should be increased when released
         public const string BaseFolder = "SaveData";
         public const string CacheFolder = "SpriteCache";
         public const string PortraitFolder = "Sprites/People";
@@ -139,6 +139,7 @@ namespace Assets.Scripts
 
         public enum ProjectileTypes
         {
+            None,
             BeeSmall,
             BeeMedium,
             BumblebeeShot,

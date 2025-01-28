@@ -1,1 +1,1 @@
-[]
+[{"Id": 2, "Side": 2, "Name": "Squadron #2", "Color": {"r": 0, "g": 0, "b": 0, "a": 0 }, "StartingPosition": {"x": -30.75, "y": -0.75 }, "CeaseFire": false, "IsMatchingSpeed": false, "ChosenShootingStrategy": "First Seen", "Stats": {"Commander":"Qi Xaebo","BattlesFought":0,"BattlesWon":0,"ShipsLost":0,"DamageDone":0,"DamageReceived":0,"Kills":0}, "Ships": [{"FleetId": 0, "ShipType": "Barge", "Offset": { "x": 10.5, "y": 2.861023E-06 }}, {"FleetId": 1, "ShipType": "Barge", "Offset": { "x": -10.49998, "y": 2.861023E-06 }}]}]

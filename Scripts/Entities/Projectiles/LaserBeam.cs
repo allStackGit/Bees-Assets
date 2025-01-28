@@ -69,7 +69,8 @@ namespace Assets.Scripts.Entities.Projectiles
             {
                 Shooter.ProjectilesInFlight.Remove(this);
             }
-            Destroy(gameObject);
+            Debug.Log($"{Name} has been killed and will be returned");
+            Stage.ReturnProjectileToPool(this);
         }
         private Vector2 GetChangeInShooterPosition()
         {

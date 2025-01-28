@@ -1095,7 +1095,7 @@ namespace Assets.Scripts.Levels
                 power /= 2;
             }
             //Debug.Log($"Position before setup for {projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
-            projectile.Setup(this, shooter.Side, State.GetId(), weapon, shooter, target, startingPosition, angle, weapon.Range, power);
+            projectile.Setup(this, type, shooter.Side, State.GetId(), weapon, shooter, target, startingPosition, angle, weapon.Range, power);
             shooter.ProjectilesInFlight.Add(projectile);
             //Debug.Log($"Position after setup for #{projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
             return projectile;

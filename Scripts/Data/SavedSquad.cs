@@ -271,7 +271,7 @@ namespace Assets.Scripts.Data
         {
             string json = $"{{\"Id\": {Id}, \"Side\": {Side}, \"Name\": \"{Name}\", \"Color\": {{\"r\": {Color.r}, \"g\": {Color.g}, \"b\": {Color.b}, \"a\": {Color.a} }}, \"StartingPosition\":" +
                 $" {{\"x\": {StartingPosition.x}, \"y\": {StartingPosition.y} }}, \"CeaseFire\": {(CeaseFire ? "true" : "false")}, \"IsMatchingSpeed\": {(IsMatchingSpeed ? "true" : "false")}, \"ChosenShootingStrategy\":" +
-                $" \"{ChosenShootingStrategy}\", \"Stats\": {Stats.ToJson()}, \"Ships\": [";
+                $" \"{Utilities.ConvertShootingStrategyTypeToName[ChosenShootingStrategy]}\", \"Stats\": {Stats.ToJson()}, \"Ships\": [";
             GetSquadShips().ForEach((s) => json += $"{s.ToJson()}, ");
             json = json.Remove(json.Length - 2);
             json += "]}";

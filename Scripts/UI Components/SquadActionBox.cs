@@ -251,10 +251,10 @@ namespace Assets.Scripts.UIComponents
 
             ConfigData.ShootingStrategyTypes shootingStrategy = GetShootingStrategy();
             //Debug.Log($"Squad(s) shooting strategy: {shootingStrategy}");
-            ConfigData.TypesOfShootingStrategies.Where(s => (int) s > 15).ToList().ForEach(s =>
+            ConfigData.TypesOfShootingStrategies.Where(s => (int) s <= 15).ToList().ForEach(s =>
             {
-                //Debug.Log($"{s} Button");
-                GameObject buttonLabel = GameObject.Find($"{s} Button"); // [effeciency] could be made better by having a dictionary of the buttons
+                Debug.Log($"{Utilities.ConvertShootingStrategyTypeToName[s]} Button");
+                GameObject buttonLabel = GameObject.Find($"{Utilities.ConvertShootingStrategyTypeToName[s]} Button"); // [effeciency] could be made better by having a dictionary of the buttons
                 if (shootingStrategy == s)
                 {
                     HighlightButton(buttonLabel);
@@ -839,7 +839,7 @@ namespace Assets.Scripts.UIComponents
 
                     if (strategy == 0) // "-------" No option chosen
                     {
-                        shipName = ConfigData.StartingSettings.DefaultShootingStrategy;
+                        shipName = Utilities.ConvertShootingStrategyTypeToName[ConfigData.DefaultShootingStrategy];
                     }
                     //Debug.Log($"setting shooting strategy to {shipName}");
                     SetShootingStrategy(shipName);
