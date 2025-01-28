@@ -181,7 +181,7 @@ namespace Assets.Scripts.Levels
             }
             MapData = ConfigData.Maps[CurrentLevelOptions.MapIndex];
             //Map = Instantiate(Stage.Prefabs.Maps[CurrentLevelOptions.MapIndex]).GetComponent<UI_Components.Map>();
-            Map = Stage.GetPooledMap(CurrentLevelOptions.MapIndex);
+            Map = Stage.Pool.GetPooledMap(CurrentLevelOptions.MapIndex);
             Debug.Log($"Playing on the {MapData.Name} ({Map.Name}) at index #{CurrentLevelOptions.MapIndex} map");
 
             if (((CurrentLevelOptions.ObstacleMapIndex == -1 && Utilities.CoinToss()) || CurrentLevelOptions.ObstacleMapIndex > 0) && !Stage.IsTraining) // User chose random and random chose obstacles OR user chose obstacles
@@ -746,7 +746,7 @@ namespace Assets.Scripts.Levels
 
             if (Map != null)
             {
-                Stage.ReturnMapToPool(Map);
+                Stage.Pool.ReturnMapToPool(Map);
             }
             AllSquads.Clear();
             CurrentLevelOptions.ChosenSquads.Clear();
@@ -1084,7 +1084,7 @@ namespace Assets.Scripts.Levels
         public Projectile AddProjectile(ConfigData.ProjectileTypes type, Weapon weapon, Vector2 startingPosition, float angle)
         {
             //Debug.Log($"Adding projectile {instance.name} at startingPosition: {startingPosition}");
-            Projectile projectile = Stage.GetProjectileFromPool(type);
+            Projectile projectile = Stage.Pool.GetProjectileFromPool(type);
             projectile.transform.parent = Map.transform;
             Ship shooter = weapon.Ship;
             Ship target = weapon.TargetShip;
@@ -1095,7 +1095,7 @@ namespace Assets.Scripts.Levels
                 power /= 2;
             }
             //Debug.Log($"Position before setup for {projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
-            projectile.Setup(this, type, shooter.Side, State.GetId(), weapon, shooter, target, startingPosition, angle, weapon.Range, power);
+            projectile.Setup(this, State.GetId(), weapon, shooter, target, startingPosition, angle, weapon.Range, power);
             shooter.ProjectilesInFlight.Add(projectile);
             //Debug.Log($"Position after setup for #{projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
             return projectile;

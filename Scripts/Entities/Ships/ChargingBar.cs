@@ -37,13 +37,17 @@ public class ChargingBar : MonoBehaviour
     /// The green filler that shows how much the bar is filled
     /// </summary>
     public GameObject BarFiller;
-    public void Setup(Ship ship, int timeToCharge)
+    public void Create(Ship ship, int timeToCharge)
     {
         Ship = ship;
         TimeToCharge = timeToCharge;
+        ChargingIncrement = 100 / (timeToCharge * 2);
+    }
+    public void Setup()
+    {
         PercentCharged = 100;
-        ChargingIncrement = 100/(timeToCharge * 2);
         IsFullyCharged = true;
+        SetBarFill();
     }
 
     /// <summary>

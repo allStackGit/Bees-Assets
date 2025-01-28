@@ -31,7 +31,7 @@ namespace Assets.Scripts.Entities.Ships
                     Explosion = Instantiate(ShipExplosion, GetPosition(), Quaternion.identity);
                     Explosion.transform.parent = Level.Map.transform;
                     RocketExplosion explosion = (RocketExplosion)Explosion.GetComponent(typeof(RocketExplosion));
-                    explosion.Setup(Level, Side, Level.State.GetId(), Bomb, this, null, GetPosition(), 0, 0, Bomb.Power);
+                    explosion.Setup(Level, Level.State.GetId(), Bomb, this, null, GetPosition(), 0, 0, Bomb.Power);
                     Level.State.FireBargeExplosions.Add(explosion);
                     ProjectilesInFlight.Add(explosion);
 

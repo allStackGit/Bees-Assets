@@ -10,7 +10,7 @@ namespace Assets.Scripts.Entities.Projectiles
     {
         public void Kill()
         {
-            Destroy(gameObject);
+            gameObject.SetActive(false);
         }
     }
 }

@@ -75,7 +75,7 @@ SpriteRenderer:
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: -467856233
-  m_SortingLayer: 26
+  m_SortingLayer: 27
   m_SortingOrder: 0
   m_Sprite: {fileID: -62744787, guid: a51a8e324218ec946b459ead707cdfc7, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -151,9 +151,10 @@ MonoBehaviour:
   Id: 0
   Age: 0
   Level: {fileID: 0}
-  Side: 0
-  Collider: {fileID: 0}
-  Body: {fileID: 0}
+  Stage: {fileID: 0}
+  Side: 2
+  Collider: {fileID: -997384404529185541}
+  Body: {fileID: -433847355909050064}
   Power: 0
   Range: 0
   Speed: 60
@@ -162,11 +163,13 @@ MonoBehaviour:
   Weapon: {fileID: 0}
   StartingPosition: {x: 0, y: 0}
   Angle: 0
-  ExplosionAnimationPrefab: {fileID: 0}
   Explosion: {fileID: 4140905405707596873, guid: 216222dccbe78114893a8e904cb41c36, type: 3}
   Name: 
-  HasExplosion: 0
-  HasSetMovement: 0
+  Type: 5
+  HasExplosion: 1
+  ShipIsDead: 0
+  HasBody: 1
+  IsDead: 1
   MaxSpeed: 160
 --- !u!61 &-997384404529185541
 BoxCollider2D:

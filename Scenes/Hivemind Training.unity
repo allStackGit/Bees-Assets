@@ -7030,11 +7030,6 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 943905230}
   m_CullTransparentMesh: 1
---- !u!4 &1039056397 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 7924338416742863305, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
-  m_PrefabInstance: {fileID: 1136405785}
-  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1052380185 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 2992432907992008072, guid: 345c20c960a3f414f84b139929890c50, type: 3}
@@ -7561,6 +7556,10 @@ PrefabInstance:
     m_TransformParent: {fileID: 0}
     m_Modifications:
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
+      propertyPath: Pool
+      value: 
+      objectReference: {fileID: 2006949729}
+    - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: Audio
       value: 
       objectReference: {fileID: 1193163104}
@@ -7571,7 +7570,7 @@ PrefabInstance:
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: Prefabs
       value: 
-      objectReference: {fileID: 1301547704}
+      objectReference: {fileID: 2006949728}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: DeadShips
       value: 
@@ -7630,7 +7629,7 @@ PrefabInstance:
       objectReference: {fileID: 2108627698}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: UnlockCamera
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: MiniMapCamera
@@ -7642,7 +7641,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: ActivateHiveMind
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: AsteroidMaxSpeed
@@ -7650,7 +7649,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: IsTrainingHiveMind
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: InitialCommandDelay
@@ -7678,7 +7677,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: DoesUserHaveController
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: MiniMapCameraContainer
@@ -7790,11 +7789,14 @@ PrefabInstance:
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
-    m_AddedGameObjects:
-    - targetCorrespondingSourceObject: {fileID: 7924338416742863305, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
+    m_AddedGameObjects: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 5651911293931274906, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       insertIndex: -1
-      addedObject: {fileID: 1301547703}
-    m_AddedComponents: []
+      addedObject: {fileID: 2006949729}
+    - targetCorrespondingSourceObject: {fileID: 5651911293931274906, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 2006949728}
   m_SourcePrefab: {fileID: 100100000, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
 --- !u!1 &1159349887
 GameObject:
@@ -8853,149 +8855,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 649272f1c47ce8a49871dedcf74f82ca, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
---- !u!1 &1301547701
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1301547703}
-  - component: {fileID: 1301547704}
-  m_Layer: 0
-  m_Name: Prefabs
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &1301547703
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1301547701}
-  serializedVersion: 2
-  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 0}
-  m_ConstrainProportionsScale: 1
-  m_Children: []
-  m_Father: {fileID: 1039056397}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1301547704
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1301547701}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 05895867b260ddb4c83932a98ba7b818, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  LevelPrefab: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
-  BargePrefab: {fileID: 2518675752222090675, guid: 8f5aab114dd8d064ca0729e8b3401ec7, type: 3}
-  BeehivePrefab: {fileID: 2518675752222090675, guid: b6da442ecc4c92640b8ef7235b627700, type: 3}
-  BumblebeePrefab: {fileID: 3494651897252040616, guid: 0682a07bac05aeb4ba245b791d4ec956, type: 3}
-  CarpenterBeePrefab: {fileID: 2518675752222090675, guid: 331d86682914f444b9e692abaa0f0f77, type: 3}
-  CarrierPrefab: {fileID: 2518675752222090675, guid: cda01f4aced13964d8fbd73d8899c0f4, type: 3}
-  CruiserPrefab: {fileID: 2518675752222090675, guid: f74a256973f75a542b1d9fd714065f8a, type: 3}
-  DreadnoughtPrefab: {fileID: 4765992002712767473, guid: 9763c9a85c4af844a8511927557baef0, type: 3}
-  DronePrefab: {fileID: 2518675752222090675, guid: 0027b8bd923b4a849a32041a7729084a, type: 3}
-  FactoryPrefab: {fileID: 2518675752222090675, guid: 5b891f998aa3aea489a4b46516460f52, type: 3}
-  FireBargePrefab: {fileID: 2518675752222090675, guid: 21ce29e5a82a1ca43b981ebf324dd25f, type: 3}
-  FlagshipPrefab: {fileID: 4525937326214591363, guid: 655824ef07d8a00429a8030982721672, type: 3}
-  FrigatePrefab: {fileID: 2518675752222090675, guid: 9f3a66f3def008d40a922199911da802, type: 3}
-  GunshipPrefab: {fileID: 4672471954231197362, guid: 3c26030e3f2b73b4481c3035cb538344, type: 3}
-  HoneybeePrefab: {fileID: 731483193027966550, guid: 64176d435ca00d747a94ee563b6ed590, type: 3}
-  HornetPrefab: {fileID: 7216971811449879457, guid: 10f29f0bd91a04b4f8e3198d980c5fd2, type: 3}
-  LeafcutterPrefab: {fileID: 2518675752222090675, guid: f26cf8eae069a6a4089b7e1aaa8e5179, type: 3}
-  QueenPrefab: {fileID: 4725796339288062921, guid: 21ec309ef5524894890a9e3b40472f2a, type: 3}
-  ScoutPrefab: {fileID: 6841957851019292102, guid: 6f656ea558bbb6d4491f62f4fd968aaa, type: 3}
-  StrikerPrefab: {fileID: 2518675752222090675, guid: 908e373307f1b7d458c88480ca898675, type: 3}
-  WarpGatePrefab: {fileID: 2518675752222090675, guid: cadc3a4b614aa074f9bcd02924ca901f, type: 3}
-  WaspPrefab: {fileID: 707182470515144504, guid: 3ca387e48b802ae4c9b7fea5c4bc5622, type: 3}
-  YellowJacketPrefab: {fileID: 2518675752222090675, guid: bb23b0103b9e2e64f944157b23a516df, type: 3}
-  BeaconPrefab: {fileID: 641683768750393639, guid: 799add807972d1b429b4376b4f871f10, type: 3}
-  BeeMediumLaserShotPrefab: {fileID: 0}
-  MovementMarkerPrefab: {fileID: 2507697582912947509, guid: d5ee77a24c7f6a6499324a8a600b4943, type: 3}
-  TargetingMarkerPrefab: {fileID: 2507697582912947509, guid: 60a6013777594eb47842724022e04add, type: 3}
-  SquadBoxPrefab: {fileID: 4393128050314196725, guid: 606f56cf5efd9f84d9e877d10187ad8b, type: 3}
-  EmptyObstacleList: []
-  MazePrefabs:
-  - {fileID: 8059139168506411835, guid: e857b359fbc486d4185cba8d6b937759, type: 3}
-  - {fileID: 1541488032990901482, guid: 095f24154a018d64aa49ce129959b442, type: 3}
-  - {fileID: 1428732423466843166, guid: 2fe548c35102d6f46a0f174d1f4bb934, type: 3}
-  - {fileID: 1428732423466843166, guid: 4f6de868898ba7048ba6530a598f5701, type: 3}
-  - {fileID: 1428732423466843166, guid: 929d42fea79c0df49b9d1f3207816001, type: 3}
-  - {fileID: 1428732423466843166, guid: bfbe492ea5555cb4b98fd35b549ce976, type: 3}
-  - {fileID: 8059139168506411835, guid: eb9a18ed48b9d68499a456e549060fdd, type: 3}
-  - {fileID: 7829129030894184550, guid: c39cef0f8a986f04391469448c9edaf4, type: 3}
-  - {fileID: 7829129030894184550, guid: 2da399e79018bc3479c512c6dce51077, type: 3}
-  ThreePathsPrefabs:
-  - {fileID: 6135775424364691314, guid: 4262d877ff71237409f1a5939950a248, type: 3}
-  - {fileID: 4879675644559791393, guid: 9b7d23c0bb97d7544b78aa7cefbe67bc, type: 3}
-  - {fileID: 6041846926139283594, guid: 72ac37683a6fc74449e0d72265eb13e2, type: 3}
-  ForestPrefabs:
-  - {fileID: 770396282262683932, guid: 71bf27c498ea15e4b9fb6c47fbd95970, type: 3}
-  - {fileID: 305151279942074956, guid: 4328300b697307347a4b7cf111ab0717, type: 3}
-  - {fileID: 2383396407300462798, guid: ae1039ce8a41d7444af952a5f2b8d702, type: 3}
-  - {fileID: 9152976966309529601, guid: 3dda649bc94c5634fbfe1cdab01fe997, type: 3}
-  - {fileID: 5305347561405999746, guid: 299820f326a368b4681ebc0d0c951c2c, type: 3}
-  - {fileID: 6746071856776410635, guid: 53b368ddd23a4434a933d8411c11dbca, type: 3}
-  - {fileID: 3916593361163989867, guid: 96db16bd017fca34ebefaf7702f65bdb, type: 3}
-  - {fileID: 2555346042772620386, guid: 72292a9db0b86e942a1f7a8efa82282d, type: 3}
-  - {fileID: 1032564227496797728, guid: cf68a2f5b2b444a48af473928811fede, type: 3}
-  - {fileID: 4942428436154776674, guid: 3e2997c21f944aa4c9075385a82fabba, type: 3}
-  - {fileID: 7478197031987364554, guid: 04189619d64b58342a9d3287adcb5057, type: 3}
-  - {fileID: 7438210660445990170, guid: 0048b89b9cd3ce1468109ab6ede19887, type: 3}
-  - {fileID: 770396282262683932, guid: 464caebf39705304182e7ab74b4b5592, type: 3}
-  - {fileID: 5305347561405999746, guid: 260bf2d446123b1409c33b9bd08483d0, type: 3}
-  - {fileID: 4942428436154776674, guid: 811c74915e533b442aa6b9443e78994e, type: 3}
-  - {fileID: 6746071856776410635, guid: 42afa87c2a62b9a4c937ba8acb8a5d7f, type: 3}
-  - {fileID: 9152976966309529601, guid: 7bd883b503044f940a25d08ff45209b8, type: 3}
-  - {fileID: 9152976966309529601, guid: cc8dfd97b832f81409b57b03559f9949, type: 3}
-  - {fileID: 1032564227496797728, guid: 3417b91796fcfc34d804916d8b2b1347, type: 3}
-  - {fileID: 1032564227496797728, guid: d59677a8e0d9f0240a1118f8487c63aa, type: 3}
-  - {fileID: 1032564227496797728, guid: 4b95fd74483dd614eb3c331ed6698542, type: 3}
-  - {fileID: 305151279942074956, guid: b4cb9b051560baf41bc941bfbcf1b9b9, type: 3}
-  TheWallPrefabs:
-  - {fileID: 6140537953145453775, guid: 747e28e9e18bf7f4c87fd8e7c6f5343e, type: 3}
-  - {fileID: 7690447332932776464, guid: 5211f38c0c94a2f4891f4f38b51b594c, type: 3}
-  - {fileID: 4568262480907706042, guid: 8fd07fad10cc9e846aa19246ff95f3f3, type: 3}
-  - {fileID: 6829373630265507003, guid: b1747194cafe2c748ba367ccdd03aeb1, type: 3}
-  - {fileID: 8671291294499429652, guid: b9a83af82094674419ad22293f1067f6, type: 3}
-  - {fileID: 1206413553572493813, guid: c772a755193992e41a5bf70aed1335ca, type: 3}
-  - {fileID: 1476060401002231351, guid: 059e3104861c0cf40a462f2de790b5ae, type: 3}
-  - {fileID: 3056496247269849399, guid: 2db208fd931901a42ba5e102360ff7be, type: 3}
-  - {fileID: 7809105671099728273, guid: 57cb74644d014754594e4f91ce7c15e7, type: 3}
-  - {fileID: 5595109888224089792, guid: 6add5e236518622468db7a637360a4cd, type: 3}
-  - {fileID: 6253176636121864618, guid: 4b5857b2594ebfb4e8d909dcaa7f00ad, type: 3}
-  MiningAsteroidPrefabs:
-  - {fileID: 7879729711353278377, guid: fe6d0fb0d85c85c479edc717c832af86, type: 3}
-  - {fileID: 7879729711353278377, guid: 3834dda5c834aa449bc5195a6e2d6c11, type: 3}
-  CollisionAsteroidPrefabs:
-  - {fileID: 226534545502904114, guid: c56c01c11c9ad6a4aa3c7694969bdc5b, type: 3}
-  - {fileID: 439529657869320101, guid: fd259f1b80ec2cb4ab265509be0d9310, type: 3}
-  - {fileID: 4975317520758011166, guid: d4c09c3b30a0df240804e7d2ae0ce4f1, type: 3}
-  - {fileID: 2899863341814993073, guid: 795ef7f673ee4ad41bd8f30c805518eb, type: 3}
-  - {fileID: 2899863341814993073, guid: 5ba5ea3048392e449830477d46f83e9e, type: 3}
-  - {fileID: 2899863341814993073, guid: 39f193e32fc710b4bb866fc5c890e817, type: 3}
-  - {fileID: 2899863341814993073, guid: e45e959617e61c940badb738ea0b350d, type: 3}
-  - {fileID: 2899863341814993073, guid: c785de744e9e8ca4b80a961b572f8d36, type: 3}
-  - {fileID: 2899863341814993073, guid: 13b78214c45620642affa6632e8f7f23, type: 3}
-  - {fileID: 2899863341814993073, guid: a1969efbfb7bd964d87858bba1ec1393, type: 3}
-  - {fileID: 2899863341814993073, guid: db2b908a39a40f941944e2633da344c8, type: 3}
-  - {fileID: 226534545502904114, guid: af099394451a42e4aaf76305d2f2edd2, type: 3}
-  BreakawayAsteroids: []
-  AsteroidPieces: []
-  Maps:
-  - {fileID: 7112091651330518199, guid: 43e607b6c99ec5943beee4efcf0751f8, type: 3}
-  - {fileID: 7112091651330518199, guid: 10affe0dca3641a42b875997bffcc24d, type: 3}
 --- !u!1001 &1317578645
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -15900,6 +15759,226 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 649272f1c47ce8a49871dedcf74f82ca, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+--- !u!1 &2006949726 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 5651911293931274906, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
+  m_PrefabInstance: {fileID: 1136405785}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &2006949728
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2006949726}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 05895867b260ddb4c83932a98ba7b818, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  LevelPrefab: {fileID: 4498687044327674839, guid: 4f3632ec3ea98604b843ecec2ee80a44, type: 3}
+  BargePrefab: {fileID: 2518675752222090675, guid: 8f5aab114dd8d064ca0729e8b3401ec7, type: 3}
+  BeehivePrefab: {fileID: 2518675752222090675, guid: b6da442ecc4c92640b8ef7235b627700, type: 3}
+  BumblebeePrefab: {fileID: 3494651897252040616, guid: 0682a07bac05aeb4ba245b791d4ec956, type: 3}
+  CarpenterBeePrefab: {fileID: 2518675752222090675, guid: 331d86682914f444b9e692abaa0f0f77, type: 3}
+  CarrierPrefab: {fileID: 2518675752222090675, guid: cda01f4aced13964d8fbd73d8899c0f4, type: 3}
+  CruiserPrefab: {fileID: 2518675752222090675, guid: f74a256973f75a542b1d9fd714065f8a, type: 3}
+  DreadnoughtPrefab: {fileID: 4765992002712767473, guid: 9763c9a85c4af844a8511927557baef0, type: 3}
+  DronePrefab: {fileID: 2518675752222090675, guid: 0027b8bd923b4a849a32041a7729084a, type: 3}
+  FactoryPrefab: {fileID: 2518675752222090675, guid: 5b891f998aa3aea489a4b46516460f52, type: 3}
+  FireBargePrefab: {fileID: 2518675752222090675, guid: 21ce29e5a82a1ca43b981ebf324dd25f, type: 3}
+  FlagshipPrefab: {fileID: 4525937326214591363, guid: 655824ef07d8a00429a8030982721672, type: 3}
+  FrigatePrefab: {fileID: 2518675752222090675, guid: 9f3a66f3def008d40a922199911da802, type: 3}
+  GunshipPrefab: {fileID: 4672471954231197362, guid: 3c26030e3f2b73b4481c3035cb538344, type: 3}
+  HoneybeePrefab: {fileID: 731483193027966550, guid: 64176d435ca00d747a94ee563b6ed590, type: 3}
+  HornetPrefab: {fileID: 7216971811449879457, guid: 10f29f0bd91a04b4f8e3198d980c5fd2, type: 3}
+  LeafcutterPrefab: {fileID: 2518675752222090675, guid: f26cf8eae069a6a4089b7e1aaa8e5179, type: 3}
+  QueenPrefab: {fileID: 4725796339288062921, guid: 21ec309ef5524894890a9e3b40472f2a, type: 3}
+  ScoutPrefab: {fileID: 6841957851019292102, guid: 6f656ea558bbb6d4491f62f4fd968aaa, type: 3}
+  StrikerPrefab: {fileID: 2518675752222090675, guid: 908e373307f1b7d458c88480ca898675, type: 3}
+  WarpGatePrefab: {fileID: 2518675752222090675, guid: cadc3a4b614aa074f9bcd02924ca901f, type: 3}
+  WaspPrefab: {fileID: 707182470515144504, guid: 3ca387e48b802ae4c9b7fea5c4bc5622, type: 3}
+  YellowJacketPrefab: {fileID: 2518675752222090675, guid: bb23b0103b9e2e64f944157b23a516df, type: 3}
+  BeaconPrefab: {fileID: 641683768750393639, guid: 799add807972d1b429b4376b4f871f10, type: 3}
+  BeeSmallLaserShotPrefab: {fileID: 2378685256343899705, guid: 3b1a5274038082f4fb1be503df70d6de, type: 3}
+  BeeMediumLaserShotPrefab: {fileID: 2670737595383420918, guid: cbdd4db6593349049b7d89684f0bd405, type: 3}
+  BumblebeeShotPrefab: {fileID: 3307778784346582978, guid: a7fafdd7241b4e742b78484c3c81c8b9, type: 3}
+  FlagshipShotPrefab: {fileID: 1388406827635933099, guid: e814e9f9569edc64e862e11072ac93e8, type: 3}
+  RocketPrefab: {fileID: 5542536910484813896, guid: 4b03680f1afa4114386717fc0dbbf817, type: 3}
+  HumanSmallPrefab: {fileID: 6428638681076635372, guid: c5d2fa5f5d52d0d4b855fdc29fca6e90, type: 3}
+  HumanMediumPrefab: {fileID: 3911271517188601395, guid: 3da77696d01a3ea46b81fbca2a24e25d, type: 3}
+  BeamPrefab: {fileID: 7501106849564186297, guid: 7e760e89d34f0d24c9681ff13db6a00a, type: 3}
+  SplitShotPrefab: {fileID: 1332487207424970191, guid: e256732f4a582284b967f76f71403ead, type: 3}
+  QueenSmallPrefab: {fileID: 6983214468218345633, guid: 1406a89793f9832448afeba3b011fec2, type: 3}
+  QueenLargePrefab: {fileID: 6983214468218345633, guid: 3c88303479b0014448bbb58d6782a7ad, type: 3}
+  StrikerBombPrefab: {fileID: 1478250756334867065, guid: e3b10f2b9d1634c4090652b476134566, type: 3}
+  RocketExplosionPrefab: {fileID: 4140905405707596873, guid: 216222dccbe78114893a8e904cb41c36, type: 3}
+  FireBargeExplosionPrefab: {fileID: 1876865744220396715, guid: 85fb1a91ef3a67d49b33ab6501ac618d, type: 3}
+  BeeSmallProjectileExplosionAnimationPrefab: {fileID: 3345242948093166458, guid: 6a95d017bd6a082479c47468372db16d, type: 3}
+  BeeMediumProjectileExplosionAnimationPrefab: {fileID: 3345242948093166458, guid: 8478bbbf7b61aca459a368062f5b3a8e, type: 3}
+  BumblebeeShotProjectileExplosionAnimationPrefab: {fileID: 3345242948093166458, guid: 356ca648f9e412043912584134ab33dd, type: 3}
+  FlagshipShotProjectileExplosionAnimationPrefab: {fileID: 7548406097655373368, guid: c0602029ea2d09843aafa1c5fd54b787, type: 3}
+  HumanSmallProjectileExplosionAnimationPrefab: {fileID: 3345242948093166458, guid: a51cc23e10b7b7a4fa653e3920fa7f16, type: 3}
+  HumanMediumProjectileExplosionAnimationPrefab: {fileID: 3345242948093166458, guid: a2e0ff1436798d64f95ea1c8b629989d, type: 3}
+  SplitShotProjectileExplosionAnimationPrefab: {fileID: 3612702878992157786, guid: 8296e38041b692043b998926766361bc, type: 3}
+  QueenSmallProjectileExplosionAnimationPrefab: {fileID: 3345242948093166458, guid: 621b0d5f7c5f78d4f8d62b7b997cc1a9, type: 3}
+  QueenLargeProjectileExplosionAnimationPrefab: {fileID: 3345242948093166458, guid: 79f29d6ea5220e04fab074511cc6287a, type: 3}
+  BargeRemainsPrefab: {fileID: 0}
+  BeehiveRemainsPrefab: {fileID: 0}
+  BumblebeeRemainsPrefab: {fileID: 0}
+  CarpenterBeeRemainsPrefab: {fileID: 0}
+  CarrierRemainsPrefab: {fileID: 0}
+  CruiserRemainsPrefab: {fileID: 0}
+  DreadnoughtRemainsPrefab: {fileID: 0}
+  DroneRemainsPrefab: {fileID: 3284305956443189761, guid: e1645a44ab1f1054d876dd172a8ff1e9, type: 3}
+  FactoryRemainsPrefab: {fileID: 0}
+  FireBargeRemainsPrefab: {fileID: 0}
+  FlagshipRemainsPrefab: {fileID: 0}
+  FrigateRemainsPrefab: {fileID: 0}
+  GunshipRemainsPrefab: {fileID: 8509169495103239065, guid: db15dd052b3f4154089d2e57294c1df6, type: 3}
+  HoneybeeRemainsPrefab: {fileID: 3284305956443189761, guid: c622be5f7d500034a8a9c6094904f2ee, type: 3}
+  HornetRemainsPrefab: {fileID: 3284305956443189761, guid: abc976f81f683a8488eeb2e7cb347509, type: 3}
+  LeafcutterRemainsPrefab: {fileID: 0}
+  QueenRemainsPrefab: {fileID: 0}
+  ScoutRemainsPrefab: {fileID: 3284305956443189761, guid: 9155b5af830f51c48ab1b31e8596c5f8, type: 3}
+  StrikerRemainsPrefab: {fileID: 3284305956443189761, guid: 25c7ec7d55baae94baf69847d9c97eb8, type: 3}
+  WarpGateRemainsPrefab: {fileID: 0}
+  WaspRemainsPrefab: {fileID: 0}
+  YellowJacketRemainsPrefab: {fileID: 3284305956443189761, guid: 5af1c72d8dd080b4582e97265edfb4e8, type: 3}
+  BeaconRemainsPrefab: {fileID: 0}
+  TinyShipExplosionPrefab: {fileID: 1876865744220396715, guid: 1f58b7947f208d944b8669f2e51a9a52, type: 3}
+  SmallShipExplosionPrefab: {fileID: 2246065620099526006, guid: 065ca2e62b6492c47aecb8daad1641a5, type: 3}
+  MediumShipExplosionPrefab: {fileID: 5251504260705199934, guid: 9b9ec98e14c9ff04db5cf9584f56ae1c, type: 3}
+  LargeShipExplosionPrefab: {fileID: 5251504260705199934, guid: 70dc82c9665ce3f4eb24bbfe8e62b2c9, type: 3}
+  HugeShipExplosionPrefab: {fileID: 5251504260705199934, guid: 6a4063a718e9d7341ac9460de59edcb0, type: 3}
+  BeehiveShipExplosionPrefab: {fileID: 0}
+  QueenShipExplosionPrefab: {fileID: 0}
+  MovementMarkerPrefab: {fileID: 2507697582912947509, guid: d5ee77a24c7f6a6499324a8a600b4943, type: 3}
+  TargetingMarkerPrefab: {fileID: 2507697582912947509, guid: 60a6013777594eb47842724022e04add, type: 3}
+  SquadBoxPrefab: {fileID: 4393128050314196725, guid: 606f56cf5efd9f84d9e877d10187ad8b, type: 3}
+  EmptyObstacleList: []
+  MazePrefabs:
+  - {fileID: 8059139168506411835, guid: e857b359fbc486d4185cba8d6b937759, type: 3}
+  - {fileID: 1541488032990901482, guid: 095f24154a018d64aa49ce129959b442, type: 3}
+  - {fileID: 1428732423466843166, guid: 2fe548c35102d6f46a0f174d1f4bb934, type: 3}
+  - {fileID: 1428732423466843166, guid: 4f6de868898ba7048ba6530a598f5701, type: 3}
+  - {fileID: 1428732423466843166, guid: 929d42fea79c0df49b9d1f3207816001, type: 3}
+  - {fileID: 1428732423466843166, guid: bfbe492ea5555cb4b98fd35b549ce976, type: 3}
+  - {fileID: 8059139168506411835, guid: eb9a18ed48b9d68499a456e549060fdd, type: 3}
+  - {fileID: 7829129030894184550, guid: c39cef0f8a986f04391469448c9edaf4, type: 3}
+  - {fileID: 7829129030894184550, guid: 2da399e79018bc3479c512c6dce51077, type: 3}
+  ThreePathsPrefabs:
+  - {fileID: 6135775424364691314, guid: 4262d877ff71237409f1a5939950a248, type: 3}
+  - {fileID: 4879675644559791393, guid: 9b7d23c0bb97d7544b78aa7cefbe67bc, type: 3}
+  - {fileID: 6041846926139283594, guid: 72ac37683a6fc74449e0d72265eb13e2, type: 3}
+  ForestPrefabs:
+  - {fileID: 770396282262683932, guid: 71bf27c498ea15e4b9fb6c47fbd95970, type: 3}
+  - {fileID: 305151279942074956, guid: 4328300b697307347a4b7cf111ab0717, type: 3}
+  - {fileID: 2383396407300462798, guid: ae1039ce8a41d7444af952a5f2b8d702, type: 3}
+  - {fileID: 9152976966309529601, guid: 3dda649bc94c5634fbfe1cdab01fe997, type: 3}
+  - {fileID: 5305347561405999746, guid: 299820f326a368b4681ebc0d0c951c2c, type: 3}
+  - {fileID: 6746071856776410635, guid: 53b368ddd23a4434a933d8411c11dbca, type: 3}
+  - {fileID: 3916593361163989867, guid: 96db16bd017fca34ebefaf7702f65bdb, type: 3}
+  - {fileID: 2555346042772620386, guid: 72292a9db0b86e942a1f7a8efa82282d, type: 3}
+  - {fileID: 1032564227496797728, guid: cf68a2f5b2b444a48af473928811fede, type: 3}
+  - {fileID: 4942428436154776674, guid: 3e2997c21f944aa4c9075385a82fabba, type: 3}
+  - {fileID: 7478197031987364554, guid: 04189619d64b58342a9d3287adcb5057, type: 3}
+  - {fileID: 7438210660445990170, guid: 0048b89b9cd3ce1468109ab6ede19887, type: 3}
+  - {fileID: 770396282262683932, guid: 464caebf39705304182e7ab74b4b5592, type: 3}
+  - {fileID: 5305347561405999746, guid: 260bf2d446123b1409c33b9bd08483d0, type: 3}
+  - {fileID: 4942428436154776674, guid: 811c74915e533b442aa6b9443e78994e, type: 3}
+  - {fileID: 6746071856776410635, guid: 42afa87c2a62b9a4c937ba8acb8a5d7f, type: 3}
+  - {fileID: 9152976966309529601, guid: 7bd883b503044f940a25d08ff45209b8, type: 3}
+  - {fileID: 9152976966309529601, guid: cc8dfd97b832f81409b57b03559f9949, type: 3}
+  - {fileID: 1032564227496797728, guid: 3417b91796fcfc34d804916d8b2b1347, type: 3}
+  - {fileID: 1032564227496797728, guid: d59677a8e0d9f0240a1118f8487c63aa, type: 3}
+  - {fileID: 1032564227496797728, guid: 4b95fd74483dd614eb3c331ed6698542, type: 3}
+  - {fileID: 305151279942074956, guid: b4cb9b051560baf41bc941bfbcf1b9b9, type: 3}
+  TheWallPrefabs:
+  - {fileID: 6140537953145453775, guid: 747e28e9e18bf7f4c87fd8e7c6f5343e, type: 3}
+  - {fileID: 7690447332932776464, guid: 5211f38c0c94a2f4891f4f38b51b594c, type: 3}
+  - {fileID: 4568262480907706042, guid: 8fd07fad10cc9e846aa19246ff95f3f3, type: 3}
+  - {fileID: 6829373630265507003, guid: b1747194cafe2c748ba367ccdd03aeb1, type: 3}
+  - {fileID: 8671291294499429652, guid: b9a83af82094674419ad22293f1067f6, type: 3}
+  - {fileID: 1206413553572493813, guid: c772a755193992e41a5bf70aed1335ca, type: 3}
+  - {fileID: 1476060401002231351, guid: 059e3104861c0cf40a462f2de790b5ae, type: 3}
+  - {fileID: 3056496247269849399, guid: 2db208fd931901a42ba5e102360ff7be, type: 3}
+  - {fileID: 7809105671099728273, guid: 57cb74644d014754594e4f91ce7c15e7, type: 3}
+  - {fileID: 5595109888224089792, guid: 6add5e236518622468db7a637360a4cd, type: 3}
+  - {fileID: 6253176636121864618, guid: 4b5857b2594ebfb4e8d909dcaa7f00ad, type: 3}
+  MiningAsteroidPrefabs:
+  - {fileID: 7879729711353278377, guid: fe6d0fb0d85c85c479edc717c832af86, type: 3}
+  - {fileID: 7879729711353278377, guid: 3834dda5c834aa449bc5195a6e2d6c11, type: 3}
+  CollisionAsteroidPrefabs:
+  - {fileID: 226534545502904114, guid: c56c01c11c9ad6a4aa3c7694969bdc5b, type: 3}
+  - {fileID: 439529657869320101, guid: fd259f1b80ec2cb4ab265509be0d9310, type: 3}
+  - {fileID: 4975317520758011166, guid: d4c09c3b30a0df240804e7d2ae0ce4f1, type: 3}
+  - {fileID: 2899863341814993073, guid: 795ef7f673ee4ad41bd8f30c805518eb, type: 3}
+  - {fileID: 2899863341814993073, guid: 5ba5ea3048392e449830477d46f83e9e, type: 3}
+  - {fileID: 2899863341814993073, guid: 39f193e32fc710b4bb866fc5c890e817, type: 3}
+  - {fileID: 2899863341814993073, guid: e45e959617e61c940badb738ea0b350d, type: 3}
+  - {fileID: 2899863341814993073, guid: c785de744e9e8ca4b80a961b572f8d36, type: 3}
+  - {fileID: 2899863341814993073, guid: 13b78214c45620642affa6632e8f7f23, type: 3}
+  - {fileID: 2899863341814993073, guid: a1969efbfb7bd964d87858bba1ec1393, type: 3}
+  - {fileID: 2899863341814993073, guid: db2b908a39a40f941944e2633da344c8, type: 3}
+  - {fileID: 226534545502904114, guid: af099394451a42e4aaf76305d2f2edd2, type: 3}
+  BreakawayAsteroids: []
+  AsteroidPieces: []
+  Maps:
+  - {fileID: 7112091651330518199, guid: 43e607b6c99ec5943beee4efcf0751f8, type: 3}
+  - {fileID: 7112091651330518199, guid: 10affe0dca3641a42b875997bffcc24d, type: 3}
+--- !u!114 &2006949729
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2006949726}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 15e09bd8b6586bf4f9a40c96a6089c47, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Stage: {fileID: 0}
+  __BargePoolSize: 0
+  __BeaconPoolSize: 0
+  __BeehivePoolSize: 0
+  __BumblebeePoolSize: 0
+  __CarpenterBeePoolSize: 0
+  __CarrierPoolSize: 0
+  __CruiserPoolSize: 0
+  __DreadnoughtPoolSize: 0
+  __DronePoolSize: 0
+  __FactoryPoolSize: 0
+  __FireBargePoolSize: 0
+  __FlagshipPoolSize: 0
+  __FrigatePoolSize: 0
+  __GunshipPoolSize: 0
+  __HoneybeePoolSize: 0
+  __HornetPoolSize: 0
+  __LeafcutterPoolSize: 0
+  __QueenPoolSize: 0
+  __ScoutPoolSize: 0
+  __StrikerPoolSize: 0
+  __WarpGatePoolSize: 0
+  __WaspPoolSize: 0
+  __YellowJacketPoolSize: 0
+  __PlutoMapPoolSize: 0
+  __UranusMapPoolSize: 0
+  __BeeSmallProjectilePoolSize: 0
+  __BeeMediumProjectilePoolSize: 0
+  __BumblebeeShotProjectilePoolSize: 0
+  __FlagshipShotProjectilePoolSize: 0
+  __RocketProjectilePoolSize: 0
+  __HumanSmallProjectilePoolSize: 0
+  __HumanMediumProjectilePoolSize: 0
+  __BeamProjectilePoolSize: 0
+  __SplitShotProjectilePoolSize: 0
+  __QueenSmallProjectilePoolSize: 0
+  __QueenLargeProjectilePoolSize: 0
+  __StrikerBombProjectilePoolSize: 0
+  __RocketExplosionProjectilePoolSize: 0
+  __FireBargeExplosionProjectilePoolSize: 0
 --- !u!1001 &2087423607
 PrefabInstance:
   m_ObjectHideFlags: 0

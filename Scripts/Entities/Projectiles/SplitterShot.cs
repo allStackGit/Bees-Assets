@@ -22,8 +22,9 @@ namespace Assets.Scripts.Entities.Projectiles
         {
             if (HasExplosion)
             {
-                Explosion = Instantiate(ExplosionAnimationPrefab, GetPosition() + Level.GetPosition(), Quaternion.identity);
                 Explosion.transform.parent = Level.Map.transform;
+                Explosion.transform.localPosition = GetPosition();
+                Explosion.SetActive(true);
             }
             Split(target);
             Kill();
@@ -33,8 +34,9 @@ namespace Assets.Scripts.Entities.Projectiles
         {
             if (HasExplosion)
             {
-                Explosion = Instantiate(ExplosionAnimationPrefab, GetPosition() + Level.GetPosition(), Quaternion.identity);
                 Explosion.transform.parent = Level.Map.transform;
+                Explosion.transform.localPosition = GetPosition();
+                Explosion.SetActive(true);
             }
             Split(null);
             Kill();
@@ -73,7 +75,7 @@ namespace Assets.Scripts.Entities.Projectiles
                 GameObject shot =  Instantiate(SplitLaserPrefab, startingPosition, Quaternion.identity);
                 shot.transform.parent = Level.Map.transform;
                 LaserShot projectile = (LaserShot)shot.GetComponent(typeof(LaserShot));
-                projectile.Setup(Level, Shooter.Side, Level.State.GetId(), Weapon, Shooter, Target, startingPosition, radians, Weapon.Range, (int) (Weapon.Power / 1.5f));
+                projectile.Setup(Level, Level.State.GetId(), Weapon, Shooter, Target, startingPosition, radians, Weapon.Range, (int) (Weapon.Power / 1.5f));
                 projectile.ShipsToIgnore.Add(target);
                 Shooter.ProjectilesInFlight.Add(projectile);
 

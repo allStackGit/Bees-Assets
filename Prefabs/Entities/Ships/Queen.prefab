@@ -111,9 +111,10 @@ MonoBehaviour:
   Id: 0
   Age: 0
   Level: {fileID: 0}
-  Side: 0
-  Collider: {fileID: 0}
-  Body: {fileID: 0}
+  Stage: {fileID: 0}
+  Side: 1
+  Collider: {fileID: 2932568822215041311}
+  Body: {fileID: 2066278837942174322}
   ShowDebug: 0
   Health: 0
   MaxHealth: 0
@@ -130,7 +131,7 @@ MonoBehaviour:
   SpecialFirePower: 0
   CurrentSpeed: 0
   LongestSide: 0
-  ShipExplosion: {fileID: 1876865744220396715, guid: 1f58b7947f208d944b8669f2e51a9a52, type: 3}
+  ShipExplosion: {fileID: 0}
   HealthBar: {fileID: 3570096180295899104}
   MiniMapIcon: {fileID: 3941083685554326912}
   ShipAnimation: {fileID: 0}
@@ -145,16 +146,10 @@ MonoBehaviour:
   DefaultAngle: 0
   TargetDirection: 0
   LastKilled: 0
-  ShipType: 
   Name: 
-  FireAtFrontOfShip: 1
-  InCombat: 0
-  IsFollowingPath: 0
-  CannotChangeMovementOrders: 0
-  IsSpawnedShip: 0
+  ShipType: 17
   Vision: {fileID: 4998567580898334610}
-  SpriteRenderer: {fileID: 0}
-  IsDead: 0
+  IsDead: 1
   IsUserControlled: 0
   IsMobile: 0
   HasBrain: 0
@@ -171,17 +166,18 @@ MonoBehaviour:
   HasLeftRocketFlares: 0
   HasCenterRocketFlares: 0
   HasRightRocketFlares: 0
+  HasOnlySideRocketFlares: 0
   HasMovementMarker: 0
   HasWaitingTargetCoordinates: 0
   HasRemainsShip: 0
+  FireAtFrontOfShip: 1
+  IsSpawnedShip: 0
   HasEnteredMap: 0
+  AreRocketFlaresOutOfSync: 0
+  InCombat: 0
+  IsFollowingPath: 0
+  CannotChangeMovementOrders: 0
   Weapons: []
-  ProjectilePrefabs:
-  - {fileID: 6983214468218345633, guid: 3c88303479b0014448bbb58d6782a7ad, type: 3}
-  - {fileID: 6983214468218345633, guid: 1406a89793f9832448afeba3b011fec2, type: 3}
-  - {fileID: 6983214468218345633, guid: 1406a89793f9832448afeba3b011fec2, type: 3}
-  - {fileID: 6983214468218345633, guid: 1406a89793f9832448afeba3b011fec2, type: 3}
-  - {fileID: 6983214468218345633, guid: 1406a89793f9832448afeba3b011fec2, type: 3}
   WeaponPrefabs:
   - {fileID: 5673722620579886739}
   - {fileID: 1554310400260538185}
@@ -192,17 +188,19 @@ MonoBehaviour:
   LeftRocketFlares: []
   CenterRocketFlares: []
   RightRocketFlares: []
-  RemainsShips: []
-  Brain: {fileID: 0}
+  Brain: {fileID: 7060275179156892988}
   NearbyAsteroids: []
   Turrets: []
   ProximityCollider: {fileID: 0}
   ShipAnimationController: {fileID: 0}
   RotationSpeed: 0
   TargetEnemyShipToFollow: {fileID: 0}
-  IsCloseEnoughToTargetEnemyShipToFollow: 0
   Killer: {fileID: 0}
   ShipRemains: {fileID: 0}
+  ShipTypeLetter: 0
+  ShootingStrategy: 0
+  ShipExplosionSoundEffect: {fileID: 0}
+  HasShipExplosionSoundEffect: 0
   PathfindingThreadComplete: 0
   IsPathfinding: 0
   PathfindingThread: 0
@@ -216,6 +214,7 @@ MonoBehaviour:
   __EnemySquad: 
   __TargetEnemyShipToFollow: 
   __SquadColor: 
+  __SquadShootingStrategy: 
   __CommandDestination: {x: 0, y: 0}
   __Velocity: {x: 0, y: 0}
   __TargetCoordinates: {x: 0, y: 0}
@@ -225,6 +224,10 @@ MonoBehaviour:
   __DegreesToTargetCoordinates: 0
   __DistanceToTargetCoordinates: 0
   __TurningRadius: 0
+  __Width: 0
+  __Height: 0
+  __SquadWidth: 0
+  __SquadHeight: 0
   __Tsv: 0
   __CommandTsv: 0
   __HasReachedDestination: 0
@@ -247,11 +250,11 @@ MonoBehaviour:
   __Clearance: 0
   Direction: 0
   ShouldDetonate: 0
-  RLShootingStrategy: 
+  RLShootingStrategy: 0
   RLSide: 0
   RLHealth: 0
   RLShipType: 0
-  MinionType: Yellow Jacket
+  MinionType: 0
   MinionCount: 8
   SpawnPoint: {x: 0, y: -48}
   SpawnFrequency: 45
@@ -572,6 +575,17 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 2546671832864185319, guid: 3cef43755502536428d6888543b38fb4, type: 3}
   m_PrefabInstance: {fileID: 2982181235232530685}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &7060275179156892988 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 5231481642865495489, guid: 3cef43755502536428d6888543b38fb4, type: 3}
+  m_PrefabInstance: {fileID: 2982181235232530685}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 42a9c0cc5fd6f664f8b7fac23cb6cf97, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1001 &3128772266335194683
 PrefabInstance:
   m_ObjectHideFlags: 0

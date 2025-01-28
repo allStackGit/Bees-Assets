@@ -9,7 +9,6 @@ using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
 
 using UnityEngine;
-using static UnityEngine.GraphicsBuffer;
 
 namespace Assets.Scripts.Entities.Projectiles
 {
@@ -23,54 +22,86 @@ namespace Assets.Scripts.Entities.Projectiles
         public Weapon Weapon;
         public Vector2 StartingPosition;
         public float Angle;
-        public GameObject ExplosionAnimationPrefab;
         public GameObject Explosion;
         public HashSet<Ship> ShipsToIgnore = new HashSet<Ship>();
         public Queue<Ship> CollidingQueue = new Queue<Ship>();
         public Queue<Obstacle> CollidingObstacleQueue = new Queue<Obstacle>();
         public string Name;
         public ConfigData.ProjectileTypes Type;
-        public bool HasExplosion, HasSetMovement, ShipIsDead;
+        public bool HasExplosion, ShipIsDead, HasBody;
+        /// <summary>
+        /// If a projectile is dead that means it has been created in the object pool but either has never been spawned into the game or has died and gone back to the pool
+        /// </summary>
+        public bool IsDead;
         
-        public void Setup(Level level, ConfigData.ProjectileTypes type, int side, long id, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power)
+        public void Create(Stage stage)
         {
-            Type = type;
-            Stage = level.Stage;
+            Stage = stage;
+            if (!Stage.IsTraining && HasExplosion)
+            {
+                //Debug.Log($"{Stage}, {Stage?.Prefabs}, {Type}, {Stage?.Prefabs?.ConvertProjectileTypeToExplosionAnimation[Type]}");
+                Explosion = Instantiate(Stage.Prefabs.ConvertProjectileTypeToExplosionAnimation[Type], Vector2.zero, Quaternion.identity);
+                Explosion.gameObject.SetActive(false);
+            }
+            else
+            {
+                HasExplosion = false;
+            }
+
+            gameObject.SetActive(false);
+        }
+        public void Setup(Level level, long id, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power)
+        {
+            Level = level;
             Id = id;
             Weapon = weapon;
             Shooter = shooter;
             Target = target;
             Range = range;
-            Side = side;
             Power = power;
             Angle = angle;
-            Name = $"{Shooter.Name}: {name} - #{Id}";
+            Name = $"{Shooter.Name}: {Type} - #{Id}";
             gameObject.name = Name;
             StartingPosition = startingPosition;
             transform.localPosition = StartingPosition;
-            Level = level;
-            Body = GetComponent<Rigidbody2D>();
-            Collider = GetComponent<Collider2D>();
-            HasExplosion = ExplosionAnimationPrefab != null;
-            if (Body != null)
-            {
-                SetMovement();
-            }
+            IsDead = false;
+
+
 
             FleetShip = shooter.FleetShip;
             SavedSquad = shooter.Squad.SavedSquad;
+            ClearData();
+            gameObject.SetActive(true);
+            if (HasBody)
+            {
+                SetMovement();
+            }
+        }
+
+        public void ClearData()
+        {
+            ShipsToIgnore.Clear();
+            CollidingQueue.Clear();
+            CollidingObstacleQueue.Clear();
+            ShipIsDead = false;
+
         }
 
         public virtual void Kill()
         {
             //Debug.Log($"killed projectile {Name}");
-            RemoveDamageSentEntry();
-            if (!ShipIsDead)
+            if (!IsDead)
             {
-                Shooter.ProjectilesInFlight.Remove(this);
+                RemoveDamageSentEntry();
+                if (!ShipIsDead)
+                {
+                    Shooter.ProjectilesInFlight.Remove(this);
+                }
+                Debug.Log($"{Name} has been killed and will be returned");
+                IsDead = true;
+                Stage.Pool.ReturnProjectileToPool(this);
             }
-            Debug.Log($"{Name} has been killed and will be returned");
-            Stage.ReturnProjectileToPool(this);
+
             //Destroy(gameObject);
         }
 
@@ -81,12 +112,12 @@ namespace Assets.Scripts.Entities.Projectiles
         }
         public virtual void KillSequence()
         {
-            if (!Stage.IsTraining && HasExplosion)
+            if (HasExplosion)
             {
-                Explosion = Instantiate(ExplosionAnimationPrefab, Vector2.zero, Quaternion.identity);
                 Explosion.transform.parent = Level.Map.transform;
                 Explosion.transform.localPosition = GetPosition();
                 Explosion.transform.eulerAngles = transform.eulerAngles - new Vector3(0, 0, 180);
+                Explosion.SetActive(true);
             }
             Kill();
         }

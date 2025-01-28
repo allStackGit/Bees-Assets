@@ -106,9 +106,10 @@ MonoBehaviour:
   Id: 0
   Age: 0
   Level: {fileID: 0}
-  Side: 0
-  Collider: {fileID: 0}
-  Body: {fileID: 0}
+  Stage: {fileID: 0}
+  Side: 1
+  Collider: {fileID: 5638430987097987723}
+  Body: {fileID: 6277810116308881389}
   ShowDebug: 0
   Health: 0
   MaxHealth: 0
@@ -125,7 +126,7 @@ MonoBehaviour:
   SpecialFirePower: 0
   CurrentSpeed: 0
   LongestSide: 0
-  ShipExplosion: {fileID: 1876865744220396715, guid: 1f58b7947f208d944b8669f2e51a9a52, type: 3}
+  ShipExplosion: {fileID: 0}
   HealthBar: {fileID: 1255180578373249434}
   MiniMapIcon: {fileID: 8272520175179369049}
   ShipAnimation: {fileID: 0}
@@ -140,16 +141,10 @@ MonoBehaviour:
   DefaultAngle: 0
   TargetDirection: 0
   LastKilled: 0
-  ShipType: 
   Name: 
-  FireAtFrontOfShip: 0
-  InCombat: 0
-  IsFollowingPath: 0
-  CannotChangeMovementOrders: 0
-  IsSpawnedShip: 0
+  ShipType: 14
   Vision: {fileID: 7148354848737101034}
-  SpriteRenderer: {fileID: 0}
-  IsDead: 0
+  IsDead: 1
   IsUserControlled: 0
   IsMobile: 0
   HasBrain: 0
@@ -166,29 +161,36 @@ MonoBehaviour:
   HasLeftRocketFlares: 0
   HasCenterRocketFlares: 0
   HasRightRocketFlares: 0
+  HasOnlySideRocketFlares: 0
   HasMovementMarker: 0
   HasWaitingTargetCoordinates: 0
-  HasRemainsShip: 0
+  HasRemainsShip: 1
+  FireAtFrontOfShip: 0
+  IsSpawnedShip: 0
   HasEnteredMap: 0
+  AreRocketFlaresOutOfSync: 0
+  InCombat: 0
+  IsFollowingPath: 0
+  CannotChangeMovementOrders: 0
   Weapons: []
-  ProjectilePrefabs: []
   WeaponPrefabs: []
   ColoredPrefabs: []
   LeftRocketFlares: []
   CenterRocketFlares: []
   RightRocketFlares: []
-  RemainsShips:
-  - {fileID: 3284305956443189761, guid: c622be5f7d500034a8a9c6094904f2ee, type: 3}
-  Brain: {fileID: 0}
+  Brain: {fileID: 521218637271496490}
   NearbyAsteroids: []
   Turrets: []
   ProximityCollider: {fileID: 0}
   ShipAnimationController: {fileID: 0}
   RotationSpeed: 0
   TargetEnemyShipToFollow: {fileID: 0}
-  IsCloseEnoughToTargetEnemyShipToFollow: 0
   Killer: {fileID: 0}
   ShipRemains: {fileID: 0}
+  ShipTypeLetter: 8
+  ShootingStrategy: 0
+  ShipExplosionSoundEffect: {fileID: 0}
+  HasShipExplosionSoundEffect: 0
   PathfindingThreadComplete: 0
   IsPathfinding: 0
   PathfindingThread: 0
@@ -202,6 +204,7 @@ MonoBehaviour:
   __EnemySquad: 
   __TargetEnemyShipToFollow: 
   __SquadColor: 
+  __SquadShootingStrategy: 
   __CommandDestination: {x: 0, y: 0}
   __Velocity: {x: 0, y: 0}
   __TargetCoordinates: {x: 0, y: 0}
@@ -211,6 +214,10 @@ MonoBehaviour:
   __DegreesToTargetCoordinates: 0
   __DistanceToTargetCoordinates: 0
   __TurningRadius: 0
+  __Width: 0
+  __Height: 0
+  __SquadWidth: 0
+  __SquadHeight: 0
   __Tsv: 0
   __CommandTsv: 0
   __HasReachedDestination: 0
@@ -233,7 +240,7 @@ MonoBehaviour:
   __Clearance: 0
   Direction: 0
   ShouldDetonate: 0
-  RLShootingStrategy: 
+  RLShootingStrategy: 0
   RLSide: 0
   RLHealth: 0
   RLShipType: 0
@@ -651,6 +658,17 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 3cef43755502536428d6888543b38fb4, type: 3}
+--- !u!114 &521218637271496490 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 5231481642865495489, guid: 3cef43755502536428d6888543b38fb4, type: 3}
+  m_PrefabInstance: {fileID: 5738229418327341803}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 42a9c0cc5fd6f664f8b7fac23cb6cf97, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!4 &7851412194700042508 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 2546671832864185319, guid: 3cef43755502536428d6888543b38fb4, type: 3}

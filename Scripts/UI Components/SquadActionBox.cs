@@ -253,7 +253,7 @@ namespace Assets.Scripts.UIComponents
             //Debug.Log($"Squad(s) shooting strategy: {shootingStrategy}");
             ConfigData.TypesOfShootingStrategies.Where(s => (int) s <= 15).ToList().ForEach(s =>
             {
-                Debug.Log($"{Utilities.ConvertShootingStrategyTypeToName[s]} Button");
+                //Debug.Log($"{Utilities.ConvertShootingStrategyTypeToName[s]} Button");
                 GameObject buttonLabel = GameObject.Find($"{Utilities.ConvertShootingStrategyTypeToName[s]} Button"); // [effeciency] could be made better by having a dictionary of the buttons
                 if (shootingStrategy == s)
                 {

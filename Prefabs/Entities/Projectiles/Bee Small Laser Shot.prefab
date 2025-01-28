@@ -75,7 +75,7 @@ SpriteRenderer:
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: -467856233
-  m_SortingLayer: 21
+  m_SortingLayer: 27
   m_SortingOrder: 0
   m_Sprite: {fileID: -1005040807, guid: 3d42f2cb44d730644b13116ef760d860, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -196,18 +196,22 @@ MonoBehaviour:
   Id: 0
   Age: 0
   Level: {fileID: 0}
-  Side: 0
-  Body: {fileID: 0}
-  Range: 0
+  Stage: {fileID: 0}
+  Side: 1
+  Collider: {fileID: -853758773562587244}
+  Body: {fileID: 2927933581851390187}
   Power: 0
+  Range: 0
   Speed: 100
   Shooter: {fileID: 0}
   Target: {fileID: 0}
   Weapon: {fileID: 0}
   StartingPosition: {x: 0, y: 0}
   Angle: 0
-  ExplosionAnimationPrefab: {fileID: 3345242948093166458, guid: 6a95d017bd6a082479c47468372db16d, type: 3}
   Explosion: {fileID: 0}
-  ShipsToIgnore: []
   Name: 
-  HasExplosion: 0
+  Type: 1
+  HasExplosion: 1
+  ShipIsDead: 0
+  HasBody: 1
+  IsDead: 1

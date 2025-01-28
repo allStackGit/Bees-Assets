@@ -158,8 +158,9 @@ MonoBehaviour:
   Id: 0
   Age: 0
   Level: {fileID: 0}
-  Side: 0
-  Collider: {fileID: 0}
+  Stage: {fileID: 0}
+  Side: 2
+  Collider: {fileID: -1155758467170267426}
   Body: {fileID: 0}
   Power: 0
   Range: 0
@@ -169,10 +170,11 @@ MonoBehaviour:
   Weapon: {fileID: 0}
   StartingPosition: {x: 0, y: 0}
   Angle: 0
-  ExplosionAnimationPrefab: {fileID: 0}
   Explosion: {fileID: 0}
   Name: 
+  Type: 14
   HasExplosion: 0
-  HasSetMovement: 0
   ShipIsDead: 0
+  HasBody: 0
+  IsDead: 1
   CircleCollider: {fileID: -1155758467170267426}

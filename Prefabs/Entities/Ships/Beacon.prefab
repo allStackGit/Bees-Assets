@@ -37,6 +37,7 @@ Transform:
   - {fileID: 8140052339954663421}
   - {fileID: 5944538779689448074}
   - {fileID: 2716867326067029647}
+  - {fileID: 6777650756092284923}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!212 &6567794813209988519
@@ -106,7 +107,8 @@ MonoBehaviour:
   Id: 0
   Age: 0
   Level: {fileID: 0}
-  Side: 0
+  Stage: {fileID: 0}
+  Side: 2
   Collider: {fileID: 5366410214926510080}
   Body: {fileID: 1694647275188970929}
   ShowDebug: 0
@@ -140,16 +142,10 @@ MonoBehaviour:
   DefaultAngle: 0
   TargetDirection: 0
   LastKilled: 0
-  ShipType: 
   Name: 
-  FireAtFrontOfShip: 0
-  InCombat: 0
-  IsFollowingPath: 0
-  CannotChangeMovementOrders: 0
-  IsSpawnedShip: 0
+  ShipType: 1
   Vision: {fileID: 7385427098843832696}
-  SpriteRenderer: {fileID: 6567794813209988519}
-  IsDead: 0
+  IsDead: 1
   IsUserControlled: 0
   IsMobile: 0
   HasBrain: 0
@@ -166,28 +162,36 @@ MonoBehaviour:
   HasLeftRocketFlares: 0
   HasCenterRocketFlares: 0
   HasRightRocketFlares: 0
+  HasOnlySideRocketFlares: 0
   HasMovementMarker: 0
   HasWaitingTargetCoordinates: 0
   HasRemainsShip: 0
+  FireAtFrontOfShip: 0
+  IsSpawnedShip: 0
   HasEnteredMap: 0
+  AreRocketFlaresOutOfSync: 0
+  InCombat: 0
+  IsFollowingPath: 0
+  CannotChangeMovementOrders: 0
   Weapons: []
-  ProjectilePrefabs: []
   WeaponPrefabs: []
   ColoredPrefabs: []
   LeftRocketFlares: []
   CenterRocketFlares: []
   RightRocketFlares: []
-  RemainsShips: []
-  Brain: {fileID: 0}
+  Brain: {fileID: 3873483979716598237}
   NearbyAsteroids: []
   Turrets: []
   ProximityCollider: {fileID: 8866134372856945948}
   ShipAnimationController: {fileID: 0}
   RotationSpeed: 0
   TargetEnemyShipToFollow: {fileID: 0}
-  IsCloseEnoughToTargetEnemyShipToFollow: 0
   Killer: {fileID: 0}
   ShipRemains: {fileID: 0}
+  ShipTypeLetter: 22
+  ShootingStrategy: 0
+  ShipExplosionSoundEffect: {fileID: 0}
+  HasShipExplosionSoundEffect: 0
   PathfindingThreadComplete: 0
   IsPathfinding: 0
   PathfindingThread: 0
@@ -201,6 +205,7 @@ MonoBehaviour:
   __EnemySquad: 
   __TargetEnemyShipToFollow: 
   __SquadColor: 
+  __SquadShootingStrategy: 
   __CommandDestination: {x: 0, y: 0}
   __Velocity: {x: 0, y: 0}
   __TargetCoordinates: {x: 0, y: 0}
@@ -210,6 +215,10 @@ MonoBehaviour:
   __DegreesToTargetCoordinates: 0
   __DistanceToTargetCoordinates: 0
   __TurningRadius: 0
+  __Width: 0
+  __Height: 0
+  __SquadWidth: 0
+  __SquadHeight: 0
   __Tsv: 0
   __CommandTsv: 0
   __HasReachedDestination: 0
@@ -232,12 +241,13 @@ MonoBehaviour:
   __Clearance: 0
   Direction: 0
   ShouldDetonate: 0
-  RLShootingStrategy: 
+  RLShootingStrategy: 0
   RLSide: 0
   RLHealth: 0
   RLShipType: 0
   StandardSprite: {fileID: 21300000, guid: 6cbaccdd50c5ab9478e1af3d49ec7c65, type: 3}
   EnemySprite: {fileID: 21300000, guid: b927f2b254e594245af18aa210c2ccdd, type: 3}
+  SpriteRenderer: {fileID: 6567794813209988519}
 --- !u!58 &5366410214926510080
 CircleCollider2D:
   m_ObjectHideFlags: 0
@@ -635,4 +645,77 @@ GameObject:
 Transform:
   m_CorrespondingSourceObject: {fileID: 5341925016214729742, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
   m_PrefabInstance: {fileID: 5823638039574691257}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1001 &9032133970943611932
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 6515886964553051367}
+    m_Modifications:
+    - target: {fileID: 1024470799965513159, guid: 0a1e261e9666884449e3015691601de4, type: 3}
+      propertyPath: m_Name
+      value: Human Brain
+      objectReference: {fileID: 0}
+    - target: {fileID: 2546671832864185319, guid: 0a1e261e9666884449e3015691601de4, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2546671832864185319, guid: 0a1e261e9666884449e3015691601de4, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2546671832864185319, guid: 0a1e261e9666884449e3015691601de4, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2546671832864185319, guid: 0a1e261e9666884449e3015691601de4, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 2546671832864185319, guid: 0a1e261e9666884449e3015691601de4, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2546671832864185319, guid: 0a1e261e9666884449e3015691601de4, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2546671832864185319, guid: 0a1e261e9666884449e3015691601de4, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2546671832864185319, guid: 0a1e261e9666884449e3015691601de4, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2546671832864185319, guid: 0a1e261e9666884449e3015691601de4, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2546671832864185319, guid: 0a1e261e9666884449e3015691601de4, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 0a1e261e9666884449e3015691601de4, type: 3}
+--- !u!114 &3873483979716598237 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 5231481642865495489, guid: 0a1e261e9666884449e3015691601de4, type: 3}
+  m_PrefabInstance: {fileID: 9032133970943611932}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 42a9c0cc5fd6f664f8b7fac23cb6cf97, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!4 &6777650756092284923 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 2546671832864185319, guid: 0a1e261e9666884449e3015691601de4, type: 3}
+  m_PrefabInstance: {fileID: 9032133970943611932}
   m_PrefabAsset: {fileID: 0}

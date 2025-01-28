@@ -33,12 +33,33 @@ namespace Assets.Scripts.Entities.Ships
         public Weapon Bomb => Weapons.First();
         public Vector2 LastCarrierPosition;
 
-
-        private void Start()
+        public override void Create(Stage stage)
         {
-            _indicatorSprite = LoadedIndicator.GetComponent<SpriteRenderer>();
-            SetBombsReadyStatus(true);
+            base.Create(stage);
+
+            if (Stage.IsTraining)
+            {
+                Destroy(LoadedIndicator);
+                Destroy(CarriedBomb);
+            }
+            else
+            {
+                _indicatorSprite = LoadedIndicator.GetComponent<SpriteRenderer>();
+                SetBombsReadyStatus(true);
+            }
             InvokeRepeating(nameof(CheckCarrierReload), 1, 1);
+
+        }
+        public override void ClearData()
+        {
+            base.ClearData();
+            IsBombReady = false;
+            HasCompletedRun = false;
+            HasDroppedBomb = false;
+            HasReturnedToCarrier = false;
+            ContactedShip = null;
+            TouchingShip = null;
+            LastCarrierPosition = Vector2.zero;
         }
         protected override void OnTriggerEnter2D(Collider2D collider) // projectile collision
         {
@@ -118,23 +139,26 @@ namespace Assets.Scripts.Entities.Ships
         }
         public void SetIndicatorColor()
         { 
-            if (IsBombReady)
+            if (!Stage.IsTraining)
             {
-                _indicatorSprite.color = ConfigData.GetUIColor("striker-loaded-indicator");
-                CarriedBomb.SetActive(true);
+                if (IsBombReady)
+                {
+                    _indicatorSprite.color = ConfigData.GetUIColor("striker-loaded-indicator");
+                    CarriedBomb.SetActive(true);
 
-            }
-            else
-            {
-                _indicatorSprite.color = ConfigData.GetUIColor("striker-not-loaded-indicator");
-                CarriedBomb.SetActive(false);
+                }
+                else
+                {
+                    _indicatorSprite.color = ConfigData.GetUIColor("striker-not-loaded-indicator");
+                    CarriedBomb.SetActive(false);
 
+                }
             }
+
         }
         private void DropBomb()
         {
             //Debug.Log($"Striker #{Id} is dropping bombs");
-            CarriedBomb.SetActive(false);
             HasDroppedBomb = true;
             SetBombsReadyStatus(false);
 

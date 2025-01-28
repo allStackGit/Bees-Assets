@@ -70,7 +70,7 @@ namespace Assets.Scripts.Entities.Projectiles
                 Shooter.ProjectilesInFlight.Remove(this);
             }
             Debug.Log($"{Name} has been killed and will be returned");
-            Stage.ReturnProjectileToPool(this);
+            Stage.Pool.ReturnProjectileToPool(this);
         }
         private Vector2 GetChangeInShooterPosition()
         {

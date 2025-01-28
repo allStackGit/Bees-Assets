@@ -10,6 +10,8 @@ namespace Assets.Scripts.Entities.Ships
     public class Beacon : Ship
     {
         public Sprite StandardSprite, EnemySprite;
+        public SpriteRenderer SpriteRenderer;
+
         public void LookForShips()
         {
             if (!Stage.IsTraining && IsUserControlled)

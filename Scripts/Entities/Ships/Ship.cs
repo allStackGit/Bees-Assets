@@ -43,17 +43,11 @@ namespace Assets.Scripts.Entities.Ships
         public FleetShip FleetShip = null;
         public string Name;
         public ConfigData.ShipTypes ShipType;
-        public string ShipTypeName;
         public Vision Vision;
-        public SpriteRenderer SpriteRenderer;
         /// <summary>
-        /// A ship can be killed at some point of the frame and still exist until the end of the frame. Check this to see if a ship is dead but not yet destroyed.
+        /// If a ship has not been spawned into the game yet or it has been killed and returned to the pool then it is dead
         /// </summary>
         public bool IsDead;
-        /// <summary>
-        /// A ship can be created but held in the pool and therefor not alive yet. This checks whether a ship is active and alive in the game
-        /// </summary>
-        public bool IsAlive;
         /// <summary>
         /// This has the same side as the user and the user has a controller
         /// </summary>
@@ -72,7 +66,7 @@ namespace Assets.Scripts.Entities.Ships
         /// </summary>
         public bool HasEnteredMap, AreRocketFlaresOutOfSync, InCombat, IsFollowingPath, CannotChangeMovementOrders;
         public List<Weapon> Weapons;
-        public List<GameObject> WeaponPrefabs, ColoredPrefabs, LeftRocketFlares, CenterRocketFlares, RightRocketFlares, RemainsShips;
+        public List<GameObject> WeaponPrefabs, ColoredPrefabs, LeftRocketFlares, CenterRocketFlares, RightRocketFlares;
         public Brain Brain = null;
         public Queue<Vector2> DestinationQueue = new Queue<Vector2>();
         public List<CollisionAsteroid> NearbyAsteroids = new List<CollisionAsteroid>();
@@ -116,6 +110,11 @@ namespace Assets.Scripts.Entities.Ships
         /// The chosen shooting strategy of this ship which should in turn match the squad
         /// </summary>
         public ConfigData.ShootingStrategyTypes ShootingStrategy;
+        /// <summary>
+        /// The sound effect of the ship exploding, if there is one
+        /// </summary>
+        public AudioSource ShipExplosionSoundEffect;
+        public bool HasShipExplosionSoundEffect;
 
         public volatile bool PathfindingThreadComplete, IsPathfinding;
         public volatile Pathfinder.Path PathfindingValue;
@@ -276,14 +275,9 @@ namespace Assets.Scripts.Entities.Ships
         /// <summary>
         /// Sets up a ship for the Ship pool so it is ready to go regardless of which level it's in and other identifying factors
         /// </summary>
-        public virtual void Create(Stage stage, string shipName)
+        public virtual void Create(Stage stage)
         {
-            ShipType = Utilities.ConvertShipNameToShipType[shipName];
-            ShipTypeLetter = Utilities.ConvertShipTypeToShipTypeLetter[ShipType];
-            Side = Utilities.ConvertShipTypeToSide.GetValueOrDefault(ShipType);
             Stage = stage;
-            Body = GetComponent<Rigidbody2D>();
-            Collider = GetComponent<Collider2D>();
             ShipStatBlock shipStats = ConfigData.GetShipInfo(ShipType);
             AdditionalTsv = shipStats.AdditionalTsv;
             Sight = shipStats.Sight;
@@ -296,7 +290,6 @@ namespace Assets.Scripts.Entities.Ships
             IsUserControlled = Side == ConfigData.Configuration.UserSide && Stage.DoesUserHaveController;
             RotationSpeed = Speed * ConfigData.Configuration.RotationMultiplier;
             IsMobile = Speed > 0;
-            IsDead = true;
 
             //Transform brain = transform.Find("Brain");
             //if (brain != null && Level.Stage.ActivateBrains)
@@ -353,13 +346,44 @@ namespace Assets.Scripts.Entities.Ships
                     HasShipAnimation = true;
                 }
 
-                if (RemainsShips.Count > 0) // [testing] all ships should have multiple shattered ships eventually
+                if (HasRemainsShip) // [testing] all ships should have multiple shattered ships eventually
                 {
-                    HasRemainsShip = true;
-                    GameObject remains = Instantiate(RemainsShips.GetRange(Utilities.RandomInt(RemainsShips.Count), 1).First(), Vector2.zero, Quaternion.identity);
-                    ShipRemains = remains.AddComponent<ShipRemains>();
+                    ShipRemains = Instantiate(Stage.Prefabs.ConvertShipTypeToRemainsPrefab[ShipType], Vector2.zero, Quaternion.identity).AddComponent<ShipRemains>();
                     ShipRemains.Create(this);
                 }
+
+                ShipExplosion = Instantiate(Stage.Prefabs.ConvertShipTypeToExplosionPrefab[ShipType], Vector2.zero, Quaternion.identity);
+                ShipExplosion.SetActive(false);
+
+                if (Stage.ActivateAudio)
+                {
+                    ShipExplosionSoundEffect = ShipExplosion.GetComponent<AudioSource>();
+                    if (ShipExplosionSoundEffect != null)
+                    {
+                        HasShipExplosionSoundEffect = true;
+                    }
+                }
+            }
+            else
+            {
+                Destroy(HealthBar);
+                Destroy(MiniMapIcon);
+                LeftRocketFlares.ForEach((flare) =>
+                {
+                    Destroy(flare);
+                });
+                CenterRocketFlares.ForEach((flare) =>
+                {
+                    Destroy(flare);
+                });
+                RightRocketFlares.ForEach((flare) =>
+                {
+                    Destroy(flare);
+                });
+            }
+            if (!HasBrain)
+            {
+                Destroy(Brain.gameObject);
             }
 
             if (ShipType == ConfigData.ShipTypes.Striker || ShipType == ConfigData.ShipTypes.Barge)
@@ -1658,7 +1682,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                     Squad.SetOffsets();
                 }
                 Debug.Log($"{Name} has been killed and will be returned");
-                Stage.ReturnShipToPool(this);
+                Stage.Pool.ReturnShipToPool(this);
                 //if (!Level.IsTraining && IsUserControlled)
                 //{
                 //    Turrets.ForEach((turret) =>
@@ -1698,7 +1722,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             //Destroy(DroppedRemainsShip);
             //Destroy(gameObject);
             Debug.Log($"{Name} has been killed and will be returned");
-            Stage.ReturnShipToPool(this);
+            Stage.Pool.ReturnShipToPool(this);
         }
         /// <summary>
         /// Returns the target enemy ship to follow for this ship. The Target enemy ship will be the first in the targeting queue for this ship's squad's command. This is different from which ship its weapons are targeting
@@ -2018,18 +2042,13 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         {
             if (!Stage.IsTraining)
             {
-                GameObject explosion = Instantiate(ShipExplosion, Vector2.zero, Quaternion.identity);
-                explosion.transform.parent = Level.Map.transform;
-                explosion.transform.localPosition = GetPosition();
+                ShipExplosion.transform.parent = Level.Map.transform;
+                ShipExplosion.transform.localPosition = GetPosition();
+                ShipExplosion.SetActive(true);
 
-                if (Level.Stage.ActivateAudio)
+                if (Level.Stage.ActivateAudio && HasShipExplosionSoundEffect)
                 {
-                    AudioSource soundEffect = explosion.GetComponent<AudioSource>();
-
-                    if (soundEffect != null)
-                    {
-                        soundEffect.Play();
-                    }
+                    ShipExplosionSoundEffect.Play();
                 }
 
 

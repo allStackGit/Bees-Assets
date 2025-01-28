@@ -25,18 +25,26 @@ namespace Assets.Scripts.Entities.Ships
         public Weapon Charge => Weapons.First();
         public HashSet<Ship> ShipsHit = new HashSet<Ship>();
         public ChargingBar ChargingBar;
-        public override void Create(Stage stage, string shipType)
+        public override void Create(Stage stage)
         {
-            base.Create(stage, shipType);
+            base.Create(stage);
             if (IsUserControlled)
             {
-                ChargingBar.Setup(this, 10); // [efficiency] Make this be created instead of starting with every barge, in case it's unneeded
+                ChargingBar.Create(this, 10); 
+            }
+            else
+            {
+                Destroy(ChargingBar.gameObject);
             }
         }
 
         public override void Setup(Level level, long id, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
         {
             base.Setup(level, id, fleetShip, squad, offsetFromCenter);
+            if (IsUserControlled)
+            {
+                ChargingBar.Setup(); 
+            }
         }
         public override void ClearData()
         {

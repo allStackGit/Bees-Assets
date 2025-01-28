@@ -118,7 +118,7 @@ namespace Assets.Scripts.Entities.Ships
             }
             //Destroy(gameObject);
             Debug.Log($"{Name} has been killed and will be returned");
-            Stage.ReturnShipToPool(this);
+            Stage.Pool.ReturnShipToPool(this);
 
         }
 

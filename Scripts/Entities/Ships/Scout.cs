@@ -17,12 +17,16 @@ namespace Assets.Scripts.Entities.Ships
         public ChargingBar ChargingBar;
         public bool CanDropBeacons;
 
-        public override void Create(Stage stage, string shipType)
+        public override void Create(Stage stage)
         {
-            base.Create(stage, shipType);
+            base.Create(stage);
             if (IsUserControlled)
             {
-                ChargingBar.Setup(this, ConfigData.MinimumDelayPerBeacon); // [efficiency] Make this be created instead of starting with every barge, in case it's unneeded
+                ChargingBar.Create(this, ConfigData.MinimumDelayPerBeacon);
+            }
+            else
+            {
+                Destroy(ChargingBar.gameObject);
             }
         }
         public override void Setup(Level level, long id, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
@@ -30,6 +34,10 @@ namespace Assets.Scripts.Entities.Ships
             base.Setup(level, id, fleetShip, squad, offsetFromCenter);
 
             CanDropBeacons = true;
+            if (IsUserControlled)
+            {
+                ChargingBar.Setup(); 
+            }
         }
         private Squad CreateMinionSquad()
         {

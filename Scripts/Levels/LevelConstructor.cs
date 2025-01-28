@@ -516,73 +516,73 @@ namespace Assets.Scripts.Levels
             switch (type)
             {
                 case ConfigData.ShipTypes.Barge:
-                    ship = Stage.BargePool.Get();
+                    ship = Stage.Pool.BargePool.Get();
                     break;
                 case ConfigData.ShipTypes.Beacon:
-                    ship = Stage.BeaconPool.Get();
+                    ship = Stage.Pool.BeaconPool.Get();
                     break;
                 case ConfigData.ShipTypes.Beehive:
-                    ship = Stage.BeehivePool.Get();
+                    ship = Stage.Pool.BeehivePool.Get();
                     break;
                 case ConfigData.ShipTypes.Bumblebee:
-                    ship = Stage.BumblebeePool.Get();
+                    ship = Stage.Pool.BumblebeePool.Get();
                     break;
                 case ConfigData.ShipTypes.CarpenterBee:
-                    ship = Stage.CarpenterBeePool.Get();
+                    ship = Stage.Pool.CarpenterBeePool.Get();
                     break;
                 case ConfigData.ShipTypes.Carrier:
-                    ship = Stage.CarrierPool.Get();
+                    ship = Stage.Pool.CarrierPool.Get();
                     break;
                 case ConfigData.ShipTypes.Cruiser:
-                    ship = Stage.CruiserPool.Get();
+                    ship = Stage.Pool.CruiserPool.Get();
                     break;
                 case ConfigData.ShipTypes.Dreadnought:
-                    ship = Stage.DreadnoughtPool.Get();
+                    ship = Stage.Pool.DreadnoughtPool.Get();
                     break;
                 case ConfigData.ShipTypes.Drone:
-                    ship = Stage.DronePool.Get();
+                    ship = Stage.Pool.DronePool.Get();
                     break;
                 case ConfigData.ShipTypes.Factory:
-                    ship = Stage.FactoryPool.Get();
+                    ship = Stage.Pool.FactoryPool.Get();
                     break;
                 case ConfigData.ShipTypes.FireBarge:
-                    ship = Stage.FireBargePool.Get();
+                    ship = Stage.Pool.FireBargePool.Get();
                     break;
                 case ConfigData.ShipTypes.Flagship:
-                    ship = Stage.FlagshipPool.Get();
+                    ship = Stage.Pool.FlagshipPool.Get();
                     break;
                 case ConfigData.ShipTypes.Frigate:
-                    ship = Stage.FrigatePool.Get();
+                    ship = Stage.Pool.FrigatePool.Get();
                     break;
                 case ConfigData.ShipTypes.Gunship:
-                    ship = Stage.GunshipPool.Get();
+                    ship = Stage.Pool.GunshipPool.Get();
                     break;
                 case ConfigData.ShipTypes.Honeybee:
-                    ship = Stage.HoneybeePool.Get();
+                    ship = Stage.Pool.HoneybeePool.Get();
                     break;
                 case ConfigData.ShipTypes.Hornet:
-                    ship = Stage.HornetPool.Get();
+                    ship = Stage.Pool.HornetPool.Get();
                     break;
                 case ConfigData.ShipTypes.Leafcutter:
-                    ship = Stage.LeafcutterPool.Get();
+                    ship = Stage.Pool.LeafcutterPool.Get();
                     break;
                 case ConfigData.ShipTypes.Queen:
-                    ship = Stage.QueenPool.Get();
+                    ship = Stage.Pool.QueenPool.Get();
                     break;
                 case ConfigData.ShipTypes.Scout:
-                    ship = Stage.ScoutPool.Get();
+                    ship = Stage.Pool.ScoutPool.Get();
                     break;
                 case ConfigData.ShipTypes.Striker:
-                    ship = Stage.StrikerPool.Get();
+                    ship = Stage.Pool.StrikerPool.Get();
                     break;
                 case ConfigData.ShipTypes.WarpGate:
-                    ship = Stage.WarpGatePool.Get();
+                    ship = Stage.Pool.WarpGatePool.Get();
                     break;
                 case ConfigData.ShipTypes.Wasp:
-                    ship = Stage.WaspPool.Get();
+                    ship = Stage.Pool.WaspPool.Get();
                     break;
                 case ConfigData.ShipTypes.YellowJacket:
-                    ship = Stage.YellowJacketPool.Get();
+                    ship = Stage.Pool.YellowJacketPool.Get();
                     break;
                 default:
                     Debug.LogError($"Tried to instanstiate a ship type ({type}) that doesn't exist");

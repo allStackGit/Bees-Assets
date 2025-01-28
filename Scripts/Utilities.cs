@@ -104,6 +104,24 @@ namespace Assets.Scripts
             {ConfigData.ShipTypes.WarpGate, 2 },
             {ConfigData.ShipTypes.Beacon, 2 },
         };
+
+        public static readonly Dictionary<ConfigData.ProjectileTypes, int> ConvertProjectileTypeToSide = new Dictionary<ConfigData.ProjectileTypes, int>()
+        {
+            {ConfigData.ProjectileTypes.BeeSmall, 1 },
+            {ConfigData.ProjectileTypes.BeeMedium, 1 },
+            {ConfigData.ProjectileTypes.BumblebeeShot, 1 },
+            {ConfigData.ProjectileTypes.FlagshipShot, 2 },
+            {ConfigData.ProjectileTypes.Rocket, 2 },
+            {ConfigData.ProjectileTypes.HumanSmall, 2 },
+            {ConfigData.ProjectileTypes.HumanMedium, 2 },
+            {ConfigData.ProjectileTypes.Beam, 2 },
+            {ConfigData.ProjectileTypes.SplitShot, 1 },
+            {ConfigData.ProjectileTypes.QueenSmall, 1 },
+            {ConfigData.ProjectileTypes.QueenLarge, 1 },
+            {ConfigData.ProjectileTypes.StrikerBomb, 2 },
+            {ConfigData.ProjectileTypes.RocketExplosion, 2 },
+            {ConfigData.ProjectileTypes.FireBargeExplosion, 2 },
+        };
         public static Dictionary<ConfigData.ShipTypes, string> ConvertShipTypeToName = new Dictionary<ConfigData.ShipTypes, string>
         {
             {ConfigData.ShipTypes.Barge, "Barge"},

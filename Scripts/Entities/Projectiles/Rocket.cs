@@ -59,7 +59,7 @@ namespace Assets.Scripts.Entities.Projectiles
             Explosion = Instantiate(Explosion, new Vector3(0, 0, 0), Quaternion.identity);
             Explosion.transform.parent = Level.Map.transform;
             RocketExplosion explosion = (RocketExplosion) Explosion.GetComponent(typeof(RocketExplosion));
-            explosion.Setup(this.Level, this.Side, Level.State.GetId(), this.Weapon, this.Shooter, this.Target, this.GetPosition(), 0, 0, this.Power);
+            explosion.Setup(Level, Level.State.GetId(), Weapon, Shooter, Target, GetPosition(), 0, 0, Power);
             Shooter.ProjectilesInFlight.Add(explosion);
         }
 
