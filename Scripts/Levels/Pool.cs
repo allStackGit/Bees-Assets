@@ -1,4 +1,5 @@
 using Assets.Scripts;
+using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships;
 using System.Collections;
@@ -53,12 +54,18 @@ public class Pool : MonoBehaviour
     public ObjectPool<Projectile> RocketExplosionProjectilePool;
     public ObjectPool<Projectile> FireBargeExplosionProjectilePool;
 
+    public ObjectPool<List<Obstacle>> EmptyObstacleListObjectPool;
+    //public ObjectPool<CollisionAsteroid> CollisionAsteroidPool;
+    //public ObjectPool<MapBorder> MapBorderPool;
+    //public ObjectPool<MiningAsteroid> MiningAsteroidPool;
+
+
     public int __BargePoolSize, __BeaconPoolSize, __BeehivePoolSize, __BumblebeePoolSize, __CarpenterBeePoolSize, __CarrierPoolSize, __CruiserPoolSize, __DreadnoughtPoolSize,
         __DronePoolSize, __FactoryPoolSize, __FireBargePoolSize, __FlagshipPoolSize, __FrigatePoolSize, __GunshipPoolSize, __HoneybeePoolSize, __HornetPoolSize, __LeafcutterPoolSize,
         __QueenPoolSize, __ScoutPoolSize, __StrikerPoolSize, __WarpGatePoolSize, __WaspPoolSize, __YellowJacketPoolSize, __PlutoMapPoolSize, __UranusMapPoolSize, __BeeSmallProjectilePoolSize,
         __BeeMediumProjectilePoolSize, __BumblebeeShotProjectilePoolSize, __FlagshipShotProjectilePoolSize, __RocketProjectilePoolSize, __HumanSmallProjectilePoolSize, __HumanMediumProjectilePoolSize,
         __BeamProjectilePoolSize, __SplitShotProjectilePoolSize, __QueenSmallProjectilePoolSize, __QueenLargeProjectilePoolSize, __StrikerBombProjectilePoolSize, __RocketExplosionProjectilePoolSize,
-        __FireBargeExplosionProjectilePoolSize;
+        __FireBargeExplosionProjectilePoolSize, __EmptyObstacleListObjectPoolSize;
     public void DebugLogger()
     {
         __BargePoolSize = BargePool.CountAll;
@@ -100,6 +107,7 @@ public class Pool : MonoBehaviour
         __StrikerBombProjectilePoolSize = StrikerBombProjectilePool.CountAll;
         __RocketExplosionProjectilePoolSize = RocketExplosionProjectilePool.CountAll;
         __FireBargeExplosionProjectilePoolSize = FireBargeExplosionProjectilePool.CountAll;
+        __EmptyObstacleListObjectPoolSize = EmptyObstacleListObjectPool.CountAll;
     }
 
     public void Setup(Stage stage)
@@ -133,24 +141,47 @@ public class Pool : MonoBehaviour
         PlutoMapPool = new ObjectPool<Assets.Scripts.UI_Components.Map>(CreatePooledPlutoMap, null, null, null, true);
         UranusMapPool = new ObjectPool<Assets.Scripts.UI_Components.Map>(CreatePooledUranusMap, null, null, null, true);
 
-        BeeSmallProjectilePool = new ObjectPool<Projectile>(CreatedPooledBeeSmallProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
-        BeeMediumProjectilePool = new ObjectPool<Projectile>(CreatedPooledBeeMediumProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
-        BumblebeeShotProjectilePool = new ObjectPool<Projectile>(CreatedPooledBumblebeeShotProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
-        FlagshipShotProjectilePool = new ObjectPool<Projectile>(CreatedPooledFlagshipShotProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
-        RocketProjectilePool = new ObjectPool<Projectile>(CreatedPooledRocketProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
-        HumanSmallProjectilePool = new ObjectPool<Projectile>(CreatedPooledHumanSmallProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
-        HumanMediumProjectilePool = new ObjectPool<Projectile>(CreatedPooledHumanMediumProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
-        BeamProjectilePool = new ObjectPool<Projectile>(CreatedPooledBeamProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
-        SplitShotProjectilePool = new ObjectPool<Projectile>(CreatedPooledSplitShotProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
-        QueenSmallProjectilePool = new ObjectPool<Projectile>(CreatedPooledQueenSmallProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
-        QueenLargeProjectilePool = new ObjectPool<Projectile>(CreatedPooledQueenLargeProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
-        StrikerBombProjectilePool = new ObjectPool<Projectile>(CreatedPooledStrikerBombProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
-        RocketExplosionProjectilePool = new ObjectPool<Projectile>(CreatedPooledRocketExplosionProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
-        FireBargeExplosionProjectilePool = new ObjectPool<Projectile>(CreatedPooledFireBargeExplosionProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
+        BeeSmallProjectilePool = new ObjectPool<Projectile>(CreatePooledBeeSmallProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
+        BeeMediumProjectilePool = new ObjectPool<Projectile>(CreatePooledBeeMediumProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
+        BumblebeeShotProjectilePool = new ObjectPool<Projectile>(CreatePooledBumblebeeShotProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
+        FlagshipShotProjectilePool = new ObjectPool<Projectile>(CreatePooledFlagshipShotProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
+        RocketProjectilePool = new ObjectPool<Projectile>(CreatePooledRocketProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
+        HumanSmallProjectilePool = new ObjectPool<Projectile>(CreatePooledHumanSmallProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
+        HumanMediumProjectilePool = new ObjectPool<Projectile>(CreatePooledHumanMediumProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
+        BeamProjectilePool = new ObjectPool<Projectile>(CreatePooledBeamProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
+        SplitShotProjectilePool = new ObjectPool<Projectile>(CreatePooledSplitShotProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
+        QueenSmallProjectilePool = new ObjectPool<Projectile>(CreatePooledQueenSmallProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
+        QueenLargeProjectilePool = new ObjectPool<Projectile>(CreatePooledQueenLargeProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
+        StrikerBombProjectilePool = new ObjectPool<Projectile>(CreatePooledStrikerBombProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
+        RocketExplosionProjectilePool = new ObjectPool<Projectile>(CreatePooledRocketExplosionProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
+        FireBargeExplosionProjectilePool = new ObjectPool<Projectile>(CreatePooledFireBargeExplosionProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
 
-        FillPools();
+        EmptyObstacleListObjectPool = new ObjectPool<List<Obstacle>>(CreatePooledEmptyObstacleList, null, null, null, true);
+
+        //FillPools();
     }
-
+    public List<Obstacle> CreatePooledEmptyObstacleList()
+    {
+        return CreatePooledObstacleList(0);
+    }
+    public List<Obstacle> CreatePooledObstacleList(int index)
+    {
+        List<Obstacle> obstacleList = new List<Obstacle>();
+        switch (index)
+        {
+            case 0:
+                Stage.Prefabs.EmptyObstacleList.ForEach((prefab) =>
+                {
+                    Obstacle obstacle = Instantiate(prefab).GetComponent<Obstacle>();
+                    obstacleList.Add(obstacle);
+                });
+                break;
+            default:
+                Debug.LogError($"The chosen obstacle map index does not match an obstacle map");
+                break;
+        }
+        return obstacleList;
+    }
     public Barge CreatePooledBarge()
     {
         Barge barge = Instantiate(Stage.Prefabs.BargePrefab, Vector2.zero, Quaternion.identity).GetComponent<Barge>();
@@ -306,90 +337,91 @@ public class Pool : MonoBehaviour
         return map;
     }
 
-    public Projectile CreatedPooledBeeSmallProjectile()
+    public Projectile CreatePooledBeeSmallProjectile()
     {
         Projectile projectile = Instantiate(Stage.Prefabs.BeeSmallLaserShotPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         projectile.Create(Stage);
         return projectile;
     }
-    public Projectile CreatedPooledBeeMediumProjectile()
+    public Projectile CreatePooledBeeMediumProjectile()
     {
         Projectile projectile = Instantiate(Stage.Prefabs.BeeMediumLaserShotPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         projectile.Create(Stage);
         return projectile;
     }
-    public Projectile CreatedPooledBumblebeeShotProjectile()
+    public Projectile CreatePooledBumblebeeShotProjectile()
     {
         Projectile projectile = Instantiate(Stage.Prefabs.BumblebeeShotPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         projectile.Create(Stage);
         return projectile;
     }
-    public Projectile CreatedPooledFlagshipShotProjectile()
+    public Projectile CreatePooledFlagshipShotProjectile()
     {
         Projectile projectile = Instantiate(Stage.Prefabs.FlagshipShotPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         projectile.Create(Stage);
         return projectile;
     }
-    public Projectile CreatedPooledRocketProjectile()
+    public Projectile CreatePooledRocketProjectile()
     {
         Projectile projectile = Instantiate(Stage.Prefabs.RocketPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         projectile.Create(Stage);
         return projectile;
     }
-    public Projectile CreatedPooledHumanSmallProjectile()
+    public Projectile CreatePooledHumanSmallProjectile()
     {
         Projectile projectile = Instantiate(Stage.Prefabs.HumanSmallPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         projectile.Create(Stage);
         return projectile;
     }
-    public Projectile CreatedPooledHumanMediumProjectile()
+    public Projectile CreatePooledHumanMediumProjectile()
     {
         Projectile projectile = Instantiate(Stage.Prefabs.HumanMediumPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         projectile.Create(Stage);
         return projectile;
     }
-    public Projectile CreatedPooledBeamProjectile()
+    public Projectile CreatePooledBeamProjectile()
     {
         Projectile projectile = Instantiate(Stage.Prefabs.BeamPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         projectile.Create(Stage);
         return projectile;
     }
-    public Projectile CreatedPooledSplitShotProjectile()
+    public Projectile CreatePooledSplitShotProjectile()
     {
         Projectile projectile = Instantiate(Stage.Prefabs.SplitShotPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         projectile.Create(Stage);
         return projectile;
     }
-    public Projectile CreatedPooledQueenSmallProjectile()
+    public Projectile CreatePooledQueenSmallProjectile()
     {
         Projectile projectile = Instantiate(Stage.Prefabs.QueenSmallPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         projectile.Create(Stage);
         return projectile;
     }
-    public Projectile CreatedPooledQueenLargeProjectile()
+    public Projectile CreatePooledQueenLargeProjectile()
     {
         Projectile projectile = Instantiate(Stage.Prefabs.QueenLargePrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         projectile.Create(Stage);
         return projectile;
     }
-    public Projectile CreatedPooledStrikerBombProjectile()
+    public Projectile CreatePooledStrikerBombProjectile()
     {
         Projectile projectile = Instantiate(Stage.Prefabs.StrikerBombPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         projectile.Create(Stage);
         return projectile;
     }
-    public Projectile CreatedPooledRocketExplosionProjectile()
+    public Projectile CreatePooledRocketExplosionProjectile()
     {
         Projectile projectile = Instantiate(Stage.Prefabs.RocketExplosionPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         projectile.Create(Stage);
         return projectile;
     }
-    public Projectile CreatedPooledFireBargeExplosionProjectile()
+    public Projectile CreatePooledFireBargeExplosionProjectile()
     {
         Projectile projectile = Instantiate(Stage.Prefabs.FireBargeExplosionPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         projectile.Create(Stage);
         return projectile;
     }
+
     public void OnTakeShipFromPool(Ship ship)
     {
         Debug.Log($"{ship.name} was taken from the pool");
@@ -412,6 +444,35 @@ public class Pool : MonoBehaviour
     public void OnReturnProjectileToPool(Projectile projectile)
     {
         Debug.Log($"{projectile.name} was returned to the pool");
+    }
+
+    public void ReturnObstacleMapToPool(List<Obstacle> obstacleList, int index)
+    {
+        obstacleList.ForEach(obstacle =>
+        {
+            obstacle.gameObject.SetActive(false);
+        });
+        switch (index)
+        {
+            case 0:
+                EmptyObstacleListObjectPool.Release(obstacleList);
+                break;
+            default:
+                Debug.LogError($"The chosen obstacle map index does not match an obstacle map");
+                break;
+        }
+    }
+    public List<Obstacle> GetObstacleMapFromPool(int index)
+    {
+        switch (index)
+        {
+            case 0:
+                return EmptyObstacleListObjectPool.Get();
+            default:
+                Debug.LogError($"The chosen obstacle map index does not match an obstacle map");
+                break;
+        }
+        return null;
     }
 
     public void ReturnShipToPool(Ship ship)
@@ -553,6 +614,7 @@ public class Pool : MonoBehaviour
     public void ReturnMapToPool(Assets.Scripts.UI_Components.Map map)
     {
         Debug.Log($"Returning {map.Name} to pool");
+        map.gameObject.SetActive(false);
         switch (map.Index)
         {
             case 0:

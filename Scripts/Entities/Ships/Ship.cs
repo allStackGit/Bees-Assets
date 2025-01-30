@@ -306,7 +306,7 @@ namespace Assets.Scripts.Entities.Ships
 
             if (ProximityCollider != null)
             {
-                ProximityCollider.Setup(this, Sight);
+                ProximityCollider.Create(this, Sight);
                 HasProximityCollider = true;
             }
 
@@ -657,6 +657,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             KillerSavedSquad = null;
             ProjectilesInFlight.Clear();
             WeaponsThatHaveUsWithinRange.Clear();
+
+            if (HasProximityCollider)
+            {
+                ProximityCollider.Setup();
+            }
         }
         protected void FixedUpdate()
         {
@@ -729,6 +734,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
 
         // movement methods
+        Vector2Int _convertedStart, _convertedDestination;
+        Vector2 _startPosition;
         public void MoveToPoint(Vector2 destination, bool foundObstacle = false)
         {
             if (!CannotChangeMovementOrders)
@@ -737,20 +744,20 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
                 if (Level.HasObstacles && IsInBounds())
                 {
-                    startPosition = Level.ForceBounds(GetPosition());
+                    _startPosition = Level.ForceBounds(GetPosition());
                     DestinationQueue.Clear();
                    
 
                     if (foundObstacle)
                     {
 
-                        convertedStart = Level.Pathfinder.ConvertToMapCoordinates(startPosition);
-                        convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
+                        _convertedStart = Level.Pathfinder.ConvertToMapCoordinates(_startPosition);
+                        _convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
                         //StopMoving("Got a new destination");
                         ClearPreviousDesintation();
                         if (!IsPathfinding)
                         {
-                            Level.Pathfinder.FindPath(this, convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance());
+                            Level.Pathfinder.FindPath(this, _convertedStart.x, _convertedStart.y, _convertedDestination.x, _convertedDestination.y, GetClearance());
                             PathfindingDestination = destination;
                         }
                         else
@@ -777,14 +784,14 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                                 //if (!NearbyAsteroids.Contains(asteroid)){
                                 //    NearbyAsteroids.Add(asteroid);
                                 //}
-                                convertedStart = Level.Pathfinder.ConvertToMapCoordinates(startPosition);
-                                convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
+                                _convertedStart = Level.Pathfinder.ConvertToMapCoordinates(_startPosition);
+                                _convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
                                 //StopMoving("Got a new destination");
                                 ClearPreviousDesintation();
 
                                 if (!IsPathfinding)
                                 {
-                                    Level.Pathfinder.FindPath(this, convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance());
+                                    Level.Pathfinder.FindPath(this, _convertedStart.x, _convertedStart.y, _convertedDestination.x, _convertedDestination.y, GetClearance());
                                     PathfindingDestination = destination;
                                 }
                                 else
@@ -899,11 +906,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         {
             NearbyAsteroids.Remove(asteroid);
         }
-        /// <summary>
-        /// Uses pathfinding (if necessary) to find the shortest path to the destination
-        /// </summary>
-        Vector2Int convertedStart, convertedDestination;
-        Vector2 startPosition;
+
+        public int _retries = 0;
         private void MergePathfindingPaths()
         {
             //if (PrintDebugImage)
@@ -912,6 +916,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             //}
             if (PathfindingValue != null && PathfindingValue.Points.Count > 0)
             {
+                _retries = 0;
                 //float start = Time.realtimeSinceStartup;
                 //Debug.Log($"Merging pathfinding paths for {Name} with {PathfindingValue.Points.Count} points");
                 //Vector2 firstPoint = PathfindingValue.Points.Take(25).OrderBy((p) => DistanceToPoint(p)).Take(10).OrderBy((p) => GetRotatedAngleToPoint(p)).First();
@@ -935,8 +940,13 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             else
             {
                 //Debug.Log($"{Name} couldn't find a path to {PathfindingDestination} and so it will try again in 2 seconds");
-                EndDestination("Could not find a path to destination");
-                Invoke(nameof(TryToFindPathAgain), 2);
+                if (_retries < 5)
+                {
+                    EndDestination("Could not find a path to destination");
+                    Invoke(nameof(TryToFindPathAgain), 2);
+                    _retries++;
+                }
+
             }
             IsPathfinding = false;
         }
@@ -2034,8 +2044,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             //Debug.Log($"{Name} health: {healthPercent}% MaxHealth: {MaxHealth}");
             _healthBarFiller.localScale = new Vector2(healthPercent, _healthBarFiller.localScale.y);
             //_healthBarFiller.sizeDelta = new Vector2(healthPercent, _healthBarFiller.sizeDelta.y);
-
-            if (healthPercent > .25f && healthPercent <= .50f)
+            if (healthPercent > .5f)
+            {
+                _healthBarFillerSprite.color = ConfigData.GetUIColor("good");
+            }
+            else if (healthPercent > .25f && healthPercent <= .50f)
             {
                 _healthBarFillerSprite.color = ConfigData.GetUIColor("medium");
             }

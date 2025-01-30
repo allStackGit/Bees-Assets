@@ -72,6 +72,11 @@ namespace Assets.Scripts
         public static bool[] IsSavedSquadsDataLoaded = new bool[] { false, false };
         public static bool[] IsFleetDataLoaded = new bool[] { false, false };
 
+        public enum SceneTypes
+        {
+            Scene,
+            Stage
+        }
         public enum ShipTypes
         {
             Barge,

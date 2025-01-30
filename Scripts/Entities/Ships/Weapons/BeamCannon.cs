@@ -11,6 +11,12 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         public bool IsFiringLaserBeam;
         public Ship LaserBeamTarget;
+        public override void ClearData()
+        {
+            base.ClearData();
+            IsFiringLaserBeam = false;
+            LaserBeamTarget = null;
+        }
         protected override void Aim()
         {
             if (IsFiringManually)

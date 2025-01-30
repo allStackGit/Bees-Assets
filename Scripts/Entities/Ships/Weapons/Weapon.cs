@@ -84,16 +84,19 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             Id = Level.State.GetId();
             
             Name = $"{Ship.Name}: {Piece.name}";
+            ClearData();
+            
+            //Piece.transform.parent = ship.transform;
+            //Piece.transform.localPosition = (Vector2)piece.transform.position;
+
+        }
+        public virtual void ClearData()
+        {
             TargetShip = null;
             CachedTargetingQueue.Clear();
             ShipsWithinRange.Clear();
             IsUsingCachedTargetingQueue = false;
             HasCachedChanged = false;
-
-            
-            //Piece.transform.parent = ship.transform;
-            //Piece.transform.localPosition = (Vector2)piece.transform.position;
-
         }
         public virtual void SetupRangeCircleAndCollider()
         {
@@ -203,7 +206,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// <returns></returns>
         public virtual bool IsShipValidTarget(Ship potentialTargetShip)
         {
-            return IsShipWithinRange(potentialTargetShip);
+            return !potentialTargetShip.IsDead && IsShipWithinRange(potentialTargetShip);
         }
         /// <summary> Called every 1/3 Rate of Fire. Makes and sends the sorted targeting list to DetermineTargetShip. 
         /// Every time this method is called, a target ship should be selected if there is one available </summary>

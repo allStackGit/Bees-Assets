@@ -101,10 +101,13 @@ namespace Assets.Scripts.Entities.Ships
 
                     if (BeaconsDropped == ConfigData.MaxBeaconsDroppedPerScout)
                     {
-                        ChargingBar.gameObject.SetActive(false);
+                        if (IsUserControlled)
+                        {
+                            ChargingBar.gameObject.SetActive(false);
+                        }
                         CanDropBeacons = false;
                     }
-                    else
+                    else if (IsUserControlled)
                     {
                         ChargingBar.DrainBar();
                     }

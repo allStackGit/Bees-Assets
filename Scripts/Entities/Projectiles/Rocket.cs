@@ -1,5 +1,6 @@
 ﻿
 using Assets.Scripts.Entities.Ships;
+using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Levels;
 using System.Collections;
 using System.Collections.Generic;
@@ -16,11 +17,11 @@ namespace Assets.Scripts.Entities.Projectiles
         //public GameObject RocketExplosion;
         public int MaxSpeed;
 
-        protected void Start()
+        public override void Setup(Level level, long id, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power)
         {
+            base.Setup(level, id, weapon, shooter, target, startingPosition, angle, range, power);
             InvokeRepeating(nameof(IncreaseSpeed), .1f, .1f);
         }
-
         private void IncreaseSpeed()
         {
             Body.velocity *= 1.5f;

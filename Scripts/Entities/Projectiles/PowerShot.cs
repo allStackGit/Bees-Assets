@@ -9,6 +9,12 @@ namespace Assets.Scripts.Entities.Projectiles
     {
         private int _powerLoss;
         private HashSet<Ship> _shipsHit = new HashSet<Ship>();
+        public override void ClearData()
+        {
+            base.ClearData();
+            _powerLoss = 0;
+            _shipsHit.Clear();
+        }
         public override void ContactTarget(Ship target)
         {
             if (!_shipsHit.Contains(target))

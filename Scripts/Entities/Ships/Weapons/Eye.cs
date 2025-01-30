@@ -17,6 +17,11 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             base.Create(ship, type, range, power, rateOfFire, projectileValue, piece, projectileType, fireAtFrontOfShip, rotationRate);
             Pupil = Piece.gameObject.transform.GetChild(0).GetComponent<SpriteRenderer>();
         }
+        public override void ClearData()
+        {
+            base.ClearData();
+            _readyToChangeColor = false;
+        }
         protected override void SendProjectile() // [projectile-method] [note]
         {
             base.SendProjectile();

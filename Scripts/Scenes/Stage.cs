@@ -129,6 +129,10 @@ public class Stage : Scene
     /// </summary>
     public int GeneratedSquadCountOverride;
     /// <summary>
+    /// How many obstacle lists there are
+    /// </summary>
+    public int ObstacleListCount;
+    /// <summary>
     /// Forces all levels to use a particular map
     /// </summary>
     public int OverrideMapIndex;
@@ -270,7 +274,7 @@ public class Stage : Scene
     /// </summary>
     public int FixedUpdates;
     /// <summary>
-    /// The time in seconds when the stage started up
+    /// The time in seconds when the stage started up [debugging]
     /// </summary>
     public float StartTime;
 

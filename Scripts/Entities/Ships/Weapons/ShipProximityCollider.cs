@@ -16,11 +16,15 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public CircleCollider2D Collider;
         public HashSet<Ship> NearbyEnemyShips = new HashSet<Ship>();
 
-        public virtual void Setup(Ship ship, int range)
+        public void Create(Ship ship, int range)
         {
             Ship = ship;
             Range = range;
             Collider.radius = Range;
+        }
+        public virtual void Setup()
+        {
+            NearbyEnemyShips.Clear();
         }
         protected virtual void OnTriggerEnter2D(Collider2D collider)
         {

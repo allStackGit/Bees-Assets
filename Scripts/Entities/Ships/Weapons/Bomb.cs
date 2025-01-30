@@ -50,7 +50,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// <returns></returns>
         public override bool IsShipValidTarget(Ship potentialTargetShip)
         {
-            return true; // all ships are "within range" and thus valid
+            return !potentialTargetShip.IsDead; // all ships that aren't dead are "within range" and thus valid
         }
 
         protected override void SetTargetShip(Ship targetShip)

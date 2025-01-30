@@ -55,7 +55,7 @@ namespace Assets.Scripts.Levels
         public float MapX, MapY, MaxDistance, HalfX, HalfY;
         public int MapWidth, MapHeight, HalfMapWidth, HalfMapHeight, MaximumClearance;
 
-        public float Seconds;
+        public float Seconds, StartTime;
         public int TriggersActivated;
         public float TimePaused;
         public List<Trigger> Triggers = new List<Trigger>();
@@ -77,8 +77,8 @@ namespace Assets.Scripts.Levels
         public List<string> __BeeHivemindShips, __HumanHivemindShips, __PastCommands, __PathfindingThreads, __CustomLevels;
 
 
-        private List<GameObject> _chosenObstacles;
-        private Dictionary<int, List<GameObject>> _obstacleLists;
+        private List<Obstacle> _chosenObstacles;
+        //private Dictionary<int, List<GameObject>> _obstacleLists;
 
         private void UpdateDebugVariables()
         {
@@ -134,14 +134,14 @@ namespace Assets.Scripts.Levels
                 HasPlayer = ConfigData.Configuration.DoesUserHaveController;
             }
 
-            _obstacleLists = new Dictionary<int, List<GameObject>>()
-            {
-                {0, Stage.Prefabs.EmptyObstacleList }, // it's important to have this here so we choose an empty level for testing
-                {1, Stage.Prefabs.MazePrefabs },
-                {2, Stage.Prefabs.ThreePathsPrefabs },
-                {3, Stage.Prefabs.ForestPrefabs },
-                {4, Stage.Prefabs.TheWallPrefabs }
-            };
+            //_obstacleLists = new Dictionary<int, List<GameObject>>()
+            //{
+            //    {0, Stage.Prefabs.EmptyObstacleList }, // it's important to have this here so we choose an empty level for testing
+            //    {1, Stage.Prefabs.MazePrefabs },
+            //    {2, Stage.Prefabs.ThreePathsPrefabs },
+            //    {3, Stage.Prefabs.ForestPrefabs },
+            //    {4, Stage.Prefabs.TheWallPrefabs }
+            //};
 
             if (Stage.ActivateBrains)
             {
@@ -190,9 +190,9 @@ namespace Assets.Scripts.Levels
                 Debug.Log($"The map has obstacles");
                 if (CurrentLevelOptions.ObstacleMapIndex == -1)
                 {
-                    CurrentLevelOptions.ObstacleMapIndex = Utilities.RandomInt(_obstacleLists.Count - 1) + 1;
+                    CurrentLevelOptions.ObstacleMapIndex = Utilities.RandomInt(Stage.ObstacleListCount - 1) + 1;
                 }
-                _chosenObstacles = _obstacleLists.GetValueOrDefault(CurrentLevelOptions.ObstacleMapIndex);
+                _chosenObstacles = Stage.Pool.GetObstacleMapFromPool(CurrentLevelOptions.ObstacleMapIndex);
 
                 if ((CurrentLevelOptions.AsteroidOption == -1 && Utilities.RandomInt(4) == 0) || CurrentLevelOptions.AsteroidOption > 0) // User chose random and random chose asteroids OR User chose asteroids
                 {
@@ -211,7 +211,7 @@ namespace Assets.Scripts.Levels
                 if (((CurrentLevelOptions.AsteroidOption == -1 && Utilities.CoinToss()) || CurrentLevelOptions.AsteroidOption > 0) && !Stage.IsTraining) // User chose random and random chose asteroids OR User chose asteroids
                 {
                     HasObstacles = true;
-                    _chosenObstacles = Stage.Prefabs.EmptyObstacleList;
+                    _chosenObstacles = Stage.Pool.GetObstacleMapFromPool(0);
                     CurrentLevelOptions.ObstacleMapIndex = 0;
                     ActivateCollisionAsteroids = true;
                     Debug.Log($"The map has asteroids but not obstacles");
@@ -309,13 +309,12 @@ namespace Assets.Scripts.Levels
         {
             Stage.CurrentAsteroidMaxSpawnRate = Stage.AsteroidMaxSpawnRate;
             Stage.CurrentAsteroidMinimumSpawnRate = Stage.AsteroidMinimumSpawnRate;
-            _chosenObstacles.ForEach((prefab) =>
+            _chosenObstacles.ForEach((obstacle) =>
             {
-                Vector2 position = prefab.transform.position;
-                GameObject instance = Instantiate(prefab);
-                instance.transform.parent = Map.transform;
-                instance.transform.localPosition = position;
-                State.AddObstacle(instance.GetComponent<Obstacle>());
+                Vector2 position = obstacle.transform.position;
+                obstacle.transform.parent = Map.transform;
+                obstacle.transform.localPosition = position;
+                //State.AddObstacle(obstacle.GetComponent<Obstacle>());
             });
 
             if (ActivateCollisionAsteroids)
@@ -366,7 +365,7 @@ namespace Assets.Scripts.Levels
 
             Triggers.Add(new Trigger(() =>
             {
-                return Time.realtimeSinceStartup - Stage.StartTime >= CurrentLevelOptions.EnemyReinforcementDelay;
+                return Time.realtimeSinceStartup - StartTime >= CurrentLevelOptions.EnemyReinforcementDelay;
             }, () =>
             {
                 Debug.Log($"{CurrentLevelOptions.EnemyReinforcementDelay} seconds have passed, spawning new enemy ships for side {ConfigData.Configuration.AISide}: {Utilities.ListToString(CurrentLevelOptions.EnemyReinforcements)}");
@@ -639,7 +638,7 @@ namespace Assets.Scripts.Levels
         {
             //StartTime = Time.realtimeSinceStartup;
 
-
+            StartTime = Time.realtimeSinceStartup;
             if (ConfigData.ChooseRandomLevel)
             {
                 List<LevelOptions> possibleLevels = ConfigData.GetLevelData().GetLevels().Where((level) => level.Side == ConfigData.Configuration.AISide).ToList();
@@ -691,11 +690,11 @@ namespace Assets.Scripts.Levels
                 Debug.Log($"The map does not have randomized options");
                 CurrentLevelOptions.MapIndex = Stage.OverrideMapIndex;
                 MapData = ConfigData.Maps[CurrentLevelOptions.MapIndex];
-                Map = Instantiate(Stage.Prefabs.Maps[CurrentLevelOptions.MapIndex]).GetComponent<UI_Components.Map>();
+                Map = Stage.Pool.GetPooledMap(CurrentLevelOptions.MapIndex);
 
-                
+
                 CurrentLevelOptions.ObstacleMapIndex = Stage.OverrideObstacleMapIndex;
-                _chosenObstacles = _obstacleLists.GetValueOrDefault(CurrentLevelOptions.ObstacleMapIndex);
+                _chosenObstacles = Stage.Pool.GetObstacleMapFromPool(CurrentLevelOptions.ObstacleMapIndex);
             }
             SetupMapAndCamera();
 
@@ -816,6 +815,7 @@ namespace Assets.Scripts.Levels
         {
             Map.transform.parent = this.transform;
             Map.transform.localPosition = Vector2.zero;
+            Map.gameObject.SetActive(true);
 
             StartingPositions[ConfigData.Configuration.AISide - 1] = Map.AIStartingPosition;
             StartingPositions[ConfigData.Configuration.UserSide - 1] = Map.UserStartingPosition;
@@ -950,10 +950,15 @@ namespace Assets.Scripts.Levels
 
                 ship.EndKill();
             }
+            // Should probably remove this
             GetComponents<Command>().ToList().ForEach((command) =>
             {
+                Debug.LogError($"A command had to be destroyed at the end of the level");
                 Destroy(command);
             });
+
+            Stage.Pool.ReturnObstacleMapToPool(_chosenObstacles, CurrentLevelOptions.ObstacleMapIndex);
+
             Obstacle[] obstacles = State.GetObstacles().ToArray();
             for (int i = 0; i < obstacles.Length; i++)
             {

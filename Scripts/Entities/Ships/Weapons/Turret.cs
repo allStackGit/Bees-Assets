@@ -23,7 +23,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public int TargetingPasses, PassesPerFire;
         /// <summary> How many times the targeting sequence runs per fire sequence </summary>
         public float TargetingRate;
-        public float DamagePerSecond => RateOfFire > 0 ? (Power / RateOfFire) : 0;
+        public float DamagePerSecond;
         public Vector2 TargetPoint;
         public GameObject TargetingMarker;
         public CollisionAsteroid TargetAsteroid;
@@ -44,6 +44,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             PassesPerFire = 3;
             TargetingRate = RateOfFire / PassesPerFire;
             RotationRate = rotationRate;
+            DamagePerSecond = RateOfFire > 0 ? (Power / RateOfFire) : 0;
 
             if (Ship.IsUserControlled)
             {
@@ -68,6 +69,17 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 //Invoke(nameof(Fire), RateOfFire);
             }
 
+        }
+        public override void ClearData()
+        {
+            base.ClearData();
+            IsAimedAtTarget = false;
+            IsFiringManually = false;
+            ReadyToFire = false;
+            TargetPoint = Vector2.zero;
+            TargetAsteroid = null;
+            HasTargetAsteroid = false;
+            IsFiringAtAsteroid = false;
         }
         protected void MoveTargetingMarker()
         {
@@ -183,7 +195,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// <returns></returns>
         public bool HasValidTarget()
         {
-            return ShipsWithinRange.Any((targetShip) => targetShip != null && IsShipValidTarget(targetShip));
+            return ShipsWithinRange.Any((targetShip) => !targetShip.IsDead && IsShipValidTarget(targetShip));
         }
         /// <summary>
         /// Checks if the ship is a) within range, b) In the map, and c) Not blocked by obstacles
@@ -192,7 +204,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// <returns></returns>
         public override bool IsShipValidTarget(Ship potentialTargetShip)
         {
-            return IsShipWithinRange(potentialTargetShip) && potentialTargetShip.IsInBounds() && (!Level.HasObstacles || !Utilities.HasObstaclesInTheWay(GetPosition(), GetTargetPoint(potentialTargetShip)));
+            return !potentialTargetShip.IsDead && IsShipWithinRange(potentialTargetShip) && potentialTargetShip.IsInBounds() && (!Level.HasObstacles || !Utilities.HasObstaclesInTheWay(GetPosition(), GetTargetPoint(potentialTargetShip)));
         }
         /// <summary>
         /// Sends the projectile to the Target Ship. Last in the Targeting sequence.

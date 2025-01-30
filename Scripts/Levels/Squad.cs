@@ -531,7 +531,7 @@ namespace Assets.Scripts.Levels
                 banned = banned.Where((type) => !enemyShips.Contains(type)).ToHashSet();
             }
             
-            string[] bannedTypes = banned.Select((ship) => $"Type {(Utilities.ConvertShipTypeToShipTypeLetter[ship])}").ToArray();
+            string[] bannedTypes = banned.Select((ship) => $"Type {(Utilities.ConvertShipTypeToCharacter[ship])}").ToArray();
 
             ConfigData.Socket.SendRequest(new MatchupStrategyRequest(new GetMatchupStrategy(AddToMatchup(GetShips()), OpponentId, bannedTypes),
                 this, Level, ConfigData.StandardMaxTimeOnQueue));
@@ -540,7 +540,7 @@ namespace Assets.Scripts.Levels
         {
             //string unsorted = "";
             //StringBuilder stringBuilder = new StringBuilder();
-            char[] letters = ships.Select(s => (char) s.ShipTypeLetter).ToArray();
+            char[] letters = ships.Select(s => Utilities.ConvertShipTypeLetterToCharacter[s.ShipTypeLetter]).ToArray();
             //ships.ForEach((ship) =>
             //{
             //    //unsorted += ship.ShipTypeLetter;

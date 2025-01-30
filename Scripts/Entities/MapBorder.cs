@@ -63,6 +63,9 @@ namespace Assets.Scripts.Entities
 
         }
 
-
+        private void OnDestroy()
+        {
+            Debug.LogError($"Map border {Name} destroyed");
+        }
     }
 }

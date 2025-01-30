@@ -13,7 +13,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public Weapon Weapon;
         public int Range;
         public CircleCollider2D Collider;
-        public bool IsTurret;
 
         public virtual void Setup(Weapon weapon, int range)
         {

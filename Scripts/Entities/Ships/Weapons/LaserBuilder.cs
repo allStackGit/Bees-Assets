@@ -22,6 +22,11 @@ namespace Assets.Scripts.Entities.Ships
             LaserBuilderControl = LaserBuilderAnimation.GetComponent<LaserBuilderControl>();
             LaserBuilderControl.Setup(this);
         }
+        public override void ClearData()
+        {
+            base.ClearData();
+            IsReadyForFiring = false;
+        }
         protected override void SendProjectile() // [projectile-method] [note] this doesn't actually send the projectile because we need to wait for the animation to finish
         {
             IsReadyForFiring = true;

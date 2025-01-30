@@ -27,6 +27,8 @@ namespace Assets.Scripts.Scenes
         /// The framerate that the application should try to hit. -1 Means syncing it to the monitor refresh rate.
         /// </summary>
         public int TargetFrameRate;
+        public ConfigData.SceneTypes Type;
+
 
         public List<string> __PastServerRequests, __SocketLevels, __StandingRequests;
         /// <summary>
@@ -142,11 +144,19 @@ namespace Assets.Scripts.Scenes
             if (ConfigData.Socket.HasClosed && IsSocketManager && !NetworkDisconnection.IsOpen)
             {
                 Debug.Log($"Network disconnected!");
+                if (Type == ConfigData.SceneTypes.Stage)
+                {
+                    ((Stage)this).PrimaryLevel.Pause();
+                }
                 NetworkDisconnection.Show();
             }
             else if (ConfigData.Socket.IsOpen && IsSocketManager && NetworkDisconnection.IsOpen)
             {
                 NetworkDisconnection.Hide();
+                if (Type == ConfigData.SceneTypes.Stage)
+                {
+                    ((Stage)this).PrimaryLevel.UnPause();
+                }
             }
             if (!ConfigData.SocketManager.NetworkDisconnection.IsOpen)
             {
