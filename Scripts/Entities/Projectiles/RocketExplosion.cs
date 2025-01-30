@@ -17,6 +17,13 @@ namespace Assets.Scripts.Entities.Projectiles
         private HashSet<Obstacle> _obstaclesHit = new HashSet<Obstacle>();
         public CircleCollider2D CircleCollider;
 
+        public override void ClearData()
+        {
+            base.ClearData();
+            _shipsHit.Clear();
+            _obstaclesHit.Clear();
+            _isHarmless = false;
+        }
         public override void ContactTarget(Ship target)
         {
             //Debug.Log($"Explosion hit {target.Name}");
@@ -52,8 +59,12 @@ namespace Assets.Scripts.Entities.Projectiles
         public new virtual void Kill()
         {
             //Debug.Log("Killed off the rocket explosion");
-            Level.State.FireBargeExplosions.Remove(this);
-            Destroy(gameObject);
+            if (Type == ConfigData.ProjectileTypes.FireBargeExplosion)
+            {
+                Level.State.FireBargeExplosions.Remove(this);
+            }
+            //Destroy(gameObject);
+            base.Kill();
         } 
 
         public void SetHarmless()

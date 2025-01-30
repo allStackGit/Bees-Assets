@@ -21,8 +21,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             Range = range;
             Weapon.HasRangeCollider = true;
             Collider.radius = Range;
-
-         
         }
         protected virtual void OnTriggerEnter2D(Collider2D collider)
         {
@@ -30,9 +28,13 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             if (collidingThing.CompareTag("Ship"))
             {
                 Ship ship = collidingThing.GetComponent<Ship>();
-                Weapon.ShipsWithinRange.Add(ship);
-                ship.WeaponsThatHaveUsWithinRange.Add(Weapon);
-                Weapon.HasCachedChanged = true;
+                if (!ship.IsDead)
+                {
+                    Weapon.ShipsWithinRange.Add(ship);
+                    ship.WeaponsThatHaveUsWithinRange.Add(Weapon);
+                    Weapon.HasCachedChanged = true;
+                }
+
 
                 //if (Weapon.Ship.IsHiveMindControlled && Weapon.Ship.HasCommand)
                 //{
@@ -54,10 +56,15 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             if (collidingThing.CompareTag("Ship"))
             {
                 Ship ship = collidingThing.GetComponent<Ship>();
+
                 //Debug.Log($"{ship.Name} is no longer in {Weapon.Ship.Name} range");
                 Weapon.ShipsWithinRange.Remove(ship);
-                ship.WeaponsThatHaveUsWithinRange.Remove(Weapon);
                 Weapon.HasCachedChanged = true;
+                if (!ship.IsDead)
+                {
+                    ship.WeaponsThatHaveUsWithinRange.Remove(Weapon);
+                }
+
 
                 //if (Weapon.Ship.IsHiveMindControlled)
                 //{

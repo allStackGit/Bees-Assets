@@ -73,7 +73,7 @@ SpriteRenderer:
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: -41909203
-  m_SortingLayer: 5
+  m_SortingLayer: 28
   m_SortingOrder: 0
   m_Sprite: {fileID: -695304075, guid: d403a940e86120f42a5bb4e0cda36f6f, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -119,7 +119,26 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0db5a75519756f24c80c634c95c7cf2e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  Id: 0
+  Age: 0
+  Level: {fileID: 0}
+  Stage: {fileID: 0}
+  Side: 2
+  Collider: {fileID: 0}
+  Body: {fileID: 0}
   Power: 0
-  Striker: {fileID: 0}
+  Range: 0
+  Speed: 0
+  Shooter: {fileID: 0}
+  Target: {fileID: 0}
+  Weapon: {fileID: 0}
+  StartingPosition: {x: 0, y: 0}
+  Angle: 0
+  Explosion: {fileID: 0}
+  Name: 
+  Type: 12
+  HasExplosion: 1
+  ShipIsDead: 0
+  HasBody: 0
+  IsDead: 1
   ContactedShip: {fileID: 0}
-  Explosion: {fileID: 1876865744220396715, guid: 9f4ad1076c8f24f4ab42adc2d5009d87, type: 3}

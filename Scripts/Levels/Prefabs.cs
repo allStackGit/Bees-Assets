@@ -25,7 +25,7 @@ namespace Assets.Scripts.Levels
             
             BeeSmallProjectileExplosionAnimationPrefab, BeeMediumProjectileExplosionAnimationPrefab, BumblebeeShotProjectileExplosionAnimationPrefab, FlagshipShotProjectileExplosionAnimationPrefab,
             HumanSmallProjectileExplosionAnimationPrefab, HumanMediumProjectileExplosionAnimationPrefab, SplitShotProjectileExplosionAnimationPrefab, QueenSmallProjectileExplosionAnimationPrefab,
-            QueenLargeProjectileExplosionAnimationPrefab,
+            QueenLargeProjectileExplosionAnimationPrefab, StrikerBombProjectileExplosionAnimationPrefab,
 
             BargeRemainsPrefab, BeehiveRemainsPrefab, BumblebeeRemainsPrefab, CarpenterBeeRemainsPrefab, CarrierRemainsPrefab, CruiserRemainsPrefab, DreadnoughtRemainsPrefab, DroneRemainsPrefab,
     FactoryRemainsPrefab, FireBargeRemainsPrefab, FlagshipRemainsPrefab, FrigateRemainsPrefab, GunshipRemainsPrefab, HoneybeeRemainsPrefab, HornetRemainsPrefab, LeafcutterRemainsPrefab, QueenRemainsPrefab,
@@ -74,6 +74,7 @@ namespace Assets.Scripts.Levels
                 { ConfigData.ProjectileTypes.SplitShot, SplitShotProjectileExplosionAnimationPrefab },
                 { ConfigData.ProjectileTypes.QueenSmall, QueenSmallProjectileExplosionAnimationPrefab },
                 { ConfigData.ProjectileTypes.QueenLarge, QueenLargeProjectileExplosionAnimationPrefab },
+                { ConfigData.ProjectileTypes.StrikerBomb, StrikerBombProjectileExplosionAnimationPrefab },
             };
 
             ConvertShipTypeToRemainsPrefab = new Dictionary<ConfigData.ShipTypes, GameObject>

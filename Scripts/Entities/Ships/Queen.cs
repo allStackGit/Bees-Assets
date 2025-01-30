@@ -24,16 +24,29 @@ namespace Assets.Scripts.Entities.Ships
         public List<Squad> MinionSquads = new List<Squad>();
 
         private int _maxMinionsPerSquad = 16;
-
-        private void Start()
+        public override void Create(Stage stage)
         {
+            base.Create(stage);
             if (MinionCount > _maxMinionsPerSquad)
             {
                 Debug.LogError($"Queen Property [MinionCount] (MinionCount) cannot be greater than [_maxMinionsPerSquad] ({_maxMinionsPerSquad})");
+                RotationSpeed = Speed * ConfigData.Configuration.RotationMultiplier / 4;
+
             }
-            InvokeRepeating(nameof(SpawnMinions), SpawnFrequency, SpawnFrequency);
-            RotationSpeed = Speed * ConfigData.Configuration.RotationMultiplier / 4;
         }
+        public override void Setup(Level level, long id, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
+        {
+            base.Setup(level, id, fleetShip, squad, offsetFromCenter);
+            InvokeRepeating(nameof(SpawnMinions), SpawnFrequency, SpawnFrequency);
+        }
+        public override void ClearData()
+        {
+            base.ClearData();
+            MinionSquadsCount = 0;
+            CurrentMinionSquad = null;
+            MinionSquads.Clear();
+        }
+
 
         private void SpawnMinions()
         {

@@ -247,7 +247,7 @@ MonoBehaviour:
   RLSide: 0
   RLHealth: 0
   RLShipType: 0
-  MinionType: 0
+  MinionType: 1
   TimeSinceLastBeaconDropped: 0
   BeaconsDropped: 0
   MinionSquads: []

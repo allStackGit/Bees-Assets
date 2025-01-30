@@ -1066,19 +1066,23 @@ namespace Assets.Scripts.Levels
         }
         public void Pause()
         {
+            //Debug.Log("Paused!");
             if (Stage.Audio != null)
             {
                 Stage.Audio.Pause();
             }
             State.IsPaused = true;
+            Time.timeScale = 0;
         }
         public void UnPause()
         {
+            //Debug.Log("UN Paused!");
             State.IsPaused = false;
             if (Stage.Audio != null && Stage.PlayMusic)
             {
                 Stage.Audio.Play();
             }
+            Time.timeScale = Stage.TimeScale;
         }
         // The SplitterShot class adds it's own projectile [note] [projectile-method]
         public Projectile AddProjectile(ConfigData.ProjectileTypes type, Weapon weapon, Vector2 startingPosition, float angle)

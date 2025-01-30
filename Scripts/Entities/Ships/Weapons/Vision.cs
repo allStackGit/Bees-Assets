@@ -94,6 +94,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 //Destroy(gameObject);
                 CancelInvoke(nameof(ShrinkVision));
+                gameObject.SetActive(false);
             }
         }
 

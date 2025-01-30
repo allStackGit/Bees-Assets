@@ -14,6 +14,13 @@ namespace Assets.Scripts.Entities.Ships
         public Ship ContactedShip, TouchingShip;
 
         public Weapon Bomb => Weapons.First();
+        public override void ClearData()
+        {
+            base.ClearData();
+            ContactedShip = null;
+            TouchingShip = null;
+            HasCompletedRun = false;
+        }
 
         protected override void OnTriggerEnter2D(Collider2D collider) // projectile collision
         {
@@ -88,37 +95,6 @@ namespace Assets.Scripts.Entities.Ships
 
 
             Kill(ContactedShip, ContactedShip.FleetShip, ContactedShip.Squad.SavedSquad); // kill the Yellow Jacket either way, giving credit to the contacted ship 
-
-        }
-
-        public void SuicideKill(Squad killerSquad) // [kill-method] [stats-method] [note]
-        {
-            DropExplosionAnimation();
-
-            Level.State.RemoveShip(this);
-            Squad.RemoveShip(this);
-
-            if (Stage.ReplaceDeadShips && Squad.SavedSquad.HasBeenSavedToStorage)
-            {
-                FleetShip.IsDead = true;
-            }
-            Squad.SavedSquad.Stats.ShipsLost++;
-
-            killerSquad.SavedSquad.Stats.Kills++;
-            //FleetShip.BattlesFought++;
-
-            if (Squad.GetShips().Count == 0)
-            {
-                //Squad.SavedSquad.Stats.BattlesFought++;
-                Squad.Kill();
-            }
-            else
-            {
-                Squad.SetOffsets();
-            }
-            //Destroy(gameObject);
-            Debug.Log($"{Name} has been killed and will be returned");
-            Stage.Pool.ReturnShipToPool(this);
 
         }
 

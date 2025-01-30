@@ -1,36 +1,39 @@
 ﻿using Assets.Scripts.Data;
 using Assets.Scripts.Entities.Ships;
+using Assets.Scripts.Entities.Ships.Weapons;
+using Assets.Scripts.Levels;
 using System.Collections;
 using UnityEngine;
 
 namespace Assets.Scripts.Entities.Projectiles
 {
-    public class StrikerBomb : MonoBehaviour
+    public class StrikerBomb : Projectile
     {
-        public int Power;
-        public Striker Striker;
-        public FleetShip FleetShip;
-        public SavedSquad SavedSquad;
         public Ship ContactedShip;
-        public GameObject Explosion;
         // Use this for initialization
-        public void Setup(int power, Striker striker, Ship contactedShip)
+        public void Setup(Level level, long id, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power, Ship contactedShip)
         {
-            Power = power;
-            Striker = striker;
-            FleetShip = Striker.FleetShip;
-            SavedSquad = Striker.Squad.SavedSquad;
+            base.Setup(level, id, weapon, shooter, target, startingPosition, angle, range, power);
             ContactedShip = contactedShip;
-            Invoke(nameof(Explode), 1.5f);
-
+            transform.parent = ContactedShip.transform;
+            Invoke(nameof(KillSequence), 1.5f);
         }
 
-        private void Explode()
+
+        public override void KillSequence()
         {
-            Ship.LogAttackingDamage(Power, Striker, FleetShip, SavedSquad, ContactedShip);
-            GameObject explosion = Instantiate(Explosion, transform.position, Quaternion.identity);
-            explosion.transform.parent = ContactedShip.transform;
-            Destroy(gameObject);
+            if (!ContactedShip.IsDead)
+            {
+                Explosion.transform.parent = ContactedShip.transform;
+                Explosion.transform.localPosition = GetPosition();
+                Explosion.SetActive(true);
+                Kill();
+                Invoke(nameof(Damage), .5f);
+            }
+        }
+        public void Damage()
+        {
+            Ship.LogAttackingDamage(Power, Shooter, FleetShip, SavedSquad, ContactedShip);
         }
     }
 }

@@ -282,8 +282,8 @@ namespace Assets.Scripts.Entities.Ships
             AdditionalTsv = shipStats.AdditionalTsv;
             Sight = shipStats.Sight;
             Speed = shipStats.Speed;
-            OriginalHealth = Health;
-            MaxHealth = Health;
+            OriginalHealth = shipStats.Health;
+            MaxHealth = OriginalHealth;
             Clearance = Stage.ShipClearances.GetValueOrDefault(ShipType);
             _healthBarFiller = HealthBar.transform.GetChild(0);
             _healthBarFillerSprite = HealthBar.transform.GetChild(0).GetComponent<SpriteRenderer>();
@@ -352,7 +352,15 @@ namespace Assets.Scripts.Entities.Ships
                     ShipRemains.Create(this);
                 }
 
-                ShipExplosion = Instantiate(Stage.Prefabs.ConvertShipTypeToExplosionPrefab[ShipType], Vector2.zero, Quaternion.identity);
+                if (ShipType == ConfigData.ShipTypes.FireBarge)
+                {
+                    ShipExplosion = Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.FireBargeExplosion).gameObject;
+
+                }
+                else
+                {
+                    ShipExplosion = Instantiate(Stage.Prefabs.ConvertShipTypeToExplosionPrefab[ShipType], Vector2.zero, Quaternion.identity);
+                }
                 ShipExplosion.SetActive(false);
 
                 if (Stage.ActivateAudio)
@@ -626,6 +634,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             {
                 Level.State.MiningShips.Add(this);
             }
+            UpdateHealthBar();
             gameObject.SetActive(true);
         }
         public virtual void ClearData()

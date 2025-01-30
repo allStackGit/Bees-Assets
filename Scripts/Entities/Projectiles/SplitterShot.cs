@@ -72,12 +72,18 @@ namespace Assets.Scripts.Entities.Projectiles
 
 
                 Vector3 startingPosition = GetPosition();
-                GameObject shot =  Instantiate(SplitLaserPrefab, startingPosition, Quaternion.identity);
-                shot.transform.parent = Level.Map.transform;
-                LaserShot projectile = (LaserShot)shot.GetComponent(typeof(LaserShot));
-                projectile.Setup(Level, Level.State.GetId(), Weapon, Shooter, Target, startingPosition, radians, Weapon.Range, (int) (Weapon.Power / 1.5f));
+                Projectile projectile = Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.BeeSmall);
+                projectile.Setup(Level, Level.State.GetId(), Weapon, Shooter, Target, startingPosition, radians, Weapon.Range, (int)(Weapon.Power / 1.5f));
                 projectile.ShipsToIgnore.Add(target);
                 Shooter.ProjectilesInFlight.Add(projectile);
+
+
+                //GameObject shot =  Instantiate(SplitLaserPrefab, startingPosition, Quaternion.identity);
+                //shot.transform.parent = Level.Map.transform;
+                //LaserShot projectile = (LaserShot)shot.GetComponent(typeof(LaserShot));
+                //projectile.Setup(Level, Level.State.GetId(), Weapon, Shooter, Target, startingPosition, radians, Weapon.Range, (int) (Weapon.Power / 1.5f));
+                //projectile.ShipsToIgnore.Add(target);
+                //Shooter.ProjectilesInFlight.Add(projectile);
 
             }
 

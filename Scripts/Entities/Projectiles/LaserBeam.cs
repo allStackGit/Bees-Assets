@@ -7,6 +7,7 @@ using Assets.Scripts.Entities.Ships.Weapons;
 using System.Security.Cryptography;
 using static UnityEngine.GraphicsBuffer;
 using System.Collections.Generic;
+using Assets.Scripts.Levels;
 
 namespace Assets.Scripts.Entities.Projectiles
 {
@@ -14,24 +15,30 @@ namespace Assets.Scripts.Entities.Projectiles
     {
 
         private Vector2 _lastShooterPosition, _lastTargetPoint;
-        private float _scale;
+        private float _scale = 2f;
         private Ship _target;
         private int _powerLoss;
         private HashSet<Ship> _shipsHit = new HashSet<Ship>();
-        void Start()
+        public override void Setup(Level level, long id, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power)
         {
-            if (Weapon != null && Weapon.Ship != null)
+            base.Setup(level, id, weapon, shooter, target, startingPosition, angle, range, power);
+            _lastShooterPosition = Weapon.GetPosition();
+            _target = Weapon.TargetShip;
+            if (_target != null)
             {
-                _scale = 2f;
-                _lastShooterPosition = Weapon.GetPosition();
-                _target = Weapon.TargetShip;
-                if (_target != null )
-                {
-                    _lastTargetPoint = _target.GetPosition();
-                }
-                Angle = 0;
+                _lastTargetPoint = _target.GetPosition();
             }
-
+        }
+        public override void ClearData()
+        {
+            base.ClearData();
+            _lastShooterPosition = Vector2.zero;
+            _lastTargetPoint = Vector2.zero;
+            _target = null;
+            _powerLoss = 0;
+            transform.localScale = new Vector2(1, .5f);
+            _shipsHit.Clear();
+            Angle = 0;
         }
         public override void ContactTarget(Ship target)
         {
@@ -53,24 +60,23 @@ namespace Assets.Scripts.Entities.Projectiles
 
 
         }
-        public void StopBeam()
-        {
-            _scale = 0;
-            Body.velocity = Vector2.zero;
-        }
         public override void Kill()
         {
-            //Debug.Log($"killed projectile {name} #{Id}");
-            BeamCannon weapon = (BeamCannon)Weapon;
-            weapon.IsFiringLaserBeam = false;
-            weapon.LaserBeamTarget = null;
-            RemoveDamageSentEntry();
-            if (!ShipIsDead)
+            if (!IsDead)
             {
-                Shooter.ProjectilesInFlight.Remove(this);
+                IsDead = true;
+                BeamCannon weapon = (BeamCannon)Weapon;
+                weapon.IsFiringLaserBeam = false;
+                weapon.LaserBeamTarget = null;
+                RemoveDamageSentEntry();
+                if (!ShipIsDead)
+                {
+                    Shooter.ProjectilesInFlight.Remove(this);
+                }
+                Debug.Log($"{Name} has been killed and will be returned");
+                Stage.Pool.ReturnProjectileToPool(this);
             }
-            Debug.Log($"{Name} has been killed and will be returned");
-            Stage.Pool.ReturnProjectileToPool(this);
+
         }
         private Vector2 GetChangeInShooterPosition()
         {

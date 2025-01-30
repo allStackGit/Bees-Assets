@@ -61,16 +61,13 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 TargetingMarker.transform.SetParent(Level.Map.transform);
                 TargetingMarker.name = $"{Name}'s Targeting Marker";
             }
-
-        }
-        private void Start()
-        {
             if (RateOfFire > 0)
             {
                 //Debug.Log($"Aiming rate: {TargetingRate} for {FleetShip.Name}");
                 InvokeRepeating(nameof(TargetingSequence), TargetingRate, TargetingRate);
                 //Invoke(nameof(Fire), RateOfFire);
             }
+
         }
         protected void MoveTargetingMarker()
         {

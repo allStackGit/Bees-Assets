@@ -13,6 +13,11 @@ namespace Assets.Scripts.Entities.Ships
         public Vector2 WarpPoint;
         public HashSet<Ship> ShipsWarpingHere = new HashSet<Ship>();
         public Collider2D WarpCollider;
+        public override void ClearData()
+        {
+            base.ClearData();
+            ShipsWarpingHere.Clear();
+        }
 
         public void OnTriggerEnter2D(Collider2D collider)
         {

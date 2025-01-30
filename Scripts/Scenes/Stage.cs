@@ -183,17 +183,13 @@ public class Stage : Scene
     /// <summary>
     /// Only allows Hive Mind strats of the types specified here, unless it's empty. Gets converted to OverridenStrats which has the enum of every strategy type
     /// </summary>
-    public List<string> OverrideStrats = new List<string> { };
-    /// <summary>
-    /// The enum version of OVerrideStrats
-    /// </summary>
-    public List<ConfigData.CommandTypes> OverriddenStrats = new List<ConfigData.CommandTypes>();
+    public List<ConfigData.CommandTypes> OverrideStrats = new List<ConfigData.CommandTypes> { };
     /// <summary>
     /// The set of positions for each level depending on the number of levels on the stage
     /// </summary>
     public Dictionary<int, Vector2[]> LevelLayouts = new Dictionary<int, Vector2[]>
     {
-        {1, new Vector2[] { new Vector2(0, 0), new Vector2(0, 0) } },
+        {1, new Vector2[] { Vector2.zero, Vector2.zero } },
         {2, new Vector2[] { new Vector2(-756, 0), new Vector2(756, 0) } },
         {4, new Vector2[] { new Vector2(-756, 756), new Vector2(756, 756), new Vector2(-756, -756), new Vector2(756, -756) } },
     };
@@ -332,10 +328,6 @@ public class Stage : Scene
             SpawnLevels();
         }
 
-        OverrideStrats.ForEach((strategy) =>
-        {
-            OverriddenStrats.Add(Utilities.ConvertCommandNameToType[strategy]);
-        });
 
         if (DoesUserHaveController)
         {
@@ -533,7 +525,7 @@ public class Stage : Scene
         base.Update();
         if (!IsTrainingNueralNetwork)
         {
-            Time.timeScale = TimeScale;
+            //Time.timeScale = TimeScale;
             if (!IsTrainingHiveMind && IsFinalized)
             {
                 InputManager.Update();

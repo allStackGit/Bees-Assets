@@ -308,85 +308,85 @@ public class Pool : MonoBehaviour
 
     public Projectile CreatedPooledBeeSmallProjectile()
     {
-        Projectile projectile = Instantiate(Stage.Prefabs.BeeSmallLaserShotPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+        Projectile projectile = Instantiate(Stage.Prefabs.BeeSmallLaserShotPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         projectile.Create(Stage);
         return projectile;
     }
     public Projectile CreatedPooledBeeMediumProjectile()
     {
-        Projectile projectile = Instantiate(Stage.Prefabs.BeeMediumLaserShotPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+        Projectile projectile = Instantiate(Stage.Prefabs.BeeMediumLaserShotPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         projectile.Create(Stage);
         return projectile;
     }
     public Projectile CreatedPooledBumblebeeShotProjectile()
     {
-        Projectile projectile = Instantiate(Stage.Prefabs.BumblebeeShotPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+        Projectile projectile = Instantiate(Stage.Prefabs.BumblebeeShotPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         projectile.Create(Stage);
         return projectile;
     }
     public Projectile CreatedPooledFlagshipShotProjectile()
     {
-        Projectile projectile = Instantiate(Stage.Prefabs.FlagshipShotPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+        Projectile projectile = Instantiate(Stage.Prefabs.FlagshipShotPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         projectile.Create(Stage);
         return projectile;
     }
     public Projectile CreatedPooledRocketProjectile()
     {
-        Projectile projectile = Instantiate(Stage.Prefabs.RocketPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+        Projectile projectile = Instantiate(Stage.Prefabs.RocketPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         projectile.Create(Stage);
         return projectile;
     }
     public Projectile CreatedPooledHumanSmallProjectile()
     {
-        Projectile projectile = Instantiate(Stage.Prefabs.HumanSmallPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+        Projectile projectile = Instantiate(Stage.Prefabs.HumanSmallPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         projectile.Create(Stage);
         return projectile;
     }
     public Projectile CreatedPooledHumanMediumProjectile()
     {
-        Projectile projectile = Instantiate(Stage.Prefabs.HumanMediumPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+        Projectile projectile = Instantiate(Stage.Prefabs.HumanMediumPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         projectile.Create(Stage);
         return projectile;
     }
     public Projectile CreatedPooledBeamProjectile()
     {
-        Projectile projectile = Instantiate(Stage.Prefabs.BeamPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+        Projectile projectile = Instantiate(Stage.Prefabs.BeamPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         projectile.Create(Stage);
         return projectile;
     }
     public Projectile CreatedPooledSplitShotProjectile()
     {
-        Projectile projectile = Instantiate(Stage.Prefabs.SplitShotPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+        Projectile projectile = Instantiate(Stage.Prefabs.SplitShotPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         projectile.Create(Stage);
         return projectile;
     }
     public Projectile CreatedPooledQueenSmallProjectile()
     {
-        Projectile projectile = Instantiate(Stage.Prefabs.QueenSmallPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+        Projectile projectile = Instantiate(Stage.Prefabs.QueenSmallPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         projectile.Create(Stage);
         return projectile;
     }
     public Projectile CreatedPooledQueenLargeProjectile()
     {
-        Projectile projectile = Instantiate(Stage.Prefabs.QueenLargePrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+        Projectile projectile = Instantiate(Stage.Prefabs.QueenLargePrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         projectile.Create(Stage);
         return projectile;
     }
     public Projectile CreatedPooledStrikerBombProjectile()
     {
-        Projectile projectile = Instantiate(Stage.Prefabs.StrikerBombPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+        Projectile projectile = Instantiate(Stage.Prefabs.StrikerBombPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         projectile.Create(Stage);
         return projectile;
     }
     public Projectile CreatedPooledRocketExplosionProjectile()
     {
-        Projectile projectile = Instantiate(Stage.Prefabs.RocketExplosionPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+        Projectile projectile = Instantiate(Stage.Prefabs.RocketExplosionPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         projectile.Create(Stage);
         return projectile;
     }
     public Projectile CreatedPooledFireBargeExplosionProjectile()
     {
-        Projectile projectile = Instantiate(Stage.Prefabs.FireBargeExplosionPrefab, new Vector2(0, 0), Quaternion.identity).GetComponent<Projectile>();
+        Projectile projectile = Instantiate(Stage.Prefabs.FireBargeExplosionPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         projectile.Create(Stage);
         return projectile;
     }
@@ -418,6 +418,18 @@ public class Pool : MonoBehaviour
     {
 
         ship.gameObject.SetActive(false);
+        if (ship.HasMovementMarker)
+        {
+            ship.MovementMarker.SetActive(false);
+        }
+        ship.Turrets.ForEach(turret =>
+        {
+            turret.CancelInvoke();
+            if (turret.HasTargetingMarker)
+            {
+                turret.TargetingMarker.SetActive(false);
+            }
+        });
 
         switch (ship.ShipType)
         {
@@ -700,7 +712,7 @@ public class Pool : MonoBehaviour
             spawnedProjectiles.Add(RocketProjectilePool.Get());
             spawnedProjectiles.Add(HumanMediumProjectilePool.Get());
             spawnedProjectiles.Add(SplitShotProjectilePool.Get());
-            //spawnedProjectiles.Add(StrikerBombProjectilePool.Get());
+            spawnedProjectiles.Add(StrikerBombProjectilePool.Get());
             spawnedProjectiles.Add(RocketExplosionProjectilePool.Get());
 
 

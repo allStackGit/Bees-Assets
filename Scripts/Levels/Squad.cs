@@ -557,12 +557,12 @@ namespace Assets.Scripts.Levels
         public void MakeMatchupAndGetCommand(Squad enemy = null)
         {
             string matchup = "";
-            if (Level.Stage.OverriddenStrats.Count > 0) // [debug]
+            if (Level.Stage.OverrideStrats.Count > 0) // [debug]
             {
                 BannedStrats.UnionWith(ConfigData.TypesOfCommands);
-                BannedStrats = BannedStrats.Except(Level.Stage.OverriddenStrats).ToHashSet();
+                BannedStrats = BannedStrats.Except(Level.Stage.OverrideStrats).ToHashSet();
 
-                if (Level.Stage.OverriddenStrats.Contains(ConfigData.CommandTypes.Scouting) && Level.State.GetShipsVisibleToHiveMind(Side).Count > 0 && Level.Stage.OverriddenStrats.Count > 1 && !IsDefenseless)
+                if (Level.Stage.OverrideStrats.Contains(ConfigData.CommandTypes.Scouting) && Level.State.GetShipsVisibleToHiveMind(Side).Count > 0 && Level.Stage.OverrideStrats.Count > 1 && !IsDefenseless)
                 {
                     BannedStrats.Add(ConfigData.CommandTypes.Scouting);
                 }

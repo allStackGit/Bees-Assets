@@ -254,7 +254,7 @@ MonoBehaviour:
   RLSide: 0
   RLHealth: 0
   RLShipType: 0
-  MinionType: 0
+  MinionType: 22
   MinionCount: 8
   SpawnPoint: {x: 0, y: -48}
   SpawnFrequency: 45

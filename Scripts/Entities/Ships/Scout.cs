@@ -39,6 +39,13 @@ namespace Assets.Scripts.Entities.Ships
                 ChargingBar.Setup(); 
             }
         }
+        public override void ClearData()
+        {
+            base.ClearData();
+            TimeSinceLastBeaconDropped = 0;
+            BeaconsDropped = 0;
+            MinionSquads.Clear();
+        }
         private Squad CreateMinionSquad()
         {
             // Create Squad

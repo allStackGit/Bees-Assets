@@ -40,8 +40,17 @@ namespace Assets.Scripts.Entities.Projectiles
             if (!Stage.IsTraining && HasExplosion)
             {
                 //Debug.Log($"{Stage}, {Stage?.Prefabs}, {Type}, {Stage?.Prefabs?.ConvertProjectileTypeToExplosionAnimation[Type]}");
-                Explosion = Instantiate(Stage.Prefabs.ConvertProjectileTypeToExplosionAnimation[Type], Vector2.zero, Quaternion.identity);
+                
+                if (Type == ConfigData.ProjectileTypes.Rocket)
+                {
+                    Explosion = Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.RocketExplosion).gameObject;
+                }
+                else
+                {
+                    Explosion = Instantiate(Stage.Prefabs.ConvertProjectileTypeToExplosionAnimation[Type], Vector2.zero, Quaternion.identity);
+                }
                 Explosion.gameObject.SetActive(false);
+
             }
             else
             {
@@ -50,7 +59,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
             gameObject.SetActive(false);
         }
-        public void Setup(Level level, long id, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power)
+        public virtual void Setup(Level level, long id, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power)
         {
             Level = level;
             Id = id;
@@ -63,6 +72,7 @@ namespace Assets.Scripts.Entities.Projectiles
             Name = $"{Shooter.Name}: {Type} - #{Id}";
             gameObject.name = Name;
             StartingPosition = startingPosition;
+            transform.parent = Level.Map.transform;
             transform.localPosition = StartingPosition;
             IsDead = false;
 
@@ -78,7 +88,7 @@ namespace Assets.Scripts.Entities.Projectiles
             }
         }
 
-        public void ClearData()
+        public virtual void ClearData()
         {
             ShipsToIgnore.Clear();
             CollidingQueue.Clear();
@@ -97,8 +107,8 @@ namespace Assets.Scripts.Entities.Projectiles
                 {
                     Shooter.ProjectilesInFlight.Remove(this);
                 }
-                Debug.Log($"{Name} has been killed and will be returned");
                 IsDead = true;
+                Debug.Log($"{Name} has been killed and will be returned");
                 Stage.Pool.ReturnProjectileToPool(this);
             }
 
@@ -154,24 +164,21 @@ namespace Assets.Scripts.Entities.Projectiles
         
         protected virtual void FixedUpdate()
         {
-            if (!Level.State.IsPaused)
+            if (CollidingQueue.Count > 0)
             {
-                if (CollidingQueue.Count > 0)
-                {
-                    //Debug.Log("Pulled collision off of queue");
-                    ShipCollision(CollidingQueue.Dequeue());
-                }
-                if (CollidingObstacleQueue.Count > 0)
-                {
-                    ContactObstacle(CollidingObstacleQueue.Dequeue());
-                }
-                if (ShipIsDead && DistanceToPoint(StartingPosition) > Range)
-                {
-                    Debug.Log($"Projectile ({Name}) killed because it went past its range ({Range}), and it's shooter ({FleetShip.Name}) is dead");
-                    Kill();
-                }
+                //Debug.Log("Pulled collision off of queue");
+                ShipCollision(CollidingQueue.Dequeue());
             }
-            
+            if (CollidingObstacleQueue.Count > 0)
+            {
+                ContactObstacle(CollidingObstacleQueue.Dequeue());
+            }
+            if (ShipIsDead && DistanceToPoint(StartingPosition) > Range)
+            {
+                Debug.Log($"Projectile ({Name}) killed because it went past its range ({Range}), and it's shooter ({FleetShip.Name}) is dead");
+                Kill();
+            }
+
         }
 
         public void RemoveDamageSentEntry()

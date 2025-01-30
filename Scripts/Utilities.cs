@@ -655,13 +655,13 @@ namespace Assets.Scripts
         // screen and this will tell you the value of the unit
         public static Vector2 WorldUnitsToScreenPixels(Vector2 vector, Camera camera)
         {
-            Vector2 baseWorldPoint = camera.WorldToScreenPoint(new Vector2(0, 0));
+            Vector2 baseWorldPoint = camera.WorldToScreenPoint(Vector2.zero);
             Vector2 screenPoint = camera.WorldToScreenPoint(vector);
             return new Vector2(Mathf.Abs(baseWorldPoint.x - screenPoint.x), Mathf.Abs(baseWorldPoint.y - screenPoint.y));
         }
         public static Vector2 ScreenPixelsToWorldUnits(Vector2 vector, Camera camera)
         {
-            Vector2 baseWorldPoint = camera.ScreenToWorldPoint(new Vector2(0, 0));
+            Vector2 baseWorldPoint = camera.ScreenToWorldPoint(Vector2.zero);
             Vector2 worldPoint = camera.ScreenToWorldPoint(vector);
             return new Vector2(Mathf.Abs(baseWorldPoint.x - worldPoint.x), Mathf.Abs(baseWorldPoint.y - worldPoint.y));
         }

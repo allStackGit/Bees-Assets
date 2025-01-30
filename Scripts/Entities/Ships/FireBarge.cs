@@ -11,12 +11,17 @@ namespace Assets.Scripts.Entities.Ships
 {
     public class FireBarge : Ship
     {
-        public GameObject Explosion;
+        RocketExplosion Explosion;
         public void Detonate()
         {
             //Debug.Log("Detonating Fire Barge");
 
             Kill(null, null, null);
+        }
+        public override void Create(Stage stage)
+        {
+            base.Create(stage);
+            Explosion = (RocketExplosion)ShipExplosion.GetComponent(typeof(RocketExplosion));
         }
         public Weapon Bomb => Weapons.First();
 
@@ -28,12 +33,10 @@ namespace Assets.Scripts.Entities.Ships
                 //Debug.Log("FireBarge exploding");
                 if (!endKill)
                 {
-                    Explosion = Instantiate(ShipExplosion, GetPosition(), Quaternion.identity);
-                    Explosion.transform.parent = Level.Map.transform;
-                    RocketExplosion explosion = (RocketExplosion)Explosion.GetComponent(typeof(RocketExplosion));
-                    explosion.Setup(Level, Level.State.GetId(), Bomb, this, null, GetPosition(), 0, 0, Bomb.Power);
-                    Level.State.FireBargeExplosions.Add(explosion);
-                    ProjectilesInFlight.Add(explosion);
+                    DropExplosionAnimation();
+                    Explosion.Setup(Level, Level.State.GetId(), Bomb, this, null, GetPosition(), 0, 0, Bomb.Power);
+                    Level.State.FireBargeExplosions.Add(Explosion);
+                    ProjectilesInFlight.Add(Explosion);
 
 
                     // The Fire Barge is killing itself so it takes full damage but there's no shooter so it's just logging damage
@@ -85,7 +88,7 @@ namespace Assets.Scripts.Entities.Ships
                 //{
                 //    Destroy(MovementMarker);
                 //}
-                //gameObject.SetActive(false);
+                gameObject.SetActive(false);
                 Invoke(nameof(DelayedKill), 5);
 
             }

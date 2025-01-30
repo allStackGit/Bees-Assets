@@ -7641,11 +7641,19 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: ActivateHiveMind
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: AsteroidMaxSpeed
       value: 12
+      objectReference: {fileID: 0}
+    - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
+      propertyPath: OverrideMapIndex
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
+      propertyPath: ReplaceDeadShips
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: IsTrainingHiveMind
@@ -7683,6 +7691,10 @@ PrefabInstance:
       propertyPath: MiniMapCameraContainer
       value: 
       objectReference: {fileID: 807741791}
+    - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
+      propertyPath: BeeShipTypes.Array.size
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: DefaultCameraPosition.y
       value: -512
@@ -7733,7 +7745,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: GeneratedSquadCountOverride
-      value: 4
+      value: 12
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: MouseScrollDistanceFromEdge.x
@@ -7742,6 +7754,14 @@ PrefabInstance:
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: MouseScrollDistanceFromEdge.y
       value: 10
+      objectReference: {fileID: 0}
+    - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
+      propertyPath: OverrideBeeShipTypes.Array.size
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
+      propertyPath: OverrideBeeShipTypes.Array.data[0]
+      value: 16
       objectReference: {fileID: 0}
     - target: {fileID: 5651911293931274906, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: m_Name
@@ -15823,6 +15843,7 @@ MonoBehaviour:
   SplitShotProjectileExplosionAnimationPrefab: {fileID: 3612702878992157786, guid: 8296e38041b692043b998926766361bc, type: 3}
   QueenSmallProjectileExplosionAnimationPrefab: {fileID: 3345242948093166458, guid: 621b0d5f7c5f78d4f8d62b7b997cc1a9, type: 3}
   QueenLargeProjectileExplosionAnimationPrefab: {fileID: 3345242948093166458, guid: 79f29d6ea5220e04fab074511cc6287a, type: 3}
+  StrikerBombProjectileExplosionAnimationPrefab: {fileID: 1876865744220396715, guid: 9f4ad1076c8f24f4ab42adc2d5009d87, type: 3}
   BargeRemainsPrefab: {fileID: 0}
   BeehiveRemainsPrefab: {fileID: 0}
   BumblebeeRemainsPrefab: {fileID: 0}

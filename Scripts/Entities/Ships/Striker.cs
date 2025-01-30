@@ -53,7 +53,7 @@ namespace Assets.Scripts.Entities.Ships
         public override void ClearData()
         {
             base.ClearData();
-            IsBombReady = false;
+            IsBombReady = true;
             HasCompletedRun = false;
             HasDroppedBomb = false;
             HasReturnedToCarrier = false;
@@ -171,12 +171,11 @@ namespace Assets.Scripts.Entities.Ships
             //    bombPosition = ContactedShip.GetRandomPointOnShip(Utilities.RotatePointAroundPoint(targetPoint, frontOfShip, GetRotation() * Mathf.Deg2Rad));
             //}
 
-            GameObject instance = Instantiate(BombSprite, Vector2.zero, Quaternion.identity);
-            instance.transform.localPosition = bombPosition;
-            instance.transform.parent = ContactedShip.transform;
 
-            StrikerBomb bomb = (StrikerBomb)instance.GetComponent(typeof(StrikerBomb));
-            bomb.Setup(Bomb.Power, this, ContactedShip);
+
+            StrikerBomb bomb = (StrikerBomb) Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.StrikerBomb);
+            bomb.transform.parent = Level.Map.transform;
+            bomb.Setup(Level, Level.State.GetId(), Bomb, this, ContactedShip, bombPosition, 0, 0, Bomb.Power, ContactedShip);
 
             CompleteRun();
 
