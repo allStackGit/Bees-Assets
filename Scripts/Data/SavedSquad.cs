@@ -250,7 +250,7 @@ namespace Assets.Scripts.Data
         }
         public Squad ToSquad(Level level)
         {
-            Squad squad = level.gameObject.AddComponent<Squad>();
+            Squad squad = level.Stage.Pool.GetSquadFromPool();
             squad.Setup(
                 level,
                 HasBeenSavedToStorage ? ConfigData.CurrentShips.GetSavedSquad(Id) : this,

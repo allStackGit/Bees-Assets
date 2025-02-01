@@ -36,7 +36,7 @@ namespace Assets.Scripts.Levels
                     {
                         CarrierSquad carrierSquad = (CarrierSquad)squad;
                         CarrierShip carrierShip = (CarrierShip)ship;
-                        carrierShip.CarrierShipSetup(carrierSquad.Carrier.FleetShip, carrierSquad.SquadType, carrierSquad.Carrier);
+                        carrierShip.CarrierShipSetup(carrierSquad.Carrier.FleetShip, carrierSquad.CarrierSquadType, carrierSquad.Carrier);
                     }
                 }
             });
@@ -283,7 +283,6 @@ namespace Assets.Scripts.Levels
                         Ship ship = InstantiateShip(fleetShip.Type);
                         ship.Setup(
                                 Level,
-                                Level.State.GetId(),
                                 fleetShip,
                                 squad,
                                 squadShip.Offset
@@ -316,7 +315,7 @@ namespace Assets.Scripts.Levels
                 // spawn drones
                 for (int i = 0; i < ConfigData.Configuration.CarrierSquadCount; i++)
                 {
-                    CarrierSquad droneSquad = Level.gameObject.AddComponent<CarrierSquad>();
+                    CarrierSquad droneSquad = Stage.Pool.GetCarrierSquadFromPool();
                     droneSquad.Setup(
                         Level,
                         carrier.Squad.SavedSquad,
@@ -335,7 +334,7 @@ namespace Assets.Scripts.Levels
                     droneSquad.SetupCarrierSquad((Carrier)carrier, ConfigData.ShipTypes.Drone);
 
                     // spawn strikers
-                    CarrierSquad strikerSquad = Level.gameObject.AddComponent<CarrierSquad>();
+                    CarrierSquad strikerSquad = Stage.Pool.GetCarrierSquadFromPool();
                     strikerSquad.Setup(
                         Level,
                         carrier.Squad.SavedSquad,

@@ -20,7 +20,12 @@ namespace Assets.Scripts.Levels
         public Level Level;
         public Stage Stage;
         public int Side, SquadNumber, OpponentId, Id;
+        /// <summary>
+        /// The Id of this squad relative to the stage. Guarenteed unique for this stage. Not the same as the saved squad Id
+        /// </summary>
+        public int ItemId;
         public long Age;
+        public ConfigData.SquadTypes SquadType;
         public Command Command;
         public List<StoredCommand> PastCommands = new List<StoredCommand>();
         public MatchupStrategy MatchupStrategy; // the matchup strategy belongs to the squad and not the command because it is used to determine the command by making the matchup
@@ -32,7 +37,7 @@ namespace Assets.Scripts.Levels
         public SavedSquad SavedSquad;
         public GameObject SquadBox;
         public SquadTab SquadTab;
-        public bool HasMovedBox, IsMatchingSpeed, IsImmobile, CeaseFire, HasAddedShips, IsShowingRanges, IsGrowingSquad, HasCustomColor, HasSquadTab;
+        public bool HasMovedBox, IsMatchingSpeed, IsImmobile, CeaseFire, HasAddedShips, IsShowingRanges, IsGrowingSquad, HasCustomColor, HasSquadTab, HasSquadBox;
         public Vector2 Destination;
         /// <summary>
         /// A squad can be dead for one frame before it is destroyed. It's important to check for the death of a squad on anything run by a timer outside of the squad object
@@ -96,19 +101,47 @@ namespace Assets.Scripts.Levels
         public List<Ship> __Ships;
 
         // Setup methods
+        public virtual void ClearData()
+        {
+            Command = null;
+            PastCommands.Clear();
+            MatchupStrategy = null;
+            BannedStrats.Clear();
+            Status = "idle";
+            HasMovedBox = false;
+            IsImmobile = false;
+            HasAddedShips = false;
+            IsShowingRanges = false;
+            HasSquadTab = false;
+            HasSquadBox = false;
+            IsGrowingSquad = false;
+            HasCustomColor = false;
+            _ships.Clear();
+            _shouldChase = false;
+            Destination = Vector2.zero;
+            IsDead = false;
+            CurrentSpeed = 0;
+
+        }
+        public virtual void Create(Stage stage)
+        {
+            SquadType = ConfigData.SquadTypes.Squad;
+            Stage = stage;
+            IsDead = true;
+        }
         public void Setup(Level level, SavedSquad savedSquad, ConfigData.ShootingStrategyTypes shootingStrategy, bool ceaseFire, bool isMatchingSpeed, bool shouldChase,
             int id, int side, int squadNumber, string name, Color color)
         {
+            ClearData();
             Level = level;
-            Stage = Level.Stage;
             SavedSquad = savedSquad;
             Id = id;
             Side = side;
-            Status = "idle";
             Name = name;
             Color = color;
             SquadNumber = squadNumber;
             IsMatchingSpeed = isMatchingSpeed;
+            ItemId = Level.State.GetId();
             CeaseFire = ceaseFire;
             _shouldChase = shouldChase;
             SetShootingStrategy(shootingStrategy);
@@ -144,6 +177,7 @@ namespace Assets.Scripts.Levels
                 CeaseFire = true;
             }
         }
+
         private void SetOpponent()
         {
             if (Side == ConfigData.Configuration.AISide)
@@ -163,7 +197,11 @@ namespace Assets.Scripts.Levels
 
                 if (!Stage.IsTraining)
                 {
-                    SquadBox = Instantiate(Level.Stage.Prefabs.SquadBoxPrefab, new Vector3(0, 0, 0), Quaternion.identity);
+                    if (!HasSquadBox)
+                    {
+                        SquadBox = Instantiate(Stage.Prefabs.SquadBoxPrefab, Vector2.zero, Quaternion.identity);
+                        HasSquadBox = true;
+                    }
                     SquadBox.transform.parent = Level.Map.transform;
                     SquadBox.SetActive(false);
                     SquadBox.name = $"{Name} - Squadbox"; // [note] [testing] Only used for testing
@@ -420,10 +458,10 @@ namespace Assets.Scripts.Levels
                     {
                         SquadTab.DisableTab();
                     }
-                    Destroy(SquadBox);
+                    SquadBox.gameObject.SetActive(false);
                     Level.State.DeselectSquad(this);
                 }
-                Destroy(this);
+                Stage.Pool.ReturnSquadToPool(this);
             }
             
 
@@ -435,7 +473,7 @@ namespace Assets.Scripts.Levels
         }
         public Squad GetClosestValidFriendlySquad()
         {
-            List<Squad> squads = Level.State.GetSquadsBySide(Side).Where(squad => !squad.Equals(this) && (!squad.HasCommand || squad.Command.CommandType != ConfigData.CommandTypes.ClosestFriendly)).ToList();
+            List<Squad> squads = Level.State.GetSquadsBySide(Side).Where(squad => squad != this && (!squad.HasCommand || squad.Command.CommandType != ConfigData.CommandTypes.ClosestFriendly)).ToList();
             return squads.OrderBy(squad => squad.DistanceToPoint(GetPosition())).FirstOrDefault();
         }
         public Squad GetEnemy()
@@ -469,11 +507,11 @@ namespace Assets.Scripts.Levels
         {
             
             List<Ship> potentialEnemies = GetEnemyShips();
-            List<Ship> enemies = potentialEnemies.Where((s) => s.Squad.Equals(target)).ToList();
+            List<Ship> enemies = potentialEnemies.Where((s) => s.Squad == target).ToList();
 
             foreach (Ship potentialEnemy in  potentialEnemies)
             {
-                if (!potentialEnemy.Squad.Equals(target))
+                if (!potentialEnemy.Squad == target)
                 {
                     if (potentialEnemy.IsAnySquadShipWithinRange(target)) // if any ship in the target squad is within the range of another of its allies (the potential enemy)
                     {
@@ -495,7 +533,7 @@ namespace Assets.Scripts.Levels
 
             foreach(Ship potentialAlly in potentialAllies)
             {
-                if (!Equals(potentialAlly.Squad))
+                if (this != potentialAlly.Squad)
                 {
                     if (potentialAlly.IsAnySquadShipWithinRange(target)) // if any ship in the target squad is within the range of another of its allies
                     {
@@ -645,8 +683,8 @@ namespace Assets.Scripts.Levels
             else
             {
                 banned.Add(ConfigData.CommandTypes.Aggressive);
-                banned.Add(ConfigData.CommandTypes.Defensive);
-                banned.Add(ConfigData.CommandTypes.Circle);
+                banned.Add(ConfigData.CommandTypes.Retreat);
+                banned.Add(ConfigData.CommandTypes.CircleSquad);
                 banned.Add(ConfigData.CommandTypes.RightSwipe);
                 banned.Add(ConfigData.CommandTypes.LeftSwipe);
                 banned.Add(ConfigData.CommandTypes.InAndOut);
@@ -917,7 +955,7 @@ namespace Assets.Scripts.Levels
             if (IsDefenseless)
             {
                 BannedStrats.Add(ConfigData.CommandTypes.Aggressive);
-                BannedStrats.Add(ConfigData.CommandTypes.Circle);
+                BannedStrats.Add(ConfigData.CommandTypes.CircleSquad);
                 BannedStrats.Add(ConfigData.CommandTypes.RightSwipe);
                 BannedStrats.Add(ConfigData.CommandTypes.LeftSwipe);
                 BannedStrats.Add(ConfigData.CommandTypes.InAndOut);
@@ -925,7 +963,7 @@ namespace Assets.Scripts.Levels
             else
             {
                 BannedStrats.Remove(ConfigData.CommandTypes.Aggressive);
-                BannedStrats.Remove(ConfigData.CommandTypes.Circle);
+                BannedStrats.Remove(ConfigData.CommandTypes.CircleSquad);
                 BannedStrats.Remove(ConfigData.CommandTypes.RightSwipe);
                 BannedStrats.Remove(ConfigData.CommandTypes.LeftSwipe);
                 BannedStrats.Remove(ConfigData.CommandTypes.InAndOut);
@@ -944,13 +982,58 @@ namespace Assets.Scripts.Levels
 
 
         // Utility methods
-        public bool Equals(Squad squad)
-        {
-            return squad.Id == Id;
-        }
         public override string ToString()
         {
             return $"Squad Number #{SquadNumber} on side #{Side} {Name} with {_ships.Count} ships";
+        }
+
+        public override bool Equals(System.Object obj)
+        {
+            if (obj == null)
+            {
+                return false;
+            }
+
+            // If parameter cannot be cast to class return false.
+            Squad x = obj as Squad;
+            if (x == null)
+            {
+                return false;
+            }
+
+            return ItemId == x.ItemId;
+        }
+
+        public bool Equals(Squad other)
+        {
+            return ItemId == other.ItemId;
+        }
+
+        public override int GetHashCode()
+        {
+            return ItemId.GetHashCode();
+        }
+
+        public static bool operator ==(Squad a, Squad b)
+        {
+            // If both are null, or both are same instance, return true.
+            if (System.Object.ReferenceEquals(a, b))
+            {
+                return true;
+            }
+
+            // If one is null, but not both, return false.
+            if (((object)a == null) || ((object)b == null))
+            {
+                return false;
+            }
+
+            return a.ItemId == b.ItemId;
+        }
+
+        public static bool operator !=(Squad a, Squad b)
+        {
+            return !(a == b);
         }
 
 
@@ -1105,7 +1188,7 @@ namespace Assets.Scripts.Levels
         }
         public void DeactivateSquadBox()
         {
-            if (SquadBox != null)
+            if (HasSquadBox)
             {
                 SquadBox.SetActive(false);
             }

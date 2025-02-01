@@ -11,10 +11,20 @@ namespace Assets.Scripts.Entities
         public int Speed;
         public int HalfSeconds;
         public SpriteRenderer SpriteRenderer;
-        public void Setup(Level level, int id, CollisionAsteroid parent)
+        public override void Create(Stage stage)
         {
-            base.Setup(level, id);
+            base.Create(stage);
             Speed = (Utilities.RandomInt(Level.Stage.AsteroidMaxSpeed) + ConfigData.MinimumAsteroidSpeed) + 5;
+
+        }
+        public override void ClearData()
+        {
+            base.ClearData();
+            HalfSeconds = 0;
+        }
+        public void Setup(Level level, CollisionAsteroid parent)
+        {
+            base.Setup(level);
 
 
             transform.localPosition = parent.GetPosition();

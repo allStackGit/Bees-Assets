@@ -18,11 +18,6 @@ namespace Assets.Scripts.Entities.Ships
 
             Kill(null, null, null);
         }
-        public override void Create(Stage stage)
-        {
-            base.Create(stage);
-            Explosion = (RocketExplosion)ShipExplosion.GetComponent(typeof(RocketExplosion));
-        }
         public Weapon Bomb => Weapons.First();
 
         public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false) // [kill-method] [damage-method] [note] [stats-method]
@@ -33,8 +28,10 @@ namespace Assets.Scripts.Entities.Ships
                 //Debug.Log("FireBarge exploding");
                 if (!endKill)
                 {
+                    Explosion = (RocketExplosion)Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.FireBargeExplosion);
+                    ShipExplosion = Explosion.gameObject;
                     DropExplosionAnimation();
-                    Explosion.Setup(Level, Level.State.GetId(), Bomb, this, null, GetPosition(), 0, 0, Bomb.Power);
+                    Explosion.Setup(Level, Bomb, this, null, GetPosition(), 0, 0, Bomb.Power);
                     Level.State.FireBargeExplosions.Add(Explosion);
                     ProjectilesInFlight.Add(Explosion);
 

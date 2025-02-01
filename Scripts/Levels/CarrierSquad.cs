@@ -9,14 +9,19 @@ namespace Assets.Scripts.Levels
 {
     public class CarrierSquad : Squad
     {
-        public ConfigData.ShipTypes SquadType;
+        public ConfigData.ShipTypes CarrierSquadType;
         public Carrier Carrier;
-        public bool IsDroneSquad => SquadType == ConfigData.ShipTypes.Drone ? true : false;
-        public bool IsStrikerSquad => SquadType == ConfigData.ShipTypes.Striker ? true: false;
+        public bool IsDroneSquad => CarrierSquadType == ConfigData.ShipTypes.Drone ? true : false;
+        public bool IsStrikerSquad => CarrierSquadType == ConfigData.ShipTypes.Striker ? true: false;
+        public override void Create(Stage stage)
+        {
+            Stage = stage;
+            SquadType = ConfigData.SquadTypes.CarrierSquad;
+        }
         public void SetupCarrierSquad(Carrier carrier, ConfigData.ShipTypes squadType)
         {
             Carrier = carrier;
-            SquadType = squadType;
+            CarrierSquadType = squadType;
             SetupShips();
             SetShootingStrategy(carrier.Squad.GetShootingStrategy());
             SetSquadTab();
@@ -43,14 +48,13 @@ namespace Assets.Scripts.Levels
                 }
 
                 //Debug.Log($"Offset: {offset}");
-                CarrierShip ship = (CarrierShip)Level.LevelConstructor.InstantiateShip(SquadType);
+                CarrierShip ship = (CarrierShip)Level.LevelConstructor.InstantiateShip(CarrierSquadType);
 
                 if (ship != null)
                 {
                     ship.Setup(
                         Level,
-                        Level.State.GetId(),
-                        new FleetShip(id, $"Carrier {SquadType} - #{id}", SquadType, false, true, false, 0, 0, 0, 0, 0, 0, 0),
+                        new FleetShip(id, $"Carrier {CarrierSquadType} - #{id}", CarrierSquadType, false, true, false, 0, 0, 0, 0, 0, 0, 0),
                         this,
                         offset
                     );

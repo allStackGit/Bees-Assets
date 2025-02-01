@@ -377,7 +377,7 @@ namespace Assets.Scripts.Levels
                 Obstacle obstacle = obstacleObject.GetComponent<Obstacle>();
                 //Debug.Log($"Found {obstacleObject.name}: {obstacle}");
 
-                obstacle.Setup(Level, Level.State.GetId());
+                obstacle.Setup(Level);
                 obstacle.MapPointsIndex = AddObstacle(obstacle);
                 ObstaclePoints[0][obstacle.MapPointsIndex] = GetObstaclePoints(obstacle, 0, 0);
 
@@ -391,7 +391,7 @@ namespace Assets.Scripts.Levels
                         _grid.Nodes[point[0]][point[1]].Clearance = 0; // set to unwalkable space
                         _grid.Nodes[point[0]][point[1]].OriginalClearance = 0;
                     }
-                    else if (!obstacle.IsMapBorder)
+                    else if (obstacle.ObstacleType != ConfigData.ObstacleTypes.MapBorder)
                     {
                         Debug.Log($"Invalid indexes: {point[0]}, {point[1]}");
                     }
@@ -454,7 +454,7 @@ namespace Assets.Scripts.Levels
 
             }
 
-            if (obstacle.IsCollisionAsteroid && !HasMovingObstacles)
+            if (obstacle.ObstacleType == ConfigData.ObstacleTypes.CollisionAsteroid && !HasMovingObstacles)
             {
                 HasMovingObstacles = true;
             }

@@ -41,6 +41,11 @@ namespace Assets.Scripts.Levels.Commands
                 SetFinalize("The enemy squad is gone or dead");
             }
         }
+        public override void ClearData()
+        {
+            base.ClearData();
+            _retreatPoint = Vector2.zero;
+        }
         private void Timer()
         {
             if (Squad.HasReachedDestination)

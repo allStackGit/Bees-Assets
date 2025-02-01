@@ -37,8 +37,8 @@ namespace Assets.Scripts.Levels.Commands
                 Level.State.GetSquadsBySide(Squad.Side).ForEach((guardingSquad) =>
                 {
                     // check if it's a guarding squad and guarding the same squad as this squad
-                    if (!guardingSquad.Equals(Squad) && guardingSquad.HasCommand && guardingSquad.Command.HasStrategy &&
-                    guardingSquad.Command.Strategy.CommandType == ConfigData.CommandTypes.Guard && ((Guard)guardingSquad.Command)._guardedSquad.Equals(_guardedSquad))
+                    if (guardingSquad != Squad && guardingSquad.HasCommand && guardingSquad.Command.HasStrategy &&
+                    guardingSquad.Command.Strategy.CommandType == ConfigData.CommandTypes.Guard && ((Guard)guardingSquad.Command)._guardedSquad == _guardedSquad)
                     {
                         ((Guard)guardingSquad.Command).OtherGuardSquads.Add(Squad);
                         OtherGuardSquads.Add(guardingSquad);
@@ -61,6 +61,12 @@ namespace Assets.Scripts.Levels.Commands
             }
 
 
+        }
+        public override void ClearData()
+        {
+            base.ClearData();
+            _guardedSquad = null;
+            OtherGuardSquads.Clear();
         }
         private void Timer()
         {
@@ -111,7 +117,7 @@ namespace Assets.Scripts.Levels.Commands
         private Squad GetClosestAvailableSquadToGuard()
         {
             return Level.State.GetSquadsBySide(Side)
-                .Where((s) => !s.Equals(Squad) && (!s.HasCommand || !s.Command.HasStrategy || s.Command.Strategy.CommandType != ConfigData.CommandTypes.Guard))
+                .Where((s) => s != Squad && (!s.HasCommand || !s.Command.HasStrategy || s.Command.Strategy.CommandType != ConfigData.CommandTypes.Guard))
                 .OrderBy(s => s.DistanceToPoint(Squad.GetPosition())).FirstOrDefault();
         }
         public List<Squad> GetGuardingSquads()
@@ -119,13 +125,13 @@ namespace Assets.Scripts.Levels.Commands
             if (_guardedSquad != null && OtherGuardSquads.Count > 0)
             {
                 List<Squad> otherGuardSquads = OtherGuardSquads.Where(
-                (squad) => squad.HasCommand && squad.Command.HasStrategy && !squad.Equals(Squad)
+                (squad) => squad.HasCommand && squad.Command.HasStrategy && squad != Squad
                 && squad.Command.Strategy.CommandType == ConfigData.CommandTypes.Guard).ToList();
 
                 if (otherGuardSquads.Count > 0)
                 {
                     return otherGuardSquads.Where((squad) => ((Guard)squad.Command)._guardedSquad != null
-                    && ((Guard)squad.Command)._guardedSquad.Equals(_guardedSquad)).ToList();
+                    && ((Guard)squad.Command)._guardedSquad == _guardedSquad).ToList();
                 }
             }
             return new List<Squad>();

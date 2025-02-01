@@ -96,7 +96,7 @@ namespace Assets.Scripts.Entities.Ships
             if (TouchingShip != null  && collidingThing.CompareTag("Ship") && Collider.IsTouching(collider))
             {
                 Ship ship = collidingThing.GetComponent<Ship>();
-                if (ship.Equals(TouchingShip))
+                if (ship == TouchingShip)
                 {
                     TouchingShip = null;
                 }
@@ -175,7 +175,7 @@ namespace Assets.Scripts.Entities.Ships
 
             StrikerBomb bomb = (StrikerBomb) Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.StrikerBomb);
             bomb.transform.parent = Level.Map.transform;
-            bomb.Setup(Level, Level.State.GetId(), Bomb, this, ContactedShip, bombPosition, 0, 0, Bomb.Power, ContactedShip);
+            bomb.Setup(Level, Bomb, this, ContactedShip, bombPosition, 0, 0, Bomb.Power, ContactedShip);
 
             CompleteRun();
 

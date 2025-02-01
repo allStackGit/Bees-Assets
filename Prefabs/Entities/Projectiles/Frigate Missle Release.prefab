@@ -163,14 +163,15 @@ MonoBehaviour:
   Weapon: {fileID: 0}
   StartingPosition: {x: 0, y: 0}
   Angle: 0
-  Explosion: {fileID: 4140905405707596873, guid: 216222dccbe78114893a8e904cb41c36, type: 3}
+  Explosion: {fileID: 0}
   Name: 
   Type: 5
-  HasExplosion: 1
+  HasExplosion: 0
   ShipIsDead: 0
   HasBody: 1
   IsDead: 1
   MaxSpeed: 160
+  RocketExplosion: {fileID: 0}
 --- !u!61 &-997384404529185541
 BoxCollider2D:
   m_ObjectHideFlags: 0

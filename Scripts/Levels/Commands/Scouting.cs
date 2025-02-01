@@ -42,6 +42,12 @@ namespace Assets.Scripts.Levels.Commands
             }
 
         }
+        public override void ClearData()
+        {
+            base.ClearData();
+            _foundShips = false;
+            Scouts.Clear();
+        }
         private void Timer()
         {
             if (!Squad.IsDead && Squad.HasReachedDestination)

@@ -51,6 +51,13 @@ namespace Assets.Scripts.Levels.Commands
             }
 
         }
+        public override void ClearData()
+        {
+            base.ClearData();
+            TargetAstroid = null;
+            MiningShips.Clear();
+            ShipsMining.Clear();
+        }
 
         public void MoveToAsteroid()
         {

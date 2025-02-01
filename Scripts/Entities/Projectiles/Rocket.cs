@@ -16,10 +16,11 @@ namespace Assets.Scripts.Entities.Projectiles
     {
         //public GameObject RocketExplosion;
         public int MaxSpeed;
+        public RocketExplosion RocketExplosion;
 
-        public override void Setup(Level level, long id, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power)
+        public override void Setup(Level level, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power)
         {
-            base.Setup(level, id, weapon, shooter, target, startingPosition, angle, range, power);
+            base.Setup(level, weapon, shooter, target, startingPosition, angle, range, power);
             InvokeRepeating(nameof(IncreaseSpeed), .1f, .1f);
         }
         private void IncreaseSpeed()
@@ -44,7 +45,7 @@ namespace Assets.Scripts.Entities.Projectiles
         {
             if (obstacle != null)
             {
-                if (!obstacle.IsMapBorder)
+                if (obstacle.ObstacleType != ConfigData.ObstacleTypes.MapBorder)
                 {
                     //Debug.Log($"{Name} hit {obstacle.Name}");
                     //DamageObstacle(obstacle);
@@ -57,11 +58,10 @@ namespace Assets.Scripts.Entities.Projectiles
 
         private void AddExplosion()
         {
-            Explosion = Instantiate(Explosion, new Vector3(0, 0, 0), Quaternion.identity);
-            Explosion.transform.parent = Level.Map.transform;
-            RocketExplosion explosion = (RocketExplosion) Explosion.GetComponent(typeof(RocketExplosion));
-            explosion.Setup(Level, Level.State.GetId(), Weapon, Shooter, Target, GetPosition(), 0, 0, Power);
-            Shooter.ProjectilesInFlight.Add(explosion);
+            RocketExplosion = (RocketExplosion)Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.RocketExplosion);
+            RocketExplosion.transform.parent = Level.Map.transform;
+            RocketExplosion.Setup(Level, Weapon, Shooter, Target, GetPosition(), 0, 0, Power);
+            Shooter.ProjectilesInFlight.Add(RocketExplosion);
         }
 
         protected override void ShipCollision(Ship ship)
@@ -70,7 +70,7 @@ namespace Assets.Scripts.Entities.Projectiles
             if (ship != null)
             {
                 // if hit enemy projectile or Fire Barge explosion. the ships to ignore is for leafcutter split shots
-                if ((!IsFriendly(ship) || (Shooter.ShipType == ConfigData.ShipTypes.FireBarge && !Equals(Shooter))) && !ShipsToIgnore.Contains(ship))
+                if ((!IsFriendly(ship) || (Shooter.ShipType == ConfigData.ShipTypes.FireBarge && this != Shooter)) && !ShipsToIgnore.Contains(ship))
                 {
                     ContactTarget(ship); // don't do damage because the explosion is what does damage
                 }

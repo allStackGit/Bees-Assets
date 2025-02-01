@@ -108,6 +108,10 @@ PrefabInstance:
       propertyPath: Name
       value: Right Border
       objectReference: {fileID: 0}
+    - target: {fileID: 8824466230303253864, guid: da38269fea4455643a492c57b83df01a, type: 3}
+      propertyPath: ObstacleType
+      value: 1
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []

@@ -17,7 +17,10 @@ namespace Assets.Scripts.Levels.Commands
 {
     public class Command : MonoBehaviour
     {
-        public long Age, Tsv;      
+        public long Age, Tsv;  
+        /// <summary>
+        /// The Id of this command relative to the server.
+        /// </summary>
         public long OutcomeId = 0; 
         public Squad EnemySquad, Squad;
         public string Matchup, FinalizationCause;
@@ -33,6 +36,10 @@ namespace Assets.Scripts.Levels.Commands
         public Level Level;
         public int Side;
         /// <summary>
+        /// The Id of this command relative to the stage. Guarenteed unique for this stage.
+        /// </summary>
+        public int ItemId;
+        /// <summary>
         /// The targeting queue, unmodified from when it was generated, only regenerated when a new ship is added to the enemy squad
         /// </summary>
         public Queue<Ship> OriginalQueue;
@@ -46,16 +53,41 @@ namespace Assets.Scripts.Levels.Commands
 
         public bool IsFinalized, IsStored, IsHiveMindCommand;
 
-
-        public void Setup(Squad squad, bool isHiveMindCommand, Squad enemy, string matchup)
+        public virtual void Create(Stage stage)
         {
-            Stage = squad.Level.Stage;
+            Stage = stage;
+        }
+        public virtual void ClearData()
+        {
+            Tsv = 0;
+            OutcomeId = 0;
+            EnemySquad = null;
+            FinalizationCause = null;
+            CommandType = ConfigData.CommandTypes.Uninitialized;
+            Strategy = null;
+            MatchupStrategy = null;
+            ShootingStrategy = null;
+            IsAttacking = false;
+            IsCloseToTarget = false;
+            HasStrategy = false;
+            HasShootingStrategy = false;
+            HasEnemy = false;
+            OriginalQueue.Clear();
+            TargetingQueue.Clear();
+            _destinations.Clear();
+            IsFinalized = false;
+            IsStored = false;
+        }
+        public void Setup(Squad squad, bool isHiveMindCommand, Squad enemy, string matchup, bool n)
+        {
+            ClearData();
             Level = squad.Level;
             Side = squad.Side;
             Squad = squad;
             EnemySquad = enemy;
             Matchup = matchup;
             IsHiveMindCommand = isHiveMindCommand;
+            ItemId = Level.State.GetId();
 
             if (EnemySquad != null)
             {
@@ -122,7 +154,7 @@ namespace Assets.Scripts.Levels.Commands
 
         }
 
-        public virtual void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy)
+        public virtual void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy, bool n)
         {
             if (noEnemy || HasEnemy)
             {
@@ -383,6 +415,55 @@ namespace Assets.Scripts.Levels.Commands
             return $"Command #{(OutcomeId != 0 ? OutcomeId : "N/A")} with Strategy {(HasStrategy ? Strategy.CommandType : "N/A")} attached to " +
                 $"Squad #{Squad.Id} - {Squad.Name}";
         }
-        
+
+        public override bool Equals(System.Object obj)
+        {
+            if (obj == null)
+            {
+                return false;
+            }
+
+            // If parameter cannot be cast to class return false.
+            Command x = obj as Command;
+            if (x == null)
+            {
+                return false;
+            }
+
+            return ItemId == x.ItemId;
+        }
+
+        public bool Equals(Command other)
+        {
+            return ItemId == other.ItemId;
+        }
+
+        public override int GetHashCode()
+        {
+            return ItemId.GetHashCode();
+        }
+
+        public static bool operator ==(Command a, Command b)
+        {
+            // If both are null, or both are same instance, return true.
+            if (System.Object.ReferenceEquals(a, b))
+            {
+                return true;
+            }
+
+            // If one is null, but not both, return false.
+            if (((object)a == null) || ((object)b == null))
+            {
+                return false;
+            }
+
+            return a.ItemId == b.ItemId;
+        }
+
+        public static bool operator !=(Command a, Command b)
+        {
+            return !(a == b);
+        }
+
     }
 }

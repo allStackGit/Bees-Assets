@@ -32,6 +32,12 @@ namespace Assets.Scripts.Levels.Commands
             }
             
         }
+        public override void ClearData()
+        {
+            base.ClearData();
+            IsComfortablyWithinRange = false;
+            ConsecutiveTimesWithinRange = 0;
+        }
         private void Timer()
         {
             if (!Squad.IsDead)

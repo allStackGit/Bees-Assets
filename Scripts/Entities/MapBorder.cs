@@ -17,12 +17,12 @@ namespace Assets.Scripts.Entities
                 CollisionAsteroid asteroid = collidingThing.GetComponent<CollisionAsteroid>();
                 if (asteroid.HasEnteredMap)
                 {
-                    //Debug.Log($"{asteroid.Name} left the map border and is being killed");
+                    Debug.Log($"{asteroid.Name} left the map border and is being killed at {asteroid.GetPosition()}");
                     asteroid.Kill(true);
                 }
                 else
                 {
-                    //Debug.Log($"{asteroid.Name} entered the map border");
+                    Debug.Log($"{asteroid.Name} entered the map border at {asteroid.GetPosition()}");
                     asteroid.HasEnteredMap = true;
                 }
 
@@ -57,15 +57,10 @@ namespace Assets.Scripts.Entities
             {
                 CollisionAsteroid asteroid = collidingThing.GetComponent<CollisionAsteroid>();
                 asteroid.HasTouchedMapBorder = true;
-
+                Debug.Log($"{asteroid.Name} has touched the map border");
 
             }
 
-        }
-
-        private void OnDestroy()
-        {
-            Debug.LogError($"Map border {Name} destroyed");
         }
     }
 }

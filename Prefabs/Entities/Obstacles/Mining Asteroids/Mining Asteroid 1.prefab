@@ -158,15 +158,15 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   Health: 30000
-  InitialHealth: 0
+  OriginalHealth: 0
   Id: 0
+  MapPointsIndex: 0
   Name: Mining Asteroid
-  IsMobile: 0
-  IsMapBorder: 0
-  HasEnteredMap: 1
-  IsDead: 0
-  IsMiningAsteroid: 1
+  IsDead: 1
   Level: {fileID: 0}
+  Stage: {fileID: 0}
+  ObstacleType: 3
   Collider: {fileID: 6610865759102504746}
   ProximityCollider: {fileID: 0}
+  ClearanceMappingCollider: {fileID: 0}
   SquadsMining: []

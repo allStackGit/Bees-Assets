@@ -34,9 +34,9 @@ namespace Assets.Scripts.Entities.Ships
 
             }
         }
-        public override void Setup(Level level, long id, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
+        public override void Setup(Level level, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
         {
-            base.Setup(level, id, fleetShip, squad, offsetFromCenter);
+            base.Setup(level, fleetShip, squad, offsetFromCenter);
             InvokeRepeating(nameof(SpawnMinions), SpawnFrequency, SpawnFrequency);
         }
         public override void ClearData()
@@ -64,7 +64,7 @@ namespace Assets.Scripts.Entities.Ships
         private Squad CreateMinionSquad()
         {
             // Create Squad
-            Squad squad = Level.gameObject.AddComponent<Squad>();
+            Squad squad = Stage.Pool.GetSquadFromPool();
             squad.Setup(
                 Level,
                 Squad.SavedSquad,
@@ -105,7 +105,6 @@ namespace Assets.Scripts.Entities.Ships
             {
                 ship.Setup(
                     Level,
-                    Level.State.GetId(),
                     new FleetShip(id, $"{ShipType} Minion {MinionType} - #{id}", MinionType, false, true, false, 0, 0, 0, 0, 0, 0, 0),
                     squad,
                     offset

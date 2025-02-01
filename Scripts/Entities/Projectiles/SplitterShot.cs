@@ -73,7 +73,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
                 Vector3 startingPosition = GetPosition();
                 Projectile projectile = Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.BeeSmall);
-                projectile.Setup(Level, Level.State.GetId(), Weapon, Shooter, Target, startingPosition, radians, Weapon.Range, (int)(Weapon.Power / 1.5f));
+                projectile.Setup(Level, Weapon, Shooter, Target, startingPosition, radians, Weapon.Range, (int)(Weapon.Power / 1.5f));
                 projectile.ShipsToIgnore.Add(target);
                 Shooter.ProjectilesInFlight.Add(projectile);
 

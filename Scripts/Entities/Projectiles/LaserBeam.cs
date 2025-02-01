@@ -19,9 +19,9 @@ namespace Assets.Scripts.Entities.Projectiles
         private Ship _target;
         private int _powerLoss;
         private HashSet<Ship> _shipsHit = new HashSet<Ship>();
-        public override void Setup(Level level, long id, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power)
+        public override void Setup(Level level, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power)
         {
-            base.Setup(level, id, weapon, shooter, target, startingPosition, angle, range, power);
+            base.Setup(level, weapon, shooter, target, startingPosition, angle, range, power);
             _lastShooterPosition = Weapon.GetPosition();
             _target = Weapon.TargetShip;
             if (_target != null)

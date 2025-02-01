@@ -24,6 +24,11 @@ namespace Assets.Scripts.Levels.Commands
 
 
         }
+        public override void ClearData()
+        {
+            base.ClearData();
+            _closestFriendlySquad = null;
+        }
         private void Timer()
         {
             if (!Squad.IsDead)

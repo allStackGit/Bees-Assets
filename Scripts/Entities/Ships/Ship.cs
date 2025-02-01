@@ -352,16 +352,13 @@ namespace Assets.Scripts.Entities.Ships
                     ShipRemains.Create(this);
                 }
 
-                if (ShipType == ConfigData.ShipTypes.FireBarge)
-                {
-                    ShipExplosion = Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.FireBargeExplosion).gameObject;
-
-                }
-                else
+                if (ShipType != ConfigData.ShipTypes.FireBarge)
                 {
                     ShipExplosion = Instantiate(Stage.Prefabs.ConvertShipTypeToExplosionPrefab[ShipType], Vector2.zero, Quaternion.identity);
+                    ShipExplosion.SetActive(false);
+
                 }
-                ShipExplosion.SetActive(false);
+
 
                 if (Stage.ActivateAudio)
                 {
@@ -542,12 +539,12 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         /// <param name="fleetShip"></param>
         /// <param name="squad"></param>
         /// <param name="offsetFromCenter"></param>
-        public virtual void Setup(Level level, long id, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter) // [tsv-calculation]
+        public virtual void Setup(Level level, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter) // [tsv-calculation]
         {
             //Debug.Log($"Setting up ship IsCarrierShip: {IsCarrierShip}");
-            Id = id;
             Squad = squad;
             Level = level;
+            Id = Level.State.GetId();
             FleetShip = fleetShip;
             OffsetFromCenter = offsetFromCenter;
             Health = OriginalHealth;
@@ -778,7 +775,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                         {
                             Obstacle obstacle = obstacleCollider.GetComponent<Obstacle>();
                             //Debug.Log($"{obstacle.Name} is in the way of {Name}");
-                            if (!obstacle.IsCollisionAsteroid)
+                            if (obstacle.ObstacleType != ConfigData.ObstacleTypes.CollisionAsteroid)
                             {
                                 //CollisionAsteroid asteroid = (CollisionAsteroid)obstacle;
                                 //if (!NearbyAsteroids.Contains(asteroid)){
@@ -1198,7 +1195,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             //if any of the target ship(s) if your weapons are not dead and are within range
             else if (
                 HasTargetEnemyShipToFollow &&
-                !(Squad.HasCommand && (Squad.Command.CommandType == ConfigData.CommandTypes.Circle || Squad.Command.CommandType == ConfigData.CommandTypes.RightSwipe ||  
+                !(Squad.HasCommand && (Squad.Command.CommandType == ConfigData.CommandTypes.CircleSquad || Squad.Command.CommandType == ConfigData.CommandTypes.RightSwipe ||  
                 Squad.Command.CommandType == ConfigData.CommandTypes.LeftSwipe) || Squad.Command.CommandType == ConfigData.CommandTypes.InAndOut || 
                 Squad.Command.CommandType == ConfigData.CommandTypes.BombingRun) &&  // Squad must either not have a command or not have a command of a certain type
 
@@ -1666,7 +1663,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                             {
                                 CarrierShip carrierShip = (CarrierShip)ship;
 
-                                if (carrierShip.Carrier != null && carrierShip.Carrier.Equals(this))
+                                if (carrierShip.Carrier == this)
                                 {
                                     carrierShip.Carrier = nextCarrier;
                                 }

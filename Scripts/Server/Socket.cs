@@ -539,7 +539,7 @@ namespace Assets.Scripts.Server
                 ConfigData.CommandTypes commandType = Utilities.ConvertCommandNameToType[commandResponse.Name];
                 //Debug.Log($"strategic command response");
                 //Debug.Log(squad.damageSentToEnemyShipsBySquad);
-                if (squad != null && !level.State.GameOver && !squad.IsDead)
+                if (squad != null && !level.State.LevelEnded && !squad.IsDead)
                 {
                     //Debug.Log("squad is not null");
                     Command command = null;
@@ -566,15 +566,15 @@ namespace Assets.Scripts.Server
                             }
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
-                        case ConfigData.CommandTypes.Defensive:
+                        case ConfigData.CommandTypes.Retreat:
                             command = squad.gameObject.AddComponent<Retreat>();
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
-                        case ConfigData.CommandTypes.Random:
+                        case ConfigData.CommandTypes.MoveToRandom:
                             command = squad.gameObject.AddComponent<MoveToRandom>();
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
-                        case ConfigData.CommandTypes.Circle:
+                        case ConfigData.CommandTypes.CircleSquad:
                             if (squad.HasOnlyBombers)
                             {
                                 command = squad.gameObject.AddComponent<BombingRun>();
@@ -674,7 +674,7 @@ namespace Assets.Scripts.Server
                     {
                         ((ClosestFriendly)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true);
                     }
-                    else if (commandType == ConfigData.CommandTypes.Random)
+                    else if (commandType == ConfigData.CommandTypes.MoveToRandom)
                     {
                         ((MoveToRandom)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true);
                     }

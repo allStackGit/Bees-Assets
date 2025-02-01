@@ -34,35 +34,27 @@ namespace Assets.Scripts.Entities.Projectiles
         /// </summary>
         public bool IsDead;
         
-        public void Create(Stage stage)
+        public virtual void Create(Stage stage)
         {
             Stage = stage;
             if (!Stage.IsTraining && HasExplosion)
             {
                 //Debug.Log($"{Stage}, {Stage?.Prefabs}, {Type}, {Stage?.Prefabs?.ConvertProjectileTypeToExplosionAnimation[Type]}");
-                
-                if (Type == ConfigData.ProjectileTypes.Rocket)
-                {
-                    Explosion = Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.RocketExplosion).gameObject;
-                }
-                else
-                {
-                    Explosion = Instantiate(Stage.Prefabs.ConvertProjectileTypeToExplosionAnimation[Type], Vector2.zero, Quaternion.identity);
-                }
-                Explosion.gameObject.SetActive(false);
 
+                Explosion = Instantiate(Stage.Prefabs.ConvertProjectileTypeToExplosionAnimation[Type], Vector2.zero, Quaternion.identity);
+                Explosion.gameObject.SetActive(false);
             }
             else
             {
                 HasExplosion = false;
             }
-
+            Name = name;
             gameObject.SetActive(false);
         }
-        public virtual void Setup(Level level, long id, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power)
+        public virtual void Setup(Level level, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power)
         {
             Level = level;
-            Id = id;
+            Id = Level.State.GetId();
             Weapon = weapon;
             Shooter = shooter;
             Target = target;
@@ -136,11 +128,11 @@ namespace Assets.Scripts.Entities.Projectiles
         {
             if (obstacle != null)
             {
-                if (!obstacle.IsMapBorder)
+                if (obstacle.ObstacleType != ConfigData.ObstacleTypes.MapBorder)
                 {
-                    if (obstacle.IsCollisionAsteroid)
+                    if (obstacle.ObstacleType == ConfigData.ObstacleTypes.CollisionAsteroid)
                     {
-                        DamageObstacle(obstacle);
+                        DamageObstacle((CollisionAsteroid)obstacle);
                     }
                     KillSequence();
                 }
@@ -152,12 +144,12 @@ namespace Assets.Scripts.Entities.Projectiles
             }
         }
 
-        public void DamageObstacle(Obstacle obstacle)
+        public void DamageObstacle(CollisionAsteroid asteroid)
         {
-            obstacle.Health -= Power;
-            if (obstacle.Health <= 0)
+            asteroid.Health -= Power;
+            if (asteroid.Health <= 0)
             {
-                obstacle.Kill();
+                asteroid.Kill();
             }
 
         }
@@ -232,7 +224,7 @@ namespace Assets.Scripts.Entities.Projectiles
             if (ship != null)
             {
                 // if hit enemy projectile or Fire Barge explosion. the ships to ignore is for leafcutter split shots
-                if ((!IsFriendly(ship) || (Shooter.ShipType == ConfigData.ShipTypes.FireBarge && !Equals(Shooter))) && !ShipsToIgnore.Contains(ship))
+                if ((!IsFriendly(ship) || (Shooter.ShipType == ConfigData.ShipTypes.FireBarge && this != Shooter)) && !ShipsToIgnore.Contains(ship))
                 {
                     int originalPower = Power;
                     ContactTarget(ship);

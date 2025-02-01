@@ -52,6 +52,12 @@ public class FullRetreat : Command
         }
 
     }
+    public override void ClearData()
+    {
+        base.ClearData();
+        TargetWarpGate = null;
+        ShipsWaitingToWarp.Clear();
+    }
 
     public void MoveToWarpGate()
     {

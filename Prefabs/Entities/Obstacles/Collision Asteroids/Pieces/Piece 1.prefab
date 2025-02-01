@@ -103,19 +103,16 @@ MonoBehaviour:
   Id: 0
   MapPointsIndex: 0
   Name: Asteroid Piece
-  IsCollisionAsteroid: 0
-  IsMapBorder: 0
-  HasEnteredMap: 0
   IsDead: 0
-  IsMiningAsteroid: 0
-  IsRegularObstacle: 0
   Level: {fileID: 0}
+  Stage: {fileID: 0}
+  ObstacleType: 4
   Collider: {fileID: 0}
   ProximityCollider: {fileID: 0}
   ClearanceMappingCollider: {fileID: 0}
   Body: {fileID: 2677304029482758414}
   Speed: 0
-  Seconds: 0
+  HalfSeconds: 0
   SpriteRenderer: {fileID: 8414330620359745627}
 --- !u!50 &2677304029482758414
 Rigidbody2D:

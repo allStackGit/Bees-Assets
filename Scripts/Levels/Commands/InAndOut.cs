@@ -35,6 +35,13 @@ namespace Assets.Scripts.Levels.Commands
             }
 
         }
+        public override void ClearData()
+        {
+            base.ClearData();
+            ReturnPoint = Vector2.zero;
+            HasReachedReturnPoint = false;
+            HasReachedEnemySquad = false;
+        }
         private void Timer()
         {
             if (!Squad.IsDead)

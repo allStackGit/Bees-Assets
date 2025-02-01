@@ -34,12 +34,12 @@ namespace Assets.Scripts.Entities.Projectiles
         {
            if (obstacle != null)
             {
-                if (!obstacle.IsMapBorder && !HasHitObstacle(obstacle))
+                if (obstacle.ObstacleType != ConfigData.ObstacleTypes.MapBorder && !HasHitObstacle(obstacle))
                 {
                     //Debug.Log($"{Name} hit {obstacle.Name}");
-                    if (obstacle.IsCollisionAsteroid)
+                    if (obstacle.ObstacleType == ConfigData.ObstacleTypes.CollisionAsteroid)
                     {
-                        DamageObstacle(obstacle);
+                        DamageObstacle((CollisionAsteroid)obstacle);
                     }
                     //DamageObstacle(obstacle);
                 }
@@ -102,7 +102,7 @@ namespace Assets.Scripts.Entities.Projectiles
             if (ship != null)
             {
                 // if hit enemy projectile or Fire Barge explosion
-                if ((!IsFriendly(ship) || (Shooter.ShipType == ConfigData.ShipTypes.FireBarge && !Equals(Shooter))))
+                if ((!IsFriendly(ship) || (Shooter.ShipType == ConfigData.ShipTypes.FireBarge && this != Shooter)))
                 {
                     if (!_isHarmless && !HasHitShip(ship)) // if it's an explosion it should do damage but not if it's already contacted the ship
                     {

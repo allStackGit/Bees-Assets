@@ -10,6 +10,11 @@ namespace Assets.Scripts.Entities
     public class MiningAsteroid : Obstacle
     {
         public List<Squad> SquadsMining = new List<Squad>();
+        public override void ClearData()
+        {
+            base.ClearData();
+            SquadsMining.Clear();
+        }
         protected override void OnTriggerEnter2D(Collider2D collider)
         {
             MiningCollision(collider);
@@ -57,7 +62,7 @@ namespace Assets.Scripts.Entities
                 });
                 Level.State.RemoveObstacle(this);
                 Level.State.MiningAsteroids.Remove(this);
-                Destroy(gameObject);
+                Stage.Pool.ReturnMiningAsteroidToPool(this);
             }
 
         }

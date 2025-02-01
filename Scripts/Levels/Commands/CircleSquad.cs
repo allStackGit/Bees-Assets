@@ -24,6 +24,15 @@ namespace Assets.Scripts.Levels.Commands
                 Invoke(nameof(Timeout), ConfigData.StandardMaxCommandTime);
             }
         }
+        public override void ClearData()
+        {
+            base.ClearData();
+            _gotToEnemy = false;
+            _hasSetIdealDistance = false;
+            _idealDistance = 0;
+            _angle = 0;
+            _lastDestination = Vector2.zero;
+        }
         private void Timer()
         {
             if (!Squad.IsDead)

@@ -77,6 +77,11 @@ namespace Assets.Scripts
             Scene,
             Stage
         }
+        public enum SquadTypes
+        {
+            Squad,
+            CarrierSquad
+        }
         public enum ShipTypes
         {
             Barge,
@@ -168,9 +173,9 @@ namespace Assets.Scripts
             Aggressive,
             BombingRun,
             Charge,
-            Defensive,
-            Random,
-            Circle,
+            Retreat,
+            MoveToRandom,
+            CircleSquad,
             RightSwipe,
             LeftSwipe,
             ClosestFriendly,
@@ -234,6 +239,14 @@ namespace Assets.Scripts
             Guard,
             Chase,
             Hold,
+        }
+        public enum ObstacleTypes
+        {
+            StaticObstacle,
+            MapBorder,
+            CollisionAsteroid,
+            MiningAsteroid,
+            AsteroidPiece
         }
 
         public enum MatchupStrategyTypes
@@ -455,7 +468,7 @@ namespace Assets.Scripts
         };
 
         public static readonly HashSet<CommandTypes> TypesOfCommands = new HashSet<CommandTypes> { CommandTypes.Aggressive, CommandTypes.BombingRun, CommandTypes.Charge,
-            CommandTypes.Defensive, CommandTypes.Random, CommandTypes.Circle, CommandTypes.RightSwipe, CommandTypes.LeftSwipe, CommandTypes.ClosestFriendly, CommandTypes.InAndOut,
+            CommandTypes.Retreat, CommandTypes.MoveToRandom, CommandTypes.CircleSquad, CommandTypes.RightSwipe, CommandTypes.LeftSwipe, CommandTypes.ClosestFriendly, CommandTypes.InAndOut,
             CommandTypes.Patrol, CommandTypes.Guard, CommandTypes.Scouting, CommandTypes.Mining, CommandTypes.FullRetreat };
 
         public static readonly List<ShootingStrategyTypes> TypesOfShootingStrategies = new List<ShootingStrategyTypes>
@@ -521,8 +534,8 @@ namespace Assets.Scripts
         public static readonly HashSet<ShipTypes> ArmedShipTypes = new HashSet<ShipTypes> { ShipTypes.Cruiser, ShipTypes.Dreadnought, ShipTypes.Flagship, ShipTypes.Frigate, ShipTypes.Gunship, ShipTypes.Bumblebee, ShipTypes.Hornet,
             ShipTypes.Leafcutter, ShipTypes.Queen, ShipTypes.Wasp };
         public static readonly List<Map> Maps = new List<Map> { new Map(0, new Vector2(0, -230), new Vector2(0, 230), "Pluto"), new Map(1, new Vector2(0, -430), new Vector2(0, 430), "Uranus") };
-        public static readonly List<ObstacleMap> ObstacleMaps = new List<ObstacleMap> { new ObstacleMap(0, "None"), new ObstacleMap(1, "Maze") , new ObstacleMap(2, "Three Paths") , 
-            new ObstacleMap(0, "Forest"), new ObstacleMap(0, "The Wall") };
+        public static readonly List<Data.ObstacleMap> ObstacleMaps = new List<Data.ObstacleMap> { new Data.ObstacleMap(0, "None"), new Data.ObstacleMap(1, "Maze") , new Data.ObstacleMap(2, "Three Paths") , 
+            new Data.ObstacleMap(0, "Forest"), new Data.ObstacleMap(0, "The Wall") };
         public static int SquadMakerSide;
 
         public const bool UseWebSocketSharp = true; // Whether to use the "WebSocketSharp" implementation of WebSockets or use the "NativeWebSocket" implmentation

@@ -27,7 +27,7 @@ namespace Assets.Scripts.Levels
         public List<Squad> SelectedSquads = new List<Squad>();
         public List<Obstacle> Obstacles = new List<Obstacle>();
 
-        public int EntityCount, UserCommands, AICommands;
+        public int UserCommands, AICommands;
         public bool IsPaused;
         public bool GameOver = false;
         public bool LevelEnded = false;
@@ -82,7 +82,7 @@ namespace Assets.Scripts.Levels
         public void AddSpottedShip(Ship ship, Ship spotter)
         {
             SpottedShip spottedShip = new SpottedShip(ship, spotter.Id);
-            if (!SpottedShips[spotter.Side - 1].Any((s) => s.Ship.Equals(ship)))
+            if (!SpottedShips[spotter.Side - 1].Any((s) => s.Ship == ship))
             {
                 SpottedShips[spotter.Side - 1].Add(spottedShip);
             }
@@ -113,9 +113,13 @@ namespace Assets.Scripts.Levels
         {
             return UserCommands++;
         }
+        /// <summary>
+        /// Returns an incremented Id that is guarenteed unique for all other objects (that have Ids) in the entire stage
+        /// </summary>
+        /// <returns></returns>
         public int GetId()
         {
-            return EntityCount++;
+            return Stage.Pool.ItemCount++;
         }
         public void AddShip(Ship ship)
         {
@@ -158,7 +162,7 @@ namespace Assets.Scripts.Levels
             ShipDamageStatus shipDamageStatus = null;
             if (ShipDamageStatuses[side - 1].Count > 0)
             {
-                shipDamageStatus = ShipDamageStatuses[side - 1].FirstOrDefault(s => s != null && s.Ship != null && s.Ship.Equals(potentialTargetShip));
+                shipDamageStatus = ShipDamageStatuses[side - 1].FirstOrDefault(s => s != null && s.Ship != null && s.Ship == potentialTargetShip);
             }
 
             if (shipDamageStatus == null)

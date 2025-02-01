@@ -20,19 +20,34 @@ namespace Assets.Scripts.Entities
         public HashSet<CollisionAsteroid> AsteroidsHit = new HashSet<CollisionAsteroid>();
         public CollisionAsteroid LastHitAsteroid;
         public GameObject ExplosionAnimation;
-        public bool HasCollisionAnimation, HasCrackedSprite, HasDroppedDestructionAnimation, IsImmune, HasTouchedMapBorder;
+        public bool HasCollisionAnimation, HasCrackedSprite;
+        public bool HasDroppedDestructionAnimation, IsImmune, HasTouchedMapBorder, HasEnteredMap;
         public Sprite CrackedSprite;
         public SpriteRenderer SpriteRenderer;
 
         private int _overlaps;
         private bool _isColliding => _overlaps > 0;
-        // Use this for initialization
-        public new void Setup(Level level, int id)
+
+        public override void Create(Stage stage)
         {
-            base.Setup(level, id);
             Health = ConfigData.CollisionAsteroidHealthIncrement * SizeClass;
-            OriginalHealth = Health;
-            Speed = Utilities.RandomInt(Level.Stage.AsteroidMaxSpeed) + ConfigData.MinimumAsteroidSpeed;
+            base.Create(stage);
+            Speed = Utilities.RandomInt(Stage.AsteroidMaxSpeed) + ConfigData.MinimumAsteroidSpeed;
+
+            if (ExplosionAnimation != null)
+            {
+                HasCollisionAnimation = true;
+            }
+            if (CrackedSprite != null)
+            {
+                HasCrackedSprite = true;
+            }
+
+        }
+        // Use this for initialization
+        public new void Setup(Level level)
+        {
+            base.Setup(level);
 
             // starting right (+) or left (-)
             Vector2 randomPosition = new Vector2(Utilities.RandomSign() * (Level.HalfMapWidth + ConfigData.MinimumAsteroidSpawnDistance), (Utilities.RandomSign() * (Utilities.RandomInt(Level.HalfMapHeight))));
@@ -43,21 +58,25 @@ namespace Assets.Scripts.Entities
             }
             transform.localPosition = randomPosition;
             transform.localEulerAngles = new Vector3(0, 0, Utilities.RandomInt(360));
-            IsCollisionAsteroid = true;
 
             //Debug.Log($"Setup Asteroid {Name} with Speed: {Speed}, starting at {transform.localPosition}");
             SetMoving();
 
-            if (ExplosionAnimation != null)
-            {
-                HasCollisionAnimation = true;
-            }
-            if (CrackedSprite != null)
-            {
-                HasCrackedSprite = true;
-            }
+
             IsImmune = true;
             Invoke(nameof(RemoveImmunity), 4);
+        }
+        public override void ClearData()
+        {
+            base.ClearData();
+            NearbyShips.Clear();
+            TouchingShips.Clear();
+            NearbyObstacles.Clear();
+            AsteroidsHit.Clear();
+            LastHitAsteroid = null;
+            HasTouchedMapBorder = false;
+            HasDroppedDestructionAnimation = false;
+            HasEnteredMap = false;
         }
 
         public void RemoveImmunity()
@@ -192,7 +211,7 @@ namespace Assets.Scripts.Entities
 
 
             }
-            else if (obstacle.IsCollisionAsteroid)
+            else if (obstacle.ObstacleType == ConfigData.ObstacleTypes.CollisionAsteroid)
             {
                 NearbyObstacles.Add(obstacle);
                 //Debug.Log($"{ship.Name} is near {Name}");
@@ -278,20 +297,17 @@ namespace Assets.Scripts.Entities
         {
             if (!IsDead)
             {
-                if (endKill || HasDroppedDestructionAnimation)
-                {
-                    base.Kill();
-                }
-                else
+                IsDead = true;
+                if (!endKill && !HasDroppedDestructionAnimation)
                 {
                     NearbyShips.ToList().ForEach((ship) =>
                     {
                         ship.LeftNearbyAsteroid(this);
                     });
-                    base.Kill();
-                    //SpawnBreakAwayAsteroids();
-                    //ShowCollisionAnimation();
                 }
+                Level.State.RemoveObstacle(this);
+                Debug.Log($"Returning {Name} to the pool");
+                Stage.Pool.ReturnCollisionAsteroidToPool(this);
             }
         }
 
@@ -318,7 +334,7 @@ namespace Assets.Scripts.Entities
                 instance.transform.parent = Level.Map.transform;
                 AsteroidPiece asteroid = instance.GetComponent<AsteroidPiece>();
                 Level.State.AddObstacle(asteroid);
-                asteroid.Setup(Level, Level.State.GetId(), this);
+                asteroid.Setup(Level, this);
 
             }
         }

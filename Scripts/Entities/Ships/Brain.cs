@@ -95,7 +95,7 @@ namespace Assets.Scripts.Entities.Ships
 
 
             // find the ships that this ship can see
-            SpottedShips = Ship.Level.State.GetShips().Where((s) => s.DistanceTo(Ship) <= Ship.Sight && !s.Equals(Ship)).OrderBy((s) => s.DistanceTo(Ship)).ToList();
+            SpottedShips = Ship.Level.State.GetShips().Where((s) => s.DistanceTo(Ship) <= Ship.Sight && s != Ship).OrderBy((s) => s.DistanceTo(Ship)).ToList();
             Ships = SpottedShips;
 
 

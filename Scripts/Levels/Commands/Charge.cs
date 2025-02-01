@@ -53,6 +53,12 @@ namespace Assets.Scripts.Levels.Commands
             }
 
         }
+        public override void ClearData()
+        {
+            base.ClearData();
+            ChargingShips.Clear();
+            IsCharging = false;
+        }
         private void GetTargetShip(Ship chargingShip)
         {
             Bomb bomb = (Bomb)chargingShip.Weapons.First();

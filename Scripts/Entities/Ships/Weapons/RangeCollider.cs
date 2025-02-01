@@ -73,7 +73,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             else if (collidingThing.CompareTag("Projectile"))
             {
                 Projectile projectile = collidingThing.GetComponent<Projectile>();
-                if (projectile.Weapon.Equals(Weapon))
+                if (projectile.Weapon.Equals(Weapon) && !Weapon.Ship.IsDead)
                 {
                     //Debug.Log($"{Weapon.Ship.Name}'s projectile left it's range!");
                     projectile.Kill();

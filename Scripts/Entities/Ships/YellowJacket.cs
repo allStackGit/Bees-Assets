@@ -56,7 +56,7 @@ namespace Assets.Scripts.Entities.Ships
             if (TouchingShip != null && collidingThing.CompareTag("Ship"))
             {
                 Ship ship = collidingThing.GetComponent<Ship>();
-                if (ship.Equals(TouchingShip))
+                if (ship == TouchingShip)
                 {
                     TouchingShip = null;
                 }

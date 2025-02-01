@@ -25,10 +25,6 @@ namespace Assets.Scripts.Entities
         //        Age++;
         //    }
         //}        
-        public bool Equals(Entity entity)
-        {
-            return Id == entity.Id;
-        }
         public int GetLifeTime() {
             return DateTime.Now.Subtract(StartTime).Seconds;
         }
@@ -111,6 +107,55 @@ namespace Assets.Scripts.Entities
         public float GetRotation()
         {
             return transform.eulerAngles.z;
+        }
+
+        public override bool Equals(System.Object obj)
+        {
+            if (obj == null)
+            {
+                return false;
+            }
+
+            // If parameter cannot be cast to class return false.
+            Entity x = obj as Entity;
+            if (x == null)
+            {
+                return false;
+            }
+
+            return Id == x.Id;
+        }
+
+        public bool Equals(Entity other)
+        {
+            return Id == other.Id;
+        }
+
+        public override int GetHashCode()
+        {
+            return Id.GetHashCode();
+        }
+
+        public static bool operator ==(Entity a, Entity b)
+        {
+            // If both are null, or both are same instance, return true.
+            if (System.Object.ReferenceEquals(a, b))
+            {
+                return true;
+            }
+
+            // If one is null, but not both, return false.
+            if (((object)a == null) || ((object)b == null))
+            {
+                return false;
+            }
+
+            return a.Id == b.Id;
+        }
+
+        public static bool operator !=(Entity a, Entity b)
+        {
+            return !(a == b);
         }
     }
 

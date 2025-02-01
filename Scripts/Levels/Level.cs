@@ -77,7 +77,7 @@ namespace Assets.Scripts.Levels
         public List<string> __BeeHivemindShips, __HumanHivemindShips, __PastCommands, __PathfindingThreads, __CustomLevels;
 
 
-        private List<Obstacle> _chosenObstacles;
+        public ObstacleMap ObstacleMap;
         //private Dictionary<int, List<GameObject>> _obstacleLists;
 
         private void UpdateDebugVariables()
@@ -192,7 +192,7 @@ namespace Assets.Scripts.Levels
                 {
                     CurrentLevelOptions.ObstacleMapIndex = Utilities.RandomInt(Stage.ObstacleListCount - 1) + 1;
                 }
-                _chosenObstacles = Stage.Pool.GetObstacleMapFromPool(CurrentLevelOptions.ObstacleMapIndex);
+                ObstacleMap = Stage.Pool.GetObstacleMapFromPool(CurrentLevelOptions.ObstacleMapIndex);
 
                 if ((CurrentLevelOptions.AsteroidOption == -1 && Utilities.RandomInt(4) == 0) || CurrentLevelOptions.AsteroidOption > 0) // User chose random and random chose asteroids OR User chose asteroids
                 {
@@ -211,7 +211,7 @@ namespace Assets.Scripts.Levels
                 if (((CurrentLevelOptions.AsteroidOption == -1 && Utilities.CoinToss()) || CurrentLevelOptions.AsteroidOption > 0) && !Stage.IsTraining) // User chose random and random chose asteroids OR User chose asteroids
                 {
                     HasObstacles = true;
-                    _chosenObstacles = Stage.Pool.GetObstacleMapFromPool(0);
+                    ObstacleMap = Stage.Pool.GetObstacleMapFromPool(0);
                     CurrentLevelOptions.ObstacleMapIndex = 0;
                     ActivateCollisionAsteroids = true;
                     Debug.Log($"The map has asteroids but not obstacles");
@@ -309,7 +309,7 @@ namespace Assets.Scripts.Levels
         {
             Stage.CurrentAsteroidMaxSpawnRate = Stage.AsteroidMaxSpawnRate;
             Stage.CurrentAsteroidMinimumSpawnRate = Stage.AsteroidMinimumSpawnRate;
-            _chosenObstacles.ForEach((obstacle) =>
+            ObstacleMap.Obstacles.ForEach((obstacle) =>
             {
                 Vector2 position = obstacle.transform.position;
                 obstacle.transform.parent = Map.transform;
@@ -319,6 +319,7 @@ namespace Assets.Scripts.Levels
 
             if (ActivateCollisionAsteroids)
             {
+                Stage.HasAsteroids = true;
                 if (CurrentLevelOptions.AsteroidOption == 2)
                 {
                     Stage.CurrentAsteroidMaxSpawnRate /= 2;
@@ -329,23 +330,20 @@ namespace Assets.Scripts.Levels
         }
         private void SpawnMiningAsteroids()
         {
-            Stage.Prefabs.MiningAsteroidPrefabs.ForEach((prefab) =>
+            for (int  i = 0; i < Utilities.RandomInt(5); i++)
             {
-                Vector2 position = prefab.transform.position;
-                GameObject instance = Instantiate(prefab);
-                instance.transform.parent = Map.transform;
-                instance.transform.localPosition = position;
-                MiningAsteroid asteroid = instance.GetComponent<MiningAsteroid>();
-                State.AddObstacle(asteroid);
-                State.MiningAsteroids.Add(asteroid);
-                asteroid.Setup(this, State.GetId());
-
-            });
+                MiningAsteroid miningAsteroid = Stage.Pool.GetMiningAsteroidFromPool();
+                miningAsteroid.transform.parent = Map.transform;
+                miningAsteroid.transform.localPosition = Utilities.RandomCoordinate(this, Vector2.zero, new Vector2(HalfMapWidth, HalfMapHeight), Vector2.zero);
+                State.AddObstacle(miningAsteroid);
+                State.MiningAsteroids.Add(miningAsteroid);
+                miningAsteroid.Setup(this);
+            }
         }
         private void SpawnAsteroid()
         {
-            GameObject instance = Instantiate(Stage.Prefabs.CollisionAsteroidPrefabs[Utilities.RandomInt(Stage.Prefabs.CollisionAsteroidPrefabs.Count)]);
-            AddAsteroid(instance);
+            //GameObject instance = Instantiate(Stage.Prefabs.CollisionAsteroidPrefabs[Utilities.RandomInt(Stage.Prefabs.CollisionAsteroidPrefabs.Count)]);
+            AddAsteroid(Stage.Pool.GetCollisionAsteroidFromPool().gameObject);
             Invoke(nameof(SpawnAsteroid), Stage.AsteroidMinimumSpawnRate + Utilities.RandomInt(Stage.CurrentAsteroidMaxSpawnRate - Stage.CurrentAsteroidMinimumSpawnRate));
         }
 
@@ -354,7 +352,7 @@ namespace Assets.Scripts.Levels
             instance.transform.parent = Map.transform;
             CollisionAsteroid asteroid = instance.GetComponent<CollisionAsteroid>();
             State.AddObstacle(asteroid);
-            asteroid.Setup(this, State.GetId());
+            asteroid.Setup(this);
 
             asteroid.MapPointsIndex = Pathfinder.AddObstacle(asteroid);
             return asteroid;
@@ -417,6 +415,7 @@ namespace Assets.Scripts.Levels
                 {
                     LevelOver();
                 }
+
             }
 
             if ((State.IsPaused || ConfigData.SocketManager.NetworkDisconnection.IsOpen || !IsLevelConnectedToServer) && !Stage.IsTraining)
@@ -447,6 +446,7 @@ namespace Assets.Scripts.Levels
         {
             if (!Stage.IsTrainingNueralNetwork)
             {
+                State.LevelEnded = true;
                 Pause();
                 //Debug.Log("LEVEL OVER!");
 
@@ -458,7 +458,6 @@ namespace Assets.Scripts.Levels
                     }
                 });
 
-                State.LevelEnded = true;
                 float fps = Time.frameCount / Time.unscaledTime;
                 float fups = Stage.FixedUpdates / Time.unscaledTime;
                 ConfigData.__TotalLength += Time.realtimeSinceStartup - Stage.StartTime;
@@ -514,19 +513,19 @@ namespace Assets.Scripts.Levels
             {
                 if (Stage.IsTrainingHiveMind)
                 {
-                    SaveAndEnd();
+                    SaveAndEnd(); // invoke immediately because training is happening
 
                 }
                 else
                 {
                     if (State.FireBargeExplosions.Count > 0)
                     {
-                        Invoke(nameof(SaveAndEnd), 5f);
+                        Invoke(nameof(SaveAndEnd), 5f); // invoke after 5 seconds because the explosion should be fully seen
 
                     }
                     else
                     {
-                        Invoke(nameof(SaveAndEnd), .5f);
+                        Invoke(nameof(SaveAndEnd), .5f); // inoke after half a second 
                     }
 
                 }
@@ -694,7 +693,7 @@ namespace Assets.Scripts.Levels
 
 
                 CurrentLevelOptions.ObstacleMapIndex = Stage.OverrideObstacleMapIndex;
-                _chosenObstacles = Stage.Pool.GetObstacleMapFromPool(CurrentLevelOptions.ObstacleMapIndex);
+                ObstacleMap = Stage.Pool.GetObstacleMapFromPool(CurrentLevelOptions.ObstacleMapIndex);
             }
             SetupMapAndCamera();
 
@@ -866,6 +865,7 @@ namespace Assets.Scripts.Levels
                 CancelInvoke(nameof(SpawnAsteroid));
                 //CancelInvoke(nameof(SetLocationHistory));
                 //InvokeRepeating(nameof(SetLocationHistory), .5f, .5f);
+                
                 SpawnObstacles();
                 Pathfinder = new Pathfinder(this);
 
@@ -953,28 +953,34 @@ namespace Assets.Scripts.Levels
             // Should probably remove this
             GetComponents<Command>().ToList().ForEach((command) =>
             {
-                Debug.LogError($"A command had to be destroyed at the end of the level");
+                if (!IsRestarting)
+                {
+                    Debug.LogError($"A command had to be destroyed at the end of the level");
+                }
                 Destroy(command);
             });
-
-            Stage.Pool.ReturnObstacleMapToPool(_chosenObstacles, CurrentLevelOptions.ObstacleMapIndex);
-
-            Obstacle[] obstacles = State.GetObstacles().ToArray();
-            for (int i = 0; i < obstacles.Length; i++)
+            if (HasObstacles)
             {
-                Obstacle obstacle = obstacles[i];
-                if (obstacle != null)
+                Stage.Pool.ReturnObstacleMapToPool(ObstacleMap, CurrentLevelOptions.ObstacleMapIndex);
+
+                Obstacle[] obstacles = State.GetObstacles().ToArray();
+                for (int i = 0; i < obstacles.Length; i++)
                 {
-                    if (obstacle.IsCollisionAsteroid)
+                    Obstacle obstacle = obstacles[i];
+                    if (obstacle != null)
                     {
-                        ((CollisionAsteroid)obstacle).Kill(true);
-                    }
-                    else
-                    {
-                        obstacle.Kill();
+                        if (obstacle.ObstacleType == ConfigData.ObstacleTypes.CollisionAsteroid)
+                        {
+                            ((CollisionAsteroid)obstacle).Kill(true);
+                        }
+                        else if (obstacle.ObstacleType == ConfigData.ObstacleTypes.MiningAsteroid)
+                        {
+                            ((MiningAsteroid)obstacle).Kill();
+                        }
                     }
                 }
             }
+
 
             while (State.Deadbodies.Count > 0)
             {
@@ -1104,7 +1110,7 @@ namespace Assets.Scripts.Levels
                 power /= 2;
             }
             //Debug.Log($"Position before setup for {projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
-            projectile.Setup(this, State.GetId(), weapon, shooter, target, startingPosition, angle, weapon.Range, power);
+            projectile.Setup(this, weapon, shooter, target, startingPosition, angle, weapon.Range, power);
             shooter.ProjectilesInFlight.Add(projectile);
             //Debug.Log($"Position after setup for #{projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
             return projectile;

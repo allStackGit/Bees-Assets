@@ -15,19 +15,34 @@ namespace Assets.Scripts.Entities
         /// </summary>
         public int MapPointsIndex;
         public string Name;
-        public bool IsCollisionAsteroid, IsMapBorder, HasEnteredMap, IsDead, IsMiningAsteroid, IsRegularObstacle;
+        public bool IsDead;
         public Level Level;
+        public Stage Stage;
+        public ConfigData.ObstacleTypes ObstacleType;
         public Collider2D Collider, ProximityCollider, ClearanceMappingCollider;
 
         private int _frameCollisions = 0;
 
-        public void Setup(Level level, int id)
+        public virtual void Create(Stage stage)
+        {
+            Stage = stage;
+            OriginalHealth = Health;
+        }
+        public void Setup(Level level)
         {
             Level = level;
-            Id = id;
-            Name = $"{Name} #{Id}";
+            Id = Level.State.GetId();
+            Name = $"{ObstacleType} #{Id}";
             gameObject.name = Name;
+            Health = OriginalHealth;
+            ClearData();
+            gameObject.SetActive(true);
 
+        }
+        public virtual void ClearData()
+        {
+            MapPointsIndex = 0;
+            IsDead = false;
         }
         public virtual void Kill()
         {
@@ -37,7 +52,7 @@ namespace Assets.Scripts.Entities
                 IsDead = true;
                 Debug.Log($"Level: {Level}, State: {Level?.State}");
                 Level.State.RemoveObstacle(this);
-                Destroy(gameObject);
+                //Destroy(gameObject);
             }
 
         }
@@ -75,14 +90,14 @@ namespace Assets.Scripts.Entities
 
         protected virtual void OnTriggerEnter2D(Collider2D collider)
         {
-            if (IsRegularObstacle)
+            if (ObstacleType == ConfigData.ObstacleTypes.StaticObstacle)
             {
                 Collision(collider);
             }
         }
         protected virtual void OnTriggerStay2D(Collider2D collider)
         {
-            if (IsRegularObstacle)
+            if (ObstacleType == ConfigData.ObstacleTypes.StaticObstacle)
             {
                 _frameCollisions++;
                 if (_frameCollisions == 50)
@@ -92,6 +107,55 @@ namespace Assets.Scripts.Entities
                 }
             }
 
+        }
+
+        public override bool Equals(System.Object obj)
+        {
+            if (obj == null)
+            {
+                return false;
+            }
+
+            // If parameter cannot be cast to class return false.
+            Obstacle x = obj as Obstacle;
+            if (x == null)
+            {
+                return false;
+            }
+
+            return Id == x.Id;
+        }
+
+        public bool Equals(Obstacle other)
+        {
+            return Id == other.Id;
+        }
+
+        public override int GetHashCode()
+        {
+            return Id.GetHashCode();
+        }
+
+        public static bool operator ==(Obstacle a, Obstacle b)
+        {
+            // If both are null, or both are same instance, return true.
+            if (System.Object.ReferenceEquals(a, b))
+            {
+                return true;
+            }
+
+            // If one is null, but not both, return false.
+            if (((object)a == null) || ((object)b == null))
+            {
+                return false;
+            }
+
+            return a.Id == b.Id;
+        }
+
+        public static bool operator !=(Obstacle a, Obstacle b)
+        {
+            return !(a == b);
         }
     }
 }

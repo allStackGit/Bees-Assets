@@ -277,6 +277,10 @@ public class Stage : Scene
     /// The time in seconds when the stage started up [debugging]
     /// </summary>
     public float StartTime;
+    /// <summary>
+    /// Whether or not there are any asteroids on any levels in this stage
+    /// </summary>
+    public bool HasAsteroids;
 
     
 
@@ -405,6 +409,11 @@ public class Stage : Scene
         }
 
         SetupLevels();
+
+        if (HasAsteroids)
+        {
+            Pool.FillAsteroidPool();
+        }
 
         float end = (Time.realtimeSinceStartup - StartTime) * 1000; // seconds to milliseconds
         Debug.Log($"It took {Math.Round(end, 2)} ms to set up the stage and {Math.Round(Time.realtimeSinceStartup, 2)}s total time.");

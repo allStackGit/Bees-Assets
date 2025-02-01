@@ -11,9 +11,9 @@ namespace Assets.Scripts.Entities.Projectiles
     {
         public Ship ContactedShip;
         // Use this for initialization
-        public void Setup(Level level, long id, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power, Ship contactedShip)
+        public void Setup(Level level, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power, Ship contactedShip)
         {
-            base.Setup(level, id, weapon, shooter, target, startingPosition, angle, range, power);
+            base.Setup(level, weapon, shooter, target, startingPosition, angle, range, power);
             ContactedShip = contactedShip;
             transform.parent = ContactedShip.transform;
             Invoke(nameof(KillSequence), 1.5f);

@@ -38,9 +38,9 @@ namespace Assets.Scripts.Entities.Ships
             }
         }
 
-        public override void Setup(Level level, long id, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
+        public override void Setup(Level level, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
         {
-            base.Setup(level, id, fleetShip, squad, offsetFromCenter);
+            base.Setup(level, fleetShip, squad, offsetFromCenter);
             if (IsUserControlled)
             {
                 ChargingBar.Setup(); 

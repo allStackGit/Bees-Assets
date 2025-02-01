@@ -29,9 +29,9 @@ namespace Assets.Scripts.Entities.Ships
                 Destroy(ChargingBar.gameObject);
             }
         }
-        public override void Setup(Level level, long id, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
+        public override void Setup(Level level, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
         {
-            base.Setup(level, id, fleetShip, squad, offsetFromCenter);
+            base.Setup(level, fleetShip, squad, offsetFromCenter);
 
             CanDropBeacons = true;
             if (IsUserControlled)
@@ -49,7 +49,7 @@ namespace Assets.Scripts.Entities.Ships
         private Squad CreateMinionSquad()
         {
             // Create Squad
-            Squad squad = Level.gameObject.AddComponent<Squad>();
+            Squad squad = Stage.Pool.GetSquadFromPool();
             squad.IsImmobile = true;
             squad.Setup(
                 Level,
@@ -85,7 +85,6 @@ namespace Assets.Scripts.Entities.Ships
                     Squad squad = CreateMinionSquad();
                     ship.Setup(
                         Level,
-                        Level.State.GetId(),
                         new FleetShip(id, $"{Name} -> {MinionType} #{Id}", MinionType, false, true, false, 0, 0, 0, 0, 0, 0, 0),
                         squad,
                         Vector2.zero

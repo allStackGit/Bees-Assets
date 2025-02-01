@@ -74,6 +74,11 @@ namespace Assets.Scripts.Levels.Commands
             }
 
         }
+        public override void ClearData()
+        {
+            base.ClearData();
+            ShipsCompletedCommand.Clear();
+        }
         /// <summary>
         /// Finds a target ship for the ship's bomb and then makes that ship the enemy ship to follow as well
         /// </summary>
@@ -128,7 +133,7 @@ namespace Assets.Scripts.Levels.Commands
                 }))
                 {
                     Squad.BannedStrats.Add(ConfigData.CommandTypes.Aggressive);
-                    Squad.BannedStrats.Add(ConfigData.CommandTypes.Circle);
+                    Squad.BannedStrats.Add(ConfigData.CommandTypes.CircleSquad);
                     Squad.BannedStrats.Add(ConfigData.CommandTypes.RightSwipe);
                     Squad.BannedStrats.Add(ConfigData.CommandTypes.LeftSwipe);
                     Squad.BannedStrats.Add(ConfigData.CommandTypes.InAndOut);
