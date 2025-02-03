@@ -13,14 +13,14 @@ namespace Assets.Scripts.Settings
          */
         public string Description, CodexDescription;
         public ConfigData.ShipTypes Type;
-        public int Health, Sight, AdditionalTsv;
+        public int Health, Sight, Tsv;
         public float Speed;
         public List<int> Ranges, Powers;
         public List<float> RatesOfFire, ProjectileValues, RotationRates;
         public List<ConfigData.WeaponTypes> WeaponTypes;
         public List<ConfigData.ProjectileTypes> ProjectileTypes;
 
-        public ShipStatBlock(ConfigData.ShipTypes type, string description, string codexDescription, int health, List<int> ranges, List<int> powers, int sight, int additionalTsv, 
+        public ShipStatBlock(ConfigData.ShipTypes type, string description, string codexDescription, int health, List<int> ranges, List<int> powers, int sight, int tsv, 
             List<float> projectileValues, List<float> ratesOfFire, List<float> rotationRates, float speed, List<ConfigData.WeaponTypes> weaponTypes, List<ConfigData.ProjectileTypes> projectileTypes)
         {
             Type = type;
@@ -30,7 +30,7 @@ namespace Assets.Scripts.Settings
             Ranges = ranges;
             Powers = powers;
             Sight = sight;
-            AdditionalTsv = additionalTsv;
+            Tsv = tsv;
             ProjectileValues = projectileValues;
             RotationRates = rotationRates;
             RatesOfFire = ratesOfFire;

@@ -55,7 +55,7 @@ namespace Assets.Scripts.Levels
         public const int LeftClick = 0;
         public List<Timer> Timers = new List<Timer>();
         public List<Turret> TurretsFiringManually = new List<Turret>();
-        public EventSystem EventSystem => Stage.EventSystem;
+        public EventSystem EventSystem;
 
         // these are booleans for user inputs that are held down so that we don't need to fire the action the entire time they're held down
 
@@ -71,6 +71,7 @@ namespace Assets.Scripts.Levels
             Level = stage.PrimaryLevel;
             _mousePosition = Stage.Camera.ScreenToWorldPoint(Input.mousePosition);
             Selector = selector;
+            EventSystem = Stage.EventSystem;
 
             LoadHotKeySettings();
         }
@@ -857,10 +858,8 @@ namespace Assets.Scripts.Levels
                 //targetPosition = new Vector2(x, y);
 
                 // if the user is controlling this squad and setting it to target an enemy, end that.
-                if (squad.FinalizeUserCommand())
-                {
-                    squad.Move(localized);
-                }
+                squad.FinalizeUserCommand();
+                squad.Move(localized);
                 
             });
         }

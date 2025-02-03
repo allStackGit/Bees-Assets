@@ -18,9 +18,9 @@ namespace Assets.Scripts.Levels.Commands
         /// <param name="shootingStrategy"></param>
         /// <param name="commandOutcomeId"></param>
         /// <param name="noEnemy"></param>
-        public override void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy)
+        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
         {
-            base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
+            base.Execute(ConfigData.CommandTypes.BombingRun, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
             //Debug.Log("Executing bombing run");
 
 
@@ -197,7 +197,7 @@ namespace Assets.Scripts.Levels.Commands
                 if (ship.ShipType == ConfigData.ShipTypes.Striker)
                 {
                     Striker striker = (Striker)ship;
-                    return striker.HasCompletedRun && (striker.HasReturnedToCarrier || !striker.HasCarrier);
+                    return striker.HasCompletedRun && (striker.HasReturnedToCarrier || striker.Carrier.IsDead);
                 }
                 else if (ship.ShipType == ConfigData.ShipTypes.YellowJacket)
                 {

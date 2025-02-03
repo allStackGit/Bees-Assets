@@ -8,23 +8,34 @@ using Random = System.Random;
 
 namespace Assets.Scripts.Levels.Commands
 {
-    public class MatchupStrategy : Strategy
+    public class MatchupStrategy 
     {
-        public new Squad Squad;
-        public new int Side => Squad.Side;
-        public new Level Level => Squad.Level;
+        public Squad Squad;
         public ConfigData.MatchupStrategyTypes MatchupType;
+        /// <summary>
+        /// The matchup outcome Id, not the strategy outcomeId
+        /// </summary>
+        public long OutcomeId;
+        public int Side;
+        public Level Level;
+        public bool IsDead;
 
-        public MatchupStrategy(Command command, Squad squad, ConfigData.MatchupStrategyTypes type, string matchupString, long matchupId, long outcomeId): base(command, ConfigData.CommandTypes.Matchup, matchupString, matchupId, outcomeId)
+        public MatchupStrategy()
         {
-            Squad = squad;
+            IsDead = true;
+        }
+        public void Setup(ConfigData.MatchupStrategyTypes type, long outcomeId, Squad squad)
+        {
+            OutcomeId = outcomeId;
             MatchupType = type;
-            //Command = command;
-            //this.Name = name;
-            //this.MatchupString = matchupString; // the string of the matchup e.g. GG|DDDDCC|0|2|0
-            //this.MatchupId = matchupId; // the database ID of the matchup that connects to the matchup string in the database
-            //this.OutcomeId = outcomeId; // the database ID of the targeting outcome record
-            ////Debug.Log("Created MatchupStrategy");
+            Squad = squad;
+            Side = Squad.Side;
+            Level = Squad.Level;
+            IsDead = false;
+        }
+        public void Kill()
+        {
+            IsDead = true;
         }
 
         public Squad SortSquads()

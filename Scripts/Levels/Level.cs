@@ -69,10 +69,8 @@ namespace Assets.Scripts.Levels
         /// </summary>
         public HashSet<int> HandledRequests = new HashSet<int>();
         public Stage Stage;
+        public bool DidUserWin;
 
-
-
-        public bool DidUserWin => WinningSide == ConfigData.Configuration.UserSide;
 
         public List<string> __BeeHivemindShips, __HumanHivemindShips, __PastCommands, __PathfindingThreads, __CustomLevels;
 
@@ -334,7 +332,7 @@ namespace Assets.Scripts.Levels
             {
                 MiningAsteroid miningAsteroid = Stage.Pool.GetMiningAsteroidFromPool();
                 miningAsteroid.transform.parent = Map.transform;
-                miningAsteroid.transform.localPosition = Utilities.RandomCoordinate(this, Vector2.zero, new Vector2(HalfMapWidth, HalfMapHeight), Vector2.zero);
+                miningAsteroid.transform.localPosition = Utilities.RandomCoordinate(this, Vector2.zero, new Vector2(HalfMapWidth-64, HalfMapHeight-64), Vector2.zero);
                 State.AddObstacle(miningAsteroid);
                 State.MiningAsteroids.Add(miningAsteroid);
                 miningAsteroid.Setup(this);
@@ -498,6 +496,11 @@ namespace Assets.Scripts.Levels
                 if (Stage.Menus != null && !ConfigData.IsPlayingCampaign)
                 {
                     Stage.Menus.UpdateScore(ConfigData.GetUserProgressData().HumanFreePlayWins, ConfigData.GetUserProgressData().BeeFreePlayWins);
+                }
+
+                if (WinningSide == ConfigData.Configuration.UserSide)
+                {
+                    DidUserWin = true;
                 }
 
                 UnPause();

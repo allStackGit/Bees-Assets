@@ -13,9 +13,9 @@ namespace Assets.Scripts.Levels.Commands
 
         private bool _gotToEnemy;
         private Vector2 _swipeDestination = Vector2.zero;
-        public override void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy)
+        public override void Execute(ConfigData.CommandTypes commandType, ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
         {
-            base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
+            base.Execute(commandType, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
 
             IsAttacking = true;
             PrepareDamageToSendEntries();

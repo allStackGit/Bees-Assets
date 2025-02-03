@@ -25,9 +25,9 @@ namespace Assets.Scripts.Levels.Commands
         public Squad EnemySquad, Squad;
         public string Matchup, FinalizationCause;
         public ConfigData.CommandTypes CommandType = ConfigData.CommandTypes.Uninitialized;
-        public Strategy Strategy = null;
-        public MatchupStrategy MatchupStrategy = null;
-        public ShootingStrategy ShootingStrategy = null;
+        public Strategy Strategy;
+        public MatchupStrategy MatchupStrategy;
+        public ShootingStrategy ShootingStrategy;
         public bool IsAttacking, IsCloseToTarget;
         public bool HasStrategy;
         public bool HasShootingStrategy;
@@ -42,11 +42,11 @@ namespace Assets.Scripts.Levels.Commands
         /// <summary>
         /// The targeting queue, unmodified from when it was generated, only regenerated when a new ship is added to the enemy squad
         /// </summary>
-        public Queue<Ship> OriginalQueue;
+        public Queue<Ship> OriginalQueue = new Queue<Ship>();
         /// <summary>
         /// The list of ships (in order) that this squad's ships should follow after, modified each time a ship takes an enemy ship off the queue and follows it
         /// </summary>
-        public Queue<Ship> TargetingQueue;
+        public Queue<Ship> TargetingQueue = new Queue<Ship>();
         public Stage Stage;
 
         private List<Vector2> _destinations = new List<Vector2>();
@@ -56,6 +56,8 @@ namespace Assets.Scripts.Levels.Commands
         public virtual void Create(Stage stage)
         {
             Stage = stage;
+            Strategy = new Strategy();
+            ShootingStrategy = new ShootingStrategy();
         }
         public virtual void ClearData()
         {
@@ -64,9 +66,6 @@ namespace Assets.Scripts.Levels.Commands
             EnemySquad = null;
             FinalizationCause = null;
             CommandType = ConfigData.CommandTypes.Uninitialized;
-            Strategy = null;
-            MatchupStrategy = null;
-            ShootingStrategy = null;
             IsAttacking = false;
             IsCloseToTarget = false;
             HasStrategy = false;
@@ -78,12 +77,13 @@ namespace Assets.Scripts.Levels.Commands
             IsFinalized = false;
             IsStored = false;
         }
-        public void Setup(Squad squad, bool isHiveMindCommand, Squad enemy, string matchup, bool n)
+        public void Setup(Squad squad, bool isHiveMindCommand, Squad enemy, string matchup)
         {
             ClearData();
             Level = squad.Level;
             Side = squad.Side;
             Squad = squad;
+            Squad.HasCommand = true;
             EnemySquad = enemy;
             Matchup = matchup;
             IsHiveMindCommand = isHiveMindCommand;
@@ -154,18 +154,18 @@ namespace Assets.Scripts.Levels.Commands
 
         }
 
-        public virtual void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy, bool n)
+        public virtual void Execute(ConfigData.CommandTypes commandType, ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
         {
             if (noEnemy || HasEnemy)
             {
-                Strategy = strategy;
-                CommandType = Strategy.CommandType;
-                ShootingStrategy = shootingStrategy;
+                OutcomeId = commandOutcomeId;
+                CommandType = commandType;
+                Strategy.Setup(CommandType, OutcomeId);
+                ShootingStrategy.Setup(shootingStrategy, shootingStrategyOutcomeId);
                 HasShootingStrategy = true;
                 Squad.SetShootingStrategy(ShootingStrategy.ShootingStrategyType);
                 Squad.ClearTargets(); // Clear all old targets before starting the new command
 
-                OutcomeId = commandOutcomeId;
                 if (!Stage.IsTraining)
                 {
                     Squad.PastCommands.Add(new StoredCommand(this));
@@ -330,6 +330,9 @@ namespace Assets.Scripts.Levels.Commands
             FinalizationCause = cause;
             //Debug.Log($"Finalized #{OutcomeId} - {Strategy.Name} because of [{FinalizationCause}]");
             IsFinalized = true;
+            Strategy.Kill();
+            MatchupStrategy.Kill();
+            ShootingStrategy.Kill();
             //ClearDestinations();
 
             //if (Squad != null)
@@ -358,6 +361,7 @@ namespace Assets.Scripts.Levels.Commands
             }
             Debug.Log($"Finalizing and setting Squad Command #{OutcomeId}:{Strategy?.CommandType} to null for {Squad.Name} because of {FinalizationCause}");
             Squad.Command = null;
+            Squad.HasCommand = false;
 
             if (Squad.IsHiveMindControlled && Stage.ActivateHiveMind)
             {
@@ -407,7 +411,7 @@ namespace Assets.Scripts.Levels.Commands
             //{
             //    Destroy(Squad.gameObject.GetComponents<Command>().First((c) => c.OutcomeId == OutcomeId));
             //}
-            Destroy(this);
+            Stage.Pool.ReturnCommandToPool(this);
         }
 
         public override string ToString()

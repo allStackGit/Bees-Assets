@@ -20,9 +20,9 @@ namespace Assets.Scripts.Levels.Commands
         /// <param name="shootingStrategy"></param>
         /// <param name="commandOutcomeId"></param>
         /// <param name="noEnemy"></param>
-        public override void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy)
+        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
         {
-            base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
+            base.Execute(ConfigData.CommandTypes.Charge, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
             //Debug.Log("Executing bombing run");
 
             IsAttacking = true;
@@ -113,11 +113,14 @@ namespace Assets.Scripts.Levels.Commands
             return !ship.HasStartedCharging && !ship.HasCompletedRun && ship.HasTargetEnemyShipToFollow;
         }
 
-        private bool HasTargetsWithinChargingRange(Ship ship)
+        private bool HasTargetsWithinChargingRange(Barge barge)
         {
-            return ship.HasWeaponsTargetShips && ship.WeaponsTargetShips.Any((targetShip) => targetShip != null &&  ship.ShipsWithinRange.Contains(targetShip) 
-            && Utilities.IsRotatedTowards(ship.gameObject, ship.GetDegreesTowardsPoint(targetShip.GetPosition()))) && !ship.ShipsWithinRange.Any((targetship) => 
-            Utilities.HasObstaclesInTheWay(ship.GetPosition(), targetship.GetPosition()));
+            return barge.Charge.HasTargetShip && Utilities.IsRotatedTowards(barge.gameObject, barge.GetDegreesTowardsPoint(barge.Charge.TargetShip.GetPosition())) &&
+            !Utilities.HasObstaclesInTheWay(barge.GetPosition(), barge.Charge.TargetShip.GetPosition());
+
+            //return ship.HasWeaponsTargetShips && ship.WeaponsTargetShips.Any((targetShip) => targetShip != null &&  ship.ShipsWithinRange.Contains(targetShip) 
+            //&& Utilities.IsRotatedTowards(ship.gameObject, ship.GetDegreesTowardsPoint(targetShip.GetPosition()))) && !ship.ShipsWithinRange.Any((targetship) => 
+            //Utilities.HasObstaclesInTheWay(ship.GetPosition(), targetship.GetPosition()));
         }
 
 
@@ -142,7 +145,7 @@ namespace Assets.Scripts.Levels.Commands
                                 {
                                     ChargingShips.Add(barge);
                                     IsCharging = true;
-                                    StartCoroutine(barge.ChargeForward(barge.WeaponsTargetShips.First()));
+                                    StartCoroutine(barge.ChargeForward(barge.Charge.TargetShip));
                                 }
                             }
                             else
@@ -150,7 +153,7 @@ namespace Assets.Scripts.Levels.Commands
                                 SendShipToTarget(barge);
                             }
                         }
-                        else if (!barge.HasWeaponsTargetShips)
+                        else if (!barge.Charge.HasTargetShip)
                         {
                             GetTargetShip(barge);
                         }

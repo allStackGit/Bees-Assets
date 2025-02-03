@@ -34,7 +34,7 @@ namespace Assets.Scripts.Settings
                 List<ConfigData.ProjectileTypes> projectileTypes = Utilities.JArrayToProjectileTypes(ship.ProjectileTypes);
 
                 ShipStatsList.Add(Utilities.ConvertShipNameToShipType[(string) ship.ShipType], new ShipStatBlock(Utilities.ConvertShipNameToShipType[(string) ship.ShipType], (string)ship.Description, (string)ship.CodexDescription, (int)ship.Health,
-                    range, power, (int)ship.Sight, (int)ship.AdditionalTsv, ProjectileValue,
+                    range, power, (int)ship.Sight, (int)ship.Tsv, ProjectileValue,
                     rateOfFire, rotationRates, (float)ship.Speed, weaponTypes, projectileTypes));
                  
             });

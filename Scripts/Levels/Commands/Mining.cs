@@ -17,13 +17,13 @@ namespace Assets.Scripts.Levels.Commands
         public List<Ship> MiningShips;
         public List<Ship> ShipsMining = new List<Ship>();
 
-        public void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy, MiningAsteroid asteroid)
+        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy, MiningAsteroid asteroid)
         {
             if (asteroid != null)
             {
                 MiningShips = Squad.GetShips().Where((ship) => ship.IsMiningShip).ToList();
                 TargetAstroid = asteroid;
-                base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
+                base.Execute(ConfigData.CommandTypes.Mining, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
                 PrepareDamageToSendEntries("closest");
 
                 // Check if any ships are already on the asteroid
@@ -112,7 +112,7 @@ namespace Assets.Scripts.Levels.Commands
                 ShipsMining.ForEach((ship) =>
                 {
                     ship.FleetShip.MineralsMinedThisLevel += amountPerShip;
-                    ship.AdditionalTsv += amountPerShip;
+                    ship.Tsv += amountPerShip;
                 });
 
                 if (TargetAstroid.Health == 0)

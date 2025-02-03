@@ -83,7 +83,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         }
         protected void MoveTargetingMarker()
         {
-            if (HasTargetingMarker && Squad.IsSelected && IsAimedAtTarget)
+            if (HasTargetingMarker && Ship.Squad.IsSelected && IsAimedAtTarget)
             {
                 TargetingMarker.transform.position = TargetPoint;
                 TargetingMarker.SetActive(true);

@@ -17,7 +17,7 @@ namespace Assets.Scripts.Data
         public int ShotsFired, DamageDone, DamageReceived, Kills, BattlesFought, BattlesWon, MineralsMined, MineralsMinedThisLevel;
         public int BattlesLost => BattlesFought - BattlesWon;
 
-        public int Health, MaxHealth, AdditionalTsv, Sight;
+        public int Health, MaxHealth, Sight, RatedTsv;
         public List<int> Range, Power;
         public List<float> RateOfFire, ProjectileValue, RotationRates;
         public float Speed;
@@ -84,20 +84,15 @@ namespace Assets.Scripts.Data
             MaxHealth = shipInfo.Health;
             Range = shipInfo.Ranges;
             Power = shipInfo.Powers;
-            AdditionalTsv = shipInfo.AdditionalTsv;
             Sight = shipInfo.Sight;
+            RatedTsv = shipInfo.Tsv;
             ProjectileValue = shipInfo.ProjectileValues;
             RotationRates = shipInfo.RotationRates;
 
             RateOfFire = shipInfo.RatesOfFire;
             Speed = shipInfo.Speed;
 
-            if (Type == ConfigData.ShipTypes.Carrier)
-            {
-                AdditionalTsv = Utilities.CalculateCarrierAdditionalTsv();
-                //Debug.Log($"AdditionalTSV for Carrier is {AdditionalTsv}. {drone.GetTsv()} for each drone and {striker.GetTsv()} for each striker");
-            }
-            else if (Type == ConfigData.ShipTypes.Striker || Type == ConfigData.ShipTypes.Barge)
+            if (Type == ConfigData.ShipTypes.Striker || Type == ConfigData.ShipTypes.Barge)
             {
                 SpecialFirePower.Add(shipInfo.Powers.First()/3);
             }

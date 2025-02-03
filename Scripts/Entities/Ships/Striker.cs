@@ -30,7 +30,7 @@ namespace Assets.Scripts.Entities.Ships
         private SpriteRenderer _indicatorSprite;
         //private GameObject _droppedBomb;
         public Ship ContactedShip, TouchingShip;
-        public Weapon Bomb => Weapons.First();
+        public Weapon Bomb;
         public Vector2 LastCarrierPosition;
 
         public override void Create(Stage stage)
@@ -48,6 +48,7 @@ namespace Assets.Scripts.Entities.Ships
                 SetBombsReadyStatus(true);
             }
             InvokeRepeating(nameof(CheckCarrierReload), 1, 1);
+            Bomb = Weapons.First();
 
         }
         public override void ClearData()
@@ -80,7 +81,7 @@ namespace Assets.Scripts.Entities.Ships
                 //    $"{Squad}, " +
                 //    $"{TargetShips.First()}");
 
-                if (TouchingShip.Side != Side && Squad.HasCommand && HasWeaponsTargetShips && WeaponsTargetShips.Contains(TouchingShip) && IsBombReady)
+                if (TouchingShip.Side != Side && Squad.HasCommand && Bomb.TargetShip == TouchingShip && IsBombReady)
                 {
                     //Debug.Log($"Collided with our target {TouchingShip.Name}!");
                     ContactedShip = TouchingShip;
@@ -119,7 +120,7 @@ namespace Assets.Scripts.Entities.Ships
         }
         private void CheckCarrierReload()
         {
-            if (HasCarrier && DistanceTo(Carrier) < 15 && !IsBombReady)
+            if (!Carrier.IsDead && DistanceTo(Carrier) < 15 && !IsBombReady)
             {
                 SetBombsReadyStatus(true);
                 SetIndicatorColor();
@@ -194,7 +195,7 @@ namespace Assets.Scripts.Entities.Ships
             {
                 // send any bomber that is't loaded to its carrier
                 //Debug.Log($"Sending {striker.Id} back to its carrier");
-                if (HasCarrier)
+                if (!Carrier.IsDead)
                 {
                     Vector2 destination = Carrier.GetPosition() + OffsetFromCenter;
                     //Vector2 targetPoint = Level.ForceBounds(destination + OffsetFromCenter);

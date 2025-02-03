@@ -12,9 +12,9 @@ namespace Assets.Scripts.Levels.Commands
     {
         public Vector2 ReturnPoint;
         public bool HasReachedReturnPoint, HasReachedEnemySquad;
-        public override void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy)
+        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
         {
-            base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
+            base.Execute(ConfigData.CommandTypes.InAndOut, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
             if (EnemySquad != null && !EnemySquad.IsDead)
             {
                 IsAttacking = true;

@@ -501,7 +501,7 @@ namespace Assets.Scripts.Server
                     //squad.Command = squad.gameObject.AddComponent<Command>();
                     //squad.Command.Setup(squad, true);
 
-                    squad.MatchupStrategy = new MatchupStrategy(null, squad, Utilities.ConvertMatchupStrategyNameToType[matchupResponse.Name], matchupResponse.MatchupString, matchupResponse.MatchupId, matchupResponse.OutcomeId);
+                    squad.MatchupStrategy.Setup(Utilities.ConvertMatchupStrategyNameToType[matchupResponse.Name], matchupResponse.OutcomeId, squad);
 
                     //squad.Command.MatchupStrategy = squad.MatchupStrategy;
                     Squad targetSquad = squad.MatchupStrategy.SortSquads();
@@ -552,42 +552,42 @@ namespace Assets.Scripts.Server
                         case ConfigData.CommandTypes.Aggressive:
                             if (squad.HasOnlyBombers)
                             {
-                                command = squad.gameObject.AddComponent<BombingRun>();
+                                command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.BombingRun);
                                 commandType = ConfigData.CommandTypes.BombingRun;
                             }
                             else if (squad.HasOnlyBarges)
                             {
-                                command = squad.gameObject.AddComponent<Charge>();
+                                command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Charge);
                                 commandType = ConfigData.CommandTypes.Charge;
                             }
                             else
                             {
-                                command = squad.gameObject.AddComponent<Aggressive>();
+                                command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Aggressive);
                             }
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.Retreat:
-                            command = squad.gameObject.AddComponent<Retreat>();
+                            command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Retreat);
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.MoveToRandom:
-                            command = squad.gameObject.AddComponent<MoveToRandom>();
+                            command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.MoveToRandom);
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.CircleSquad:
                             if (squad.HasOnlyBombers)
                             {
-                                command = squad.gameObject.AddComponent<BombingRun>();
+                                command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.BombingRun);
                                 commandType = ConfigData.CommandTypes.BombingRun;
                             }
                             else if (squad.HasOnlyBarges)
                             {
-                                command = squad.gameObject.AddComponent<Charge>();
+                                command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Charge);
                                 commandType = ConfigData.CommandTypes.Charge;
                             }
                             else
                             {
-                                command = squad.gameObject.AddComponent<CircleSquad>();
+                                command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.CircleSquad);
                             }
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
@@ -595,59 +595,60 @@ namespace Assets.Scripts.Server
                         case ConfigData.CommandTypes.LeftSwipe:
                             if (squad.HasOnlyBombers)
                             {
-                                command = squad.gameObject.AddComponent<BombingRun>();
+                                command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.BombingRun);
                                 commandType = ConfigData.CommandTypes.BombingRun;
                             }
                             else if (squad.HasOnlyBarges)
                             {
-                                command = squad.gameObject.AddComponent<Charge>();
+                                command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Charge);
                                 commandType = ConfigData.CommandTypes.Charge;
                             }
                             else
                             {
-                                command = squad.gameObject.AddComponent<SwipeSquad>();
+                                command = level.Stage.Pool.GetCommandFromPool(commandType);
+
                             }
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.ClosestFriendly:
-                            command = squad.gameObject.AddComponent<ClosestFriendly>();
+                            command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.ClosestFriendly);
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.InAndOut:
                             if (squad.HasOnlyBombers)
                             {
-                                command = squad.gameObject.AddComponent<BombingRun>();
+                                command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.BombingRun);
                                 commandType = ConfigData.CommandTypes.BombingRun;
                             }
                             else if (squad.HasOnlyBarges)
                             {
-                                command = squad.gameObject.AddComponent<Charge>();
+                                command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Charge);
                                 commandType = ConfigData.CommandTypes.Charge;
                             }
                             else
                             {
-                                command = squad.gameObject.AddComponent<InAndOut>();
+                                command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.InAndOut);
                             }
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.Patrol:
-                            command = squad.gameObject.AddComponent<Patrol>();
+                            command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Patrol);
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.Guard:
-                            command = squad.gameObject.AddComponent<Guard>();
+                            command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Guard);
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.Scouting:
-                            command = squad.gameObject.AddComponent<Scouting>();
+                            command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Scouting);
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.Mining:
-                            command = squad.gameObject.AddComponent<Mining>();
+                            command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Mining);
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.FullRetreat:
-                            command = squad.gameObject.AddComponent<FullRetreat>();
+                            command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.FullRetreat);
                             command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
                             break;
                         default:
@@ -657,40 +658,37 @@ namespace Assets.Scripts.Server
 
                     squad.Command = command;
                     squad.Command.MatchupStrategy = squad.MatchupStrategy;
-
-                    Strategy strategy = new Strategy(squad.Command, commandType, commandResponse.MatchupString, commandResponse.MatchupId, commandResponse.OutcomeId);
-                    ShootingStrategy shootingStrategy = new ShootingStrategy(squad.Command, Utilities.ConvertShootingStrategyNameToType[commandResponse.ShootingStrategyName], commandResponse.ShootingStrategyMatchupString, commandResponse.ShootingStrategyMatchupId, commandResponse.ShootingStrategyOutcomeId);
                     
                     if (commandType == ConfigData.CommandTypes.Patrol)
                     {
                         //Debug.Log("Got a patrol);
-                        ((Patrol)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true, Vector2.zero, Vector2.zero);
+                        ((Patrol)squad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[commandResponse.ShootingStrategyName], commandResponse.OutcomeId, commandResponse.ShootingStrategyOutcomeId, true, Vector2.zero, Vector2.zero);
                     }
                     else if (commandType == ConfigData.CommandTypes.Guard)
                     {
-                        ((Guard)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true, null);
+                        ((Guard)squad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[commandResponse.ShootingStrategyName], commandResponse.OutcomeId, commandResponse.ShootingStrategyOutcomeId, true, null);
                     }
                     else if (commandType == ConfigData.CommandTypes.ClosestFriendly)
                     {
-                        ((ClosestFriendly)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true);
+                        ((ClosestFriendly)squad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[commandResponse.ShootingStrategyName], commandResponse.OutcomeId, commandResponse.ShootingStrategyOutcomeId, true);
                     }
                     else if (commandType == ConfigData.CommandTypes.MoveToRandom)
                     {
-                        ((MoveToRandom)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true);
+                        ((MoveToRandom)squad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[commandResponse.ShootingStrategyName], commandResponse.OutcomeId, commandResponse.ShootingStrategyOutcomeId, true);
                     }
                     else if (commandType == ConfigData.CommandTypes.Scouting)
                     {
-                        ((Scouting)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true);
+                        ((Scouting)squad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[commandResponse.ShootingStrategyName], commandResponse.OutcomeId, commandResponse.ShootingStrategyOutcomeId, true);
                     }
                     else if (commandType == ConfigData.CommandTypes.Mining)
                     {
-                        ((Mining)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true, squad.GetNearestMiningAsteroid());
+                        ((Mining)squad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[commandResponse.ShootingStrategyName], commandResponse.OutcomeId, commandResponse.ShootingStrategyOutcomeId, true, squad.GetNearestMiningAsteroid());
                     }
                     else if (commandType == ConfigData.CommandTypes.FullRetreat)
                     {
                         Vector2 position = squad.GetPosition();
                         WarpGate warpGate = (WarpGate) level.State.GetHumanShips().Where((s) => s.IsWarpGate).OrderBy((s) => s.DistanceToPoint(position)).FirstOrDefault();
-                        ((FullRetreat)squad.Command).Execute(strategy, shootingStrategy, commandResponse.OutcomeId, true, warpGate);
+                        ((FullRetreat)squad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[commandResponse.ShootingStrategyName], commandResponse.OutcomeId, commandResponse.ShootingStrategyOutcomeId, true, warpGate);
                     }
                     else
                     {
@@ -698,7 +696,7 @@ namespace Assets.Scripts.Server
                         //{
                         //    Debug.Log($"Trying to execute bombing run ({commandResponse.Name}) for {squad.Name} against null enemy from #{commandResponse.Hash}. IsCached? {commandResponse.IsCached}");
                         //}
-                        squad.Command.Execute(strategy, shootingStrategy, commandResponse.OutcomeId, false);
+                        squad.Command.Execute(commandType, Utilities.ConvertShootingStrategyNameToType[commandResponse.ShootingStrategyName], commandResponse.OutcomeId, commandResponse.ShootingStrategyOutcomeId, false);
                     }
 
                 }

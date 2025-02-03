@@ -9,9 +9,9 @@ namespace Assets.Scripts.Levels.Commands
         Sends the squad towards a random spot on the map
          */
         
-        public override void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy)
+        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
         {
-            base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
+            base.Execute(ConfigData.CommandTypes.MoveToRandom, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy); 
 
             PrepareDamageToSendEntries("closest");
             Vector2 position = Squad.GetPosition();

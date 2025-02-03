@@ -19,9 +19,9 @@ namespace Assets.Scripts.Levels.Commands
         /// The position of the squad as either, 0, 1, 2, or 3. Corresponds to the cardinal directions to determine where the squad should be
         /// </summary>
         public int GuardPosition;
-        public void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy, Squad guardedSquad)
+        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy, Squad guardedSquad)
         {
-            base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
+            base.Execute(ConfigData.CommandTypes.Guard, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
             if (IsHiveMindCommand)
             {
                 _guardedSquad = GetClosestAvailableSquadToGuard();

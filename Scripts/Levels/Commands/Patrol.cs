@@ -9,9 +9,9 @@ namespace Assets.Scripts.Levels.Commands
         /*
         The squad moves in a loop between predefined points
         */
-        public void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy, Vector2 topLeft, Vector2 bottomRight)
+        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy, Vector2 topLeft, Vector2 bottomRight)
         {
-            base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
+            base.Execute(ConfigData.CommandTypes.Patrol, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
 
             Vector2 position = Squad.GetPosition();
             if (IsHiveMindCommand)

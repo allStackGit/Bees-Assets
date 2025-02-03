@@ -15,7 +15,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         public Ship Ship, TargetShip;
         public int Range, Power; 
-        public float RateOfFire, ProjectileValue, RotationRate, SpecialFirepower;
+        public float RateOfFire, ProjectileValue, RotationRate, SpecialFirepower, Firepower;
         public GameObject Piece, RangeCircle;
         public ConfigData.ProjectileTypes ProjectileType;
         public List<Ship> CachedTargetingQueue = new List<Ship>();
@@ -29,11 +29,9 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// Ships that this weapon can't fire at because an obstacle is in the way
         /// </summary>
         public Dictionary<Ship, string> __TargetingRejectReasons = new Dictionary<Ship, string>();
-        public float Firepower => Utilities.CalculateFirepower(Power, Range, RateOfFire, RotationRate, ProjectileValue, SpecialFirepower);
         public bool CeaseFire => Ship.Squad.CeaseFire;
         public bool HasTargetShip => TargetShip != null;
-        public bool HasShipsWithinRange => ShipsWithinRange.Count > 0;
-        public int Id;
+        public int Id, Side;
         public Level Level;
         public Stage Stage;
         public RangeCollider RangeCollider;
@@ -41,9 +39,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// Whether a weapon has a target ship and is not cease fire and therefore *should* fire at a target. It may still not be *able* to fire at a target, if for instance it's a turret and not aimed at the target.
         /// </summary>
         public virtual bool ShouldFire => TargetShip != null && !CeaseFire;
-        public Squad Squad => Ship.Squad;
-        public int Side => Ship.Side;
-
 
         public string __NotShootingReason;
         public List<Ship> __ShipsWithinRange;
@@ -51,6 +46,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             ConfigData.ProjectileTypes projectileType)
         {
             Ship = ship;
+            Side = Ship.Side;
             Stage = Ship.Stage;
             Range = range;
             Power = power;
@@ -72,6 +68,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 SoundEffect.transform.localPosition = Vector2.zero;
 
             }
+            Firepower = Utilities.CalculateFirepower(Power, Range, RateOfFire, RotationRate, ProjectileValue, SpecialFirepower);
 
             SetupRangeCircleAndCollider();
         }
@@ -228,7 +225,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 }
                 else
                 {
-                    if ((Ship.HasCommand || Ship.HasBrain)) // if you've got a command, and you're not retreating
+                    if ((Ship.Squad.HasCommand || Ship.HasBrain)) // if you've got a command, and you're not retreating
                     {
                         List<Ship> queue = MakeSortedTargetingList(false);
                         Ship.__SortedTargetingQueue = queue;
@@ -239,7 +236,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     }
                     else
                     {
-                        if (!Ship.HasCommand)
+                        if (!Ship.Squad.HasCommand)
                         {
                             //Debug.Log($"{Ship.Name} is not firing {Piece.name} because it is AI controlled and it doesn't have a command");
                             __NotShootingReason = $"{Ship.Name} is not firing {Piece.name} because it is AI controlled and it doesn't have a command";
@@ -284,7 +281,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             List<Ship> queue;
             if (disregardRange)
             {
-                queue = Squad.Command.EnemySquad.GetShips();
+                queue = Ship.Squad.Command.EnemySquad.GetShips();
             }
             else
             {

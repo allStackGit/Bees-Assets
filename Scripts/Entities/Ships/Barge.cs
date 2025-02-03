@@ -22,7 +22,7 @@ namespace Assets.Scripts.Entities.Ships
         public bool HasStartedCharging, WaitingForNewCharge;
         public bool IsCharging;
         public int OriginalPower;
-        public Weapon Charge => Weapons.First();
+        public Weapon Charge;
         public HashSet<Ship> ShipsHit = new HashSet<Ship>();
         public ChargingBar ChargingBar;
         public override void Create(Stage stage)
@@ -36,6 +36,7 @@ namespace Assets.Scripts.Entities.Ships
             {
                 Destroy(ChargingBar.gameObject);
             }
+            Charge = Weapons.First();
         }
 
         public override void Setup(Level level, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)

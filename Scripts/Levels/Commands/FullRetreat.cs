@@ -10,12 +10,12 @@ public class FullRetreat : Command
 {
     public WarpGate TargetWarpGate;
     public List<Ship> ShipsWaitingToWarp = new List<Ship>();
-    public void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy, WarpGate warpgate)
+    public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy, WarpGate warpgate)
     {
         if (warpgate != null)
         {
             TargetWarpGate = warpgate;
-            base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
+            base.Execute(ConfigData.CommandTypes.FullRetreat, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
 
             
             // The ToList() is necessary to prevent errors from warp killing while looping through the list of ships

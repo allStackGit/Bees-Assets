@@ -13,9 +13,9 @@ namespace Assets.Scripts.Levels.Commands
          */
         private bool _foundShips;
         List<Scout> Scouts = new List<Scout>();
-        public override void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy)
+        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
         {
-            base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
+            base.Execute(ConfigData.CommandTypes.Scouting, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
 
             PrepareDamageToSendEntries("closest");
             Vector2 position = Squad.GetPosition();

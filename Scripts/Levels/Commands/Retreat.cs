@@ -11,9 +11,9 @@ namespace Assets.Scripts.Levels.Commands
          * Method for the Defensive strategy. The squad moves away from the enemy at a faster speed than it can normally move, but it can't fire while retreating
          */
         private Vector2 _retreatPoint;
-        public override void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy)
+        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
         {
-            base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
+            base.Execute(ConfigData.CommandTypes.Retreat, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
 
             if (EnemySquad != null && !EnemySquad.IsDead)
             {

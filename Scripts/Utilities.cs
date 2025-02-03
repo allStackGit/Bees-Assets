@@ -1164,25 +1164,25 @@ namespace Assets.Scripts
         public static int CalculateTsv(Ship ship)
         {
             //Debug.Log($"Calculating TSV for {ship.Name}");
-            return CalculateTsv(ship.Speed, ship.Firepower, ship.Health, ship.Sight, ship.AdditionalTsv);
+            return CalculateTsv(ship.Speed, ship.Firepower, ship.Health, ship.Sight);
         }
         public static int CalculateMaxTsv(Ship ship)
         {
-            return CalculateTsv(ship.Speed, ship.Firepower, ship.MaxHealth, ship.Sight, ship.AdditionalTsv);
+            return CalculateTsv(ship.Speed, ship.Firepower, ship.MaxHealth, ship.Sight);
         }
         public static int CalculateTsv(FleetShip ship)
         {
-            return CalculateTsv(ship.Speed, ship.Firepower, ship.Health, ship.Sight, ship.AdditionalTsv);
+            return CalculateTsv(ship.Speed, ship.Firepower, ship.Health, ship.Sight);
         }
         public static int CalculateMaxTsv(FleetShip ship)
         {
-            return CalculateTsv(ship.Speed, ship.Firepower, ship.MaxHealth, ship.Sight, ship.AdditionalTsv);
+            return CalculateTsv(ship.Speed, ship.Firepower, ship.MaxHealth, ship.Sight);
         }
-        public static int CalculateTsv(float speed, float firepower, int health, int sight, int additionalTsv)
+        public static int CalculateTsv(float speed, float firepower, int health, int sight)
         {
             double speedValue = speed / 3;
             int fullHealthTsv = (int)Math.Round((firepower > 0 ? firepower : 1) * (speedValue > 1 ? speedValue : 1) * (math.max(health / 200, 1)), 0) + sight;
-            int tsv = ((health > 0 ? 1 : 0) * fullHealthTsv) + ((health > 0 ? 1 : 0) * (health + additionalTsv));
+            int tsv = ((health > 0 ? 1 : 0) * fullHealthTsv) + ((health > 0 ? 1 : 0) * health);
             //Debug.Log($"This ship has speed {speed}, speedValue {speedValue}, firepower {firepower}, health: {health}, sight {sight}, fullHealthTSV {fullHealthTsv}, additionalTSV {additionalTsv}" +
             //    $" to culminate in tsv of {tsv}");
             return tsv;

@@ -12,9 +12,9 @@ namespace Assets.Scripts.Levels.Commands
         just follow that squad for a period before finalizing the strategy.
         */
         private Squad _closestFriendlySquad;
-        public override void Execute(Strategy strategy, ShootingStrategy shootingStrategy, long commandOutcomeId, bool noEnemy)
+        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
         {
-            base.Execute(strategy, shootingStrategy, commandOutcomeId, noEnemy);
+            base.Execute(ConfigData.CommandTypes.ClosestFriendly, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
 
 
             //_parameters.setTimer = false;

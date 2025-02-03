@@ -1087,9 +1087,9 @@ public class Pool : MonoBehaviour
                 break;
         }
     }
-    public Command GetCommandFromPool(Command command)
+    public Command GetCommandFromPool(ConfigData.CommandTypes type)
     {
-        switch (command.CommandType)
+        switch (type)
         {
             case ConfigData.CommandTypes.Aggressive:
                 return AggressiveCommandPool.Get();
@@ -1121,7 +1121,7 @@ public class Pool : MonoBehaviour
             case ConfigData.CommandTypes.RightSwipe:
                 return SwipeSquadCommandPool.Get();
             default:
-                Debug.LogError($"Command type is invalid: {command}");
+                Debug.LogError($"Command type is invalid: {type}");
                 return null;
         }
     }

@@ -11,8 +11,7 @@ namespace Assets.Scripts.Levels
     {
         public ConfigData.ShipTypes CarrierSquadType;
         public Carrier Carrier;
-        public bool IsDroneSquad => CarrierSquadType == ConfigData.ShipTypes.Drone ? true : false;
-        public bool IsStrikerSquad => CarrierSquadType == ConfigData.ShipTypes.Striker ? true: false;
+        public bool IsDroneSquad;
         public override void Create(Stage stage)
         {
             Stage = stage;
@@ -22,9 +21,11 @@ namespace Assets.Scripts.Levels
         {
             Carrier = carrier;
             CarrierSquadType = squadType;
+            IsCarrierSquad = true;
             SetupShips();
             SetShootingStrategy(carrier.Squad.GetShootingStrategy());
             SetSquadTab();
+            IsDroneSquad = CarrierSquadType == ConfigData.ShipTypes.Drone;
         }
         private void SetupShips()
         {
@@ -59,6 +60,7 @@ namespace Assets.Scripts.Levels
                         offset
                     );
                 }
+                ship.IsCarrierShip = true;
                 AddShip(ship);
                 ship.SetColor();
             }

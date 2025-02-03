@@ -29,7 +29,7 @@ namespace Assets.Scripts.Entities.Ships
     public class Ship : Entity
     {
         public bool ShowDebug;
-        public int Health, MaxHealth, OriginalHealth, OriginalTsv, Sight, AdditionalTsv, Clearance, MaxRange, HalfMaxRange;
+        public int Health, MaxHealth, OriginalHealth, OriginalTsv, Sight, Clearance, MaxRange, HalfMaxRange;
         public float SizeClass, ProjectileValue, Speed, SpecialFirePower, CurrentSpeed, LongestSide;
         public GameObject ShipExplosion, HealthBar, MiniMapIcon, ShipAnimation, MovementMarker;
         public Vector2 TargetCoordinates, FinalDestination, OffsetFromCenter, PathfindingDestination; // the coordinates of where the ship should go, and it's offset from the center of the squad
@@ -115,6 +115,15 @@ namespace Assets.Scripts.Entities.Ships
         /// </summary>
         public AudioSource ShipExplosionSoundEffect;
         public bool HasShipExplosionSoundEffect;
+        public float Firepower;
+        public float DamagePerSecond;
+        /// <summary>
+        /// The value of the ship + the value of all minerals mined
+        /// </summary>
+        public int Tsv;
+        public bool HasWeapons;
+        public bool IsCarrierShip;
+        public bool IsMoving;
 
         public volatile bool PathfindingThreadComplete, IsPathfinding;
         public volatile Pathfinder.Path PathfindingValue;
@@ -133,32 +142,17 @@ namespace Assets.Scripts.Entities.Ships
 
 
         // [tsv-calculation] [note]
-        public float Firepower => HasWeapons ? Weapons.Sum(w => w.Firepower) : SpecialFirePower;
-        public float DamagePerSecond => Turrets.Sum(t => t.DamagePerSecond);
-        public int Tsv => Utilities.CalculateTsv(this);
-        public bool HasWeapons => Weapons.Count > 0;
-        /// <summary>
-        /// Does this ship have ship(s) that it's weapon(s) are targeting?
-        /// </summary>
-        public bool HasWeaponsTargetShips => WeaponsTargetShips.Count > 0;
         /// <summary>
         /// Whether or not the ship has target coordinates. If it does, it hasn't reached the destination
         /// </summary>
         public bool HasReachedDestination => !HasTargetCoordinates;
-        public bool IsMoving => Body.velocity != Vector2.zero;
-        public bool IsCarrierShip => ShipType == ConfigData.ShipTypes.Striker || ShipType == ConfigData.ShipTypes.Drone;
         /// <summary>
-        /// A list of all the ships that this ship's weapons are targeting
-        /// </summary>
-        public List<Ship> WeaponsTargetShips => HasWeapons ? Weapons.Select((w) => w.TargetShip).Where((s) => s != null).ToList() : new List<Ship>();
-        /// <summary>
-        /// A list of all the ships that are within range of this ship's weapon(s)
+        /// A list of all the ships that are within range of this ship's weapon(s) for debugging purposes only
         /// </summary>
         public List<Ship> ShipsWithinRange => HasWeapons ? Weapons.Select((w) => w.ShipsWithinRange).Aggregate(new HashSet<Ship>(), (list, current) => {
             list.UnionWith(current);
             return list;
         }).ToList() : new List<Ship>();
-        public bool HasCommand => Squad.HasCommand;
         /// <summary>
         /// Means the a ship has a command, that command has live enemies, and this ship is following after one of those enemies. This is seperate from the ship(s) that this ship's weapon(s) are targeting
         /// </summary>
@@ -196,7 +190,6 @@ namespace Assets.Scripts.Entities.Ships
         {
             __Strategy = $"{Squad?.Command?.Strategy?.CommandType} - {Squad?.Command?.OutcomeId}";
             __EnemySquad =  Squad.HasEnemy ? Squad.Command.EnemySquad.Name : "-";
-            __WeaponTargetShips = WeaponsTargetShips;
             __ShipsWithinRangeOfWeapons = ShipsWithinRange.Select((ship) => ship.Name).ToList();
             __Squad = Squad.Name;
             __SavedSquad = Squad.SavedSquad.Name;
@@ -279,7 +272,6 @@ namespace Assets.Scripts.Entities.Ships
         {
             Stage = stage;
             ShipStatBlock shipStats = ConfigData.GetShipInfo(ShipType);
-            AdditionalTsv = shipStats.AdditionalTsv;
             Sight = shipStats.Sight;
             Speed = shipStats.Speed;
             OriginalHealth = shipStats.Health;
@@ -497,6 +489,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             MaxRange = HasWeapons ? Weapons.Max((w) => w.Range) : 0;
             HalfMaxRange = MaxRange / 2;
             OriginalTsv = Utilities.CalculateMaxTsv(this);
+            Firepower = HasWeapons ? Weapons.Sum(w => w.Firepower) : SpecialFirePower;
+            DamagePerSecond = Turrets.Sum(t => t.DamagePerSecond);
+            Tsv = OriginalTsv;
+            HasWeapons = Weapons.Count > 0;
 
             _size = ConfigData.ShipSizes[ShipType] / ConfigData.PixelsPerUnit;
 
@@ -1033,6 +1029,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             if (Direction == 360)
             {
                 Body.velocity = Vector2.zero;
+                IsMoving = false;
                 return;
             }
             if (!HasTargetCoordinates || DistanceToPoint(TargetCoordinates) > GetHeight())
@@ -1054,7 +1051,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             //transform.localPosition = new Vector2(Mathf.Clamp(pos.x, Level.MinX, Level.MaxX), Mathf.Clamp(pos.y, Level.MinY, Level.MaxY));
 
             Body.velocity = velocity;
-
+            IsMoving = true;
         }
         public void SetMovementVelocity()
         {
@@ -1160,6 +1157,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
 
             Body.velocity = new Vector2((maxSpeed * Mathf.Sin(angle)), (-1 * maxSpeed * Mathf.Cos(angle)));
+            IsMoving = true;
         }
         private void MoveInDirection()
         {
@@ -1261,7 +1259,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         /// <returns></returns>
         private bool IsCloseEnoughToTargetCoordinates(float distance)
         {
-            return distance < ConfigData.ShipTurningRadius && !(!IsFollowingPath && HasTargetEnemyShipToFollow && HasCommand && Squad.Command.CommandType == ConfigData.CommandTypes.BombingRun
+            return distance < ConfigData.ShipTurningRadius && !(!IsFollowingPath && HasTargetEnemyShipToFollow && Squad.HasCommand && Squad.Command.CommandType == ConfigData.CommandTypes.BombingRun
                 && ProximityCollider.NearbyEnemyShips.Contains(TargetEnemyShipToFollow));
         }
         /// <summary>
@@ -1276,6 +1274,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 //Debug.Log(__LastStopReason);
                 SetTargetCoordinates(Vector2.zero);
                 Body.velocity = Vector2.zero;
+                IsMoving = false;
                 ClearPreviousDesintation();
                 if (HasRocketFlares)
                 {

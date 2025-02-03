@@ -7617,7 +7617,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: TimeoutTime
-      value: 900
+      value: 420
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: VisonSprite
@@ -16014,6 +16014,20 @@ MonoBehaviour:
   __MiningAsteroidPoolSize: 0
   __SquadPoolSize: 0
   __CarrierSquadPoolSize: 0
+  __AggressiveCommandPoolSize: 0
+  __BombingRunCommandPoolSize: 0
+  __ChargeCommandPoolSize: 0
+  __CircleSquadCommandPoolSize: 0
+  __ClosestFriendlyCommandPoolSize: 0
+  __FullRetreatCommandPoolSize: 0
+  __GuardCommandPoolSize: 0
+  __InAndOutCommandPoolSize: 0
+  __MiningCommandPoolSize: 0
+  __MoveToRandomCommandPoolSize: 0
+  __PatrolCommandPoolSize: 0
+  __RetreatCommandPoolSize: 0
+  __ScoutingCommandPoolSize: 0
+  __SwipeSquadCommandPoolSize: 0
 --- !u!1001 &2087423607
 PrefabInstance:
   m_ObjectHideFlags: 0

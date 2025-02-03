@@ -13,7 +13,12 @@ namespace Assets.Scripts.Entities.Ships
         public bool HasCompletedRun;
         public Ship ContactedShip, TouchingShip;
 
-        public Weapon Bomb => Weapons.First();
+        public Weapon Bomb;
+        public override void Create(Stage stage)
+        {
+            base.Create(stage);
+            Bomb = Weapons.First();
+        }
         public override void ClearData()
         {
             base.ClearData();
@@ -40,7 +45,7 @@ namespace Assets.Scripts.Entities.Ships
                 //    $"{Squad}, " +
                 //    $"{TargetShip}");
 
-                if (TouchingShip != null && TouchingShip.Side != Side && Squad.HasCommand && HasWeaponsTargetShips && WeaponsTargetShips.Contains(TouchingShip))
+                if (TouchingShip != null && TouchingShip.Side != Side && Squad.HasCommand && Bomb.TargetShip == TouchingShip)
                 {
                     //Debug.Log("Collided with our target ship!");
                     ContactedShip = TouchingShip;
