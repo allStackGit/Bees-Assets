@@ -20,14 +20,14 @@ namespace Assets.Scripts.Server
         public CommandResponse Response = null;
         public CommandRequest(GetStrategy request, Squad squad, Squad enemy, Level level, string matchup, int maxTimeOnQueue) : base(maxTimeOnQueue)
         {
-            Type = "get-strategy";
+            Type = ConfigData.RequestTypes.GetStrategy;
             Request = request;
             Squad = squad;
             Enemy = enemy;
             Level = level;
             Matchup = matchup;
             Squad.Status = $"Requesting full command";
-            request.Type = Type;
+            request.Type = Utilities.ConvertRequestTypeToName[Type];
             request.Hash = Hash;
         }
     }

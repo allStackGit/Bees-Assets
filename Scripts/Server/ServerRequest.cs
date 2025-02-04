@@ -7,7 +7,7 @@ namespace Assets.Scripts.Server
 {
     public abstract class ServerRequest
     {
-        public string Type;
+        public ConfigData.RequestTypes Type;
         public int Status = 0;
         public float StartTime = Time.unscaledTime;
         /// <summary>
@@ -22,7 +22,7 @@ namespace Assets.Scripts.Server
         public ServerRequest(int maxTimeOnQueue)
         {
             MaxTimeOnQueue = maxTimeOnQueue;
-            Type = "server-request";
+            Type = ConfigData.RequestTypes.Request;
         }
 
         public bool Equals(ServerRequest sr)

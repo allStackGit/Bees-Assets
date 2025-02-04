@@ -239,113 +239,131 @@ public class Pool : MonoBehaviour
 
         //FillPools();
     }
+    Aggressive _spawn_aggressive;
     public Aggressive CreatePooledAggressiveCommand()
     {
-        Aggressive command = gameObject.AddComponent<Aggressive>();
-        command.Create(Stage);
-        return command;
+        _spawn_aggressive = gameObject.AddComponent<Aggressive>();
+        _spawn_aggressive.Create(Stage);
+        return _spawn_aggressive;
     }
+    BombingRun _spawn_bombingRun;
     public BombingRun CreatePooledBombingRunCommand()
     {
-        BombingRun command = gameObject.AddComponent<BombingRun>();
-        command.Create(Stage);
-        return command;
+        _spawn_bombingRun = gameObject.AddComponent<BombingRun>();
+        _spawn_bombingRun.Create(Stage);
+        return _spawn_bombingRun;
     }
+    Charge _spawn_charge;
     public Charge CreatePooledChargeCommand()
     {
-        Charge command = gameObject.AddComponent<Charge>();
-        command.Create(Stage);
-        return command;
+        _spawn_charge = gameObject.AddComponent<Charge>();
+        _spawn_charge.Create(Stage);
+        return _spawn_charge;
     }
+    CircleSquad _spawn_circleSquad;
     public CircleSquad CreatePooledCircleSquadCommand()
     {
-        CircleSquad command = gameObject.AddComponent<CircleSquad>();
-        command.Create(Stage);
-        return command;
+        _spawn_circleSquad = gameObject.AddComponent<CircleSquad>();
+        _spawn_circleSquad.Create(Stage);
+        return _spawn_circleSquad;
     }
+    ClosestFriendly _spawn_closestFriendly;
     public ClosestFriendly CreatePooledClosestFriendlyCommand()
     {
-        ClosestFriendly command = gameObject.AddComponent<ClosestFriendly>();
-        command.Create(Stage);
-        return command;
+        _spawn_closestFriendly = gameObject.AddComponent<ClosestFriendly>();
+        _spawn_closestFriendly.Create(Stage);
+        return _spawn_closestFriendly;
     }
+    FullRetreat _spawn_fullRetreat;
     public FullRetreat CreatePooledFullRetreatCommand()
     {
-        FullRetreat command = gameObject.AddComponent<FullRetreat>();
-        command.Create(Stage);
-        return command;
+        _spawn_fullRetreat = gameObject.AddComponent<FullRetreat>();
+        _spawn_fullRetreat.Create(Stage);
+        return _spawn_fullRetreat;
     }
+    Guard _spawn_guard;
     public Guard CreatePooledGuardCommand()
     {
-        Guard command = gameObject.AddComponent<Guard>();
-        command.Create(Stage);
-        return command;
+        _spawn_guard = gameObject.AddComponent<Guard>();
+        _spawn_guard.Create(Stage);
+        return _spawn_guard;
     }
+    InAndOut _spawn_inAndOut;
     public InAndOut CreatePooledInAndOutCommand()
     {
-        InAndOut command = gameObject.AddComponent<InAndOut>();
-        command.Create(Stage);
-        return command;
+        _spawn_inAndOut = gameObject.AddComponent<InAndOut>();
+        _spawn_inAndOut.Create(Stage);
+        return _spawn_inAndOut;
     }
+    Mining _spawn_mining;
     public Mining CreatePooledMiningCommand()
     {
-        Mining command = gameObject.AddComponent<Mining>();
-        command.Create(Stage);
-        return command;
+        _spawn_mining = gameObject.AddComponent<Mining>();
+        _spawn_mining.Create(Stage);
+        return _spawn_mining;
     }
+    MoveToRandom _spawn_moveToRandom;
     public MoveToRandom CreatePooledMoveToRandomCommand()
     {
-        MoveToRandom command = gameObject.AddComponent<MoveToRandom>();
-        command.Create(Stage);
-        return command;
+        _spawn_moveToRandom = gameObject.AddComponent<MoveToRandom>();
+        _spawn_moveToRandom.Create(Stage);
+        return _spawn_moveToRandom;
     }
+    Patrol _spawn_patrol;
     public Patrol CreatePooledPatrolCommand()
     {
-        Patrol command = gameObject.AddComponent<Patrol>();
-        command.Create(Stage);
-        return command;
+        _spawn_patrol = gameObject.AddComponent<Patrol>();
+        _spawn_patrol.Create(Stage);
+        return _spawn_patrol;
     }
+    Retreat _spawn_retreat;
     public Retreat CreatePooledRetreatCommand()
     {
-        Retreat command = gameObject.AddComponent<Retreat>();
-        command.Create(Stage);
-        return command;
+        _spawn_retreat = gameObject.AddComponent<Retreat>();
+        _spawn_retreat.Create(Stage);
+        return _spawn_retreat;
     }
+    Scouting _spawn_scouting;
     public Scouting CreatePooledScoutingCommand()
     {
-        Scouting command = gameObject.AddComponent<Scouting>();
-        command.Create(Stage);
-        return command;
+        _spawn_scouting = gameObject.AddComponent<Scouting>();
+        _spawn_scouting.Create(Stage);
+        return _spawn_scouting;
     }
+    SwipeSquad _spawn_swipeSquad;
     public SwipeSquad CreatePooledSwipeSquadCommand()
     {
-        SwipeSquad command = gameObject.AddComponent<SwipeSquad>();
-        command.Create(Stage);
-        return command;
+        _spawn_swipeSquad = gameObject.AddComponent<SwipeSquad>();
+        _spawn_swipeSquad.Create(Stage);
+        return _spawn_swipeSquad;
     }
+    CarrierSquad _spawn_carrierSquad;
     public CarrierSquad CreatePooledCarrierSquad()
     {
-        CarrierSquad carrierSquad = gameObject.AddComponent<CarrierSquad>();
-        carrierSquad.Create(Stage);
-        return carrierSquad;
+        _spawn_carrierSquad = gameObject.AddComponent<CarrierSquad>();
+        _spawn_carrierSquad.Create(Stage);
+        return _spawn_carrierSquad;
     }
+    Squad _spawn_squad;
     public Squad CreatePooledSquad()
     {
-        Squad squad = gameObject.AddComponent<Squad>();
-        squad.Create(Stage);
-        return squad;
+        _spawn_squad = gameObject.AddComponent<Squad>();
+        _spawn_squad.Create(Stage);
+        return _spawn_squad;
     }
+    CollisionAsteroid _spawn_collisionAsteroid;
     public CollisionAsteroid CreatePooledCollisionAsteroid()
     {
-        CollisionAsteroid asteroid = Instantiate(Stage.Prefabs.CollisionAsteroidPrefabs[Utilities.RandomInt(Stage.Prefabs.CollisionAsteroidPrefabs.Count)]).GetComponent<CollisionAsteroid>();
-        asteroid.Create(Stage);
-        return asteroid;
+        _spawn_collisionAsteroid = Instantiate(Stage.Prefabs.CollisionAsteroidPrefabs[Utilities.RandomInt(Stage.Prefabs.CollisionAsteroidPrefabs.Count)]).GetComponent<CollisionAsteroid>();
+        _spawn_collisionAsteroid.Create(Stage);
+        return _spawn_collisionAsteroid;
     }
+    MiningAsteroid _spawn_miningAsteroid;
     public MiningAsteroid CreatePooledMiningAsteroid()
     {
-        MiningAsteroid asteroid = Instantiate(Stage.Prefabs.MiningAsteroidPrefabs[Utilities.RandomInt(Stage.Prefabs.MiningAsteroidPrefabs.Count)]).GetComponent<MiningAsteroid>();
-        asteroid.Create(Stage);
-        return asteroid;
+        _spawn_miningAsteroid = Instantiate(Stage.Prefabs.MiningAsteroidPrefabs[Utilities.RandomInt(Stage.Prefabs.MiningAsteroidPrefabs.Count)]).GetComponent<MiningAsteroid>();
+        _spawn_miningAsteroid.Create(Stage);
+        return _spawn_miningAsteroid;
     }
     public ObstacleMap CreatePooledEmptyObstacleList()
     {
@@ -367,294 +385,374 @@ public class Pool : MonoBehaviour
     {
         return CreatePooledObstacleList(4);
     }
+    ObstacleMap _spawn_obstacleMap;
     public ObstacleMap CreatePooledObstacleList(int index)
     {
-        ObstacleMap obstacleMap = new ObstacleMap(ItemCount++);
+        _spawn_obstacleMap = new ObstacleMap(ItemCount++);
         switch (index)
         {
             case 0:
                 Stage.Prefabs.EmptyObstacleList.ForEach((prefab) =>
                 {
-                    Obstacle obstacle = Instantiate(prefab).GetComponent<Obstacle>();
-                    obstacleMap.Obstacles.Add(obstacle);
+                    _spawn_obstacleMap.Obstacles.Add(Instantiate(prefab).GetComponent<Obstacle>());
                 });
                 break;
 
             case 1:
                 Stage.Prefabs.MazePrefabs.ForEach((prefab) =>
                 {
-                    Obstacle obstacle = Instantiate(prefab).GetComponent<Obstacle>();
-                    obstacleMap.Obstacles.Add(obstacle);
+                    _spawn_obstacleMap.Obstacles.Add(Instantiate(prefab).GetComponent<Obstacle>());
                 });
                 break;
 
             case 2:
                 Stage.Prefabs.ThreePathsPrefabs.ForEach((prefab) =>
                 {
-                    Obstacle obstacle = Instantiate(prefab).GetComponent<Obstacle>();
-                    obstacleMap.Obstacles.Add(obstacle);
+                    _spawn_obstacleMap.Obstacles.Add(Instantiate(prefab).GetComponent<Obstacle>());
                 });
                 break;
 
             case 3:
                 Stage.Prefabs.ForestPrefabs.ForEach((prefab) =>
                 {
-                    Obstacle obstacle = Instantiate(prefab).GetComponent<Obstacle>();
-                    obstacleMap.Obstacles.Add(obstacle);
+                    _spawn_obstacleMap.Obstacles.Add(Instantiate(prefab).GetComponent<Obstacle>());
                 });
                 break;
 
             case 4:
                 Stage.Prefabs.TheWallPrefabs.ForEach((prefab) =>
                 {
-                    Obstacle obstacle = Instantiate(prefab).GetComponent<Obstacle>();
-                    obstacleMap.Obstacles.Add(obstacle);
+                    _spawn_obstacleMap.Obstacles.Add(Instantiate(prefab).GetComponent<Obstacle>());
                 });
                 break;
             default:
                 Debug.LogError($"The chosen obstacle map index does not match an obstacle map");
                 break;
         }
-        return obstacleMap;
+        return _spawn_obstacleMap;
     }
+    private Barge _spawn_barge;
+    private Beacon _spawn_beacon;
+    private Beehive _spawn_beehive;
+    private Bumblebee _spawn_bumblebee;
+    private CarpenterBee _spawn_carpenterBee;
+    private Carrier _spawn_carrier;
+    private Cruiser _spawn_cruiser;
+    private Dreadnought _spawn_dreadnought;
+    private Drone _spawn_drone;
+    private Factory _spawn_factory;
+    private FireBarge _spawn_fireBarge;
+    private Flagship _spawn_flagship;
+    private Frigate _spawn_frigate;
+    private Gunship _spawn_gunship;
+    private Honeybee _spawn_honeybee;
+    private Hornet _spawn_hornet;
+    private Leafcutter _spawn_leafcutter;
+    private Queen _spawn_queen;
+    private Scout _spawn_scout;
+    private Striker _spawn_striker;
+    private WarpGate _spawn_warpGate;
+    private Wasp _spawn_wasp;
+    private YellowJacket _spawn_yellowJacket;
+
+    // Map Fields
+    private Assets.Scripts.UI_Components.Map _spawn_map;
+
+    // Projectile Fields
+    private Projectile _spawn_beeSmallProjectile;
+    private Projectile _spawn_beeMediumProjectile;
+    private Projectile _spawn_bumblebeeShotProjectile;
+    private Projectile _spawn_flagshipShotProjectile;
+    private Projectile _spawn_rocketProjectile;
+    private Projectile _spawn_humanSmallProjectile;
+    private Projectile _spawn_humanMediumProjectile;
+    private Projectile _spawn_beamProjectile;
+    private Projectile _spawn_splitShotProjectile;
+    private Projectile _spawn_queenSmallProjectile;
+    private Projectile _spawn_queenLargeProjectile;
+    private Projectile _spawn_strikerBombProjectile;
+    private Projectile _spawn_rocketExplosionProjectile;
+    private Projectile _spawn_fireBargeExplosionProjectile;
+
+    // Unit Creation Methods
     public Barge CreatePooledBarge()
     {
-        Barge barge = Instantiate(Stage.Prefabs.BargePrefab, Vector2.zero, Quaternion.identity).GetComponent<Barge>();
-        barge.Create(Stage);
-        return barge;
-    }
-    public Beacon CreatePooledBeacon()
-    {
-        Beacon beacon = Instantiate(Stage.Prefabs.BeaconPrefab, Vector2.zero, Quaternion.identity).GetComponent<Beacon>();
-        beacon.Create(Stage);
-        return beacon;
-    }
-    public Beehive CreatePooledBeehive()
-    {
-        Beehive Beehive = Instantiate(Stage.Prefabs.BeehivePrefab, Vector2.zero, Quaternion.identity).GetComponent<Beehive>();
-        Beehive.Create(Stage);
-        return Beehive;
-    }
-    public Bumblebee CreatePooledBumblebee()
-    {
-        Bumblebee Bumblebee = Instantiate(Stage.Prefabs.BumblebeePrefab, Vector2.zero, Quaternion.identity).GetComponent<Bumblebee>();
-        Bumblebee.Create(Stage);
-        return Bumblebee;
-    }
-    public CarpenterBee CreatePooledCarpenterBee()
-    {
-        CarpenterBee CarpenterBee = Instantiate(Stage.Prefabs.CarpenterBeePrefab, Vector2.zero, Quaternion.identity).GetComponent<CarpenterBee>();
-        CarpenterBee.Create(Stage);
-        return CarpenterBee;
-    }
-    public Carrier CreatePooledCarrier()
-    {
-        Carrier Carrier = Instantiate(Stage.Prefabs.CarrierPrefab, Vector2.zero, Quaternion.identity).GetComponent<Carrier>();
-        Carrier.Create(Stage);
-        return Carrier;
-    }
-    public Cruiser CreatePooledCruiser()
-    {
-        Cruiser Cruiser = Instantiate(Stage.Prefabs.CruiserPrefab, Vector2.zero, Quaternion.identity).GetComponent<Cruiser>();
-        Cruiser.Create(Stage);
-        return Cruiser;
-    }
-    public Dreadnought CreatePooledDreadnought()
-    {
-        Dreadnought Dreadnought = Instantiate(Stage.Prefabs.DreadnoughtPrefab, Vector2.zero, Quaternion.identity).GetComponent<Dreadnought>();
-        Dreadnought.Create(Stage);
-        return Dreadnought;
-    }
-    public Drone CreatePooledDrone()
-    {
-        Drone Drone = Instantiate(Stage.Prefabs.DronePrefab, Vector2.zero, Quaternion.identity).GetComponent<Drone>();
-        Drone.Create(Stage);
-        return Drone;
-    }
-    public Factory CreatePooledFactory()
-    {
-        Factory Factory = Instantiate(Stage.Prefabs.FactoryPrefab, Vector2.zero, Quaternion.identity).GetComponent<Factory>();
-        Factory.Create(Stage);
-        return Factory;
-    }
-    public FireBarge CreatePooledFireBarge()
-    {
-        FireBarge FireBarge = Instantiate(Stage.Prefabs.FireBargePrefab, Vector2.zero, Quaternion.identity).GetComponent<FireBarge>();
-        FireBarge.Create(Stage);
-        return FireBarge;
-    }
-    public Flagship CreatePooledFlagship()
-    {
-        Flagship Flagship = Instantiate(Stage.Prefabs.FlagshipPrefab, Vector2.zero, Quaternion.identity).GetComponent<Flagship>();
-        Flagship.Create(Stage);
-        return Flagship;
-    }
-    public Frigate CreatePooledFrigate()
-    {
-        Frigate Frigate = Instantiate(Stage.Prefabs.FrigatePrefab, Vector2.zero, Quaternion.identity).GetComponent<Frigate>();
-        Frigate.Create(Stage);
-        return Frigate;
-    }
-    public Gunship CreatePooledGunship()
-    {
-        Gunship Gunship = Instantiate(Stage.Prefabs.GunshipPrefab, Vector2.zero, Quaternion.identity).GetComponent<Gunship>();
-        Gunship.Create(Stage);
-        return Gunship;
-    }
-    public Honeybee CreatePooledHoneybee()
-    {
-        Honeybee Honeybee = Instantiate(Stage.Prefabs.HoneybeePrefab, Vector2.zero, Quaternion.identity).GetComponent<Honeybee>();
-        Honeybee.Create(Stage);
-        return Honeybee;
-    }
-    public Hornet CreatePooledHornet()
-    {
-        Hornet Hornet = Instantiate(Stage.Prefabs.HornetPrefab, Vector2.zero, Quaternion.identity).GetComponent<Hornet>();
-        Hornet.Create(Stage);
-        return Hornet;
-    }
-    public Leafcutter CreatePooledLeafcutter()
-    {
-        Leafcutter Leafcutter = Instantiate(Stage.Prefabs.LeafcutterPrefab, Vector2.zero, Quaternion.identity).GetComponent<Leafcutter>();
-        Leafcutter.Create(Stage);
-        return Leafcutter;
-    }
-    public Queen CreatePooledQueen()
-    {
-        Queen Queen = Instantiate(Stage.Prefabs.QueenPrefab, Vector2.zero, Quaternion.identity).GetComponent<Queen>();
-        Queen.Create(Stage);
-        return Queen;
-    }
-    public Scout CreatePooledScout()
-    {
-        Scout Scout = Instantiate(Stage.Prefabs.ScoutPrefab, Vector2.zero, Quaternion.identity).GetComponent<Scout>();
-        Scout.Create(Stage);
-        return Scout;
-    }
-    public Striker CreatePooledStriker()
-    {
-        Striker Striker = Instantiate(Stage.Prefabs.StrikerPrefab, Vector2.zero, Quaternion.identity).GetComponent<Striker>();
-        Striker.Create(Stage);
-        return Striker;
-    }
-    public WarpGate CreatePooledWarpGate()
-    {
-        WarpGate WarpGate = Instantiate(Stage.Prefabs.WarpGatePrefab, Vector2.zero, Quaternion.identity).GetComponent<WarpGate>();
-        WarpGate.Create(Stage);
-        return WarpGate;
-    }
-    public Wasp CreatePooledWasp()
-    {
-        Wasp Wasp = Instantiate(Stage.Prefabs.WaspPrefab, Vector2.zero, Quaternion.identity).GetComponent<Wasp>();
-        Wasp.Create(Stage);
-        return Wasp;
-    }
-    public YellowJacket CreatePooledYellowJacket()
-    {
-        YellowJacket YelllowJacket = Instantiate(Stage.Prefabs.YellowJacketPrefab, Vector2.zero, Quaternion.identity).GetComponent<YellowJacket>();
-        YelllowJacket.Create(Stage);
-        return YelllowJacket;
+        _spawn_barge = Instantiate(Stage.Prefabs.BargePrefab, Vector2.zero, Quaternion.identity).GetComponent<Barge>();
+        _spawn_barge.Create(Stage);
+        return _spawn_barge;
     }
 
+    public Beacon CreatePooledBeacon()
+    {
+        _spawn_beacon = Instantiate(Stage.Prefabs.BeaconPrefab, Vector2.zero, Quaternion.identity).GetComponent<Beacon>();
+        _spawn_beacon.Create(Stage);
+        return _spawn_beacon;
+    }
+
+    public Beehive CreatePooledBeehive()
+    {
+        _spawn_beehive = Instantiate(Stage.Prefabs.BeehivePrefab, Vector2.zero, Quaternion.identity).GetComponent<Beehive>();
+        _spawn_beehive.Create(Stage);
+        return _spawn_beehive;
+    }
+
+    public Bumblebee CreatePooledBumblebee()
+    {
+        _spawn_bumblebee = Instantiate(Stage.Prefabs.BumblebeePrefab, Vector2.zero, Quaternion.identity).GetComponent<Bumblebee>();
+        _spawn_bumblebee.Create(Stage);
+        return _spawn_bumblebee;
+    }
+
+    public CarpenterBee CreatePooledCarpenterBee()
+    {
+        _spawn_carpenterBee = Instantiate(Stage.Prefabs.CarpenterBeePrefab, Vector2.zero, Quaternion.identity).GetComponent<CarpenterBee>();
+        _spawn_carpenterBee.Create(Stage);
+        return _spawn_carpenterBee;
+    }
+
+    public Carrier CreatePooledCarrier()
+    {
+        _spawn_carrier = Instantiate(Stage.Prefabs.CarrierPrefab, Vector2.zero, Quaternion.identity).GetComponent<Carrier>();
+        _spawn_carrier.Create(Stage);
+        return _spawn_carrier;
+    }
+
+    public Cruiser CreatePooledCruiser()
+    {
+        _spawn_cruiser = Instantiate(Stage.Prefabs.CruiserPrefab, Vector2.zero, Quaternion.identity).GetComponent<Cruiser>();
+        _spawn_cruiser.Create(Stage);
+        return _spawn_cruiser;
+    }
+
+    public Dreadnought CreatePooledDreadnought()
+    {
+        _spawn_dreadnought = Instantiate(Stage.Prefabs.DreadnoughtPrefab, Vector2.zero, Quaternion.identity).GetComponent<Dreadnought>();
+        _spawn_dreadnought.Create(Stage);
+        return _spawn_dreadnought;
+    }
+
+    public Drone CreatePooledDrone()
+    {
+        _spawn_drone = Instantiate(Stage.Prefabs.DronePrefab, Vector2.zero, Quaternion.identity).GetComponent<Drone>();
+        _spawn_drone.Create(Stage);
+        return _spawn_drone;
+    }
+
+    public Factory CreatePooledFactory()
+    {
+        _spawn_factory = Instantiate(Stage.Prefabs.FactoryPrefab, Vector2.zero, Quaternion.identity).GetComponent<Factory>();
+        _spawn_factory.Create(Stage);
+        return _spawn_factory;
+    }
+
+    public FireBarge CreatePooledFireBarge()
+    {
+        _spawn_fireBarge = Instantiate(Stage.Prefabs.FireBargePrefab, Vector2.zero, Quaternion.identity).GetComponent<FireBarge>();
+        _spawn_fireBarge.Create(Stage);
+        return _spawn_fireBarge;
+    }
+
+    public Flagship CreatePooledFlagship()
+    {
+        _spawn_flagship = Instantiate(Stage.Prefabs.FlagshipPrefab, Vector2.zero, Quaternion.identity).GetComponent<Flagship>();
+        _spawn_flagship.Create(Stage);
+        return _spawn_flagship;
+    }
+
+    public Frigate CreatePooledFrigate()
+    {
+        _spawn_frigate = Instantiate(Stage.Prefabs.FrigatePrefab, Vector2.zero, Quaternion.identity).GetComponent<Frigate>();
+        _spawn_frigate.Create(Stage);
+        return _spawn_frigate;
+    }
+
+    public Gunship CreatePooledGunship()
+    {
+        _spawn_gunship = Instantiate(Stage.Prefabs.GunshipPrefab, Vector2.zero, Quaternion.identity).GetComponent<Gunship>();
+        _spawn_gunship.Create(Stage);
+        return _spawn_gunship;
+    }
+
+    public Honeybee CreatePooledHoneybee()
+    {
+        _spawn_honeybee = Instantiate(Stage.Prefabs.HoneybeePrefab, Vector2.zero, Quaternion.identity).GetComponent<Honeybee>();
+        _spawn_honeybee.Create(Stage);
+        return _spawn_honeybee;
+    }
+
+    public Hornet CreatePooledHornet()
+    {
+        _spawn_hornet = Instantiate(Stage.Prefabs.HornetPrefab, Vector2.zero, Quaternion.identity).GetComponent<Hornet>();
+        _spawn_hornet.Create(Stage);
+        return _spawn_hornet;
+    }
+
+    public Leafcutter CreatePooledLeafcutter()
+    {
+        _spawn_leafcutter = Instantiate(Stage.Prefabs.LeafcutterPrefab, Vector2.zero, Quaternion.identity).GetComponent<Leafcutter>();
+        _spawn_leafcutter.Create(Stage);
+        return _spawn_leafcutter;
+    }
+
+    public Queen CreatePooledQueen()
+    {
+        _spawn_queen = Instantiate(Stage.Prefabs.QueenPrefab, Vector2.zero, Quaternion.identity).GetComponent<Queen>();
+        _spawn_queen.Create(Stage);
+        return _spawn_queen;
+    }
+
+    public Scout CreatePooledScout()
+    {
+        _spawn_scout = Instantiate(Stage.Prefabs.ScoutPrefab, Vector2.zero, Quaternion.identity).GetComponent<Scout>();
+        _spawn_scout.Create(Stage);
+        return _spawn_scout;
+    }
+
+    public Striker CreatePooledStriker()
+    {
+        _spawn_striker = Instantiate(Stage.Prefabs.StrikerPrefab, Vector2.zero, Quaternion.identity).GetComponent<Striker>();
+        _spawn_striker.Create(Stage);
+        return _spawn_striker;
+    }
+
+    public WarpGate CreatePooledWarpGate()
+    {
+        _spawn_warpGate = Instantiate(Stage.Prefabs.WarpGatePrefab, Vector2.zero, Quaternion.identity).GetComponent<WarpGate>();
+        _spawn_warpGate.Create(Stage);
+        return _spawn_warpGate;
+    }
+
+    public Wasp CreatePooledWasp()
+    {
+        _spawn_wasp = Instantiate(Stage.Prefabs.WaspPrefab, Vector2.zero, Quaternion.identity).GetComponent<Wasp>();
+        _spawn_wasp.Create(Stage);
+        return _spawn_wasp;
+    }
+
+    public YellowJacket CreatePooledYellowJacket()
+    {
+        _spawn_yellowJacket = Instantiate(Stage.Prefabs.YellowJacketPrefab, Vector2.zero, Quaternion.identity).GetComponent<YellowJacket>();
+        _spawn_yellowJacket.Create(Stage);
+        return _spawn_yellowJacket;
+    }
+
+    // Map Creation Methods
     public Assets.Scripts.UI_Components.Map CreatePooledPlutoMap()
     {
-        return CreatePooledMap(0);
+       return CreatePooledMap(0);
     }
+
     public Assets.Scripts.UI_Components.Map CreatePooledUranusMap()
     {
         return CreatePooledMap(1);
     }
+
     public Assets.Scripts.UI_Components.Map CreatePooledMap(int index)
     {
-        Assets.Scripts.UI_Components.Map map = Instantiate(Stage.Prefabs.Maps[index]).GetComponent<Assets.Scripts.UI_Components.Map>();
-        map.Setup(index, ItemCount++, ConfigData.Maps[index].Name, ConfigData.Maps[index].UserStartingPosition, ConfigData.Maps[index].AIStartingPosition);
-        map.name = map.Name;
-        return map;
+        // Here the map is instantiated locally because the prefab array is indexed.
+        _spawn_map = Instantiate(Stage.Prefabs.Maps[index]).GetComponent<Assets.Scripts.UI_Components.Map>();
+        _spawn_map.Setup(index, ItemCount++, ConfigData.Maps[index].Name, ConfigData.Maps[index].UserStartingPosition, ConfigData.Maps[index].AIStartingPosition);
+        _spawn_map.name = _spawn_map.Name;
+        return _spawn_map;
     }
 
+    // Projectile Creation Methods
     public Projectile CreatePooledBeeSmallProjectile()
     {
-        Projectile projectile = Instantiate(Stage.Prefabs.BeeSmallLaserShotPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
-        projectile.Create(Stage);
-        return projectile;
+        _spawn_beeSmallProjectile = Instantiate(Stage.Prefabs.BeeSmallLaserShotPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
+        _spawn_beeSmallProjectile.Create(Stage);
+        return _spawn_beeSmallProjectile;
     }
+
     public Projectile CreatePooledBeeMediumProjectile()
     {
-        Projectile projectile = Instantiate(Stage.Prefabs.BeeMediumLaserShotPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
-        projectile.Create(Stage);
-        return projectile;
+        _spawn_beeMediumProjectile = Instantiate(Stage.Prefabs.BeeMediumLaserShotPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
+        _spawn_beeMediumProjectile.Create(Stage);
+        return _spawn_beeMediumProjectile;
     }
+
     public Projectile CreatePooledBumblebeeShotProjectile()
     {
-        Projectile projectile = Instantiate(Stage.Prefabs.BumblebeeShotPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
-        projectile.Create(Stage);
-        return projectile;
+        _spawn_bumblebeeShotProjectile = Instantiate(Stage.Prefabs.BumblebeeShotPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
+        _spawn_bumblebeeShotProjectile.Create(Stage);
+        return _spawn_bumblebeeShotProjectile;
     }
+
     public Projectile CreatePooledFlagshipShotProjectile()
     {
-        Projectile projectile = Instantiate(Stage.Prefabs.FlagshipShotPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
-        projectile.Create(Stage);
-        return projectile;
+        _spawn_flagshipShotProjectile = Instantiate(Stage.Prefabs.FlagshipShotPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
+        _spawn_flagshipShotProjectile.Create(Stage);
+        return _spawn_flagshipShotProjectile;
     }
+
     public Projectile CreatePooledRocketProjectile()
     {
-        Projectile projectile = Instantiate(Stage.Prefabs.RocketPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
-        projectile.Create(Stage);
-        return projectile;
+        _spawn_rocketProjectile = Instantiate(Stage.Prefabs.RocketPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
+        _spawn_rocketProjectile.Create(Stage);
+        return _spawn_rocketProjectile;
     }
+
     public Projectile CreatePooledHumanSmallProjectile()
     {
-        Projectile projectile = Instantiate(Stage.Prefabs.HumanSmallPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
-        projectile.Create(Stage);
-        return projectile;
+        _spawn_humanSmallProjectile = Instantiate(Stage.Prefabs.HumanSmallPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
+        _spawn_humanSmallProjectile.Create(Stage);
+        return _spawn_humanSmallProjectile;
     }
+
     public Projectile CreatePooledHumanMediumProjectile()
     {
-        Projectile projectile = Instantiate(Stage.Prefabs.HumanMediumPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
-        projectile.Create(Stage);
-        return projectile;
+        _spawn_humanMediumProjectile = Instantiate(Stage.Prefabs.HumanMediumPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
+        _spawn_humanMediumProjectile.Create(Stage);
+        return _spawn_humanMediumProjectile;
     }
+
     public Projectile CreatePooledBeamProjectile()
     {
-        Projectile projectile = Instantiate(Stage.Prefabs.BeamPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
-        projectile.Create(Stage);
-        return projectile;
+        _spawn_beamProjectile = Instantiate(Stage.Prefabs.BeamPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
+        _spawn_beamProjectile.Create(Stage);
+        return _spawn_beamProjectile;
     }
+
     public Projectile CreatePooledSplitShotProjectile()
     {
-        Projectile projectile = Instantiate(Stage.Prefabs.SplitShotPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
-        projectile.Create(Stage);
-        return projectile;
+        _spawn_splitShotProjectile = Instantiate(Stage.Prefabs.SplitShotPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
+        _spawn_splitShotProjectile.Create(Stage);
+        return _spawn_splitShotProjectile;
     }
+
     public Projectile CreatePooledQueenSmallProjectile()
     {
-        Projectile projectile = Instantiate(Stage.Prefabs.QueenSmallPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
-        projectile.Create(Stage);
-        return projectile;
+        _spawn_queenSmallProjectile = Instantiate(Stage.Prefabs.QueenSmallPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
+        _spawn_queenSmallProjectile.Create(Stage);
+        return _spawn_queenSmallProjectile;
     }
+
     public Projectile CreatePooledQueenLargeProjectile()
     {
-        Projectile projectile = Instantiate(Stage.Prefabs.QueenLargePrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
-        projectile.Create(Stage);
-        return projectile;
+        _spawn_queenLargeProjectile = Instantiate(Stage.Prefabs.QueenLargePrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
+        _spawn_queenLargeProjectile.Create(Stage);
+        return _spawn_queenLargeProjectile;
     }
+
     public Projectile CreatePooledStrikerBombProjectile()
     {
-        Projectile projectile = Instantiate(Stage.Prefabs.StrikerBombPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
-        projectile.Create(Stage);
-        return projectile;
+        _spawn_strikerBombProjectile = Instantiate(Stage.Prefabs.StrikerBombPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
+        _spawn_strikerBombProjectile.Create(Stage);
+        return _spawn_strikerBombProjectile;
     }
+
     public Projectile CreatePooledRocketExplosionProjectile()
     {
-        Projectile projectile = Instantiate(Stage.Prefabs.RocketExplosionPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
-        projectile.Create(Stage);
-        return projectile;
+        _spawn_rocketExplosionProjectile = Instantiate(Stage.Prefabs.RocketExplosionPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
+        _spawn_rocketExplosionProjectile.Create(Stage);
+        return _spawn_rocketExplosionProjectile;
     }
+
     public Projectile CreatePooledFireBargeExplosionProjectile()
     {
-        Projectile projectile = Instantiate(Stage.Prefabs.FireBargeExplosionPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
-        projectile.Create(Stage);
-        return projectile;
+        _spawn_fireBargeExplosionProjectile = Instantiate(Stage.Prefabs.FireBargeExplosionPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
+        _spawn_fireBargeExplosionProjectile.Create(Stage);
+        return _spawn_fireBargeExplosionProjectile;
     }
 
     public void OnTakeShipFromPool(Ship ship)
@@ -1125,111 +1223,119 @@ public class Pool : MonoBehaviour
                 return null;
         }
     }
+    // Class-level fields for FillPools
+    private int _fillPool_fillSizeSmall;
+    private int _fillPool_fillSizeMedium;
+    private int _fillPool_fillSizeLarge;
+    private int _fillPool_i;
+    private List<Ship> _fillPool_spawnedShips = new List<Ship>();
+    private List<Projectile> _fillPool_spawnedProjectiles = new List<Projectile>();
+    private List<Command> _fillPool_spawnedCommands = new List<Command>();
+
     private void FillPools()
     {
-        int fillSizeSmall = 15 * Stage.LevelCount / 2;
-        int fillSizeMedium = 10 * Stage.LevelCount / 2;
-        int fillSizeLarge = 5 * Stage.LevelCount / 2;
-        List<Ship> spawnedShips = new List<Ship>();
-        List<Projectile> spawnedProjectiles = new List<Projectile>();
-        List<Command> spawnedCommands = new List<Command>();
-        
+        // Calculate fill sizes based on Stage.LevelCount
+        _fillPool_fillSizeSmall = 15 * Stage.LevelCount / 2;
+        _fillPool_fillSizeMedium = 10 * Stage.LevelCount / 2;
+        _fillPool_fillSizeLarge = 5 * Stage.LevelCount / 2;
 
-        for (int i = 0; i < fillSizeSmall; i++)
+        // Fill small pool items
+        for (_fillPool_i = 0; _fillPool_i < _fillPool_fillSizeSmall; _fillPool_i++)
         {
-            spawnedShips.Add(BeaconPool.Get());
-            spawnedShips.Add(DronePool.Get());
-            spawnedShips.Add(HoneybeePool.Get());
-            spawnedShips.Add(HornetPool.Get());
-            spawnedShips.Add(ScoutPool.Get());
-            spawnedShips.Add(StrikerPool.Get());
-            spawnedShips.Add(YellowJacketPool.Get());
+            _fillPool_spawnedShips.Add(BeaconPool.Get());
+            _fillPool_spawnedShips.Add(DronePool.Get());
+            _fillPool_spawnedShips.Add(HoneybeePool.Get());
+            _fillPool_spawnedShips.Add(HornetPool.Get());
+            _fillPool_spawnedShips.Add(ScoutPool.Get());
+            _fillPool_spawnedShips.Add(StrikerPool.Get());
+            _fillPool_spawnedShips.Add(YellowJacketPool.Get());
 
-            spawnedProjectiles.Add(BeeSmallProjectilePool.Get());
-            spawnedProjectiles.Add(HumanSmallProjectilePool.Get());
-            spawnedProjectiles.Add(QueenSmallProjectilePool.Get());
+            _fillPool_spawnedProjectiles.Add(BeeSmallProjectilePool.Get());
+            _fillPool_spawnedProjectiles.Add(HumanSmallProjectilePool.Get());
+            _fillPool_spawnedProjectiles.Add(QueenSmallProjectilePool.Get());
         }
 
-        for (int i = 0; i < fillSizeMedium; i++)
+        // Fill medium pool items
+        for (_fillPool_i = 0; _fillPool_i < _fillPool_fillSizeMedium; _fillPool_i++)
         {
-            spawnedShips.Add(BargePool.Get());
-            spawnedShips.Add(BumblebeePool.Get());
-            spawnedShips.Add(CarpenterBeePool.Get());
-            spawnedShips.Add(CarrierPool.Get());
-            spawnedShips.Add(CruiserPool.Get());
-            spawnedShips.Add(DreadnoughtPool.Get());
-            spawnedShips.Add(FrigatePool.Get());
-            spawnedShips.Add(GunshipPool.Get());
-            spawnedShips.Add(LeafcutterPool.Get());
-            spawnedShips.Add(WaspPool.Get());
+            _fillPool_spawnedShips.Add(BargePool.Get());
+            _fillPool_spawnedShips.Add(BumblebeePool.Get());
+            _fillPool_spawnedShips.Add(CarpenterBeePool.Get());
+            _fillPool_spawnedShips.Add(CarrierPool.Get());
+            _fillPool_spawnedShips.Add(CruiserPool.Get());
+            _fillPool_spawnedShips.Add(DreadnoughtPool.Get());
+            _fillPool_spawnedShips.Add(FrigatePool.Get());
+            _fillPool_spawnedShips.Add(GunshipPool.Get());
+            _fillPool_spawnedShips.Add(LeafcutterPool.Get());
+            _fillPool_spawnedShips.Add(WaspPool.Get());
 
-            spawnedProjectiles.Add(BeeMediumProjectilePool.Get());
-            spawnedProjectiles.Add(RocketProjectilePool.Get());
-            spawnedProjectiles.Add(HumanMediumProjectilePool.Get());
-            spawnedProjectiles.Add(SplitShotProjectilePool.Get());
-            spawnedProjectiles.Add(StrikerBombProjectilePool.Get());
-            //spawnedProjectiles.Add(RocketExplosionProjectilePool.Get());
+            _fillPool_spawnedProjectiles.Add(BeeMediumProjectilePool.Get());
+            _fillPool_spawnedProjectiles.Add(RocketProjectilePool.Get());
+            _fillPool_spawnedProjectiles.Add(HumanMediumProjectilePool.Get());
+            _fillPool_spawnedProjectiles.Add(SplitShotProjectilePool.Get());
+            _fillPool_spawnedProjectiles.Add(StrikerBombProjectilePool.Get());
+            // _fillPool_spawnedProjectiles.Add(RocketExplosionProjectilePool.Get());
 
-            spawnedCommands.Add(AggressiveCommandPool.Get());
-            spawnedCommands.Add(BombingRunCommandPool.Get());
-            spawnedCommands.Add(ChargeCommandPool.Get());
-            spawnedCommands.Add(CircleSquadCommandPool.Get());
-            spawnedCommands.Add(ClosestFriendlyCommandPool.Get());
-            spawnedCommands.Add(FullRetreatCommandPool.Get());
-            spawnedCommands.Add(GuardCommandPool.Get());
-            spawnedCommands.Add(InAndOutCommandPool.Get());
-            spawnedCommands.Add(MiningCommandPool.Get());
-            spawnedCommands.Add(MoveToRandomCommandPool.Get());
-            spawnedCommands.Add(PatrolCommandPool.Get());
-            spawnedCommands.Add(RetreatCommandPool.Get());
-            spawnedCommands.Add(ScoutingCommandPool.Get());
-            spawnedCommands.Add(SwipeSquadCommandPool.Get());
-
-
+            _fillPool_spawnedCommands.Add(AggressiveCommandPool.Get());
+            _fillPool_spawnedCommands.Add(BombingRunCommandPool.Get());
+            _fillPool_spawnedCommands.Add(ChargeCommandPool.Get());
+            _fillPool_spawnedCommands.Add(CircleSquadCommandPool.Get());
+            _fillPool_spawnedCommands.Add(ClosestFriendlyCommandPool.Get());
+            _fillPool_spawnedCommands.Add(FullRetreatCommandPool.Get());
+            _fillPool_spawnedCommands.Add(GuardCommandPool.Get());
+            _fillPool_spawnedCommands.Add(InAndOutCommandPool.Get());
+            _fillPool_spawnedCommands.Add(MiningCommandPool.Get());
+            _fillPool_spawnedCommands.Add(MoveToRandomCommandPool.Get());
+            _fillPool_spawnedCommands.Add(PatrolCommandPool.Get());
+            _fillPool_spawnedCommands.Add(RetreatCommandPool.Get());
+            _fillPool_spawnedCommands.Add(ScoutingCommandPool.Get());
+            _fillPool_spawnedCommands.Add(SwipeSquadCommandPool.Get());
         }
 
-        for (int i = 0; i < fillSizeLarge; i++)
+        // Fill large pool items
+        for (_fillPool_i = 0; _fillPool_i < _fillPool_fillSizeLarge; _fillPool_i++)
         {
-            spawnedShips.Add(BeehivePool.Get());
-            spawnedShips.Add(FactoryPool.Get());
-            spawnedShips.Add(FireBargePool.Get());
-            spawnedShips.Add(FlagshipPool.Get());
-            spawnedShips.Add(QueenPool.Get());
-            spawnedShips.Add(WarpGatePool.Get());
+            _fillPool_spawnedShips.Add(BeehivePool.Get());
+            _fillPool_spawnedShips.Add(FactoryPool.Get());
+            _fillPool_spawnedShips.Add(FireBargePool.Get());
+            _fillPool_spawnedShips.Add(FlagshipPool.Get());
+            _fillPool_spawnedShips.Add(QueenPool.Get());
+            _fillPool_spawnedShips.Add(WarpGatePool.Get());
 
-            spawnedProjectiles.Add(BumblebeeShotProjectilePool.Get());
-            spawnedProjectiles.Add(FlagshipShotProjectilePool.Get());
-            spawnedProjectiles.Add(BeamProjectilePool.Get());
-            spawnedProjectiles.Add(QueenLargeProjectilePool.Get());
-            spawnedProjectiles.Add(FireBargeExplosionProjectilePool.Get());
+            _fillPool_spawnedProjectiles.Add(BumblebeeShotProjectilePool.Get());
+            _fillPool_spawnedProjectiles.Add(FlagshipShotProjectilePool.Get());
+            _fillPool_spawnedProjectiles.Add(BeamProjectilePool.Get());
+            _fillPool_spawnedProjectiles.Add(QueenLargeProjectilePool.Get());
+            _fillPool_spawnedProjectiles.Add(FireBargeExplosionProjectilePool.Get());
         }
 
-
-        spawnedShips.ForEach((ship) =>
+        // Process and return items to their respective pools
+        _fillPool_spawnedShips.ForEach((ship) =>
         {
             ReturnShipToPool(ship);
         });
 
-        spawnedProjectiles.ForEach((projectile) =>
+        _fillPool_spawnedProjectiles.ForEach((projectile) =>
         {
             ReturnProjectileToPool(projectile);
         });
 
-        spawnedCommands.ForEach((command) =>
+        _fillPool_spawnedCommands.ForEach((command) =>
         {
-
+            // Process command if necessary.
         });
-
     }
+
+    // Class-level field for the asteroid pool
+    private List<CollisionAsteroid> _fillPool_spawnedAsteroids = new List<CollisionAsteroid>();
 
     public void FillAsteroidPool()
     {
-        List<CollisionAsteroid> spawnedAsteroids = new List<CollisionAsteroid>();
-        for (int i = 0; i < 15 * Stage.LevelCount; i++)
+        for (int _fillPool_i = 0; _fillPool_i < _fillPool_fillSizeSmall; _fillPool_i++)
         {
-            spawnedAsteroids.Add(CollisionAsteroidPool.Get());
+            _fillPool_spawnedAsteroids.Add(CollisionAsteroidPool.Get());
         }
-        spawnedAsteroids.ForEach((spawnedAsteroid) =>
+        _fillPool_spawnedAsteroids.ForEach((spawnedAsteroid) =>
         {
             ReturnCollisionAsteroidToPool(spawnedAsteroid);
         });

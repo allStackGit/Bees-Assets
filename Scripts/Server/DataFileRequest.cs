@@ -13,10 +13,10 @@ namespace Assets.Scripts.Server
 
         public DataFileRequest(GetUserData request, DataFile dataFile, int maxTimeOnQueue) : base(maxTimeOnQueue)
         {
-            Type = "get-user-data";
+            Type = ConfigData.RequestTypes.GetUserData;
             Request = request;
             DataFile = dataFile;
-            request.Type = Type;
+            request.Type = Utilities.ConvertRequestTypeToName[Type];
             request.Hash = Hash;
         }
     }

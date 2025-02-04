@@ -146,6 +146,19 @@ namespace Assets.Scripts
             Eye,
             SplitShot
         }
+        public enum RequestTypes
+        {
+            Request, // Not a real type
+            GetMatchupStrategy,
+            GetStrategy,
+            SendRLData,
+            StoreCommands,
+            SetupLevel,
+            ReconnectLevel,
+            StoreUserData,
+            GetUserData,
+            GetSettings
+        }
 
         public enum ProjectileTypes
         {

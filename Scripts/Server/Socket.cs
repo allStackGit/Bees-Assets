@@ -171,58 +171,61 @@ namespace Assets.Scripts.Server
                 SendRequest(sr);
             });
         }
+
+        private string _f_message;
+        private ServerResponse _message_response;
         private void Message(byte[] bytes)
         {
             //Debug.Log($"Got message from server");
             // getting the message as a string
-            string message = System.Text.Encoding.UTF8.GetString(bytes);
+            _f_message = System.Text.Encoding.UTF8.GetString(bytes);
             //Debug.Log($"Server message: {message}");
-            ServerResponse response = JsonUtility.FromJson<ServerResponse>(message);
+            _message_response = JsonUtility.FromJson<ServerResponse>(_f_message);
+            _message_response.RequestType = Utilities.ConvertNameToRequestType[_message_response.Type];
             //Debug.Log(response);
-            string type = response.Type;
             
-            if (!HandledRequests.Contains(response.Hash))
+            if (!HandledRequests.Contains(_message_response.Hash))
             {
-                HandledRequests.Add(response.Hash);
-                switch (type)
+                HandledRequests.Add(_message_response.Hash);
+                switch (_message_response.RequestType)
                 {
-                    case "get-matchup-strategy":
+                    case ConfigData.RequestTypes.GetMatchupStrategy:
                         //Debug.Log("Handling matchup response!");
-                        HandleMatchupResponse(message);
+                        HandleMatchupResponse(_f_message);
                         return;
-                    case "get-strategy":
-                        HandleStrategicCommandResponse(message);
+                    case ConfigData.RequestTypes.GetStrategy:
+                        HandleStrategicCommandResponse(_f_message);
                         return;
-                    case "send-rl-data":
-                        HandleBasicResponse(response);
+                    case ConfigData.RequestTypes.SendRLData:
+                        HandleBasicResponse(_message_response);
                         return;
-                    case "store-commands":
-                        HandleBasicResponse(response);
+                    case ConfigData.RequestTypes.StoreCommands:
+                        HandleBasicResponse(_message_response);
                         return;
-                    case "setup-level":
-                        HandleSetupLevelResponse(response);
+                    case ConfigData.RequestTypes.SetupLevel:
+                        HandleSetupLevelResponse(_message_response);
                         return;
-                    case "reconnect-level":
-                        HandleReconnectLevelResponse(response);
+                    case ConfigData.RequestTypes.ReconnectLevel:
+                        HandleReconnectLevelResponse(_message_response);
                         return;
-                    case "store-user-data":
-                        HandleBasicResponse(response);
+                    case ConfigData.RequestTypes.StoreUserData:
+                        HandleBasicResponse(_message_response);
                         return;
-                    case "get-user-data":
-                        HandleUserDataResponse(message);
+                    case ConfigData.RequestTypes.GetUserData:
+                        HandleUserDataResponse(_f_message);
                         return;
-                    case "get-settings":
-                        HandleSettingsResponse(message);
+                    case ConfigData.RequestTypes.GetSettings:
+                        HandleSettingsResponse(_f_message);
                         return;
                     default:
-                        Debug.LogError($"No response type from {response}");
+                        Debug.LogError($"No response type from {_message_response}");
                         return;
                 }
             }
             else
             {
-                Debug.Log($"Got a response for #{response.Hash} Status: {response.Status} which has already been handled");
-                ServerRequest sr = GetStandingRequest(response.Hash);
+                Debug.Log($"Got a response for #{_message_response.Hash} Status: {_message_response.Status} which has already been handled");
+                ServerRequest sr = GetStandingRequest(_message_response.Hash);
                 if (sr != null)
                 {
                     StandingRequests.Remove(sr);
@@ -270,28 +273,28 @@ namespace Assets.Scripts.Server
             ConfigData.__PastServerRequests.Add(serverRequest);
             switch (serverRequest.Type)
             {
-                case "get-matchup-strategy":
+                case ConfigData.RequestTypes.GetMatchupStrategy:
                     Send(((MatchupStrategyRequest)serverRequest).Request);
                     return;
-                case "get-strategy":
+                case ConfigData.RequestTypes.GetStrategy:
                     Send(((CommandRequest)serverRequest).Request);
                     return;
-                case "store-commands":
+                case ConfigData.RequestTypes.StoreCommands:
                     Send(((StoreCommandsRequest)serverRequest).Request);
                     return;
-                case "setup-level":
+                case ConfigData.RequestTypes.SetupLevel:
                     Send(((SetupLevelRequest)serverRequest).Request);
                     return;
-                case "reconnect-level":
+                case ConfigData.RequestTypes.ReconnectLevel:
                     Send(((ReconnectLevelRequest)serverRequest).Request);
                     return;
-                case "store-user-data":
+                case ConfigData.RequestTypes.StoreUserData:
                     Send(((StoreUserDataRequest)serverRequest).Request);
                     return;
-                case "get-user-data":
+                case ConfigData.RequestTypes.GetUserData:
                     Send(((DataFileRequest)serverRequest).Request);
                     return;
-                case "get-settings":
+                case ConfigData.RequestTypes.GetSettings:
                     //Debug.Log("Sending settings request");
                     Send(((SettingsRequest)serverRequest).Request);
                     return;
@@ -312,13 +315,13 @@ namespace Assets.Scripts.Server
 
                 //request.TimeOnQueue = Time.unscaledTime - request.StartTime;
                 //Debug.Log($"Time on Queue for #{request.Hash} - {request.Type} is {request.TimeOnQueue}ms");
-                if (request.Type == "get-user-data")
+                if (request.Type == ConfigData.RequestTypes.GetUserData)
                 {
                     DataFileRequest dataFileRequest = (DataFileRequest)request;
                     dataFileRequest.DataFile.WaitForResponse();
                     continue;
                 }
-                else if (request.Type == "get-settings")
+                else if (request.Type == ConfigData.RequestTypes.GetSettings)
                 {
                     SettingsRequest settingsRequest = (SettingsRequest)request;
                     settingsRequest.Settings.WaitForResponse();

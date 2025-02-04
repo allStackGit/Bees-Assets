@@ -9,9 +9,9 @@ namespace Assets.Scripts.Server
 
         public StoreCommandsRequest(StoreCommands request, int maxTimeOnQueue) : base(maxTimeOnQueue)
         {
-            Type = "store-commands";
+            Type = ConfigData.RequestTypes.StoreCommands;
             Request = request;
-            request.Type = Type;
+            request.Type = Utilities.ConvertRequestTypeToName[Type];
             request.Hash = Hash;
         }
     }

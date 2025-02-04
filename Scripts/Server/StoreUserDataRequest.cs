@@ -9,9 +9,9 @@ namespace Assets.Scripts.Server
 
         public StoreUserDataRequest(StoreUserData request, int maxTimeOnQueue) : base(maxTimeOnQueue)
         {
-            Type = "store-user-data";
+            Type = ConfigData.RequestTypes.StoreUserData;
             Request = request;
-            request.Type = Type;
+            request.Type = Utilities.ConvertRequestTypeToName[Type];
             request.Hash = Hash;
         }
     }

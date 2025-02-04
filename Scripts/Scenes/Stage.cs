@@ -292,6 +292,8 @@ public class Stage : Scene
         Name = "Level";
         base.Start();
     }
+    int _spawn_i;
+    Level _spawn_level;
     /// <summary>
     /// Spawns the other levels on this stage
     /// </summary>
@@ -299,29 +301,32 @@ public class Stage : Scene
     {
         Debug.Log($"Spawning stage levels");
         transform.position = LevelLayouts[LevelCount][0];
-        for (int i = 0; i < LevelCount; i++)
+        for (_spawn_i = 0; _spawn_i < LevelCount; _spawn_i++)
         {
-            GameObject nextLevel = Instantiate(Prefabs.LevelPrefab.gameObject, transform.parent);
-            Level level = nextLevel.GetComponent<Level>();
-            if (i == 0)
+            _spawn_level = Instantiate(Prefabs.LevelPrefab.gameObject, transform.parent).GetComponent<Level>();
+            if (_spawn_i == 0)
             {
-                PrimaryLevel = level;
+                PrimaryLevel = _spawn_level;
             }
-            nextLevel.transform.parent = transform;
-            nextLevel.SetActive(true);
-            nextLevel.transform.position = LevelLayouts[LevelCount][i];
-            Levels.Add(level);
+            _spawn_level.transform.parent = transform;
+            _spawn_level.gameObject.SetActive(true);
+            _spawn_level.transform.position = LevelLayouts[LevelCount][_spawn_i];
+            Levels.Add(_spawn_level);
 
         }
     }
+    int _setup_i;
     private void SetupLevels()
     {
-        for (int i = 0; i < Levels.Count; i++)
+        for (_setup_i = 0; _setup_i < Levels.Count; _setup_i++)
         {
-            Levels[i].Setup(this, $"Level - #{i}");
+            Levels[_setup_i].Setup(this, $"Level - #{_setup_i}");
         }
     }
-    
+
+    float _finalize_end;
+    Vector2 _finalize_cameraWorldUnitsSize, _finalize_localizedPosition;
+    Transform _finalize_colliderContainer;
     protected override void FinalizeSceneWithUserData()
     {
         Debug.Log($"Finalize scene");
@@ -371,7 +376,7 @@ public class Stage : Scene
 
 
             // Setup Squad Action Box
-            if (ActivateAudio && Audio != null)
+            if (ActivateAudio)
             {
                 Audio.Setup(PlayMusic);
             }
@@ -389,7 +394,7 @@ public class Stage : Scene
         }
         else
         {
-            if (Audio != null)
+            if (ActivateAudio)
             {
                 Audio.gameObject.SetActive(false);
             }
@@ -399,11 +404,11 @@ public class Stage : Scene
         if (!IsTraining && !UnlockCamera)
         {
 
-            Vector2 cameraWorldUnitsSize = Utilities.ScreenPixelsToWorldUnits(new Vector2(MiniMapCamera.pixelWidth, MiniMapCamera.pixelHeight), Camera);
-            Transform colliderContainer = Camera.transform.GetChild(0);
-            colliderContainer.localScale = cameraWorldUnitsSize;
-            Vector2 localizedPosition = DefaultCameraPosition + PrimaryLevel.GetPosition();
-            Camera.transform.position = new Vector3(localizedPosition.x, localizedPosition.y, -10);
+            _finalize_cameraWorldUnitsSize = Utilities.ScreenPixelsToWorldUnits(new Vector2(MiniMapCamera.pixelWidth, MiniMapCamera.pixelHeight), Camera);
+            _finalize_colliderContainer = Camera.transform.GetChild(0);
+            _finalize_colliderContainer.localScale = _finalize_cameraWorldUnitsSize;
+            _finalize_localizedPosition = DefaultCameraPosition + PrimaryLevel.GetPosition();
+            Camera.transform.position = new Vector3(_finalize_localizedPosition.x, _finalize_localizedPosition.y, -10);
 
             InputManager.MaintainScrollBoundary();
         }
@@ -415,17 +420,18 @@ public class Stage : Scene
             Pool.FillAsteroidPool();
         }
 
-        float end = (Time.realtimeSinceStartup - StartTime) * 1000; // seconds to milliseconds
-        Debug.Log($"It took {Math.Round(end, 2)} ms to set up the stage and {Math.Round(Time.realtimeSinceStartup, 2)}s total time.");
+        _finalize_end = (Time.realtimeSinceStartup - StartTime) * 1000; // seconds to milliseconds
+        Debug.Log($"It took {Math.Round(_finalize_end, 2)} ms to set up the stage and {Math.Round(Time.realtimeSinceStartup, 2)}s total time.");
     }
+    Vector2 _camera_localizedPosition;
     /// <summary>
     /// Sets up the camera for the Primary Level once the primary level is ready for it
     /// </summary>
     public void SetupCamera()
     {
         Camera.orthographicSize = DefaultZoom;
-        Vector2 localizedPosition = DefaultCameraPosition + (Vector2)transform.position;
-        Camera.transform.position = new Vector3(localizedPosition.x, localizedPosition.y, -10);
+        _camera_localizedPosition = DefaultCameraPosition + (Vector2)transform.position;
+        Camera.transform.position = new Vector3(_camera_localizedPosition.x, _camera_localizedPosition.y, -10);
         InputManager.MaintainScrollBoundary();
         if ((OverrideUserSide == 1 || OverrideUserSide == 2) && OverrideUserSide != ConfigData.Configuration.UserSide)
         {

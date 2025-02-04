@@ -26,14 +26,12 @@ namespace Assets.Scripts.Levels
         // If brains are activated, get actions from the nueral network
         // If IsTrainingNueralNetwork, train the neural network. IsTrainingHiveMind, train the hive mind
         // Training Hivemind or Nueral Network then there is no player, levels are reset every time, and the camera position doesn't matter
-
         public bool HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateLoadingShipsMidLevel;
         public UI_Components.Map Map;
         public LevelConstructor LevelConstructor;
         public Pathfinder Pathfinder;
         public SimpleMultiAgentGroup AgentGroup;
         public SimpleMultiAgentGroup HumanAgentGroup;
-
         public float MinX, MinY, MaxX, MaxY;
         public Vector2[] StartingPositions = new Vector2[2];
 
@@ -54,7 +52,6 @@ namespace Assets.Scripts.Levels
         public int WinningSide;
         public float MapX, MapY, MaxDistance, HalfX, HalfY;
         public int MapWidth, MapHeight, HalfMapWidth, HalfMapHeight, MaximumClearance;
-
         public float Seconds, StartTime;
         public int TriggersActivated;
         public float TimePaused;
@@ -70,13 +67,14 @@ namespace Assets.Scripts.Levels
         public HashSet<int> HandledRequests = new HashSet<int>();
         public Stage Stage;
         public bool DidUserWin;
+        /// <summary>
+        /// The chosen obstacle map
+        /// </summary>
+        public ObstacleMap ObstacleMap;
 
 
         public List<string> __BeeHivemindShips, __HumanHivemindShips, __PastCommands, __PathfindingThreads, __CustomLevels;
 
-
-        public ObstacleMap ObstacleMap;
-        //private Dictionary<int, List<GameObject>> _obstacleLists;
 
         private void UpdateDebugVariables()
         {
@@ -98,8 +96,6 @@ namespace Assets.Scripts.Levels
             //File.WriteAllBytes(path, dest.EncodeToPNG());
             State.UpdateDebugVariables();
         }
-
-
         public void Setup(Stage stage, string name)
         {
             Stage = stage;
@@ -167,7 +163,6 @@ namespace Assets.Scripts.Levels
             }
             SetupLevel();
         }
-
         private void RandomizeOptions()
         {
             //Debug.Log($"Randomizing options...");
@@ -261,57 +256,60 @@ namespace Assets.Scripts.Levels
             }
 
         }
+        List<Ship> _clearance_Ships = new List<Ship>();
+        float _clearance_width, _clearance_height;
+        int _f_clearance;
         public void CalculateShipClearances()
         {
-            List<Ship> ships = State.GetShips();
-            while (ships.Count > 0)
+            _clearance_Ships = State.GetShips();
+            while (_clearance_Ships.Count > 0)
             {
-                ConfigData.ShipTypes shipType = ships[0].ShipType;
 
-                if (!Stage.ShipClearances.ContainsKey(shipType))
+                if (!Stage.ShipClearances.ContainsKey(_clearance_Ships[0].ShipType))
                 {
-                    float width = ships[0].GetHalfWidth();
-                    float height = ships[0].GetHalfHeight();
-                    int clearance = (width > height ? Mathf.CeilToInt(width) : Mathf.CeilToInt(height));
+                    _clearance_width = _clearance_Ships[0].GetHalfWidth();
+                    _clearance_height = _clearance_Ships[0].GetHalfHeight();
+                    _f_clearance = (_clearance_width > _clearance_height ? Mathf.CeilToInt(_clearance_width) : Mathf.CeilToInt(_clearance_height));
 
-                    while (clearance % Pathfinder.Scale > 0) // round the clearance up to the nearest multiple of Scale (e.g. round 13 to 16 if the Scale is 4)
+                    while (_f_clearance % Pathfinder.Scale > 0) // round the clearance up to the nearest multiple of Scale (e.g. round 13 to 16 if the Scale is 4)
                     {
-                        clearance++;
+                        _f_clearance++;
                     }
-                    clearance /= Pathfinder.Scale;
-                    clearance += 2; // 2 for padding
-                    clearance = Math.Max(clearance, ConfigData.MinimumClearance);
+                    _f_clearance /= Pathfinder.Scale;
+                    _f_clearance += 2; // 2 for padding
+                    _f_clearance = Math.Max(_f_clearance, ConfigData.MinimumClearance);
 
-                    Stage.ShipClearances.Add(shipType, clearance);
-                    ships.ForEach((s) =>
+                    Stage.ShipClearances.Add(_clearance_Ships[0].ShipType, _f_clearance);
+                    _clearance_Ships.ForEach((s) =>
                     {
-                        if (s.ShipType == shipType)
+                        if (s.ShipType == _clearance_Ships[0].ShipType)
                         {
-                            s.Clearance = clearance;
+                            s.Clearance = _f_clearance;
                         }
 
                     });
 
-                    if (clearance > MaximumClearance)
+                    if (_f_clearance > MaximumClearance)
                     {
-                        MaximumClearance = clearance;
+                        MaximumClearance = _f_clearance;
                     }
                 }
 
 
 
-                ships = ships.Where((s) => s.ShipType != shipType).ToList();
+                _clearance_Ships = _clearance_Ships.Where((s) => s.ShipType != _clearance_Ships[0].ShipType).ToList();
             }
         }
+        Vector2 _spawn_position;
         private void SpawnObstacles()
         {
             Stage.CurrentAsteroidMaxSpawnRate = Stage.AsteroidMaxSpawnRate;
             Stage.CurrentAsteroidMinimumSpawnRate = Stage.AsteroidMinimumSpawnRate;
             ObstacleMap.Obstacles.ForEach((obstacle) =>
             {
-                Vector2 position = obstacle.transform.position;
+                _spawn_position = obstacle.transform.position;
                 obstacle.transform.parent = Map.transform;
-                obstacle.transform.localPosition = position;
+                obstacle.transform.localPosition = _spawn_position;
                 //State.AddObstacle(obstacle.GetComponent<Obstacle>());
             });
 
@@ -326,16 +324,19 @@ namespace Assets.Scripts.Levels
                 Invoke(nameof(SpawnAsteroid), Stage.AsteroidMinimumSpawnRate + Utilities.RandomInt(Stage.CurrentAsteroidMaxSpawnRate - Stage.CurrentAsteroidMinimumSpawnRate));
             }
         }
+        MiningAsteroid _spawn_miningAsteroid;
+        Vector2 _spawn_distance;
         private void SpawnMiningAsteroids()
         {
+            _spawn_distance = new Vector2(HalfMapWidth - 64, HalfMapHeight - 64);
             for (int  i = 0; i < Utilities.RandomInt(5); i++)
             {
-                MiningAsteroid miningAsteroid = Stage.Pool.GetMiningAsteroidFromPool();
-                miningAsteroid.transform.parent = Map.transform;
-                miningAsteroid.transform.localPosition = Utilities.RandomCoordinate(this, Vector2.zero, new Vector2(HalfMapWidth-64, HalfMapHeight-64), Vector2.zero);
-                State.AddObstacle(miningAsteroid);
-                State.MiningAsteroids.Add(miningAsteroid);
-                miningAsteroid.Setup(this);
+                _spawn_miningAsteroid = Stage.Pool.GetMiningAsteroidFromPool();
+                _spawn_miningAsteroid.transform.parent = Map.transform;
+                _spawn_miningAsteroid.transform.localPosition = Utilities.RandomCoordinate(this, Vector2.zero, _spawn_distance, Vector2.zero);
+                State.AddObstacle(_spawn_miningAsteroid);
+                State.MiningAsteroids.Add(_spawn_miningAsteroid);
+                _spawn_miningAsteroid.Setup(this);
             }
         }
         private void SpawnAsteroid()
@@ -344,17 +345,19 @@ namespace Assets.Scripts.Levels
             AddAsteroid(Stage.Pool.GetCollisionAsteroidFromPool().gameObject);
             Invoke(nameof(SpawnAsteroid), Stage.AsteroidMinimumSpawnRate + Utilities.RandomInt(Stage.CurrentAsteroidMaxSpawnRate - Stage.CurrentAsteroidMinimumSpawnRate));
         }
-
+        CollisionAsteroid _f_asteroid;
         public CollisionAsteroid AddAsteroid(GameObject instance)
         {
             instance.transform.parent = Map.transform;
-            CollisionAsteroid asteroid = instance.GetComponent<CollisionAsteroid>();
-            State.AddObstacle(asteroid);
-            asteroid.Setup(this);
+            _f_asteroid = instance.GetComponent<CollisionAsteroid>();
+            State.AddObstacle(_f_asteroid);
+            _f_asteroid.Setup(this);
 
-            asteroid.MapPointsIndex = Pathfinder.AddObstacle(asteroid);
-            return asteroid;
+            _f_asteroid.MapPointsIndex = Pathfinder.AddObstacle(_f_asteroid);
+            return _f_asteroid;
         }
+        Vector2 _trigger_moveToPoint;
+        Vector2 _trigger_double = new Vector2(0, 2);
         private void SetTriggers()
         {
             Triggers.Clear();
@@ -365,8 +368,8 @@ namespace Assets.Scripts.Levels
             }, () =>
             {
                 Debug.Log($"{CurrentLevelOptions.EnemyReinforcementDelay} seconds have passed, spawning new enemy ships for side {ConfigData.Configuration.AISide}: {Utilities.ListToString(CurrentLevelOptions.EnemyReinforcements)}");
-                Vector2 moveToPoint = StartingPositions[ConfigData.Configuration.AISide - 1];
-                LevelConstructor.SpawnShipsAndSquads(CurrentLevelOptions.EnemyReinforcements, StartingPositions[ConfigData.Configuration.AISide - 1] * new Vector2(0, 2), moveToPoint);
+                _trigger_moveToPoint = StartingPositions[ConfigData.Configuration.AISide - 1];
+                LevelConstructor.SpawnShipsAndSquads(CurrentLevelOptions.EnemyReinforcements, StartingPositions[ConfigData.Configuration.AISide - 1] * _trigger_double, _trigger_moveToPoint);
 
             }));
 
@@ -415,28 +418,32 @@ namespace Assets.Scripts.Levels
                 }
 
             }
-
-            if ((State.IsPaused || ConfigData.SocketManager.NetworkDisconnection.IsOpen || !IsLevelConnectedToServer) && !Stage.IsTraining)
-            {
-                if (IsPausedByTester && Stage.InputManager.HasPauseInput() && Time.realtimeSinceStartup - TimePaused > 1)
-                {
-                    IsPausedByTester = false;
-                    TimePaused = Time.realtimeSinceStartup;
-                    UnPause();
-                }
-            }
             else
             {
-                if (HasObstacles)
+                if ((State.IsPaused || ConfigData.SocketManager.NetworkDisconnection.IsOpen || !IsLevelConnectedToServer) && !Stage.IsTraining)
                 {
-                    //Debug.Log($"Calling path finder update again");
-                    Pathfinder.Update();
+                    if (IsPausedByTester && Stage.InputManager.HasPauseInput() && Time.realtimeSinceStartup - TimePaused > 1)
+                    {
+                        IsPausedByTester = false;
+                        TimePaused = Time.realtimeSinceStartup;
+                        UnPause();
+                    }
                 }
+                else
+                {
+                    if (HasObstacles)
+                    {
+                        //Debug.Log($"Calling path finder update again");
+                        Pathfinder.Update();
+                    }
 
+                }
             }
 
-        }
 
+
+        }
+        float _levelOver_fps, _levelOver_fups;
         /// <summary>
         /// Ends the level and marks the winner
         /// </summary>
@@ -456,12 +463,12 @@ namespace Assets.Scripts.Levels
                     }
                 });
 
-                float fps = Time.frameCount / Time.unscaledTime;
-                float fups = Stage.FixedUpdates / Time.unscaledTime;
+                _levelOver_fps = Time.frameCount / Time.unscaledTime;
+                _levelOver_fups = Stage.FixedUpdates / Time.unscaledTime;
                 ConfigData.__TotalLength += Time.realtimeSinceStartup - Stage.StartTime;
                 ConfigData.__AverageLatency = ConfigData.__TotalLatency / ConfigData.__TotalRequests;
 
-                Debug.Log($"{$"fps: {fps}".PadRight(10).Substring(0, 10)}  {$"fups: {fups}".PadRight(10).Substring(0, 10)}     " +
+                Debug.Log($"{$"fps: {_levelOver_fps}".PadRight(10).Substring(0, 10)}  {$"fups: {_levelOver_fups}".PadRight(10).Substring(0, 10)}     " +
                       $"{$"latency: {(int)(ConfigData.__AverageLatency * 1000)}ms".PadRight(18)} {$"CPS: {ConfigData.__HivemindCommands / Time.unscaledTime}".PadRight(9).Substring(0, 9)}   " +
                       $"LTO: {ConfigData.__LevelTimeouts} AveLT: {(int)ConfigData.__AverageLength}s"
                 );
@@ -493,7 +500,7 @@ namespace Assets.Scripts.Levels
                     Debug.Log("Neither side is dead!");
                 }
 
-                if (Stage.Menus != null && !ConfigData.IsPlayingCampaign)
+                if (!Stage.IsTraining && !ConfigData.IsPlayingCampaign)
                 {
                     Stage.Menus.UpdateScore(ConfigData.GetUserProgressData().HumanFreePlayWins, ConfigData.GetUserProgressData().BeeFreePlayWins);
                 }
@@ -537,6 +544,11 @@ namespace Assets.Scripts.Levels
 
 
         }
+        Ship[] _reset_ships;
+        float _reset_remainingHumanTsv, _reset_remainingHumanTSVPercentage, _reset_remainingBeeTsv, _reset_remainingBeeTSVPercentage;
+        Vector2 _reset_swap;
+        readonly List<SpottedShip>[] _reset_spottedShips = new List<SpottedShip>[] { new List<SpottedShip>(), new List<SpottedShip>() };
+        int _reset_i;
         /// <summary>
         /// Used for Nueral Network training. Resets the level.
         /// </summary>
@@ -547,15 +559,15 @@ namespace Assets.Scripts.Levels
             Academy.Instance.StatsRecorder.Add("Episode Time", Seconds);
 
             //Debug.Log($"Reset level ({Seconds}), Unclamped Bee reward: {BeeCumaltiveReward}, Unclamped Human reward: {HumanCumulativeReward}");
-            Ship[] ships = State.GetShips().ToArray();
+            _reset_ships = State.GetShips().ToArray();
 
             State.GameOver = false;
             State.LevelEnded = false;
-            float remainingHumanTsv = ships.Where((s) => s.Side == ConfigData.Configuration.HumanSide).Sum((s) => s.Tsv);
-            float remainingHumanTSVPercentage = remainingHumanTsv / State.InitialTsv[ConfigData.Configuration.HumanSide - 1];
+            _reset_remainingHumanTsv = _reset_ships.Where((s) => s.Side == ConfigData.Configuration.HumanSide).Sum((s) => s.Tsv);
+            _reset_remainingHumanTSVPercentage = _reset_remainingHumanTsv / State.InitialTsv[ConfigData.Configuration.HumanSide - 1];
 
-            float remainingBeeTsv = ships.Where((s) => s.Side == ConfigData.Configuration.BeeSide).Sum((s) => s.Tsv);
-            float remainingBeeTSVPercentage = remainingBeeTsv / State.InitialTsv[ConfigData.Configuration.BeeSide - 1];
+            _reset_remainingBeeTsv = _reset_ships.Where((s) => s.Side == ConfigData.Configuration.BeeSide).Sum((s) => s.Tsv);
+            _reset_remainingBeeTSVPercentage = _reset_remainingBeeTsv / State.InitialTsv[ConfigData.Configuration.BeeSide - 1];
 
             //if (Utilities.RandomInt(10) > 7)
             //{
@@ -571,11 +583,11 @@ namespace Assets.Scripts.Levels
 
             Map.UserStartingPosition = new Vector2(UnityEngine.Random.Range(MinX, MaxX), UnityEngine.Random.Range(MinY, 0));
 
-            if (UnityEngine.Random.Range(0, 2) > 0)
+            if (Utilities.CoinToss())
             {
-                Vector2 swap = Map.UserStartingPosition;
+                _reset_swap = Map.UserStartingPosition;
                 Map.UserStartingPosition = Map.AIStartingPosition;
-                Map.AIStartingPosition = swap;
+                Map.AIStartingPosition = _reset_swap;
                
             }
 
@@ -591,8 +603,8 @@ namespace Assets.Scripts.Levels
                     //WinningSide = ConfigData.Configuration.BeeSide;
                     //Debug.Log($"Bees won! They had {remainingBeeTsv} / {state.InitialTsv[ConfigData.Configuration.BeeSide - 1]} remaining TSV or {remainingBeeTSVPercentage} x of the original.");
 
-                    AgentGroup.SetGroupReward(remainingBeeTSVPercentage);
-                    HumanAgentGroup.SetGroupReward(-remainingBeeTSVPercentage);
+                    AgentGroup.SetGroupReward(_reset_remainingBeeTSVPercentage);
+                    HumanAgentGroup.SetGroupReward(-_reset_remainingBeeTSVPercentage);
                     //BeeCumaltiveReward += 1f;
                     //HumanCumulativeReward = -1f;
                     //Debug.Log($"Bees won! Lost {LostBeeShips} bees, reward: {BeeCumaltiveReward}, {HumanCumulativeReward}");
@@ -602,8 +614,8 @@ namespace Assets.Scripts.Levels
                 {
                     //Debug.Log($"Humans won! They had {remainingHumanTsv} / {state.InitialTsv[ConfigData.Configuration.HumanSide - 1]} remaining TSV or {remainingHumanTSVPercentage} x of the original.");
 
-                    AgentGroup.SetGroupReward(-remainingHumanTSVPercentage);
-                    HumanAgentGroup.SetGroupReward(remainingHumanTSVPercentage);
+                    AgentGroup.SetGroupReward(-_reset_remainingHumanTSVPercentage);
+                    HumanAgentGroup.SetGroupReward(_reset_remainingHumanTSVPercentage);
                     //BeeCumaltiveReward = -1f;
                     //HumanCumulativeReward += 1f;
                     //Debug.Log($"Humans won! Lost {LostBeeShips} bees, reward: {BeeCumaltiveReward}, {HumanCumulativeReward}");
@@ -619,20 +631,19 @@ namespace Assets.Scripts.Levels
                 AgentGroup.EndGroupEpisode();
                 HumanAgentGroup.EndGroupEpisode();
             }
+            Array.Clear(_reset_spottedShips, 0, 2);
+            State.SpottedShips = _reset_spottedShips;
 
-            State.SpottedShips = new List<SpottedShip>[] { new List<SpottedShip>(), new List<SpottedShip>() };
 
-
-            for (int i = 0; i < ships.Length; i++)
+            for (_reset_i = 0; _reset_i < _reset_ships.Length; _reset_i++)
             {
-                Ship ship = ships[i];
-
-                ship.EndKill();
+                _reset_ships[_reset_i].EndKill();
             }
             SetupLevel();
             //Invoke(nameof(StartNew), .1f);
             //WinningSide = 0;
         }
+        List<LevelOptions> _setup_possibleLevels;
         /// <summary>
         /// Called by both ResetLevel(), FinalizeSceneWithUserData(), and SaveAndEnd(). Prepares the LevelStage for a new level
         /// </summary>
@@ -643,8 +654,8 @@ namespace Assets.Scripts.Levels
             StartTime = Time.realtimeSinceStartup;
             if (ConfigData.ChooseRandomLevel)
             {
-                List<LevelOptions> possibleLevels = ConfigData.GetLevelData().GetLevels().Where((level) => level.Side == ConfigData.Configuration.AISide).ToList();
-                CurrentLevelOptions = (LevelOptions)possibleLevels[Utilities.RandomInt(possibleLevels.Count)].Clone();
+                _setup_possibleLevels = ConfigData.GetLevelData().GetLevels().Where((level) => level.Side == ConfigData.Configuration.AISide).ToList();
+                CurrentLevelOptions = (LevelOptions)_setup_possibleLevels[Utilities.RandomInt(_setup_possibleLevels.Count)].Clone();
             }
             else if (ConfigData.LevelOptions == null)
             {
@@ -701,8 +712,10 @@ namespace Assets.Scripts.Levels
             SetupMapAndCamera();
 
             SetupShips();
-
-            MakeSaveLevel();
+            if (!Stage.IsTraining)
+            {
+                MakeSaveLevel();
+            }
 
             AllSquads.AddRange(CurrentLevelOptions.EnemySquads);
             AllSquads.AddRange(CurrentLevelOptions.ChosenSquads);
@@ -884,6 +897,11 @@ namespace Assets.Scripts.Levels
             IsRestarting = true;
             SaveAndEnd();
         }
+        int _save_i;
+        SavedSquad _save_savedSquad;
+        FleetShip _save_fleetship;
+        Ship[] _save_ships;
+        Obstacle[] _save_obstacles;
         /// <summary>
         /// Used for standard play and Hivemind Training. Stores commands, cleans the map, and records the stats.
         /// </summary>
@@ -897,12 +915,12 @@ namespace Assets.Scripts.Levels
             if (Stage.RecordStats && !Stage.IsTraining)
             {
 
-                for (int i = 0; i < AllSquads.Count; i++)
+                for (_save_i = 0; _save_i < AllSquads.Count; _save_i++)
                 {
-                    SavedSquad savedSquad = AllSquads[i];
-                    if (savedSquad.HasBeenSavedToStorage)
+                    _save_savedSquad = AllSquads[_save_i];
+                    if (_save_savedSquad.HasBeenSavedToStorage)
                     {
-                        savedSquad = ConfigData.CurrentShips.GetSavedSquad(savedSquad.Id);
+                        _save_savedSquad = ConfigData.CurrentShips.GetSavedSquad(_save_savedSquad.Id);
                     }
                     else
                     {
@@ -911,25 +929,25 @@ namespace Assets.Scripts.Levels
                     }
 
                     //Debug.Log($"Logging stats for sqauds battles fought for {savedSquad.Name}");
-                    savedSquad.Stats.BattlesFought++;
+                    _save_savedSquad.Stats.BattlesFought++;
 
-                    if (savedSquad.Side == WinningSide)
+                    if (_save_savedSquad.Side == WinningSide)
                     {
                         //ConfigData.Ships.GetSavedSquad(savedSquad.Id).Stats.BattlesWon++;
-                        savedSquad.Stats.BattlesWon++;
+                        _save_savedSquad.Stats.BattlesWon++;
                     }
 
-                    savedSquad.GetSquadShips().ForEach((ship) =>
+                    _save_savedSquad.GetSquadShips().ForEach((ship) =>
                     {
-                        FleetShip fleetShip = ship.GetFleetShip();
-                        fleetShip.BattlesFought++;
-                        if (fleetShip.Side == WinningSide)
+                        _save_fleetship = ship.GetFleetShip();
+                        _save_fleetship.BattlesFought++;
+                        if (_save_fleetship.Side == WinningSide)
                         {
-                            fleetShip.BattlesWon++;
+                            _save_fleetship.BattlesWon++;
                         }
                         //Debug.Log($"{fleetShip.Name} has mined {fleetShip.MineralsMined} minerals in its lifetime. It has mined {fleetShip.MineralsMinedThisLevel} minerals this level");
-                        fleetShip.MineralsMined += fleetShip.MineralsMinedThisLevel;
-                        fleetShip.MineralsMinedThisLevel = 0;
+                        _save_fleetship.MineralsMined += _save_fleetship.MineralsMinedThisLevel;
+                        _save_fleetship.MineralsMinedThisLevel = 0;
 
                     });
 
@@ -945,40 +963,37 @@ namespace Assets.Scripts.Levels
                 
             }
             //Debug.Log($"Resetting scene");
-            Ship[] ships = State.GetShips().ToArray(); // need to convert this to an array because killing a ship removes it from the list of ships in the state
+            _save_ships = State.GetShips().ToArray(); // need to convert this to an array because killing a ship removes it from the list of ships in the state
 
-            for (int i = 0; i < ships.Length; i++)
+            for (_save_i = 0; _save_i < _save_ships.Length; _save_i++)
             {
-                Ship ship = ships[i];
-
-                ship.EndKill();
+                _save_ships[_save_i].EndKill();
             }
             // Should probably remove this
-            GetComponents<Command>().ToList().ForEach((command) =>
+            if (IsRestarting)
             {
-                if (!IsRestarting)
+                GetComponents<Command>().ToList().ForEach((command) =>
                 {
-                    Debug.LogError($"A command had to be destroyed at the end of the level");
-                }
-                Destroy(command);
-            });
+                    Destroy(command);
+                });
+            }
+
             if (HasObstacles)
             {
                 Stage.Pool.ReturnObstacleMapToPool(ObstacleMap, CurrentLevelOptions.ObstacleMapIndex);
 
-                Obstacle[] obstacles = State.GetObstacles().ToArray();
-                for (int i = 0; i < obstacles.Length; i++)
+                _save_obstacles = State.GetObstacles().ToArray();
+                for (_save_i = 0; _save_i < _save_obstacles.Length; _save_i++)
                 {
-                    Obstacle obstacle = obstacles[i];
-                    if (obstacle != null)
+                    if (!_save_obstacles[_save_i].IsDead)
                     {
-                        if (obstacle.ObstacleType == ConfigData.ObstacleTypes.CollisionAsteroid)
+                        if (_save_obstacles[_save_i].ObstacleType == ConfigData.ObstacleTypes.CollisionAsteroid)
                         {
-                            ((CollisionAsteroid)obstacle).Kill(true);
+                            ((CollisionAsteroid)_save_obstacles[_save_i]).Kill(true);
                         }
-                        else if (obstacle.ObstacleType == ConfigData.ObstacleTypes.MiningAsteroid)
+                        else if (_save_obstacles[_save_i].ObstacleType == ConfigData.ObstacleTypes.MiningAsteroid)
                         {
-                            ((MiningAsteroid)obstacle).Kill();
+                            ((MiningAsteroid)_save_obstacles[_save_i]).Kill();
                         }
                     }
                 }
@@ -987,9 +1002,7 @@ namespace Assets.Scripts.Levels
 
             while (State.Deadbodies.Count > 0)
             {
-                ShipRemains deadbody = State.Deadbodies[0];
-                State.Deadbodies.Remove(deadbody);
-
+                State.Deadbodies.Remove(State.Deadbodies[0]);
             }
 
 
@@ -1017,48 +1030,50 @@ namespace Assets.Scripts.Levels
             }
 
         }
+        UserProgressData _saveCampaign_progress = ConfigData.GetUserProgressData();
+        int _saveCampaign_i;
+        SavedSquad _saveCampaign_savedSquad;
+        FleetShip _saveCampaign_fleetShip;
         private void SaveCampaignStats()
         {
-            UserProgressData progress = ConfigData.GetUserProgressData();
-
             if (WinningSide == ConfigData.Configuration.HumanSide)
             {
-                progress.HumanWins++;
+                _saveCampaign_progress.HumanWins++;
             }
             else
             {
-                progress.BeeWins++;
+                _saveCampaign_progress.BeeWins++;
             }
 
             if (WinningSide == ConfigData.Configuration.UserSide)
             {
-                progress.AdvanceToNextLevel();
+                _saveCampaign_progress.AdvanceToNextLevel();
             }
 
-            for (int i = 0; i < AllSquads.Count; i++)
+            for (_saveCampaign_i = 0; _saveCampaign_i < AllSquads.Count; _saveCampaign_i++)
             {
-                SavedSquad savedSquad = AllSquads[i];
-                savedSquad.GetSquadShips().ForEach((ship) =>
+                _saveCampaign_savedSquad = AllSquads[_saveCampaign_i];
+                _saveCampaign_savedSquad.GetSquadShips().ForEach((ship) =>
                 {
-                    FleetShip fleetShip = ship.GetFleetShip();
+                    _saveCampaign_fleetShip = ship.GetFleetShip();
                     //Debug.Log($"{fleetShip.Name} has mined {fleetShip.MineralsMined} minerals in its lifetime. It has mined {fleetShip.MineralsMinedThisLevel} minerals this level");
-                    if (fleetShip.Side == ConfigData.Configuration.UserSide)
+                    if (_saveCampaign_fleetShip.Side == ConfigData.Configuration.UserSide)
                     {
-                        progress.MinedTSV += fleetShip.MineralsMinedThisLevel;
+                        _saveCampaign_progress.MinedTSV += _saveCampaign_fleetShip.MineralsMinedThisLevel;
                     }
                     else
                     {
-                        progress.HivemindMinedTSV += fleetShip.MineralsMinedThisLevel;
+                        _saveCampaign_progress.HivemindMinedTSV += _saveCampaign_fleetShip.MineralsMinedThisLevel;
                     }
 
                 });
             }
 
-            progress.Save();
+            _saveCampaign_progress.Save();
 
-            if (Stage.Menus != null)
+            if (!Stage.IsTraining)
             {
-                Stage.Menus.UpdateScore(ConfigData.GetUserProgressData().HumanWins, ConfigData.GetUserProgressData().BeeWins);
+                Stage.Menus.UpdateScore(_saveCampaign_progress.HumanWins, _saveCampaign_progress.BeeWins);
             }
         }
         private void LevelEndedDialogue()
@@ -1081,7 +1096,7 @@ namespace Assets.Scripts.Levels
         public void Pause()
         {
             //Debug.Log("Paused!");
-            if (Stage.Audio != null)
+            if (Stage.ActivateAudio)
             {
                 Stage.Audio.Pause();
             }
@@ -1092,47 +1107,60 @@ namespace Assets.Scripts.Levels
         {
             //Debug.Log("UN Paused!");
             State.IsPaused = false;
-            if (Stage.Audio != null && Stage.PlayMusic)
+            if (Stage.ActivateAudio && Stage.PlayMusic)
             {
                 Stage.Audio.Play();
             }
             Time.timeScale = Stage.TimeScale;
         }
-        // The SplitterShot class adds it's own projectile [note] [projectile-method]
+        Projectile _f_projectile;
+        int _projectile_power;
+        /// <summary>
+        /// Adds projectiles to the game. Some projectiles don't use this
+        /// </summary>
+        /// <param name="type"></param>
+        /// <param name="weapon"></param>
+        /// <param name="startingPosition"></param>
+        /// <param name="angle"></param>
+        /// <returns></returns>
         public Projectile AddProjectile(ConfigData.ProjectileTypes type, Weapon weapon, Vector2 startingPosition, float angle)
         {
             //Debug.Log($"Adding projectile {instance.name} at startingPosition: {startingPosition}");
-            Projectile projectile = Stage.Pool.GetProjectileFromPool(type);
-            projectile.transform.parent = Map.transform;
-            Ship shooter = weapon.Ship;
-            Ship target = weapon.TargetShip;
-            int power = weapon.Power;
+            _f_projectile = Stage.Pool.GetProjectileFromPool(type);
+            _f_projectile.transform.parent = Map.transform;
+
+            _projectile_power = weapon.Power;
             if (weapon.Type == ConfigData.WeaponTypes.DualCannon)
             {
                 //Debug.Log("This is a dual cannon, splitting the power");
-                power /= 2;
+                _projectile_power /= 2;
             }
             //Debug.Log($"Position before setup for {projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
-            projectile.Setup(this, weapon, shooter, target, startingPosition, angle, weapon.Range, power);
-            shooter.ProjectilesInFlight.Add(projectile);
+            _f_projectile.Setup(this, weapon, weapon.Ship, weapon.TargetShip, startingPosition, angle, weapon.Range, _projectile_power);
+            weapon.Ship.ProjectilesInFlight.Add(_f_projectile);
             //Debug.Log($"Position after setup for #{projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
-            return projectile;
+            return _f_projectile;
         }
+        Queue<Squad> _hive_squads;
+        Squad _hive_squad;
+        /// <summary>
+        /// Runs though all the hive mind squads that need commands and makes matchup strategy requests for them
+        /// </summary>
         private void GetHiveMindCommands()
         {
             //Debug.Log("Giving command");
             if (!State.IsPaused && Stage.ActivateHiveMind && IsLevelSetupOnServer)
             {
-                Queue<Squad> squads = State.GetSquadsAwaitingHiveMindCommands();  
-                while (squads.Count > 0)
+                _hive_squads = State.GetSquadsAwaitingHiveMindCommands();  
+                while (_hive_squads.Count > 0)
                 {
-                    Squad squad = squads.Dequeue();
-                    if (squad != null && !squad.IsDead)
+                    _hive_squad = _hive_squads.Dequeue();
+                    if (!_hive_squad.IsDead)
                     {
                         //Debug.Log("Giving command");
                         //Debug.Log($"asking for matchup strat");
                         //Debug.Log(squad.damageSentToEnemyShipsBySquad);
-                        squad.MakeMatchupStrat();
+                        _hive_squad.MakeMatchupStrat();
                     }
                 }
             }

@@ -76,35 +76,50 @@ namespace Assets.Scripts.Levels
             LoadHotKeySettings();
         }
 
+        // ================================
+        // Fields for LoadHotKeySettings method
+        // ================================
+        private int _loadHotKey_number; // Used to hold the parsed squad number in the "Select Squad #" case
+
+        // ================================
+        // Fields for SelectSquadByNumber method
+        // ================================
+        private int _selectSquad_friendlySquads;
+        private Squad _selectSquad_squad;
+        private Vector2 _selectSquad_position;
+
+        // ================================
+        // Fields for Update method
+        // ================================
+        private int _update_i;
+
         public void LoadHotKeySettings()
         {
+            // _hotKeys is assumed to be a class-level variable already declared elsewhere.
             _hotKeys = ConfigData.GetUserSettingsData().HotKeys;
 
-            // make special input for firing and showing ranges together
-            //List<KeyCode> combinedKeys = ConfigData.GetUserSettingsData().FindKey("Show Ranges").Keys.ToList();
-            //combinedKeys.AddRange(ConfigData.GetUserSettingsData().FindKey("Manual Fire").Keys);
-            //_hotKeys.Add(new HotKey("Show Ranges and Manual Fire", combinedKeys, () =>
-            //{
-            //    Debug.Log("Double action");
-            //    ShowRanges();
-            //    ManualFire();
-            //}, () =>
-            //{
-            //    Debug.Log("Double release action");
-            //    ShowRanges();
-            //    ManualFire();
-            //}, false, true));
+            // The following commented code remains as-is (for special combined keys).
+            // List<KeyCode> combinedKeys = ConfigData.GetUserSettingsData().FindKey("Show Ranges").Keys.ToList();
+            // combinedKeys.AddRange(ConfigData.GetUserSettingsData().FindKey("Manual Fire").Keys);
+            // _hotKeys.Add(new HotKey("Show Ranges and Manual Fire", combinedKeys, () =>
+            // {
+            //     Debug.Log("Double action");
+            //     ShowRanges();
+            //     ManualFire();
+            // }, () =>
+            // {
+            //     Debug.Log("Double release action");
+            //     ShowRanges();
+            //     ManualFire();
+            // }, false, true));
 
-
-            _hotKeys.ForEach((hotKey =>
+            _hotKeys.ForEach((hotKey) =>
             {
                 switch (hotKey.Name)
                 {
                     case "Match Speed":
-                        //Debug.Log($"Found match speed: {hotKey}");
                         hotKey.SetAction(() =>
                         {
-                            //Debug.Log($"Match speed action!");
                             Stage.Menus.ActionBox.MatchSpeed();
                         });
                         break;
@@ -162,22 +177,20 @@ namespace Assets.Scripts.Levels
                             Stage.Menus.ActionBox.DropBeacon();
                         });
                         break;
-
                     case var _ when ConfigData.ShootingStrategyNames.Contains(hotKey.Name):
                         hotKey.SetAction(() =>
                         {
                             Stage.Menus.ActionBox.SetShootingStrategy(hotKey.Name);
                         });
                         break;
-
                     case var _ when hotKey.Name.StartsWith("Select Squad #"):
-                        int number = int.Parse(hotKey.Name.Substring(hotKey.Name.Length - 1));
+                        // Instead of declaring a local int here, we use a class-level field.
+                        _loadHotKey_number = int.Parse(hotKey.Name.Substring(hotKey.Name.Length - 1));
                         hotKey.SetAction(() =>
                         {
-                            SelectSquadByNumber(number);
+                            SelectSquadByNumber(_loadHotKey_number);
                         });
                         break;
-
                     case "Open Menu":
                         hotKey.SetAction(() =>
                         {
@@ -190,19 +203,15 @@ namespace Assets.Scripts.Levels
                         {
                             if (!IsShowingRanges)
                             {
-                                //Debug.Log("Show ranges");
                                 ShowRanges();
                             }
-
                         });
                         hotKey.SetReleaseAction(() =>
                         {
                             if (IsShowingRanges)
                             {
-                                //Debug.Log("Show ranges release");
                                 ShowRanges();
                             }
-
                         });
                         break;
                     case "Manual Fire":
@@ -210,16 +219,13 @@ namespace Assets.Scripts.Levels
                         {
                             if (!IsFiringManually)
                             {
-                                //Debug.Log("Manual fire");
                                 ManualFire();
                             }
-
                         });
                         hotKey.SetReleaseAction(() =>
                         {
                             if (IsFiringManually)
                             {
-                                //Debug.Log("Manual fire release");
                                 ManualFire();
                             }
                         });
@@ -227,7 +233,6 @@ namespace Assets.Scripts.Levels
                     case "Show Ranges + Manual Fire":
                         hotKey.SetAction(() =>
                         {
-                            //Debug.Log("Show Ranges + Manual Fire");
                             if (!IsShowingRanges)
                             {
                                 ShowRanges();
@@ -239,7 +244,6 @@ namespace Assets.Scripts.Levels
                         });
                         hotKey.SetReleaseAction(() =>
                         {
-                            //Debug.Log("Show Ranges + Manual Fire release");
                             ConfigData.GetUserSettingsData().FindKey("Show Ranges").ManuallySetInputRelease(true);
                             ConfigData.GetUserSettingsData().FindKey("Manual Fire").ManuallySetInputRelease(true);
                             if (IsShowingRanges && !ConfigData.GetUserSettingsData().FindKey("Show Ranges").HasInput())
@@ -282,15 +286,16 @@ namespace Assets.Scripts.Levels
                             ScrollLeft();
                         });
                         break;
-
                 }
-            }));
+            });
         }
+
         public void ShowRanges()
         {
             if (!IsShowingRanges)
             {
-                Level.State.GetSelectedSquads().ForEach(s => {
+                Level.State.GetSelectedSquads().ForEach(s =>
+                {
                     if (!s.IsShowingRanges)
                     {
                         s.ShowSquadRanges();
@@ -300,7 +305,8 @@ namespace Assets.Scripts.Levels
             }
             else
             {
-                Level.State.GetSelectedSquads().ForEach(s => {
+                Level.State.GetSelectedSquads().ForEach(s =>
+                {
                     if (s.IsShowingRanges)
                     {
                         s.HideSquadRanges();
@@ -309,11 +315,13 @@ namespace Assets.Scripts.Levels
                 IsShowingRanges = false;
             }
         }
+
         public void ManualFire()
         {
             if (!IsFiringManually)
             {
-                Level.State.GetSelectedSquads().ForEach(squad => {
+                Level.State.GetSelectedSquads().ForEach(squad =>
+                {
                     squad.GetShips().ForEach((ship) =>
                     {
                         ship.Turrets.ForEach((turret) =>
@@ -328,8 +336,6 @@ namespace Assets.Scripts.Levels
                     });
                 });
                 IsFiringManually = true;
-
-                //Cursor.SetCursor(Level.TargetingMouseTexture, Vector2.zero, CursorMode.Auto);
             }
             else
             {
@@ -341,6 +347,7 @@ namespace Assets.Scripts.Levels
                 Cursor.SetCursor(null, Vector2.zero, CursorMode.Auto);
             }
         }
+
         public void SelectSquadByNumber(int squadNumber)
         {
             if (squadNumber == 0)
@@ -348,38 +355,41 @@ namespace Assets.Scripts.Levels
                 squadNumber = 10;
             }
 
-            int friendlySquads = Level.State.OriginalSquadCounts[ConfigData.Configuration.UserSide - 1];
-            squadNumber %= friendlySquads;
+            // Instead of a locally declared variable, use class-level fields.
+            _selectSquad_friendlySquads = Level.State.OriginalSquadCounts[ConfigData.Configuration.UserSide - 1];
+            squadNumber %= _selectSquad_friendlySquads;
             if (squadNumber == 0)
             {
-                squadNumber = friendlySquads;
+                squadNumber = _selectSquad_friendlySquads;
             }
 
-            Squad squad = Level.State.GetSquadByNumber(ConfigData.Configuration.UserSide, squadNumber);
-            if (squad != null)
+            _selectSquad_squad = Level.State.GetSquadByNumber(ConfigData.Configuration.UserSide, squadNumber);
+            if (_selectSquad_squad != null)
             {
-                Vector2 position = squad.GetPosition();
-                Stage.Camera.transform.position = new Vector3(position.x, position.y, -10) + Level.Get3DPosition();
+                _selectSquad_position = _selectSquad_squad.GetPosition();
+                Stage.Camera.transform.position = new Vector3(_selectSquad_position.x, _selectSquad_position.y, -10) + Level.Get3DPosition();
                 //ToggleZoom();
                 MaintainScrollBoundary();
             }
-            //Debug.Log("Pressed " + squadNumber);
-            Level.State.SelectSquad(squad);
+            Level.State.SelectSquad(_selectSquad_squad);
         }
+
         public void Update()
         {
             CheckInputs();
             CheckActions();
             ResetInputs();
-            for (int i = 0; i < Timers.Count; i++)
+            // Declare the loop variable as a class-level field (_update_i) instead of a local variable.
+            for (_update_i = 0; _update_i < Timers.Count; _update_i++)
             {
-                if (Timers[i].Update())
+                if (Timers[_update_i].Update())
                 {
-                    Timers.RemoveAt(i);
+                    Timers.RemoveAt(_update_i);
                 }
             }
-            //Debug.Log($"width: {Screen.width}, height: {Screen.height}, mousePosition: {_mousePosition}");
+            // Debug.Log($"width: {Screen.width}, height: {Screen.height}, mousePosition: {_mousePosition}");
         }
+
         private void ResetInputs()
         {
             _rightMouseButtonUp = false;
@@ -395,23 +405,38 @@ namespace Assets.Scripts.Levels
             _clickedShip = null;
             _clickedMiningAsteroid = null;
         }
-        private void CheckInputs() {
+        // ===========================================================
+        // Fields used in CheckInputs()
+        // ===========================================================
+        private Vector2 _checkInputs_mouse; // formerly: Vector2 mouse
 
+        // ===========================================================
+        // Fields used in HasMiningCommandInput()
+        // ===========================================================
+        private RaycastHit2D[] _hasMiningCommandInput_hits;
+        private int _hasMiningCommandInput_i;
+        private RaycastHit2D _hasMiningCommandInput_hit;
+
+        // ===========================================================
+        // Fields used in CheckActions()
+        // ===========================================================
+        private float _checkActions_mouseScrollSpeed; // formerly: float mouseScrollSpeed
+
+        // -----------------------------------------------------------
+        // (Other class-level fields already declared elsewhere, e.g.:
+        // _mousePosition, _previousMousePosition, _leftMouseButtonDown, etc.)
+        // -----------------------------------------------------------
+
+        private void CheckInputs()
+        {
+            // Save previous mouse position
             _previousMousePosition = _mousePosition;
-            Vector2 mouse = Input.mousePosition;
-            _mousePosition = Stage.Camera.ScreenToWorldPoint(mouse);
 
-            // A test to see which keys are being pressed
-            //if (Input.anyKeyDown)
-            //{
-            //    foreach (KeyCode key in Enum.GetValues(typeof(KeyCode)))
-            //    {
-            //        if (Input.GetKeyDown(key))
-            //        {
-            //            Debug.Log("Key pressed: " + key);
-            //        }
-            //    }
-            //}
+            // Get the current mouse position from the input
+            _checkInputs_mouse = Input.mousePosition;
+            _mousePosition = Stage.Camera.ScreenToWorldPoint(_checkInputs_mouse);
+
+            // --- (Commented out debug code for testing key presses) ---
 
             if (Input.GetKey(KeyCode.LeftShift))
             {
@@ -424,12 +449,11 @@ namespace Assets.Scripts.Levels
 
             if (Input.GetMouseButtonDown(LeftClick)) // left mouse button down
             {
-                //Debug.Log("Pressed Left mouse button");
                 if (EventSystem.IsPointerOverGameObject())
                 {
                     CheckForMiniMapNavigation(LeftClick);
                     return;
-                };
+                }
                 _leftMouseButtonDown = true;
                 _leftMouseButtonUp = false;
                 _mouseDownPosition = new Vector2(_mousePosition.x, _mousePosition.y);
@@ -446,7 +470,6 @@ namespace Assets.Scripts.Levels
                 {
                     return;
                 }
-
                 _leftMouseButtonUp = true;
                 _leftMouseButtonDown = false;
             }
@@ -469,7 +492,6 @@ namespace Assets.Scripts.Levels
                 _rightMouseButtonDown = false;
                 _isRightMouseDownPrior = false;
                 _isRightMouseDragging = false;
-                //Debug.Log("Drag move mouse down prior is being set to false because right mouse button went up");
             }
 
             if (Input.GetAxis("Mouse ScrollWheel") > 0)
@@ -481,18 +503,20 @@ namespace Assets.Scripts.Levels
                 _scrollNegative = true;
             }
 
-            if (mouse.x < Utilities.WorldUnitsToScreenPixels(Stage.MouseScrollDistanceFromEdge, Stage.Camera).x)   
+            if (_checkInputs_mouse.x < Utilities.WorldUnitsToScreenPixels(Stage.MouseScrollDistanceFromEdge, Stage.Camera).x)
             {
                 _mouseAtLeftEdge = true;
-            }else if (mouse.x >= ConfigData.ScreenWidth - Utilities.WorldUnitsToScreenPixels(Stage.MouseScrollDistanceFromEdge, Stage.Camera).x)
+            }
+            else if (_checkInputs_mouse.x >= ConfigData.ScreenWidth - Utilities.WorldUnitsToScreenPixels(Stage.MouseScrollDistanceFromEdge, Stage.Camera).x)
             {
                 _mouseAtRightEdge = true;
             }
 
-            if (mouse.y < Utilities.WorldUnitsToScreenPixels(Stage.MouseScrollDistanceFromEdge, Stage.Camera).y)
+            if (_checkInputs_mouse.y < Utilities.WorldUnitsToScreenPixels(Stage.MouseScrollDistanceFromEdge, Stage.Camera).y)
             {
                 _mouseAtBottomEdge = true;
-            }else if (mouse.y >= ConfigData.ScreenHeight - Utilities.WorldUnitsToScreenPixels(Stage.MouseScrollDistanceFromEdge, Stage.Camera).y)
+            }
+            else if (_checkInputs_mouse.y >= ConfigData.ScreenHeight - Utilities.WorldUnitsToScreenPixels(Stage.MouseScrollDistanceFromEdge, Stage.Camera).y)
             {
                 _mouseAtTopEdge = true;
             }
@@ -502,10 +526,8 @@ namespace Assets.Scripts.Levels
                 if (EventSystem.IsPointerOverGameObject()) return;
                 if (Mathf.Abs(Input.GetAxis("Mouse X")) > .5f || Mathf.Abs(Input.GetAxis("Mouse Y")) > .5f)
                 {
-                    //Debug.Log($"Mouse Axis: {Input.GetAxis("Mouse X")}, {Input.GetAxis("Mouse Y")}");
-                    _isLeftMouseDragging = true; 
+                    _isLeftMouseDragging = true;
                 }
-
             }
 
             if (Time.realtimeSinceStartup - _leftMouseClickedTime > .25f)
@@ -513,11 +535,11 @@ namespace Assets.Scripts.Levels
                 _leftMouseClicked = false;
                 _leftMouseDoubleClicked = false;
             }
-            
-
         }
+
         private void ToggleZoom()
         {
+            // No locally declared variables.
             if (Stage.Camera.orthographicSize == Level.Map.MaxZoom)
             {
                 Stage.Camera.orthographicSize = Stage.DefaultZoom;
@@ -527,18 +549,24 @@ namespace Assets.Scripts.Levels
                 Stage.Camera.orthographicSize = Level.Map.MaxZoom;
             }
         }
+
         private void SetRightMouseDownLongEnoughForDragging()
         {
+            // No locally declared variables.
             if (_isRightMouseDownPrior)
             {
                 _isRightMouseDragging = true;
             }
         }
+
         private bool HasDragMoveSquadsInput()
         {
-            if (!_isDragMovementBlockedByTimer && !EventSystem.IsPointerOverGameObject() && _isRightMouseDragging && Vector2.Distance(_previousDragMousePosition, _mousePosition) > 5)
+            // No new local variables are declared here.
+            if (!_isDragMovementBlockedByTimer &&
+                !EventSystem.IsPointerOverGameObject() &&
+                _isRightMouseDragging &&
+                Vector2.Distance(_previousDragMousePosition, _mousePosition) > 5)
             {
-                //Debug.Log($"Drag moving");
                 _isDragMovementBlockedByTimer = true;
                 _previousDragMousePosition = _mousePosition;
                 Timers.Add(new Timer(.25f, UnblockDragMovement));
@@ -546,24 +574,32 @@ namespace Assets.Scripts.Levels
             }
             return false;
         }
+
         private void UnblockDragMovement()
         {
+            // No locally declared variables.
             _isDragMovementBlockedByTimer = false;
         }
+
         private bool HasMoveSquadsInput()
         {
+            // No locally declared variables.
             if (EventSystem.IsPointerOverGameObject())
             {
                 return false;
             }
             return Input.GetMouseButtonUp(RightClick);
         }
+
         private bool HasSelectingGuardShipInput()
         {
+            // No locally declared variables.
             return _selectingGuardTarget && Input.GetMouseButtonUp(RightClick) && _clickedShip != null && _clickedShip.IsUserControlled;
         }
+
         private bool HasAttackingShipInput()
         {
+            // No locally declared variables.
             if (Input.GetMouseButtonUp(RightClick))
             {
                 if (_clickedShip != null)
@@ -580,36 +616,41 @@ namespace Assets.Scripts.Levels
             }
             return false;
         }
+
         private bool HasMiningCommandInput()
         {
             if (_rightMouseButtonUp)
             {
-                //Debug.Log($"right up: {_rightMouseButtonUp}");
-                RaycastHit2D[] hits = Physics2D.RaycastAll(Stage.Camera.ScreenToWorldPoint(Input.mousePosition), Vector2.zero);
-                for (int i = 0; i < hits.Length; i++)
+                // Perform a raycast from the current mouse position.
+                _hasMiningCommandInput_hits = Physics2D.RaycastAll(Stage.Camera.ScreenToWorldPoint(Input.mousePosition), Vector2.zero);
+                for (_hasMiningCommandInput_i = 0; _hasMiningCommandInput_i < _hasMiningCommandInput_hits.Length; _hasMiningCommandInput_i++)
                 {
-                    RaycastHit2D hit = hits[i];
-                    if (hit.collider != null && hit.collider.CompareTag("Mining Asteroid"))
+                    _hasMiningCommandInput_hit = _hasMiningCommandInput_hits[_hasMiningCommandInput_i];
+                    if (_hasMiningCommandInput_hit.collider != null && _hasMiningCommandInput_hit.collider.CompareTag("Mining Asteroid"))
                     {
-                        //Debug.Log($"hit: {hit.collider.gameObject.name}");
-                        _clickedMiningAsteroid = hit.collider.gameObject.GetComponent<MiningAsteroid>();
+                        _clickedMiningAsteroid = _hasMiningCommandInput_hit.collider.gameObject.GetComponent<MiningAsteroid>();
                         return true;
                     }
                 }
             }
             return false;
         }
+
         private bool HasFullRetreatCommandInput()
         {
-            //Debug.Log($"right up: {Input.GetMouseButtonUp(RightClick)}, _clickedShip: {_clickedShip?.Name}");
+            // No locally declared variables.
             return Input.GetMouseButtonUp(RightClick) && _clickedShip != null && _clickedShip.IsWarpGate;
         }
+
         private bool HasEitherControlKey()
         {
+            // No locally declared variables.
             return Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
         }
+
         public bool HasPauseInput()
         {
+            // No locally declared variables.
             return Input.GetKey(KeyCode.P);
         }
 
@@ -620,17 +661,14 @@ namespace Assets.Scripts.Levels
         /// </summary>
         private void CheckActions()
         {
-            //List<KeyCode> keysPressed = Utilities.GetAllKeys();
-            //Debug.Log($"Keys pressed: {Utilities.ListToString(keysPressed)}");
+            // No local variables declared except for the following float:
+            _checkActions_mouseScrollSpeed = Stage.ScrollSpeed * 5 * Time.deltaTime;
+
             foreach (HotKey hotKey in _hotKeys)
             {
-                //if (hotKey.Name == "Match Speed")
-                //{
-                //    Debug.Log($"Checking Match Speed: {hotKey}");
-                //}
                 if (hotKey.CheckInput())
                 {
-                    //Debug.Log($"Input registered from {hotKey}");
+                    // Input registered from hotKey.
                 }
             }
             if (HasPauseInput())
@@ -644,20 +682,17 @@ namespace Assets.Scripts.Levels
                     return;
                 }
             }
-            
+
             if (!Level.State.IsPaused)
             {
-                //Debug.Log($"EVS: {EventSystem.IsPointerOverGameObject()}");
                 CheckClickCollision();
-                //Debug.Log($"Frame: {Level.Updates}, clicked ship: {_clickedShip}");
+
                 if (HasDragMoveSquadsInput())
                 {
-                    //Debug.Log("Has drag input");
                     MoveSquads(Stage.Camera.ScreenToWorldPoint(Input.mousePosition));
                 }
                 else if (HasSelectingGuardShipInput())
                 {
-                    //Debug.Log("Has input for selecting guard ship");
                     SetSelectingGuard(_clickedShip);
                 }
                 else if (HasAttackingShipInput())
@@ -670,20 +705,16 @@ namespace Assets.Scripts.Levels
                 }
                 else if (HasMiningCommandInput())
                 {
-                    //Debug.Log($"Setting squads to mine");
                     SetSquadsToMine(_clickedMiningAsteroid);
                 }
                 else if (HasMoveSquadsInput())
                 {
-                    //Debug.Log("Has move input");
                     MoveSquads(Stage.Camera.ScreenToWorldPoint(Input.mousePosition));
                 }
                 else if (_leftMouseButtonUp)
                 {
-                    //Debug.Log($"Left mouse button up: clicked ship? {_clickedShip}");
                     if (_isLeftMouseDragging && !_selectingPatrolArea)
                     {
-                        //Debug.Log("_leftMouseDragging");
                         Selector.SelectShipsInBox();
                     }
                     else if (!LeftClickAction())
@@ -691,13 +722,10 @@ namespace Assets.Scripts.Levels
                         Selector.SelectShipsInBox();
                     }
                     _isLeftMouseDragging = false;
-                    //Debug.Log("Deactivated box");
                     Selector.Deactivate();
-
                 }
                 if (_isLeftMouseDragging)
                 {
-
                     Selector.DrawSelectionBox(_mouseDownPosition, _mousePosition);
                 }
 
@@ -709,7 +737,6 @@ namespace Assets.Scripts.Levels
                     }
                     else if (_leftControl)
                     {
-
                         ScrollUp();
                     }
                     else
@@ -733,80 +760,132 @@ namespace Assets.Scripts.Levels
                     }
                 }
 
-                float mouseScrollSpeed = Stage.ScrollSpeed * 5 * Time.deltaTime;
-
                 if (Stage.UseMouseScrolling)
                 {
                     if (_mouseAtLeftEdge)
                     {
-                        ScrollLeft(mouseScrollSpeed);
-
+                        ScrollLeft(_checkActions_mouseScrollSpeed);
                     }
                     else if (_mouseAtRightEdge)
                     {
-                        ScrollRight(mouseScrollSpeed);
+                        ScrollRight(_checkActions_mouseScrollSpeed);
                     }
 
                     if (_mouseAtTopEdge)
                     {
-                        ScrollUp(mouseScrollSpeed);
-
+                        ScrollUp(_checkActions_mouseScrollSpeed);
                     }
                     else if (_mouseAtBottomEdge)
                     {
-                        ScrollDown(mouseScrollSpeed);
+                        ScrollDown(_checkActions_mouseScrollSpeed);
                     }
                 }
-                
             }
-
         }
-        
+
         public Vector2 GetMousePosition()
         {
+            // No locally declared variables.
             return _mousePosition;
         }
+
         public void SetPatrolAreaActive()
         {
+            // No locally declared variables.
             _selectingPatrolArea = true;
         }
+
         public void SetSelectGuardTargetActive()
         {
-            //Debug.Log("Selecting guard target is active");
+            // No locally declared variables.
             _selectingGuardTarget = true;
         }
 
-
         private void SetSelectingGuard(Ship ship)
         {
-            //Debug.Log($"Selecting {ship.name} for guarding");
+            // No locally declared variables.
             Level.State.GetSelectedSquads().ForEach((squad) =>
             {
-                squad.UserGuard(ship.Squad); // make all selected ships guard this squad
+                squad.UserGuard(ship.Squad); // Make all selected ships guard this squad.
             });
             _selectingGuardTarget = false;
         }
+        // ===========================================================
+        // Fields for CheckForSelectingSquad()
+        // ===========================================================
+        private List<Ship> _checkForSelectingSquad_ships;
+        private Squad _checkForSelectingSquad_potentialSquad;
+        private Vector2 _checkForSelectingSquad_levelPosition;
+        private int _checkForSelectingSquad_i;
+        private Ship _checkForSelectingSquad_currentShip;
+
+        // ===========================================================
+        // Fields for CheckForAttackAISquad()
+        // ===========================================================
+        private List<Ship> _checkForAttackAISquad_ships;
+        private Squad _checkForAttackAISquad_potentialSquad;
+        private Vector2 _checkForAttackAISquad_levelPosition;
+        private int _checkForAttackAISquad_i;
+        private Ship _checkForAttackAISquad_currentShip;
+
+        // ===========================================================
+        // Fields for MoveSquads()
+        // ===========================================================
+        private Vector2 _moveSquads_localized;
+        private List<Squad> _moveSquads_selectedSquads;
+        private int _moveSquads_i;
+
+        // ===========================================================
+        // Fields for CheckForSelectingPatrolArea()
+        // ===========================================================
+        private Vector2 _checkForSelectingPatrolArea_startingPosition;
+        private Vector2 _checkForSelectingPatrolArea_endingPosition;
+
+        // ===========================================================
+        // Fields for CheckClickCollision()
+        // ===========================================================
+        private RaycastHit2D[] _checkClickCollision_hits;
+        private int _checkClickCollision_i;
+        private RaycastHit2D _checkClickCollision_hit;
+        private Ship _checkClickCollision_ship;
+
+        // ===========================================================
+        // Fields for CheckForMiniMapNavigation()
+        // ===========================================================
+        private PointerEventData _checkForMiniMapNavigation_eventData;
+        private List<RaycastResult> _checkForMiniMapNavigation_results;
+        private int _checkForMiniMapNavigation_j;
+        private RaycastResult _checkForMiniMapNavigation_hit;
+        private Vector2 _checkForMiniMapNavigation_miniMapPoint;
+        private Vector2 _checkForMiniMapNavigation_viewPortPoint;
+        private Vector2 _checkForMiniMapNavigation_viewPortWorldPoint;
+        private Vector2 _checkForMiniMapNavigation_localized;
+        private Vector2 _checkForMiniMapNavigation_half = new Vector2(.5f, .5f);
+
+        // ===========================================================
+        // Method: CheckForSelectingSquad()
+        // ===========================================================
         private bool CheckForSelectingSquad()
         {
-            //Debug.Log("Didn't click on a ship, looking for nearby ships");
-            List<Ship> ships = Level.State.GetShips(ConfigData.Configuration.UserSide);
-            Squad potentialSquad = null;
-            Vector2 levelPosition = _mousePosition - Level.GetPosition();
+            _checkForSelectingSquad_ships = Level.State.GetShips(ConfigData.Configuration.UserSide);
+            _checkForSelectingSquad_potentialSquad = null;
+            _checkForSelectingSquad_levelPosition = _mousePosition - Level.GetPosition();
 
-            foreach (Ship ship in ships)
+            for (_checkForSelectingSquad_i = 0; _checkForSelectingSquad_i < _checkForSelectingSquad_ships.Count; _checkForSelectingSquad_i++)
             {
-                if (ship.DistanceToPoint(levelPosition) <= 5)
+                _checkForSelectingSquad_currentShip = _checkForSelectingSquad_ships[_checkForSelectingSquad_i];
+                if (_checkForSelectingSquad_currentShip.DistanceToPoint(_checkForSelectingSquad_levelPosition) <= 5)
                 {
-                    potentialSquad = ship.Squad;
-                    _clickedShip = ship;
+                    _checkForSelectingSquad_potentialSquad = _checkForSelectingSquad_currentShip.Squad;
+                    _clickedShip = _checkForSelectingSquad_currentShip;
                 }
             }
 
-            if (potentialSquad != null)
+            if (_checkForSelectingSquad_potentialSquad != null)
             {
                 if (HasEitherControlKey())
                 {
-                    Level.State.AddSelectedSquad(potentialSquad);
+                    Level.State.AddSelectedSquad(_checkForSelectingSquad_potentialSquad);
                 }
                 else if (_leftMouseDoubleClicked)
                 {
@@ -814,64 +893,71 @@ namespace Assets.Scripts.Levels
                 }
                 else
                 {
-                    Level.State.SelectSquad(potentialSquad);
+                    Level.State.SelectSquad(_checkForSelectingSquad_potentialSquad);
                 }
-                //Debug.Log($"Mouse was close enough to ${potentialSquad.Name}");
                 return true;
             }
             return false;
         }
+
+        // ===========================================================
+        // Method: CheckForAttackAISquad()
+        // ===========================================================
         private bool CheckForAttackAISquad()
         {
-            List<Ship> ships = Level.State.GetShips(ConfigData.Configuration.AISide);
-            Squad potentialSquad = null;
-            Vector2 levelPosition = _mousePosition - Level.GetPosition();
+            _checkForAttackAISquad_ships = Level.State.GetShips(ConfigData.Configuration.AISide);
+            _checkForAttackAISquad_potentialSquad = null;
+            _checkForAttackAISquad_levelPosition = _mousePosition - Level.GetPosition();
 
-            foreach (Ship ship in ships)
+            for (_checkForAttackAISquad_i = 0; _checkForAttackAISquad_i < _checkForAttackAISquad_ships.Count; _checkForAttackAISquad_i++)
             {
-                if (ship.DistanceToPoint(levelPosition) <= 10)
+                _checkForAttackAISquad_currentShip = _checkForAttackAISquad_ships[_checkForAttackAISquad_i];
+                if (_checkForAttackAISquad_currentShip.DistanceToPoint(_checkForAttackAISquad_levelPosition) <= 10)
                 {
-                    //Debug.Log($"Targeting a potential AI squad! {ship.Squad.Name}");
-                    potentialSquad = ship.Squad;
-                    _clickedShip = ship;
-
+                    _checkForAttackAISquad_potentialSquad = _checkForAttackAISquad_currentShip.Squad;
+                    _clickedShip = _checkForAttackAISquad_currentShip;
                 }
             }
-            if (potentialSquad != null)
+            if (_checkForAttackAISquad_potentialSquad != null)
             {
-                potentialSquad.GetShips().First().Clicked(RightClick);
-                //Debug.Log($"Mouse was close enough to ${potentialSquad.Name}");
+                _checkForAttackAISquad_potentialSquad.GetShips().First().Clicked(RightClick);
                 return true;
             }
             return false;
         }
+
+        // ===========================================================
+        // Method: MoveSquads()
+        // ===========================================================
         private void MoveSquads(Vector2 targetPosition)
         {
-            Level.State.GetSelectedSquads().ForEach((squad) =>
+            _moveSquads_selectedSquads = Level.State.GetSelectedSquads();
+            for (_moveSquads_i = 0; _moveSquads_i < _moveSquads_selectedSquads.Count; _moveSquads_i++)
             {
-                Vector2 localized = targetPosition - Level.GetPosition();
-                //Debug.Log($"Squad: {squad.Name} World point target position: {targetPosition}, localized: {localized}");
-
-                //float x = Mathf.Clamp(targetPosition.x, Level.MinX, Level.MaxX);
-                //float y = Mathf.Clamp(targetPosition.y, Level.MinY, Level.MaxY);
-
-                //targetPosition = new Vector2(x, y);
-
-                // if the user is controlling this squad and setting it to target an enemy, end that.
-                squad.FinalizeUserCommand();
-                squad.Move(localized);
-                
-            });
+                _moveSquads_localized = targetPosition - Level.GetPosition();
+                _moveSquads_selectedSquads[_moveSquads_i].FinalizeUserCommand();
+                _moveSquads_selectedSquads[_moveSquads_i].Move(_moveSquads_localized);
+            }
         }
+
+        // ===========================================================
+        // Method: SetSquadsToMine()
+        // ===========================================================
         private void SetSquadsToMine(MiningAsteroid asteroid)
         {
+            // No local variables need extraction here.
             Level.State.GetSelectedSquads().ForEach((squad) =>
             {
                 squad.UserMining(asteroid);
             });
         }
+
+        // ===========================================================
+        // Method: SetSquadsToFullRetreat()
+        // ===========================================================
         private void SetSquadsToFullRetreat(WarpGate warpGate)
         {
+            // No local variables need extraction here.
             Level.State.GetSelectedSquads().ForEach((squad) =>
             {
                 if (squad.GetShips().Any((s) => s.ShipType != ConfigData.ShipTypes.WarpGate))
@@ -880,93 +966,90 @@ namespace Assets.Scripts.Levels
                 }
             });
         }
+
+        // ===========================================================
+        // Method: CheckForSelectingPatrolArea()
+        // ===========================================================
         private bool CheckForSelectingPatrolArea()
         {
-            //Debug.Log($"Checking to select for patrol area: {_selectingPatrolArea}");
             if (_selectingPatrolArea)
             {
                 Level.State.GetSelectedSquads().ForEach((squad) =>
                 {
-                    Vector2 startingPosition = _mouseDownPosition - Level.GetPosition();
-                    Vector2 endingPosition = _mousePosition - Level.GetPosition();
-                    squad.UserPatrol(startingPosition, endingPosition);
+                    _checkForSelectingPatrolArea_startingPosition = _mouseDownPosition - Level.GetPosition();
+                    _checkForSelectingPatrolArea_endingPosition = _mousePosition - Level.GetPosition();
+                    squad.UserPatrol(_checkForSelectingPatrolArea_startingPosition, _checkForSelectingPatrolArea_endingPosition);
                 });
                 _selectingPatrolArea = false;
                 return true;
             }
             return false;
         }
+
+        // ===========================================================
+        // Method: CheckClickCollision()
+        // ===========================================================
         private void CheckClickCollision()
         {
             if (_leftMouseButtonUp || _rightMouseButtonUp)
             {
-                RaycastHit2D[] hits = Physics2D.RaycastAll(Stage.Camera.ScreenToWorldPoint(Input.mousePosition), Vector2.zero);
-                for (int i = 0; i < hits.Length; i++)
+                _checkClickCollision_hits = Physics2D.RaycastAll(Stage.Camera.ScreenToWorldPoint(Input.mousePosition), Vector2.zero);
+                for (_checkClickCollision_i = 0; _checkClickCollision_i < _checkClickCollision_hits.Length; _checkClickCollision_i++)
                 {
-                    RaycastHit2D hit = hits[i];
-                    if (hit.collider != null && hit.collider.CompareTag("Ship"))
+                    _checkClickCollision_hit = _checkClickCollision_hits[_checkClickCollision_i];
+                    if (_checkClickCollision_hit.collider != null && _checkClickCollision_hit.collider.CompareTag("Ship"))
                     {
-                        //Debug.Log($"hit: {hit.collider.gameObject.name}");
-                        Ship ship = hit.collider.gameObject.GetComponent<Ship>();
-                        _clickedShip = ship;
-                    }
-                    else
-                    {
-                        //Debug.Log($"Did not hit any ship {hit}");
+                        _checkClickCollision_ship = _checkClickCollision_hit.collider.gameObject.GetComponent<Ship>();
+                        _clickedShip = _checkClickCollision_ship;
                     }
                 }
             }
         }
+
+        // ===========================================================
+        // Method: CheckForMiniMapNavigation()
+        // ===========================================================
         private void CheckForMiniMapNavigation(int mouseButton)
         {
             if (!Stage.Menus.HoveringOverMiniMapButton)
             {
-                PointerEventData eventData = new PointerEventData(EventSystem.current);
-                eventData.position = new Vector2(Input.mousePosition.x, Input.mousePosition.y);
-                //Debug.Log($"Raycasting from {eventData.position}");
+                _checkForMiniMapNavigation_eventData = new PointerEventData(EventSystem.current);
+                _checkForMiniMapNavigation_eventData.position = new Vector2(Input.mousePosition.x, Input.mousePosition.y);
 
+                _checkForMiniMapNavigation_results = new List<RaycastResult>();
+                EventSystem.RaycastAll(_checkForMiniMapNavigation_eventData, _checkForMiniMapNavigation_results);
 
-                List<RaycastResult> results = new List<RaycastResult>();
-                EventSystem.current.RaycastAll(eventData, results);
-
-                foreach (RaycastResult hit in results)
+                for (_checkForMiniMapNavigation_j = 0; _checkForMiniMapNavigation_j < _checkForMiniMapNavigation_results.Count; _checkForMiniMapNavigation_j++)
                 {
-                    //Debug.Log($"This raycast hit {hit.gameObject.name}");
-                    if (hit.gameObject.name == "Camera Collider")
+                    _checkForMiniMapNavigation_hit = _checkForMiniMapNavigation_results[_checkForMiniMapNavigation_j];
+                    if (_checkForMiniMapNavigation_hit.gameObject.name == "Camera Collider")
                     {
-                        Vector2 miniMapPoint = hit.gameObject.transform.InverseTransformPoint(hit.screenPosition);
-                        Vector2 viewPortPoint = miniMapPoint + new Vector2(.5f, .5f);
-                        Vector2 viewPortWorldPoint = Stage.MiniMapCamera.ViewportToWorldPoint(viewPortPoint);
-                        Vector2 localized = viewPortWorldPoint - Level.GetPosition();
-
-                        //Debug.Log($"Hit: Screen position: {hit.screenPosition}, Mini Map position: {miniMapPoint}, View port position: {viewPortPoint}, Viewport World Point: {viewPortWorldPoint}," +
-                        //    $"Localized: {localized} ");
+                        _checkForMiniMapNavigation_miniMapPoint = _checkForMiniMapNavigation_hit.gameObject.transform.InverseTransformPoint(_checkForMiniMapNavigation_hit.screenPosition);
+                        _checkForMiniMapNavigation_viewPortPoint = _checkForMiniMapNavigation_miniMapPoint + _checkForMiniMapNavigation_half;
+                        _checkForMiniMapNavigation_viewPortWorldPoint = Stage.MiniMapCamera.ViewportToWorldPoint(_checkForMiniMapNavigation_viewPortPoint);
+                        _checkForMiniMapNavigation_localized = _checkForMiniMapNavigation_viewPortWorldPoint - Level.GetPosition();
 
                         if (mouseButton == RightClick)
                         {
-                            MoveSquads(viewPortWorldPoint);
+                            MoveSquads(_checkForMiniMapNavigation_viewPortWorldPoint);
                         }
                         else
                         {
-                            Stage.Camera.transform.localPosition = new Vector3(localized.x, localized.y, -10);
+                            Stage.Camera.transform.localPosition = new Vector3(_checkForMiniMapNavigation_localized.x, _checkForMiniMapNavigation_localized.y, -10);
                             MaintainScrollBoundary();
                         }
-
                     }
-
                 }
             }
-            
         }
 
-
-
+        // ===========================================================
+        // Method: LeftClickAction()
+        // ===========================================================
         private bool LeftClickAction()
         {
-
             if (_clickedShip != null)
             {
-                //Debug.Log($"_clickedShip is not null, running click action");
                 if (_leftMouseDoubleClicked)
                 {
                     Level.State.SelectSquadsByShipType(_clickedShip.ShipType);
@@ -979,134 +1062,200 @@ namespace Assets.Scripts.Levels
             }
             else
             {
-                //Debug.Log("_clicked ship is null");
                 if (!CheckForSelectingSquad())
                 {
-                    if (!CheckForSelectingPatrolArea()) {
+                    if (!CheckForSelectingPatrolArea())
+                    {
                         return false;
                     }
                 }
                 return true;
-
             }
         }
-        
+
 
 
 
         // scrolling methods
+        // ===========================================================
+        // Fields for ScrollRight()
+        // ===========================================================
+        private Vector3 _scrollRight_position;
+
+        // ===========================================================
+        // Fields for ScrollLeft()
+        // ===========================================================
+        private Vector3 _scrollLeft_position;
+
+        // ===========================================================
+        // Fields for ScrollUp()
+        // ===========================================================
+        private Vector3 _scrollUp_position;
+
+        // ===========================================================
+        // Fields for ScrollDown()
+        // ===========================================================
+        private Vector3 _scrollDown_position;
+
+        // ===========================================================
+        // Fields for ZoomIn()
+        // ===========================================================
+        private float _zoomIn_difference;
+
+        // ===========================================================
+        // Fields for ZoomOut()
+        // ===========================================================
+        private float _zoomOut_difference;
+
+        // ===========================================================
+        // Fields for MaintainHorizontalScrollBoundary()
+        // ===========================================================
+        private Vector3 _maintainHorizontal_position;
+        private float _maintainHorizontal_camVertExtent;
+        private float _maintainHorizontal_camHorzExtent;
+        private Bounds _maintainHorizontal_mapBounds;
+        private float _maintainHorizontal_leftBound;
+        private float _maintainHorizontal_rightBound;
+        private float _maintainHorizontal_camX;
+
+        // ===========================================================
+        // Fields for MaintainVerticalScrollBoundary()
+        // ===========================================================
+        private Vector3 _maintainVertical_position;
+        private float _maintainVertical_camVertExtent;
+        private Bounds _maintainVertical_mapBounds;
+        private float _maintainVertical_bottomBound;
+        private float _maintainVertical_topBound;
+        private float _maintainVertical_camY;
+
+        // -----------------------------------------------------------
+        // ScrollRight(): Moves the camera to the right.
+        // -----------------------------------------------------------
         private void ScrollRight(float scrollSpeed = 0)
         {
             if (scrollSpeed == 0)
             {
                 scrollSpeed = Stage.ScrollSpeed;
             }
-            Vector3 position = Stage.Camera.transform.position;
-            Stage.Camera.transform.position = new Vector3(position.x + scrollSpeed, position.y, -10);
+            _scrollRight_position = Stage.Camera.transform.position;
+            Stage.Camera.transform.position = new Vector3(_scrollRight_position.x + scrollSpeed, _scrollRight_position.y, -10);
             MaintainScrollBoundary();
-
         }
+
+        // -----------------------------------------------------------
+        // ScrollLeft(): Moves the camera to the left.
+        // -----------------------------------------------------------
         private void ScrollLeft(float scrollSpeed = 0)
         {
             if (scrollSpeed == 0)
             {
                 scrollSpeed = Stage.ScrollSpeed;
             }
-            Vector3 position = Stage.Camera.transform.position;
-            Stage.Camera.transform.position = new Vector3(position.x - scrollSpeed, position.y, -10);
+            _scrollLeft_position = Stage.Camera.transform.position;
+            Stage.Camera.transform.position = new Vector3(_scrollLeft_position.x - scrollSpeed, _scrollLeft_position.y, -10);
             MaintainScrollBoundary();
-
         }
+
+        // -----------------------------------------------------------
+        // ScrollUp(): Moves the camera upward.
+        // -----------------------------------------------------------
         private void ScrollUp(float scrollSpeed = 0)
         {
             if (scrollSpeed == 0)
             {
                 scrollSpeed = Stage.ScrollSpeed;
             }
-            Vector3 position = Stage.Camera.transform.position;
-            Stage.Camera.transform.position = new Vector3(position.x, position.y + scrollSpeed, -10);
+            _scrollUp_position = Stage.Camera.transform.position;
+            Stage.Camera.transform.position = new Vector3(_scrollUp_position.x, _scrollUp_position.y + scrollSpeed, -10);
             MaintainScrollBoundary();
-
         }
+
+        // -----------------------------------------------------------
+        // ScrollDown(): Moves the camera downward.
+        // -----------------------------------------------------------
         private void ScrollDown(float scrollSpeed = 0)
         {
             if (scrollSpeed == 0)
             {
                 scrollSpeed = Stage.ScrollSpeed;
             }
-            Vector3 position = Stage.Camera.transform.position;
-            Stage.Camera.transform.position = new Vector3(position.x, position.y - scrollSpeed, -10);
+            _scrollDown_position = Stage.Camera.transform.position;
+            Stage.Camera.transform.position = new Vector3(_scrollDown_position.x, _scrollDown_position.y - scrollSpeed, -10);
             MaintainScrollBoundary();
-
         }
+
+        // -----------------------------------------------------------
+        // ZoomIn(): Zooms the camera in (decreases orthographic size).
+        // -----------------------------------------------------------
         private void ZoomIn()
         {
-            float difference = -1 * Stage.ZoomSpeed;
-            if ((Stage.Camera.orthographicSize + difference) < Level.Map.MinZoom)
+            _zoomIn_difference = -1 * Stage.ZoomSpeed;
+            if ((Stage.Camera.orthographicSize + _zoomIn_difference) < Level.Map.MinZoom)
             {
-                difference = Stage.Camera.orthographicSize - Level.Map.MinZoom;
+                _zoomIn_difference = Stage.Camera.orthographicSize - Level.Map.MinZoom;
             }
-            Stage.Camera.orthographicSize += difference; // orthographic size decreases, zooming in
-
+            Stage.Camera.orthographicSize += _zoomIn_difference;
             MaintainScrollBoundary();
         }
+
+        // -----------------------------------------------------------
+        // ZoomOut(): Zooms the camera out (increases orthographic size).
+        // -----------------------------------------------------------
         private void ZoomOut()
         {
-            float difference = Stage.ZoomSpeed;
-            if ((Stage.Camera.orthographicSize + difference) > Level.Map.MaxZoom)
+            _zoomOut_difference = Stage.ZoomSpeed;
+            if ((Stage.Camera.orthographicSize + _zoomOut_difference) > Level.Map.MaxZoom)
             {
-                difference = Stage.Camera.orthographicSize - Level.Map.MaxZoom;
+                _zoomOut_difference = Stage.Camera.orthographicSize - Level.Map.MaxZoom;
             }
-            Stage.Camera.orthographicSize += difference; // orthographic size increases, zooming out
-
+            Stage.Camera.orthographicSize += _zoomOut_difference;
             MaintainScrollBoundary();
         }
+
+        // -----------------------------------------------------------
+        // MaintainScrollBoundary(): Ensures the camera remains within map bounds.
+        // -----------------------------------------------------------
         public void MaintainScrollBoundary()
         {
-            //Level.MiniMapCamera.transform.position = new Vector3(0, 0, -10);
+            // No local variables declared here.
             if (Level.HasPlayer && !Stage.UnlockCamera)
             {
                 MaintainHorizontalScrollBoundary(Stage.Camera);
-                //MaintainHorizontalScrollBoundary(Level.MiniMapCamera);
                 MaintainVerticalScrollBoundary(Stage.Camera);
-                //MaintainVerticalScrollBoundary(Level.MiniMapCamera);
             }
-
         }
+
+        // -----------------------------------------------------------
+        // MaintainHorizontalScrollBoundary(): Clamps the camera's horizontal position.
+        // -----------------------------------------------------------
         private void MaintainHorizontalScrollBoundary(Camera camera)
         {
-            // make sure the horizontal scroll isn't out of bounds
-            Vector3 position = camera.transform.position;
+            _maintainHorizontal_position = camera.transform.position;
+            _maintainHorizontal_camVertExtent = camera.orthographicSize;
+            _maintainHorizontal_camHorzExtent = camera.aspect * _maintainHorizontal_camVertExtent;
+            _maintainHorizontal_mapBounds = Level.Map.SpriteRenderer.bounds;
 
-            float camVertExtent = camera.orthographicSize;
-            float camHorzExtent = camera.aspect * camVertExtent;
-            Bounds mapBounds = Level.Map.SpriteRenderer.bounds;
+            _maintainHorizontal_leftBound = _maintainHorizontal_mapBounds.min.x + _maintainHorizontal_camHorzExtent;
+            _maintainHorizontal_rightBound = _maintainHorizontal_mapBounds.max.x - _maintainHorizontal_camHorzExtent;
 
-            float leftBound = mapBounds.min.x + camHorzExtent;
-            float rightBound = mapBounds.max.x - camHorzExtent;
-
-            float camX = Mathf.Clamp(position.x, leftBound, rightBound);
-
-            camera.transform.position = new Vector3(camX, position.y, position.z);
+            _maintainHorizontal_camX = Mathf.Clamp(_maintainHorizontal_position.x, _maintainHorizontal_leftBound, _maintainHorizontal_rightBound);
+            camera.transform.position = new Vector3(_maintainHorizontal_camX, _maintainHorizontal_position.y, _maintainHorizontal_position.z);
         }
+
+        // -----------------------------------------------------------
+        // MaintainVerticalScrollBoundary(): Clamps the camera's vertical position.
+        // -----------------------------------------------------------
         private void MaintainVerticalScrollBoundary(Camera camera)
         {
-            // make sure the vertical scroll isn't out of bounds
-            Vector3 position = camera.transform.position;
+            _maintainVertical_position = camera.transform.position;
+            _maintainVertical_camVertExtent = camera.orthographicSize;
+            _maintainVertical_mapBounds = Level.Map.SpriteRenderer.bounds;
 
-            float camVertExtent = camera.orthographicSize;
-            Bounds mapBounds = Level.Map.SpriteRenderer.bounds;
+            _maintainVertical_bottomBound = _maintainVertical_mapBounds.min.y + _maintainVertical_camVertExtent;
+            _maintainVertical_topBound = _maintainVertical_mapBounds.max.y - _maintainVertical_camVertExtent;
 
-           
-            float bottomBound = mapBounds.min.y + camVertExtent;
-            float topBound = mapBounds.max.y - camVertExtent;
-
-            float camY = Mathf.Clamp(position.y, bottomBound, topBound); 
-
-            //Debug.Log($"mapBoundSize: {mapBounds.size}, mapBoundMax: {mapBounds.max}, camPosition: {position}, camVertExtent: {camVertExtent}, bottomBound: {bottomBound}, topBound: {topBound}, camY: {camY}");
-
-            camera.transform.position = new Vector3(position.x, camY, position.z);
-
+            _maintainVertical_camY = Mathf.Clamp(_maintainVertical_position.y, _maintainVertical_bottomBound, _maintainVertical_topBound);
+            camera.transform.position = new Vector3(_maintainVertical_position.x, _maintainVertical_camY, _maintainVertical_position.z);
         }
     }
 }

@@ -14,10 +14,10 @@ namespace Assets.Scripts.Server
 
         public SetupLevelRequest(SetupLevel request, int maxTimeOnQueue, Level level) : base(maxTimeOnQueue)
         {
-            Type = "setup-level";
+            Type = ConfigData.RequestTypes.SetupLevel;
             Request = request;
             Level = level;
-            request.Type = Type;
+            request.Type = Utilities.ConvertRequestTypeToName[Type];
             request.Hash = Hash;
         }
     }

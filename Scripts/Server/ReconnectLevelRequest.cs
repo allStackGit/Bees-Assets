@@ -8,9 +8,9 @@ namespace Assets.Scripts.Server
 
         public ReconnectLevelRequest(SetupLevel request, int maxTimeOnQueue, Level level) : base(request, maxTimeOnQueue, level)
         {
-            Type = "reconnect-level";
+            Type = ConfigData.RequestTypes.ReconnectLevel;
             Request = request;
-            request.Type = Type;
+            request.Type = Utilities.ConvertRequestTypeToName[Type];
             request.Hash = Hash;
         }
     }

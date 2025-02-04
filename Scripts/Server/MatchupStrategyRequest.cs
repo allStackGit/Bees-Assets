@@ -17,12 +17,12 @@ namespace Assets.Scripts.Server
 
         public MatchupStrategyRequest(GetMatchupStrategy request, Squad squad, Level level, int maxTimeOnQueue) : base(maxTimeOnQueue)
         {
-            Type = "get-matchup-strategy";
+            Type = ConfigData.RequestTypes.GetMatchupStrategy;
             Request = request;
             Squad = squad;
             Level = level;
             Squad.Status = $"Requesting matchup strategy";
-            request.Type = Type;
+            request.Type = Utilities.ConvertRequestTypeToName[Type];
             request.Hash = Hash;
         }
     }

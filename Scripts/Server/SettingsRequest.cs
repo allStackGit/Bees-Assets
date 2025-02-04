@@ -14,10 +14,10 @@ namespace Assets.Scripts.Server
 
         public SettingsRequest(GetUserSettingsData request, ServerSettings settings, int maxTimeOnQueue) : base(maxTimeOnQueue)
         {
-            Type = "get-settings";
+            Type = ConfigData.RequestTypes.GetSettings;
             Request = request;
             Settings = settings;
-            request.Type = Type;
+            request.Type = Utilities.ConvertRequestTypeToName[Type];
             request.Hash = Hash;
         }
 
