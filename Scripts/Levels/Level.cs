@@ -469,8 +469,8 @@ namespace Assets.Scripts.Levels
                 ConfigData.__AverageLatency = ConfigData.__TotalLatency / ConfigData.__TotalRequests;
 
                 Debug.Log($"{$"fps: {_levelOver_fps}".PadRight(10).Substring(0, 10)}  {$"fups: {_levelOver_fups}".PadRight(10).Substring(0, 10)}     " +
-                      $"{$"latency: {(int)(ConfigData.__AverageLatency * 1000)}ms".PadRight(18)} {$"CPS: {ConfigData.__HivemindCommands / Time.unscaledTime}".PadRight(9).Substring(0, 9)}   " +
-                      $"LTO: {ConfigData.__LevelTimeouts} AveLT: {(int)ConfigData.__AverageLength}s"
+                      $"{$"latency: {(int)(ConfigData.__AverageLatency * 1000)}ms".PadRight(18)} {$"CPS: {Stage.__HivemindCommands / Time.unscaledTime}".PadRight(9).Substring(0, 9)}   " +
+                      $"LTO: {Stage.__LevelTimeouts} AveLT: {(int)ConfigData.__AverageLength}s"
                 );
 
                 if (State.IsSideKilled(ConfigData.Configuration.BeeSide) && !State.IsSideKilled(ConfigData.Configuration.HumanSide))
@@ -893,7 +893,7 @@ namespace Assets.Scripts.Levels
         private void TimeOut()
         {
             Debug.Log("Level timed out!");
-            ConfigData.__LevelTimeouts++;
+            Stage.__LevelTimeouts++;
             IsRestarting = true;
             SaveAndEnd();
         }
@@ -985,16 +985,13 @@ namespace Assets.Scripts.Levels
                 _save_obstacles = State.GetObstacles().ToArray();
                 for (_save_i = 0; _save_i < _save_obstacles.Length; _save_i++)
                 {
-                    if (!_save_obstacles[_save_i].IsDead)
+                    if (_save_obstacles[_save_i].ObstacleType == ConfigData.ObstacleTypes.CollisionAsteroid)
                     {
-                        if (_save_obstacles[_save_i].ObstacleType == ConfigData.ObstacleTypes.CollisionAsteroid)
-                        {
-                            ((CollisionAsteroid)_save_obstacles[_save_i]).Kill(true);
-                        }
-                        else if (_save_obstacles[_save_i].ObstacleType == ConfigData.ObstacleTypes.MiningAsteroid)
-                        {
-                            ((MiningAsteroid)_save_obstacles[_save_i]).Kill();
-                        }
+                        ((CollisionAsteroid)_save_obstacles[_save_i]).Kill(true);
+                    }
+                    else if (_save_obstacles[_save_i].ObstacleType == ConfigData.ObstacleTypes.MiningAsteroid)
+                    {
+                        ((MiningAsteroid)_save_obstacles[_save_i]).Kill(true);
                     }
                 }
             }

@@ -149,7 +149,7 @@ namespace Assets.Scripts.Entities.Projectiles
             asteroid.Health -= Power;
             if (asteroid.Health <= 0)
             {
-                asteroid.Kill();
+                asteroid.Kill(false);
             }
 
         }

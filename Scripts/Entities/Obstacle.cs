@@ -44,18 +44,6 @@ namespace Assets.Scripts.Entities
             MapPointsIndex = 0;
             IsDead = false;
         }
-        public virtual void Kill()
-        {
-            //Debug.Log($"Killing {Name}");
-            if (!IsDead)
-            {
-                IsDead = true;
-                Debug.Log($"Level: {Level}, State: {Level?.State}");
-                Level.State.RemoveObstacle(this);
-                //Destroy(gameObject);
-            }
-
-        }
 
         public Vector2 GetPosition()
         {

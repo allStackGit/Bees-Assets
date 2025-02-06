@@ -12,6 +12,29 @@ namespace Assets.Scripts.Levels.Commands
     {
         public HashSet<Ship> ChargingShips = new HashSet<Ship>();
         public bool IsCharging;
+
+        //////////////////////////////////////////////////////////////////////////////
+        // Class-level variables for Execute() method:
+        //////////////////////////////////////////////////////////////////////////////
+
+        // Method parameters for Execute()
+        private ConfigData.ShootingStrategyTypes _execute_shootingStrategy;
+        private long _execute_commandOutcomeId;
+        private long _execute_shootingStrategyOutcomeId;
+        private bool _execute_noEnemy;
+
+        // List of ships retrieved from the squad.
+        private List<Ship> _execute_ships;
+
+        // Loop counter for iterating over _execute_ships.
+        private int _execute_loopIndex;
+
+        // Current ship being processed in the loop.
+        private Ship _execute_currentShip;
+
+        // When the current ship is a Barge.
+        private Barge _execute_barge;
+
         /// <summary>
         ///  Sends the squad towards the enemy and follows them, when the ship is close enough, it pauses to build up "steam" and then charges forward, ramming the ship(s) in front
         ///  and damaging them. The ship takes damage from the charge even if it doesn't hit another ship. Currently only works for squads of barges
@@ -22,28 +45,36 @@ namespace Assets.Scripts.Levels.Commands
         /// <param name="noEnemy"></param>
         public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
         {
-            base.Execute(ConfigData.CommandTypes.Charge, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
+            // Store method parameters in class-level variables.
+            _execute_shootingStrategy = shootingStrategy;
+            _execute_commandOutcomeId = commandOutcomeId;
+            _execute_shootingStrategyOutcomeId = shootingStrategyOutcomeId;
+            _execute_noEnemy = noEnemy;
+
+            base.Execute(ConfigData.CommandTypes.Charge, _execute_shootingStrategy, _execute_commandOutcomeId, _execute_shootingStrategyOutcomeId, _execute_noEnemy);
             //Debug.Log("Executing bombing run");
 
             IsAttacking = true;
-
 
             // loop through all the ships in the bombing squad
             Squad.Status = $"Starting charging run against {EnemySquad.Name}";
             PrepareDamageToSendEntries();
 
-            List<Ship> ships = Squad.GetShips();
-            foreach (Ship ship in ships)
+            _execute_ships = Squad.GetShips();
+
+            // Use a for loop with a class-level loop counter.
+            for (_execute_loopIndex = 0; _execute_loopIndex < _execute_ships.Count; _execute_loopIndex++)
             {
+                _execute_currentShip = _execute_ships[_execute_loopIndex];
 
                 // loop through all the ships in the target squad
-                if (ship.ShipType == ConfigData.ShipTypes.Barge)
+                if (_execute_currentShip.ShipType == ConfigData.ShipTypes.Barge)
                 {
-                    Barge barge = (Barge) ship;
-                    barge.HasCompletedRun = false;
-                    barge.ShipsHit.Clear();
+                    _execute_barge = (Barge)_execute_currentShip;
+                    _execute_barge.HasCompletedRun = false;
+                    _execute_barge.ShipsHit.Clear();
                 }
-                GetTargetShip(ship);
+                GetTargetShip(_execute_currentShip);
             }
 
             InvokeRepeating(nameof(Timer), 0, CommandFrequency);
@@ -51,7 +82,6 @@ namespace Assets.Scripts.Levels.Commands
             {
                 Invoke(nameof(Timeout), ConfigData.StandardMaxCommandTime);
             }
-
         }
         public override void ClearData()
         {
@@ -59,20 +89,29 @@ namespace Assets.Scripts.Levels.Commands
             ChargingShips.Clear();
             IsCharging = false;
         }
+        //////////////////////////////////////////////////////////////////////////////
+        // Class-level variables for GetTargetShip() method:
+        //////////////////////////////////////////////////////////////////////////////
+
+        // The Bomb instance retrieved from the charging ship's weapons.
+        private Bomb _getTargetShip_bomb;
+
+        // The list of ships sorted for targeting.
+        private List<Ship> _getTargetShip_targetingList;
+
         private void GetTargetShip(Ship chargingShip)
         {
-            Bomb bomb = (Bomb)chargingShip.Weapons.First();
-            List<Ship> targetingList = bomb.MakeSortedTargetingList(true);
-            if (targetingList.Count > 0)
+            _getTargetShip_bomb = (Bomb)chargingShip.Weapons.First();
+            _getTargetShip_targetingList = _getTargetShip_bomb.MakeSortedTargetingList(true);
+            if (_getTargetShip_targetingList.Count > 0)
             {
-                if (!bomb.DetermineTargetShip(targetingList, true))
+                if (!_getTargetShip_bomb.DetermineTargetShip(_getTargetShip_targetingList, true))
                 {
-                    targetingList = bomb.MakeSortedTargetingList(true);
+                    _getTargetShip_targetingList = _getTargetShip_bomb.MakeSortedTargetingList(true);
                     // Couldn't find a valid target ship, potentially because too much damage has been sent to each ship already
-                    if (targetingList.Count > 0)
+                    if (_getTargetShip_targetingList.Count > 0)
                     {
-                        bomb.SetRandomTarget(targetingList);
-
+                        _getTargetShip_bomb.SetRandomTarget(_getTargetShip_targetingList);
                     }
                     //else
                     //{
@@ -80,23 +119,22 @@ namespace Assets.Scripts.Levels.Commands
                     //}
                 }
                 //int loops = 0;
-                //while (!bomb.DetermineTargetShip(bomb.MakeSortedTargetingList(true), true) && loops < 10)
+                //while (!_getTargetShip_bomb.DetermineTargetShip(_getTargetShip_bomb.MakeSortedTargetingList(true), true) && loops < 10)
                 //{
                 //    Squad.DamageSentToEnemyShipsBySquad.Clear();
                 //    loops++;
                 //}
-                chargingShip.TargetEnemyShipToFollow = bomb.TargetShip;
+                chargingShip.TargetEnemyShipToFollow = _getTargetShip_bomb.TargetShip;
                 //if (loops == 10)
                 //{
-                //    Debug.Log($"Looped 10 times while trying to determine a target ship for {bomb.Name}");
+                //    Debug.Log($"Looped 10 times while trying to determine a target ship for {_getTargetShip_bomb.Name}");
                 //}
             }
             else
             {
                 SetFinalize("No more enemy ships to target");
             }
-
-        } 
+        }
         private void SendShipToTarget(Ship ship)
         {
             ship.MoveToPoint(ship.SetAndGetTargetEnemy().GetPosition()); // Move to the primary target ship
@@ -126,16 +164,24 @@ namespace Assets.Scripts.Levels.Commands
 
 
 
+        //////////////////////////////////////////////////////////////////////////////
+        // Class-level variables for Timer() method:
+        //////////////////////////////////////////////////////////////////////////////
+
+        // List of all barges retrieved from the squad's ships.
+        private List<Barge> _timer_barges;
+
         private void Timer()
         {
             if (!Squad.IsDead)
             {
-                if (EnemySquad != null && !EnemySquad.IsDead)
+                if (!EnemySquad.IsDead)
                 {
                     //Debug.Log("Bombing timer");
                     Squad.Status = $"In the middle of charging run against {EnemySquad.Name}";
-                    List<Barge> barges = Squad.GetShips().Select((ship) => (Barge)ship).ToList();
-                    barges.ForEach((barge) =>
+
+                    _timer_barges = Squad.GetShips().Select((ship) => (Barge)ship).ToList();
+                    _timer_barges.ForEach((barge) =>
                     {
                         if (ShouldShipPursueTarget(barge))
                         {
@@ -159,7 +205,7 @@ namespace Assets.Scripts.Levels.Commands
                         }
                         //else // if you don't have target ships or all of them are dead
                         //{
-                        //    Debug.Log($"{ship.Name} should not pursure targets because either it is charging ({ship.IsCharging}), or does not have target ships that aren't null {(ship.HasTargetShips && ship.TargetShips.Any((targetShip) => targetShip != null))}");
+                        //    Debug.Log($"{ship.Name} should not pursue targets because either it is charging ({ship.IsCharging}), or does not have target ships that aren't null {(ship.HasTargetShips && ship.TargetShips.Any((targetShip) => targetShip != null))}");
                         //    if (!ship.IsCharging)
                         //    {
                         //        ship.HasCompletedRun = true;
@@ -167,12 +213,10 @@ namespace Assets.Scripts.Levels.Commands
                         //}
                     });
 
-
-                    if (HaveAnyShipsFinished(barges))
+                    if (HaveAnyShipsFinished(_timer_barges))
                     {
                         //Debug.Log("Ended charging run");
                         SetFinalize("Completed charging run");
-
                     }
                 }
                 else
@@ -180,9 +224,7 @@ namespace Assets.Scripts.Levels.Commands
                     CancelInvoke(nameof(Timer));
                     SetFinalize("The enemy squad is gone or dead");
                 }
-                
             }
-
         }
     }
 }

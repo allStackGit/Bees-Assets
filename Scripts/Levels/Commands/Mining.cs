@@ -117,7 +117,7 @@ namespace Assets.Scripts.Levels.Commands
 
                 if (TargetAstroid.Health == 0)
                 {
-                    TargetAstroid.Kill();
+                    TargetAstroid.Kill(false);
                 }
             }
 

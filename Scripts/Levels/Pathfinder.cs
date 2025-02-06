@@ -458,7 +458,7 @@ namespace Assets.Scripts.Levels
             {
                 HasMovingObstacles = true;
             }
-            //Debug.Log($"Adding {obstacle.Name} to Map");
+            Debug.Log($"Adding {obstacle.Name} to Map with index: {(ObstaclePoints[0].Count - 1)}");
             return ObstaclePoints[0].Count - 1;
         }
 
@@ -595,7 +595,8 @@ namespace Assets.Scripts.Levels
                         ObstaclePoints[threadIndex][asteroid.MapPointsIndex] = GetObstaclePoints(asteroid, asteroid.Body.velocity.x, asteroid.Body.velocity.y);
                     }catch (Exception e)
                     {
-                        Debug.LogError($"ThreadIndex: {threadIndex}, MapPointIndex: {asteroid.MapPointsIndex}");
+                        Debug.Log($"Nearby Asteroids: {Utilities.ListToString(collisionAsteroids)}");
+                        Debug.LogError($"Ship: {ship.Name},Obstacle: {asteroid} ThreadIndex: {threadIndex}, MapPointIndex: {asteroid.MapPointsIndex}, length: {ObstaclePoints[threadIndex].Count}");
                     }
                     //float obstaclePointsEnd = (Time.realtimeSinceStartup - obstaclePoints) * 1000; // seconds to milliseconds
                     //Debug.Log($"Updated obstacle points in {obstaclePointsEnd} ms"); // takes less than a millisecond

@@ -43,7 +43,7 @@ namespace Assets.Scripts.Levels
         public bool HasMovedBox, IsMatchingSpeed, IsImmobile, CeaseFire, HasAddedShips, IsShowingRanges, IsGrowingSquad, HasCustomColor, HasSquadTab, HasSquadBox;
         public Vector2 Destination;
         /// <summary>
-        /// A squad can be dead for one frame before it is destroyed. It's important to check for the death of a squad on anything run by a timer outside of the squad object
+        /// It's important to check for the death of a squad on anything run by a timer outside of the squad object
         /// </summary>
         public bool IsDead;
         /// <summary>
@@ -124,6 +124,7 @@ namespace Assets.Scripts.Levels
             IsDead = false;
             CurrentSpeed = 0;
             MatchupStrategy.Kill();
+            enabled = true;
 
         }
         public virtual void Create(Stage stage)
@@ -131,6 +132,7 @@ namespace Assets.Scripts.Levels
             SquadType = ConfigData.SquadTypes.Squad;
             Stage = stage;
             IsDead = true;
+            enabled = false;
         }
         public void Setup(Level level, SavedSquad savedSquad, ConfigData.ShootingStrategyTypes shootingStrategy, bool ceaseFire, bool isMatchingSpeed, bool shouldChase,
             int id, int side, int squadNumber, string name, Color color)
@@ -281,9 +283,16 @@ namespace Assets.Scripts.Levels
                 ship.SetSquadName();
             }
         }
-        protected void Update()
+        protected void Update() // [testing]
         {
-
+            if (!IsDead && GetShips().Count == 0)
+            {
+                Debug.LogError($"{Name} has no ships and isn't dead at frame #{Stage.__Updates}");
+            }
+            else
+            {
+                Debug.Log($"{Name} has {GetShips().Count} ships and isDead? {IsDead} at frame #{Stage.__Updates}");
+            }
             if (!Level.State.IsPaused)
             {
                 Age++;
@@ -470,6 +479,7 @@ namespace Assets.Scripts.Levels
                     SquadBox.gameObject.SetActive(false);
                     Level.State.DeselectSquad(this);
                 }
+                Level.State.RemoveSquad(this);
                 Stage.Pool.ReturnSquadToPool(this);
             }
             
@@ -478,6 +488,7 @@ namespace Assets.Scripts.Levels
         public Squad GetClosestEnemySquad()
         {
             // Debug.Log($"Number of enemy squads {squads.Count}, {_Level.State.GetSquads()}");
+            Debug.Log($"Getting closest enemy squad for {Name}");
             return Level.State.GetEnemySquads(Side).OrderBy(squad => squad.DistanceToPoint(GetPosition())).FirstOrDefault();
         }
         public Squad GetClosestValidFriendlySquad()
@@ -1055,8 +1066,15 @@ namespace Assets.Scripts.Levels
         }
         public Vector2 GetLeftMostPoint()
         {
-            Ship ship = GetShips().OrderBy((ship) => ship.GetLeftMostPoint().x).ToList().First();
-            return new Vector2(ship.GetLeftMostPoint().x, ship.GetY());
+            try
+            {
+                Ship ship = GetShips().OrderBy((ship) => ship.GetLeftMostPoint().x).ToList().First();
+                return new Vector2(ship.GetLeftMostPoint().x, ship.GetY());
+            }catch (Exception e)
+            {
+                Debug.Log($"Squad: {Name}, ShipCount: {GetShips().Count} Ships: {Utilities.ListToString(GetShips())}, IsDead? {IsDead} at frame #{Stage.__Updates}");
+                throw e;
+            }
         }
         public Vector2 GetRightMostPoint()
         {

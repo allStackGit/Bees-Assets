@@ -784,6 +784,7 @@ public class Pool : MonoBehaviour
     }
     public void ReturnSquadToPool(Squad squad)
     {
+        squad.enabled = false;
         if (squad.SquadType != ConfigData.SquadTypes.CarrierSquad)
         {
             SquadPool.Release(squad);
@@ -877,6 +878,7 @@ public class Pool : MonoBehaviour
     {
 
         ship.gameObject.SetActive(false);
+        ship.CancelInvoke();
         if (ship.HasMovementMarker)
         {
             ship.MovementMarker.SetActive(false);

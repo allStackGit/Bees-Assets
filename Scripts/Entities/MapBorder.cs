@@ -15,7 +15,7 @@ namespace Assets.Scripts.Entities
             if (collidingThing.CompareTag("Obstacle"))
             {
                 CollisionAsteroid asteroid = collidingThing.GetComponent<CollisionAsteroid>();
-                if (asteroid.HasEnteredMap)
+                if (asteroid.HasEnteredMap) 
                 {
                     Debug.Log($"{asteroid.Name} left the map border and is being killed at {asteroid.GetPosition()}");
                     asteroid.Kill(true);

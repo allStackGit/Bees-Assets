@@ -14,6 +14,7 @@ using UnityEngine.Pool;
 using Assets.Scripts.UIComponents;
 using System.Security.Cryptography;
 using Assets.Scripts.Entities.Projectiles;
+using Assets.Scripts.Server;
 
 /// <summary>
 /// Container scene for 1 or more Levels. Handles scene level variables and communication with the server
@@ -282,7 +283,21 @@ public class Stage : Scene
     /// </summary>
     public bool HasAsteroids;
 
-    
+
+    public int __HivemindCommands, __LevelTimeouts;
+    // DEBUG VARIABLES
+    public static int __TotalRequests;
+    public static double __TotalLatency, __AverageLatency, __TotalLength, __AverageLength;
+    public void DebugLogger()
+    {
+        __TotalRequests = ConfigData.__TotalRequests;
+        __TotalLatency = ConfigData.__TotalLatency;
+        __AverageLatency = ConfigData.__AverageLatency;
+        __TotalLength = ConfigData.__TotalLength;
+        __AverageLength = ConfigData.__AverageLength;
+    }
+
+
 
     // Start is called before the first frame update
     new void Start()
@@ -551,8 +566,9 @@ public class Stage : Scene
             }
         }
 
-        if (IsDebugging && FixedUpdates > 1000)
+        if (IsDebugging)
         {
+            DebugLogger();
             Pool.DebugLogger();
         }
     }

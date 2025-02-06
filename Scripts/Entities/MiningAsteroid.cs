@@ -47,22 +47,30 @@ namespace Assets.Scripts.Entities
             }
         }
 
-        public override void Kill()
+        public void Kill(bool endKill)
         {
             if (!IsDead)
             {
                 IsDead = true;
-                SquadsMining.ForEach((squad) =>
+                if (!endKill)
                 {
-                    if (squad != null && squad.HasCommand)
+                    SquadsMining.ForEach((squad) =>
                     {
-                        squad.Command.SetFinalize("Mining asteroid was destroyed");
+                        if (!squad.IsDead && squad.HasCommand)
+                        {
+                            squad.Command.SetFinalize("Mining asteroid was destroyed");
 
-                    }
-                });
+                        }
+                    });
+                }
+                Debug.Log($"Killing mining asteroid {Name} and returning to pool. endkill: {endKill}");
                 Level.State.RemoveObstacle(this);
                 Level.State.MiningAsteroids.Remove(this);
                 Stage.Pool.ReturnMiningAsteroidToPool(this);
+            }
+            else
+            {
+                Debug.LogError($"Tried to kill already dead mining asteroid {Name}");
             }
 
         }

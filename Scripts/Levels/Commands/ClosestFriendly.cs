@@ -29,23 +29,25 @@ namespace Assets.Scripts.Levels.Commands
             base.ClearData();
             _closestFriendlySquad = null;
         }
+
+        Vector2 _timer_position;
         private void Timer()
         {
             if (!Squad.IsDead)
             {
-                if (_closestFriendlySquad != null && !_closestFriendlySquad.IsDead)
+                if (!_closestFriendlySquad.IsDead)
                 {
                     //Debug.Log($"_closestFriendlySquad: {_closestFriendlySquad.Name} IsDead: {_closestFriendlySquad.IsDead}");
-                    Vector2 position = _closestFriendlySquad.GetPosition();
+                    _timer_position = _closestFriendlySquad.GetPosition();
                     if (Squad.HasReachedDestination)
                     {
                         Squad.Status = $"Trying to catch up to friendly squad #{_closestFriendlySquad.SquadNumber}";
-                        SetAndMove(position);
+                        SetAndMove(_timer_position);
                     }
                     else
                     {
                         Squad.Status = $"Following friendly squad #{_closestFriendlySquad.SquadNumber}";
-                        SetAndMove(position);
+                        SetAndMove(_timer_position);
                         
                     }
 

@@ -48,5 +48,15 @@ namespace Assets.Scripts.Entities
                 HalfSeconds++;
             }
         }
+
+        public void Kill()
+        {
+            if (!IsDead)
+            {
+                IsDead = true;
+                Level.State.RemoveObstacle(this);
+                Debug.LogError($"No pool for asteroid pieces");
+            }
+        }
     }
 }

@@ -49,7 +49,7 @@ namespace Assets.Scripts.Levels
         public List<String> __Squads, __SquadsAwaitingCommands, __PastCommands, __Obstacles;
         public void UpdateDebugVariables()
         {
-            __Squads = Squads.Select(s => s.ToString()).ToList();
+            __Squads = GetAllSquads().Select(s => s.ToString()).ToList();
             __SquadsAwaitingCommands = SquadsAwaitingCommands.Select(s => s.ToString()).ToList();
             __PastCommands = PastCommands.Select((c) => $"Command #{c.OutcomeId} - {c.Strategy.CommandType} against {c.Enemy} ended with {c.Tsv}" +
             $" TSV due to \"{c.FinalizationCause}\" and took {c.Age} ticks").ToList();
@@ -131,6 +131,10 @@ namespace Assets.Scripts.Levels
             Squads.Add(squad);
             OriginalSquadCounts[squad.Side - 1]++;
         }
+        public void RemoveSquad(Squad squad)
+        {
+            Squads.Remove(squad);
+        }
         public void AddObstacle(Obstacle obstacle)
         {
             Obstacles.Add(obstacle);
@@ -149,7 +153,7 @@ namespace Assets.Scripts.Levels
             //_commands.Add(command);
             PastCommands.Add(new StoredCommand(command));
             AICommands++;
-            ConfigData.__HivemindCommands++;
+            Stage.__HivemindCommands++;
         }
 
         /// <summary>
@@ -342,11 +346,11 @@ namespace Assets.Scripts.Levels
         }
         public Squad GetSquadById(long Id)
         {
-            return Squads.FirstOrDefault(squad => squad.Id == Id);
+            return GetAllSquads().FirstOrDefault(squad => squad.Id == Id);
         }
         public List<Squad> GetAllSquads()
         {
-            return Squads.Where(squad => squad != null && !squad.IsDead).ToList();
+            return Squads;
         }
         public List<Squad> GetSquadsBySide(int side)
         {
@@ -372,7 +376,7 @@ namespace Assets.Scripts.Levels
         public List<Squad> GetTargetedSquads(int side)
         {
             List<Squad> targetedSquads = new List<Squad>();
-            Squads.Where((s) => s.Side == side).ToList().ForEach((s) =>
+            GetAllSquads().Where((s) => s.Side == side).ToList().ForEach((s) =>
             {
                 if (s.HasCommand && s.Command.EnemySquad != null)
                 {

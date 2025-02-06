@@ -68,42 +68,46 @@ namespace Assets.Scripts.Levels.Commands
             _guardedSquad = null;
             OtherGuardSquads.Clear();
         }
+        //////////////////////////////////////////////////////////////////////////////
+        // Class-level variables for Timer() method:
+        //////////////////////////////////////////////////////////////////////////////
+
+        private Vector2 _timer_position;
+        private Vector2 _timer_offsetFromSquad;
+        private int _timer_offset = 4;
+
         private void Timer()
         {
-            // determine initial destination based on other guarding squads
+            // Determine initial destination based on other guarding squads
             if (!Squad.IsDead)
             {
                 if (!_guardedSquad.IsDead)
                 {
-                    Vector2 position = _guardedSquad.GetCenterPoint();
-                    int offset = 4;
-                    Vector2 offsetFromSquad = new Vector2(Squad.GetWidth() + offset, Squad.GetHeight() + offset);
-
+                    _timer_position = _guardedSquad.GetCenterPoint();
+                    _timer_offsetFromSquad = new Vector2(Squad.GetWidth() + _timer_offset, Squad.GetHeight() + _timer_offset);
 
                     switch (GuardPosition)
                     {
                         case 0:
-                            position.y += offsetFromSquad.y;
+                            _timer_position.y += _timer_offsetFromSquad.y;
                             break;
                         case 1:
-                            position.x -= offsetFromSquad.x;
+                            _timer_position.x -= _timer_offsetFromSquad.x;
                             break;
                         case 2:
-                            position.x += offsetFromSquad.x;
+                            _timer_position.x += _timer_offsetFromSquad.x;
                             break;
                         case 3:
-                            position.y -= offsetFromSquad.y;
+                            _timer_position.y -= _timer_offsetFromSquad.y;
                             break;
-
                     }
-                    //Debug.Log($"There are {OtherGuardSquads.Count} other squads guarding {GuardedSquad.Name}, so {Squad.Name} is going to {position}");
-                    // set the destination
-                    SetAndMove(position);
-                    if (Vector2.Distance(position, Squad.GetPosition()) < ConfigData.CloseEnoughCoordinateVariance)
+
+                    // Set the destination
+                    SetAndMove(_timer_position);
+                    if (Vector2.Distance(_timer_position, Squad.GetPosition()) < ConfigData.CloseEnoughCoordinateVariance)
                     {
                         Squad.SetSquadSpeed(_guardedSquad.SlowestSpeed);
                     }
-
                 }
                 else
                 {
@@ -112,7 +116,6 @@ namespace Assets.Scripts.Levels.Commands
                     SetFinalize("Guarded squad died");
                 }
             }
-            
         }
         private Squad GetClosestAvailableSquadToGuard()
         {
@@ -120,21 +123,23 @@ namespace Assets.Scripts.Levels.Commands
                 .Where((s) => s != Squad && (!s.HasCommand || !s.Command.HasStrategy || s.Command.Strategy.CommandType != ConfigData.CommandTypes.Guard))
                 .OrderBy(s => s.DistanceToPoint(Squad.GetPosition())).FirstOrDefault();
         }
+        private List<Squad> _f_otherGuardSquads = new List<Squad>();
         public List<Squad> GetGuardingSquads()
         {
             if (_guardedSquad != null && OtherGuardSquads.Count > 0)
             {
-                List<Squad> otherGuardSquads = OtherGuardSquads.Where(
+                _f_otherGuardSquads = OtherGuardSquads.Where(
                 (squad) => squad.HasCommand && squad.Command.HasStrategy && squad != Squad
                 && squad.Command.Strategy.CommandType == ConfigData.CommandTypes.Guard).ToList();
 
-                if (otherGuardSquads.Count > 0)
+                if (_f_otherGuardSquads.Count > 0)
                 {
-                    return otherGuardSquads.Where((squad) => ((Guard)squad.Command)._guardedSquad != null
+                    return _f_otherGuardSquads.Where((squad) => ((Guard)squad.Command)._guardedSquad != null
                     && ((Guard)squad.Command)._guardedSquad == _guardedSquad).ToList();
                 }
             }
-            return new List<Squad>();
+            _f_otherGuardSquads.Clear();
+            return _f_otherGuardSquads;
             
         }
 

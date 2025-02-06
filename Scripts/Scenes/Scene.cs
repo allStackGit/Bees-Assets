@@ -134,6 +134,7 @@ namespace Assets.Scripts.Scenes
         // Update is called once per frame
         protected void Update()
         {
+            __Updates++;
             SocketTimer.Update();
             
             if (ConfigData.Socket.HasClosed && IsSocketManager)

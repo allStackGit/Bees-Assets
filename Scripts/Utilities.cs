@@ -559,6 +559,7 @@ namespace Assets.Scripts
             {"setup-level", ConfigData.RequestTypes.SetupLevel },
             {"reconnect-level", ConfigData.RequestTypes.ReconnectLevel },
             {"get-user-data", ConfigData.RequestTypes.GetUserData },
+            {"store-user-data", ConfigData.RequestTypes.StoreUserData },
             {"get-settings", ConfigData.RequestTypes.GetSettings }
         };
 
@@ -571,6 +572,7 @@ namespace Assets.Scripts
             { ConfigData.RequestTypes.SetupLevel, "setup-level" },
             { ConfigData.RequestTypes.ReconnectLevel, "reconnect-level" },
             { ConfigData.RequestTypes.GetUserData, "get-user-data" },
+            { ConfigData.RequestTypes.StoreUserData, "store-user-data" },
             { ConfigData.RequestTypes.GetSettings, "get-settings" }
         };
 

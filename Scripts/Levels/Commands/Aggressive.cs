@@ -42,7 +42,7 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (!Squad.IsDead)
             {
-                if (EnemySquad != null && !EnemySquad.IsDead)
+                if (!EnemySquad.IsDead)
                 {
                     Squad.Status = $"Targeting enemy squad #{EnemySquad.SquadNumber}";
                     if (!IsComfortablyWithinRange) // check if all of their squad ships are comfortably within range of all of our squad ships

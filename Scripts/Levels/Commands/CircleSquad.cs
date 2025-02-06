@@ -33,11 +33,21 @@ namespace Assets.Scripts.Levels.Commands
             _angle = 0;
             _lastDestination = Vector2.zero;
         }
+
+        //////////////////////////////////////////////////////////////////////////////
+        // Class-level variables for Timer() method:
+        //////////////////////////////////////////////////////////////////////////////
+
+        private Vector2 _timer_squadPosition;
+        private Vector2 _timer_destination;
+        private int _timer_loops;
+        private float _timer_angle;
+
         private void Timer()
         {
             if (!Squad.IsDead)
             {
-                if (EnemySquad != null && !EnemySquad.IsDead)
+                if (!EnemySquad.IsDead)
                 {
                     Squad.Status = $"Moving to circle enemy squad #{EnemySquad.SquadNumber}";
                     if (!_gotToEnemy && !Squad.AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
@@ -49,11 +59,11 @@ namespace Assets.Scripts.Levels.Commands
                     }
                     else
                     {
-                        Vector2 squadPosition = Squad.GetPosition();
+                        _timer_squadPosition = Squad.GetPosition();
                         if (!_hasSetIdealDistance)
                         {
-                            _idealDistance = EnemySquad.DistanceToPoint(squadPosition);
-                            _angle = EnemySquad.AngleToPoint(squadPosition) - (Mathf.PI * .5f);
+                            _idealDistance = EnemySquad.DistanceToPoint(_timer_squadPosition);
+                            _angle = EnemySquad.AngleToPoint(_timer_squadPosition) - (Mathf.PI * .5f);
                             _hasSetIdealDistance = true;
                         }
                         if (!_gotToEnemy)
@@ -63,23 +73,26 @@ namespace Assets.Scripts.Levels.Commands
                             _gotToEnemy = true;
                             InvokeRepeating(nameof(Timer), CommandFrequency, CommandFrequency);
                         }
-                        float angle = EnemySquad.AngleToPoint(squadPosition);
 
-                        _angle = angle + (.06f * Mathf.PI);
+                        _timer_angle = EnemySquad.AngleToPoint(_timer_squadPosition);
+                        _angle = _timer_angle + (.06f * Mathf.PI);
+
                         //Debug.Log($"{Squad.Name} is circling enemy squad # {Enemy.Name} at {_idealDistance} away");
-                        Squad.Status = $"Circling enemy squad # {EnemySquad.Name} at {_idealDistance} away";
+                        Squad.Status = $"Circling enemy squad {EnemySquad.Name} at {_idealDistance} away";
 
-                        Vector2 destination = EnemySquad.CirclePoint(_angle, _idealDistance);
-                        int loops = 0;
-                        while (Vector2.Distance(destination, _lastDestination) < .15f && loops < 100)
+                        _timer_destination = EnemySquad.CirclePoint(_angle, _idealDistance);
+                        _timer_loops = 0;
+
+                        while (Vector2.Distance(_timer_destination, _lastDestination) < .15f && _timer_loops < 100)
                         {
-                            loops++;
+                            _timer_loops++;
                             //Debug.Log($"Next squad position for {Squad.Name} is too close: {Vector2.Distance(destination, _lastDestination)}");
                             _angle += (.06f * Mathf.PI);
-                            destination = EnemySquad.CirclePoint(_angle, _idealDistance);
+                            _timer_destination = EnemySquad.CirclePoint(_angle, _idealDistance);
                         }
-                        _lastDestination = destination;
-                        SetAndMove(destination);
+
+                        _lastDestination = _timer_destination;
+                        SetAndMove(_timer_destination);
                     }
                 }
                 else
@@ -89,8 +102,7 @@ namespace Assets.Scripts.Levels.Commands
                     SetFinalize("The enemy squad is gone or dead");
                 }
             }
-           
-
         }
+
     }
 }

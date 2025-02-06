@@ -18,86 +18,122 @@ namespace Assets.Scripts.Levels.Commands
         /// <param name="shootingStrategy"></param>
         /// <param name="commandOutcomeId"></param>
         /// <param name="noEnemy"></param>
-        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
+        // Class-level variables for the Execute method:
+
+        // Class-level variables for the Execute() method:
+
+        // Used in Execute(): holds the list of ships from the squad.
+        private List<Ship> _execute_ships;
+
+        // Used in Execute() loop: current ship being processed.
+        private Ship _execute_currentShip;
+
+        // Used in Execute() loop when a ship is a Striker.
+        private Striker _execute_currentStriker;
+
+        // Used in Execute() loop when a ship is a YellowJacket.
+        private YellowJacket _execute_currentYellowJacket;
+
+        // Used in Execute() loop: loop index.
+        private int _execute_loopIndex;
+
+        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy,
+                            long commandOutcomeId,
+                            long shootingStrategyOutcomeId,
+                            bool noEnemy)
         {
             base.Execute(ConfigData.CommandTypes.BombingRun, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
-            //Debug.Log("Executing bombing run");
-
+            // Debug.Log("Executing bombing run");
 
             if (CheckIfStrikersAreDefenseless())
             {
                 return;
             }
 
-            // this piece of code seems to make the squad move to it's current location for no particular reason
-
-            // check if squad has reached destination and if so, cancel the timer and start over again for the next destination
-            //Vector2 destination = GetDestination();
-            //if (HasDestination && Squad.HasReachedDestination)
-            //{
-            //    RemoveDestination(destination);
-            //    AddDestination(destination);
-            //}
-            //destination = GetDestination();
-            //Squad.Move(destination);
-
             // Setup status and damage
             IsAttacking = true;
             Squad.Status = $"Starting bombing run against {EnemySquad.Name}";
             PrepareDamageToSendEntries();
 
-            // loop through all the ships in the bombing squad
-            List<Ship> ships = Squad.GetShips();
-            foreach (Ship ship in ships)
+            // Retrieve and store the ships from the squad.
+            _execute_ships = Squad.GetShips();
+
+            // Iterate through all the ships using a for loop that utilizes the class-level loop index.
+            for (_execute_loopIndex = 0; _execute_loopIndex < _execute_ships.Count; _execute_loopIndex++)
             {
-                //Debug.Log("Looping through all ships in bombing squad");
-                if (ship.ShipType == ConfigData.ShipTypes.Striker)
+                _execute_currentShip = _execute_ships[_execute_loopIndex];
+
+                // If the ship is a Striker, cast it and reset its run-related flags.
+                if (_execute_currentShip.ShipType == ConfigData.ShipTypes.Striker)
                 {
-                    Striker striker = (Striker)ship;
-                    striker.HasCompletedRun = false;
-                    striker.HasDroppedBomb = false;
-                    striker.HasReturnedToCarrier = false;
+                    _execute_currentStriker = (Striker)_execute_currentShip;
+                    _execute_currentStriker.HasCompletedRun = false;
+                    _execute_currentStriker.HasDroppedBomb = false;
+                    _execute_currentStriker.HasReturnedToCarrier = false;
                 }
-                else if (ship.ShipType == ConfigData.ShipTypes.YellowJacket)
+                // If the ship is a YellowJacket, cast it and reset its run flag.
+                else if (_execute_currentShip.ShipType == ConfigData.ShipTypes.YellowJacket)
                 {
-                    YellowJacket yellowJacket = (YellowJacket)ship;
-                    yellowJacket.HasCompletedRun = false;
+                    _execute_currentYellowJacket = (YellowJacket)_execute_currentShip;
+                    _execute_currentYellowJacket.HasCompletedRun = false;
                 }
 
-                GetTarget(ship);
+                // Process the current ship to get its target.
+                GetTarget(_execute_currentShip);
             }
+
             CommandFrequency = 2;
             InvokeRepeating(nameof(Timer), 0, CommandFrequency);
             if (IsHiveMindCommand)
             {
                 Invoke(nameof(Timeout), ConfigData.StandardMaxCommandTime);
             }
-
         }
+
         public override void ClearData()
         {
             base.ClearData();
             ShipsCompletedCommand.Clear();
         }
+
+        //////////////////////////////////////////////////////////////////////////////
+        // Class-level variables for GetTarget() method:
+        //////////////////////////////////////////////////////////////////////////////
+        private Bomb _getTarget_bomb;
+        private List<Ship> _getTarget_targetingList;
+
+        //////////////////////////////////////////////////////////////////////////////
+        // Class-level variable for CheckIfStrikersAreDefenseless() method:
+        //////////////////////////////////////////////////////////////////////////////
+        private Striker _checkIfStrikersAreDefenseless_striker;
+
+        //////////////////////////////////////////////////////////////////////////////
+        // Class-level variable for ShouldShipPursueTarget() method:
+        //////////////////////////////////////////////////////////////////////////////
+        private Striker _shouldShipPursueTarget_striker;
+
+        //////////////////////////////////////////////////////////////////////////////
+        // Method: GetTarget
+        //////////////////////////////////////////////////////////////////////////////
         /// <summary>
         /// Finds a target ship for the ship's bomb and then makes that ship the enemy ship to follow as well
         /// </summary>
         /// <param name="bomber"></param>
         private void GetTarget(Ship bomber)
         {
-            Bomb bomb = (Bomb)bomber.Weapons.First();
+            _getTarget_bomb = (Bomb)bomber.Weapons.First();
             //int loops = 0;
-            bomb.HasCachedChanged = true;
-            List<Ship> targetingList = bomb.MakeSortedTargetingList(true);
-            if (targetingList.Count > 0)
+            _getTarget_bomb.HasCachedChanged = true;
+            _getTarget_targetingList = _getTarget_bomb.MakeSortedTargetingList(true);
+            if (_getTarget_targetingList.Count > 0)
             {
-                if (!bomb.DetermineTargetShip(targetingList, true))
+                if (!_getTarget_bomb.DetermineTargetShip(_getTarget_targetingList, true))
                 {
-                    targetingList = bomb.MakeSortedTargetingList(true);
+                    _getTarget_targetingList = _getTarget_bomb.MakeSortedTargetingList(true);
                     // Couldn't find a valid target ship, potentially because too much damage has been sent to each ship already
-                    if (targetingList.Count > 0)
+                    if (_getTarget_targetingList.Count > 0)
                     {
-                        bomb.SetRandomTarget(targetingList);
+                        _getTarget_bomb.SetRandomTarget(_getTarget_targetingList);
 
                     }
                     //else
@@ -110,7 +146,7 @@ namespace Assets.Scripts.Levels.Commands
                 //    Squad.DamageSentToEnemyShipsBySquad.Clear();
                 //    loops++;
                 //}
-                bomber.TargetEnemyShipToFollow = bomb.TargetShip;
+                bomber.TargetEnemyShipToFollow = _getTarget_bomb.TargetShip;
                 //if (loops == 10)
                 //{
                 //    Debug.Log($"Looped 10 times while trying to determine a target ship for {bomb.Name}");
@@ -120,16 +156,19 @@ namespace Assets.Scripts.Levels.Commands
             {
                 SetFinalize("No more enemy ships to target");
             }
-
         }
+
+        //////////////////////////////////////////////////////////////////////////////
+        // Method: CheckIfStrikersAreDefenseless
+        //////////////////////////////////////////////////////////////////////////////
         private bool CheckIfStrikersAreDefenseless()
         {
             if (Squad.IsCarrierSquad)
             {
                 if (Squad.GetShips().All((s) =>
                 {
-                    Striker striker = ((Striker)s);
-                    return !striker.IsBombReady && striker.Carrier == null;
+                    _checkIfStrikersAreDefenseless_striker = (Striker)s;
+                    return !_checkIfStrikersAreDefenseless_striker.IsBombReady && _checkIfStrikersAreDefenseless_striker.Carrier == null;
                 }))
                 {
                     Squad.BannedStrats.Add(ConfigData.CommandTypes.Aggressive);
@@ -145,6 +184,10 @@ namespace Assets.Scripts.Levels.Commands
             }
             return false;
         }
+
+        //////////////////////////////////////////////////////////////////////////////
+        // Method: ShouldShipPursueTarget
+        //////////////////////////////////////////////////////////////////////////////
         /// <summary>
         /// Does the ship have a target to follow, and if it is a striker does it have its bomb ready? 
         /// </summary>
@@ -156,8 +199,8 @@ namespace Assets.Scripts.Levels.Commands
             {
                 if (ship.ShipType == ConfigData.ShipTypes.Striker)
                 {
-                    Striker striker = (Striker)ship;
-                    return striker.IsBombReady; // if it's a striker and its bombs are ready 
+                    _shouldShipPursueTarget_striker = (Striker)ship;
+                    return _shouldShipPursueTarget_striker.IsBombReady; // if it's a striker and its bombs are ready 
                 }
                 else
                 {
@@ -190,116 +233,181 @@ namespace Assets.Scripts.Levels.Commands
         /// </summary>
         /// <param name="ships"></param>
         /// <returns></returns>
+        //////////////////////////////////////////////////////////////////////////////
+        // Class-level variables for HaveAllShipsFinished() method:
+        //////////////////////////////////////////////////////////////////////////////
+        private Ship _haveAllShipsFinished_currentShip;
+        private Striker _haveAllShipsFinished_striker;
+        private YellowJacket _haveAllShipsFinished_yellowJacket;
+
+        //////////////////////////////////////////////////////////////////////////////
+        // Class-level variables for HaveAllShipsBombed() method:
+        //////////////////////////////////////////////////////////////////////////////
+        private Ship _haveAllShipsBombed_currentShip;
+        private Striker _haveAllShipsBombed_striker;
+        private YellowJacket _haveAllShipsBombed_yellowJacket;
+        /// <summary>
+        /// Have all the ships dropped their bombs if they have them and then returned to their carrier if necessary
+        /// </summary>
+        /// <param name="ships"></param>
+        /// <returns></returns>
         private bool HaveAllShipsFinished(List<Ship> ships)
         {
             return ships.All((ship) => // if all of the ships have completed their run and are either yellow jackets or are strikers who have reloaded or have no carrier
             {
-                if (ship.ShipType == ConfigData.ShipTypes.Striker)
+                _haveAllShipsFinished_currentShip = ship;
+                if (_haveAllShipsFinished_currentShip.ShipType == ConfigData.ShipTypes.Striker)
                 {
-                    Striker striker = (Striker)ship;
-                    return striker.HasCompletedRun && (striker.HasReturnedToCarrier || striker.Carrier.IsDead);
+                    _haveAllShipsFinished_striker = (Striker)_haveAllShipsFinished_currentShip;
+                    return _haveAllShipsFinished_striker.HasCompletedRun &&
+                           (_haveAllShipsFinished_striker.HasReturnedToCarrier || _haveAllShipsFinished_striker.Carrier.IsDead);
                 }
-                else if (ship.ShipType == ConfigData.ShipTypes.YellowJacket)
+                else if (_haveAllShipsFinished_currentShip.ShipType == ConfigData.ShipTypes.YellowJacket)
                 {
-                    YellowJacket yellowJacket = (YellowJacket)ship;
-                    return yellowJacket.HasCompletedRun;
+                    _haveAllShipsFinished_yellowJacket = (YellowJacket)_haveAllShipsFinished_currentShip;
+                    return _haveAllShipsFinished_yellowJacket.HasCompletedRun;
                 }
-                else if (ship.ShipType == ConfigData.ShipTypes.FireBarge)
+                else if (_haveAllShipsFinished_currentShip.ShipType == ConfigData.ShipTypes.FireBarge)
                 {
                     return false;
                 }
                 return true;
             });
         }
+
         private bool HaveAllShipsBombed(List<Ship> ships)
         {
             return ships.All((ship) => // if all of the ships have completed their run and are either yellow jackets or are strikers who have reloaded or have no carrier
             {
-                if (ship.ShipType == ConfigData.ShipTypes.Striker)
+                _haveAllShipsBombed_currentShip = ship;
+                if (_haveAllShipsBombed_currentShip.ShipType == ConfigData.ShipTypes.Striker)
                 {
-                    Striker striker = (Striker)ship;
-                    return striker.HasCompletedRun;
+                    _haveAllShipsBombed_striker = (Striker)_haveAllShipsBombed_currentShip;
+                    return _haveAllShipsBombed_striker.HasCompletedRun;
                 }
-                else if (ship.ShipType == ConfigData.ShipTypes.YellowJacket)
+                else if (_haveAllShipsBombed_currentShip.ShipType == ConfigData.ShipTypes.YellowJacket)
                 {
-                    YellowJacket yellowJacket = (YellowJacket)ship;
-                    return yellowJacket.HasCompletedRun;
+                    _haveAllShipsBombed_yellowJacket = (YellowJacket)_haveAllShipsBombed_currentShip;
+                    return _haveAllShipsBombed_yellowJacket.HasCompletedRun;
                 }
                 return true;
             });
         }
 
         private int _timerLoops;
+        //////////////////////////////////////////////////////////////////////////////
+        // Class-level variables for Timer() method:
+        //////////////////////////////////////////////////////////////////////////////
+
+        // Used in Timer(): list of ships retrieved from the squad.
+        private List<Ship> _timer_ships;
+
+        // Used in Timer(): list of FireBarge IDs that need to detonate.
+        private List<long> _timer_FireBargesToDetonate;
+
+        // Used in Timer() loop: current ship being processed.
+        private Ship _timer_currentShip;
+
+        // Used in Timer() loop when a ship is a Striker.
+        private Striker _timer_striker;
+
+        // Used in Timer() loop when a ship is a YellowJacket.
+        private YellowJacket _timer_yellowJacket;
+
+        // Used in Timer(): loop counter for processing FireBargesToDetonate.
+        private int _timer_firebargeLoopIndex;
+        private int _timer_loopIndex;
+
+
+        //////////////////////////////////////////////////////////////////////////////
+        // Class-level variables for EndBombingRun() method:
+        //////////////////////////////////////////////////////////////////////////////
+
+        // Used in EndBombingRun(): list of ships retrieved from the squad.
+        private List<Ship> _endBombingRun_ships;
+
+        // Used in EndBombingRun() loop: current ship being processed.
+        private Ship _endBombingRun_currentShip;
+
+        // Used in EndBombingRun() loop when a ship is a Striker.
+        private Striker _endBombingRun_striker;
+
+        // Used in EndBombingRun(): loop counter for processing ships.
+        private int _endBombingRun_loopIndex;
+
+
+
         private void Timer()
         {
             if (!Squad.IsDead)
             {
-                _timerLoops++;
-                //Debug.Log("Bombing timer");
+                _timerLoops++; // Assuming _timerLoops is already declared as a class-level variable
+                               //Debug.Log("Bombing timer");
                 Squad.Status = $"In the middle of bombing run against {EnemySquad.Name}";
-                List<Ship> ships = Squad.GetShips();
-                List<long> FireBargesToDetonate = new List<long>();
-                ships.ForEach((ship) =>
-                {
-                    if (!ShipsCompletedCommand.Contains(ship))
-                    {
-                        if (ShouldShipPursueTarget(ship))
-                        {
+                _timer_ships = Squad.GetShips();
+                _timer_FireBargesToDetonate = new List<long>();
 
-                            SendShipToTarget(ship);
-                            if (Squad.IsHiveMindControlled && ship.ShipType == ConfigData.ShipTypes.FireBarge && ship.ProximityCollider.NearbyEnemyShips.Contains(ship.TargetEnemyShipToFollow))
+                // Process each ship in the squad.
+                for (_timer_loopIndex = 0; _timer_loopIndex < _timer_ships.Count; _timer_loopIndex++)
+                {
+                    _timer_currentShip = _timer_ships[_timer_loopIndex];
+                    if (!ShipsCompletedCommand.Contains(_timer_currentShip))
+                    {
+                        if (ShouldShipPursueTarget(_timer_currentShip))
+                        {
+                            SendShipToTarget(_timer_currentShip);
+                            if (Squad.IsHiveMindControlled &&
+                                _timer_currentShip.ShipType == ConfigData.ShipTypes.FireBarge &&
+                                _timer_currentShip.ProximityCollider.NearbyEnemyShips.Contains(_timer_currentShip.TargetEnemyShipToFollow))
                             {
                                 // if you're a Fire Barge and within detonation distance of your target, detonate
-                                Debug.Log($"{ship.Name} is hivemind controlled and on a bombing run and near its target enemy and so it's going to detonate. ");
-                                FireBargesToDetonate.Add(ship.Id);
+                                Debug.Log($"{_timer_currentShip.Name} is hivemind controlled and on a bombing run and near its target enemy and so it's going to detonate. ");
+                                _timer_FireBargesToDetonate.Add(_timer_currentShip.Id);
                             }
                         }
                         else
                         {
-
-                            //Debug.Log($"{ship.Name} should not pursure its target ({ship.TargetEnemyShipToFollow}) and so it's going back to its carrier");
-                            if (ship.ShipType == ConfigData.ShipTypes.Striker)
+                            //Debug.Log($"{_timer_currentShip.Name} should not pursure its target ({_timer_currentShip.TargetEnemyShipToFollow}) and so it's going back to its carrier");
+                            if (_timer_currentShip.ShipType == ConfigData.ShipTypes.Striker)
                             {
-                                Striker striker = (Striker)ship;
+                                _timer_striker = (Striker)_timer_currentShip;
                                 if (EnemySquad.IsDead)
                                 {
-                                    striker.CompleteRun();
+                                    _timer_striker.CompleteRun();
                                 }
-                                else if (striker.IsBombReady)
+                                else if (_timer_striker.IsBombReady)
                                 {
-                                    GetTarget(ship);
+                                    GetTarget(_timer_currentShip);
                                 }
                             }
-                            else if (ship.ShipType == ConfigData.ShipTypes.YellowJacket)
+                            else if (_timer_currentShip.ShipType == ConfigData.ShipTypes.YellowJacket)
                             {
-                                YellowJacket yellowJacket = (YellowJacket)ship;
+                                _timer_yellowJacket = (YellowJacket)_timer_currentShip;
                                 if (EnemySquad.IsDead)
                                 {
-                                    yellowJacket.HasCompletedRun = true;
+                                    _timer_yellowJacket.HasCompletedRun = true;
                                 }
                                 else
                                 {
-                                    GetTarget(ship);
+                                    GetTarget(_timer_currentShip);
                                 }
                             }
                         }
-                        if (ship.ShipType == ConfigData.ShipTypes.Striker)
+                        if (_timer_currentShip.ShipType == ConfigData.ShipTypes.Striker)
                         {
-                            Striker striker = (Striker)ship;
-                            striker.ReturnToCarrierIfNecessary();
+                            _timer_striker = (Striker)_timer_currentShip;
+                            _timer_striker.ReturnToCarrierIfNecessary();
                         }
                     }
-                    
-                });
-
-                // This is necessary to prevent modifying the list when the Fire Barge(s) is killed
-                for (int i = 0; i < FireBargesToDetonate.Count; i++)
-                {
-                    ((FireBarge)Level.State.GetShipById(FireBargesToDetonate[i])).Detonate();
                 }
 
+                // This is necessary to prevent modifying the list when the Fire Barge(s) is killed.
+                for (_timer_firebargeLoopIndex = 0; _timer_firebargeLoopIndex < _timer_FireBargesToDetonate.Count; _timer_firebargeLoopIndex++)
+                {
+                    ((FireBarge)Level.State.GetShipById(_timer_FireBargesToDetonate[_timer_firebargeLoopIndex])).Detonate();
+                }
 
-                if (HaveAllShipsFinished(ships))
+                if (HaveAllShipsFinished(_timer_ships))
                 {
                     EndBombingRun();
                 }
@@ -314,9 +422,8 @@ namespace Assets.Scripts.Levels.Commands
                         IsCloseToTarget = true;
                         InvokeRepeating(nameof(Timer), CommandFrequency, CommandFrequency);
                     }
-
                 }
-                else if (IsCloseToTarget &&  _timerLoops % 4 == 0 && (HaveAllShipsBombed(ships) || (EnemySquad.IsDead || !AreBombersCloseToEnemyTargets())))
+                else if (IsCloseToTarget && _timerLoops % 4 == 0 && (HaveAllShipsBombed(_timer_ships) || (EnemySquad.IsDead || !AreBombersCloseToEnemyTargets())))
                 {
                     //Debug.Log($"{Squad.Name} is on a bombing run and no longer close to {EnemySquad.Name}");
                     CancelInvoke(nameof(Timer));
@@ -325,7 +432,6 @@ namespace Assets.Scripts.Levels.Commands
                     InvokeRepeating(nameof(Timer), CommandFrequency, CommandFrequency);
                 }
             }
-            
         }
 
         private void EndBombingRun()
@@ -336,15 +442,15 @@ namespace Assets.Scripts.Levels.Commands
 
             if (Squad.HasOnlyStrikers)
             {
-                foreach (Ship ship in Squad.GetShips())
+                _endBombingRun_ships = Squad.GetShips();
+                for (_endBombingRun_loopIndex = 0; _endBombingRun_loopIndex < _endBombingRun_ships.Count; _endBombingRun_loopIndex++)
                 {
-
-                    Striker striker = (Striker)ship;
-                    striker.HasCompletedRun = true;
-                    striker.ReturnToCarrierIfNecessary();
+                    _endBombingRun_currentShip = _endBombingRun_ships[_endBombingRun_loopIndex];
+                    _endBombingRun_striker = (Striker)_endBombingRun_currentShip;
+                    _endBombingRun_striker.HasCompletedRun = true;
+                    _endBombingRun_striker.ReturnToCarrierIfNecessary();
                 }
             }
-
         }
     }
 }

@@ -59,19 +59,20 @@ public class FullRetreat : Command
         ShipsWaitingToWarp.Clear();
     }
 
+    Vector2 _f_targetPosition;
     public void MoveToWarpGate()
     {
         if (!Squad.IsDead && !TargetWarpGate.IsDead)
         {
-            Vector2 targetPosition = TargetWarpGate.GetPosition() + TargetWarpGate.WarpPoint;
+            _f_targetPosition = TargetWarpGate.GetPosition() + TargetWarpGate.WarpPoint;
             Squad.GetShips().ForEach((ship) =>
             {
                 if (ship.ShipType != ConfigData.ShipTypes.WarpGate)
                 {
-                    ship.MoveToPoint(targetPosition);
+                    ship.MoveToPoint(_f_targetPosition);
                 }
             });
-            Squad.Status = $"Moving to {TargetWarpGate.Name} to warp out of the level: {targetPosition}";
+            Squad.Status = $"Moving to {TargetWarpGate.Name} to warp out of the level: {_f_targetPosition}";
         }
         else if (TargetWarpGate.IsDead)
         {

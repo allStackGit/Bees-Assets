@@ -96,6 +96,35 @@ namespace Assets.Scripts.Levels.Commands
                 HasEnemy = true;
             }
         }
+        public virtual void Execute(ConfigData.CommandTypes commandType, ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
+        {
+            if (noEnemy || HasEnemy)
+            {
+                OutcomeId = commandOutcomeId;
+                CommandType = commandType;
+                Strategy.Setup(CommandType, OutcomeId);
+                ShootingStrategy.Setup(shootingStrategy, shootingStrategyOutcomeId);
+                HasShootingStrategy = true;
+                Squad.SetShootingStrategy(ShootingStrategy.ShootingStrategyType);
+                Squad.ClearTargets(); // Clear all old targets before starting the new command
+
+                if (!Stage.IsTraining)
+                {
+                    Squad.PastCommands.Add(new StoredCommand(this));
+                }
+                Level.State.AddCommand(this);
+
+                Squad.Status = $"Executing Command #{OutcomeId}";
+                //Debug.Log("Set status for command");
+            }
+            else
+            {
+                //Debug.Log($"Could not find the enemy for command #{commandOutcomeId}");
+                SetFinalize("Could not find the enemy squad for command");
+                return;
+            }
+
+        }
 
         public void SetDestination(Vector2 destination)
         {
@@ -144,106 +173,69 @@ namespace Assets.Scripts.Levels.Commands
         {
             SetFinalize("The command ran out of time");
         }
-        public void StandStill()
-        {
-            if (Squad!= null)
-            {
-                ClearDestinations();
-                SetAndMove(Squad.GetPosition());
-            }
 
-        }
 
-        public virtual void Execute(ConfigData.CommandTypes commandType, ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
-        {
-            if (noEnemy || HasEnemy)
-            {
-                OutcomeId = commandOutcomeId;
-                CommandType = commandType;
-                Strategy.Setup(CommandType, OutcomeId);
-                ShootingStrategy.Setup(shootingStrategy, shootingStrategyOutcomeId);
-                HasShootingStrategy = true;
-                Squad.SetShootingStrategy(ShootingStrategy.ShootingStrategyType);
-                Squad.ClearTargets(); // Clear all old targets before starting the new command
-
-                if (!Stage.IsTraining)
-                {
-                    Squad.PastCommands.Add(new StoredCommand(this));
-                }
-                Level.State.AddCommand(this);
-
-                Squad.Status = $"Executing Command #{OutcomeId}";
-                //Debug.Log("Set status for command");
-            }
-            else
-            {
-                //Debug.Log($"Could not find the enemy for command #{commandOutcomeId}");
-                SetFinalize("Could not find the enemy squad for command");
-                return;
-            }
-
-        }
-
+        private List<Ship> _f_queue;
         public List<Ship> MakeTargetingQueue()
         {
 
-            List<Ship> queue = EnemySquad.GetShips();
+            _f_queue = EnemySquad.GetShips();
             ConfigData.ShootingStrategyTypes strategy = Squad.GetShootingStrategy();
             //Debug.Log($"Making targeting queue for {Ship.Name}. The squad is using {Squad.GetShootingStrategy()}");
             switch (strategy)
             {
                 case ConfigData.ShootingStrategyTypes.FirstSeen:
-                    return queue;
+                    return _f_queue;
                 case ConfigData.ShootingStrategyTypes.Random:
-                    queue.Shuffle();
+                    _f_queue.Shuffle();
                     break;
                 case ConfigData.ShootingStrategyTypes.Revenge:
-                    queue.Sort((a, b) => b.LastKilled - a.LastKilled);
+                    _f_queue.Sort((a, b) => b.LastKilled - a.LastKilled);
                     break;
                 case ConfigData.ShootingStrategyTypes.MostDangerous:
-                    queue.Sort((a, b) => b.FleetShip.DamageDone - a.FleetShip.DamageDone);
+                    _f_queue.Sort((a, b) => b.FleetShip.DamageDone - a.FleetShip.DamageDone);
                     break;
                 case ConfigData.ShootingStrategyTypes.LeastHealth:
-                    queue.Sort((a, b) => a.Health - b.Health);
+                    _f_queue.Sort((a, b) => a.Health - b.Health);
                     break;
                 case ConfigData.ShootingStrategyTypes.MostHealth:
-                    queue.Sort((a, b) => b.Health - a.Health);
+                    _f_queue.Sort((a, b) => b.Health - a.Health);
                     break;
                 case ConfigData.ShootingStrategyTypes.MostPowerful:
-                    queue.Sort((a, b) => (int)(b.Firepower - a.Firepower));
+                    _f_queue.Sort((a, b) => (int)(b.Firepower - a.Firepower));
                     break;
                 case ConfigData.ShootingStrategyTypes.LeastPowerful:
-                    queue.Sort((a, b) => (int)(a.Firepower - b.Firepower));
+                    _f_queue.Sort((a, b) => (int)(a.Firepower - b.Firepower));
                     break;
                 case ConfigData.ShootingStrategyTypes.Closest:
-                    queue.Sort((a, b) => (int)(Squad.DistanceToPoint(a.GetPosition()) - Squad.DistanceToPoint(b.GetPosition())));
+                    _f_queue.Sort((a, b) => (int)(Squad.DistanceToPoint(a.GetPosition()) - Squad.DistanceToPoint(b.GetPosition())));
                     break;
                 case ConfigData.ShootingStrategyTypes.Furthest:
-                    queue.Sort((a, b) => (int)(Squad.DistanceToPoint(b.GetPosition()) - Squad.DistanceToPoint(a.GetPosition())));
+                    _f_queue.Sort((a, b) => (int)(Squad.DistanceToPoint(b.GetPosition()) - Squad.DistanceToPoint(a.GetPosition())));
                     break;
                 case ConfigData.ShootingStrategyTypes.MostRange:
-                    queue.Sort((a, b) => b.MaxRange - a.MaxRange);
+                    _f_queue.Sort((a, b) => b.MaxRange - a.MaxRange);
                     break;
                 case ConfigData.ShootingStrategyTypes.LeastRange:
-                    queue.Sort((a, b) => a.MaxRange - b.MaxRange);
+                    _f_queue.Sort((a, b) => a.MaxRange - b.MaxRange);
                     break;
                 case ConfigData.ShootingStrategyTypes.Fastest:
-                    queue.Sort((a, b) => (int)(b.Speed - a.Speed));
+                    _f_queue.Sort((a, b) => (int)(b.Speed - a.Speed));
                     break;
                 case ConfigData.ShootingStrategyTypes.Slowest:
-                    queue.Sort((a, b) => (int)(a.Speed - b.Speed));
+                    _f_queue.Sort((a, b) => (int)(a.Speed - b.Speed));
                     break;
                 case ConfigData.ShootingStrategyTypes.MostValuable:
-                    queue.Sort((a, b) => b.Tsv - a.Tsv);
+                    _f_queue.Sort((a, b) => b.Tsv - a.Tsv);
                     break;
                 case ConfigData.ShootingStrategyTypes.LeastValuable:
-                    queue.Sort((a, b) => a.Tsv - b.Tsv);
+                    _f_queue.Sort((a, b) => a.Tsv - b.Tsv);
                     break;
                 default:
                     if ((int)strategy > 15)
                     {
                         ConfigData.ShipTypeLetters type = Utilities.ConvertShipTypeToShipTypeLetter[Utilities.ConvertShootingStrategyToShipType[strategy]];
-                        queue.Sort((a, b) =>
+                        _f_queue.Sort((a, b) =>
                         {
                             //Debug.Log($"Strategy: {strategy}, Type: {type}, A ShipTypeLetter: {a.ShipTypeLetter}, B ShipTypeLetter: {b.ShipTypeLetter}");
                             if (a.ShipTypeLetter == type && b.ShipTypeLetter != type)
@@ -259,41 +251,50 @@ namespace Assets.Scripts.Levels.Commands
                                 return 0;
                             }
                         });
-                        //if (queue.Count > 0)
+                        //if (_f_queue.Count > 0)
                         //{
-                        //    Debug.Log($"The first entry in the sorted queue is {queue.First().Name}");
+                        //    Debug.Log($"The first entry in the sorted _f_queue is {_f_queue.First().Name}");
                         //}
-                        return queue;
+                        return _f_queue;
                     }
                     else
                     {
-                        return queue;
+                        return _f_queue;
                     }
             }
-            return queue;
+            return _f_queue;
         }
-        /*
-         * This method finds the enemies of the command's squad and makes sure there's a ship damage status entry for each enemy ship
-         */
+
+        //////////////////////////////////////////////////////////////////////////////
+        // Class-level variables for PrepareDamageToSendEntries() method:
+        //////////////////////////////////////////////////////////////////////////////
+
+        private List<Ship> _prepareDamage_ships = new List<Ship>();
+        private Squad _prepareDamage_closestEnemy;
+        /// <summary>
+        /// This method finds the enemies of the command's squad and makes sure there's a ship damage status entry for each enemy ship
+        /// </summary>
+        /// <param name="which"></param>
         public void PrepareDamageToSendEntries(string which = "")
         {
             if (!Squad.IsDefenseless)
             {
-                List<Ship> ships = new List<Ship>();
+                _prepareDamage_ships.Clear();
+
                 if (which == "closest")
                 {
-                    Squad closestEnemy = Squad.GetClosestEnemySquad();
-                    if (closestEnemy != null)
+                    _prepareDamage_closestEnemy = Squad.GetClosestEnemySquad();
+                    if (_prepareDamage_closestEnemy != null)
                     {
-                        ships = closestEnemy.GetShips();
-
+                        _prepareDamage_ships = _prepareDamage_closestEnemy.GetShips();
                     }
                 }
                 else if (EnemySquad != null)
                 {
-                    ships = EnemySquad.GetShips();
+                    _prepareDamage_ships = EnemySquad.GetShips();
                 }
-                foreach (Ship ship in ships)
+
+                foreach (Ship ship in _prepareDamage_ships)
                 {
                     Level.State.GetShipDamageStatus(Side, ship);
                 }
@@ -322,34 +323,33 @@ namespace Assets.Scripts.Levels.Commands
             }
             Finalize("This squad got killed");
         }
+        //////////////////////////////////////////////////////////////////////////////
+        // Class-level variables for Finalize() method:
+        //////////////////////////////////////////////////////////////////////////////
+
+        private StoredCommand _finalize_storedCommand;
+        private StoredCommand _finalize_squadCommand;
+
+        private List<Ship> _finalize_ships;
+
+        private string _finalize_enemyName;
+
+        private bool _finalize_isStored;
+
         private void Finalize(string cause)
         {
             CancelInvoke();
             StopAllCoroutines();
 
             FinalizationCause = cause;
-            //Debug.Log($"Finalized #{OutcomeId} - {Strategy.Name} because of [{FinalizationCause}]");
             IsFinalized = true;
             Strategy.Kill();
             MatchupStrategy.Kill();
             ShootingStrategy.Kill();
-            //ClearDestinations();
 
-            //if (Squad != null)
-            //{
-                
-            //}
-            //else
-            //{
-            //    Debug.LogError($"Tried to finalize command #{OutcomeId} for a null squad");
-            //}
+            _finalize_ships = Squad.GetShips();
+            _finalize_ships.ForEach(ship => ship.TargetEnemyShipToFollow = null);
 
-            Squad.GetShips().ForEach((ship) =>
-            {
-                ship.TargetEnemyShipToFollow = null;
-
-            });
-            //Squad.IsRetreating = false;
             Squad.Status = "idle";
             if (Squad.IsChasing())
             {
@@ -359,7 +359,9 @@ namespace Assets.Scripts.Levels.Commands
             {
                 Stage.Menus.ActionBox.HighlightSelectedButtons();
             }
+
             Debug.Log($"Finalizing and setting Squad Command #{OutcomeId}:{Strategy?.CommandType} to null for {Squad.Name} because of {FinalizationCause}");
+
             Squad.Command = null;
             Squad.HasCommand = false;
 
@@ -367,50 +369,37 @@ namespace Assets.Scripts.Levels.Commands
             {
                 Squad.AddToCommandList();
             }
+
             if (Stage.IsDebugging)
             {
-                StoredCommand storedCommand = Level.State.GetPastCommands().FirstOrDefault(c => c.OutcomeId == OutcomeId);
-                if (storedCommand != null)
+                _finalize_storedCommand = Level.State.GetPastCommands().FirstOrDefault(c => c.OutcomeId == OutcomeId);
+                if (_finalize_storedCommand != null)
                 {
-                    if (storedCommand.IsStored)
+                    _finalize_isStored = _finalize_storedCommand.IsStored;
+                    if (_finalize_isStored)
                     {
                         Debug.Log($"Trying to finalize a command #${OutcomeId} with cause [{cause}] that has already been stored");
                         return;
                     }
-                    storedCommand.Tsv = Tsv;
-                    storedCommand.IsFinalized = true;
-                    //storedCommand.FinalizationCause = cause;
 
-                    StoredCommand squadCommand = Squad.PastCommands.FirstOrDefault(c => c.OutcomeId == OutcomeId);
-                    if (squadCommand != null)
+                    _finalize_storedCommand.Tsv = Tsv;
+                    _finalize_storedCommand.IsFinalized = true;
+
+                    _finalize_squadCommand = Squad.PastCommands.FirstOrDefault(c => c.OutcomeId == OutcomeId);
+                    if (_finalize_squadCommand != null)
                     {
-                        //squadCommand.Age = Age;
-                        if (EnemySquad != null)
-                        {
-                            squadCommand.Enemy = EnemySquad.Name;
-                        }
-                        else
-                        {
-                            squadCommand.Enemy = "";
-                        }
-                        squadCommand.Tsv = Tsv;
-                        squadCommand.FinalizationCause = cause;
+                        _finalize_enemyName = EnemySquad != null ? EnemySquad.Name : "";
+                        _finalize_squadCommand.Enemy = _finalize_enemyName;
+                        _finalize_squadCommand.Tsv = Tsv;
+                        _finalize_squadCommand.FinalizationCause = cause;
                     }
-
                 }
                 else
                 {
                     Debug.Log($"Couldn't find a past command with id #{OutcomeId}  with cause [{cause}]");
                 }
             }
-            // 
 
-
-            //Debug.Log($"Trying to destroy ({Squad.gameObject.name}, {name}) {Squad.gameObject.GetComponent<Command>()}");
-            //if (Squad != null)
-            //{
-            //    Destroy(Squad.gameObject.GetComponents<Command>().First((c) => c.OutcomeId == OutcomeId));
-            //}
             Stage.Pool.ReturnCommandToPool(this);
         }
 

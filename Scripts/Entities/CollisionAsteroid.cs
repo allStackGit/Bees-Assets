@@ -288,7 +288,7 @@ namespace Assets.Scripts.Entities
             }
             else
             {
-                base.Kill();
+                Kill(false);
             }
 
         }
@@ -308,6 +308,10 @@ namespace Assets.Scripts.Entities
                 Level.State.RemoveObstacle(this);
                 Debug.Log($"Returning {Name} to the pool");
                 Stage.Pool.ReturnCollisionAsteroidToPool(this);
+            }
+            else
+            {
+                Debug.Log($"Tried to kill already dead asteroid {Name}");
             }
         }
 

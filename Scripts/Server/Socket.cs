@@ -174,6 +174,7 @@ namespace Assets.Scripts.Server
 
         private string _f_message;
         private ServerResponse _message_response;
+        private ServerRequest _message_request;
         private void Message(byte[] bytes)
         {
             //Debug.Log($"Got message from server");
@@ -225,31 +226,32 @@ namespace Assets.Scripts.Server
             else
             {
                 Debug.Log($"Got a response for #{_message_response.Hash} Status: {_message_response.Status} which has already been handled");
-                ServerRequest sr = GetStandingRequest(_message_response.Hash);
-                if (sr != null)
+                _message_request = GetStandingRequest(_message_response.Hash);
+                if (_message_request != null)
                 {
-                    StandingRequests.Remove(sr);
+                    StandingRequests.Remove(_message_request);
                 }
             }
            
         }
 
-
+        private string _send_json;
         public void Send(dynamic content)
         {
             //Debug.Log($"Content: {content}");
-            string json = JsonConvert.SerializeObject(content);
+            _send_json = JsonConvert.SerializeObject(content);
             //Debug.Log($"Message to server: {json}");
             ConfigData.__TotalRequests++;
             if (_useWebSocketSharp)
             {
-                _webSocketSharpSocket.Send(json);
+                _webSocketSharpSocket.Send(_send_json);
             }
             else
             {
-                _nativeWebSocket.SendText(json);
+                _nativeWebSocket.SendText(_send_json);
             }
         }
+        private byte[] _update_message;
         public void Update() 
         {
             //Debug.Log("Updating socket");
@@ -259,11 +261,8 @@ namespace Assets.Scripts.Server
             }
             while (MessageQueue.Count > 0)
             {
-                byte[] message = MessageQueue.Dequeue();
-                if (message != null)
-                {
-                    Message(message);
-                }
+                _update_message = MessageQueue.Dequeue();
+                Message(_update_message);
             }
             CheckStandingRequests();
         }
@@ -304,53 +303,48 @@ namespace Assets.Scripts.Server
             }
             
         }
+        // ===========================
+        // Class-Level Static Variables
+        // ===========================
+
+        // Variables for CheckStandingRequests()
+        private List<ServerRequest> _checkStandingRequests_serverRequests; // Stores the list of standing requests
+        private ServerRequest _checkStandingRequests_currentRequest; // Holds the current request being processed
+        private DataFileRequest _checkStandingRequests_dataFileRequest; // Holds a DataFileRequest instance
+        private SettingsRequest _checkStandingRequests_settingsRequest; // Holds a SettingsRequest instance
+        private int _checkStandingRequests_loopIndex; // Tracks the loop iteration index
+
+        /// <summary>
+        /// Checks standing requests and processes them accordingly.
+        /// </summary>
         private void CheckStandingRequests()
         {
-            //Debug.Log("1. Checking on standing requests");
-            //List<ServerRequest> resends = new List<ServerRequest>();
-            List<ServerRequest> serverRequests = StandingRequests.ToList();
-            for (int i = 0; i < serverRequests.Count; i++)
+            // Copy standing requests to a list for processing
+            _checkStandingRequests_serverRequests = StandingRequests.ToList();
+
+            // Iterate through the requests using the class-level loop index
+            for (_checkStandingRequests_loopIndex = 0;
+                 _checkStandingRequests_loopIndex < _checkStandingRequests_serverRequests.Count;
+                 _checkStandingRequests_loopIndex++)
             {
-                ServerRequest request = serverRequests[i];
+                _checkStandingRequests_currentRequest = _checkStandingRequests_serverRequests[_checkStandingRequests_loopIndex];
 
-                //request.TimeOnQueue = Time.unscaledTime - request.StartTime;
-                //Debug.Log($"Time on Queue for #{request.Hash} - {request.Type} is {request.TimeOnQueue}ms");
-                if (request.Type == ConfigData.RequestTypes.GetUserData)
+                // Handle specific request types
+                if (_checkStandingRequests_currentRequest.Type == ConfigData.RequestTypes.GetUserData)
                 {
-                    DataFileRequest dataFileRequest = (DataFileRequest)request;
-                    dataFileRequest.DataFile.WaitForResponse();
+                    _checkStandingRequests_dataFileRequest = (DataFileRequest)_checkStandingRequests_currentRequest;
+                    _checkStandingRequests_dataFileRequest.DataFile.WaitForResponse();
                     continue;
                 }
-                else if (request.Type == ConfigData.RequestTypes.GetSettings)
+                else if (_checkStandingRequests_currentRequest.Type == ConfigData.RequestTypes.GetSettings)
                 {
-                    SettingsRequest settingsRequest = (SettingsRequest)request;
-                    settingsRequest.Settings.WaitForResponse();
+                    _checkStandingRequests_settingsRequest = (SettingsRequest)_checkStandingRequests_currentRequest;
+                    _checkStandingRequests_settingsRequest.Settings.WaitForResponse();
                     continue;
                 }
-
-                //if (request.TimeOnQueue > request.MaxTimeOnQueue && request.Status == 0)
-                //{
-                //    Debug.Log($"Request #{request.Hash} - {request.Type} timed out after {request.TimeOnQueue}/{request.MaxTimeOnQueue}s  and is NOT being resent. ");
-                //    //request.MaxTimeOnQueue += (int)(ConfigData.StandardMaxTimeOnQueue);
-                //    //request.Resends++;
-                //    //request.Status = -1;
-                //    //resends.Add(request);
-                //}
             }
-            
-            
-            //Debug.Log($"2. Loop ended, Resends: {resends.Count}");
-            //HandledRequests.AddRange(StandingRequests.Where((r) => r.Status == 1).Select((r) => r.Hash));
-            //StandingRequests = StandingRequests.Where((request) => request.Status == 0).ToHashSet(null);
-            //Debug.Log($"3. Modified standing requests, Resends: {resends.Count}");
-
-            //resends.ForEach((request) =>
-            //{
-            //    request.Status = 0;
-            //    SendRequest(request);
-            //});
-
         }
+
         public ServerRequest GetStandingRequest(long hash)
         {
             //ServerRequest serverRequest = StandingRequests.FirstOrDefault(r => r.Hash == hash);
@@ -365,341 +359,385 @@ namespace Assets.Scripts.Server
         }
 
 
+        // Class-level variables for HandleUserDataResponse
+        private UserDataResponse _userDataResponse; // Stores the deserialized response from the server
+        private DataFileRequest _standingRequest; // Stores the standing request matching the response
+        private string _dataFilename; // Stores the filename of the requested data file
+
+        private FleetData _fleetData; // Stores fleet data
+        private SavedSquadsData _savedSquadsData; // Stores saved squads data
+        private LevelData _levelData; // Stores level data
+        private UserProgressData _userProgressData; // Stores user progress data
+        private UserSettingsData _userSettingsData; // Stores user settings data
+
         private void HandleUserDataResponse(string message)
         {
-            //Debug.Log("Got user data from server");
-            UserDataResponse userDataResponse = JsonUtility.FromJson<UserDataResponse>(message);
-            DataFileRequest standingRequest;
-            try
-            {
-                standingRequest = (DataFileRequest)GetStandingRequest(userDataResponse.Hash);
-            }
-            catch (Exception e)
-            {
-                Debug.Log($"Error trying to get standing request #{userDataResponse.Hash}");
-                Debug.Log($"Standing requests: {Utilities.ListToString(StandingRequests.ToList())}");
-                throw e;
-            }
-            if (standingRequest != null)
-            {
-                standingRequest.TimeOnQueue = Time.unscaledTime - standingRequest.StartTime;
-                ConfigData.__TotalLatency += standingRequest.TimeOnQueue;
+            // Deserialize the user data response
+            _userDataResponse = JsonUtility.FromJson<UserDataResponse>(message);
+            _standingRequest = (DataFileRequest)GetStandingRequest(_userDataResponse.Hash);
 
-                if (userDataResponse.Filename != "" && userDataResponse.Contents != "")
+            //try
+            //{
+            //    _standingRequest = (DataFileRequest)GetStandingRequest(_userDataResponse.Hash);
+            //}
+            //catch (Exception e)
+            //{
+            //    Debug.Log($"Error trying to get standing request #{_userDataResponse.Hash}");
+            //    Debug.Log($"Standing requests: {Utilities.ListToString(StandingRequests.ToList())}");
+            //    throw e;
+            //}
+
+            if (_standingRequest != null)
+            {
+                _standingRequest.TimeOnQueue = Time.unscaledTime - _standingRequest.StartTime;
+                ConfigData.__TotalLatency += _standingRequest.TimeOnQueue;
+
+                if (!string.IsNullOrEmpty(_userDataResponse.Filename) && !string.IsNullOrEmpty(_userDataResponse.Contents))
                 {
-                    standingRequest.Response = userDataResponse;
-                    standingRequest.Status = 1;
-                    //Debug.Log($"Set the response {userDataResponse.Filename}, {userDataResponse.Contents}");
+                    _standingRequest.Response = _userDataResponse;
+                    _standingRequest.Status = 1;
                 }
                 else
                 {
-                    //Debug.Log("The server data file was null, writing the defaults to the server");
-                    string dataFilename = standingRequest.Request.DataFile;
+                    _dataFilename = _standingRequest.Request.DataFile;
 
-                    if (dataFilename == ConfigData.FleetDataFilenames[0])
+                    if (_dataFilename == ConfigData.FleetDataFilenames[0])
                     {
-                        FleetData fleetData = ConfigData.GetCampaignFleetData();
-                        fleetData.GetDataFile().WriteData(fleetData.GetDefaultJson());
+                        _fleetData = ConfigData.GetCampaignFleetData();
+                        _fleetData.GetDataFile().WriteData(_fleetData.GetDefaultJson());
                     }
-                    else if (dataFilename == ConfigData.FleetDataFilenames[1])
+                    else if (_dataFilename == ConfigData.FleetDataFilenames[1])
                     {
-                        FleetData fleetData = ConfigData.GetFleetData();
-                        fleetData.GetDataFile().WriteData(fleetData.GetDefaultJson());
+                        _fleetData = ConfigData.GetFleetData();
+                        _fleetData.GetDataFile().WriteData(_fleetData.GetDefaultJson());
                     }
-
-                    else if (dataFilename == ConfigData.SavedSquadsDataFilenames[0])
+                    else if (_dataFilename == ConfigData.SavedSquadsDataFilenames[0])
                     {
-                        SavedSquadsData savedSquadsData = ConfigData.GetCampaignSavedSquadsData();
-                        savedSquadsData.GetDataFile().WriteData(savedSquadsData.GetDefaultJson());
+                        _savedSquadsData = ConfigData.GetCampaignSavedSquadsData();
+                        _savedSquadsData.GetDataFile().WriteData(_savedSquadsData.GetDefaultJson());
                     }
-                    else if (dataFilename == ConfigData.SavedSquadsDataFilenames[1])
+                    else if (_dataFilename == ConfigData.SavedSquadsDataFilenames[1])
                     {
-                        SavedSquadsData savedSquadsData = ConfigData.GetSavedSquadsData();
-                        savedSquadsData.GetDataFile().WriteData(savedSquadsData.GetDefaultJson());
+                        _savedSquadsData = ConfigData.GetSavedSquadsData();
+                        _savedSquadsData.GetDataFile().WriteData(_savedSquadsData.GetDefaultJson());
                     }
-
-                    else if (dataFilename == ConfigData.LevelsDataFilenames[0])
+                    else if (_dataFilename == ConfigData.LevelsDataFilenames[0])
                     {
-                        LevelData levelData = ConfigData.GetCampaignLevelData();
-                        levelData.GetDataFile().WriteData(levelData.GetDefaultJson());
+                        _levelData = ConfigData.GetCampaignLevelData();
+                        _levelData.GetDataFile().WriteData(_levelData.GetDefaultJson());
                     }
-                    else if (dataFilename == ConfigData.LevelsDataFilenames[1])
+                    else if (_dataFilename == ConfigData.LevelsDataFilenames[1])
                     {
-                        LevelData levelData = ConfigData.GetLevelData();
-                        levelData.GetDataFile().WriteData(levelData.GetDefaultJson());
+                        _levelData = ConfigData.GetLevelData();
+                        _levelData.GetDataFile().WriteData(_levelData.GetDefaultJson());
                     }
-
-                    else if (dataFilename == ConfigData.UserProgressFilename)
+                    else if (_dataFilename == ConfigData.UserProgressFilename)
                     {
-                        UserProgressData userProgressData = ConfigData.GetUserProgressData();
-                        userProgressData.GetDataFile().WriteData(userProgressData.GetDefaultJson());
+                        _userProgressData = ConfigData.GetUserProgressData();
+                        _userProgressData.GetDataFile().WriteData(_userProgressData.GetDefaultJson());
                     }
-
-                    else if (dataFilename == ConfigData.UserSettingsFilename)
+                    else if (_dataFilename == ConfigData.UserSettingsFilename)
                     {
-                        UserSettingsData userSettingsData = ConfigData.GetUserSettingsData();
-                        userSettingsData.GetDataFile().WriteData(userSettingsData.GetDefaultJson());
+                        _userSettingsData = ConfigData.GetUserSettingsData();
+                        _userSettingsData.GetDataFile().WriteData(_userSettingsData.GetDefaultJson());
                     }
 
-                    standingRequest.Status = -1;
-
-                    //Task.Run(async () =>
-                    //{
-                    //    await Task.Delay(500);
-                    //    standingRequest.Status = -1; // indicates the the request needs to be resent
-                    //    standingRequest.Response = userDataResponse;
-                    //});
-
-
+                    _standingRequest.Status = -1;
                 }
-
-                //Debug.Log("Set the response");
             }
             else
             {
-                Debug.LogError($"Counldn't find a matching request for {userDataResponse.Hash}");
+                Debug.LogError($"Couldn't find a matching request for {_userDataResponse.Hash}");
             }
-            
         }
+
+        //////////////////////////////////////////////////////////////////////////////
+        // Class-level variables for HandleSettingsResponse() method:
+        //////////////////////////////////////////////////////////////////////////////
+
+        private UserDataResponse _settingsResponse_userData;
+        private SettingsRequest _settingsResponse_standingRequest;
+
         private void HandleSettingsResponse(string message)
         {
-            //Debug.Log("Got user data from server");
-            UserDataResponse userDataResponse = JsonUtility.FromJson<UserDataResponse>(message);
-            SettingsRequest standingRequest = (SettingsRequest)GetStandingRequest(userDataResponse.Hash);
-            if (standingRequest != null)
+            // Debug.Log("Got user data from server");
+            _settingsResponse_userData = JsonUtility.FromJson<UserDataResponse>(message);
+            _settingsResponse_standingRequest = (SettingsRequest)GetStandingRequest(_settingsResponse_userData.Hash);
+
+            if (_settingsResponse_standingRequest != null)
             {
-                if (userDataResponse.Filename != "" && userDataResponse.Contents != "")
+                if (!string.IsNullOrEmpty(_settingsResponse_userData.Filename) &&
+                    !string.IsNullOrEmpty(_settingsResponse_userData.Contents))
                 {
-                    standingRequest.Status = 1;
-                    standingRequest.Response = userDataResponse;
-                    standingRequest.TimeOnQueue = Time.unscaledTime - standingRequest.StartTime;
-                    ConfigData.__TotalLatency += standingRequest.TimeOnQueue;
-                    //Debug.Log($"Set the response {userDataResponse.Filename}, {userDataResponse.Contents}");
+                    _settingsResponse_standingRequest.Status = 1;
+                    _settingsResponse_standingRequest.Response = _settingsResponse_userData;
+                    _settingsResponse_standingRequest.TimeOnQueue = Time.unscaledTime - _settingsResponse_standingRequest.StartTime;
+                    ConfigData.__TotalLatency += _settingsResponse_standingRequest.TimeOnQueue;
+                    // Debug.Log($"Set the response {_settingsResponse_userData.Filename}, {_settingsResponse_userData.Contents}");
                 }
                 else
                 {
-                    Debug.LogError($"Null response when requesting settings from the server. {userDataResponse}");
-
+                    Debug.LogError($"Null response when requesting settings from the server. {_settingsResponse_userData}");
                 }
-
             }
             else
             {
-                Debug.LogError($"Couldn't find a matching request for {userDataResponse.Hash}");
+                Debug.LogError($"Couldn't find a matching request for {_settingsResponse_userData.Hash}");
             }
-
         }
+        //////////////////////////////////////////////////////////////////////////////
+        // Class-level variables for HandleMatchupResponse() method:
+        //////////////////////////////////////////////////////////////////////////////
+
+        private MatchupStrategyResponse _handleMatchupResponse_matchupResponse;
+        private MatchupStrategyRequest _handleMatchupResponse_standingRequest;
+        private Squad _handleMatchupResponse_squad;
+        private Squad _handleMatchupResponse_targetSquad;
+        private Level _handleMatchupResponse_level;
+
         private void HandleMatchupResponse(string message)
         {
-            MatchupStrategyResponse matchupResponse = JsonUtility.FromJson<MatchupStrategyResponse>(message);
-            MatchupStrategyRequest standingRequest = (MatchupStrategyRequest)GetStandingRequest(matchupResponse.Hash);
-            if (standingRequest != null)
+            _handleMatchupResponse_matchupResponse = JsonUtility.FromJson<MatchupStrategyResponse>(message);
+            _handleMatchupResponse_standingRequest = (MatchupStrategyRequest)GetStandingRequest(_handleMatchupResponse_matchupResponse.Hash);
+
+            if (_handleMatchupResponse_standingRequest != null)
             {
-                StandingRequests.Remove(standingRequest);
-                standingRequest.TimeOnQueue = Time.unscaledTime - standingRequest.StartTime;
-                ConfigData.__TotalLatency += standingRequest.TimeOnQueue;
-                Squad squad = standingRequest.Squad;
-                if (squad != null && !squad.IsDead)
+                StandingRequests.Remove(_handleMatchupResponse_standingRequest);
+                _handleMatchupResponse_standingRequest.TimeOnQueue = Time.unscaledTime - _handleMatchupResponse_standingRequest.StartTime;
+                ConfigData.__TotalLatency += _handleMatchupResponse_standingRequest.TimeOnQueue;
+
+                _handleMatchupResponse_squad = _handleMatchupResponse_standingRequest.Squad;
+
+                if (_handleMatchupResponse_squad != null && !_handleMatchupResponse_squad.IsDead)
                 {
-                    //squad.Command = squad.gameObject.AddComponent<Command>();
-                    //squad.Command.Setup(squad, true);
+                    _handleMatchupResponse_squad.MatchupStrategy.Setup(
+                        Utilities.ConvertMatchupStrategyNameToType[_handleMatchupResponse_matchupResponse.Name],
+                        _handleMatchupResponse_matchupResponse.OutcomeId,
+                        _handleMatchupResponse_squad
+                    );
 
-                    squad.MatchupStrategy.Setup(Utilities.ConvertMatchupStrategyNameToType[matchupResponse.Name], matchupResponse.OutcomeId, squad);
+                    _handleMatchupResponse_targetSquad = _handleMatchupResponse_squad.MatchupStrategy.SortSquads();
 
-                    //squad.Command.MatchupStrategy = squad.MatchupStrategy;
-                    Squad targetSquad = squad.MatchupStrategy.SortSquads();
-                    //Debug.Log($"matchup strategy after sorted");
-                    //Debugger.LogSquads(Level.State.GetSquads());
-                    Level level = standingRequest.Level;
-                    level.HandledRequests.Add(standingRequest.Hash);
-                    squad.MakeMatchupAndGetCommand(targetSquad);
+                    _handleMatchupResponse_level = _handleMatchupResponse_standingRequest.Level;
+                    _handleMatchupResponse_level.HandledRequests.Add(_handleMatchupResponse_standingRequest.Hash);
+
+                    _handleMatchupResponse_squad.MakeMatchupAndGetCommand(_handleMatchupResponse_targetSquad);
                 }
                 else
                 {
-                    //Debug.Log("Exception");
-                    //Debug.Log($"matchup strategy #{matchupResponse.StrategyId} was received for squad #{matchupResponse.SquadHash} but that squad no longer exists.");
+                    Debug.LogWarning($"Matchup strategy #{_handleMatchupResponse_matchupResponse.OutcomeId} was received for squad {_handleMatchupResponse_matchupResponse.Hash}, but the squad no longer exists.");
                 }
             }
             else
             {
-                Debug.Log($"Couldn't find a matching request for {matchupResponse.Hash}");
+                Debug.LogWarning($"Couldn't find a matching request for {_handleMatchupResponse_matchupResponse.Hash}");
             }
-            
-        }  
+        }
+        //////////////////////////////////////////////////////////////////////////////
+        // Class-level variables for HandleStrategicCommandResponse() method:
+        //////////////////////////////////////////////////////////////////////////////
+
+        private CommandResponse _handleStrategicCommandResponse_commandResponse;
+        private CommandRequest _handleStrategicCommandResponse_standingRequest;
+        private Squad _handleStrategicCommandResponse_squad;
+        private Level _handleStrategicCommandResponse_level;
+        private ConfigData.CommandTypes _handleStrategicCommandResponse_commandType;
+        private Command _handleStrategicCommandResponse_command;
+        private WarpGate _handleStrategicCommandResponse_warpGate;
+        private Vector2 _handleStrategicCommandResponse_position;
         private void HandleStrategicCommandResponse(string message)
         {
-            CommandResponse commandResponse = JsonUtility.FromJson<CommandResponse>(message);
-            CommandRequest standingRequest = (CommandRequest)GetStandingRequest(commandResponse.Hash);
+            _handleStrategicCommandResponse_commandResponse = JsonUtility.FromJson<CommandResponse>(message);
+            _handleStrategicCommandResponse_standingRequest = (CommandRequest)GetStandingRequest(_handleStrategicCommandResponse_commandResponse.Hash);
 
-            if (standingRequest != null)
+            if (_handleStrategicCommandResponse_standingRequest != null)
             {
-                StandingRequests.Remove(standingRequest);
-                standingRequest.TimeOnQueue = Time.unscaledTime - standingRequest.StartTime;
-                ConfigData.__TotalLatency += standingRequest.TimeOnQueue;
-                Squad squad = standingRequest.Squad;
-                Level level = standingRequest.Level;
-                level.HandledRequests.Add(standingRequest.Hash);
-                ConfigData.CommandTypes commandType = Utilities.ConvertCommandNameToType[commandResponse.Name];
+                StandingRequests.Remove(_handleStrategicCommandResponse_standingRequest);  
+                _handleStrategicCommandResponse_standingRequest.TimeOnQueue = Time.unscaledTime - _handleStrategicCommandResponse_standingRequest.StartTime;
+                ConfigData.__TotalLatency += _handleStrategicCommandResponse_standingRequest.TimeOnQueue;
+                _handleStrategicCommandResponse_squad = _handleStrategicCommandResponse_standingRequest.Squad;
+                _handleStrategicCommandResponse_level = _handleStrategicCommandResponse_standingRequest.Level;
+                _handleStrategicCommandResponse_level.HandledRequests.Add(_handleStrategicCommandResponse_standingRequest.Hash);
+               _handleStrategicCommandResponse_commandType = Utilities.ConvertCommandNameToType[_handleStrategicCommandResponse_commandResponse.Name];
                 //Debug.Log($"strategic command response");
                 //Debug.Log(squad.damageSentToEnemyShipsBySquad);
-                if (squad != null && !level.State.LevelEnded && !squad.IsDead)
+                if (!_handleStrategicCommandResponse_level.State.LevelEnded && !_handleStrategicCommandResponse_squad.IsDead)
                 {
                     //Debug.Log("squad is not null");
-                    Command command = null;
                     //if (squad.BannedStrats.Contains(commandResponse.Name))
                     //{
                     //    Debug.LogError($"{squad.Name} was given banned strat {commandResponse.Name} #{commandResponse.Hash}, isCached? {commandResponse.IsCached}");
                     //}
-                    switch (commandType)
+                    switch (_handleStrategicCommandResponse_commandType)
                     {
                         case ConfigData.CommandTypes.Aggressive:
-                            if (squad.HasOnlyBombers)
+                            if (_handleStrategicCommandResponse_squad.HasOnlyBombers)
                             {
-                                command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.BombingRun);
-                                commandType = ConfigData.CommandTypes.BombingRun;
+                                _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.BombingRun);
+                                _handleStrategicCommandResponse_commandType = ConfigData.CommandTypes.BombingRun;
                             }
-                            else if (squad.HasOnlyBarges)
+                            else if (_handleStrategicCommandResponse_squad.HasOnlyBarges)
                             {
-                                command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Charge);
-                                commandType = ConfigData.CommandTypes.Charge;
+                                _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Charge);
+                                _handleStrategicCommandResponse_commandType = ConfigData.CommandTypes.Charge;
                             }
                             else
                             {
-                                command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Aggressive);
+                                _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Aggressive);
                             }
-                            command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
+                            _handleStrategicCommandResponse_command.Setup(_handleStrategicCommandResponse_squad, true, _handleStrategicCommandResponse_standingRequest.Enemy, _handleStrategicCommandResponse_standingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.Retreat:
-                            command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Retreat);
-                            command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
+                            _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Retreat);
+                            _handleStrategicCommandResponse_command.Setup(_handleStrategicCommandResponse_squad, true, _handleStrategicCommandResponse_standingRequest.Enemy, _handleStrategicCommandResponse_standingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.MoveToRandom:
-                            command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.MoveToRandom);
-                            command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
+                            _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.MoveToRandom);
+                            _handleStrategicCommandResponse_command.Setup(_handleStrategicCommandResponse_squad, true, _handleStrategicCommandResponse_standingRequest.Enemy, _handleStrategicCommandResponse_standingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.CircleSquad:
-                            if (squad.HasOnlyBombers)
+                            if (_handleStrategicCommandResponse_squad.HasOnlyBombers)
                             {
-                                command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.BombingRun);
-                                commandType = ConfigData.CommandTypes.BombingRun;
+                                _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.BombingRun);
+                                _handleStrategicCommandResponse_commandType = ConfigData.CommandTypes.BombingRun;
                             }
-                            else if (squad.HasOnlyBarges)
+                            else if (_handleStrategicCommandResponse_squad.HasOnlyBarges)
                             {
-                                command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Charge);
-                                commandType = ConfigData.CommandTypes.Charge;
+                                _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Charge);
+                                _handleStrategicCommandResponse_commandType = ConfigData.CommandTypes.Charge;
                             }
                             else
                             {
-                                command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.CircleSquad);
+                                _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.CircleSquad);
                             }
-                            command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
+                            _handleStrategicCommandResponse_command.Setup(_handleStrategicCommandResponse_squad, true, _handleStrategicCommandResponse_standingRequest.Enemy, _handleStrategicCommandResponse_standingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.RightSwipe:
                         case ConfigData.CommandTypes.LeftSwipe:
-                            if (squad.HasOnlyBombers)
+                            if (_handleStrategicCommandResponse_squad.HasOnlyBombers)
                             {
-                                command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.BombingRun);
-                                commandType = ConfigData.CommandTypes.BombingRun;
+                                _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.BombingRun);
+                                _handleStrategicCommandResponse_commandType = ConfigData.CommandTypes.BombingRun;
                             }
-                            else if (squad.HasOnlyBarges)
+                            else if (_handleStrategicCommandResponse_squad.HasOnlyBarges)
                             {
-                                command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Charge);
-                                commandType = ConfigData.CommandTypes.Charge;
+                                _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Charge);
+                                _handleStrategicCommandResponse_commandType = ConfigData.CommandTypes.Charge;
                             }
                             else
                             {
-                                command = level.Stage.Pool.GetCommandFromPool(commandType);
+                                _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(_handleStrategicCommandResponse_commandType);
 
                             }
-                            command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
+                            _handleStrategicCommandResponse_command.Setup(_handleStrategicCommandResponse_squad, true, _handleStrategicCommandResponse_standingRequest.Enemy, _handleStrategicCommandResponse_standingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.ClosestFriendly:
-                            command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.ClosestFriendly);
-                            command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
+                            _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.ClosestFriendly);
+                            _handleStrategicCommandResponse_command.Setup(_handleStrategicCommandResponse_squad, true, _handleStrategicCommandResponse_standingRequest.Enemy, _handleStrategicCommandResponse_standingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.InAndOut:
-                            if (squad.HasOnlyBombers)
+                            if (_handleStrategicCommandResponse_squad.HasOnlyBombers)
                             {
-                                command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.BombingRun);
-                                commandType = ConfigData.CommandTypes.BombingRun;
+                                _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.BombingRun);
+                                _handleStrategicCommandResponse_commandType = ConfigData.CommandTypes.BombingRun;
                             }
-                            else if (squad.HasOnlyBarges)
+                            else if (_handleStrategicCommandResponse_squad.HasOnlyBarges)
                             {
-                                command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Charge);
-                                commandType = ConfigData.CommandTypes.Charge;
+                                _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Charge);
+                                _handleStrategicCommandResponse_commandType = ConfigData.CommandTypes.Charge;
                             }
                             else
                             {
-                                command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.InAndOut);
+                                _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.InAndOut);
                             }
-                            command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
+                            _handleStrategicCommandResponse_command.Setup(_handleStrategicCommandResponse_squad, true, _handleStrategicCommandResponse_standingRequest.Enemy, _handleStrategicCommandResponse_standingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.Patrol:
-                            command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Patrol);
-                            command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
+                            _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Patrol);
+                            _handleStrategicCommandResponse_command.Setup(_handleStrategicCommandResponse_squad, true, _handleStrategicCommandResponse_standingRequest.Enemy, _handleStrategicCommandResponse_standingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.Guard:
-                            command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Guard);
-                            command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
+                            _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Guard);
+                            _handleStrategicCommandResponse_command.Setup(_handleStrategicCommandResponse_squad, true, _handleStrategicCommandResponse_standingRequest.Enemy, _handleStrategicCommandResponse_standingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.Scouting:
-                            command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Scouting);
-                            command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
+                            _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Scouting);
+                            _handleStrategicCommandResponse_command.Setup(_handleStrategicCommandResponse_squad, true, _handleStrategicCommandResponse_standingRequest.Enemy, _handleStrategicCommandResponse_standingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.Mining:
-                            command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Mining);
-                            command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
+                            _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Mining);
+                            _handleStrategicCommandResponse_command.Setup(_handleStrategicCommandResponse_squad, true, _handleStrategicCommandResponse_standingRequest.Enemy, _handleStrategicCommandResponse_standingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.FullRetreat:
-                            command = level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.FullRetreat);
-                            command.Setup(squad, true, standingRequest.Enemy, standingRequest.Matchup);
+                            _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.FullRetreat);
+                            _handleStrategicCommandResponse_command.Setup(_handleStrategicCommandResponse_squad, true, _handleStrategicCommandResponse_standingRequest.Enemy, _handleStrategicCommandResponse_standingRequest.Matchup);
                             break;
                         default:
-                            Debug.LogError($"commandResponse doesn't match a known command: {commandResponse.Name}");
+                            Debug.LogError($"commandResponse doesn't match a known command: {_handleStrategicCommandResponse_commandResponse.Name}");
                             break;
                     }
 
-                    squad.Command = command;
-                    squad.Command.MatchupStrategy = squad.MatchupStrategy;
+                    _handleStrategicCommandResponse_squad.Command = _handleStrategicCommandResponse_command;
+                    _handleStrategicCommandResponse_squad.Command.MatchupStrategy = _handleStrategicCommandResponse_squad.MatchupStrategy;
                     
-                    if (commandType == ConfigData.CommandTypes.Patrol)
+                    if (_handleStrategicCommandResponse_commandType == ConfigData.CommandTypes.Aggressive)
+                    {
+                        ((Aggressive)_handleStrategicCommandResponse_squad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[_handleStrategicCommandResponse_commandResponse.ShootingStrategyName], _handleStrategicCommandResponse_commandResponse.OutcomeId, _handleStrategicCommandResponse_commandResponse.ShootingStrategyOutcomeId, false);
+                    }
+                    else if (_handleStrategicCommandResponse_commandType == ConfigData.CommandTypes.BombingRun)
+                    {
+                        ((BombingRun)_handleStrategicCommandResponse_squad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[_handleStrategicCommandResponse_commandResponse.ShootingStrategyName], _handleStrategicCommandResponse_commandResponse.OutcomeId, _handleStrategicCommandResponse_commandResponse.ShootingStrategyOutcomeId, false);
+                    }
+                    else if (_handleStrategicCommandResponse_commandType == ConfigData.CommandTypes.Charge)
+                    {
+                        ((Charge)_handleStrategicCommandResponse_squad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[_handleStrategicCommandResponse_commandResponse.ShootingStrategyName], _handleStrategicCommandResponse_commandResponse.OutcomeId, _handleStrategicCommandResponse_commandResponse.ShootingStrategyOutcomeId, false);
+                    }
+                    else if (_handleStrategicCommandResponse_commandType == ConfigData.CommandTypes.CircleSquad)
+                    {
+                        ((CircleSquad)_handleStrategicCommandResponse_squad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[_handleStrategicCommandResponse_commandResponse.ShootingStrategyName], _handleStrategicCommandResponse_commandResponse.OutcomeId, _handleStrategicCommandResponse_commandResponse.ShootingStrategyOutcomeId, false);
+                    }
+                    else if (_handleStrategicCommandResponse_commandType == ConfigData.CommandTypes.InAndOut)
+                    {
+                        ((InAndOut)_handleStrategicCommandResponse_squad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[_handleStrategicCommandResponse_commandResponse.ShootingStrategyName], _handleStrategicCommandResponse_commandResponse.OutcomeId, _handleStrategicCommandResponse_commandResponse.ShootingStrategyOutcomeId, false);
+                    }
+                    else if (_handleStrategicCommandResponse_commandType == ConfigData.CommandTypes.Retreat)
+                    {
+                        ((Retreat)_handleStrategicCommandResponse_squad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[_handleStrategicCommandResponse_commandResponse.ShootingStrategyName], _handleStrategicCommandResponse_commandResponse.OutcomeId, _handleStrategicCommandResponse_commandResponse.ShootingStrategyOutcomeId, false);
+                    }
+                    else if (_handleStrategicCommandResponse_commandType == ConfigData.CommandTypes.LeftSwipe || _handleStrategicCommandResponse_commandType == ConfigData.CommandTypes.RightSwipe)
+                    {
+                        ((SwipeSquad)_handleStrategicCommandResponse_squad.Command).Execute(_handleStrategicCommandResponse_commandType, Utilities.ConvertShootingStrategyNameToType[_handleStrategicCommandResponse_commandResponse.ShootingStrategyName], _handleStrategicCommandResponse_commandResponse.OutcomeId, _handleStrategicCommandResponse_commandResponse.ShootingStrategyOutcomeId, false);
+                    }
+                    else if (_handleStrategicCommandResponse_commandType == ConfigData.CommandTypes.Patrol)
                     {
                         //Debug.Log("Got a patrol);
-                        ((Patrol)squad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[commandResponse.ShootingStrategyName], commandResponse.OutcomeId, commandResponse.ShootingStrategyOutcomeId, true, Vector2.zero, Vector2.zero);
+                        ((Patrol)_handleStrategicCommandResponse_squad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[_handleStrategicCommandResponse_commandResponse.ShootingStrategyName], _handleStrategicCommandResponse_commandResponse.OutcomeId, _handleStrategicCommandResponse_commandResponse.ShootingStrategyOutcomeId, true, Vector2.zero, Vector2.zero);
                     }
-                    else if (commandType == ConfigData.CommandTypes.Guard)
+                    else if (_handleStrategicCommandResponse_commandType == ConfigData.CommandTypes.Guard)
                     {
-                        ((Guard)squad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[commandResponse.ShootingStrategyName], commandResponse.OutcomeId, commandResponse.ShootingStrategyOutcomeId, true, null);
+                        ((Guard)_handleStrategicCommandResponse_squad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[_handleStrategicCommandResponse_commandResponse.ShootingStrategyName], _handleStrategicCommandResponse_commandResponse.OutcomeId, _handleStrategicCommandResponse_commandResponse.ShootingStrategyOutcomeId, true, null);
                     }
-                    else if (commandType == ConfigData.CommandTypes.ClosestFriendly)
+                    else if (_handleStrategicCommandResponse_commandType == ConfigData.CommandTypes.ClosestFriendly)
                     {
-                        ((ClosestFriendly)squad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[commandResponse.ShootingStrategyName], commandResponse.OutcomeId, commandResponse.ShootingStrategyOutcomeId, true);
+                        ((ClosestFriendly)_handleStrategicCommandResponse_squad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[_handleStrategicCommandResponse_commandResponse.ShootingStrategyName], _handleStrategicCommandResponse_commandResponse.OutcomeId, _handleStrategicCommandResponse_commandResponse.ShootingStrategyOutcomeId, true);
                     }
-                    else if (commandType == ConfigData.CommandTypes.MoveToRandom)
+                    else if (_handleStrategicCommandResponse_commandType == ConfigData.CommandTypes.MoveToRandom)
                     {
-                        ((MoveToRandom)squad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[commandResponse.ShootingStrategyName], commandResponse.OutcomeId, commandResponse.ShootingStrategyOutcomeId, true);
+                        ((MoveToRandom)_handleStrategicCommandResponse_squad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[_handleStrategicCommandResponse_commandResponse.ShootingStrategyName], _handleStrategicCommandResponse_commandResponse.OutcomeId, _handleStrategicCommandResponse_commandResponse.ShootingStrategyOutcomeId, true);
                     }
-                    else if (commandType == ConfigData.CommandTypes.Scouting)
+                    else if (_handleStrategicCommandResponse_commandType == ConfigData.CommandTypes.Scouting)
                     {
-                        ((Scouting)squad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[commandResponse.ShootingStrategyName], commandResponse.OutcomeId, commandResponse.ShootingStrategyOutcomeId, true);
+                        ((Scouting)_handleStrategicCommandResponse_squad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[_handleStrategicCommandResponse_commandResponse.ShootingStrategyName], _handleStrategicCommandResponse_commandResponse.OutcomeId, _handleStrategicCommandResponse_commandResponse.ShootingStrategyOutcomeId, true);
                     }
-                    else if (commandType == ConfigData.CommandTypes.Mining)
+                    else if (_handleStrategicCommandResponse_commandType == ConfigData.CommandTypes.Mining)
                     {
-                        ((Mining)squad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[commandResponse.ShootingStrategyName], commandResponse.OutcomeId, commandResponse.ShootingStrategyOutcomeId, true, squad.GetNearestMiningAsteroid());
+                        ((Mining)_handleStrategicCommandResponse_squad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[_handleStrategicCommandResponse_commandResponse.ShootingStrategyName], _handleStrategicCommandResponse_commandResponse.OutcomeId, _handleStrategicCommandResponse_commandResponse.ShootingStrategyOutcomeId, true, _handleStrategicCommandResponse_squad.GetNearestMiningAsteroid());
                     }
-                    else if (commandType == ConfigData.CommandTypes.FullRetreat)
+                    else if (_handleStrategicCommandResponse_commandType == ConfigData.CommandTypes.FullRetreat)
                     {
-                        Vector2 position = squad.GetPosition();
-                        WarpGate warpGate = (WarpGate) level.State.GetHumanShips().Where((s) => s.IsWarpGate).OrderBy((s) => s.DistanceToPoint(position)).FirstOrDefault();
-                        ((FullRetreat)squad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[commandResponse.ShootingStrategyName], commandResponse.OutcomeId, commandResponse.ShootingStrategyOutcomeId, true, warpGate);
-                    }
-                    else
-                    {
-                        //if (command is BombingRun && standingRequest.Enemy == null)
-                        //{
-                        //    Debug.Log($"Trying to execute bombing run ({commandResponse.Name}) for {squad.Name} against null enemy from #{commandResponse.Hash}. IsCached? {commandResponse.IsCached}");
-                        //}
-                        squad.Command.Execute(commandType, Utilities.ConvertShootingStrategyNameToType[commandResponse.ShootingStrategyName], commandResponse.OutcomeId, commandResponse.ShootingStrategyOutcomeId, false);
+                        _handleStrategicCommandResponse_position = _handleStrategicCommandResponse_squad.GetPosition();
+                        _handleStrategicCommandResponse_warpGate = (WarpGate) _handleStrategicCommandResponse_level.State.GetHumanShips().Where((s) => s.IsWarpGate).OrderBy((s) => s.DistanceToPoint(_handleStrategicCommandResponse_position)).FirstOrDefault();
+                        ((FullRetreat)_handleStrategicCommandResponse_squad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[_handleStrategicCommandResponse_commandResponse.ShootingStrategyName], _handleStrategicCommandResponse_commandResponse.OutcomeId, _handleStrategicCommandResponse_commandResponse.ShootingStrategyOutcomeId, true, _handleStrategicCommandResponse_warpGate);
                     }
 
                 }
@@ -710,66 +748,97 @@ namespace Assets.Scripts.Server
             }
             else
             {
-                Debug.Log($"Couldn't find a matching request for {commandResponse.Hash}");
+                Debug.Log($"Couldn't find a matching request for {_handleStrategicCommandResponse_commandResponse.Hash}");
             }
 
         }
+        // HandleSetupLevelResponse variables
+        private SetupLevelRequest handleSetupLevelResponseStandingRequest;
+        private Level handleSetupLevelResponseLevel;
+        private float handleSetupLevelResponseTimeOnQueue;
+
+        // HandleReconnectLevelResponse variables
+        private SetupLevelRequest handleReconnectLevelResponseStandingRequest;
+        private Level handleReconnectLevelResponseLevel;
+        private float handleReconnectLevelResponseTimeOnQueue;
+
+        // HandleBasicResponse variables
+        private ServerRequest handleBasicResponseStandingRequest;
+        private float handleBasicResponseTimeOnQueue;
+
         private void HandleSetupLevelResponse(ServerResponse response)
         {
-            SetupLevelRequest standingRequest = (SetupLevelRequest)GetStandingRequest(response.Hash);
+            // Get standing request
+            handleSetupLevelResponseStandingRequest = (SetupLevelRequest)GetStandingRequest(response.Hash);
 
-            if (standingRequest != null)
+            if (handleSetupLevelResponseStandingRequest != null)
             {
-                StandingRequests.Remove(standingRequest);
-                standingRequest.Level.IsLevelSetupOnServer = true;
-                standingRequest.Level.IsLevelConnectedToServer = true;
-                standingRequest.Level.HandledRequests.Add(response.Hash);
-                standingRequest.TimeOnQueue = Time.unscaledTime - standingRequest.StartTime;
-                ConfigData.__TotalLatency += standingRequest.TimeOnQueue;
-                OpenLevels.Add(standingRequest.Level);
+                // Remove from standing requests and process level
+                StandingRequests.Remove(handleSetupLevelResponseStandingRequest);
+                handleSetupLevelResponseLevel = handleSetupLevelResponseStandingRequest.Level;
+                handleSetupLevelResponseLevel.IsLevelSetupOnServer = true;
+                handleSetupLevelResponseLevel.IsLevelConnectedToServer = true;
+                handleSetupLevelResponseLevel.HandledRequests.Add(response.Hash);
+
+                // Calculate time on queue and update latency
+                handleSetupLevelResponseTimeOnQueue = Time.unscaledTime - handleSetupLevelResponseStandingRequest.StartTime;
+                handleSetupLevelResponseStandingRequest.TimeOnQueue = handleSetupLevelResponseTimeOnQueue;
+                ConfigData.__TotalLatency += handleSetupLevelResponseTimeOnQueue;
+
+                // Add to open levels
+                OpenLevels.Add(handleSetupLevelResponseLevel);
             }
             else
             {
                 Debug.Log($"Couldn't find a matching request for {response.Hash}");
             }
-
         }
 
         private void HandleReconnectLevelResponse(ServerResponse response)
         {
-            SetupLevelRequest standingRequest = (SetupLevelRequest)GetStandingRequest(response.Hash);
+            // Get standing request
+            handleReconnectLevelResponseStandingRequest = (SetupLevelRequest)GetStandingRequest(response.Hash);
 
-            if (standingRequest != null)
+            if (handleReconnectLevelResponseStandingRequest != null)
             {
-                StandingRequests.Remove(standingRequest);
-                standingRequest.Level.IsLevelConnectedToServer = true;
-                standingRequest.Level.HandledRequests.Add(response.Hash);
-                standingRequest.TimeOnQueue = Time.unscaledTime - standingRequest.StartTime;
-                ConfigData.__TotalLatency += standingRequest.TimeOnQueue;
-                Debug.Log($"Reconnected {standingRequest.Level.Name} to the server");
+                // Remove from standing requests and process level
+                StandingRequests.Remove(handleReconnectLevelResponseStandingRequest);
+                handleReconnectLevelResponseLevel = handleReconnectLevelResponseStandingRequest.Level;
+                handleReconnectLevelResponseLevel.IsLevelConnectedToServer = true;
+                handleReconnectLevelResponseLevel.HandledRequests.Add(response.Hash);
+
+                // Calculate time on queue and update latency
+                handleReconnectLevelResponseTimeOnQueue = Time.unscaledTime - handleReconnectLevelResponseStandingRequest.StartTime;
+                handleReconnectLevelResponseStandingRequest.TimeOnQueue = handleReconnectLevelResponseTimeOnQueue;
+                ConfigData.__TotalLatency += handleReconnectLevelResponseTimeOnQueue;
+
+                // Log reconnection and mark stranded requests for resending
+                Debug.Log($"Reconnected {handleReconnectLevelResponseLevel.Name} to the server");
                 MarkStrandedRequestsForResending();
             }
             else
             {
                 Debug.Log($"Couldn't find a matching request for {response.Hash}");
             }
-
         }
+
         private void HandleBasicResponse(ServerResponse response)
         {
-            ServerRequest standingRequest = GetStandingRequest(response.Hash);
+            // Get standing request
+            handleBasicResponseStandingRequest = GetStandingRequest(response.Hash);
 
-            if (standingRequest != null)
+            if (handleBasicResponseStandingRequest != null)
             {
-                StandingRequests.Remove(standingRequest);
-                standingRequest.TimeOnQueue = Time.unscaledTime - standingRequest.StartTime;
-                ConfigData.__TotalLatency += standingRequest.TimeOnQueue;
+                // Remove from standing requests and calculate time on queue
+                StandingRequests.Remove(handleBasicResponseStandingRequest);
+                handleBasicResponseTimeOnQueue = Time.unscaledTime - handleBasicResponseStandingRequest.StartTime;
+                handleBasicResponseStandingRequest.TimeOnQueue = handleBasicResponseTimeOnQueue;
+                ConfigData.__TotalLatency += handleBasicResponseTimeOnQueue;
             }
             else
             {
                 Debug.Log($"Couldn't find a matching request for {response.Hash}");
             }
-
         }
 
     }

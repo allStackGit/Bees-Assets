@@ -887,7 +887,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         {
             if (NearbyAsteroids.Count > 0)
             {
-                //Debug.Log($"There are still {NearbyAsteroids.Count} asteroids near {Name}, double checking the pathfinding");
+                Debug.Log($"There are still {NearbyAsteroids.Count} asteroids near {Name}, double checking the pathfinding");
                 MoveToPoint(FinalDestination);
             }
             else
@@ -1644,21 +1644,21 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                     }
                 }
 
-
+                Debug.Log($"Squad {Squad.Name} ship count before {Name} has been removed (for dying): {Squad.GetShips().Count}");
                 Level.State.RemoveShip(this);
                 Squad.RemoveShip(this);
-
+                Debug.Log($"Squad {Squad.Name} ship count after {Name} has been removed (for dying): {Squad.GetShips().Count}");
 
                 // If this is a carrier, get all strikers that belonged to this carrier and mark the last spot the carrier was at
-                if (this is Carrier)
+                if (ShipType == ConfigData.ShipTypes.Carrier)
                 {
-                    Carrier nextCarrier = (Carrier)Level.State.GetHumanShips().FirstOrDefault((s) => s is Carrier);
+                    Carrier nextCarrier = (Carrier)Level.State.GetHumanShips().FirstOrDefault((s) => s.ShipType == ConfigData.ShipTypes.Carrier);
                     if (nextCarrier != null)
                     {
 
                         Level.State.GetHumanShips().ForEach((ship) =>
                         {
-                            if (ship.ShipType == ConfigData.ShipTypes.Striker || ship.ShipType == ConfigData.ShipTypes.Drone)
+                            if (ship.Squad.IsCarrierSquad)
                             {
                                 CarrierShip carrierShip = (CarrierShip)ship;
 
@@ -1690,10 +1690,12 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
                 if (Squad.GetShips().Count == 0)
                 {
+                    Debug.Log($"Killing squad {Squad.Name} because it doesn't have any ships left");
                     Squad.Kill(endKill);
                 }
                 else
                 {
+                    Debug.Log($"Not killing squad {Squad.Name} because it has {Squad.GetShips().Count} ships left");
                     Squad.SetOffsets();
                 }
                 Debug.Log($"{Name} has been killed and will be returned");
