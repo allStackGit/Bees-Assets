@@ -10,6 +10,14 @@ namespace Assets.Scripts.Entities
     public class MiningAsteroid : Obstacle
     {
         public List<Squad> SquadsMining = new List<Squad>();
+        public override void Setup(Level level)
+        {
+            base.Setup(level);
+            transform.parent = Level.Map.transform;
+            transform.localPosition = Utilities.RandomCoordinate(Level, Vector2.zero, Level.MiningAsteroidSpawnDistance, Vector2.zero);
+            Level.State.AddObstacle(this);
+            Level.State.MiningAsteroids.Add(this);
+        }
         public override void ClearData()
         {
             base.ClearData();

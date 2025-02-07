@@ -285,14 +285,14 @@ namespace Assets.Scripts.Levels
         }
         protected void Update() // [testing]
         {
-            if (!IsDead && GetShips().Count == 0)
-            {
-                Debug.LogError($"{Name} has no ships and isn't dead at frame #{Stage.__Updates}");
-            }
-            else
-            {
-                Debug.Log($"{Name} has {GetShips().Count} ships and isDead? {IsDead} at frame #{Stage.__Updates}");
-            }
+            //if (!IsDead && GetShips().Count == 0)
+            //{
+            //    Debug.LogError($"{Name} has no ships and isn't dead at frame #{Stage.__Updates}");
+            //}
+            //else
+            //{
+            //    Debug.Log($"{Name} has {GetShips().Count} ships and isDead? {IsDead} at frame #{Stage.__Updates}");
+            //}
             if (!Level.State.IsPaused)
             {
                 Age++;

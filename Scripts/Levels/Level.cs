@@ -325,36 +325,22 @@ namespace Assets.Scripts.Levels
             }
         }
         MiningAsteroid _spawn_miningAsteroid;
-        Vector2 _spawn_distance;
+        public Vector2 MiningAsteroidSpawnDistance;
+        int _spawn_i;
         private void SpawnMiningAsteroids()
         {
-            _spawn_distance = new Vector2(HalfMapWidth - 64, HalfMapHeight - 64);
-            for (int  i = 0; i < Utilities.RandomInt(5); i++)
+            MiningAsteroidSpawnDistance = new Vector2(HalfMapWidth - 64, HalfMapHeight - 64);
+            for (_spawn_i = 0; _spawn_i < Utilities.RandomInt(5); _spawn_i++)
             {
                 _spawn_miningAsteroid = Stage.Pool.GetMiningAsteroidFromPool();
-                _spawn_miningAsteroid.transform.parent = Map.transform;
-                _spawn_miningAsteroid.transform.localPosition = Utilities.RandomCoordinate(this, Vector2.zero, _spawn_distance, Vector2.zero);
-                State.AddObstacle(_spawn_miningAsteroid);
-                State.MiningAsteroids.Add(_spawn_miningAsteroid);
                 _spawn_miningAsteroid.Setup(this);
             }
         }
         private void SpawnAsteroid()
         {
             //GameObject instance = Instantiate(Stage.Prefabs.CollisionAsteroidPrefabs[Utilities.RandomInt(Stage.Prefabs.CollisionAsteroidPrefabs.Count)]);
-            AddAsteroid(Stage.Pool.GetCollisionAsteroidFromPool().gameObject);
+            Stage.Pool.GetCollisionAsteroidFromPool().Setup(this);
             Invoke(nameof(SpawnAsteroid), Stage.AsteroidMinimumSpawnRate + Utilities.RandomInt(Stage.CurrentAsteroidMaxSpawnRate - Stage.CurrentAsteroidMinimumSpawnRate));
-        }
-        CollisionAsteroid _f_asteroid;
-        public CollisionAsteroid AddAsteroid(GameObject instance)
-        {
-            instance.transform.parent = Map.transform;
-            _f_asteroid = instance.GetComponent<CollisionAsteroid>();
-            State.AddObstacle(_f_asteroid);
-            _f_asteroid.Setup(this);
-
-            _f_asteroid.MapPointsIndex = Pathfinder.AddObstacle(_f_asteroid);
-            return _f_asteroid;
         }
         Vector2 _trigger_moveToPoint;
         Vector2 _trigger_double = new Vector2(0, 2);
@@ -977,12 +963,15 @@ namespace Assets.Scripts.Levels
                     Destroy(command);
                 });
             }
-
             if (HasObstacles)
             {
                 Stage.Pool.ReturnObstacleMapToPool(ObstacleMap, CurrentLevelOptions.ObstacleMapIndex);
+            }
+            if (State.Obstacles.Count > 0) // Level can have obstacles from asteroids, obstacles, and mining asteroids
+            {
+                
 
-                _save_obstacles = State.GetObstacles().ToArray();
+                _save_obstacles = State.Obstacles.ToArray();
                 for (_save_i = 0; _save_i < _save_obstacles.Length; _save_i++)
                 {
                     if (_save_obstacles[_save_i].ObstacleType == ConfigData.ObstacleTypes.CollisionAsteroid)
@@ -992,6 +981,10 @@ namespace Assets.Scripts.Levels
                     else if (_save_obstacles[_save_i].ObstacleType == ConfigData.ObstacleTypes.MiningAsteroid)
                     {
                         ((MiningAsteroid)_save_obstacles[_save_i]).Kill(true);
+                    }
+                    else
+                    {
+                        Debug.LogError($"{_save_obstacles[_save_i].Name} does not have valid obstacle type: {_save_obstacles[_save_i].ObstacleType}");
                     }
                 }
             }

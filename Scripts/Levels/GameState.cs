@@ -46,7 +46,7 @@ namespace Assets.Scripts.Levels
         public List<ShipDamageStatus>[] ShipDamageStatuses = new List<ShipDamageStatus>[] {new List<ShipDamageStatus>(), new List<ShipDamageStatus>() };
         //public bool[] HasMiningShips = new bool[2];
 
-        public List<String> __Squads, __SquadsAwaitingCommands, __PastCommands, __Obstacles;
+        public List<string> __Squads, __SquadsAwaitingCommands, __PastCommands, __Obstacles;
         public void UpdateDebugVariables()
         {
             __Squads = GetAllSquads().Select(s => s.ToString()).ToList();
@@ -77,6 +77,13 @@ namespace Assets.Scripts.Levels
             OriginalSquadCounts = new int[] { 0, 0 };
             HivemindShips = new Dictionary<long, HashSet<Ship>>[] { new Dictionary<long, HashSet<Ship>>(), new Dictionary<long, HashSet<Ship>>() };
             VisionCache = new HashSet<Ship>[] { new HashSet<Ship>(), new HashSet<Ship>() };
+            Deadbodies.Clear();
+            FireBargeExplosions.Clear();
+            MiningAsteroids.Clear();
+            MiningShips.Clear();
+            ShipDamageStatuses[0].Clear();
+            ShipDamageStatuses[1].Clear();
+
         }
 
         public void AddSpottedShip(Ship ship, Ship spotter)

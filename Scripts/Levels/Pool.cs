@@ -800,6 +800,7 @@ public class Pool : MonoBehaviour
     }
     public void ReturnMiningAsteroidToPool(MiningAsteroid asteroid)
     {
+        Debug.Log($"Returning mining asteroid {asteroid.Name} to pool");
         asteroid.gameObject.SetActive(false);
         MiningAsteroidPool.Release(asteroid);
     }
@@ -810,6 +811,7 @@ public class Pool : MonoBehaviour
 
     public void ReturnCollisionAsteroidToPool(CollisionAsteroid asteroid)
     {
+        Debug.Log($"Returning collision asteroid {asteroid.Name} to pool");
         asteroid.gameObject.SetActive(false);
         CollisionAsteroidPool.Release(asteroid);
     }

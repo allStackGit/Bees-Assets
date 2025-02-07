@@ -269,7 +269,7 @@ namespace Assets.Scripts.Levels.Commands
         // Class-level variables for PrepareDamageToSendEntries() method:
         //////////////////////////////////////////////////////////////////////////////
 
-        private List<Ship> _prepareDamage_ships = new List<Ship>();
+        private List<Ship> _prepareDamage_ships;
         private Squad _prepareDamage_closestEnemy;
         /// <summary>
         /// This method finds the enemies of the command's squad and makes sure there's a ship damage status entry for each enemy ship
@@ -279,7 +279,7 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (!Squad.IsDefenseless)
             {
-                _prepareDamage_ships.Clear();
+                _prepareDamage_ships = new List<Ship>();
 
                 if (which == "closest")
                 {

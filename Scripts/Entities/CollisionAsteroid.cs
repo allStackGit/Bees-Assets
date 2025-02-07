@@ -45,9 +45,13 @@ namespace Assets.Scripts.Entities
 
         }
         // Use this for initialization
-        public new void Setup(Level level)
+        public override void Setup(Level level)
         {
             base.Setup(level);
+            transform.parent = Level.Map.transform;
+            Level.State.AddObstacle(this);
+            MapPointsIndex = Level.Pathfinder.AddObstacle(this);
+
 
             // starting right (+) or left (-)
             Vector2 randomPosition = new Vector2(Utilities.RandomSign() * (Level.HalfMapWidth + ConfigData.MinimumAsteroidSpawnDistance), (Utilities.RandomSign() * (Utilities.RandomInt(Level.HalfMapHeight))));
@@ -306,7 +310,7 @@ namespace Assets.Scripts.Entities
                     });
                 }
                 Level.State.RemoveObstacle(this);
-                Debug.Log($"Returning {Name} to the pool");
+                Debug.Log($"Killing and returning {Name} to the pool");
                 Stage.Pool.ReturnCollisionAsteroidToPool(this);
             }
             else
@@ -315,32 +319,34 @@ namespace Assets.Scripts.Entities
             }
         }
 
+        /// <summary>
+        ///  Needs to be modified to account for pooling
+        /// </summary>
         public void SpawnBreakAwayAsteroids()
         {
-            int asteroidCount = SizeClass < 6 ? 0 : (SizeClass > 6 ? 3 : 2);
-            int pieceCount = (int) (SizeClass * 1.5f);
+            //int asteroidCount = SizeClass < 6 ? 0 : (SizeClass > 6 ? 3 : 2);
+            //int pieceCount = (int) (SizeClass * 1.5f);
 
-            //Debug.Log($"{Name} died and spawned {asteroidCount} asteroids and {pieceCount} pieces");
+            ////Debug.Log($"{Name} died and spawned {asteroidCount} asteroids and {pieceCount} pieces");
 
-            for (int i = 0; i < asteroidCount; i++)
-            {
-                GameObject instance = Instantiate(Level.Stage.Prefabs.BreakawayAsteroids[Utilities.RandomInt(Level.Stage.Prefabs.BreakawayAsteroids.Count)]);
-                CollisionAsteroid asteroid = Level.AddAsteroid(instance);
-                asteroid.transform.localPosition = GetPosition();
-                asteroid.Body.angularVelocity = Body.angularVelocity;
-                asteroid.HasEnteredMap = true;
+            //for (int i = 0; i < asteroidCount; i++)
+            //{
+            //    CollisionAsteroid asteroid = Level.AddAsteroid(Instantiate(Level.Stage.Prefabs.BreakawayAsteroids[Utilities.RandomInt(Level.Stage.Prefabs.BreakawayAsteroids.Count)]).GetComponent<CollisionAsteroid>());
+            //    asteroid.transform.localPosition = GetPosition();
+            //    asteroid.Body.angularVelocity = Body.angularVelocity;
+            //    asteroid.HasEnteredMap = true;
 
-            }
+            //}
 
-            for (int i = 0; i < pieceCount; i++)
-            {
-                GameObject instance = Instantiate(Level.Stage.Prefabs.AsteroidPieces[Utilities.RandomInt(Level.Stage.Prefabs.AsteroidPieces.Count)]);
-                instance.transform.parent = Level.Map.transform;
-                AsteroidPiece asteroid = instance.GetComponent<AsteroidPiece>();
-                Level.State.AddObstacle(asteroid);
-                asteroid.Setup(Level, this);
+            //for (int i = 0; i < pieceCount; i++)
+            //{
+            //    GameObject instance = Instantiate(Level.Stage.Prefabs.AsteroidPieces[Utilities.RandomInt(Level.Stage.Prefabs.AsteroidPieces.Count)]);
+            //    instance.transform.parent = Level.Map.transform;
+            //    AsteroidPiece asteroid = instance.GetComponent<AsteroidPiece>();
+            //    Level.State.AddObstacle(asteroid);
+            //    asteroid.Setup(Level, this);
 
-            }
+            //}
         }
     }
 }

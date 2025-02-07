@@ -28,19 +28,20 @@ namespace Assets.Scripts.Entities
             Stage = stage;
             OriginalHealth = Health;
         }
-        public void Setup(Level level)
+        public virtual void Setup(Level level)
         {
+            ClearData();
             Level = level;
             Id = Level.State.GetId();
             Name = $"{ObstacleType} #{Id}";
             gameObject.name = Name;
             Health = OriginalHealth;
-            ClearData();
             gameObject.SetActive(true);
 
         }
         public virtual void ClearData()
         {
+            Debug.Log($"Clearing data for {Name}");
             MapPointsIndex = 0;
             IsDead = false;
         }

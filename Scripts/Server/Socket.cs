@@ -262,7 +262,10 @@ namespace Assets.Scripts.Server
             while (MessageQueue.Count > 0)
             {
                 _update_message = MessageQueue.Dequeue();
-                Message(_update_message);
+                if (_update_message != null)
+                {
+                    Message(_update_message);
+                }
             }
             CheckStandingRequests();
         }
