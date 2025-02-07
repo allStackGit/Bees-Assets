@@ -37,64 +37,65 @@ namespace Assets.Scripts.Levels.Commands
         {
             IsDead = true;
         }
-
+        private List<Squad> _queue, _targetedSquads;
+        private Vector2 _location;
+        private ConfigData.ShipTypes _type;
+        //private int _aShipsOfType, _bShipsOfType;
         public Squad SortSquads()
         {
             //Debug.Log("Sorting squads");
             //Debug.Log($"Squad: {Squad}");
-            List<Squad> queue = Level.State.GetSquadsVisibleToHiveMind(Side);
+            _queue = Level.State.GetSquadsVisibleToHiveMind(Side);
             //Debug.Log($"Squads visible to HiveMind {Side}: {queue.Count}");
             //Debug.Log($"Ships visible to HiveMind {Side}: {Level.State.GetShipsVisibleToHiveMind(Side).Count}");
 
-            if (queue.Count == 0)
+            if (_queue.Count == 0)
             {
                 //Debug.Log($"There were no enemy squads to sort for the targeting queue");
                 return null;
             }
 
-            Vector2 location;
-
             switch (MatchupType)
             {
                 case ConfigData.MatchupStrategyTypes.Random:
-                    return queue.OrderBy(s => Utilities.RandomInt(2)).First();
+                    return _queue.OrderBy(s => Utilities.RandomInt(2)).First();
                 case ConfigData.MatchupStrategyTypes.Revenge:
-                    return queue.OrderByDescending(s => s.LastKilled).First();
+                    return _queue.OrderByDescending(s => s.LastKilled).First();
                 case ConfigData.MatchupStrategyTypes.MostDangerous:
-                    return queue.OrderByDescending(s => s.DamageDone).First();
+                    return _queue.OrderByDescending(s => s.DamageDone).First();
                 case ConfigData.MatchupStrategyTypes.LeastHealth:
-                    return queue.OrderBy(s => s.Health).First();
+                    return _queue.OrderBy(s => s.Health).First();
                 case ConfigData.MatchupStrategyTypes.MostHealth:
-                    return queue.OrderByDescending(s => s.Health).First();
+                    return _queue.OrderByDescending(s => s.Health).First();
                 case ConfigData.MatchupStrategyTypes.MostPowerful:
-                    return queue.OrderByDescending(s => s.Firepower).First();
+                    return _queue.OrderByDescending(s => s.Firepower).First();
                 case ConfigData.MatchupStrategyTypes.LeastPowerful:
-                    return queue.OrderBy(s => s.Firepower).First();
+                    return _queue.OrderBy(s => s.Firepower).First();
                 case ConfigData.MatchupStrategyTypes.Closest:
-                    location = Squad.GetPosition();
-                    queue.Sort((a, b) => (int)(a.DistanceToPoint(location) - b.DistanceToPoint(location)));
-                    return queue.First();
+                    _location = Squad.GetPosition();
+                    _queue.Sort((a, b) => (int)(a.DistanceToPoint(_location) - b.DistanceToPoint(_location)));
+                    return _queue.First();
                 case ConfigData.MatchupStrategyTypes.Furthest:
-                    location = Squad.GetPosition();
-                    queue.Sort((a, b) => (int)(b.DistanceToPoint(location) - a.DistanceToPoint(location)));
-                    return queue.First();
+                    _location = Squad.GetPosition();
+                    _queue.Sort((a, b) => (int)(b.DistanceToPoint(_location) - a.DistanceToPoint(_location)));
+                    return _queue.First();
                 case ConfigData.MatchupStrategyTypes.MostRange:
-                    return queue.OrderByDescending(s => s.MaxRange).First();
+                    return _queue.OrderByDescending(s => s.MaxRange).First();
                 case ConfigData.MatchupStrategyTypes.LeastRange:
-                    return queue.OrderBy(s => s.MaxRange).First();
+                    return _queue.OrderBy(s => s.MaxRange).First();
                 case ConfigData.MatchupStrategyTypes.Fastest:
-                    return queue.OrderByDescending(s => s.TotalSpeed).First();
+                    return _queue.OrderByDescending(s => s.TotalSpeed).First();
                 case ConfigData.MatchupStrategyTypes.Slowest:
-                    return queue.OrderBy(s => s.TotalSpeed).First();
+                    return _queue.OrderBy(s => s.TotalSpeed).First();
                 case ConfigData.MatchupStrategyTypes.InCombat:
-                    return queue.OrderByDescending(s => s.InCombat).ThenBy(s => s.MaxRange).FirstOrDefault();
+                    return _queue.OrderByDescending(s => s.InCombat).ThenBy(s => s.MaxRange).FirstOrDefault();
                 case ConfigData.MatchupStrategyTypes.GangUp:
-                    List<Squad> targetedSquads = Level.State.GetTargetedSquads(Side);
-                    return targetedSquads.Count > 0 ? targetedSquads.First() : queue.OrderByDescending(s => s.InCombat).ThenBy(s => s.MaxRange).FirstOrDefault(); // In Combat
+                    _targetedSquads = Level.State.GetTargetedSquads(Side);
+                    return _targetedSquads.Count > 0 ? _targetedSquads.First() : _queue.OrderByDescending(s => s.InCombat).ThenBy(s => s.MaxRange).FirstOrDefault(); // In Combat
                 case ConfigData.MatchupStrategyTypes.MostValuable:
-                    return queue.OrderByDescending(s => s.Tsv).First();
+                    return _queue.OrderByDescending(s => s.Tsv).First();
                 case ConfigData.MatchupStrategyTypes.LeastValuable:
-                    return queue.OrderBy(s => s.Tsv).First();
+                    return _queue.OrderBy(s => s.Tsv).First();
                 case ConfigData.MatchupStrategyTypes.TypeA:
                 case ConfigData.MatchupStrategyTypes.TypeB:
                 case ConfigData.MatchupStrategyTypes.TypeC:
@@ -118,27 +119,29 @@ namespace Assets.Scripts.Levels.Commands
                 case ConfigData.MatchupStrategyTypes.TypeU:
                 case ConfigData.MatchupStrategyTypes.TypeV:
                 case ConfigData.MatchupStrategyTypes.TypeW:
-                    ConfigData.ShipTypes type = Utilities.ConvertMatchupStrategyToShipType[MatchupType];
-                    queue.Sort((a, b) =>
+                    _type = Utilities.ConvertMatchupStrategyToShipType[MatchupType];
+                    _queue.Sort((a, b) =>
                     {
-                        int aShipsOfType = a.GetShips().Where(s => s.ShipType == type).ToList().Count;
-                        int bShipsofType = b.GetShips().Where(s => s.ShipType == type).ToList().Count;
-                        if (aShipsOfType > bShipsofType)
-                        {
-                            return -1;
-                        }
-                        else if (bShipsofType > aShipsOfType)
-                        {
-                            return 1;
-                        }
-                        else
-                        {
-                            return 0;
-                        }
+                        return a.GetShips().Where(s => s.ShipType == _type).ToList().Count - b.GetShips().Where(s => s.ShipType == _type).ToList().Count;
+
+                        //_aShipsOfType = a.GetShips().Where(s => s.ShipType == type).ToList().Count;
+                        //_bShipsOfType = b.GetShips().Where(s => s.ShipType == type).ToList().Count;
+                        //if (_aShipsOfType > _bShipsOfType)
+                        //{
+                        //    return -1;
+                        //}
+                        //else if (_bShipsOfType > _aShipsOfType)
+                        //{
+                        //    return 1;
+                        //}
+                        //else
+                        //{
+                        //    return 0;
+                        //}
                     });
-                    return queue.First();
+                    return _queue.First();
                 default:
-                    return queue.First();
+                    return _queue.First();
             }
         }
     }

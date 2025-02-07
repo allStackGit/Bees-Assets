@@ -12,6 +12,8 @@ namespace Assets.Scripts.Levels.Commands
     {
         public Vector2 ReturnPoint;
         public bool HasReachedReturnPoint, HasReachedEnemySquad;
+        Vector2 _position, _enemyPosition;
+        float _distance;
         public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
         {
             base.Execute(ConfigData.CommandTypes.InAndOut, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
@@ -20,12 +22,12 @@ namespace Assets.Scripts.Levels.Commands
                 IsAttacking = true;
 
                 PrepareDamageToSendEntries();
-                Vector2 position = Squad.GetPosition();
-                Vector2 enemyPosition = EnemySquad.GetPosition();
-                float distance = Squad.DistanceToPoint(enemyPosition);
-                ReturnPoint = distance > EnemySquad.MaxRange && distance < 50 ?
-                    Utilities.RandomCoordinate(Level, position, Vector2.one * 45, Vector2.zero) :
-                    Utilities.RandomCoordinate(Level, enemyPosition, Vector2.one * (EnemySquad.MaxRange + 45), Vector2.one * (EnemySquad.MaxRange + 10));
+                _position = Squad.GetPosition();
+                _enemyPosition = EnemySquad.GetPosition();
+                _distance = Squad.DistanceToPoint(_enemyPosition);
+                ReturnPoint = _distance > EnemySquad.MaxRange && _distance < 50 ?
+                    Utilities.RandomCoordinate(Level, _position, Vector2.one * 45, Vector2.zero) :
+                    Utilities.RandomCoordinate(Level, _enemyPosition, Vector2.one * (EnemySquad.MaxRange + 45), Vector2.one * (EnemySquad.MaxRange + 10));
 
                 InvokeRepeating(nameof(Timer), 0, CommandFrequency);
                 if (IsHiveMindCommand)
@@ -46,7 +48,7 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (!Squad.IsDead)
             {
-                if (EnemySquad != null && !EnemySquad.IsDead)
+                if (!EnemySquad.IsDead)
                 {
 
                     // if you haven't reached the enemy squad yet, check if you are within range and go to them

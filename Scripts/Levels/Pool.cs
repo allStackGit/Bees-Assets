@@ -757,26 +757,26 @@ public class Pool : MonoBehaviour
 
     public void OnTakeShipFromPool(Ship ship)
     {
-        Debug.Log($"{ship.name} was taken from the pool");
+        Debug.Log($"{ship.Name} was taken from the pool");
         //ship.transform.parent = PoolShips.transform;
         //ship.transform.localPosition = Vector2.zero;
     }
 
     public void OnReturnShipToPool(Ship ship)
     {
-        Debug.Log($"{ship.name} was returned to the pool");
+        Debug.Log($"{ship.Name} was returned to the pool");
         //ship.transform.parent = PoolShips.transform;
         //ship.transform.localPosition = Vector2.zero;
     }
 
     public void OnTakeProjectileFromPool(Projectile projectile)
     {
-        Debug.Log($"{projectile.Name} was taken from the pool");
+        //Debug.Log($"{projectile.Name} was taken from the pool");
     }
 
     public void OnReturnProjectileToPool(Projectile projectile)
     {
-        Debug.Log($"{projectile.Name} was returned to the pool");
+        //Debug.Log($"{projectile.Name} was returned to the pool");
     }
     public CarrierSquad GetCarrierSquadFromPool()
     {

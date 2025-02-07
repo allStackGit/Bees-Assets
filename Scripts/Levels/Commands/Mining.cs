@@ -14,12 +14,18 @@ namespace Assets.Scripts.Levels.Commands
     public class Mining : Command
     {
         public MiningAsteroid TargetAstroid;
+        /// <summary>
+        /// Ships in the squad that can mine asteroids
+        /// </summary>
         public List<Ship> MiningShips;
-        public List<Ship> ShipsMining = new List<Ship>();
+        /// <summary>
+        /// Ships in squad that are currently mining asteroids
+        /// </summary>
+        public List<Ship> ShipsCurrentlyMining = new List<Ship>();
 
         public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy, MiningAsteroid asteroid)
         {
-            if (asteroid != null)
+            if (!asteroid.IsDead)
             {
                 MiningShips = Squad.GetShips().Where((ship) => ship.IsMiningShip).ToList();
                 TargetAstroid = asteroid;
@@ -56,16 +62,17 @@ namespace Assets.Scripts.Levels.Commands
             base.ClearData();
             TargetAstroid = null;
             MiningShips.Clear();
-            ShipsMining.Clear();
+            ShipsCurrentlyMining.Clear();
         }
 
+        private Vector2 _position;
         public void MoveToAsteroid()
         {
             if (!Squad.IsDead && !TargetAstroid.IsDead)
             {
-                Vector2 targetPosition = TargetAstroid.GetPosition();
-                SetAndMove(targetPosition);
-                Squad.Status = $"Moving to {TargetAstroid.Name} to start mining: {targetPosition}";
+                _position = TargetAstroid.GetPosition();
+                SetAndMove(_position);
+                Squad.Status = $"Moving to {TargetAstroid.Name} to start mining: {_position}";
 
             }
             else if (TargetAstroid.IsDead)
@@ -75,16 +82,16 @@ namespace Assets.Scripts.Levels.Commands
         }
         public void FoundAsteroid(Ship ship)
         {
-            ShipsMining.Add(ship);
+            ShipsCurrentlyMining.Add(ship);
             if (ship.HasShipAnimation)
             {
                 ship.ShipAnimation.SetActive(true);
             }
-            if (ShipsMining.Count == 1)
+            if (ShipsCurrentlyMining.Count == 1)
             {
                 InvokeRepeating(nameof(Mine), 0, 3);
             }
-            if (MiningShips.All((s) => s == null || s.IsDead || ShipsMining.Contains(s)))
+            if (MiningShips.All((s) => s.IsDead || ShipsCurrentlyMining.Contains(s)))
             {
                 Invoke(nameof(StopMovingTowardsAsteroid), 5);
             }
@@ -94,25 +101,25 @@ namespace Assets.Scripts.Levels.Commands
         {
             CancelInvoke(nameof(MoveToAsteroid));
         }
-
+        private int _miningRate, _amountMined, _amountPerShip;
         public void Mine() // [stats-method]
         {
-            ShipsMining = ShipsMining.Where((s) => s != null && !s.IsDead).ToList();
-            if (ShipsMining.Count > 0)
+            ShipsCurrentlyMining = ShipsCurrentlyMining.Where((s) => !s.IsDead).ToList();
+            if (ShipsCurrentlyMining.Count > 0)
             {
                 //Debug.Log($"There are {ShipsMining.Count} ships mining for {Squad.Name}");
-                int miningRate = ConfigData.MiningRate * ShipsMining.Count;
-                int amountMined = math.min(miningRate, TargetAstroid.Health);
+                _miningRate = ConfigData.MiningRate * ShipsCurrentlyMining.Count;
+                _amountMined = math.min(_miningRate, TargetAstroid.Health);
 
-                Tsv += amountMined;
-                TargetAstroid.Health -= amountMined;
+                Tsv += _amountMined;
+                TargetAstroid.Health -= _amountMined;
                 //Debug.Log($"{Squad.Name} mined {amountMined} from {TargetAstroid.Name}. It has {TargetAstroid.Health} health left");
 
-                int amountPerShip = amountMined / ShipsMining.Count;
-                ShipsMining.ForEach((ship) =>
+                _amountPerShip = _amountMined / ShipsCurrentlyMining.Count;
+                ShipsCurrentlyMining.ForEach((ship) =>
                 {
-                    ship.FleetShip.MineralsMinedThisLevel += amountPerShip;
-                    ship.Tsv += amountPerShip;
+                    ship.FleetShip.MineralsMinedThisLevel += _amountPerShip;
+                    ship.Tsv += _amountPerShip;
                 });
 
                 if (TargetAstroid.Health == 0)

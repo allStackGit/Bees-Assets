@@ -10,24 +10,25 @@ namespace Assets.Scripts.Levels.Commands
         /*
          * Method for the Defensive strategy. The squad moves away from the enemy at a faster speed than it can normally move, but it can't fire while retreating
          */
-        private Vector2 _retreatPoint;
+        private Vector2 _retreatPoint, _enemyPosition, _position;
+        private float _distance, _idealDistance, _angle;
         public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
         {
             base.Execute(ConfigData.CommandTypes.Retreat, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
 
-            if (EnemySquad != null && !EnemySquad.IsDead)
+            if (!EnemySquad.IsDead)
             {
-                Vector2 enemyPosition = EnemySquad.GetPosition();
-                double distance = Squad.DistanceToPoint(enemyPosition);
-                double idealDistance = EnemySquad.MaxRange * 2;
+                _enemyPosition = EnemySquad.GetPosition();
+                _distance = Squad.DistanceToPoint(_enemyPosition);
+                _idealDistance = EnemySquad.MaxRange * 2;
 
-                if (distance < idealDistance)
+                if (_distance < _idealDistance)
                 {
-                    float angle = Squad.AngleToPoint(enemyPosition);
+                    _angle = Squad.AngleToPoint(_enemyPosition);
                     //Squad.IsRetreating = true;
                     Squad.Status = $"Retreating away from {EnemySquad.Name}";
-                    Vector2 position = Squad.GetPosition();
-                    _retreatPoint = new Vector2((float)(Mathf.Sin(angle) * (idealDistance - distance) + position.x), (float)(Mathf.Cos(angle) * (idealDistance - distance) + position.y));
+                    _position = Squad.GetPosition();
+                    _retreatPoint = new Vector2((Mathf.Sin(_angle) * (_idealDistance - _distance) + _position.x), (Mathf.Cos(_angle) * (_idealDistance - _distance) + _position.y));
                     SetAndMove(_retreatPoint);
                     InvokeRepeating(nameof(Timer), 0, CommandFrequency);
                 }

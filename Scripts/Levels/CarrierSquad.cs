@@ -27,42 +27,31 @@ namespace Assets.Scripts.Levels
             SetSquadTab();
             IsDroneSquad = CarrierSquadType == ConfigData.ShipTypes.Drone;
         }
+        private int _shipCount, _shipIndex, _id;
+        private CarrierShip _ship;
         private void SetupShips()
         {
-            int shipCount = IsDroneSquad ? ConfigData.Configuration.CarrierCarryDroneMax : ConfigData.Configuration.CarrierCarryStrikerMax;
-            string formation = "Column";
+            _shipCount = IsDroneSquad ? ConfigData.Configuration.CarrierCarryDroneMax : ConfigData.Configuration.CarrierCarryStrikerMax;
 
             //Debug.Log($"Setting up {SquadType} ships in {formation} formation");
 
 
-            for (int shipIndex = 0; shipIndex < shipCount; shipIndex++)
+            for (_shipIndex = 0; _shipIndex < _shipCount; _shipIndex++)
             {
-                int id = Utilities.GetNegativeFleetshipId();
-                Vector2 offset = Vector2.left;
-
-                if (formation == "Double Column")
-                {
-                    offset = ConfigData.CarrierDoubleColumnFormationOffsets[shipIndex];
-                }else if (formation == "Column")
-                {
-                    offset = ConfigData.CarrierColumnFormationOffsets[shipIndex];
-                }
+                _id = Utilities.GetNegativeFleetshipId();
 
                 //Debug.Log($"Offset: {offset}");
-                CarrierShip ship = (CarrierShip)Level.LevelConstructor.InstantiateShip(CarrierSquadType);
+                _ship = (CarrierShip)Level.LevelConstructor.InstantiateShip(CarrierSquadType);
 
-                if (ship != null)
-                {
-                    ship.Setup(
+                _ship.Setup(
                         Level,
-                        new FleetShip(id, $"Carrier {CarrierSquadType} - #{id}", CarrierSquadType, false, true, false, 0, 0, 0, 0, 0, 0, 0),
+                        new FleetShip(_id, $"Carrier {CarrierSquadType} - #{_id}", CarrierSquadType, false, true, false, 0, 0, 0, 0, 0, 0, 0),
                         this,
-                        offset
+                        ConfigData.CarrierColumnFormationOffsets[_shipIndex]
                     );
-                }
-                ship.IsCarrierShip = true;
-                AddShip(ship);
-                ship.SetColor();
+                _ship.IsCarrierShip = true;
+                AddShip(_ship);
+                _ship.SetColor();
             }
 
         }

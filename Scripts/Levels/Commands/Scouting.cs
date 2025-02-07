@@ -13,14 +13,16 @@ namespace Assets.Scripts.Levels.Commands
          */
         private bool _foundShips;
         List<Scout> Scouts = new List<Scout>();
+        private Vector2 _position, _randomPoint;
+        private Vector2 _ten = Vector2.one * 10;
         public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
         {
             base.Execute(ConfigData.CommandTypes.Scouting, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
 
             PrepareDamageToSendEntries("closest");
-            Vector2 position = Squad.GetPosition();
-            Vector2 randomCoordinates = Utilities.RandomCoordinate(Level, position, Vector2.one * ConfigData.Configuration.AIRandomMovementMaxDistance, Vector2.one * Squad.MaxSight);
-            SetAndMove(randomCoordinates);
+            _position = Squad.GetPosition();
+            _randomPoint = Utilities.RandomCoordinate(Level, _position, Vector2.one * ConfigData.Configuration.AIRandomMovementMaxDistance, Vector2.one * Squad.MaxSight);
+            SetAndMove(_randomPoint);
             CommandFrequency = 5;
             InvokeRepeating(nameof(Timer), 0, CommandFrequency);
             Invoke(nameof(EndCommand), ConfigData.Configuration.AISquadPatrolTime);
@@ -52,33 +54,33 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (!Squad.IsDead && Squad.HasReachedDestination)
             {
-                Vector2 position = Squad.GetPosition();
-                Vector2 randomCoordinates = Utilities.RandomCoordinate(Level, position, Vector2.one * ConfigData.Configuration.AIRandomMovementMaxDistance, Vector2.one * 10);
-                SetAndMove(randomCoordinates);
-                Squad.Status = $"Moving to random destination to look for ships: {randomCoordinates}";
+                _position = Squad.GetPosition();
+                _randomPoint = Utilities.RandomCoordinate(Level, _position, Vector2.one * ConfigData.Configuration.AIRandomMovementMaxDistance, _ten);
+                SetAndMove(_randomPoint);
+                Squad.Status = $"Moving to random destination to look for ships: {_randomPoint}";
 
             }
 
         }
-
+        private List<Scout> _scoutsToRemove = new List<Scout>();
         public void DropScoutBeacons()
         {
-            List<Scout> scoutsToRemove = new List<Scout>();
             Scouts.ForEach((scout) =>
             {
-                if (scout != null && !scout.IsDead)
+                if (!scout.IsDead)
                 {
                     scout.DropBeacon();
                 }
                 else
                 {
-                    scoutsToRemove.Add(scout);
+                    _scoutsToRemove.Add(scout);
                 }
             });
 
-            if (scoutsToRemove.Count > 0)
+            if (_scoutsToRemove.Count > 0)
             {
-                Scouts = Scouts.Except(scoutsToRemove).ToList();
+                Scouts = Scouts.Except(_scoutsToRemove).ToList();
+                _scoutsToRemove.Clear();
             }
         }
 

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 //using System.Security.Policy;
 using System.Text.RegularExpressions;
+using System.Windows.Input;
 using Assets.Scripts;
 using Assets.Scripts.Data;
 using Assets.Scripts.Entities;
@@ -86,29 +87,25 @@ namespace Assets.Scripts.Levels
 
         }
 
-        public void AddSpottedShip(Ship ship, Ship spotter)
-        {
-            SpottedShip spottedShip = new SpottedShip(ship, spotter.Id);
-            if (!SpottedShips[spotter.Side - 1].Any((s) => s.Ship == ship))
-            {
-                SpottedShips[spotter.Side - 1].Add(spottedShip);
-            }
-        }
+        private List<SpottedShip> _spottedShips;
+        private int _maxExistingShips, _maxNewShips, _index, _shipIndex;
+        private bool _duplicate;
+        private Ship _spottedShip;
         public void AddSpottedShips(List<Ship> spottedShips, Ship spotter)
         {
-            List<SpottedShip> ships = SpottedShips[spotter.Side - 1];
-            int maxExistingShips = spottedShips.Count;
-            int maxNewShips = ships.Count;
-            for (int i = 0; i < maxExistingShips; i++)
+            _spottedShips = SpottedShips[spotter.Side - 1];
+            _maxExistingShips = spottedShips.Count;
+            _maxNewShips = _spottedShips.Count;
+            for (_index = 0; _index < _maxExistingShips; _index++)
             {
 
-                bool duplicate = false;
-                Ship spottedShip = spottedShips[i];
-                for (int ship = 0; ship < maxNewShips && !duplicate; ship++)
+                _duplicate = false;
+                _spottedShip = spottedShips[_index];
+                for (_shipIndex = 0; _shipIndex < _maxNewShips && !_duplicate; _shipIndex++)
                 {
-                    duplicate = ships[ship].Ship.Id == spottedShip.Id;
+                    _duplicate = _spottedShips[_shipIndex].Ship.Id == _spottedShip.Id;
                 }
-                ships.Add(new SpottedShip(spottedShip, spotter.Id));
+                _spottedShips.Add(new SpottedShip(_spottedShip, spotter.Id));
             }
         }
         public bool CanUserKeepMining()
@@ -163,6 +160,7 @@ namespace Assets.Scripts.Levels
             Stage.__HivemindCommands++;
         }
 
+        private ShipDamageStatus _shipDamageStatus;
         /// <summary>
         /// Finds the damage status entry for this ship in the side's list or creates it if it doesn't exist
         /// </summary>
@@ -170,18 +168,18 @@ namespace Assets.Scripts.Levels
         /// <returns></returns>
         public ShipDamageStatus GetShipDamageStatus(int side, Ship potentialTargetShip)
         {
-            ShipDamageStatus shipDamageStatus = null;
+            _shipDamageStatus = null;
             if (ShipDamageStatuses[side - 1].Count > 0)
             {
-                shipDamageStatus = ShipDamageStatuses[side - 1].FirstOrDefault(s => s != null && s.Ship != null && s.Ship == potentialTargetShip);
+                _shipDamageStatus = ShipDamageStatuses[side - 1].FirstOrDefault(s => s != null && !s.Ship.IsDead && s.Ship == potentialTargetShip);
             }
 
-            if (shipDamageStatus == null)
+            if (_shipDamageStatus == null)
             {
-                shipDamageStatus = new ShipDamageStatus(potentialTargetShip);
-                ShipDamageStatuses[side - 1].Add(shipDamageStatus);
+                _shipDamageStatus = new ShipDamageStatus(potentialTargetShip);
+                ShipDamageStatuses[side - 1].Add(_shipDamageStatus);
             }
-            return shipDamageStatus;
+            return _shipDamageStatus;
         }
         public List<Obstacle> GetObstacles()
         {
@@ -380,17 +378,18 @@ namespace Assets.Scripts.Levels
         {
             return SquadsAwaitingCommands;
         }
+        private List<Squad> _targetedSquads;
         public List<Squad> GetTargetedSquads(int side)
         {
-            List<Squad> targetedSquads = new List<Squad>();
+            _targetedSquads = new List<Squad>();
             GetAllSquads().Where((s) => s.Side == side).ToList().ForEach((s) =>
             {
-                if (s.HasCommand && s.Command.EnemySquad != null)
+                if (s.HasCommand && s.Command.HasEnemy && !s.Command.EnemySquad.IsDead)
                 {
-                    targetedSquads.Add(s.Command.EnemySquad);
+                    _targetedSquads.Add(s.Command.EnemySquad);
                 }
             });
-            return targetedSquads;
+            return _targetedSquads;
         }
 
 
@@ -398,35 +397,37 @@ namespace Assets.Scripts.Levels
         {
             return PastCommands;
         }
+        private List<StoredCommand> _commpletes, _commands, _shootingCommands, _targetingCommands = new List<StoredCommand>();
         public void StoreCommands()
         {
-            List<StoredCommand> completes = PastCommands.Where((c) => c.IsHiveMindCommand && c.IsFinalized && !c.IsStored).ToList();
-            List<StoredCommand> commands = new List<StoredCommand>();
-            List<StoredCommand> shootingCommands = new List<StoredCommand>();
-            List<StoredCommand> targetingCommands = new List<StoredCommand>();
+            _commpletes = PastCommands.Where((c) => c.IsHiveMindCommand && c.IsFinalized && !c.IsStored).ToList();
 
-            if (completes.Count > 0)
+            if (_commpletes.Count > 0)
             {
 
-                completes.ForEach((command) =>
+                _commpletes.ForEach((command) =>
                 {
-                    commands.Add(command);
+                    _commands.Add(command);
                     if (command.ShootingStrategy != null)
                     {
-                        shootingCommands.Add(command);
+                        _shootingCommands.Add(command);
 
                     }
                     if (command.MatchupStrategy != null)
                     {
-                        targetingCommands.Add(command);
+                        _targetingCommands.Add(command);
                     }
 
                     command.IsStored = true;
                 });
 
-                ConfigData.Socket.SendRequest(new StoreCommandsRequest(new StoreCommands(commands, shootingCommands, targetingCommands),
+                ConfigData.Socket.SendRequest(new StoreCommandsRequest(new StoreCommands(_commands, _shootingCommands, _targetingCommands),
                     ConfigData.StandardMaxTimeOnQueue));
                 PastCommands = PastCommands.Where(c => !c.IsStored).ToList();
+
+                _commands.Clear();
+                _shootingCommands.Clear();
+                _targetingCommands.Clear();
             }
 
 

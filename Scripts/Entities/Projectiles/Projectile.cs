@@ -100,7 +100,7 @@ namespace Assets.Scripts.Entities.Projectiles
                     Shooter.ProjectilesInFlight.Remove(this);
                 }
                 IsDead = true;
-                Debug.Log($"{Name} has been killed and will be returned");
+                //Debug.Log($"{Name} has been killed and will be returned");
                 Stage.Pool.ReturnProjectileToPool(this);
             }
 
@@ -173,18 +173,19 @@ namespace Assets.Scripts.Entities.Projectiles
 
         }
 
+        ShipDamageStatus _status;
         public void RemoveDamageSentEntry()
         {
             if (Target != null)
             {
-                ShipDamageStatus status = Level.State.GetShipDamageStatus(Shooter.Side, Target);
-                if (status.TotalDamageSentToShip >= Power)
+                _status = Level.State.GetShipDamageStatus(Shooter.Side, Target);
+                if (_status.TotalDamageSentToShip >= Power)
                 {
-                    status.TotalDamageSentToShip -= Power;
+                    _status.TotalDamageSentToShip -= Power;
                 }
                 else
                 {
-                    status.TotalDamageSentToShip = 0;
+                    _status.TotalDamageSentToShip = 0;
                 }
             }
 
@@ -201,23 +202,23 @@ namespace Assets.Scripts.Entities.Projectiles
 
         }
 
+        private GameObject _collidingThing;
         protected virtual void OnTriggerEnter2D(Collider2D collider) // projectile collision
         {
-            GameObject collidingThing = collider.gameObject;
+            _collidingThing = collider.gameObject;
             //Debug.Log($"Projectile {Name} collided with {collidingThing.name}");
-            if (collidingThing.CompareTag("Ship"))
+            if (_collidingThing.CompareTag("Ship"))
             {
-                Ship ship = collidingThing.GetComponent<Ship>();
-                CollidingQueue.Enqueue(ship);
+                CollidingQueue.Enqueue(_collidingThing.GetComponent<Ship>());
 
             }
-            else if (collidingThing.CompareTag("Obstacle"))
+            else if (_collidingThing.CompareTag("Obstacle"))
             {
-                Obstacle obstacle = collidingThing.GetComponent<Obstacle>();
-                CollidingObstacleQueue.Enqueue(obstacle);
+                CollidingObstacleQueue.Enqueue(_collidingThing.GetComponent<Obstacle>());
             }
         }
 
+        private int _originalPower;
         protected virtual void ShipCollision(Ship ship)
         {
             //Debug.Log("Basic ship collision");
@@ -226,9 +227,9 @@ namespace Assets.Scripts.Entities.Projectiles
                 // if hit enemy projectile or Fire Barge explosion. the ships to ignore is for leafcutter split shots
                 if ((!IsFriendly(ship) || (Shooter.ShipType == ConfigData.ShipTypes.FireBarge && this != Shooter)) && !ShipsToIgnore.Contains(ship))
                 {
-                    int originalPower = Power;
+                    _originalPower = Power;
                     ContactTarget(ship);
-                    Ship.LogAttackingDamage(originalPower, Shooter, FleetShip, SavedSquad, ship);
+                    Ship.LogAttackingDamage(_originalPower, Shooter, FleetShip, SavedSquad, ship);
                 }
             }
 

@@ -31,11 +31,13 @@ namespace Assets.Scripts.Levels.Commands
             _gotToEnemy = false;
             _swipeDestination = Vector2.zero;
         }
+        private Vector2 _enemyPosition;
+        private float _angle, _distance;
         private void Timer()
         {
             if (!Squad.IsDead)
             {
-                if (EnemySquad != null && !EnemySquad.IsDead)
+                if (!EnemySquad.IsDead)
                 {
                     Squad.Status = $"Targeting enemy squad {EnemySquad.Name} #{EnemySquad.Id} with {Strategy.CommandType}";
 
@@ -52,38 +54,38 @@ namespace Assets.Scripts.Levels.Commands
                         //SetFinalize("Reached the enemy");
                         //return;
                         Squad.Status = $"Using {Strategy.CommandType} against enemy squad {EnemySquad.Name} #{EnemySquad.Id}";
-                        Vector2 enemyPosition = EnemySquad.GetPosition();
-                        float angle = Squad.AngleToPoint(enemyPosition);
+                        _enemyPosition = EnemySquad.GetPosition();
+                        _angle = Squad.AngleToPoint(_enemyPosition);
 
                         if (Strategy.CommandType == ConfigData.CommandTypes.RightSwipe)
                         {
-                            angle += .25f * Mathf.PI;
+                            _angle += .25f * Mathf.PI;
 
-                            if (angle > Mathf.PI) // if the angle is greater than PI, subtract 2 PI to get the equivilent negative angle
+                            if (_angle > Mathf.PI) // if the angle is greater than PI, subtract 2 PI to get the equivilent negative angle
                             {
-                                angle -= 2 * Mathf.PI;
+                                _angle -= 2 * Mathf.PI;
                             }
 
                         }
                         else
                         {
-                            angle -= .25f * Mathf.PI;
+                            _angle -= .25f * Mathf.PI;
 
-                            if (angle < -Mathf.PI) // if the angle is less than negative PI, add 2 PI to get the equivilent negative angle
+                            if (_angle < -Mathf.PI) // if the angle is less than negative PI, add 2 PI to get the equivilent negative angle
                             {
-                                angle += 2 * Mathf.PI;
+                                _angle += 2 * Mathf.PI;
                             }
 
                         }
 
 
 
-                        float distance = EnemySquad.MaxRange * 2f;
-                        if (distance < Squad.MaxRange - 2)
+                        _distance = EnemySquad.MaxRange * 2f;
+                        if (_distance < Squad.MaxRange - 2)
                         {
-                            distance = Squad.MaxRange - 2;
+                            _distance = Squad.MaxRange - 2;
                         }
-                        _swipeDestination = Squad.CirclePoint(angle, distance);
+                        _swipeDestination = Squad.CirclePoint(_angle, _distance);
 
 
                         SetAndMove(_swipeDestination);
