@@ -80,7 +80,7 @@ namespace Assets.Scripts.Levels
         {
             __BeeHivemindShips = State.GetShipsVisibleToHiveMind(ConfigData.Configuration.BeeSide).Select(s => s.ToString()).ToList();
             __HumanHivemindShips = State.GetShipsVisibleToHiveMind(ConfigData.Configuration.HumanSide).Select(s => s.ToString()).ToList();
-            __PastCommands = State.GetPastCommands().Select((c) => $"Command #{c.OutcomeId} - {c.Strategy.CommandType} for Squad {c.Squad} against [{c.Enemy}] with {c.Tsv} TSV").ToList();
+            __PastCommands = State.PastCommands.Select((c) => $"Command #{c.OutcomeId} - {c.CommandType} for Squad {c.Squad} against [{c.Enemy}] with {c.Tsv} TSV").ToList();
             __CustomLevels = ConfigData.GetLevelData().GetLevels().Select((level) => level.ToString()).ToList();
             
             if (Pathfinder != null)
@@ -771,10 +771,6 @@ namespace Assets.Scripts.Levels
         }
         public void MakeSaveLevel()
         {
-            if (CurrentLevelOptions.EnemyReinforcementDelay == 0)
-            {
-                CurrentLevelOptions.EnemyReinforcementDelay = ConfigData.StandardReinforcementsDelay;
-            }
             SaveLevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}", CurrentLevelOptions.MapIndex,
                 CurrentLevelOptions.ObstacleMapIndex, CurrentLevelOptions.AsteroidOption == 2 ? 2 : (ActivateCollisionAsteroids ? 1 : 0),
                 ActivateFogOfWar ? 1 : 0, ActivateMining ? 1 : 0, -1, ActivateLoadingShipsMidLevel ? 1 : 0, CurrentLevelOptions.EnemyReinforcementDelay, CurrentLevelOptions.EnemyShipTypeOption, 0,
@@ -811,6 +807,10 @@ namespace Assets.Scripts.Levels
                 Stage.Menus.NoAliveShipsAlert.SetActive(true);
             }
             CalculateShipClearances();
+            if (CurrentLevelOptions.EnemyReinforcementDelay == 0)
+            {
+                CurrentLevelOptions.EnemyReinforcementDelay = ConfigData.StandardReinforcementsDelay;
+            }
         }
         public void SetupMapAndCamera()
         {
@@ -895,9 +895,6 @@ namespace Assets.Scripts.Levels
         {
             //Debug.Log($"Saving and ending");
 
-
-            State.StoreCommands();
-
             if (Stage.RecordStats && !Stage.IsTraining)
             {
 
@@ -956,13 +953,13 @@ namespace Assets.Scripts.Levels
                 _save_ships[_save_i].EndKill();
             }
             // Should probably remove this
-            if (IsRestarting)
-            {
-                GetComponents<Command>().ToList().ForEach((command) =>
-                {
-                    Destroy(command);
-                });
-            }
+            //if (IsRestarting)
+            //{
+            //    GetComponents<Command>().ToList().ForEach((command) =>
+            //    {
+            //        command.SetFinalize("Restarting");
+            //    });
+            //}
             if (HasObstacles)
             {
                 Stage.Pool.ReturnObstacleMapToPool(ObstacleMap, CurrentLevelOptions.ObstacleMapIndex);
@@ -1003,6 +1000,7 @@ namespace Assets.Scripts.Levels
 
             //Invoke(nameof(StartNew), .1f);
             //Invoke(nameof(ReloadScene), 1f);
+            State.StoreCommands();
 
             if (!Stage.IsTraining && !Stage.Menus.IsMiniMapOpen)
             {

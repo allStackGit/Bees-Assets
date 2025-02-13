@@ -197,6 +197,12 @@ public class Stage : Scene
         {1, new Vector2[] { Vector2.zero, Vector2.zero } },
         {2, new Vector2[] { new Vector2(-756, 0), new Vector2(756, 0) } },
         {4, new Vector2[] { new Vector2(-756, 756), new Vector2(756, 756), new Vector2(-756, -756), new Vector2(756, -756) } },
+        {16, new Vector2[] {
+            new Vector2(-756, 756), new Vector2(-2268, 756), new Vector2(756, 756), new Vector2(2268, 756),
+            new Vector2(-756, 2268), new Vector2(-2268, 2268), new Vector2(756, 2268), new Vector2(2268, 2268),
+            new Vector2(-756, -756), new Vector2(-2268, -756), new Vector2(756, -756), new Vector2(2268, -756),
+            new Vector2(-756, -2268), new Vector2(-2268, -2268), new Vector2(756, -2268), new Vector2(2268, -2268)} 
+        },
     };
     /// <summary>
     /// All the clearances for all the ships, calculated in levels dynamically when needed but shared between all the levels
@@ -315,7 +321,7 @@ public class Stage : Scene
     private void SpawnLevels()
     {
         Debug.Log($"Spawning stage levels");
-        transform.position = LevelLayouts[LevelCount][0];
+        //transform.position = LevelLayouts[LevelCount][0];
         for (_spawn_i = 0; _spawn_i < LevelCount; _spawn_i++)
         {
             _spawn_level = Instantiate(Prefabs.LevelPrefab.gameObject, transform.parent).GetComponent<Level>();
@@ -325,7 +331,7 @@ public class Stage : Scene
             }
             _spawn_level.transform.parent = transform;
             _spawn_level.gameObject.SetActive(true);
-            _spawn_level.transform.position = LevelLayouts[LevelCount][_spawn_i];
+            _spawn_level.transform.localPosition = LevelLayouts[LevelCount][_spawn_i];
             Levels.Add(_spawn_level);
 
         }
@@ -566,7 +572,7 @@ public class Stage : Scene
             }
         }
 
-        if (IsDebugging)
+        if (IsDebugging && FixedUpdates > 1000)
         {
             DebugLogger();
             Pool.DebugLogger();

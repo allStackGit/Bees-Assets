@@ -37,7 +37,13 @@ namespace Assets.Scripts.Levels
         public int[] OriginalSquadCounts = new int[] { 0, 0 };
         public Level Level;
         public Stage Stage;
+        /// <summary>
+        /// A hashset of all ships that a given side can see
+        /// </summary>
         public HashSet<Ship>[] VisionCache = new HashSet<Ship>[] { new HashSet<Ship>(), new HashSet<Ship>() };
+        /// <summary>
+        /// A dictionary of every ship, (keyed by Id) that has a hashset of all the ships this ship has seen
+        /// </summary>
         public Dictionary<long, HashSet<Ship>>[] HivemindShips = new Dictionary<long, HashSet<Ship>>[] { new Dictionary<long, HashSet<Ship>>(), new Dictionary<long, HashSet<Ship>>() };
         public List<ShipRemains> Deadbodies = new List<ShipRemains>();
         public HashSet<RocketExplosion> FireBargeExplosions = new HashSet<RocketExplosion>();
@@ -45,6 +51,7 @@ namespace Assets.Scripts.Levels
         public HashSet<Ship> MiningShips = new HashSet<Ship>();
         public bool HasWarpGates, IsFireBargeExploding, HasSelectedSquads;
         public List<ShipDamageStatus>[] ShipDamageStatuses = new List<ShipDamageStatus>[] {new List<ShipDamageStatus>(), new List<ShipDamageStatus>() };
+        public Dictionary<long, int> OutcomeIdToPastCommandIndex = new Dictionary<long, int>();
         //public bool[] HasMiningShips = new bool[2];
 
         public List<string> __Squads, __SquadsAwaitingCommands, __PastCommands, __Obstacles;
@@ -52,7 +59,7 @@ namespace Assets.Scripts.Levels
         {
             __Squads = GetAllSquads().Select(s => s.ToString()).ToList();
             __SquadsAwaitingCommands = SquadsAwaitingCommands.Select(s => s.ToString()).ToList();
-            __PastCommands = PastCommands.Select((c) => $"Command #{c.OutcomeId} - {c.Strategy.CommandType} against {c.Enemy} ended with {c.Tsv}" +
+            __PastCommands = PastCommands.Select((c) => $"Command #{c.OutcomeId} - {c.CommandType} against {c.Enemy} ended with {c.Tsv}" +
             $" TSV due to \"{c.FinalizationCause}\" and took {c.Age} ticks").ToList();
 
             __Obstacles = Obstacles.Select((o) => $"{o.Name} at {o.GetPosition()} with {o.Health} health").ToList();
@@ -156,6 +163,8 @@ namespace Assets.Scripts.Levels
         {
             //_commands.Add(command);
             PastCommands.Add(new StoredCommand(command));
+            OutcomeIdToPastCommandIndex.Add(command.OutcomeId, PastCommands.Count - 1);
+            Debug.Log($"Added Command {command} to past commands at index #{(PastCommands.Count - 1)}");
             AICommands++;
             Stage.__HivemindCommands++;
         }
@@ -203,7 +212,7 @@ namespace Assets.Scripts.Levels
         {
 
             VisionCache[side - 1] = HivemindShips[side - 1].Aggregate(new HashSet<Ship>(), (sum, dictionary) => {
-                sum.UnionWith(dictionary.Value.Where((ship) => ship != null && !ship.IsDead));
+                sum.UnionWith(dictionary.Value.Where((ship) => !ship.IsDead));
                 return sum;
             });
             
@@ -393,20 +402,20 @@ namespace Assets.Scripts.Levels
         }
 
 
-        public List<StoredCommand> GetPastCommands()
-        {
-            return PastCommands;
-        }
-        private List<StoredCommand> _commpletes, _commands, _shootingCommands, _targetingCommands = new List<StoredCommand>();
+        private List<StoredCommand> _completes = new List<StoredCommand>();
+        private List<StoredCommand> _commands = new List<StoredCommand>();
+        private List<StoredCommand> _shootingCommands = new List<StoredCommand>();
+        private List<StoredCommand> _targetingCommands = new List<StoredCommand>();
         public void StoreCommands()
         {
-            _commpletes = PastCommands.Where((c) => c.IsHiveMindCommand && c.IsFinalized && !c.IsStored).ToList();
-
-            if (_commpletes.Count > 0)
+            _completes = PastCommands.Where((c) => c.IsHiveMindCommand && c.IsFinalized && !c.IsStored).ToList();
+            Debug.Log($"_completes list: {_completes.Count} / {PastCommands.Count}");
+            if (_completes.Count > 0)
             {
 
-                _commpletes.ForEach((command) =>
+                _completes.ForEach((command) =>
                 {
+                    OutcomeIdToPastCommandIndex.Remove(command.OutcomeId);
                     _commands.Add(command);
                     if (command.ShootingStrategy != null)
                     {
@@ -423,7 +432,9 @@ namespace Assets.Scripts.Levels
 
                 ConfigData.Socket.SendRequest(new StoreCommandsRequest(new StoreCommands(_commands, _shootingCommands, _targetingCommands),
                     ConfigData.StandardMaxTimeOnQueue));
-                PastCommands = PastCommands.Where(c => !c.IsStored).ToList();
+                //PastCommands = PastCommands.Where(c => !c.IsStored).ToList();
+                PastCommands.Clear();
+                OutcomeIdToPastCommandIndex.Clear();
 
                 _commands.Clear();
                 _shootingCommands.Clear();

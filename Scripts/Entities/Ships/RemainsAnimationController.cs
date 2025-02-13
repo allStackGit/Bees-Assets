@@ -56,10 +56,5 @@ namespace Assets.Scripts.Entities.Ships
                 ShouldSwapSprite = true;
             }
         }
-
-        public void Kill()
-        {
-            //Destroy(gameObject);
-        }
     }
 }

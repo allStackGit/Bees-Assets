@@ -9,9 +9,9 @@ namespace Assets.Scripts.Levels.Commands
         Sends the squad towards a random spot on the map
          */
         private Vector2 _destination;
-        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
+        public override void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
         {
-            base.Execute(ConfigData.CommandTypes.MoveToRandom, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy); 
+            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy); 
 
             PrepareDamageToSendEntries("closest");
             SetAndMove(Utilities.RandomCoordinate(Level, Squad.GetPosition(), Vector2.one * ConfigData.Configuration.AIRandomMovementMaxDistance, Vector2.one * 10));
@@ -21,15 +21,17 @@ namespace Assets.Scripts.Levels.Commands
         }
         private void Timer()
         {
-            if (Squad.HasReachedDestination)
+            if (!IsDead)
             {
-                CancelInvoke(nameof(Timer));
-                SetFinalize("Reached the random destination on the map");
+                if (Squad.HasReachedDestination)
+                {
+                    CancelInvoke(nameof(Timer));
+                    SetFinalize("Reached the random destination on the map");
+                }
+                _destination = GetDestination();
+                SetAndMove(_destination);
+                Squad.Status = $"Moving to random destination: {_destination}";
             }
-            _destination = GetDestination();
-            SetAndMove(_destination);
-            Squad.Status = $"Moving to random destination: {_destination}";
-
         }
     }
 }

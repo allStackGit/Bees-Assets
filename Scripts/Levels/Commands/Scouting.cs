@@ -15,9 +15,9 @@ namespace Assets.Scripts.Levels.Commands
         List<Scout> Scouts = new List<Scout>();
         private Vector2 _position, _randomPoint;
         private Vector2 _ten = Vector2.one * 10;
-        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
+        public override void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
         {
-            base.Execute(ConfigData.CommandTypes.Scouting, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
+            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
 
             PrepareDamageToSendEntries("closest");
             _position = Squad.GetPosition();
@@ -27,7 +27,7 @@ namespace Assets.Scripts.Levels.Commands
             InvokeRepeating(nameof(Timer), 0, CommandFrequency);
             Invoke(nameof(EndCommand), ConfigData.Configuration.AISquadPatrolTime);
 
-            if (Squad.Side == ConfigData.Configuration.HumanSide && ConfigData.Configuration.UserSide == Squad.Side)
+            if (Squad.Side == ConfigData.Configuration.HumanSide)
             {
                 Squad.GetShips().ForEach((ship) =>
                 {

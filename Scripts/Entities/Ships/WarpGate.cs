@@ -32,7 +32,7 @@ namespace Assets.Scripts.Entities.Ships
             else if (collider.gameObject.CompareTag("Ship"))
             {
                 Ship ship = collider.GetComponent<Ship>();
-                if (ship.Side == Side && ship.Squad?.Command?.Strategy.CommandType == ConfigData.CommandTypes.FullRetreat && ship.ShipType != this.ShipType)
+                if (ship.Side == Side && ship.Squad?.Command?.CommandType == ConfigData.CommandTypes.FullRetreat && ship.ShipType != this.ShipType)
                 {
                     FullRetreat fullRetreat = (FullRetreat)ship.Squad.Command;
                     if (fullRetreat.TargetWarpGate == this)

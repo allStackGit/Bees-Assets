@@ -15,7 +15,7 @@ public class FullRetreat : Command
         if (warpgate != null)
         {
             TargetWarpGate = warpgate;
-            base.Execute(ConfigData.CommandTypes.FullRetreat, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
+            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
 
             
             // The ToList() is necessary to prevent errors from warp killing while looping through the list of ships
@@ -80,11 +80,13 @@ public class FullRetreat : Command
         }
     }
 
+    List<Ship> _tempShips;
     public void WaitToWarp()
     {
-        if (TargetWarpGate.ShipAnimationController.IsReadyToWarp)
+        if (TargetWarpGate.ShipAnimationController.IsReadyToWarp && TargetWarpGate.ShipsWarpingHere.Count > 0)
         {
-            ShipsWaitingToWarp.ForEach((ship) =>
+            _tempShips = ShipsWaitingToWarp.ToList();
+            _tempShips.ForEach((ship) =>
             {
                 WarpKill(ship);
             });
@@ -100,8 +102,8 @@ public class FullRetreat : Command
     {
         Tsv += (int)(ship.Tsv * .05f);
         TargetWarpGate.ShipsWarpingHere.Remove(ship);
-        ship.EndKill();
-        if (TargetWarpGate.ShipsWarpingHere.Count == 0)
+        ship.EndKill(); // if this is the last ship, this call could kill the command as well
+        if (!IsDead && TargetWarpGate.ShipsWarpingHere.Count == 0)
         {
             SetFinalize("All ships have warped");
         }

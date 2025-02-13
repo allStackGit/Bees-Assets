@@ -21,7 +21,7 @@ namespace Assets.Scripts.Levels.Commands
         public int GuardPosition;
         public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy, Squad guardedSquad)
         {
-            base.Execute(ConfigData.CommandTypes.Guard, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
+            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
             if (IsHiveMindCommand)
             {
                 _guardedSquad = GetClosestAvailableSquadToGuard();
@@ -37,8 +37,8 @@ namespace Assets.Scripts.Levels.Commands
                 Level.State.GetSquadsBySide(Squad.Side).ForEach((guardingSquad) =>
                 {
                     // check if it's a guarding squad and guarding the same squad as this squad
-                    if (guardingSquad != Squad && guardingSquad.HasCommand && guardingSquad.Command.HasStrategy &&
-                    guardingSquad.Command.Strategy.CommandType == ConfigData.CommandTypes.Guard && ((Guard)guardingSquad.Command)._guardedSquad == _guardedSquad)
+                    if (guardingSquad != Squad && guardingSquad.HasCommand &&
+                    guardingSquad.Command.CommandType == ConfigData.CommandTypes.Guard && ((Guard)guardingSquad.Command)._guardedSquad == _guardedSquad)
                     {
                         ((Guard)guardingSquad.Command).OtherGuardSquads.Add(Squad);
                         OtherGuardSquads.Add(guardingSquad);
@@ -56,7 +56,7 @@ namespace Assets.Scripts.Levels.Commands
             }
             else
             {
-                Squad.BannedStrats.Add(Strategy.CommandType);
+                Squad.BannedStrats.Add(CommandType);
                 SetFinalize("There are no squads to guard");
             }
 
@@ -79,7 +79,7 @@ namespace Assets.Scripts.Levels.Commands
         private void Timer()
         {
             // Determine initial destination based on other guarding squads
-            if (!Squad.IsDead)
+            if (!IsDead)
             {
                 if (!_guardedSquad.IsDead)
                 {
@@ -120,7 +120,7 @@ namespace Assets.Scripts.Levels.Commands
         private Squad GetClosestAvailableSquadToGuard()
         {
             return Level.State.GetSquadsBySide(Side)
-                .Where((s) => s != Squad && (!s.HasCommand || !s.Command.HasStrategy || s.Command.Strategy.CommandType != ConfigData.CommandTypes.Guard))
+                .Where((s) => s != Squad && (!s.HasCommand || s.Command.CommandType != ConfigData.CommandTypes.Guard))
                 .OrderBy(s => s.DistanceToPoint(Squad.GetPosition())).FirstOrDefault();
         }
         private List<Squad> _f_otherGuardSquads = new List<Squad>();
@@ -129,8 +129,8 @@ namespace Assets.Scripts.Levels.Commands
             if (_guardedSquad != null && OtherGuardSquads.Count > 0)
             {
                 _f_otherGuardSquads = OtherGuardSquads.Where(
-                (squad) => squad.HasCommand && squad.Command.HasStrategy && squad != Squad
-                && squad.Command.Strategy.CommandType == ConfigData.CommandTypes.Guard).ToList();
+                (squad) => squad.HasCommand && squad != Squad
+                && squad.Command.CommandType == ConfigData.CommandTypes.Guard).ToList();
 
                 if (_f_otherGuardSquads.Count > 0)
                 {

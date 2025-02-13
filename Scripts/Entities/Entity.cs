@@ -57,7 +57,7 @@ namespace Assets.Scripts.Entities
         {
             transform.eulerAngles = new Vector3(0, 0, GetDegreesTowardsPoint(point));
         }
-        float _degrees;
+        private float _degrees;
         /// <summary>
         /// Gets the angle (0-360) in degrees
         /// </summary>
@@ -79,7 +79,7 @@ namespace Assets.Scripts.Entities
             //Debug.Log($"Angle towards movement point after adjustment {degrees}");
             return _degrees;
         }
-        float _result;
+        private float _result;
         public float GetRotatedAngleToPoint(Vector2 point)
         {
             _result = GetDegreesTowardsPoint(point) - GetRotation();

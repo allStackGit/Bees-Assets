@@ -17,7 +17,7 @@ namespace Assets.Scripts.Levels.Commands
         /// <summary>
         /// Ships in the squad that can mine asteroids
         /// </summary>
-        public List<Ship> MiningShips;
+        public List<Ship> MiningShips = new List<Ship>();
         /// <summary>
         /// Ships in squad that are currently mining asteroids
         /// </summary>
@@ -25,11 +25,11 @@ namespace Assets.Scripts.Levels.Commands
 
         public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy, MiningAsteroid asteroid)
         {
-            if (!asteroid.IsDead)
+            if (asteroid != null) // Needs to be null check in case there were no asteroids
             {
                 MiningShips = Squad.GetShips().Where((ship) => ship.IsMiningShip).ToList();
                 TargetAstroid = asteroid;
-                base.Execute(ConfigData.CommandTypes.Mining, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
+                base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
                 PrepareDamageToSendEntries("closest");
 
                 // Check if any ships are already on the asteroid
@@ -104,29 +104,37 @@ namespace Assets.Scripts.Levels.Commands
         private int _miningRate, _amountMined, _amountPerShip;
         public void Mine() // [stats-method]
         {
-            ShipsCurrentlyMining = ShipsCurrentlyMining.Where((s) => !s.IsDead).ToList();
-            if (ShipsCurrentlyMining.Count > 0)
+            if (!TargetAstroid.IsDead)
             {
-                //Debug.Log($"There are {ShipsMining.Count} ships mining for {Squad.Name}");
-                _miningRate = ConfigData.MiningRate * ShipsCurrentlyMining.Count;
-                _amountMined = math.min(_miningRate, TargetAstroid.Health);
-
-                Tsv += _amountMined;
-                TargetAstroid.Health -= _amountMined;
-                //Debug.Log($"{Squad.Name} mined {amountMined} from {TargetAstroid.Name}. It has {TargetAstroid.Health} health left");
-
-                _amountPerShip = _amountMined / ShipsCurrentlyMining.Count;
-                ShipsCurrentlyMining.ForEach((ship) =>
+                ShipsCurrentlyMining = ShipsCurrentlyMining.Where((s) => !s.IsDead).ToList();
+                if (ShipsCurrentlyMining.Count > 0)
                 {
-                    ship.FleetShip.MineralsMinedThisLevel += _amountPerShip;
-                    ship.Tsv += _amountPerShip;
-                });
+                    //Debug.Log($"There are {ShipsMining.Count} ships mining for {Squad.Name}");
+                    _miningRate = ConfigData.MiningRate * ShipsCurrentlyMining.Count;
+                    _amountMined = math.min(_miningRate, TargetAstroid.Health);
 
-                if (TargetAstroid.Health == 0)
+                    Tsv += _amountMined;
+                    TargetAstroid.Health -= _amountMined;
+                    //Debug.Log($"{Squad.Name} mined {amountMined} from {TargetAstroid.Name}. It has {TargetAstroid.Health} health left");
+
+                    _amountPerShip = _amountMined / ShipsCurrentlyMining.Count;
+                    ShipsCurrentlyMining.ForEach((ship) =>
+                    {
+                        ship.FleetShip.MineralsMinedThisLevel += _amountPerShip;
+                        ship.Tsv += _amountPerShip;
+                    });
+
+                    if (TargetAstroid.Health == 0)
+                    {
+                        TargetAstroid.Kill(false);
+                    }
+                }
+                else
                 {
-                    TargetAstroid.Kill(false);
+                    SetFinalize("Asteroid has died");
                 }
             }
+            
 
         }
         public void CleanupAsteroid()

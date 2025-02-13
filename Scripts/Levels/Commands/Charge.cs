@@ -43,7 +43,7 @@ namespace Assets.Scripts.Levels.Commands
         /// <param name="shootingStrategy"></param>
         /// <param name="commandOutcomeId"></param>
         /// <param name="noEnemy"></param>
-        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
+        public override void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
         {
             // Store method parameters in class-level variables.
             _execute_shootingStrategy = shootingStrategy;
@@ -51,7 +51,7 @@ namespace Assets.Scripts.Levels.Commands
             _execute_shootingStrategyOutcomeId = shootingStrategyOutcomeId;
             _execute_noEnemy = noEnemy;
 
-            base.Execute(ConfigData.CommandTypes.Charge, _execute_shootingStrategy, _execute_commandOutcomeId, _execute_shootingStrategyOutcomeId, _execute_noEnemy);
+            base.Execute(_execute_shootingStrategy, _execute_commandOutcomeId, _execute_shootingStrategyOutcomeId, _execute_noEnemy);
             //Debug.Log("Executing bombing run");
 
             IsAttacking = true;

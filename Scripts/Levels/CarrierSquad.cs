@@ -14,7 +14,7 @@ namespace Assets.Scripts.Levels
         public bool IsDroneSquad;
         public override void Create(Stage stage)
         {
-            Stage = stage;
+            base.Create(stage);
             SquadType = ConfigData.SquadTypes.CarrierSquad;
         }
         public void SetupCarrierSquad(Carrier carrier, ConfigData.ShipTypes squadType)

@@ -25,7 +25,7 @@ namespace Assets.Scripts.Entities.Ships
         /// </summary>
         public bool HasDroppedBomb;
         public bool HasReturnedToCarrier;
-        public GameObject BombSprite, LoadedIndicator, CarriedBomb;
+        public GameObject LoadedIndicator, CarriedBomb;
         //public Vector2 IndicatorOffset;
         private SpriteRenderer _indicatorSprite;
         //private GameObject _droppedBomb;
@@ -40,7 +40,6 @@ namespace Assets.Scripts.Entities.Ships
             if (Stage.IsTraining)
             {
                 Destroy(LoadedIndicator);
-                Destroy(CarriedBomb);
             }
             else
             {

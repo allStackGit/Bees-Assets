@@ -13,9 +13,10 @@ namespace Assets.Scripts.Levels.Commands
 
         private bool _gotToEnemy;
         private Vector2 _swipeDestination = Vector2.zero;
-        public override void Execute(ConfigData.CommandTypes commandType, ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
+        public void Execute(ConfigData.CommandTypes commandType, ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
         {
-            base.Execute(commandType, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
+            CommandType = commandType;
+            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
 
             IsAttacking = true;
             PrepareDamageToSendEntries();
@@ -35,11 +36,11 @@ namespace Assets.Scripts.Levels.Commands
         private float _angle, _distance;
         private void Timer()
         {
-            if (!Squad.IsDead)
+            if (!IsDead)
             {
                 if (!EnemySquad.IsDead)
                 {
-                    Squad.Status = $"Targeting enemy squad {EnemySquad.Name} #{EnemySquad.Id} with {Strategy.CommandType}";
+                    Squad.Status = $"Targeting enemy squad {EnemySquad.Name} #{EnemySquad.Id} with {CommandType}";
 
                     if (!_gotToEnemy && !Squad.AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad)) // if we haven't reached the enemy yet
                     {
@@ -53,11 +54,11 @@ namespace Assets.Scripts.Levels.Commands
                         _gotToEnemy = true;
                         //SetFinalize("Reached the enemy");
                         //return;
-                        Squad.Status = $"Using {Strategy.CommandType} against enemy squad {EnemySquad.Name} #{EnemySquad.Id}";
+                        Squad.Status = $"Using {CommandType} against enemy squad {EnemySquad.Name} #{EnemySquad.Id}";
                         _enemyPosition = EnemySquad.GetPosition();
                         _angle = Squad.AngleToPoint(_enemyPosition);
 
-                        if (Strategy.CommandType == ConfigData.CommandTypes.RightSwipe)
+                        if (CommandType == ConfigData.CommandTypes.RightSwipe)
                         {
                             _angle += .25f * Mathf.PI;
 

@@ -5,6 +5,7 @@ using Assets.Scripts.Entities.Ships.Weapons;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using System;
 
 namespace Assets.Scripts.Levels.Commands
 {
@@ -37,12 +38,12 @@ namespace Assets.Scripts.Levels.Commands
         // Used in Execute() loop: loop index.
         private int _execute_loopIndex;
 
-        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy,
+        public override void Execute(ConfigData.ShootingStrategyTypes shootingStrategy,
                             long commandOutcomeId,
                             long shootingStrategyOutcomeId,
                             bool noEnemy)
         {
-            base.Execute(ConfigData.CommandTypes.BombingRun, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
+            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
             // Debug.Log("Executing bombing run");
 
             if (CheckIfStrikersAreDefenseless())
@@ -79,7 +80,10 @@ namespace Assets.Scripts.Levels.Commands
                 }
 
                 // Process the current ship to get its target.
-                GetTarget(_execute_currentShip);
+                if (!GetTarget(_execute_currentShip))
+                {
+                    return; // There was no target and had to finalize the command
+                }
             }
 
             CommandFrequency = 2;
@@ -119,7 +123,7 @@ namespace Assets.Scripts.Levels.Commands
         /// Finds a target ship for the ship's bomb and then makes that ship the enemy ship to follow as well
         /// </summary>
         /// <param name="bomber"></param>
-        private void GetTarget(Ship bomber)
+        private bool GetTarget(Ship bomber)
         {
             _getTarget_bomb = (Bomb)bomber.Weapons.First();
             //int loops = 0;
@@ -155,7 +159,10 @@ namespace Assets.Scripts.Levels.Commands
             else
             {
                 SetFinalize("No more enemy ships to target");
+                return false;
+
             }
+            return true;
         }
 
         //////////////////////////////////////////////////////////////////////////////
@@ -223,10 +230,20 @@ namespace Assets.Scripts.Levels.Commands
         /// <returns></returns>
         private bool AreBombersCloseToEnemyTargets()
         {
-            return Squad.GetShips().All((ship) =>
+            try
             {
-                return ship.ProximityCollider.NearbyEnemyShips.Contains(ship.TargetEnemyShipToFollow) || (ship.ShipType == ConfigData.ShipTypes.Striker && ((Striker)ship).HasCompletedRun);
-            }) && Squad.GetShips().Any((ship) => ship.ProximityCollider.NearbyEnemyShips.Contains(ship.TargetEnemyShipToFollow));
+                return Squad.GetShips().All((ship) =>
+                {
+                    return ship.ProximityCollider.NearbyEnemyShips.Contains(ship.TargetEnemyShipToFollow) || (ship.ShipType == ConfigData.ShipTypes.Striker && ((Striker)ship).HasCompletedRun);
+                }) && Squad.GetShips().Any((ship) => ship.ProximityCollider.NearbyEnemyShips.Contains(ship.TargetEnemyShipToFollow));
+            }catch(Exception e)
+            {
+                Debug.Log($"Ships: {Utilities.ListToString(Squad.GetShips())}, Are any ships null? {Squad.GetShips().Any((s) => s == null)}, Are any ships proximity colliders null?" +
+                    $" {Squad.GetShips().Any((s) => s?.ProximityCollider == null)}," +
+                    $"Are any ships nearby enemy ships null? {Squad.GetShips().Any((s) => s?.ProximityCollider?.NearbyEnemyShips == null)}");
+                throw e;
+            }
+
         }
         /// <summary>
         /// Have all the ships dropped their bombs if they have them and then returned to their carrier if necessary
@@ -303,7 +320,7 @@ namespace Assets.Scripts.Levels.Commands
         private List<Ship> _timer_ships;
 
         // Used in Timer(): list of FireBarge IDs that need to detonate.
-        private List<long> _timer_FireBargesToDetonate;
+        private List<long> _timer_FireBargesToDetonate = new List<long>();
 
         // Used in Timer() loop: current ship being processed.
         private Ship _timer_currentShip;
@@ -339,13 +356,13 @@ namespace Assets.Scripts.Levels.Commands
 
         private void Timer()
         {
-            if (!Squad.IsDead)
+            if (!IsDead)
             {
                 _timerLoops++; // Assuming _timerLoops is already declared as a class-level variable
                                //Debug.Log("Bombing timer");
                 Squad.Status = $"In the middle of bombing run against {EnemySquad.Name}";
                 _timer_ships = Squad.GetShips();
-                _timer_FireBargesToDetonate = new List<long>();
+                _timer_FireBargesToDetonate.Clear();
 
                 // Process each ship in the squad.
                 for (_timer_loopIndex = 0; _timer_loopIndex < _timer_ships.Count; _timer_loopIndex++)
@@ -377,7 +394,10 @@ namespace Assets.Scripts.Levels.Commands
                                 }
                                 else if (_timer_striker.IsBombReady)
                                 {
-                                    GetTarget(_timer_currentShip);
+                                    if (!GetTarget(_timer_currentShip))
+                                    {
+                                        return; // There was no target and had to finalize the command
+                                    }
                                 }
                             }
                             else if (_timer_currentShip.ShipType == ConfigData.ShipTypes.YellowJacket)
@@ -389,7 +409,10 @@ namespace Assets.Scripts.Levels.Commands
                                 }
                                 else
                                 {
-                                    GetTarget(_timer_currentShip);
+                                    if (!GetTarget(_timer_currentShip))
+                                    {
+                                        return; // There was no target and had to finalize the command
+                                    }
                                 }
                             }
                         }
@@ -411,26 +434,30 @@ namespace Assets.Scripts.Levels.Commands
                 {
                     EndBombingRun();
                 }
-
-                if (!IsCloseToTarget && !EnemySquad.IsDead)
+                else
                 {
-                    if (AreBombersCloseToEnemyTargets())
+                    if (!IsCloseToTarget && !EnemySquad.IsDead)
                     {
-                        //Debug.Log($"{Squad.Name} is on a bombing run and close to {EnemySquad.Name}");
+                        if (AreBombersCloseToEnemyTargets())
+                        {
+                            //Debug.Log($"{Squad.Name} is on a bombing run and close to {EnemySquad.Name}");
+                            CancelInvoke(nameof(Timer));
+                            CommandFrequency = .25f;
+                            IsCloseToTarget = true;
+                            InvokeRepeating(nameof(Timer), CommandFrequency, CommandFrequency);
+                        }
+                    }
+                    else if (IsCloseToTarget && _timerLoops % 4 == 0 && (HaveAllShipsBombed(_timer_ships) || (EnemySquad.IsDead || !AreBombersCloseToEnemyTargets())))
+                    {
+                        //Debug.Log($"{Squad.Name} is on a bombing run and no longer close to {EnemySquad.Name}");
                         CancelInvoke(nameof(Timer));
-                        CommandFrequency = .25f;
-                        IsCloseToTarget = true;
+                        CommandFrequency = 2f;
+                        IsCloseToTarget = false;
                         InvokeRepeating(nameof(Timer), CommandFrequency, CommandFrequency);
                     }
                 }
-                else if (IsCloseToTarget && _timerLoops % 4 == 0 && (HaveAllShipsBombed(_timer_ships) || (EnemySquad.IsDead || !AreBombersCloseToEnemyTargets())))
-                {
-                    //Debug.Log($"{Squad.Name} is on a bombing run and no longer close to {EnemySquad.Name}");
-                    CancelInvoke(nameof(Timer));
-                    CommandFrequency = 2f;
-                    IsCloseToTarget = false;
-                    InvokeRepeating(nameof(Timer), CommandFrequency, CommandFrequency);
-                }
+
+                
             }
         }
 

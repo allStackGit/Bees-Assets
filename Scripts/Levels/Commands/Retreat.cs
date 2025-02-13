@@ -12,9 +12,9 @@ namespace Assets.Scripts.Levels.Commands
          */
         private Vector2 _retreatPoint, _enemyPosition, _position;
         private float _distance, _idealDistance, _angle;
-        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
+        public override void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
         {
-            base.Execute(ConfigData.CommandTypes.Retreat, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
+            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
 
             if (!EnemySquad.IsDead)
             {

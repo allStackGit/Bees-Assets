@@ -25,5 +25,10 @@ namespace Assets.Scripts.Server
             ShootingStrategyOutcomeId = shootingStrategyOutcomeId;
             IsCached = isCached;
         }
+
+        public override string ToString()
+        {
+            return $"{Name}:#{OutcomeId} with SS:{ShootingStrategyName} and MS: {MatchupString}";
+        }
     }
 }

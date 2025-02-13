@@ -73,7 +73,7 @@ namespace Assets.Scripts.Entities.Projectiles
                 {
                     Shooter.ProjectilesInFlight.Remove(this);
                 }
-                Debug.Log($"{Name} has been killed and will be returned");
+                //Debug.Log($"{Name} has been killed and will be returned");
                 Stage.Pool.ReturnProjectileToPool(this);
             }
 

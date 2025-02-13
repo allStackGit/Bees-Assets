@@ -103,8 +103,6 @@ namespace Assets.Scripts.Entities.Projectiles
                 //Debug.Log($"{Name} has been killed and will be returned");
                 Stage.Pool.ReturnProjectileToPool(this);
             }
-
-            //Destroy(gameObject);
         }
 
         public virtual void ContactTarget(Ship target)

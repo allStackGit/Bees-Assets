@@ -24,9 +24,13 @@ namespace Assets.Scripts.Entities.Projectiles
         {
             if (!ContactedShip.IsDead)
             {
-                Explosion.transform.parent = ContactedShip.transform;
-                Explosion.transform.localPosition = GetPosition();
-                Explosion.SetActive(true);
+                if (!Level.Stage.IsTraining)
+                {
+                    Explosion.transform.parent = ContactedShip.transform;
+                    Explosion.transform.localPosition = GetPosition();
+                    Explosion.SetActive(true);
+                }
+
                 Kill();
                 Invoke(nameof(Damage), .5f);
             }

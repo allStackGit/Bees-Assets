@@ -81,10 +81,6 @@ namespace Assets.Scripts.Entities.Ships
                 {
                     Squad.SetOffsets();
                 }
-                //if (!Stage.IsTraining)
-                //{
-                //    Destroy(MovementMarker);
-                //}
                 gameObject.SetActive(false);
                 Invoke(nameof(DelayedKill), 5);
 

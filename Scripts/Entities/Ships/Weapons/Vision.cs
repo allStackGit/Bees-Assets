@@ -19,7 +19,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         public virtual void Setup(Ship ship)
         {
-            //Debug.Log($"{ship.Name} : {gameObject.name} Collider.radius: {Collider.radius}, Sight: {ship.Sight}");
             Ship = ship;
             if (Ship.IsHiveMindControlled)
             {
@@ -31,6 +30,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 }
                 Collider.radius = range;
                 Collider.isTrigger = true;
+
+                //Debug.Log($"{ship.Name} : {gameObject.name} Collider.radius: {Collider.radius}, Sight: {ship.Sight}");
             }
             else
             {
@@ -78,6 +79,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     }
                 }
             }
+            //else
+            //{
+            //    Debug.Log($"{Ship.Name} from {Ship.Level.gameObject.name} just saw a ship but did not add them to hivemind vision because there is no squad command");
+            //}
 
         }
 
@@ -92,7 +97,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             transform.localScale *= ConfigData.VisionShrinkingMultiplier;
             if (transform.localScale.x < 3)
             {
-                //Destroy(gameObject);
                 CancelInvoke(nameof(ShrinkVision));
                 gameObject.SetActive(false);
             }

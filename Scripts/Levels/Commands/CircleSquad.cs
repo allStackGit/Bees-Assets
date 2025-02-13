@@ -13,9 +13,9 @@ namespace Assets.Scripts.Levels.Commands
         private bool _gotToEnemy, _hasSetIdealDistance;
         private float _idealDistance, _angle;
         private Vector2 _lastDestination;
-        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
+        public override void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
         {
-            base.Execute(ConfigData.CommandTypes.CircleSquad, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
+            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
             IsAttacking = true;
             PrepareDamageToSendEntries();
             InvokeRepeating(nameof(Timer), .1f, CommandFrequency);

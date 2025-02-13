@@ -16,9 +16,9 @@ namespace Assets.Scripts.Levels.Commands
         /// <param name="shootingStrategy"></param>
         /// <param name="commandOutcomeId"></param>
         /// <param name="noEnemy"></param>
-        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
+        public override void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
         {
-            base.Execute(ConfigData.CommandTypes.Aggressive, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
+            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
 
             if (!Squad.IsDead)
             {

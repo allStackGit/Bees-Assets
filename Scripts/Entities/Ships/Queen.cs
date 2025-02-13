@@ -101,16 +101,13 @@ namespace Assets.Scripts.Entities.Ships
 
             Ship ship = Level.LevelConstructor.InstantiateShip(MinionType);
 
-            if (ship != null)
-            {
-                ship.Setup(
+            ship.Setup(
                     Level,
                     new FleetShip(id, $"{ShipType} Minion {MinionType} - #{id}", MinionType, false, true, false, 0, 0, 0, 0, 0, 0, 0),
                     squad,
                     offset
                 );
-                ship.IsMinionShip = true;
-            }
+            ship.IsMinionShip = true;
             squad.AddShip(ship);
             ship.FleetShip = FleetShip;
 

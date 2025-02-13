@@ -63,7 +63,6 @@ namespace Assets.Scripts.Entities.Projectiles
             {
                 Level.State.FireBargeExplosions.Remove(this);
             }
-            //Destroy(gameObject);
             base.Kill();
         } 
 

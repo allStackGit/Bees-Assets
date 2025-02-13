@@ -12,9 +12,9 @@ namespace Assets.Scripts.Levels.Commands
         just follow that squad for a period before finalizing the strategy.
         */
         private Squad _closestFriendlySquad;
-        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
+        public override void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
         {
-            base.Execute(ConfigData.CommandTypes.ClosestFriendly, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
+            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
 
 
             //_parameters.setTimer = false;
@@ -35,7 +35,7 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (!Squad.IsDead)
             {
-                if (!_closestFriendlySquad.IsDead)
+                if (_closestFriendlySquad != null && !_closestFriendlySquad.IsDead)
                 {
                     //Debug.Log($"_closestFriendlySquad: {_closestFriendlySquad.Name} IsDead: {_closestFriendlySquad.IsDead}");
                     _timer_position = _closestFriendlySquad.GetPosition();

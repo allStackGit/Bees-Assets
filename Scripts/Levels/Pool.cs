@@ -219,23 +219,23 @@ public class Pool : MonoBehaviour
         CollisionAsteroidPool = new ObjectPool<CollisionAsteroid>(CreatePooledCollisionAsteroid, null, null, null, true);
         MiningAsteroidPool = new ObjectPool<MiningAsteroid>(CreatePooledMiningAsteroid, null, null, null, true);
 
-        SquadPool = new ObjectPool<Squad>(CreatePooledSquad, null, null, null, true);
+        SquadPool = new ObjectPool<Squad>(CreatePooledSquad, OnTakeSquadFromPool, OnReturnSquadToPool, null, true);
         CarrierSquadPool = new ObjectPool<CarrierSquad>(CreatePooledCarrierSquad, null, null, null, true);
 
-        AggressiveCommandPool = new ObjectPool<Aggressive>(CreatePooledAggressiveCommand, null, null, null, true);
-        BombingRunCommandPool = new ObjectPool<BombingRun>(CreatePooledBombingRunCommand, null, null, null, true);
-        ChargeCommandPool = new ObjectPool<Charge>(CreatePooledChargeCommand, null, null, null, true);
-        CircleSquadCommandPool = new ObjectPool<CircleSquad>(CreatePooledCircleSquadCommand, null, null, null, true);
-        ClosestFriendlyCommandPool = new ObjectPool<ClosestFriendly>(CreatePooledClosestFriendlyCommand, null, null, null, true);
-        FullRetreatCommandPool = new ObjectPool<FullRetreat>(CreatePooledFullRetreatCommand, null, null, null, true);
-        GuardCommandPool = new ObjectPool<Guard>(CreatePooledGuardCommand, null, null, null, true);
-        InAndOutCommandPool = new ObjectPool<InAndOut>(CreatePooledInAndOutCommand, null, null, null, true);
-        MiningCommandPool = new ObjectPool<Mining>(CreatePooledMiningCommand, null, null, null, true);
-        MoveToRandomCommandPool = new ObjectPool<MoveToRandom>(CreatePooledMoveToRandomCommand, null, null, null, true);
-        PatrolCommandPool = new ObjectPool<Patrol>(CreatePooledPatrolCommand, null, null, null, true);
-        RetreatCommandPool = new ObjectPool<Retreat>(CreatePooledRetreatCommand, null, null, null, true);
-        ScoutingCommandPool = new ObjectPool<Scouting>(CreatePooledScoutingCommand, null, null, null, true);
-        SwipeSquadCommandPool = new ObjectPool<SwipeSquad>(CreatePooledSwipeSquadCommand, null, null, null, true);
+        AggressiveCommandPool = new ObjectPool<Aggressive>(CreatePooledAggressiveCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
+        BombingRunCommandPool = new ObjectPool<BombingRun>(CreatePooledBombingRunCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
+        ChargeCommandPool = new ObjectPool<Charge>(CreatePooledChargeCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
+        CircleSquadCommandPool = new ObjectPool<CircleSquad>(CreatePooledCircleSquadCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
+        ClosestFriendlyCommandPool = new ObjectPool<ClosestFriendly>(CreatePooledClosestFriendlyCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
+        FullRetreatCommandPool = new ObjectPool<FullRetreat>(CreatePooledFullRetreatCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
+        GuardCommandPool = new ObjectPool<Guard>(CreatePooledGuardCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
+        InAndOutCommandPool = new ObjectPool<InAndOut>(CreatePooledInAndOutCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
+        MiningCommandPool = new ObjectPool<Mining>(CreatePooledMiningCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
+        MoveToRandomCommandPool = new ObjectPool<MoveToRandom>(CreatePooledMoveToRandomCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
+        PatrolCommandPool = new ObjectPool<Patrol>(CreatePooledPatrolCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
+        RetreatCommandPool = new ObjectPool<Retreat>(CreatePooledRetreatCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
+        ScoutingCommandPool = new ObjectPool<Scouting>(CreatePooledScoutingCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
+        SwipeSquadCommandPool = new ObjectPool<SwipeSquad>(CreatePooledSwipeSquadCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
 
         //FillPools();
     }
@@ -243,98 +243,98 @@ public class Pool : MonoBehaviour
     public Aggressive CreatePooledAggressiveCommand()
     {
         _spawn_aggressive = gameObject.AddComponent<Aggressive>();
-        _spawn_aggressive.Create(Stage);
+        _spawn_aggressive.Create(Stage, ConfigData.CommandTypes.Aggressive);
         return _spawn_aggressive;
     }
     BombingRun _spawn_bombingRun;
     public BombingRun CreatePooledBombingRunCommand()
     {
         _spawn_bombingRun = gameObject.AddComponent<BombingRun>();
-        _spawn_bombingRun.Create(Stage);
+        _spawn_bombingRun.Create(Stage, ConfigData.CommandTypes.BombingRun);
         return _spawn_bombingRun;
     }
     Charge _spawn_charge;
     public Charge CreatePooledChargeCommand()
     {
         _spawn_charge = gameObject.AddComponent<Charge>();
-        _spawn_charge.Create(Stage);
+        _spawn_charge.Create(Stage, ConfigData.CommandTypes.Charge);
         return _spawn_charge;
     }
     CircleSquad _spawn_circleSquad;
     public CircleSquad CreatePooledCircleSquadCommand()
     {
         _spawn_circleSquad = gameObject.AddComponent<CircleSquad>();
-        _spawn_circleSquad.Create(Stage);
+        _spawn_circleSquad.Create(Stage, ConfigData.CommandTypes.CircleSquad);
         return _spawn_circleSquad;
     }
     ClosestFriendly _spawn_closestFriendly;
     public ClosestFriendly CreatePooledClosestFriendlyCommand()
     {
         _spawn_closestFriendly = gameObject.AddComponent<ClosestFriendly>();
-        _spawn_closestFriendly.Create(Stage);
+        _spawn_closestFriendly.Create(Stage, ConfigData.CommandTypes.ClosestFriendly);
         return _spawn_closestFriendly;
     }
     FullRetreat _spawn_fullRetreat;
     public FullRetreat CreatePooledFullRetreatCommand()
     {
         _spawn_fullRetreat = gameObject.AddComponent<FullRetreat>();
-        _spawn_fullRetreat.Create(Stage);
+        _spawn_fullRetreat.Create(Stage, ConfigData.CommandTypes.FullRetreat);
         return _spawn_fullRetreat;
     }
     Guard _spawn_guard;
     public Guard CreatePooledGuardCommand()
     {
         _spawn_guard = gameObject.AddComponent<Guard>();
-        _spawn_guard.Create(Stage);
+        _spawn_guard.Create(Stage, ConfigData.CommandTypes.Guard);
         return _spawn_guard;
     }
     InAndOut _spawn_inAndOut;
     public InAndOut CreatePooledInAndOutCommand()
     {
         _spawn_inAndOut = gameObject.AddComponent<InAndOut>();
-        _spawn_inAndOut.Create(Stage);
+        _spawn_inAndOut.Create(Stage, ConfigData.CommandTypes.InAndOut);
         return _spawn_inAndOut;
     }
     Mining _spawn_mining;
     public Mining CreatePooledMiningCommand()
     {
         _spawn_mining = gameObject.AddComponent<Mining>();
-        _spawn_mining.Create(Stage);
+        _spawn_mining.Create(Stage, ConfigData.CommandTypes.Mining);
         return _spawn_mining;
     }
     MoveToRandom _spawn_moveToRandom;
     public MoveToRandom CreatePooledMoveToRandomCommand()
     {
         _spawn_moveToRandom = gameObject.AddComponent<MoveToRandom>();
-        _spawn_moveToRandom.Create(Stage);
+        _spawn_moveToRandom.Create(Stage, ConfigData.CommandTypes.MoveToRandom);
         return _spawn_moveToRandom;
     }
     Patrol _spawn_patrol;
     public Patrol CreatePooledPatrolCommand()
     {
         _spawn_patrol = gameObject.AddComponent<Patrol>();
-        _spawn_patrol.Create(Stage);
+        _spawn_patrol.Create(Stage, ConfigData.CommandTypes.Patrol);
         return _spawn_patrol;
     }
     Retreat _spawn_retreat;
     public Retreat CreatePooledRetreatCommand()
     {
         _spawn_retreat = gameObject.AddComponent<Retreat>();
-        _spawn_retreat.Create(Stage);
+        _spawn_retreat.Create(Stage, ConfigData.CommandTypes.Retreat);
         return _spawn_retreat;
     }
     Scouting _spawn_scouting;
     public Scouting CreatePooledScoutingCommand()
     {
         _spawn_scouting = gameObject.AddComponent<Scouting>();
-        _spawn_scouting.Create(Stage);
+        _spawn_scouting.Create(Stage, ConfigData.CommandTypes.Scouting);
         return _spawn_scouting;
     }
     SwipeSquad _spawn_swipeSquad;
     public SwipeSquad CreatePooledSwipeSquadCommand()
     {
         _spawn_swipeSquad = gameObject.AddComponent<SwipeSquad>();
-        _spawn_swipeSquad.Create(Stage);
+        _spawn_swipeSquad.Create(Stage, ConfigData.CommandTypes.LeftSwipe);
         return _spawn_swipeSquad;
     }
     CarrierSquad _spawn_carrierSquad;
@@ -347,6 +347,7 @@ public class Pool : MonoBehaviour
     Squad _spawn_squad;
     public Squad CreatePooledSquad()
     {
+        Debug.Log($"Created pooled squad");
         _spawn_squad = gameObject.AddComponent<Squad>();
         _spawn_squad.Create(Stage);
         return _spawn_squad;
@@ -757,14 +758,14 @@ public class Pool : MonoBehaviour
 
     public void OnTakeShipFromPool(Ship ship)
     {
-        Debug.Log($"{ship.Name} was taken from the pool");
+        //Debug.Log($"{ship.Name} was taken from the pool");
         //ship.transform.parent = PoolShips.transform;
         //ship.transform.localPosition = Vector2.zero;
     }
 
     public void OnReturnShipToPool(Ship ship)
     {
-        Debug.Log($"{ship.Name} was returned to the pool");
+        //Debug.Log($"{ship.Name} was returned to the pool");
         //ship.transform.parent = PoolShips.transform;
         //ship.transform.localPosition = Vector2.zero;
     }
@@ -784,6 +785,7 @@ public class Pool : MonoBehaviour
     }
     public void ReturnSquadToPool(Squad squad)
     {
+        Debug.Log($"Returning squad to pool: {squad}");
         squad.enabled = false;
         if (squad.SquadType != ConfigData.SquadTypes.CarrierSquad)
         {
@@ -794,8 +796,25 @@ public class Pool : MonoBehaviour
             CarrierSquadPool.Release((CarrierSquad)squad);
         }
     }
+    public void OnReturnSquadToPool(Squad squad)
+    {
+        Debug.Log($"Squad was returned to pool: {squad}");
+    }
+    public void OnTakeSquadFromPool(Squad squad)
+    {
+        Debug.Log($"Squad was taken from pool: {squad}");
+    }
+    public void OnReturnCommandToPool(Command command)
+    {
+        Debug.Log($"Command was returned to pool: {command}");
+    }
+    public void OnTakeCommandFromPool(Command command)
+    {
+        Debug.Log($"Command was taken from pool: {command}");
+    }
     public Squad GetSquadFromPool()
     {
+        //Debug.Log($"Got squad from pool");
         return SquadPool.Get();
     }
     public void ReturnMiningAsteroidToPool(MiningAsteroid asteroid)
@@ -1139,7 +1158,8 @@ public class Pool : MonoBehaviour
 
     public void ReturnCommandToPool(Command command)
     {
-        switch(command.CommandType)
+        Debug.Log($"Returning command {command.CommandType} to pool");
+        switch (command.CommandType)
         {
             case ConfigData.CommandTypes.Aggressive:
                 AggressiveCommandPool.Release((Aggressive)command);
@@ -1185,12 +1205,13 @@ public class Pool : MonoBehaviour
                 SwipeSquadCommandPool.Release((SwipeSquad)command);
                 break;
             default:
-                Debug.LogError($"Command type is invalid: {command}");
+                Debug.LogError($"Command type is invalid: {command.CommandType}");
                 break;
         }
     }
     public Command GetCommandFromPool(ConfigData.CommandTypes type)
     {
+        //Debug.Log($"Getting command {type} from pool");
         switch (type)
         {
             case ConfigData.CommandTypes.Aggressive:
@@ -1235,13 +1256,18 @@ public class Pool : MonoBehaviour
     private List<Ship> _fillPool_spawnedShips = new List<Ship>();
     private List<Projectile> _fillPool_spawnedProjectiles = new List<Projectile>();
     private List<Command> _fillPool_spawnedCommands = new List<Command>();
+    private List<Squad> _fillPool_spawnedSquads = new List<Squad>();
 
     private void FillPools()
     {
-        // Calculate fill sizes based on Stage.LevelCount
+        // Calculate fill sizes based on Levels
         _fillPool_fillSizeSmall = 15 * Stage.LevelCount / 2;
         _fillPool_fillSizeMedium = 10 * Stage.LevelCount / 2;
         _fillPool_fillSizeLarge = 5 * Stage.LevelCount / 2;
+
+        //_fillPool_fillSizeSmall = 70;
+        //_fillPool_fillSizeMedium = 70;
+        //_fillPool_fillSizeLarge = 70;
 
         // Fill small pool items
         for (_fillPool_i = 0; _fillPool_i < _fillPool_fillSizeSmall; _fillPool_i++)
@@ -1257,6 +1283,8 @@ public class Pool : MonoBehaviour
             _fillPool_spawnedProjectiles.Add(BeeSmallProjectilePool.Get());
             _fillPool_spawnedProjectiles.Add(HumanSmallProjectilePool.Get());
             _fillPool_spawnedProjectiles.Add(QueenSmallProjectilePool.Get());
+
+            _fillPool_spawnedSquads.Add(SquadPool.Get());
         }
 
         // Fill medium pool items
@@ -1278,7 +1306,7 @@ public class Pool : MonoBehaviour
             _fillPool_spawnedProjectiles.Add(HumanMediumProjectilePool.Get());
             _fillPool_spawnedProjectiles.Add(SplitShotProjectilePool.Get());
             _fillPool_spawnedProjectiles.Add(StrikerBombProjectilePool.Get());
-            // _fillPool_spawnedProjectiles.Add(RocketExplosionProjectilePool.Get());
+             _fillPool_spawnedProjectiles.Add(RocketExplosionProjectilePool.Get());
 
             _fillPool_spawnedCommands.Add(AggressiveCommandPool.Get());
             _fillPool_spawnedCommands.Add(BombingRunCommandPool.Get());
@@ -1294,6 +1322,9 @@ public class Pool : MonoBehaviour
             _fillPool_spawnedCommands.Add(RetreatCommandPool.Get());
             _fillPool_spawnedCommands.Add(ScoutingCommandPool.Get());
             _fillPool_spawnedCommands.Add(SwipeSquadCommandPool.Get());
+
+            _fillPool_spawnedSquads.Add(CarrierSquadPool.Get());
+
         }
 
         // Fill large pool items
@@ -1326,7 +1357,12 @@ public class Pool : MonoBehaviour
 
         _fillPool_spawnedCommands.ForEach((command) =>
         {
-            // Process command if necessary.
+            ReturnCommandToPool(command);
+        });
+
+        _fillPool_spawnedSquads.ForEach((squad) =>
+        {
+            ReturnSquadToPool(squad);
         });
     }
 

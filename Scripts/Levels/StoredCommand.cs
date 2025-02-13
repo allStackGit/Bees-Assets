@@ -11,7 +11,7 @@ namespace Assets.Scripts.Levels
         public string Enemy, Squad;
         public string MatchUp, FinalizationCause;
 
-        public Strategy Strategy;
+        public ConfigData.CommandTypes CommandType;
         public MatchupStrategy MatchupStrategy;
         public ShootingStrategy ShootingStrategy;
         public List<Vector2> Destinations = new List<Vector2>();
@@ -30,8 +30,8 @@ namespace Assets.Scripts.Levels
             //Destinations = command.GetDestinations();
             //damageSent = command.damageSent;
             IsFinalized = command.IsFinalized;
-            Strategy= command.Strategy;
-            IsStored = command.IsStored;
+            CommandType = command.CommandType;
+            IsStored = false;
             IsHiveMindCommand = command.IsHiveMindCommand;
 
             Enemy = command.EnemySquad != null ? command.EnemySquad.Name : "Null";

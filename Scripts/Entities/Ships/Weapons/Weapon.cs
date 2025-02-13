@@ -444,12 +444,24 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             catch (Exception e)
             {
                 Debug.Log($"Entity: {entity}, entity name: {entity.name}, Collider: {entity.Collider}");
+                Debug.Log($"GetPosition: {GetPosition()}");
+                Debug.Log($"Closest point: {entity?.Collider?.ClosestPoint(GetPosition())}");
+                Debug.Log($"Distance to point: {DistanceToPoint(entity.Collider.ClosestPoint(GetPosition()))}");
                 throw e;
             }
         }
         public Vector2 GetPosition()
         {
-            return Ship.Level.Map.transform.InverseTransformPoint(Piece.transform.position);
+            try
+            {
+                return Ship.Level.Map.transform.InverseTransformPoint(Piece.transform.position);
+            }
+            catch (Exception e)
+            {
+                Debug.Log($"Ship: {Ship}, Level: {Ship?.Level}, Map: {Ship?.Level?.Map}, Piece: {Piece}");
+                throw e;
+            }
+            
         }
         public float GetRotation()
         {

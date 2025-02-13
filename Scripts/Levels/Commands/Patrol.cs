@@ -19,7 +19,7 @@ namespace Assets.Scripts.Levels.Commands
         /// <param name="bottomRight"></param>
         public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy, Vector2 topLeft, Vector2 bottomRight)
         {
-            base.Execute(ConfigData.CommandTypes.Patrol, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
+            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
 
             _position = Squad.GetPosition();
             if (IsHiveMindCommand)

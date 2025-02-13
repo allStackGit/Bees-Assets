@@ -41,12 +41,14 @@ namespace Assets.Scripts.Levels
                 }
             });
         }
+        private int _queenCount;
         /// <summary>
         /// Generates random ships for the side and if the side is also the enemy side and there should be reinforcements it generates random reinforcements as well
         /// </summary>
         /// <param name="side"></param>
         public void AddRandomSquads(int side)
         {
+            _queenCount = 0;
             //Debug.Log($"Adding random squads for side {side}");
             for (int option = 0; option < (Level.ActivateLoadingShipsMidLevel ? 2 : 1); option++)
             {
@@ -59,7 +61,7 @@ namespace Assets.Scripts.Levels
                     {
                         type = Stage.HumanShipTypes.ElementAt(Random.Range(0, Stage.HumanShipTypes.Count));
                     }
-                    while (Level.HasObstacles && side == ConfigData.Configuration.BeeSide && type == ConfigData.ShipTypes.Queen && Stage.BeeShipTypes.Count > 1)
+                    while ((Level.HasObstacles || _queenCount == 2) && side == ConfigData.Configuration.BeeSide && type == ConfigData.ShipTypes.Queen && Stage.BeeShipTypes.Count > 1)
                     {
                         type = Stage.BeeShipTypes.ElementAt(Random.Range(0, Stage.BeeShipTypes.Count));
                     }
@@ -68,6 +70,10 @@ namespace Assets.Scripts.Levels
                         ConfigData.DefaultShootingStrategy, ConfigData.UnsetColor, null);
                     savedSquad.SetupRandomShips(type);
                     squadsList.Add(savedSquad);
+                    if (type == ConfigData.ShipTypes.Queen)
+                    {
+                        _queenCount++;
+                    }
 
                     if (ConfigData.ArmedShipTypes.Contains(type) || (side == ConfigData.Configuration.BeeSide && Stage.OverrideBeeShipTypes.Count > 0)
                         || (side == ConfigData.Configuration.HumanSide && Stage.OverrideHumanShipTypes.Count > 0) || Level.CurrentLevelOptions.EnemyShipTypeOption != 0)

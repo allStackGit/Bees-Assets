@@ -14,9 +14,9 @@ namespace Assets.Scripts.Levels.Commands
         public bool HasReachedReturnPoint, HasReachedEnemySquad;
         Vector2 _position, _enemyPosition;
         float _distance;
-        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
+        public override void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
         {
-            base.Execute(ConfigData.CommandTypes.InAndOut, shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
+            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
             if (EnemySquad != null && !EnemySquad.IsDead)
             {
                 IsAttacking = true;

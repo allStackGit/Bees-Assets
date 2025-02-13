@@ -35,7 +35,7 @@ namespace Assets.Scripts.Entities
             if (collidingThing.CompareTag("Ship"))
             {
                 Ship ship = collidingThing.GetComponent<Ship>();
-                if (ship.IsMiningShip && ship.Squad?.Command?.Strategy.CommandType == ConfigData.CommandTypes.Mining)
+                if (ship.IsMiningShip && ship.Squad?.Command?.CommandType == ConfigData.CommandTypes.Mining)
                 {
                     Mining command = ((Mining)ship.Squad?.Command);
 
