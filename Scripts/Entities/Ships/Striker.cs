@@ -207,11 +207,11 @@ namespace Assets.Scripts.Entities.Ships
                         if (HasCompletedRun)
                         {
                             HasReturnedToCarrier = true;
-                            ((BombingRun)Squad.Command).ShipsCompletedCommand.Add(this);
+                            ((BombingRun)Squad.GetCommand()).ShipsCompletedCommand.Add(this);
                         }
                         else if (HasTargetEnemyShipToFollow)
                         {
-                            ((BombingRun)Squad.Command).SendShipToTarget(this);
+                            ((BombingRun)Squad.GetCommand()).SendShipToTarget(this);
                         }
                     }
                     else

@@ -347,7 +347,7 @@ public class Pool : MonoBehaviour
     Squad _spawn_squad;
     public Squad CreatePooledSquad()
     {
-        Debug.Log($"Created pooled squad");
+        //Debug.Log($"Created pooled squad");
         _spawn_squad = gameObject.AddComponent<Squad>();
         _spawn_squad.Create(Stage);
         return _spawn_squad;
@@ -785,8 +785,7 @@ public class Pool : MonoBehaviour
     }
     public void ReturnSquadToPool(Squad squad)
     {
-        Debug.Log($"Returning squad to pool: {squad}");
-        squad.enabled = false;
+        //Debug.Log($"Returning squad to pool: {squad}");
         if (squad.SquadType != ConfigData.SquadTypes.CarrierSquad)
         {
             SquadPool.Release(squad);
@@ -798,19 +797,19 @@ public class Pool : MonoBehaviour
     }
     public void OnReturnSquadToPool(Squad squad)
     {
-        Debug.Log($"Squad was returned to pool: {squad}");
+        //Debug.Log($"Squad was returned to pool: {squad}");
     }
     public void OnTakeSquadFromPool(Squad squad)
     {
-        Debug.Log($"Squad was taken from pool: {squad}");
+        //Debug.Log($"Squad was taken from pool: {squad}");
     }
     public void OnReturnCommandToPool(Command command)
     {
-        Debug.Log($"Command was returned to pool: {command}");
+        //Debug.Log($"Command was returned to pool: {command}");
     }
     public void OnTakeCommandFromPool(Command command)
     {
-        Debug.Log($"Command was taken from pool: {command}");
+        //Debug.Log($"Command was taken from pool: {command}");
     }
     public Squad GetSquadFromPool()
     {
@@ -819,8 +818,8 @@ public class Pool : MonoBehaviour
     }
     public void ReturnMiningAsteroidToPool(MiningAsteroid asteroid)
     {
-        Debug.Log($"Returning mining asteroid {asteroid.Name} to pool");
-        asteroid.gameObject.SetActive(false);
+        //Debug.Log($"Returning mining asteroid {asteroid.Name} to pool");
+        //asteroid.gameObject.SetActive(false);
         MiningAsteroidPool.Release(asteroid);
     }
     public MiningAsteroid GetMiningAsteroidFromPool()
@@ -830,8 +829,8 @@ public class Pool : MonoBehaviour
 
     public void ReturnCollisionAsteroidToPool(CollisionAsteroid asteroid)
     {
-        Debug.Log($"Returning collision asteroid {asteroid.Name} to pool");
-        asteroid.gameObject.SetActive(false);
+        //Debug.Log($"Returning collision asteroid {asteroid.Name} to pool");
+        //asteroid.gameObject.SetActive(false);
         CollisionAsteroidPool.Release(asteroid);
     }
     public CollisionAsteroid GetCollisionAsteroidFromPool()
@@ -897,21 +896,6 @@ public class Pool : MonoBehaviour
 
     public void ReturnShipToPool(Ship ship)
     {
-
-        ship.gameObject.SetActive(false);
-        ship.CancelInvoke();
-        if (ship.HasMovementMarker)
-        {
-            ship.MovementMarker.SetActive(false);
-        }
-        ship.Turrets.ForEach(turret =>
-        {
-            turret.CancelInvoke();
-            if (turret.HasTargetingMarker)
-            {
-                turret.TargetingMarker.SetActive(false);
-            }
-        });
 
         switch (ship.ShipType)
         {
@@ -1017,7 +1001,7 @@ public class Pool : MonoBehaviour
     }
     public Assets.Scripts.UI_Components.Map GetPooledMap(int index)
     {
-        Debug.Log($"Getting map from pool");
+        //Debug.Log($"Getting map from pool");
 
         switch (index)
         {
@@ -1034,7 +1018,7 @@ public class Pool : MonoBehaviour
     }
     public void ReturnMapToPool(Assets.Scripts.UI_Components.Map map)
     {
-        Debug.Log($"Returning {map.Name} to pool");
+        //Debug.Log($"Returning {map.Name} to pool");
         map.gameObject.SetActive(false);
         switch (map.Index)
         {
@@ -1158,7 +1142,7 @@ public class Pool : MonoBehaviour
 
     public void ReturnCommandToPool(Command command)
     {
-        Debug.Log($"Returning command {command.CommandType} to pool");
+        //Debug.Log($"Returning command {command.CommandType} to pool");
         switch (command.CommandType)
         {
             case ConfigData.CommandTypes.Aggressive:

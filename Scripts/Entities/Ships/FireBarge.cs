@@ -64,7 +64,7 @@ namespace Assets.Scripts.Entities.Ships
                         List<Weapon> weapons = WeaponsThatHaveUsWithinRange.ToList();
                         for (int i = 0; i < WeaponsThatHaveUsWithinRange.Count; i++)
                         {
-                            weapons[i].ShipsWithinRange.Remove(this);
+                            weapons[i].ShipsWithinRange.Remove(this.Id);
                         }
                     }
                 }

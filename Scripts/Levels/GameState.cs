@@ -22,11 +22,17 @@ namespace Assets.Scripts.Levels
     public class GameState : MonoBehaviour
     {
         public List<Ship> Ships = new List<Ship>();
+        public List<Ship> ShipsToRelease = new List<Ship>();
+        public Dictionary<long, Ship> ShipsById = new Dictionary<long, Ship>();
         public List<Squad> Squads = new List<Squad>();
+        public List<Squad> SquadsToRelease = new List<Squad>();
         public Queue<Squad> SquadsAwaitingCommands = new Queue<Squad>();
         public List<StoredCommand> PastCommands = new List<StoredCommand>();
+        public List<Command> CommandsToRelease = new List<Command>();
         public List<Squad> SelectedSquads = new List<Squad>();
         public List<Obstacle> Obstacles = new List<Obstacle>();
+        public List<CollisionAsteroid> AsteroidsToRelease = new List<CollisionAsteroid>();
+        public List<MiningAsteroid> MiningAsteroidsToRelease = new List<MiningAsteroid>();
 
         public int UserCommands, AICommands;
         public bool IsPaused;
@@ -91,6 +97,11 @@ namespace Assets.Scripts.Levels
             MiningShips.Clear();
             ShipDamageStatuses[0].Clear();
             ShipDamageStatuses[1].Clear();
+            ShipsToRelease.Clear();
+            SquadsToRelease.Clear();
+            CommandsToRelease.Clear();
+            AsteroidsToRelease.Clear();
+            MiningAsteroidsToRelease.Clear();
 
         }
 
@@ -136,6 +147,7 @@ namespace Assets.Scripts.Levels
         {
             // Debug.Log($"{ship.name} has been added to the state");
             Ships.Add(ship);
+            ShipsById.Add(ship.Id, ship);
         }
         public void AddSquad(Squad squad)
         {
@@ -145,6 +157,7 @@ namespace Assets.Scripts.Levels
         public void RemoveSquad(Squad squad)
         {
             Squads.Remove(squad);
+            SquadsToRelease.Add(squad);
         }
         public void AddObstacle(Obstacle obstacle)
         {
@@ -154,6 +167,8 @@ namespace Assets.Scripts.Levels
         {
             Ships.Remove(ship);
             MiningShips.Remove(ship);
+            ShipsById.Remove(ship.Id);
+            ShipsToRelease.Add(ship);
         }
         public void RemoveObstacle(Obstacle obstacle)
         {
@@ -164,9 +179,37 @@ namespace Assets.Scripts.Levels
             //_commands.Add(command);
             PastCommands.Add(new StoredCommand(command));
             OutcomeIdToPastCommandIndex.Add(command.OutcomeId, PastCommands.Count - 1);
-            Debug.Log($"Added Command {command} to past commands at index #{(PastCommands.Count - 1)}");
+            //Debug.Log($"Added Command {command} to past commands at index #{(PastCommands.Count - 1)}");
             AICommands++;
             Stage.__HivemindCommands++;
+        }
+
+        public void Release()
+        {
+            ShipsToRelease.ForEach((ship) =>
+            {
+                Stage.Pool.ReturnShipToPool(ship);
+            });
+
+            CommandsToRelease.ForEach((command) =>
+            {
+                Stage.Pool.ReturnCommandToPool(command);
+            });
+
+            SquadsToRelease.ForEach((squad) =>
+            {
+                Stage.Pool.ReturnSquadToPool(squad);
+            });
+
+            AsteroidsToRelease.ForEach(asteroid =>
+            {
+                Stage.Pool.ReturnCollisionAsteroidToPool(asteroid);
+            });
+
+            MiningAsteroidsToRelease.ForEach((miningAsteroid) =>
+            {
+                Stage.Pool.ReturnMiningAsteroidToPool(miningAsteroid);
+            });
         }
 
         private ShipDamageStatus _shipDamageStatus;
@@ -180,7 +223,7 @@ namespace Assets.Scripts.Levels
             _shipDamageStatus = null;
             if (ShipDamageStatuses[side - 1].Count > 0)
             {
-                _shipDamageStatus = ShipDamageStatuses[side - 1].FirstOrDefault(s => s != null && !s.Ship.IsDead && s.Ship == potentialTargetShip);
+                _shipDamageStatus = ShipDamageStatuses[side - 1].FirstOrDefault(s => !s.Ship.IsDead && s.Ship == potentialTargetShip);
             }
 
             if (_shipDamageStatus == null)
@@ -253,7 +296,7 @@ namespace Assets.Scripts.Levels
         }
         public Ship GetShipById(long id)
         {
-            return Ships.FirstOrDefault(ship => ship.Id == id);
+            return ShipsById.GetValueOrDefault(id);
         }
 
         public List<Squad> GetSquadsVisibleToHiveMind(int side = 0)
@@ -393,9 +436,9 @@ namespace Assets.Scripts.Levels
             _targetedSquads = new List<Squad>();
             GetAllSquads().Where((s) => s.Side == side).ToList().ForEach((s) =>
             {
-                if (s.HasCommand && s.Command.HasEnemy && !s.Command.EnemySquad.IsDead)
+                if (s.HasCommand && s.GetCommand().HasEnemy && s.GetCommand().HasSameEnemy())
                 {
-                    _targetedSquads.Add(s.Command.EnemySquad);
+                    _targetedSquads.Add(s.GetCommand().EnemySquad);
                 }
             });
             return _targetedSquads;
@@ -409,7 +452,7 @@ namespace Assets.Scripts.Levels
         public void StoreCommands()
         {
             _completes = PastCommands.Where((c) => c.IsHiveMindCommand && c.IsFinalized && !c.IsStored).ToList();
-            Debug.Log($"_completes list: {_completes.Count} / {PastCommands.Count}");
+            //Debug.Log($"_completes list: {_completes.Count} / {PastCommands.Count}");
             if (_completes.Count > 0)
             {
 

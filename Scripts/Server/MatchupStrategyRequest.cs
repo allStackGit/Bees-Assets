@@ -12,6 +12,7 @@ namespace Assets.Scripts.Server
         public new GetMatchupStrategy Request = null;
         public MatchupStrategyResponse Response = null;
         public readonly Squad Squad;
+        public readonly int SquadId;
         public readonly Level Level;
 
 
@@ -24,6 +25,12 @@ namespace Assets.Scripts.Server
             Squad.Status = $"Requesting matchup strategy";
             request.Type = Utilities.ConvertRequestTypeToName[Type];
             request.Hash = Hash;
+            SquadId = Squad.Id;
+        }
+
+        public bool HasSameSquad()
+        {
+            return Squad.Id == SquadId && !Squad.IsDead;
         }
     }
 }

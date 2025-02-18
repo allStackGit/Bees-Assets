@@ -21,7 +21,7 @@ namespace Assets.Scripts.Entities.Ships
         }
         public void SetBeaconStatus()
         {
-            if (ProximityCollider.NearbyEnemyShips.Count > 0)
+            if (Vision.NearbyEnemyShips.Count > 0)
             {
                 SpriteRenderer.sprite = EnemySprite;
             }

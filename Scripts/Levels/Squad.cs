@@ -11,6 +11,7 @@ using Assets.Scripts.Levels.Commands;
 using Assets.Scripts.Scenes;
 using Assets.Scripts.Server;
 using Assets.Scripts.UI_Components;
+using JetBrains.Annotations;
 using UnityEngine;
 
 namespace Assets.Scripts.Levels
@@ -26,7 +27,7 @@ namespace Assets.Scripts.Levels
         public int ItemId;
         public long Age;
         public ConfigData.SquadTypes SquadType;
-        public Command Command;
+        private Command _command;
         public List<StoredCommand> PastCommands = new List<StoredCommand>();
         /// <summary>
         /// The matchup strategy belongs to the squad and not the command because it is used to determine the command by making the matchup
@@ -78,8 +79,8 @@ namespace Assets.Scripts.Levels
         public float MaxSpeed => GetShips().Max(s => s.Speed);
         public int Tsv => GetShips().Sum(s => s.Tsv);
         public float SlowestSpeed => GetShips().Min(s => s.Speed);
-        public bool HasEnemy => HasCommand && Command.HasEnemy;
-        public bool IsAttacking => HasCommand && Command.IsAttacking;
+        public bool HasEnemy => HasCommand && GetCommand().HasEnemy;
+        public bool IsAttacking => HasCommand && GetCommand().IsAttacking;
         public Vector2 StartingPosition => Side == ConfigData.Configuration.UserSide ? Level.Map.UserStartingPosition : Level.Map.AIStartingPosition;
         public bool IsDefenseless => GetShips().All((s) => s.Firepower == 0);
         public bool HasMiningShips => GetShips().Any((s) => s.IsMiningShip);
@@ -114,7 +115,7 @@ namespace Assets.Scripts.Levels
         // Setup methods
         public virtual void ClearData()
         {
-            Command = null;
+            SetCommand(null);
             HasCommand = false;
             PastCommands.Clear();
             BannedStrats.Clear();
@@ -143,7 +144,7 @@ namespace Assets.Scripts.Levels
             IsDead = true;
             enabled = false;
             CreationId = Utilities.Hash();
-            Debug.Log($"Created squad {this}");
+            //Debug.Log($"Created squad {this}");
         }
         public void Setup(Level level, SavedSquad savedSquad, ConfigData.ShootingStrategyTypes shootingStrategy, bool ceaseFire, bool isMatchingSpeed, bool shouldChase,
             int id, int side, int squadNumber, string name, Color color)
@@ -203,7 +204,7 @@ namespace Assets.Scripts.Levels
             {
                 CeaseFire = true;
             }
-            Debug.Log($"Setup squad {this}");
+            //Debug.Log($"Setup squad {this}");
 
         }
         private void SetSquadBox()
@@ -324,14 +325,14 @@ namespace Assets.Scripts.Levels
                 Age++;
                 if (HasCommand)
                 {
-                    Command.Age++;
+                    GetCommand().Age++;
                 }
             }
 
-            if (!IsDead && HasCommand && OriginalCommandId > 0 && OriginalCommandId != Command.ItemId || (HasCommand && PastCommands.Any((pc) => pc.OutcomeId != Command.OutcomeId && !pc.IsFinalized)))
-            {
-                Debug.LogError($"{this} no longer has the original command id! #{Command.ItemId}");
-            }
+            //if (!IsDead && HasCommand && OriginalCommandId > 0 && OriginalCommandId != GetCommand().ItemId || (HasCommand && PastCommands.Any((pc) => pc.OutcomeId != GetCommand().OutcomeId && !pc.IsFinalized)))
+            //{
+            //    Debug.LogError($"{this} no longer has the original command id! #{GetCommand().ItemId}");
+            //}
 
             // Debug.Log($"{name} ship has lived for {tickLife} ticks and {ShowLifeTime()} seconds with {GetHealth()} health");
         }
@@ -436,13 +437,13 @@ namespace Assets.Scripts.Levels
         }
         public bool IsChasing()
         {
-            return HasCommand && Command.CommandType == ConfigData.CommandTypes.Aggressive && _shouldChase;
+            return HasCommand && GetCommand().CommandType == ConfigData.CommandTypes.Aggressive && _shouldChase;
         }
         public void StopChasing()
         {
-            if (HasCommand && Command.CommandType == ConfigData.CommandTypes.Aggressive)
+            if (HasCommand && GetCommand().CommandType == ConfigData.CommandTypes.Aggressive)
             {
-                Command.SetFinalize("Stopped Chasing");
+                GetCommand().SetFinalize("Stopped Chasing");
             }
             SetChase(false);
         }
@@ -457,7 +458,7 @@ namespace Assets.Scripts.Levels
         private void CheckChase()
         {
             //Debug.Log($"Checking if {Name} should chase.");
-            if (_shouldChase && Command?.CommandType != ConfigData.CommandTypes.Aggressive)
+            if (_shouldChase && GetCommand()?.CommandType != ConfigData.CommandTypes.Aggressive)
             {
                 _tempSquad = GetClosestEnemySquad();
                 //Debug.Log($"The closest Enemy to {Name} is {closestSquad.Name}");
@@ -504,8 +505,8 @@ namespace Assets.Scripts.Levels
 
                 if (HasCommand)
                 {
-                    Debug.Log($"Squad got killed {this}");
-                    Command.SquadKilled();
+                    //Debug.Log($"Squad got killed {this}");
+                    GetCommand().SquadKilled();
                 }
 
                 if (IsUserControlled)
@@ -518,7 +519,8 @@ namespace Assets.Scripts.Levels
                     Level.State.DeselectSquad(this);
                 }
                 Level.State.RemoveSquad(this);
-                Stage.Pool.ReturnSquadToPool(this);
+                enabled = false;
+                //Stage.Pool.ReturnSquadToPool(this);
             }
             
 
@@ -526,19 +528,19 @@ namespace Assets.Scripts.Levels
         public Squad GetClosestEnemySquad()
         {
             // Debug.Log($"Number of enemy squads {squads.Count}, {_Level.State.GetSquads()}");
-            Debug.Log($"Getting closest enemy squad for {Name}");
+            //Debug.Log($"Getting closest enemy squad for {Name}");
             return Level.State.GetSquadsVisibleToHiveMind(Side).OrderBy(squad => squad.DistanceToPoint(GetPosition())).FirstOrDefault();
         }
         public Squad GetClosestValidFriendlySquad()
         {
-            _tempSquads = Level.State.GetSquadsBySide(Side).Where(squad => squad != this && (!squad.HasCommand || squad.Command.CommandType != ConfigData.CommandTypes.ClosestFriendly)).ToList();
+            _tempSquads = Level.State.GetSquadsBySide(Side).Where(squad => squad != this && (!squad.HasCommand || squad.GetCommand().CommandType != ConfigData.CommandTypes.ClosestFriendly)).ToList();
             return _tempSquads.OrderBy(squad => squad.DistanceToPoint(GetPosition())).FirstOrDefault();
         }
         public Squad GetEnemy()
         {
             if (HasCommand)
             {
-                return Command.EnemySquad;
+                return GetCommand().EnemySquad;
             }
             else
             {
@@ -607,6 +609,24 @@ namespace Assets.Scripts.Levels
 
 
         // Command and control methods
+        public Command GetCommand()
+        {
+            return _command;
+        }
+        public void SetCommand(Command command)
+        {
+            //Debug.Log($"Setting {this} Command to {command}");
+            _command = command;
+        }
+        /// <summary>
+        /// Checks whether this squad still has the same Id and is alive, or if it has since died and become a new squad
+        /// </summary>
+        /// <param name="id"></param>
+        /// <returns></returns>
+        public bool IsSameSquad(int id)
+        {
+            return ItemId == id && !IsDead;
+        }
         public void AddToCommandList()
         {          
             Level.State.AddToSquadsAwaitingHiveMindCommands(this);
@@ -761,7 +781,7 @@ namespace Assets.Scripts.Levels
                 _matchup = "";
             }
 
-            _closestFriendlySquadCount = Level.State.GetSquadsBySide(Side).Where((squad) => squad?.Command?.CommandType == ConfigData.CommandTypes.ClosestFriendly).Count();
+            _closestFriendlySquadCount = Level.State.GetSquadsBySide(Side).Where((squad) => squad?.GetCommand()?.CommandType == ConfigData.CommandTypes.ClosestFriendly).Count();
             _friendlySquadCount = Level.State.GetSquadsBySide(Side).Count;
             if (_friendlySquadCount - 1  <= _closestFriendlySquadCount)
             {
@@ -787,7 +807,7 @@ namespace Assets.Scripts.Levels
             //    }
             //}
 
-            Debug.Log($"{this} has {_bannedStrats.Count} banned strats again enemy: {enemy} with matchup: {_matchup} and {BannedStrats.Count} permabanned strats");
+            //Debug.Log($"{this} has {_bannedStrats.Count} banned strats again enemy: {enemy} with matchup: {_matchup} and {BannedStrats.Count} permabanned strats");
             ConfigData.Socket.SendRequest(new CommandRequest(new GetStrategy(_matchup, OpponentId, _bannedStrats.Select(b => Utilities.ConvertCommandTypeToName[b]).ToArray()),
                 this, enemy, Level, _matchup, ConfigData.StandardMaxTimeOnQueue));
 
@@ -803,9 +823,9 @@ namespace Assets.Scripts.Levels
         public void SetShootingStrategy(ConfigData.ShootingStrategyTypes strategy)
         {
             _chosenShootingStrategy = strategy;
-            if (HasCommand && Command.HasShootingStrategy)
+            if (HasCommand && GetCommand().HasShootingStrategy)
             {
-                Command.ShootingStrategy.ShootingStrategyType = strategy;
+                GetCommand().ShootingStrategy.ShootingStrategyType = strategy;
             }
             GetShips().ForEach((ship) =>
             {
@@ -820,7 +840,7 @@ namespace Assets.Scripts.Levels
         {
             if (HasCommand)
             {
-                return Command.CommandType;
+                return GetCommand().CommandType;
             }
             return ConfigData.CommandTypes.Uninitialized;
         }
@@ -828,7 +848,7 @@ namespace Assets.Scripts.Levels
         {
 
             MakeUserCommand(ConfigData.CommandTypes.Guard, null);
-            ((Guard)Command).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, true, squad);
+            ((Guard)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, true, squad);
             
             if (Level.Stage.DoesUserHaveController)
             {
@@ -838,7 +858,7 @@ namespace Assets.Scripts.Levels
         public void UserPatrol(Vector2 topLeft, Vector2 bottomRight)
         {
             MakeUserCommand(ConfigData.CommandTypes.Patrol, null);
-            ((Patrol)Command).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, true, topLeft, bottomRight);
+            ((Patrol)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, true, topLeft, bottomRight);
             if (Level.Stage.DoesUserHaveController)
             {
                 Level.Stage.Menus.ActionBox.HighlightSelectedButtons();
@@ -851,7 +871,7 @@ namespace Assets.Scripts.Levels
             if (HasMiningShips)
             {
                 MakeUserCommand(ConfigData.CommandTypes.Mining, null);
-                ((Mining)Command).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, true, miningAsteroid);
+                ((Mining)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, true, miningAsteroid);
             }
             else
             {
@@ -863,7 +883,7 @@ namespace Assets.Scripts.Levels
         public void UserFullRetreat(WarpGate warpGate)
         {
             MakeUserCommand(ConfigData.CommandTypes.FullRetreat, null);
-            ((FullRetreat)Command).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, true, warpGate);
+            ((FullRetreat)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, true, warpGate);
 
         }
         public void UserAggressive(Squad enemy)
@@ -874,14 +894,14 @@ namespace Assets.Scripts.Levels
                 return;
             }
             MakeUserCommand(ConfigData.CommandTypes.Aggressive, enemy);
-            ((Aggressive)Command).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, false);
+            ((Aggressive)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, false);
 
         }
         public void UserBombingRun(Squad enemy)
         {
             //Debug.Log($"Creating \"Bombing Run\" command for {Name} against {enemy.Name}");
             MakeUserCommand(ConfigData.CommandTypes.BombingRun, enemy);
-            ((BombingRun)Command).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, false);
+            ((BombingRun)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, false);
 
         }
         public void MakeUserCommand(ConfigData.CommandTypes command, Squad enemy)
@@ -892,25 +912,25 @@ namespace Assets.Scripts.Levels
             switch (command)
             {
                 case ConfigData.CommandTypes.Aggressive:
-                    Command = Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Aggressive);
+                    SetCommand(Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Aggressive));
                     break;
                 case ConfigData.CommandTypes.BombingRun:
-                    Command = Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.BombingRun);
+                    SetCommand(Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.BombingRun));
                     break;
                 //case ConfigData.CommandTypes.Charge:
                 //    Command = gameObject.AddComponent<Charge>();
                 //    break;
                 case ConfigData.CommandTypes.Guard:
-                    Command = Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Guard);
+                    SetCommand(Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Guard));
                     break;
                 case ConfigData.CommandTypes.Patrol:
-                    Command = Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Patrol);
+                    SetCommand(Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Patrol));
                     break;
                 case ConfigData.CommandTypes.Mining:
-                    Command = Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Mining);
+                    SetCommand(Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Mining));
                     break;
                 case ConfigData.CommandTypes.FullRetreat:
-                    Command = Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.FullRetreat);
+                    SetCommand(Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.FullRetreat));
                     break;
                 default:
                     Debug.LogError($"Invalid command {command} issued to user squad");
@@ -918,7 +938,7 @@ namespace Assets.Scripts.Levels
             }
 
 
-            Command.Setup(this, false, enemy, null);
+            GetCommand().Setup(this, false, enemy, null);
 
         }
         public void FinalizeUserCommand()
@@ -943,15 +963,15 @@ namespace Assets.Scripts.Levels
                 //{
                 //    Debug.Log($"Can't finalize command for {Name}, the squad is charging");
                 //}
-                if (Command.CommandType == ConfigData.CommandTypes.Guard)
+                if (GetCommand().CommandType == ConfigData.CommandTypes.Guard)
                 {
                     UnmatchSpeed();
-                    ((Guard)Command).GetGuardingSquads().ForEach((squad) =>
+                    ((Guard)GetCommand()).GetGuardingSquads().ForEach((squad) =>
                     {
-                        ((Guard)squad.Command).OtherGuardSquads.Remove(this);
+                        ((Guard)squad.GetCommand()).OtherGuardSquads.Remove(this);
                     });
                 }
-                Command.SetFinalize("New command given");
+                GetCommand().SetFinalize("New command given");
                 
             }
         }

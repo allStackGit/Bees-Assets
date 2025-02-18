@@ -19,23 +19,28 @@ public class FullRetreat : Command
 
             
             // The ToList() is necessary to prevent errors from warp killing while looping through the list of ships
-            Squad.GetShips().ToList().ForEach((ship) =>
+            GetSquad().GetShips().ToList().ForEach((ship) =>
             {
                 if (ship.ShipType != ConfigData.ShipTypes.WarpGate)
                 {
-                    TargetWarpGate.ShipsWarpingHere.Add(ship);
+                    TargetWarpGate.ShipsWarpingHere.Add(ship.Id);
                     if (ship.Collider.IsTouching(TargetWarpGate.WarpCollider))
                     {
                         ShipsWaitingToWarp.Add(ship);
-                        WaitToWarp();
                     }
                 }
 
             });
-
             if (TargetWarpGate.ShipsWarpingHere.Count > 0)
             {
                 TargetWarpGate.ShipAnimation.SetActive(true);
+                WaitToWarp();
+                if (!IsDead)
+                {
+                    PrepareDamageToSendEntries("closest");
+                    InvokeRepeating(nameof(MoveToWarpGate), 0, CommandFrequency);
+                }
+
             }
             else
             {
@@ -43,8 +48,7 @@ public class FullRetreat : Command
                 return;
             }
 
-            PrepareDamageToSendEntries("closest");
-            InvokeRepeating(nameof(MoveToWarpGate), 0, CommandFrequency);
+
         }
         else
         {
@@ -62,22 +66,26 @@ public class FullRetreat : Command
     Vector2 _f_targetPosition;
     public void MoveToWarpGate()
     {
-        if (!Squad.IsDead && !TargetWarpGate.IsDead)
+        if (!GetSquad().IsDead)
         {
-            _f_targetPosition = TargetWarpGate.GetPosition() + TargetWarpGate.WarpPoint;
-            Squad.GetShips().ForEach((ship) =>
+            if (!TargetWarpGate.IsDead)
             {
-                if (ship.ShipType != ConfigData.ShipTypes.WarpGate)
+                _f_targetPosition = TargetWarpGate.GetPosition() + TargetWarpGate.WarpPoint;
+                GetSquad().GetShips().ForEach((ship) =>
                 {
-                    ship.MoveToPoint(_f_targetPosition);
-                }
-            });
-            Squad.Status = $"Moving to {TargetWarpGate.Name} to warp out of the level: {_f_targetPosition}";
+                    if (ship.ShipType != ConfigData.ShipTypes.WarpGate)
+                    {
+                        ship.MoveToPoint(_f_targetPosition);
+                    }
+                });
+                GetSquad().Status = $"Moving to {TargetWarpGate.Name} to warp out of the level: {_f_targetPosition}";
+            }
+            else
+            {
+                SetFinalize("Warp gate was destroyed");
+            }
         }
-        else if (TargetWarpGate.IsDead)
-        {
-            SetFinalize("Warp gate was destroyed");
-        }
+        
     }
 
     List<Ship> _tempShips;
@@ -100,13 +108,17 @@ public class FullRetreat : Command
 
     public void WarpKill(Ship ship)
     {
-        Tsv += (int)(ship.Tsv * .05f);
-        TargetWarpGate.ShipsWarpingHere.Remove(ship);
-        ship.EndKill(); // if this is the last ship, this call could kill the command as well
-        if (!IsDead && TargetWarpGate.ShipsWarpingHere.Count == 0)
+        if (!IsDead)
         {
-            SetFinalize("All ships have warped");
+            Tsv += (int)(ship.Tsv * .05f);
+            TargetWarpGate.ShipsWarpingHere.Remove(ship.Id);
+            ship.EndKill(); // if this is the last ship, this call could kill the command as well
+            if (!IsDead && TargetWarpGate.ShipsWarpingHere.Count == 0)
+            {
+                SetFinalize("All ships have warped");
+            }
         }
+
     }
 
     public void CleanupWarpGate()
@@ -114,18 +126,18 @@ public class FullRetreat : Command
         //Debug.Log($"Clenaing up warp gate: {TargetWarpGate}");
         if (TargetWarpGate != null && !TargetWarpGate.IsDead)
         {
-            if (!Squad.IsDead)
+            if (!GetSquad().IsDead)
             {
-                Squad.GetShips().ForEach((ship) =>
+                GetSquad().GetShips().ForEach((ship) =>
                 {
-                    TargetWarpGate.ShipsWarpingHere.Remove(ship);
+                    TargetWarpGate.ShipsWarpingHere.Remove(ship.Id);
                 });
             }
             else
             {
                 TargetWarpGate.ShipsWarpingHere.RemoveWhere((s) =>
                 {
-                    return s == null || s.IsDead;
+                    return Level.State.GetShipById(s) == null;
                 });
             }
 

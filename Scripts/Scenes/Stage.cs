@@ -130,6 +130,10 @@ public class Stage : Scene
     /// </summary>
     public int GeneratedSquadCountOverride;
     /// <summary>
+    /// The lower limit on how many squads to generate
+    /// </summary>
+    public int GeneratedSquadCountMinimum;
+    /// <summary>
     /// How many obstacle lists there are
     /// </summary>
     public int ObstacleListCount;
@@ -197,6 +201,15 @@ public class Stage : Scene
         {1, new Vector2[] { Vector2.zero, Vector2.zero } },
         {2, new Vector2[] { new Vector2(-756, 0), new Vector2(756, 0) } },
         {4, new Vector2[] { new Vector2(-756, 756), new Vector2(756, 756), new Vector2(-756, -756), new Vector2(756, -756) } },
+        {8, new Vector2[] {
+            new Vector2(-756, 756), new Vector2(-2268, 756), new Vector2(756, 756), new Vector2(2268, 756),
+            new Vector2(-756, -756), new Vector2(-2268, -756), new Vector2(756, -756), new Vector2(2268, -756)}
+        },
+        {12, new Vector2[] {
+            new Vector2(-756, 756), new Vector2(-2268, 756), new Vector2(756, 756), new Vector2(2268, 756),
+            new Vector2(-756, 2268), new Vector2(-2268, 2268), new Vector2(756, 2268), new Vector2(2268, 2268),
+            new Vector2(-756, -756), new Vector2(-2268, -756), new Vector2(756, -756), new Vector2(2268, -756)}
+        },
         {16, new Vector2[] {
             new Vector2(-756, 756), new Vector2(-2268, 756), new Vector2(756, 756), new Vector2(2268, 756),
             new Vector2(-756, 2268), new Vector2(-2268, 2268), new Vector2(756, 2268), new Vector2(2268, 2268),
@@ -290,10 +303,12 @@ public class Stage : Scene
     public bool HasAsteroids;
 
 
-    public int __HivemindCommands, __LevelTimeouts;
+    public int __HivemindCommands, __LevelTimeouts, __TotalShips, __LevelCompletes;
     // DEBUG VARIABLES
     public static int __TotalRequests;
     public static double __TotalLatency, __AverageLatency, __TotalLength, __AverageLength;
+
+    public int[] __CommandCounts;
     public void DebugLogger()
     {
         __TotalRequests = ConfigData.__TotalRequests;
@@ -301,6 +316,7 @@ public class Stage : Scene
         __AverageLatency = ConfigData.__AverageLatency;
         __TotalLength = ConfigData.__TotalLength;
         __AverageLength = ConfigData.__AverageLength;
+        __TotalShips = Levels.Sum((l) => l.State.Ships.Count);
     }
 
 
@@ -312,6 +328,7 @@ public class Stage : Scene
         Debug.Log($"Start level stage");
         Name = "Level";
         base.Start();
+        __CommandCounts = new int[18];
     }
     int _spawn_i;
     Level _spawn_level;
@@ -488,7 +505,7 @@ public class Stage : Scene
         }
         if (PrimaryLevel.CurrentLevelOptions.EnemySquadGenerationCount > 0)
         {
-            PrimaryLevel.CurrentLevelOptions.EnemySquadGenerationCount = Utilities.RandomInt(PrimaryLevel.CurrentLevelOptions.EnemySquadGenerationCount) + 1;
+            PrimaryLevel.CurrentLevelOptions.EnemySquadGenerationCount = Utilities.RandomInt(PrimaryLevel.CurrentLevelOptions.EnemySquadGenerationCount - GeneratedSquadCountMinimum) + 1 + GeneratedSquadCountMinimum;
         }
 
         if (OverrideBeeShipTypes.Count > 0)

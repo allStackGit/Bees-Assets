@@ -29,7 +29,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 Ship ship = collidingThing.GetComponent<Ship>();
                 if (!ship.IsDead)
                 {
-                    Weapon.ShipsWithinRange.Add(ship);
+                    Weapon.ShipsWithinRange.Add(ship.Id, ship);
                     ship.WeaponsThatHaveUsWithinRange.Add(Weapon);
                     Weapon.HasCachedChanged = true;
                 }
@@ -57,7 +57,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 Ship ship = collidingThing.GetComponent<Ship>();
 
                 //Debug.Log($"{ship.Name} is no longer in {Weapon.Ship.Name} range");
-                Weapon.ShipsWithinRange.Remove(ship);
+                Weapon.ShipsWithinRange.Remove(ship.Id);
                 Weapon.HasCachedChanged = true;
                 if (!ship.IsDead)
                 {

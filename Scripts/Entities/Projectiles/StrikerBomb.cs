@@ -34,10 +34,17 @@ namespace Assets.Scripts.Entities.Projectiles
                 Kill();
                 Invoke(nameof(Damage), .5f);
             }
+            else
+            {
+                Kill();
+            }
         }
         public void Damage()
         {
-            Ship.LogAttackingDamage(Power, Shooter, FleetShip, SavedSquad, ContactedShip);
+            if (!ContactedShip.IsDead)
+            {
+                Ship.LogAttackingDamage(Power, Shooter, FleetShip, SavedSquad, ContactedShip);
+            }
         }
     }
 }

@@ -11,7 +11,7 @@ namespace Assets.Scripts.Entities.Ships
     public class WarpGate : Ship
     {
         public Vector2 WarpPoint;
-        public HashSet<Ship> ShipsWarpingHere = new HashSet<Ship>();
+        public HashSet<long> ShipsWarpingHere = new HashSet<long>();
         public Collider2D WarpCollider;
         public override void ClearData()
         {
@@ -32,9 +32,9 @@ namespace Assets.Scripts.Entities.Ships
             else if (collider.gameObject.CompareTag("Ship"))
             {
                 Ship ship = collider.GetComponent<Ship>();
-                if (ship.Side == Side && ship.Squad?.Command?.CommandType == ConfigData.CommandTypes.FullRetreat && ship.ShipType != this.ShipType)
+                if (ship.Side == Side && ship.Squad?.GetCommand()?.CommandType == ConfigData.CommandTypes.FullRetreat && ship.ShipType != this.ShipType)
                 {
-                    FullRetreat fullRetreat = (FullRetreat)ship.Squad.Command;
+                    FullRetreat fullRetreat = (FullRetreat)ship.Squad.GetCommand();
                     if (fullRetreat.TargetWarpGate == this)
                     {
                         //Debug.Log($"{ship.Name} hit {Name} and so we're warping it");

@@ -165,7 +165,7 @@ namespace Assets.Scripts.Entities.Projectiles
             }
             if (ShipIsDead && DistanceToPoint(StartingPosition) > Range)
             {
-                Debug.Log($"Projectile ({Name}) killed because it went past its range ({Range}), and it's shooter ({FleetShip.Name}) is dead");
+                //Debug.Log($"Projectile ({Name}) killed because it went past its range ({Range}), and it's shooter ({FleetShip.Name}) is dead");
                 Kill();
             }
 

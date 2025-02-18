@@ -14,7 +14,7 @@ namespace Assets.Scripts.Levels.Commands
             base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy); 
 
             PrepareDamageToSendEntries("closest");
-            SetAndMove(Utilities.RandomCoordinate(Level, Squad.GetPosition(), Vector2.one * ConfigData.Configuration.AIRandomMovementMaxDistance, Vector2.one * 10));
+            SetAndMove(Utilities.RandomCoordinate(Level, GetSquad().GetPosition(), Vector2.one * ConfigData.Configuration.AIRandomMovementMaxDistance, Vector2.one * 10));
             InvokeRepeating(nameof(Timer), 0, CommandFrequency);
 
 
@@ -23,14 +23,14 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (!IsDead)
             {
-                if (Squad.HasReachedDestination)
+                if (GetSquad().HasReachedDestination)
                 {
                     CancelInvoke(nameof(Timer));
                     SetFinalize("Reached the random destination on the map");
                 }
                 _destination = GetDestination();
                 SetAndMove(_destination);
-                Squad.Status = $"Moving to random destination: {_destination}";
+                GetSquad().Status = $"Moving to random destination: {_destination}";
             }
         }
     }

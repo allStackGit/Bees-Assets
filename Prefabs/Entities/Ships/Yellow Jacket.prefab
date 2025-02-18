@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: -8530047549913418819}
   - component: {fileID: 9209194230390332424}
   - component: {fileID: 657987285933729593}
+  - component: {fileID: 2839659447535748788}
   m_Layer: 13
   m_Name: Yellow Jacket
   m_TagString: Ship
@@ -38,7 +39,6 @@ Transform:
   - {fileID: 656151277153810066}
   - {fileID: 1000750152605894096}
   - {fileID: 8704097238695063792}
-  - {fileID: 8751539705137053016}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!212 &2518675752222090673
@@ -110,15 +110,15 @@ MonoBehaviour:
   Level: {fileID: 0}
   Stage: {fileID: 0}
   Side: 1
-  Collider: {fileID: 657987285933729593}
+  Collider: {fileID: 2839659447535748788}
   Body: {fileID: 9209194230390332424}
+  _entity: {fileID: 0}
   ShowDebug: 0
   Health: 0
   MaxHealth: 0
   OriginalHealth: 0
   OriginalTsv: 0
   Sight: 0
-  AdditionalTsv: 0
   Clearance: 0
   MaxRange: 0
   HalfMaxRange: 0
@@ -157,7 +157,7 @@ MonoBehaviour:
   IsWarpGate: 0
   HasTargetDirection: 0
   HasVision: 0
-  HasProximityCollider: 0
+  HasProximityCollider: 1
   HasShipAnimation: 0
   HasRocketFlares: 0
   HasLeftRocketFlares: 0
@@ -184,16 +184,22 @@ MonoBehaviour:
   Brain: {fileID: 7121724005480833204}
   NearbyAsteroids: []
   Turrets: []
-  ProximityCollider: {fileID: 2867984486639359691}
   ShipAnimationController: {fileID: 0}
   RotationSpeed: 0
   TargetEnemyShipToFollow: {fileID: 0}
+  TargetEnemyShipToFollowId: 0
   Killer: {fileID: 0}
   ShipRemains: {fileID: 0}
   ShipTypeLetter: 11
   ShootingStrategy: 0
   ShipExplosionSoundEffect: {fileID: 0}
   HasShipExplosionSoundEffect: 0
+  Firepower: 0
+  DamagePerSecond: 0
+  Tsv: 0
+  HasWeapons: 0
+  IsCarrierShip: 0
+  IsMoving: 0
   PathfindingThreadComplete: 0
   IsPathfinding: 0
   PathfindingThread: 0
@@ -247,9 +253,11 @@ MonoBehaviour:
   RLSide: 0
   RLHealth: 0
   RLShipType: 0
+  _retries: 0
   HasCompletedRun: 0
   ContactedShip: {fileID: 0}
   TouchingShip: {fileID: 0}
+  Bomb: {fileID: 0}
 --- !u!50 &9209194230390332424
 Rigidbody2D:
   serializedVersion: 4
@@ -284,7 +292,7 @@ PolygonCollider2D:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2518675752222090675}
-  m_Enabled: 1
+  m_Enabled: 0
   m_Density: 1
   m_Material: {fileID: 0}
   m_IncludeLayers:
@@ -338,6 +346,41 @@ PolygonCollider2D:
       - {x: -1.7, y: -2}
       - {x: -1.3000001, y: -2}
   m_UseDelaunayMesh: 0
+--- !u!58 &2839659447535748788
+CircleCollider2D:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2518675752222090675}
+  m_Enabled: 1
+  m_Density: 1
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_ForceSendLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_ForceReceiveLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_ContactCaptureLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_CallbackLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_IsTrigger: 1
+  m_UsedByEffector: 0
+  m_UsedByComposite: 0
+  m_Offset: {x: 0, y: -0.5}
+  serializedVersion: 2
+  m_Radius: 1.5
 --- !u!1001 &1118753870141812324
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -657,79 +700,6 @@ Transform:
 GameObject:
   m_CorrespondingSourceObject: {fileID: 6047554868817048550, guid: c2ddcaa3cf334ef4386893eaa113eee5, type: 3}
   m_PrefabInstance: {fileID: 4657056110323123582}
-  m_PrefabAsset: {fileID: 0}
---- !u!1001 &5819914225979147878
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 2518675752222090672}
-    m_Modifications:
-    - target: {fileID: 3006095412329282366, guid: 3bb012907a6c8bc49809691acd0d0adc, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3006095412329282366, guid: 3bb012907a6c8bc49809691acd0d0adc, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3006095412329282366, guid: 3bb012907a6c8bc49809691acd0d0adc, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3006095412329282366, guid: 3bb012907a6c8bc49809691acd0d0adc, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 3006095412329282366, guid: 3bb012907a6c8bc49809691acd0d0adc, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: -0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3006095412329282366, guid: 3bb012907a6c8bc49809691acd0d0adc, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: -0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3006095412329282366, guid: 3bb012907a6c8bc49809691acd0d0adc, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: -0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3006095412329282366, guid: 3bb012907a6c8bc49809691acd0d0adc, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3006095412329282366, guid: 3bb012907a6c8bc49809691acd0d0adc, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3006095412329282366, guid: 3bb012907a6c8bc49809691acd0d0adc, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7908384552572958469, guid: 3bb012907a6c8bc49809691acd0d0adc, type: 3}
-      propertyPath: m_Name
-      value: Bee Proximity Collider
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: 3bb012907a6c8bc49809691acd0d0adc, type: 3}
---- !u!114 &2867984486639359691 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 8577489860871491757, guid: 3bb012907a6c8bc49809691acd0d0adc, type: 3}
-  m_PrefabInstance: {fileID: 5819914225979147878}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 466dc5d84d510f746b6a52c9b8235010, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
---- !u!4 &8751539705137053016 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 3006095412329282366, guid: 3bb012907a6c8bc49809691acd0d0adc, type: 3}
-  m_PrefabInstance: {fileID: 5819914225979147878}
   m_PrefabAsset: {fileID: 0}
 --- !u!1001 &8754338898917073555
 PrefabInstance:

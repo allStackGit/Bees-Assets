@@ -19,7 +19,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public GameObject Piece, RangeCircle;
         public ConfigData.ProjectileTypes ProjectileType;
         public List<Ship> CachedTargetingQueue = new List<Ship>();
-        public HashSet<Ship> ShipsWithinRange = new HashSet<Ship>();
+        public Dictionary<long, Ship> ShipsWithinRange = new Dictionary<long, Ship>();
+
         public ConfigData.ShootingStrategyTypes CachedShootingStrategy;
         public string Name;
         public ConfigData.WeaponTypes Type;
@@ -258,17 +259,17 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             if (Ship.Squad.HasEnemy && Ship.Squad.IsAttacking)
             {
-                List<Ship> enemies = ShipsWithinRange.Where((s) => s.Squad == Ship.Squad.Command.EnemySquad).ToList();
+                List<Ship> enemies = ShipsWithinRange.Where((s) => s.Value.Squad == Ship.Squad.GetCommand().EnemySquad).Select((s) => s.Value).ToList();
                 if (enemies.Count > 0)
                 {
                     return enemies;
                 }
-                return ShipsWithinRange.ToList();
-                //return Ship.Squad.Command.Enemy.GetShips().Where((s) => IsShipWithinRange(s)).ToList();
+                return ShipsWithinRange.Select((s) => s.Value).ToList();
+                //return Ship.Squad.GetCommand().Enemy.GetShips().Where((s) => IsShipWithinRange(s)).ToList();
             }
             else
             {
-                return ShipsWithinRange.ToList();
+                return ShipsWithinRange.Select((s) => s.Value).ToList();
             }
         }
         /// <summary>
@@ -281,7 +282,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             List<Ship> queue;
             if (disregardRange)
             {
-                queue = Ship.Squad.Command.EnemySquad.GetShips();
+                queue = Ship.Squad.GetCommand().EnemySquad.GetShips();
             }
             else
             {
@@ -425,7 +426,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         // distance and position methods
         public bool IsShipWithinRange(Ship ship)
         {
-            return ShipsWithinRange.Contains(ship);
+            return ShipsWithinRange.ContainsKey(ship.Id);
         }
         public virtual bool IsPointWithinRange(Vector2 point)
         {

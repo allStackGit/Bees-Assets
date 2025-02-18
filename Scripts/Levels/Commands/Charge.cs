@@ -57,10 +57,10 @@ namespace Assets.Scripts.Levels.Commands
             IsAttacking = true;
 
             // loop through all the ships in the bombing squad
-            Squad.Status = $"Starting charging run against {EnemySquad.Name}";
+            GetSquad().Status = $"Starting charging run against {EnemySquad.Name}";
             PrepareDamageToSendEntries();
 
-            _execute_ships = Squad.GetShips();
+            _execute_ships = GetSquad().GetShips();
 
             // Use a for loop with a class-level loop counter.
             for (_execute_loopIndex = 0; _execute_loopIndex < _execute_ships.Count; _execute_loopIndex++)
@@ -173,14 +173,14 @@ namespace Assets.Scripts.Levels.Commands
 
         private void Timer()
         {
-            if (!Squad.IsDead)
+            if (!GetSquad().IsDead)
             {
-                if (!EnemySquad.IsDead)
+                if (HasSameEnemy())
                 {
                     //Debug.Log("Bombing timer");
-                    Squad.Status = $"In the middle of charging run against {EnemySquad.Name}";
+                    GetSquad().Status = $"In the middle of charging run against {EnemySquad.Name}";
 
-                    _timer_barges = Squad.GetShips().Select((ship) => (Barge)ship).ToList();
+                    _timer_barges = GetSquad().GetShips().Select((ship) => (Barge)ship).ToList();
                     _timer_barges.ForEach((barge) =>
                     {
                         if (ShouldShipPursueTarget(barge))

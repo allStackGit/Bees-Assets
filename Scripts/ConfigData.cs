@@ -180,24 +180,24 @@ namespace Assets.Scripts
         }
         public enum CommandTypes
         {
-            Uninitialized, // Not an actual command
-            Matchup, // Not an actual command
-            Shooting, // Not an actual command
-            Aggressive,
-            BombingRun,
-            Charge,
-            Retreat,
-            MoveToRandom,
-            CircleSquad,
-            RightSwipe,
-            LeftSwipe,
-            ClosestFriendly,
-            InAndOut,
-            Patrol,
-            Guard,
-            Scouting,
-            Mining,
-            FullRetreat
+            Uninitialized, // Not an actual command 0
+            Matchup, // Not an actual command 1
+            Shooting, // Not an actual command 2
+            Aggressive, // 3
+            BombingRun, // 4
+            Charge, // 5
+            Retreat, // 6
+            MoveToRandom, // 7
+            CircleSquad, // 8
+            RightSwipe, // 9
+            LeftSwipe, // 10
+            ClosestFriendly, // 11
+            InAndOut, // 12
+            Patrol, // 13
+            Guard, // 14
+            Scouting, // 15
+            Mining, // 16
+            FullRetreat // 17
         }
 
         public enum ShootingStrategyTypes
@@ -786,7 +786,7 @@ namespace Assets.Scripts
             if (AreAllSettingsLoaded && !IsAllUserDataLoaded && !IsLoadingUserData)
             {
                 IsLoadingUserData = true;
-                Debug.Log("Setting up user data");
+                //Debug.Log("Setting up user data");
 
                 //Debug.Log($"Current Level before loading user data: {GetLevel()}");
                 Dictionary<ConfigData.ShipTypes, int> allStartingShips = new Dictionary<ConfigData.ShipTypes, int>();

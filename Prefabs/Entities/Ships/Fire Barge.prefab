@@ -38,7 +38,6 @@ Transform:
   - {fileID: 5383505513815849377}
   - {fileID: 7883968320716566466}
   - {fileID: 8379286874024857759}
-  - {fileID: 1794968230085438527}
   - {fileID: 5340468619549718126}
   - {fileID: 152729196337687932}
   - {fileID: 8928017311618752728}
@@ -116,13 +115,13 @@ MonoBehaviour:
   Side: 2
   Collider: {fileID: 3694386544647984224}
   Body: {fileID: 9209194230390332424}
+  _entity: {fileID: 0}
   ShowDebug: 0
   Health: 0
   MaxHealth: 0
   OriginalHealth: 0
   OriginalTsv: 0
   Sight: 0
-  AdditionalTsv: 0
   Clearance: 0
   MaxRange: 0
   HalfMaxRange: 0
@@ -161,7 +160,7 @@ MonoBehaviour:
   IsWarpGate: 0
   HasTargetDirection: 0
   HasVision: 0
-  HasProximityCollider: 0
+  HasProximityCollider: 1
   HasShipAnimation: 0
   HasRocketFlares: 0
   HasLeftRocketFlares: 0
@@ -192,16 +191,23 @@ MonoBehaviour:
   Brain: {fileID: 2411785222874787719}
   NearbyAsteroids: []
   Turrets: []
-  ProximityCollider: {fileID: 5068682997755627436}
+  ProximityCollider: {fileID: 0}
   ShipAnimationController: {fileID: 0}
   RotationSpeed: 0
   TargetEnemyShipToFollow: {fileID: 0}
+  TargetEnemyShipToFollowId: 0
   Killer: {fileID: 0}
   ShipRemains: {fileID: 0}
   ShipTypeLetter: 20
   ShootingStrategy: 0
   ShipExplosionSoundEffect: {fileID: 0}
   HasShipExplosionSoundEffect: 0
+  Firepower: 0
+  DamagePerSecond: 0
+  Tsv: 0
+  HasWeapons: 0
+  IsCarrierShip: 0
+  IsMoving: 0
   PathfindingThreadComplete: 0
   IsPathfinding: 0
   PathfindingThread: 0
@@ -255,7 +261,7 @@ MonoBehaviour:
   RLSide: 0
   RLHealth: 0
   RLShipType: 0
-  Explosion: {fileID: 0}
+  _retries: 0
 --- !u!50 &9209194230390332424
 Rigidbody2D:
   serializedVersion: 4
@@ -685,79 +691,6 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 6500008320206064219, guid: af7caa52462ab6244a840c36b91e9893, type: 3}
   m_PrefabInstance: {fileID: 3350007578773887684}
   m_PrefabAsset: {fileID: 0}
---- !u!1001 &3557502590286288641
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 2518675752222090672}
-    m_Modifications:
-    - target: {fileID: 3006095412329282366, guid: dc6a14c773472f84cae1f827383831c9, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3006095412329282366, guid: dc6a14c773472f84cae1f827383831c9, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3006095412329282366, guid: dc6a14c773472f84cae1f827383831c9, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3006095412329282366, guid: dc6a14c773472f84cae1f827383831c9, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 3006095412329282366, guid: dc6a14c773472f84cae1f827383831c9, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: -0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3006095412329282366, guid: dc6a14c773472f84cae1f827383831c9, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: -0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3006095412329282366, guid: dc6a14c773472f84cae1f827383831c9, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: -0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3006095412329282366, guid: dc6a14c773472f84cae1f827383831c9, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3006095412329282366, guid: dc6a14c773472f84cae1f827383831c9, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3006095412329282366, guid: dc6a14c773472f84cae1f827383831c9, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7908384552572958469, guid: dc6a14c773472f84cae1f827383831c9, type: 3}
-      propertyPath: m_Name
-      value: Human Proximity Collider
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: dc6a14c773472f84cae1f827383831c9, type: 3}
---- !u!4 &1794968230085438527 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 3006095412329282366, guid: dc6a14c773472f84cae1f827383831c9, type: 3}
-  m_PrefabInstance: {fileID: 3557502590286288641}
-  m_PrefabAsset: {fileID: 0}
---- !u!114 &5068682997755627436 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 8577489860871491757, guid: dc6a14c773472f84cae1f827383831c9, type: 3}
-  m_PrefabInstance: {fileID: 3557502590286288641}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 466dc5d84d510f746b6a52c9b8235010, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!1001 &3930671136106287825
 PrefabInstance:
   m_ObjectHideFlags: 0

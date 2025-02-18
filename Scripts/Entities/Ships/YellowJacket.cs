@@ -121,11 +121,11 @@ namespace Assets.Scripts.Entities.Ships
 
             if (attacker.Squad.HasCommand)
             {
-                attacker.Squad.Command.Tsv += -1 * targetTSVChange; // add the TSV to the shooter
+                attacker.Squad.GetCommand().Tsv += -1 * targetTSVChange; // add the TSV to the shooter
             }
             if (target.Squad.HasCommand)
             {
-                target.Squad.Command.Tsv += targetTSVChange; // subtract the TSV from the target
+                target.Squad.GetCommand().Tsv += targetTSVChange; // subtract the TSV from the target
             }
             target.UpdateHealthBar();
 

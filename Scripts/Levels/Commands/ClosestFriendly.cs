@@ -18,9 +18,17 @@ namespace Assets.Scripts.Levels.Commands
 
 
             //_parameters.setTimer = false;
-            _closestFriendlySquad = Squad.GetClosestValidFriendlySquad();
-            InvokeRepeating(nameof(Timer), CommandFrequency, CommandFrequency);
-            Invoke(nameof(FinishFollowing), ConfigData.Configuration.AISquadFollowingTime);
+            _closestFriendlySquad = GetSquad().GetClosestValidFriendlySquad();
+            if (_closestFriendlySquad != null )
+            {
+                InvokeRepeating(nameof(Timer), CommandFrequency, CommandFrequency);
+                Invoke(nameof(FinishFollowing), ConfigData.Configuration.AISquadFollowingTime);
+            }
+            else
+            {
+                SetFinalize("There is no friendly squad to follow");
+            }
+
 
 
         }
@@ -33,20 +41,20 @@ namespace Assets.Scripts.Levels.Commands
         Vector2 _timer_position;
         private void Timer()
         {
-            if (!Squad.IsDead)
+            if (!GetSquad().IsDead)
             {
                 if (_closestFriendlySquad != null && !_closestFriendlySquad.IsDead)
                 {
                     //Debug.Log($"_closestFriendlySquad: {_closestFriendlySquad.Name} IsDead: {_closestFriendlySquad.IsDead}");
                     _timer_position = _closestFriendlySquad.GetPosition();
-                    if (Squad.HasReachedDestination)
+                    if (GetSquad().HasReachedDestination)
                     {
-                        Squad.Status = $"Trying to catch up to friendly squad #{_closestFriendlySquad.SquadNumber}";
+                        GetSquad().Status = $"Trying to catch up to friendly squad #{_closestFriendlySquad.SquadNumber}";
                         SetAndMove(_timer_position);
                     }
                     else
                     {
-                        Squad.Status = $"Following friendly squad #{_closestFriendlySquad.SquadNumber}";
+                        GetSquad().Status = $"Following friendly squad #{_closestFriendlySquad.SquadNumber}";
                         SetAndMove(_timer_position);
                         
                     }

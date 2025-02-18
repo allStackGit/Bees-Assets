@@ -15,6 +15,7 @@ namespace Assets.Scripts.Server
         public readonly Squad Squad, Enemy;
         public readonly Level Level;
         public readonly string Matchup;
+        public readonly int SquadId;
 
         public new GetStrategy Request = null;
         public CommandResponse Response = null;
@@ -29,6 +30,11 @@ namespace Assets.Scripts.Server
             Squad.Status = $"Requesting full command";
             request.Type = Utilities.ConvertRequestTypeToName[Type];
             request.Hash = Hash;
+            SquadId = Squad.ItemId;
+        }
+        public bool HasSameSquad()
+        {
+            return SquadId == Squad.ItemId && !Squad.IsDead;
         }
     }
 }

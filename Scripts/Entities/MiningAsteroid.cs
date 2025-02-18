@@ -35,11 +35,11 @@ namespace Assets.Scripts.Entities
             if (collidingThing.CompareTag("Ship"))
             {
                 Ship ship = collidingThing.GetComponent<Ship>();
-                if (ship.IsMiningShip && ship.Squad?.Command?.CommandType == ConfigData.CommandTypes.Mining)
+                if (ship.IsMiningShip && ship.Squad?.GetCommand()?.CommandType == ConfigData.CommandTypes.Mining)
                 {
-                    Mining command = ((Mining)ship.Squad?.Command);
+                    Mining command = ((Mining)ship.Squad?.GetCommand());
 
-                    if (!command.ShipsCurrentlyMining.Contains(ship) && command.TargetAstroid == this)
+                    if (!command.ShipsCurrentlyMining.Contains(ship.Id) && command.TargetAstroid == this)
                     {
                         //Debug.Log($"{ship.Name} is mining {Name}");
                         if (!SquadsMining.Contains(ship.Squad))
@@ -66,15 +66,17 @@ namespace Assets.Scripts.Entities
                     {
                         if (!squad.IsDead && squad.HasCommand)
                         {
-                            squad.Command.SetFinalize("Mining asteroid was destroyed");
+                            squad.GetCommand().SetFinalize("Mining asteroid was destroyed");
 
                         }
                     });
                 }
-                Debug.Log($"Killing mining asteroid {Name} and returning to pool. endkill: {endKill}");
+                //Debug.Log($"Killing mining asteroid {Name} and returning to pool. endkill: {endKill}");
                 Level.State.RemoveObstacle(this);
                 Level.State.MiningAsteroids.Remove(this);
-                Stage.Pool.ReturnMiningAsteroidToPool(this);
+                Level.State.MiningAsteroidsToRelease.Add(this);
+                //Stage.Pool.ReturnMiningAsteroidToPool(this);
+                gameObject.SetActive(false);
             }
             else
             {

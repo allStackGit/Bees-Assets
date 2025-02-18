@@ -54,7 +54,7 @@ namespace Assets.Scripts.Entities.Ships
             //Debug.Log($"Spawning {MinionCount} {MinionType}s at {SpawnPoint}");
             CurrentMinionSquad = null;
 
-            for (int shipIndex = 0; shipIndex < MinionCount && !IsDead; shipIndex++)
+            for (int shipIndex = 0; shipIndex < MinionCount; shipIndex++)
             {
                 StartCoroutine(SpawnMinion(shipIndex, GetPosition() + SpawnPoint));
             }

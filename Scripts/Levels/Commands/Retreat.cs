@@ -16,18 +16,18 @@ namespace Assets.Scripts.Levels.Commands
         {
             base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
 
-            if (!EnemySquad.IsDead)
+            if (HasSameEnemy())
             {
                 _enemyPosition = EnemySquad.GetPosition();
-                _distance = Squad.DistanceToPoint(_enemyPosition);
+                _distance = GetSquad().DistanceToPoint(_enemyPosition);
                 _idealDistance = EnemySquad.MaxRange * 2;
 
                 if (_distance < _idealDistance)
                 {
-                    _angle = Squad.AngleToPoint(_enemyPosition);
+                    _angle = GetSquad().AngleToPoint(_enemyPosition);
                     //Squad.IsRetreating = true;
-                    Squad.Status = $"Retreating away from {EnemySquad.Name}";
-                    _position = Squad.GetPosition();
+                    GetSquad().Status = $"Retreating away from {EnemySquad.Name}";
+                    _position = GetSquad().GetPosition();
                     _retreatPoint = new Vector2((Mathf.Sin(_angle) * (_idealDistance - _distance) + _position.x), (Mathf.Cos(_angle) * (_idealDistance - _distance) + _position.y));
                     SetAndMove(_retreatPoint);
                     InvokeRepeating(nameof(Timer), 0, CommandFrequency);
@@ -49,7 +49,7 @@ namespace Assets.Scripts.Levels.Commands
         }
         private void Timer()
         {
-            if (Squad.HasReachedDestination)
+            if (GetSquad().HasReachedDestination)
             {
                 CancelInvoke(nameof(Timer));
                 SetFinalize($"Retreating and got far enough away.");

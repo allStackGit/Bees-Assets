@@ -195,10 +195,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// <returns></returns>
         public bool HasValidTarget()
         {
-            return ShipsWithinRange.Any((targetShip) => !targetShip.IsDead && IsShipValidTarget(targetShip));
+            return ShipsWithinRange.Any((targetShip) => IsShipValidTarget(targetShip.Value));
         }
         /// <summary>
-        /// Checks if the ship is a) within range, b) In the map, and c) Not blocked by obstacles
+        /// Checks if the ship is a) alive, b within range, c) In the map, and d) Not blocked by obstacles
         /// </summary>
         /// <param name="potentialTargetShip"></param>
         /// <returns></returns>

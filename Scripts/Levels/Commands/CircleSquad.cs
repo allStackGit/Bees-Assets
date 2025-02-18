@@ -45,21 +45,21 @@ namespace Assets.Scripts.Levels.Commands
 
         private void Timer()
         {
-            if (!Squad.IsDead)
+            if (!GetSquad().IsDead)
             {
-                if (!EnemySquad.IsDead)
+                if (HasSameEnemy())
                 {
-                    Squad.Status = $"Moving to circle enemy squad #{EnemySquad.SquadNumber}";
-                    if (!_gotToEnemy && !Squad.AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
+                    GetSquad().Status = $"Moving to circle enemy squad #{EnemySquad.SquadNumber}";
+                    if (!_gotToEnemy && !GetSquad().AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
                     {
                         //Debug.Log($"{Squad.Name} is trying to get to a good circling position against {Enemy.Name}");
-                        Squad.Status = $"Trying to get to a good circling position against {EnemySquad.Name}";
+                        GetSquad().Status = $"Trying to get to a good circling position against {EnemySquad.Name}";
                         SetAndMove(EnemySquad.GetPosition());
                         //MoveTowardsEnemies();
                     }
                     else
                     {
-                        _timer_squadPosition = Squad.GetPosition();
+                        _timer_squadPosition = GetSquad().GetPosition();
                         if (!_hasSetIdealDistance)
                         {
                             _idealDistance = EnemySquad.DistanceToPoint(_timer_squadPosition);
@@ -78,7 +78,7 @@ namespace Assets.Scripts.Levels.Commands
                         _angle = _timer_angle + (.06f * Mathf.PI);
 
                         //Debug.Log($"{Squad.Name} is circling enemy squad # {Enemy.Name} at {_idealDistance} away");
-                        Squad.Status = $"Circling enemy squad {EnemySquad.Name} at {_idealDistance} away";
+                        GetSquad().Status = $"Circling enemy squad {EnemySquad.Name} at {_idealDistance} away";
 
                         _timer_destination = EnemySquad.CirclePoint(_angle, _idealDistance);
                         _timer_loops = 0;

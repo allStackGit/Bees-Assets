@@ -41,7 +41,7 @@ namespace Assets.Scripts.Entities
         }
         public virtual void ClearData()
         {
-            Debug.Log($"Clearing data for {Name}");
+            //Debug.Log($"Clearing data for {Name}");
             MapPointsIndex = 0;
             IsDead = false;
         }

@@ -13,6 +13,7 @@ namespace Assets.Scripts.Levels.Commands
          */
         private bool _foundShips;
         List<Scout> Scouts = new List<Scout>();
+        HashSet<long> ScoutIds = new HashSet<long>();
         private Vector2 _position, _randomPoint;
         private Vector2 _ten = Vector2.one * 10;
         public override void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
@@ -20,20 +21,21 @@ namespace Assets.Scripts.Levels.Commands
             base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
 
             PrepareDamageToSendEntries("closest");
-            _position = Squad.GetPosition();
-            _randomPoint = Utilities.RandomCoordinate(Level, _position, Vector2.one * ConfigData.Configuration.AIRandomMovementMaxDistance, Vector2.one * Squad.MaxSight);
+            _position = GetSquad().GetPosition();
+            _randomPoint = Utilities.RandomCoordinate(Level, _position, Vector2.one * ConfigData.Configuration.AIRandomMovementMaxDistance, Vector2.one * GetSquad().MaxSight);
             SetAndMove(_randomPoint);
             CommandFrequency = 5;
             InvokeRepeating(nameof(Timer), 0, CommandFrequency);
             Invoke(nameof(EndCommand), ConfigData.Configuration.AISquadPatrolTime);
 
-            if (Squad.Side == ConfigData.Configuration.HumanSide)
+            if (GetSquad().Side == ConfigData.Configuration.HumanSide)
             {
-                Squad.GetShips().ForEach((ship) =>
+                GetSquad().GetShips().ForEach((ship) =>
                 {
                     if (ship.ShipType == ConfigData.ShipTypes.Scout)
                     {
                         Scouts.Add((Scout)ship);
+                        ScoutIds.Add(ship.Id);
                     }
                 });
 
@@ -49,15 +51,16 @@ namespace Assets.Scripts.Levels.Commands
             base.ClearData();
             _foundShips = false;
             Scouts.Clear();
+            ScoutIds.Clear();
         }
         private void Timer()
         {
-            if (!Squad.IsDead && Squad.HasReachedDestination)
+            if (!GetSquad().IsDead && GetSquad().HasReachedDestination)
             {
-                _position = Squad.GetPosition();
+                _position = GetSquad().GetPosition();
                 _randomPoint = Utilities.RandomCoordinate(Level, _position, Vector2.one * ConfigData.Configuration.AIRandomMovementMaxDistance, _ten);
                 SetAndMove(_randomPoint);
-                Squad.Status = $"Moving to random destination to look for ships: {_randomPoint}";
+                GetSquad().Status = $"Moving to random destination to look for ships: {_randomPoint}";
 
             }
 
@@ -67,7 +70,7 @@ namespace Assets.Scripts.Levels.Commands
         {
             Scouts.ForEach((scout) =>
             {
-                if (!scout.IsDead)
+                if (!scout.IsDead && ScoutIds.Contains(scout.Id)) // Checking the scout ids ensures that this scout didn't die and then become a new ship with a new Id
                 {
                     scout.DropBeacon();
                 }

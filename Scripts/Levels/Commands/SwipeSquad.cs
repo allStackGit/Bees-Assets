@@ -38,11 +38,11 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (!IsDead)
             {
-                if (!EnemySquad.IsDead)
+                if (HasSameEnemy())
                 {
-                    Squad.Status = $"Targeting enemy squad {EnemySquad.Name} #{EnemySquad.Id} with {CommandType}";
+                    GetSquad().Status = $"Targeting enemy squad {EnemySquad.Name} #{EnemySquad.Id} with {CommandType}";
 
-                    if (!_gotToEnemy && !Squad.AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad)) // if we haven't reached the enemy yet
+                    if (!_gotToEnemy && !GetSquad().AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad)) // if we haven't reached the enemy yet
                     {
                         //Debug.Log($"Enemy: {Enemy.Name} IsDead: {Enemy.IsDead}");
                         //SetAndMove(Enemy.GetPosition());
@@ -54,9 +54,9 @@ namespace Assets.Scripts.Levels.Commands
                         _gotToEnemy = true;
                         //SetFinalize("Reached the enemy");
                         //return;
-                        Squad.Status = $"Using {CommandType} against enemy squad {EnemySquad.Name} #{EnemySquad.Id}";
+                        GetSquad().Status = $"Using {CommandType} against enemy squad {EnemySquad.Name} #{EnemySquad.Id}";
                         _enemyPosition = EnemySquad.GetPosition();
-                        _angle = Squad.AngleToPoint(_enemyPosition);
+                        _angle = GetSquad().AngleToPoint(_enemyPosition);
 
                         if (CommandType == ConfigData.CommandTypes.RightSwipe)
                         {
@@ -82,16 +82,16 @@ namespace Assets.Scripts.Levels.Commands
 
 
                         _distance = EnemySquad.MaxRange * 2f;
-                        if (_distance < Squad.MaxRange - 2)
+                        if (_distance < GetSquad().MaxRange - 2)
                         {
-                            _distance = Squad.MaxRange - 2;
+                            _distance = GetSquad().MaxRange - 2;
                         }
-                        _swipeDestination = Squad.CirclePoint(_angle, _distance);
+                        _swipeDestination = GetSquad().CirclePoint(_angle, _distance);
 
 
                         SetAndMove(_swipeDestination);
                     }
-                    else if (Squad.HasReachedDestination) // if we've reached the swiping destination
+                    else if (GetSquad().HasReachedDestination) // if we've reached the swiping destination
                     {
                         CancelInvoke(nameof(Timer));
                         SetFinalize("Finished swiping past the enemy");

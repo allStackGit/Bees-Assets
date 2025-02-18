@@ -17,14 +17,14 @@ namespace Assets.Scripts.Levels.Commands
         public override void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
         {
             base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
-            if (EnemySquad != null && !EnemySquad.IsDead)
+            if (HasSameEnemy())
             {
                 IsAttacking = true;
 
                 PrepareDamageToSendEntries();
-                _position = Squad.GetPosition();
+                _position = GetSquad().GetPosition();
                 _enemyPosition = EnemySquad.GetPosition();
-                _distance = Squad.DistanceToPoint(_enemyPosition);
+                _distance = GetSquad().DistanceToPoint(_enemyPosition);
                 ReturnPoint = _distance > EnemySquad.MaxRange && _distance < 50 ?
                     Utilities.RandomCoordinate(Level, _position, Vector2.one * 45, Vector2.zero) :
                     Utilities.RandomCoordinate(Level, _enemyPosition, Vector2.one * (EnemySquad.MaxRange + 45), Vector2.one * (EnemySquad.MaxRange + 10));
@@ -46,17 +46,17 @@ namespace Assets.Scripts.Levels.Commands
         }
         private void Timer()
         {
-            if (!Squad.IsDead)
+            if (!GetSquad().IsDead)
             {
-                if (!EnemySquad.IsDead)
+                if (HasSameEnemy())
                 {
 
                     // if you haven't reached the enemy squad yet, check if you are within range and go to them
                     if (!HasReachedEnemySquad)
                     {
-                        if (!Squad.AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
+                        if (!GetSquad().AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
                         {
-                            Squad.Status = $"Targeting enemy squad #{EnemySquad.SquadNumber} for In and Out";
+                            GetSquad().Status = $"Targeting enemy squad #{EnemySquad.SquadNumber} for In and Out";
                             MoveTowardsEnemies();
                         }
                         else // if you have reached the enemy squad, retreat to the return point
@@ -64,13 +64,13 @@ namespace Assets.Scripts.Levels.Commands
                             HasReachedEnemySquad = true;
 
                             //Squad.IsRetreating = true;
-                            Squad.Status = $"Retreating away from enemy squad #{EnemySquad.SquadNumber} for In and Out";
+                            GetSquad().Status = $"Retreating away from enemy squad #{EnemySquad.SquadNumber} for In and Out";
                             HasReachedReturnPoint = false;
                             SetAndMove(ReturnPoint);
                             ReturnPoint = GetDestination();
                         }
                     }
-                    else if (Squad.HasReachedDestination) // if you have hit the return point, end the command
+                    else if (GetSquad().HasReachedDestination) // if you have hit the return point, end the command
                     {
                         CancelInvoke(nameof(Timer));
                         SetFinalize("Returned to starting point");

@@ -21,7 +21,7 @@ namespace Assets.Scripts.Levels.Commands
         {
             base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
 
-            _position = Squad.GetPosition();
+            _position = GetSquad().GetPosition();
             if (IsHiveMindCommand)
             {
                 topLeft = Utilities.RandomCoordinate(Level, _position, Vector2.one * ConfigData.Configuration.AIPatrolMaxSize, _ten);
@@ -45,19 +45,19 @@ namespace Assets.Scripts.Levels.Commands
         private Vector2 _destination;
         private void Timer()
         {
-            if (!Squad.IsDead)
+            if (!GetSquad().IsDead)
             {
                 // check if squad has reached destination and if so, cancel the timer and start over again for the next destination
                 _destination = GetDestination();
-                if (Squad.HasReachedDestination)
+                if (GetSquad().HasReachedDestination)
                 {
 
                     RemoveDestination(_destination);
                     AddDestination(_destination);
                 }
                 _destination = GetDestination();
-                Squad.Move(_destination);
-                Squad.Status = $"Patrolling towards {_destination}";
+                GetSquad().Move(_destination);
+                GetSquad().Status = $"Patrolling towards {_destination}";
             }
         }
         private void FinishAIPatrol()

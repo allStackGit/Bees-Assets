@@ -282,7 +282,7 @@ namespace Assets.Scripts.Server
                     Send(((CommandRequest)serverRequest).Request);
                     return;
                 case ConfigData.RequestTypes.StoreCommands:
-                    Debug.Log($"Sending stored commands");
+                    //Debug.Log($"Sending stored commands");
                     Send(((StoreCommandsRequest)serverRequest).Request);
                     return;
                 case ConfigData.RequestTypes.SetupLevel:
@@ -512,7 +512,7 @@ namespace Assets.Scripts.Server
 
                 _handleMatchupResponse_squad = _handleMatchupResponse_standingRequest.Squad;
 
-                if (_handleMatchupResponse_squad != null && !_handleMatchupResponse_squad.IsDead)
+                if (_handleMatchupResponse_standingRequest.HasSameSquad())
                 {
                     _handleMatchupResponse_squad.MatchupStrategy.Setup(
                         Utilities.ConvertMatchupStrategyNameToType[_handleMatchupResponse_matchupResponse.Name],
@@ -529,7 +529,7 @@ namespace Assets.Scripts.Server
                 }
                 else
                 {
-                    Debug.Log($"Matchup strategy #{_handleMatchupResponse_matchupResponse.OutcomeId} was received for squad {_handleMatchupResponse_matchupResponse.Hash}, but the squad no longer exists.");
+                    //Debug.Log($"Matchup strategy #{_handleMatchupResponse_matchupResponse.OutcomeId} was received for squad {_handleMatchupResponse_matchupResponse.Hash}, but the squad no longer exists.");
                 }
             }
             else
@@ -541,8 +541,8 @@ namespace Assets.Scripts.Server
         // Class-level variables for HandleStrategicCommandResponse() method:
         //////////////////////////////////////////////////////////////////////////////
 
-        private CommandResponse _handleStrategicCommandResponse_commandResponse;
-        private CommandRequest _handleStrategicCommandResponse_standingRequest;
+        private CommandResponse _commandResponse;
+        private CommandRequest _strategicStandingRequest;
         private Squad _tempSquad;
         private Level _handleStrategicCommandResponse_level;
         private ConfigData.CommandTypes _tempCommandType;
@@ -552,27 +552,28 @@ namespace Assets.Scripts.Server
         private void HandleStrategicCommandResponse(string message)
         {
             //Debug.Log($"Message: {message}");
-            _handleStrategicCommandResponse_commandResponse = JsonUtility.FromJson<CommandResponse>(message);
-            _handleStrategicCommandResponse_standingRequest = (CommandRequest)GetStandingRequest(_handleStrategicCommandResponse_commandResponse.Hash);
+            _commandResponse = JsonUtility.FromJson<CommandResponse>(message);
+            _strategicStandingRequest = (CommandRequest)GetStandingRequest(_commandResponse.Hash);
 
-            if (_handleStrategicCommandResponse_standingRequest != null)
+            if (_strategicStandingRequest != null)
             {
-                StandingRequests.Remove(_handleStrategicCommandResponse_standingRequest);  
-                _handleStrategicCommandResponse_standingRequest.TimeOnQueue = Time.unscaledTime - _handleStrategicCommandResponse_standingRequest.StartTime;
-                ConfigData.__TotalLatency += _handleStrategicCommandResponse_standingRequest.TimeOnQueue;
-                _tempSquad = _handleStrategicCommandResponse_standingRequest.Squad;
-                _handleStrategicCommandResponse_level = _handleStrategicCommandResponse_standingRequest.Level;
-                _handleStrategicCommandResponse_level.HandledRequests.Add(_handleStrategicCommandResponse_standingRequest.Hash);
-               _tempCommandType = Utilities.ConvertCommandNameToType[_handleStrategicCommandResponse_commandResponse.Name];
+                StandingRequests.Remove(_strategicStandingRequest);  
+                _strategicStandingRequest.TimeOnQueue = Time.unscaledTime - _strategicStandingRequest.StartTime;
+                ConfigData.__TotalLatency += _strategicStandingRequest.TimeOnQueue;
+                _tempSquad = _strategicStandingRequest.Squad;
+                _handleStrategicCommandResponse_level = _strategicStandingRequest.Level;
+                _handleStrategicCommandResponse_level.HandledRequests.Add(_strategicStandingRequest.Hash);
+               _tempCommandType = Utilities.ConvertCommandNameToType[_commandResponse.Name];
+
                 //Debug.Log($"strategic command response");
                 //Debug.Log(squad.damageSentToEnemyShipsBySquad);
 
-                if (_tempSquad.BannedStrats.Contains(_tempCommandType))
+                if (_strategicStandingRequest.Request.BannedStrats.Contains(Utilities.ConvertCommandTypeToName[_tempCommandType]))
                 {
                     Debug.LogError($"{_tempSquad.Name} received banned command type: {_tempCommandType}");
                 }
                 //Debug.Log($"{_tempSquad.Name} received command type: {_tempCommandType}");
-                if (!_handleStrategicCommandResponse_level.State.LevelEnded && !_tempSquad.IsDead)
+                if (!_handleStrategicCommandResponse_level.State.LevelEnded && _strategicStandingRequest.HasSameSquad())
                 {
                     //Debug.Log("squad is not null");
                     //if (squad.BannedStrats.Contains(commandResponse.Name))
@@ -596,15 +597,15 @@ namespace Assets.Scripts.Server
                             {
                                 _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Aggressive);
                             }
-                            _handleStrategicCommandResponse_command.Setup(_tempSquad, true, _handleStrategicCommandResponse_standingRequest.Enemy, _handleStrategicCommandResponse_standingRequest.Matchup);
+                            _handleStrategicCommandResponse_command.Setup(_tempSquad, true, _strategicStandingRequest.Enemy, _strategicStandingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.Retreat:
                             _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Retreat);
-                            _handleStrategicCommandResponse_command.Setup(_tempSquad, true, _handleStrategicCommandResponse_standingRequest.Enemy, _handleStrategicCommandResponse_standingRequest.Matchup);
+                            _handleStrategicCommandResponse_command.Setup(_tempSquad, true, _strategicStandingRequest.Enemy, _strategicStandingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.MoveToRandom:
                             _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.MoveToRandom);
-                            _handleStrategicCommandResponse_command.Setup(_tempSquad, true, _handleStrategicCommandResponse_standingRequest.Enemy, _handleStrategicCommandResponse_standingRequest.Matchup);
+                            _handleStrategicCommandResponse_command.Setup(_tempSquad, true, _strategicStandingRequest.Enemy, _strategicStandingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.CircleSquad:
                             if (_tempSquad.HasOnlyBombers)
@@ -621,7 +622,7 @@ namespace Assets.Scripts.Server
                             {
                                 _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.CircleSquad);
                             }
-                            _handleStrategicCommandResponse_command.Setup(_tempSquad, true, _handleStrategicCommandResponse_standingRequest.Enemy, _handleStrategicCommandResponse_standingRequest.Matchup);
+                            _handleStrategicCommandResponse_command.Setup(_tempSquad, true, _strategicStandingRequest.Enemy, _strategicStandingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.RightSwipe:
                         case ConfigData.CommandTypes.LeftSwipe:
@@ -640,11 +641,11 @@ namespace Assets.Scripts.Server
                                 _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(_tempCommandType);
 
                             }
-                            _handleStrategicCommandResponse_command.Setup(_tempSquad, true, _handleStrategicCommandResponse_standingRequest.Enemy, _handleStrategicCommandResponse_standingRequest.Matchup);
+                            _handleStrategicCommandResponse_command.Setup(_tempSquad, true, _strategicStandingRequest.Enemy, _strategicStandingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.ClosestFriendly:
                             _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.ClosestFriendly);
-                            _handleStrategicCommandResponse_command.Setup(_tempSquad, true, _handleStrategicCommandResponse_standingRequest.Enemy, _handleStrategicCommandResponse_standingRequest.Matchup);
+                            _handleStrategicCommandResponse_command.Setup(_tempSquad, true, _strategicStandingRequest.Enemy, _strategicStandingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.InAndOut:
                             if (_tempSquad.HasOnlyBombers)
@@ -661,95 +662,95 @@ namespace Assets.Scripts.Server
                             {
                                 _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.InAndOut);
                             }
-                            _handleStrategicCommandResponse_command.Setup(_tempSquad, true, _handleStrategicCommandResponse_standingRequest.Enemy, _handleStrategicCommandResponse_standingRequest.Matchup);
+                            _handleStrategicCommandResponse_command.Setup(_tempSquad, true, _strategicStandingRequest.Enemy, _strategicStandingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.Patrol:
                             _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Patrol);
-                            _handleStrategicCommandResponse_command.Setup(_tempSquad, true, _handleStrategicCommandResponse_standingRequest.Enemy, _handleStrategicCommandResponse_standingRequest.Matchup);
+                            _handleStrategicCommandResponse_command.Setup(_tempSquad, true, _strategicStandingRequest.Enemy, _strategicStandingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.Guard:
                             _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Guard);
-                            _handleStrategicCommandResponse_command.Setup(_tempSquad, true, _handleStrategicCommandResponse_standingRequest.Enemy, _handleStrategicCommandResponse_standingRequest.Matchup);
+                            _handleStrategicCommandResponse_command.Setup(_tempSquad, true, _strategicStandingRequest.Enemy, _strategicStandingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.Scouting:
                             _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Scouting);
-                            _handleStrategicCommandResponse_command.Setup(_tempSquad, true, _handleStrategicCommandResponse_standingRequest.Enemy, _handleStrategicCommandResponse_standingRequest.Matchup);
+                            _handleStrategicCommandResponse_command.Setup(_tempSquad, true, _strategicStandingRequest.Enemy, _strategicStandingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.Mining:
                             _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Mining);
-                            _handleStrategicCommandResponse_command.Setup(_tempSquad, true, _handleStrategicCommandResponse_standingRequest.Enemy, _handleStrategicCommandResponse_standingRequest.Matchup);
+                            _handleStrategicCommandResponse_command.Setup(_tempSquad, true, _strategicStandingRequest.Enemy, _strategicStandingRequest.Matchup);
                             break;
                         case ConfigData.CommandTypes.FullRetreat:
                             _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.FullRetreat);
-                            _handleStrategicCommandResponse_command.Setup(_tempSquad, true, _handleStrategicCommandResponse_standingRequest.Enemy, _handleStrategicCommandResponse_standingRequest.Matchup);
+                            _handleStrategicCommandResponse_command.Setup(_tempSquad, true, _strategicStandingRequest.Enemy, _strategicStandingRequest.Matchup);
                             break;
                         default:
-                            Debug.LogError($"commandResponse doesn't match a known command: {_handleStrategicCommandResponse_commandResponse.Name}");
+                            Debug.LogError($"commandResponse doesn't match a known command: {_commandResponse.Name}");
                             break;
                     }
 
-                    _tempSquad.Command = _handleStrategicCommandResponse_command;
-                    _tempSquad.Command.MatchupStrategy = _tempSquad.MatchupStrategy;
+                    _tempSquad.SetCommand(_handleStrategicCommandResponse_command);
+                    _tempSquad.GetCommand().MatchupStrategy = _tempSquad.MatchupStrategy;
                     //Debug.Log($"Command response {_handleStrategicCommandResponse_commandResponse}");
                     
                     if (_tempCommandType == ConfigData.CommandTypes.Aggressive)
                     {
-                        ((Aggressive)_tempSquad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[_handleStrategicCommandResponse_commandResponse.ShootingStrategyName], _handleStrategicCommandResponse_commandResponse.OutcomeId, _handleStrategicCommandResponse_commandResponse.ShootingStrategyOutcomeId, false);
+                        ((Aggressive)_tempSquad.GetCommand()).Execute(Utilities.ConvertShootingStrategyNameToType[_commandResponse.ShootingStrategyName], _commandResponse.OutcomeId, _commandResponse.ShootingStrategyOutcomeId, false);
                     }
                     else if (_tempCommandType == ConfigData.CommandTypes.BombingRun)
                     {
-                        ((BombingRun)_tempSquad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[_handleStrategicCommandResponse_commandResponse.ShootingStrategyName], _handleStrategicCommandResponse_commandResponse.OutcomeId, _handleStrategicCommandResponse_commandResponse.ShootingStrategyOutcomeId, false);
+                        ((BombingRun)_tempSquad.GetCommand()).Execute(Utilities.ConvertShootingStrategyNameToType[_commandResponse.ShootingStrategyName], _commandResponse.OutcomeId, _commandResponse.ShootingStrategyOutcomeId, false);
                     }
                     else if (_tempCommandType == ConfigData.CommandTypes.Charge)
                     {
-                        ((Charge)_tempSquad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[_handleStrategicCommandResponse_commandResponse.ShootingStrategyName], _handleStrategicCommandResponse_commandResponse.OutcomeId, _handleStrategicCommandResponse_commandResponse.ShootingStrategyOutcomeId, false);
+                        ((Charge)_tempSquad.GetCommand()).Execute(Utilities.ConvertShootingStrategyNameToType[_commandResponse.ShootingStrategyName], _commandResponse.OutcomeId, _commandResponse.ShootingStrategyOutcomeId, false);
                     }
                     else if (_tempCommandType == ConfigData.CommandTypes.CircleSquad)
                     {
-                        ((CircleSquad)_tempSquad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[_handleStrategicCommandResponse_commandResponse.ShootingStrategyName], _handleStrategicCommandResponse_commandResponse.OutcomeId, _handleStrategicCommandResponse_commandResponse.ShootingStrategyOutcomeId, false);
+                        ((CircleSquad)_tempSquad.GetCommand()).Execute(Utilities.ConvertShootingStrategyNameToType[_commandResponse.ShootingStrategyName], _commandResponse.OutcomeId, _commandResponse.ShootingStrategyOutcomeId, false);
                     }
                     else if (_tempCommandType == ConfigData.CommandTypes.InAndOut)
                     {
-                        ((InAndOut)_tempSquad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[_handleStrategicCommandResponse_commandResponse.ShootingStrategyName], _handleStrategicCommandResponse_commandResponse.OutcomeId, _handleStrategicCommandResponse_commandResponse.ShootingStrategyOutcomeId, false);
+                        ((InAndOut)_tempSquad.GetCommand()).Execute(Utilities.ConvertShootingStrategyNameToType[_commandResponse.ShootingStrategyName], _commandResponse.OutcomeId, _commandResponse.ShootingStrategyOutcomeId, false);
                     }
                     else if (_tempCommandType == ConfigData.CommandTypes.Retreat)
                     {
-                        ((Retreat)_tempSquad.Command).Execute(ConfigData.ShootingStrategyTypes.FirstSeen, _handleStrategicCommandResponse_commandResponse.OutcomeId, _handleStrategicCommandResponse_commandResponse.ShootingStrategyOutcomeId, false);
+                        ((Retreat)_tempSquad.GetCommand()).Execute(ConfigData.ShootingStrategyTypes.FirstSeen, _commandResponse.OutcomeId, _commandResponse.ShootingStrategyOutcomeId, false);
                     }
                     else if (_tempCommandType == ConfigData.CommandTypes.LeftSwipe || _tempCommandType == ConfigData.CommandTypes.RightSwipe)
                     {
-                        ((SwipeSquad)_tempSquad.Command).Execute(_tempCommandType, Utilities.ConvertShootingStrategyNameToType[_handleStrategicCommandResponse_commandResponse.ShootingStrategyName], _handleStrategicCommandResponse_commandResponse.OutcomeId, _handleStrategicCommandResponse_commandResponse.ShootingStrategyOutcomeId, false);
+                        ((SwipeSquad)_tempSquad.GetCommand()).Execute(_tempCommandType, Utilities.ConvertShootingStrategyNameToType[_commandResponse.ShootingStrategyName], _commandResponse.OutcomeId, _commandResponse.ShootingStrategyOutcomeId, false);
                     }
                     else if (_tempCommandType == ConfigData.CommandTypes.Patrol)
                     {
                         //Debug.Log("Got a patrol);
-                        ((Patrol)_tempSquad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[_handleStrategicCommandResponse_commandResponse.ShootingStrategyName], _handleStrategicCommandResponse_commandResponse.OutcomeId, _handleStrategicCommandResponse_commandResponse.ShootingStrategyOutcomeId, true, Vector2.zero, Vector2.zero);
+                        ((Patrol)_tempSquad.GetCommand()).Execute(Utilities.ConvertShootingStrategyNameToType[_commandResponse.ShootingStrategyName], _commandResponse.OutcomeId, _commandResponse.ShootingStrategyOutcomeId, true, Vector2.zero, Vector2.zero);
                     }
                     else if (_tempCommandType == ConfigData.CommandTypes.Guard)
                     {
-                        ((Guard)_tempSquad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[_handleStrategicCommandResponse_commandResponse.ShootingStrategyName], _handleStrategicCommandResponse_commandResponse.OutcomeId, _handleStrategicCommandResponse_commandResponse.ShootingStrategyOutcomeId, true, null);
+                        ((Guard)_tempSquad.GetCommand()).Execute(Utilities.ConvertShootingStrategyNameToType[_commandResponse.ShootingStrategyName], _commandResponse.OutcomeId, _commandResponse.ShootingStrategyOutcomeId, true, null);
                     }
                     else if (_tempCommandType == ConfigData.CommandTypes.ClosestFriendly)
                     {
-                        ((ClosestFriendly)_tempSquad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[_handleStrategicCommandResponse_commandResponse.ShootingStrategyName], _handleStrategicCommandResponse_commandResponse.OutcomeId, _handleStrategicCommandResponse_commandResponse.ShootingStrategyOutcomeId, true);
+                        ((ClosestFriendly)_tempSquad.GetCommand()).Execute(Utilities.ConvertShootingStrategyNameToType[_commandResponse.ShootingStrategyName], _commandResponse.OutcomeId, _commandResponse.ShootingStrategyOutcomeId, true);
                     }
                     else if (_tempCommandType == ConfigData.CommandTypes.MoveToRandom)
                     {
-                        ((MoveToRandom)_tempSquad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[_handleStrategicCommandResponse_commandResponse.ShootingStrategyName], _handleStrategicCommandResponse_commandResponse.OutcomeId, _handleStrategicCommandResponse_commandResponse.ShootingStrategyOutcomeId, true);
+                        ((MoveToRandom)_tempSquad.GetCommand()).Execute(Utilities.ConvertShootingStrategyNameToType[_commandResponse.ShootingStrategyName], _commandResponse.OutcomeId, _commandResponse.ShootingStrategyOutcomeId, true);
                     }
                     else if (_tempCommandType == ConfigData.CommandTypes.Scouting)
                     {
-                        ((Scouting)_tempSquad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[_handleStrategicCommandResponse_commandResponse.ShootingStrategyName], _handleStrategicCommandResponse_commandResponse.OutcomeId, _handleStrategicCommandResponse_commandResponse.ShootingStrategyOutcomeId, true);
+                        ((Scouting)_tempSquad.GetCommand()).Execute(Utilities.ConvertShootingStrategyNameToType[_commandResponse.ShootingStrategyName], _commandResponse.OutcomeId, _commandResponse.ShootingStrategyOutcomeId, true);
                     }
                     else if (_tempCommandType == ConfigData.CommandTypes.Mining)
                     {
-                        ((Mining)_tempSquad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[_handleStrategicCommandResponse_commandResponse.ShootingStrategyName], _handleStrategicCommandResponse_commandResponse.OutcomeId, _handleStrategicCommandResponse_commandResponse.ShootingStrategyOutcomeId, true, _tempSquad.GetNearestMiningAsteroid());
+                        ((Mining)_tempSquad.GetCommand()).Execute(Utilities.ConvertShootingStrategyNameToType[_commandResponse.ShootingStrategyName], _commandResponse.OutcomeId, _commandResponse.ShootingStrategyOutcomeId, true, _tempSquad.GetNearestMiningAsteroid());
                     }
                     else if (_tempCommandType == ConfigData.CommandTypes.FullRetreat)
                     {
                         _handleStrategicCommandResponse_position = _tempSquad.GetPosition();
                         _handleStrategicCommandResponse_warpGate = (WarpGate) _handleStrategicCommandResponse_level.State.GetHumanShips().Where((s) => s.IsWarpGate).OrderBy((s) => s.DistanceToPoint(_handleStrategicCommandResponse_position)).FirstOrDefault();
-                        ((FullRetreat)_tempSquad.Command).Execute(Utilities.ConvertShootingStrategyNameToType[_handleStrategicCommandResponse_commandResponse.ShootingStrategyName], _handleStrategicCommandResponse_commandResponse.OutcomeId, _handleStrategicCommandResponse_commandResponse.ShootingStrategyOutcomeId, true, _handleStrategicCommandResponse_warpGate);
+                        ((FullRetreat)_tempSquad.GetCommand()).Execute(Utilities.ConvertShootingStrategyNameToType[_commandResponse.ShootingStrategyName], _commandResponse.OutcomeId, _commandResponse.ShootingStrategyOutcomeId, true, _handleStrategicCommandResponse_warpGate);
                     }
 
                 }
@@ -760,7 +761,7 @@ namespace Assets.Scripts.Server
             }
             else
             {
-                Debug.Log($"Couldn't find a matching request for {_handleStrategicCommandResponse_commandResponse.Hash}");
+                Debug.Log($"Couldn't find a matching request for {_commandResponse.Hash}");
             }
 
         }

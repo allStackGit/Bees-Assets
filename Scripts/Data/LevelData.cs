@@ -17,7 +17,7 @@ namespace Assets.Scripts.Data
             dynamic json = SetupFile(shouldFileExist, ConfigData.LevelsDataFilenames[type], (json) =>
             {
                 ConfigData.IsLevelsDataLoaded[type] = true;
-                Debug.Log($"Setting up LevelData file for {ConfigData.LevelsDataFilenames[type]}");
+                //Debug.Log($"Setting up LevelData file for {ConfigData.LevelsDataFilenames[type]}");
                 //Debug.Log($"JSON from DataFile: {json}");
                 List<dynamic> levels = Utilities.JArrayToList<dynamic>(json.Levels);
                 levels.ForEach(level =>

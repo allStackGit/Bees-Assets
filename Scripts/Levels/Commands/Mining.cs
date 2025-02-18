@@ -17,23 +17,23 @@ namespace Assets.Scripts.Levels.Commands
         /// <summary>
         /// Ships in the squad that can mine asteroids
         /// </summary>
-        public List<Ship> MiningShips = new List<Ship>();
+        public List<long> MiningShips = new List<long>();
         /// <summary>
         /// Ships in squad that are currently mining asteroids
         /// </summary>
-        public List<Ship> ShipsCurrentlyMining = new List<Ship>();
+        public List<long> ShipsCurrentlyMining = new List<long>();
 
         public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy, MiningAsteroid asteroid)
         {
             if (asteroid != null) // Needs to be null check in case there were no asteroids
             {
-                MiningShips = Squad.GetShips().Where((ship) => ship.IsMiningShip).ToList();
+                MiningShips = GetSquad().GetShips().Where((ship) => ship.IsMiningShip).Select((s) => s.Id).ToList();
                 TargetAstroid = asteroid;
                 base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
                 PrepareDamageToSendEntries("closest");
 
                 // Check if any ships are already on the asteroid
-                Squad.GetShips().ForEach((ship) =>
+                GetSquad().GetShips().ForEach((ship) =>
                 {
                     if (ship.Collider.IsTouching(TargetAstroid.Collider))
                     {
@@ -68,11 +68,11 @@ namespace Assets.Scripts.Levels.Commands
         private Vector2 _position;
         public void MoveToAsteroid()
         {
-            if (!Squad.IsDead && !TargetAstroid.IsDead)
+            if (!GetSquad().IsDead && !TargetAstroid.IsDead)
             {
                 _position = TargetAstroid.GetPosition();
                 SetAndMove(_position);
-                Squad.Status = $"Moving to {TargetAstroid.Name} to start mining: {_position}";
+                GetSquad().Status = $"Moving to {TargetAstroid.Name} to start mining: {_position}";
 
             }
             else if (TargetAstroid.IsDead)
@@ -82,7 +82,7 @@ namespace Assets.Scripts.Levels.Commands
         }
         public void FoundAsteroid(Ship ship)
         {
-            ShipsCurrentlyMining.Add(ship);
+            ShipsCurrentlyMining.Add(ship.Id);
             if (ship.HasShipAnimation)
             {
                 ship.ShipAnimation.SetActive(true);
@@ -91,7 +91,7 @@ namespace Assets.Scripts.Levels.Commands
             {
                 InvokeRepeating(nameof(Mine), 0, 3);
             }
-            if (MiningShips.All((s) => s.IsDead || ShipsCurrentlyMining.Contains(s)))
+            if (MiningShips.All((s) => Level.State.GetShipById(s) != null || ShipsCurrentlyMining.Contains(s)))
             {
                 Invoke(nameof(StopMovingTowardsAsteroid), 5);
             }
@@ -106,7 +106,7 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (!TargetAstroid.IsDead)
             {
-                ShipsCurrentlyMining = ShipsCurrentlyMining.Where((s) => !s.IsDead).ToList();
+                ShipsCurrentlyMining = ShipsCurrentlyMining.Where((s) => Level.State.GetShipById(s) != null).ToList();
                 if (ShipsCurrentlyMining.Count > 0)
                 {
                     //Debug.Log($"There are {ShipsMining.Count} ships mining for {Squad.Name}");
@@ -118,7 +118,7 @@ namespace Assets.Scripts.Levels.Commands
                     //Debug.Log($"{Squad.Name} mined {amountMined} from {TargetAstroid.Name}. It has {TargetAstroid.Health} health left");
 
                     _amountPerShip = _amountMined / ShipsCurrentlyMining.Count;
-                    ShipsCurrentlyMining.ForEach((ship) =>
+                    ShipsCurrentlyMining.Select((s) => Level.State.GetShipById(s)).ToList().ForEach((ship) =>
                     {
                         ship.FleetShip.MineralsMinedThisLevel += _amountPerShip;
                         ship.Tsv += _amountPerShip;
@@ -141,14 +141,14 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (TargetAstroid != null && !TargetAstroid.IsDead)
             {
-                TargetAstroid.SquadsMining.Remove(Squad);
+                TargetAstroid.SquadsMining.Remove(GetSquad());
             }
         }
         public override void SetFinalize(string cause)
         {
             CleanupAsteroid();
             //Debug.Log($"Finalizing mining command for {Squad}");
-            Squad.GetShips().ForEach((ship) =>
+            GetSquad().GetShips().ForEach((ship) =>
             {
                 if (ship.HasShipAnimation)
                 {

@@ -34,7 +34,7 @@ namespace Assets.Scripts.UIComponents
 
         public void Setup(SquadMaker squadMaker, EventSystem eventSystem, int side)
         {
-            this._squadMaker = squadMaker;
+            _squadMaker = squadMaker;
             _eventSystem = eventSystem;
             Side = side;
             Destroy(PatrolButton);

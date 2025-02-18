@@ -120,7 +120,6 @@ namespace Assets.Scripts.Entities.Ships
 
         }
 
-
         public IEnumerator ChargeForward(Ship target = null)
         {
             OriginalPower = Charge.Power;
@@ -137,7 +136,7 @@ namespace Assets.Scripts.Entities.Ships
                 HasStartedCharging = true;
                 CannotChangeMovementOrders = false;
                 SetCurrentSpeed(80, 80);
-                if (target != null && !target.IsDead)
+                if (!target.IsDead)
                 {
                     MoveToDirectionOfPoint(target.GetPosition());
                 }
@@ -190,7 +189,7 @@ namespace Assets.Scripts.Entities.Ships
         {
             if (!IsDead)
             {
-                Debug.Log($"Finished cool down for {Name}");
+                //Debug.Log($"Finished cool down for {Name}");
                 HasStartedCharging = false;
                 SetCurrentSpeed(Speed);
                 HasCompletedRun = true;

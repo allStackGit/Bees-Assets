@@ -53,11 +53,11 @@ namespace Assets.Scripts.Levels.Commands
 
             // Setup status and damage
             IsAttacking = true;
-            Squad.Status = $"Starting bombing run against {EnemySquad.Name}";
+            GetSquad().Status = $"Starting bombing run against {EnemySquad.Name}";
             PrepareDamageToSendEntries();
 
             // Retrieve and store the ships from the squad.
-            _execute_ships = Squad.GetShips();
+            _execute_ships = GetSquad().GetShips();
 
             // Iterate through all the ships using a for loop that utilizes the class-level loop index.
             for (_execute_loopIndex = 0; _execute_loopIndex < _execute_ships.Count; _execute_loopIndex++)
@@ -170,19 +170,19 @@ namespace Assets.Scripts.Levels.Commands
         //////////////////////////////////////////////////////////////////////////////
         private bool CheckIfStrikersAreDefenseless()
         {
-            if (Squad.IsCarrierSquad)
+            if (GetSquad().IsCarrierSquad)
             {
-                if (Squad.GetShips().All((s) =>
+                if (GetSquad().GetShips().All((s) =>
                 {
                     _checkIfStrikersAreDefenseless_striker = (Striker)s;
                     return !_checkIfStrikersAreDefenseless_striker.IsBombReady && _checkIfStrikersAreDefenseless_striker.Carrier == null;
                 }))
                 {
-                    Squad.BannedStrats.Add(ConfigData.CommandTypes.Aggressive);
-                    Squad.BannedStrats.Add(ConfigData.CommandTypes.CircleSquad);
-                    Squad.BannedStrats.Add(ConfigData.CommandTypes.RightSwipe);
-                    Squad.BannedStrats.Add(ConfigData.CommandTypes.LeftSwipe);
-                    Squad.BannedStrats.Add(ConfigData.CommandTypes.InAndOut);
+                    GetSquad().BannedStrats.Add(ConfigData.CommandTypes.Aggressive);
+                    GetSquad().BannedStrats.Add(ConfigData.CommandTypes.CircleSquad);
+                    GetSquad().BannedStrats.Add(ConfigData.CommandTypes.RightSwipe);
+                    GetSquad().BannedStrats.Add(ConfigData.CommandTypes.LeftSwipe);
+                    GetSquad().BannedStrats.Add(ConfigData.CommandTypes.InAndOut);
 
                     //Debug.Log("Strikers are defenseless, cancelling bombing run");
                     SetFinalize("Strikers are defenseless, cancelling bombing run");
@@ -232,15 +232,15 @@ namespace Assets.Scripts.Levels.Commands
         {
             try
             {
-                return Squad.GetShips().All((ship) =>
+                return GetSquad().GetShips().All((ship) =>
                 {
-                    return ship.ProximityCollider.NearbyEnemyShips.Contains(ship.TargetEnemyShipToFollow) || (ship.ShipType == ConfigData.ShipTypes.Striker && ((Striker)ship).HasCompletedRun);
-                }) && Squad.GetShips().Any((ship) => ship.ProximityCollider.NearbyEnemyShips.Contains(ship.TargetEnemyShipToFollow));
+                    return ship.Vision.NearbyEnemyShips.Contains(ship.TargetEnemyShipToFollow) || (ship.ShipType == ConfigData.ShipTypes.Striker && ((Striker)ship).HasCompletedRun);
+                }) && GetSquad().GetShips().Any((ship) => ship.Vision.NearbyEnemyShips.Contains(ship.TargetEnemyShipToFollow));
             }catch(Exception e)
             {
-                Debug.Log($"Ships: {Utilities.ListToString(Squad.GetShips())}, Are any ships null? {Squad.GetShips().Any((s) => s == null)}, Are any ships proximity colliders null?" +
-                    $" {Squad.GetShips().Any((s) => s?.ProximityCollider == null)}," +
-                    $"Are any ships nearby enemy ships null? {Squad.GetShips().Any((s) => s?.ProximityCollider?.NearbyEnemyShips == null)}");
+                Debug.Log($"Ships: {Utilities.ListToString(GetSquad().GetShips())}, Are any ships null? {GetSquad().GetShips().Any((s) => s == null)}, Are any ships vision colliders null?" +
+                    $" {GetSquad().GetShips().Any((s) => s?.Vision == null)}," +
+                    $"Are any ships nearby enemy ships null? {GetSquad().GetShips().Any((s) => s?.Vision?.NearbyEnemyShips == null)}");
                 throw e;
             }
 
@@ -254,7 +254,7 @@ namespace Assets.Scripts.Levels.Commands
         // Class-level variables for HaveAllShipsFinished() method:
         //////////////////////////////////////////////////////////////////////////////
         private Ship _haveAllShipsFinished_currentShip;
-        private Striker _haveAllShipsFinished_striker;
+        private Striker _finishingStriker;
         private YellowJacket _haveAllShipsFinished_yellowJacket;
 
         //////////////////////////////////////////////////////////////////////////////
@@ -275,9 +275,9 @@ namespace Assets.Scripts.Levels.Commands
                 _haveAllShipsFinished_currentShip = ship;
                 if (_haveAllShipsFinished_currentShip.ShipType == ConfigData.ShipTypes.Striker)
                 {
-                    _haveAllShipsFinished_striker = (Striker)_haveAllShipsFinished_currentShip;
-                    return _haveAllShipsFinished_striker.HasCompletedRun &&
-                           (_haveAllShipsFinished_striker.HasReturnedToCarrier || _haveAllShipsFinished_striker.Carrier.IsDead);
+                    _finishingStriker = (Striker)_haveAllShipsFinished_currentShip;
+                    return _finishingStriker.HasCompletedRun &&
+                           (_finishingStriker.HasReturnedToCarrier || _finishingStriker.Carrier.IsDead);
                 }
                 else if (_haveAllShipsFinished_currentShip.ShipType == ConfigData.ShipTypes.YellowJacket)
                 {
@@ -360,8 +360,8 @@ namespace Assets.Scripts.Levels.Commands
             {
                 _timerLoops++; // Assuming _timerLoops is already declared as a class-level variable
                                //Debug.Log("Bombing timer");
-                Squad.Status = $"In the middle of bombing run against {EnemySquad.Name}";
-                _timer_ships = Squad.GetShips();
+                GetSquad().Status = $"In the middle of bombing run against {EnemySquad.Name}";
+                _timer_ships = GetSquad().GetShips();
                 _timer_FireBargesToDetonate.Clear();
 
                 // Process each ship in the squad.
@@ -373,9 +373,9 @@ namespace Assets.Scripts.Levels.Commands
                         if (ShouldShipPursueTarget(_timer_currentShip))
                         {
                             SendShipToTarget(_timer_currentShip);
-                            if (Squad.IsHiveMindControlled &&
+                            if (GetSquad().IsHiveMindControlled &&
                                 _timer_currentShip.ShipType == ConfigData.ShipTypes.FireBarge &&
-                                _timer_currentShip.ProximityCollider.NearbyEnemyShips.Contains(_timer_currentShip.TargetEnemyShipToFollow))
+                                _timer_currentShip.Vision.NearbyEnemyShips.Contains(_timer_currentShip.TargetEnemyShipToFollow))
                             {
                                 // if you're a Fire Barge and within detonation distance of your target, detonate
                                 Debug.Log($"{_timer_currentShip.Name} is hivemind controlled and on a bombing run and near its target enemy and so it's going to detonate. ");
@@ -388,7 +388,7 @@ namespace Assets.Scripts.Levels.Commands
                             if (_timer_currentShip.ShipType == ConfigData.ShipTypes.Striker)
                             {
                                 _timer_striker = (Striker)_timer_currentShip;
-                                if (EnemySquad.IsDead)
+                                if (!HasSameEnemy())
                                 {
                                     _timer_striker.CompleteRun();
                                 }
@@ -403,7 +403,7 @@ namespace Assets.Scripts.Levels.Commands
                             else if (_timer_currentShip.ShipType == ConfigData.ShipTypes.YellowJacket)
                             {
                                 _timer_yellowJacket = (YellowJacket)_timer_currentShip;
-                                if (EnemySquad.IsDead)
+                                if (!HasSameEnemy())
                                 {
                                     _timer_yellowJacket.HasCompletedRun = true;
                                 }
@@ -436,7 +436,7 @@ namespace Assets.Scripts.Levels.Commands
                 }
                 else
                 {
-                    if (!IsCloseToTarget && !EnemySquad.IsDead)
+                    if (!IsCloseToTarget && HasSameEnemy())
                     {
                         if (AreBombersCloseToEnemyTargets())
                         {
@@ -447,7 +447,7 @@ namespace Assets.Scripts.Levels.Commands
                             InvokeRepeating(nameof(Timer), CommandFrequency, CommandFrequency);
                         }
                     }
-                    else if (IsCloseToTarget && _timerLoops % 4 == 0 && (HaveAllShipsBombed(_timer_ships) || (EnemySquad.IsDead || !AreBombersCloseToEnemyTargets())))
+                    else if (IsCloseToTarget && _timerLoops % 4 == 0 && (HaveAllShipsBombed(_timer_ships) || (!HasSameEnemy() || !AreBombersCloseToEnemyTargets())))
                     {
                         //Debug.Log($"{Squad.Name} is on a bombing run and no longer close to {EnemySquad.Name}");
                         CancelInvoke(nameof(Timer));
@@ -467,9 +467,9 @@ namespace Assets.Scripts.Levels.Commands
             CancelInvoke(nameof(Timer));
             SetFinalize("Completed bombing run");
 
-            if (Squad.HasOnlyStrikers)
+            if (GetSquad().HasOnlyStrikers)
             {
-                _endBombingRun_ships = Squad.GetShips();
+                _endBombingRun_ships = GetSquad().GetShips();
                 for (_endBombingRun_loopIndex = 0; _endBombingRun_loopIndex < _endBombingRun_ships.Count; _endBombingRun_loopIndex++)
                 {
                     _endBombingRun_currentShip = _endBombingRun_ships[_endBombingRun_loopIndex];
