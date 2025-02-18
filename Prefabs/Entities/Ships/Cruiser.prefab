@@ -113,13 +113,13 @@ MonoBehaviour:
   Side: 2
   Collider: {fileID: 8938707987628624116}
   Body: {fileID: 9209194230390332424}
+  _entity: {fileID: 0}
   ShowDebug: 0
   Health: 0
   MaxHealth: 0
   OriginalHealth: 0
   OriginalTsv: 0
   Sight: 0
-  AdditionalTsv: 0
   Clearance: 0
   MaxRange: 0
   HalfMaxRange: 0
@@ -188,7 +188,6 @@ MonoBehaviour:
   Brain: {fileID: 994231764307591175}
   NearbyAsteroids: []
   Turrets: []
-  ProximityCollider: {fileID: 0}
   ShipAnimationController: {fileID: 0}
   RotationSpeed: 0
   TargetEnemyShipToFollow: {fileID: 0}
@@ -198,6 +197,12 @@ MonoBehaviour:
   ShootingStrategy: 0
   ShipExplosionSoundEffect: {fileID: 0}
   HasShipExplosionSoundEffect: 0
+  Firepower: 0
+  DamagePerSecond: 0
+  Tsv: 0
+  HasWeapons: 0
+  IsCarrierShip: 0
+  IsMoving: 0
   PathfindingThreadComplete: 0
   IsPathfinding: 0
   PathfindingThread: 0
@@ -251,6 +256,7 @@ MonoBehaviour:
   RLSide: 0
   RLHealth: 0
   RLShipType: 0
+  _retries: 0
 --- !u!50 &9209194230390332424
 Rigidbody2D:
   serializedVersion: 4
@@ -322,26 +328,17 @@ PolygonCollider2D:
   m_AutoTiling: 0
   m_Points:
     m_Paths:
-    - - {x: -1.575, y: -2.775}
+    - - {x: -3.7570937, y: -2.9096758}
+      - {x: -2.8394833, y: -4.330469}
+      - {x: -1.575, y: -2.775}
       - {x: 1.9250001, y: -2.7}
-      - {x: 2.55, y: -4.5}
-      - {x: 3.375, y: -4.5}
+      - {x: 3.080934, y: -4.2893114}
       - {x: 4, y: -2.8}
-      - {x: 3.9915366, y: 2.5454352}
-      - {x: 1.825, y: 2.5631418}
-      - {x: 1.825, y: 0.77500004}
-      - {x: 0.45912942, y: 4.5067415}
-      - {x: -0.40098533, y: 4.5679436}
-      - {x: -1.2900031, y: 2.977477}
-      - {x: -1.3000001, y: 1.4250001}
-      - {x: -1.4, y: 1.45}
-      - {x: -1.7733, y: 0.8749307}
-      - {x: -1.9202302, y: 2.5122354}
-      - {x: -4.0499525, y: 2.521151}
-      - {x: -3.9971786, y: -3.8647845}
-      - {x: -3.325, y: -4.5}
-      - {x: -2.575, y: -4.5}
-      - {x: -2.075, y: -3.75}
+      - {x: 3.9578266, y: 2.2083342}
+      - {x: 1.0159572, y: 2.2428956}
+      - {x: 0.028818637, y: 4.3825383}
+      - {x: -0.9160992, y: 2.2980525}
+      - {x: -3.7706249, y: 2.3160384}
   m_UseDelaunayMesh: 0
 --- !u!1001 &909045889989814613
 PrefabInstance:

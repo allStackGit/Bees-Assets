@@ -242,13 +242,13 @@ MonoBehaviour:
   Side: 2
   Collider: {fileID: 7185360336040675276}
   Body: {fileID: 7203189950192011832}
+  _entity: {fileID: 0}
   ShowDebug: 0
   Health: 0
   MaxHealth: 0
   OriginalHealth: 0
   OriginalTsv: 0
   Sight: 0
-  AdditionalTsv: 0
   Clearance: 0
   MaxRange: 0
   HalfMaxRange: 0
@@ -323,7 +323,6 @@ MonoBehaviour:
   Brain: {fileID: 6866185776502438853}
   NearbyAsteroids: []
   Turrets: []
-  ProximityCollider: {fileID: 0}
   ShipAnimationController: {fileID: 0}
   RotationSpeed: 0
   TargetEnemyShipToFollow: {fileID: 0}
@@ -333,6 +332,12 @@ MonoBehaviour:
   ShootingStrategy: 0
   ShipExplosionSoundEffect: {fileID: 0}
   HasShipExplosionSoundEffect: 0
+  Firepower: 0
+  DamagePerSecond: 0
+  Tsv: 0
+  HasWeapons: 0
+  IsCarrierShip: 0
+  IsMoving: 0
   PathfindingThreadComplete: 0
   IsPathfinding: 0
   PathfindingThread: 0
@@ -386,6 +391,7 @@ MonoBehaviour:
   RLSide: 0
   RLHealth: 0
   RLShipType: 0
+  _retries: 0
 --- !u!50 &7203189950192011832
 Rigidbody2D:
   serializedVersion: 4
@@ -457,40 +463,30 @@ PolygonCollider2D:
   m_AutoTiling: 0
   m_Points:
     m_Paths:
-    - - {x: -1.9036398, y: -9.619919}
-      - {x: -1.8040257, y: -9.636521}
-      - {x: -1.8527265, y: -5.278453}
-      - {x: -0.6466264, y: -7.355979}
-      - {x: 0.81047314, y: -7.3657374}
-      - {x: 1.8986263, y: -5.341218}
-      - {x: 1.9350474, y: -9.661668}
-      - {x: 4.05, y: -5.875}
-      - {x: 4.309182, y: -3.8562987}
-      - {x: 8.31443, y: -3.9366937}
-      - {x: 6.9569135, y: -0.32028723}
-      - {x: 2.9273257, y: -0.27282143}
-      - {x: 2.9347062, y: 1.2325845}
-      - {x: 6.2114897, y: 1.2450988}
-      - {x: 5.504468, y: 3.656075}
-      - {x: 2.5983696, y: 3.7079697}
-      - {x: 2.5737066, y: 5.814069}
-      - {x: 0.90000004, y: 9.45}
-      - {x: 0.825, y: 9.5}
-      - {x: 0.2, y: 9.5}
-      - {x: -0.2, y: 9.5}
-      - {x: -0.8, y: 9.5}
-      - {x: -0.925, y: 9.375}
-      - {x: -2.413684, y: 6.5033107}
-      - {x: -2.5644004, y: 3.6766102}
-      - {x: -5.403315, y: 3.717804}
-      - {x: -6.364575, y: 1.2509792}
-      - {x: -2.8815243, y: 1.1256436}
-      - {x: -2.9124737, y: -0.2747243}
-      - {x: -7.0006423, y: -0.20131576}
-      - {x: -8.244911, y: -4.0475597}
-      - {x: -4.248762, y: -4.1724577}
-      - {x: -4.05, y: -5.875}
-      - {x: -4, y: -5.925}
+    - - {x: -2.2999682, y: -8.704518}
+      - {x: -2.0591724, y: -4.653866}
+      - {x: 0.0027558804, y: -6.860359}
+      - {x: 1.9962134, y: -4.7349257}
+      - {x: 2.1882951, y: -8.858697}
+      - {x: 3.838417, y: -3.3270912}
+      - {x: 7.2856965, y: -3.4566178}
+      - {x: 6.7172866, y: -1.0295823}
+      - {x: 2.0742543, y: -0.85751057}
+      - {x: 2.0528793, y: 1.7981037}
+      - {x: 5.5597043, y: 1.7531074}
+      - {x: 5.3319364, y: 3.1959915}
+      - {x: 2.004095, y: 3.4108324}
+      - {x: 0.8904149, y: 8.69278}
+      - {x: -0.8687972, y: 8.690403}
+      - {x: -1.3576881, y: 6.133713}
+      - {x: -2.142002, y: 3.2894118}
+      - {x: -5.1217165, y: 3.2602057}
+      - {x: -5.695777, y: 1.6733775}
+      - {x: -2.112388, y: 1.6886494}
+      - {x: -2.2084765, y: -0.74992234}
+      - {x: -6.562559, y: -0.7077347}
+      - {x: -7.2954235, y: -3.4783843}
+      - {x: -3.7343955, y: -3.6123695}
   m_UseDelaunayMesh: 0
 --- !u!1001 &1022177574750421151
 PrefabInstance:

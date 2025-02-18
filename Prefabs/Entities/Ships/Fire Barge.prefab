@@ -12,7 +12,7 @@ GameObject:
   - component: {fileID: 2518675752222090673}
   - component: {fileID: -2891053913955529769}
   - component: {fileID: 9209194230390332424}
-  - component: {fileID: 3694386544647984224}
+  - component: {fileID: 2185777145346564116}
   m_Layer: 12
   m_Name: Fire Barge
   m_TagString: Ship
@@ -113,7 +113,7 @@ MonoBehaviour:
   Level: {fileID: 0}
   Stage: {fileID: 0}
   Side: 2
-  Collider: {fileID: 3694386544647984224}
+  Collider: {fileID: 2185777145346564116}
   Body: {fileID: 9209194230390332424}
   _entity: {fileID: 0}
   ShowDebug: 0
@@ -191,11 +191,9 @@ MonoBehaviour:
   Brain: {fileID: 2411785222874787719}
   NearbyAsteroids: []
   Turrets: []
-  ProximityCollider: {fileID: 0}
   ShipAnimationController: {fileID: 0}
   RotationSpeed: 0
   TargetEnemyShipToFollow: {fileID: 0}
-  TargetEnemyShipToFollowId: 0
   Killer: {fileID: 0}
   ShipRemains: {fileID: 0}
   ShipTypeLetter: 20
@@ -289,8 +287,8 @@ Rigidbody2D:
   m_SleepingMode: 1
   m_CollisionDetection: 0
   m_Constraints: 0
---- !u!60 &3694386544647984224
-PolygonCollider2D:
+--- !u!61 &2185777145346564116
+BoxCollider2D:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
@@ -331,24 +329,9 @@ PolygonCollider2D:
     drawMode: 0
     adaptiveTiling: 0
   m_AutoTiling: 0
-  m_Points:
-    m_Paths:
-    - - {x: -6.947772, y: -4.5339904}
-      - {x: 6.9570723, y: -4.539692}
-      - {x: 8.675, y: -3.525}
-      - {x: 9.425, y: -2.025}
-      - {x: 9.5, y: -1.85}
-      - {x: 9.5, y: 3.575}
-      - {x: 9.325, y: 3.775}
-      - {x: 8.825, y: 4.275}
-      - {x: 8.575, y: 4.5}
-      - {x: -8.55, y: 4.5}
-      - {x: -9.5, y: 3.55}
-      - {x: -9.5, y: -1.85}
-      - {x: -9.45, y: -2.025}
-      - {x: -8.825, y: -3.275}
-      - {x: -8.650001, y: -3.575}
-  m_UseDelaunayMesh: 0
+  serializedVersion: 2
+  m_Size: {x: 16, y: 7}
+  m_EdgeRadius: 0
 --- !u!1001 &537928408941479015
 PrefabInstance:
   m_ObjectHideFlags: 0

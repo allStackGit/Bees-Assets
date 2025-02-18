@@ -12,7 +12,7 @@ GameObject:
   - component: {fileID: 2518675752222090673}
   - component: {fileID: -8293014486146453711}
   - component: {fileID: 9209194230390332424}
-  - component: {fileID: 7194127028750258853}
+  - component: {fileID: 1768310455394373730}
   m_Layer: 14
   m_Name: Striker
   m_TagString: Ship
@@ -112,7 +112,7 @@ MonoBehaviour:
   Level: {fileID: 0}
   Stage: {fileID: 0}
   Side: 2
-  Collider: {fileID: 7194127028750258853}
+  Collider: {fileID: 1768310455394373730}
   Body: {fileID: 9209194230390332424}
   _entity: {fileID: 0}
   ShowDebug: 0
@@ -188,11 +188,9 @@ MonoBehaviour:
   Brain: {fileID: 7644117084562194936}
   NearbyAsteroids: []
   Turrets: []
-  ProximityCollider: {fileID: 0}
   ShipAnimationController: {fileID: 0}
   RotationSpeed: 0
   TargetEnemyShipToFollow: {fileID: 0}
-  TargetEnemyShipToFollowId: 0
   Killer: {fileID: 0}
   ShipRemains: {fileID: 0}
   ShipTypeLetter: 16
@@ -260,7 +258,6 @@ MonoBehaviour:
   RLShipType: 0
   _retries: 0
   Carrier: {fileID: 0}
-  CarrierId: 0
   IsBombReady: 0
   HasCompletedRun: 0
   HasDroppedBomb: 0
@@ -298,8 +295,8 @@ Rigidbody2D:
   m_SleepingMode: 1
   m_CollisionDetection: 0
   m_Constraints: 0
---- !u!60 &7194127028750258853
-PolygonCollider2D:
+--- !u!58 &1768310455394373730
+CircleCollider2D:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
@@ -331,31 +328,8 @@ PolygonCollider2D:
   m_UsedByEffector: 0
   m_UsedByComposite: 0
   m_Offset: {x: 0, y: 0}
-  m_SpriteTilingProperty:
-    border: {x: 0, y: 0, z: 0, w: 0}
-    pivot: {x: 0.5, y: 0.5}
-    oldSize: {x: 4, y: 4}
-    newSize: {x: 1.6, y: 1.6}
-    adaptiveTilingThreshold: 0.5
-    drawMode: 0
-    adaptiveTiling: 0
-  m_AutoTiling: 0
-  m_Points:
-    m_Paths:
-    - - {x: 0.80208105, y: -1.6893241}
-      - {x: 0.8, y: -1.3000001}
-      - {x: 2.0608308, y: -1.277437}
-      - {x: 2.0565, y: 0.047763914}
-      - {x: 1.0278565, y: 1.9359789}
-      - {x: 0.648833, y: 1.925232}
-      - {x: 0.022487164, y: 1.1471016}
-      - {x: -0.5436189, y: 1.9038923}
-      - {x: -1.0500001, y: 1.9036103}
-      - {x: -1.9964803, y: 0.125}
-      - {x: -2.0476537, y: -1.2644408}
-      - {x: -0.725, y: -1.3131772}
-      - {x: -0.72938967, y: -1.680222}
-  m_UseDelaunayMesh: 0
+  serializedVersion: 2
+  m_Radius: 1.6
 --- !u!1001 &758350684379290928
 PrefabInstance:
   m_ObjectHideFlags: 0

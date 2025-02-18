@@ -12,7 +12,7 @@ GameObject:
   - component: {fileID: 731483193027966548}
   - component: {fileID: 6300979676642345473}
   - component: {fileID: 6277810116308881389}
-  - component: {fileID: 5638430987097987723}
+  - component: {fileID: 640674580306557361}
   m_Layer: 11
   m_Name: Honeybee
   m_TagString: Ship
@@ -108,15 +108,15 @@ MonoBehaviour:
   Level: {fileID: 0}
   Stage: {fileID: 0}
   Side: 1
-  Collider: {fileID: 5638430987097987723}
+  Collider: {fileID: 640674580306557361}
   Body: {fileID: 6277810116308881389}
+  _entity: {fileID: 0}
   ShowDebug: 0
   Health: 0
   MaxHealth: 0
   OriginalHealth: 0
   OriginalTsv: 0
   Sight: 0
-  AdditionalTsv: 0
   Clearance: 0
   MaxRange: 0
   HalfMaxRange: 0
@@ -181,7 +181,6 @@ MonoBehaviour:
   Brain: {fileID: 521218637271496490}
   NearbyAsteroids: []
   Turrets: []
-  ProximityCollider: {fileID: 0}
   ShipAnimationController: {fileID: 0}
   RotationSpeed: 0
   TargetEnemyShipToFollow: {fileID: 0}
@@ -191,6 +190,12 @@ MonoBehaviour:
   ShootingStrategy: 0
   ShipExplosionSoundEffect: {fileID: 0}
   HasShipExplosionSoundEffect: 0
+  Firepower: 0
+  DamagePerSecond: 0
+  Tsv: 0
+  HasWeapons: 0
+  IsCarrierShip: 0
+  IsMoving: 0
   PathfindingThreadComplete: 0
   IsPathfinding: 0
   PathfindingThread: 0
@@ -244,6 +249,7 @@ MonoBehaviour:
   RLSide: 0
   RLHealth: 0
   RLShipType: 0
+  _retries: 0
 --- !u!50 &6277810116308881389
 Rigidbody2D:
   serializedVersion: 4
@@ -271,8 +277,8 @@ Rigidbody2D:
   m_SleepingMode: 1
   m_CollisionDetection: 0
   m_Constraints: 0
---- !u!60 &5638430987097987723
-PolygonCollider2D:
+--- !u!58 &640674580306557361
+CircleCollider2D:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
@@ -304,32 +310,8 @@ PolygonCollider2D:
   m_UsedByEffector: 0
   m_UsedByComposite: 0
   m_Offset: {x: 0, y: 0}
-  m_SpriteTilingProperty:
-    border: {x: 0, y: 0, z: 0, w: 0}
-    pivot: {x: 0.5, y: 0.5}
-    oldSize: {x: 4, y: 4}
-    newSize: {x: 0.48, y: 0.64}
-    adaptiveTilingThreshold: 0.5
-    drawMode: 0
-    adaptiveTiling: 0
-  m_AutoTiling: 0
-  m_Points:
-    m_Paths:
-    - - {x: 1.074402, y: -0.55919415}
-      - {x: 1.95, y: -0.025}
-      - {x: 2, y: 1.1750001}
-      - {x: 0.5, y: 1.3000001}
-      - {x: 0.8, y: 2}
-      - {x: 0.475, y: 1.825}
-      - {x: -0.19531572, y: 1.6236789}
-      - {x: -0.825, y: 2}
-      - {x: -0.55, y: 1.375}
-      - {x: -2, y: 1.1750001}
-      - {x: -1.95, y: -0.025}
-      - {x: -1.0609901, y: -0.56269646}
-      - {x: -0.35, y: -2}
-      - {x: 0.425, y: -2}
-  m_UseDelaunayMesh: 0
+  serializedVersion: 2
+  m_Radius: 1.5
 --- !u!1001 &937265131447967043
 PrefabInstance:
   m_ObjectHideFlags: 0

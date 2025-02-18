@@ -112,13 +112,13 @@ MonoBehaviour:
   Side: 2
   Collider: {fileID: 7211799519643133341}
   Body: {fileID: 9209194230390332424}
+  _entity: {fileID: 0}
   ShowDebug: 0
   Health: 0
   MaxHealth: 0
   OriginalHealth: 0
   OriginalTsv: 0
   Sight: 0
-  AdditionalTsv: 0
   Clearance: 0
   MaxRange: 0
   HalfMaxRange: 0
@@ -185,7 +185,6 @@ MonoBehaviour:
   Brain: {fileID: 234994609009913064}
   NearbyAsteroids: []
   Turrets: []
-  ProximityCollider: {fileID: 0}
   ShipAnimationController: {fileID: 0}
   RotationSpeed: 0
   TargetEnemyShipToFollow: {fileID: 0}
@@ -195,6 +194,12 @@ MonoBehaviour:
   ShootingStrategy: 0
   ShipExplosionSoundEffect: {fileID: 0}
   HasShipExplosionSoundEffect: 0
+  Firepower: 0
+  DamagePerSecond: 0
+  Tsv: 0
+  HasWeapons: 0
+  IsCarrierShip: 0
+  IsMoving: 0
   PathfindingThreadComplete: 0
   IsPathfinding: 0
   PathfindingThread: 0
@@ -248,6 +253,7 @@ MonoBehaviour:
   RLSide: 0
   RLHealth: 0
   RLShipType: 0
+  _retries: 0
 --- !u!60 &7211799519643133341
 PolygonCollider2D:
   m_ObjectHideFlags: 0
@@ -292,35 +298,14 @@ PolygonCollider2D:
   m_AutoTiling: 0
   m_Points:
     m_Paths:
-    - - {x: -3.539828, y: -5.896803}
-      - {x: -2.9058876, y: -7.070246}
-      - {x: -1.7463648, y: -7.077414}
-      - {x: -1.7178341, y: -6.628691}
-      - {x: 1.7385588, y: -6.584104}
-      - {x: 1.8004118, y: -7.0838346}
-      - {x: 2.8631577, y: -7.061349}
-      - {x: 3.602915, y: -5.7746315}
-      - {x: 4.4945583, y: -7.089986}
-      - {x: 5.318818, y: -7.083841}
-      - {x: 6.167076, y: -5.9822993}
-      - {x: 6.0919433, y: -4.6643295}
-      - {x: 4.75, y: -3.95}
-      - {x: 3.9750001, y: -3.925}
-      - {x: 3.526355, y: -3.914531}
-      - {x: 2.95, y: -3.2547047}
-      - {x: 2.925, y: 7}
-      - {x: 2.4180255, y: 7.0522866}
-      - {x: 1.9527823, y: 6.5698857}
-      - {x: -2.009046, y: 6.602334}
-      - {x: -2.3927562, y: 7.063807}
-      - {x: -2.925, y: 7}
+    - - {x: 5.462208, y: -6.405998}
+      - {x: 5.7160387, y: -4.816627}
+      - {x: 2.5306523, y: -3.3526042}
+      - {x: 2.472985, y: 6.030266}
+      - {x: -2.6086764, y: 5.963598}
       - {x: -2.925, y: -3}
-      - {x: -3.4974873, y: -3.9196365}
-      - {x: -4.7739544, y: -3.9096253}
-      - {x: -6.050439, y: -4.5587053}
-      - {x: -6.141151, y: -5.8531847}
-      - {x: -5.3250003, y: -7}
-      - {x: -4.5750003, y: -7}
+      - {x: -5.581164, y: -4.897627}
+      - {x: -5.51545, y: -6.270319}
   m_UseDelaunayMesh: 0
 --- !u!50 &9209194230390332424
 Rigidbody2D:

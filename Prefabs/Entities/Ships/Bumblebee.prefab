@@ -111,13 +111,13 @@ MonoBehaviour:
   Side: 1
   Collider: {fileID: 2223322355541266078}
   Body: {fileID: -2071178775999696513}
+  _entity: {fileID: 0}
   ShowDebug: 0
   Health: 0
   MaxHealth: 0
   OriginalHealth: 0
   OriginalTsv: 0
   Sight: 0
-  AdditionalTsv: 0
   Clearance: 0
   MaxRange: 0
   HalfMaxRange: 0
@@ -183,7 +183,6 @@ MonoBehaviour:
   Brain: {fileID: 335846899064515355}
   NearbyAsteroids: []
   Turrets: []
-  ProximityCollider: {fileID: 0}
   ShipAnimationController: {fileID: 0}
   RotationSpeed: 0
   TargetEnemyShipToFollow: {fileID: 0}
@@ -193,6 +192,12 @@ MonoBehaviour:
   ShootingStrategy: 0
   ShipExplosionSoundEffect: {fileID: 0}
   HasShipExplosionSoundEffect: 0
+  Firepower: 0
+  DamagePerSecond: 0
+  Tsv: 0
+  HasWeapons: 0
+  IsCarrierShip: 0
+  IsMoving: 0
   PathfindingThreadComplete: 0
   IsPathfinding: 0
   PathfindingThread: 0
@@ -246,6 +251,7 @@ MonoBehaviour:
   RLSide: 0
   RLHealth: 0
   RLShipType: 0
+  _retries: 0
 --- !u!50 &-2071178775999696513
 Rigidbody2D:
   serializedVersion: 4
@@ -317,18 +323,15 @@ PolygonCollider2D:
   m_AutoTiling: 0
   m_Points:
     m_Paths:
-    - - {x: -2.0935795, y: -3.070044}
-      - {x: 1.5130492, y: -3.177654}
-      - {x: 6.456271, y: -5.877362}
-      - {x: 6.998372, y: -5.8812857}
-      - {x: 8.530919, y: -2.8836172}
-      - {x: 6.0774016, y: 3.0989761}
-      - {x: 0.7882283, y: 4.982217}
-      - {x: -0.8236824, y: 5.0161905}
-      - {x: -6.0315323, y: 3.0212166}
-      - {x: -8.504215, y: -2.7800956}
-      - {x: -7.0400496, y: -5.8314013}
-      - {x: -6.2797403, y: -5.8528275}
+    - - {x: -6.517788, y: -4.9744306}
+      - {x: -4.121229, y: -2.8256571}
+      - {x: 4.2603216, y: -2.8709276}
+      - {x: 6.659901, y: -4.999029}
+      - {x: 7.6617913, y: -2.812182}
+      - {x: 5.160651, y: 2.5155892}
+      - {x: -0.045181394, y: 4.48217}
+      - {x: -5.587892, y: 2.8698645}
+      - {x: -7.684632, y: -3.5669038}
   m_UseDelaunayMesh: 0
 --- !u!1001 &609310825290430481
 PrefabInstance:
