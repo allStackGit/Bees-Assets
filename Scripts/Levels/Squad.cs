@@ -476,7 +476,7 @@ namespace Assets.Scripts.Levels
         }
         public void Kill(bool endKill = false)
         {
-            Debug.Log($"Killing squad {Name}");
+            //Debug.Log($"Killing squad {Name}");
             if (!IsDead)
             {
                 IsDead = true;
@@ -706,15 +706,15 @@ namespace Assets.Scripts.Levels
 
                 _atTheWalls = 0;
                 _tempPosition = GetPosition();
-                if (_tempPosition.x < (Level.Map.SpriteRenderer.bounds.min.x + _distance) || _tempPosition.x > (Level.Map.SpriteRenderer.bounds.max.x - _distance)) // check if it's at the sides
+                if (_tempPosition.x < (Level.MinX + _distance) || _tempPosition.x > (Level.MaxX - _distance)) // check if it's at the sides
                 {
                     _atTheWalls = 1;
-                    if (_tempPosition.y < (Level.Map.SpriteRenderer.bounds.min.y + _distance) || _tempPosition.y > (Level.Map.SpriteRenderer.bounds.max.y - _distance))
+                    if (_tempPosition.y < (Level.MinY + _distance) || _tempPosition.y > (Level.MaxY - _distance))
                     {
                         _atTheWalls = 2;
                     }
                 }
-                else if (_tempPosition.y < (Level.Map.SpriteRenderer.bounds.min.y + _distance) || _tempPosition.y > (Level.Map.SpriteRenderer.bounds.max.y - _distance))
+                else if (_tempPosition.y < (Level.MinY + _distance) || _tempPosition.y > (Level.MaxY - _distance))
                 {
                     _atTheWalls = 1;
                 }

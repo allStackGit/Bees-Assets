@@ -10,7 +10,6 @@ namespace Assets.Scripts.Entities
         public Rigidbody2D Body;
         public int Speed;
         public int HalfSeconds;
-        public SpriteRenderer SpriteRenderer;
         private ScaledTimer _deathTimer = new ScaledTimer();
         public override void Create(Stage stage)
         {

@@ -7,23 +7,27 @@ namespace Assets.Scripts.Entities
     public class MapBorder : Obstacle
     {
 
+        private GameObject _collidingThing;
+        private CollisionAsteroid _collisionAsteroid;
+        private Ship _collidingShip;
+        private Barge _collidingBarge;
         protected void OnTriggerExit2D(Collider2D collider)
         {
             //Debug.Log($"{Name} collided");
-            GameObject collidingThing = collider.gameObject;
+            _collidingThing = collider.gameObject;
             //Debug.Log($"Projectile #{Id} collided with {collidingThing.name} at {Level.Updates} updates");
-            if (collidingThing.CompareTag("Obstacle"))
+            if (_collidingThing.CompareTag("Obstacle"))
             {
-                CollisionAsteroid asteroid = collidingThing.GetComponent<CollisionAsteroid>();
-                if (asteroid.HasEnteredMap) 
+                _collisionAsteroid = _collidingThing.GetComponent<CollisionAsteroid>();
+                if (_collisionAsteroid.HasEnteredMap) 
                 {
-                    Debug.Log($"{asteroid.Name} left the map border and is being killed at {asteroid.GetPosition()}");
-                    asteroid.Kill(true);
+                    Debug.Log($"{_collisionAsteroid.Name} left the map border and is being killed at {_collisionAsteroid.GetPosition()}");
+                    _collisionAsteroid.Kill(true);
                 }
                 else
                 {
-                    Debug.Log($"{asteroid.Name} entered the map border at {asteroid.GetPosition()}");
-                    asteroid.HasEnteredMap = true;
+                    Debug.Log($"{_collisionAsteroid.Name} entered the map border at {_collisionAsteroid.GetPosition()}");
+                    _collisionAsteroid.HasEnteredMap = true;
                 }
 
 
@@ -33,31 +37,31 @@ namespace Assets.Scripts.Entities
         protected override void OnTriggerEnter2D(Collider2D collider)
         {
             //Debug.Log($"{Name} collided");
-            GameObject collidingThing = collider.gameObject;
-            if (collidingThing.CompareTag("Ship"))
+            _collidingThing = collider.gameObject;
+            if (_collidingThing.CompareTag("Ship"))
             {
                 //Debug.Log("Hit by ship");
-                Ship ship = collidingThing.GetComponent<Ship>();
-                if (ship.HasTargetDirection)
+                _collidingShip = _collidingThing.GetComponent<Ship>();
+                if (_collidingShip.HasTargetDirection)
                 {
                     //Debug.Log($"{Name} hit the map border while moving in a direction");
-                    if (ship.ShipType == ConfigData.ShipTypes.Barge)
+                    if (_collidingShip.ShipType == ConfigData.ShipTypes.Barge)
                     {
-                        Barge barge = (Barge)ship;
-                        if (barge.IsCharging)
+                        _collidingBarge = (Barge)_collidingShip;
+                        if (_collidingBarge.IsCharging)
                         {
-                            StartCoroutine(barge.StopCharge());
+                            StartCoroutine(_collidingBarge.StopCharge());
                             return;
                         }
                     }
-                    ship.StopMoving("Hit map border");
+                    _collidingShip.StopMoving("Hit map border");
                 }
             }
-            else if (collidingThing.CompareTag("Obstacle"))
+            else if (_collidingThing.CompareTag("Obstacle"))
             {
-                CollisionAsteroid asteroid = collidingThing.GetComponent<CollisionAsteroid>();
-                asteroid.HasTouchedMapBorder = true;
-                Debug.Log($"{asteroid.Name} has touched the map border");
+                _collisionAsteroid = _collidingThing.GetComponent<CollisionAsteroid>();
+                _collisionAsteroid.HasTouchedMapBorder = true;
+                Debug.Log($"{_collisionAsteroid.Name} has touched the map border");
 
             }
 

@@ -11,8 +11,6 @@ namespace Assets.Scripts.Levels
 {
     public class LevelInputManager
     {
-        private bool _rightMouseButtonDown;
-        private bool _leftMouseButtonDown;
         /// <summary>
         /// Whether or not the left mouse button has been pressed down, instead of return false the next frame it returns false after a short delay so that double clicks can be registered
         /// </summary>
@@ -454,7 +452,6 @@ namespace Assets.Scripts.Levels
                     CheckForMiniMapNavigation(LeftClick);
                     return;
                 }
-                _leftMouseButtonDown = true;
                 _leftMouseButtonUp = false;
                 _mouseDownPosition = new Vector2(_mousePosition.x, _mousePosition.y);
                 if (_leftMouseClicked)
@@ -471,7 +468,6 @@ namespace Assets.Scripts.Levels
                     return;
                 }
                 _leftMouseButtonUp = true;
-                _leftMouseButtonDown = false;
             }
             else if (Input.GetMouseButtonDown(RightClick)) // right mouse button down
             {
@@ -481,7 +477,6 @@ namespace Assets.Scripts.Levels
                     return;
                 }
                 _rightMouseButtonUp = false;
-                _rightMouseButtonDown = true;
                 _isRightMouseDownPrior = true;
                 Timers.Add(new Timer(.25f, SetRightMouseDownLongEnoughForDragging));
             }
@@ -489,7 +484,6 @@ namespace Assets.Scripts.Levels
             {
                 if (EventSystem.IsPointerOverGameObject()) return;
                 _rightMouseButtonUp = true;
-                _rightMouseButtonDown = false;
                 _isRightMouseDownPrior = false;
                 _isRightMouseDragging = false;
             }

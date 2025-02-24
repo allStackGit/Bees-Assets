@@ -163,7 +163,7 @@ namespace Assets.Scripts.Levels
         int minY, minX, maxY, maxX, boundsX, boundsY, x, y, yMovement, nextX = 0;
         bool hasHitObstacle;
         MapNode currentNode, loopNode, previousNode;
-        int loopsSaved = 0;
+        //int loopsSaved = 0;
         public void CalculateClearance(MapNode[][] nodes, int startX, int endX, int startY, int endY, int maxClearance, bool isSubSection)
         {
             //loopsSaved = 0;
@@ -597,6 +597,7 @@ namespace Assets.Scripts.Levels
                     {
                         Debug.Log($"Nearby Asteroids: {Utilities.ListToString(collisionAsteroids)}");
                         Debug.LogError($"Ship: {ship.Name},Obstacle: {asteroid} ThreadIndex: {threadIndex}, MapPointIndex: {asteroid.MapPointsIndex}, length: {ObstaclePoints[threadIndex].Count}");
+                        throw e;
                     }
                     //float obstaclePointsEnd = (Time.realtimeSinceStartup - obstaclePoints) * 1000; // seconds to milliseconds
                     //Debug.Log($"Updated obstacle points in {obstaclePointsEnd} ms"); // takes less than a millisecond

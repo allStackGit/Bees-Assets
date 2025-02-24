@@ -73,7 +73,7 @@ SpriteRenderer:
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: -1489320777
-  m_SortingLayer: 7
+  m_SortingLayer: 10
   m_SortingOrder: 2
   m_Sprite: {fileID: 133110120, guid: ad7cd14d465132d4bac615c7c4626be7, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -120,11 +120,14 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   SpriteRenderer: {fileID: 711389237945103311}
+  Animator: {fileID: 3945804149284103428}
   Ship: {fileID: 0}
-  AnimationSpriteToRecolor: {fileID: 133110120, guid: ad7cd14d465132d4bac615c7c4626be7, type: 3}
   CurrentSprite: {fileID: 0}
   RecoloredSprites: []
   ShouldSwapSprite: 0
-  SpriteRows: 6
-  SpriteColumns: 9
+  UseSecondaryLoop: 0
+  IsReadyToWarp: 0
+  TotalSprites: 0
   SpriteIndex: 0
+  ModuloIndex: 0
+  SkipSprites: 0

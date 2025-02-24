@@ -239,6 +239,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   FogOfWar: {fileID: 1365853013625425597}
+  Decorations:
+  - {fileID: 8274305078945061505}
+  - {fileID: 8391265524591358300}
+  - {fileID: 3251514124339120682}
+  - {fileID: 3202333247437361040}
   SpriteRenderer: {fileID: 1498712098278513617}
   MaxZoom: 288
   MinZoom: 25
@@ -534,6 +539,11 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 7532473174318184516, guid: c3579c228df2e284bbe4b88e145ab5e0, type: 3}
   m_PrefabInstance: {fileID: 3674148677928164654}
   m_PrefabAsset: {fileID: 0}
+--- !u!1 &8274305078945061505 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 4623242301682616239, guid: c3579c228df2e284bbe4b88e145ab5e0, type: 3}
+  m_PrefabInstance: {fileID: 3674148677928164654}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &3772554042637940467
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -594,6 +604,11 @@ PrefabInstance:
 --- !u!4 &6688537694642966199 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 7532473174318184516, guid: c8503c9a59d14614189ada87b25f4454, type: 3}
+  m_PrefabInstance: {fileID: 3772554042637940467}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1 &8391265524591358300 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 4623242301682616239, guid: c8503c9a59d14614189ada87b25f4454, type: 3}
   m_PrefabInstance: {fileID: 3772554042637940467}
   m_PrefabAsset: {fileID: 0}
 --- !u!1001 &7326744777552445776
@@ -702,6 +717,11 @@ PrefabInstance:
 --- !u!4 &413773506331342273 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 7532473174318184516, guid: 18866f315416a0440b28be86899042d8, type: 3}
+  m_PrefabInstance: {fileID: 7869684926146940293}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1 &3251514124339120682 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 4623242301682616239, guid: 18866f315416a0440b28be86899042d8, type: 3}
   m_PrefabInstance: {fileID: 7869684926146940293}
   m_PrefabAsset: {fileID: 0}
 --- !u!1001 &9162379213798393912

@@ -24,6 +24,10 @@ PrefabInstance:
       propertyPath: m_Color.r
       value: 1
       objectReference: {fileID: 0}
+    - target: {fileID: 4408780908096395132, guid: da38269fea4455643a492c57b83df01a, type: 3}
+      propertyPath: m_Enabled
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 5858146905997220656, guid: da38269fea4455643a492c57b83df01a, type: 3}
       propertyPath: Name
       value: Right Border

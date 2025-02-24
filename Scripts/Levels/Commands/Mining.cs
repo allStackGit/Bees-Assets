@@ -126,7 +126,7 @@ namespace Assets.Scripts.Levels.Commands
 
                     Tsv += _amountMined;
                     TargetAstroid.Health -= _amountMined;
-                    Debug.Log($"{GetSquad().Name} mined {_amountMined} from {TargetAstroid.Name}. It has {TargetAstroid.Health} health left");
+                    //Debug.Log($"{GetSquad().Name} mined {_amountMined} from {TargetAstroid.Name}. It has {TargetAstroid.Health} health left");
 
                     _amountPerShip = _amountMined / ShipsCurrentlyMining.Count;
                     ShipsCurrentlyMining.Select((s) => Level.State.GetShipById(s)).ToList().ForEach((ship) =>

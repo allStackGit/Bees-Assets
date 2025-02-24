@@ -155,7 +155,7 @@ MonoBehaviour:
   IsMiningShip: 0
   IsWarpGate: 0
   HasTargetDirection: 0
-  HasVision: 0
+  HasUserVision: 0
   HasProximityCollider: 0
   HasShipAnimation: 0
   HasRocketFlares: 0
@@ -196,6 +196,7 @@ MonoBehaviour:
   DamagePerSecond: 0
   Tsv: 0
   HasWeapons: 0
+  HasTurrets: 0
   IsCarrierShip: 0
   IsMoving: 0
   PathfindingThreadComplete: 0
@@ -252,6 +253,7 @@ MonoBehaviour:
   RLHealth: 0
   RLShipType: 0
   _retries: 0
+  MiningAnimation: {fileID: 8908017228487048187}
 --- !u!50 &9209194230390332424
 Rigidbody2D:
   serializedVersion: 4

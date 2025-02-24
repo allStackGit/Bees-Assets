@@ -420,7 +420,7 @@ namespace Assets.Scripts.Levels
             //{
             //    RLSocket.Update();
             //}
-            if (State.GameOver && !State.LevelEnded /*&& !State.CanShipsKeepMining()*/) // Need to make sure minig command works first
+            if (State.GameOver && !State.LevelEnded && !State.CanShipsKeepMining())
             {
                 LevelOver();
                 return;
@@ -756,10 +756,6 @@ namespace Assets.Scripts.Levels
 
                 Map.FogOfWar.SetActive(true);
             }
-            else
-            {
-                Map.FogOfWar.SetActive(false);
-            }
 
             SetupHivemind();
 
@@ -941,15 +937,9 @@ namespace Assets.Scripts.Levels
             }
             else
             {
-                if (Stage.IsTraining)
-                {
-                    Stage.MiniMapCameraContainer.SetActive(false);
-                    Stage.MiniMapDisplayCanvas.SetActive(false);
-                    //Camera.gameObject.SetActive(false);
-                }
                 //CancelInvoke(nameof(TimeOut));
-                _timeoutTimer .Reuse(Stage.TimeoutTime, TimeOut);
                 CancelTimer(_timeoutTimer);
+                _timeoutTimer.Reuse(Stage.TimeoutTime, TimeOut);
                 AddTimer(_timeoutTimer);
                 //Invoke(nameof(TimeOut), Stage.TimeoutTime);
             }
@@ -1110,7 +1100,7 @@ namespace Assets.Scripts.Levels
                 Stage.Menus.ToggleMiniMapDisplay();
             }
 
-            Debug.Log($"{Name} ended and cleared");
+            //Debug.Log($"{Name} ended and cleared");
 
             if (Stage.DoesUserHaveController && !IsRestarting)
             {

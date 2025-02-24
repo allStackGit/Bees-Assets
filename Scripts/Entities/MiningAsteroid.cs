@@ -27,27 +27,29 @@ namespace Assets.Scripts.Entities
         {
             MiningCollision(collider);
         }
-
+        private GameObject _collidingThing;
+        private Ship _miningShip;
+        private Mining _command;
         public void MiningCollision(Collider2D collider)
         {
             //Debug.Log($"{Name} collided");
-            GameObject collidingThing = collider.gameObject;
-            if (collidingThing.CompareTag("Ship"))
+            _collidingThing = collider.gameObject;
+            if (_collidingThing.CompareTag("Ship"))
             {
-                Ship ship = collidingThing.GetComponent<Ship>();
-                if (ship.IsMiningShip && ship.Squad.HasCommand && ship.Squad.GetCommand().CommandType == ConfigData.CommandTypes.Mining)
+                _miningShip = _collidingThing.GetComponent<Ship>();
+                if (_miningShip.IsMiningShip && _miningShip.Squad.HasCommand && _miningShip.Squad.GetCommand().CommandType == ConfigData.CommandTypes.Mining)
                 {
-                    Mining command = ((Mining)ship.Squad.GetCommand());
+                    _command = ((Mining)_miningShip.Squad.GetCommand());
 
-                    if (!command.ShipsCurrentlyMining.Contains(ship.Id) && command.TargetAstroid == this)
+                    if (!_command.ShipsCurrentlyMining.Contains(_miningShip.Id) && _command.TargetAstroid == this)
                     {
-                        Debug.Log($"{ship.Name} is mining {Name}");
-                        if (!SquadsMining.Contains(ship.Squad))
+                        //Debug.Log($"{_miningShip.Name} is mining {Name}");
+                        if (!SquadsMining.Contains(_miningShip.Squad))
                         {
-                            SquadsMining.Add(ship.Squad);
+                            SquadsMining.Add(_miningShip.Squad);
 
                         }
-                        command.FoundAsteroid(ship);
+                        _command.FoundAsteroid(_miningShip);
 
                     }
 

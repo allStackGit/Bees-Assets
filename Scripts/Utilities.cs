@@ -1147,7 +1147,7 @@ namespace Assets.Scripts
 
         // Private class-level variables for TimedRotationDifference method
         private static float _timedRotationDifferenceDifference; // Method: TimedRotationDifference
-        private static Vector3 _timedRotationDifferenceRotationVector; // Method: TimedRotationDifference
+        //private static Vector3 _timedRotationDifferenceRotationVector; // Method: TimedRotationDifference
 
         public static float TimedRotationDifference(GameObject entity, float rotation, float rotationSpeed)
         {
@@ -1155,19 +1155,19 @@ namespace Assets.Scripts
 
             if (_timedRotationDifferenceDifference > 3)
             {
-                _timedRotationDifferenceRotationVector = new Vector3(0, 0, 1 * Time.fixedDeltaTime * rotationSpeed);
-                entity.transform.Rotate(_timedRotationDifferenceRotationVector);
+                //_timedRotationDifferenceRotationVector = new Vector3(0, 0, 1 * Time.fixedDeltaTime * rotationSpeed);
+                entity.transform.Rotate(Vector3.forward * Time.fixedDeltaTime * rotationSpeed);
                 return _timedRotationDifferenceDifference;
             }
             else if (_timedRotationDifferenceDifference < -3)
             {
-                _timedRotationDifferenceRotationVector = new Vector3(0, 0, 1 * Time.fixedDeltaTime * rotationSpeed * -1);
-                entity.transform.Rotate(_timedRotationDifferenceRotationVector);
+                //_timedRotationDifferenceRotationVector = new Vector3(0, 0, 1 * Time.fixedDeltaTime * rotationSpeed * -1);
+                entity.transform.Rotate(Vector3.forward * Time.fixedDeltaTime * -rotationSpeed);
                 return _timedRotationDifferenceDifference;
             }
             else
             {
-                entity.transform.eulerAngles = new Vector3(0, 0, rotation);
+                entity.transform.eulerAngles = Vector3.forward * rotation;
                 return 0;
             }
         }

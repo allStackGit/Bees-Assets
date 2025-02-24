@@ -227,7 +227,7 @@ MonoBehaviour:
   IsMiningShip: 0
   IsWarpGate: 0
   HasTargetDirection: 0
-  HasVision: 0
+  HasUserVision: 0
   HasProximityCollider: 0
   HasShipAnimation: 0
   HasRocketFlares: 0
@@ -271,6 +271,7 @@ MonoBehaviour:
   DamagePerSecond: 0
   Tsv: 0
   HasWeapons: 0
+  HasTurrets: 0
   IsCarrierShip: 0
   IsMoving: 0
   PathfindingThreadComplete: 0
@@ -501,6 +502,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   SpriteRenderer: {fileID: 4729914865175263180}
+  Animator: {fileID: 3211288399601708920}
   Ship: {fileID: 5834194475373852831}
   CurrentSprite: {fileID: 0}
   RecoloredSprites: []
@@ -511,6 +513,11 @@ MonoBehaviour:
   SpriteIndex: 0
   ModuloIndex: 5
   SkipSprites: 21
+--- !u!95 &3211288399601708920 stripped
+Animator:
+  m_CorrespondingSourceObject: {fileID: 3303455900732516338, guid: 6e5044801eacfbe4796e0552e595c46e, type: 3}
+  m_PrefabInstance: {fileID: 92590332390393994}
+  m_PrefabAsset: {fileID: 0}
 --- !u!212 &4729914865175263180 stripped
 SpriteRenderer:
   m_CorrespondingSourceObject: {fileID: 4678389990816726854, guid: 6e5044801eacfbe4796e0552e595c46e, type: 3}

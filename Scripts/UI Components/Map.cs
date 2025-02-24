@@ -1,6 +1,5 @@
 ﻿using Assets.Scripts.Levels;
-using Assets.Scripts.Scenes;
-using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Assets.Scripts.UI_Components
@@ -8,6 +7,7 @@ namespace Assets.Scripts.UI_Components
     public class Map : MonoBehaviour
     {
         public GameObject FogOfWar;
+        public List<GameObject> Decorations;
         public SpriteRenderer SpriteRenderer;
         public int MaxZoom, MinZoom, MiniMapCameraSize;
         public Vector2 UserStartingPosition, AIStartingPosition;
@@ -28,15 +28,11 @@ namespace Assets.Scripts.UI_Components
             AIStartingPosition = aiStartingPosition;
             if (stage.IsTraining)
             {
-                if (RingSparkle != null)
-                {
-                    Destroy(RingSparkle.gameObject);
-
-                }
                 Destroy(FogOfWar);
+                Decorations.ForEach(d => Destroy(d));
                 if (!stage.IsRendering)
                 {
-                    Destroy(SpriteRenderer);
+                    SpriteRenderer.enabled = false;
                 }
             }
         }
@@ -45,7 +41,7 @@ namespace Assets.Scripts.UI_Components
         {
             transform.parent = level.transform;
             transform.localPosition = Vector2.zero;
-            if (RingSparkle != null && !level.Stage.IsTraining)
+            if (!level.Stage.IsTraining && RingSparkle != null)
             {
                 RingSparkle.Setup(level);
             }

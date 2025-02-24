@@ -7,14 +7,29 @@ namespace Assets.Scripts.Entities.Ships
 {
     public class Factory : Ship
     {
+        public GameObject MiningAnimation;
+        public override void Create(Stage stage)
+        {
+            base.Create(stage);
+            if (Stage.IsTraining)
+            {
+                Destroy(MiningAnimation);
+            }
+        }
         public override void Activate()
         {
-            ShipAnimationController.Activate();
+            if (!Stage.IsTraining)
+            {
+                ShipAnimationController.Activate();
+            }
             base.Activate();
         }
         public override void Deactivate()
         {
-            ShipAnimationController.Deactivate();
+            if (!Stage.IsTraining)
+            {
+                ShipAnimationController.Deactivate();
+            }
             base.Deactivate();
         }
     }

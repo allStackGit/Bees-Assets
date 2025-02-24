@@ -20,6 +20,7 @@ namespace Assets.Scripts.Entities
         public Stage Stage;
         public ConfigData.ObstacleTypes ObstacleType;
         public Collider2D Collider, ProximityCollider, ClearanceMappingCollider;
+        public SpriteRenderer SpriteRenderer;
 
         private int _frameCollisions = 0;
 
@@ -27,6 +28,10 @@ namespace Assets.Scripts.Entities
         {
             Stage = stage;
             OriginalHealth = Health;
+            if (!Stage.IsRendering)
+            {
+                Destroy(SpriteRenderer);
+            }
         }
         public virtual void Setup(Level level)
         {
@@ -66,14 +71,15 @@ namespace Assets.Scripts.Entities
 
             ship.LogDamage((int)(ship.MaxHealth * .2f)); // 20% of ship health
         }
-
+        private GameObject _collidingThing;
+        private Ship _collidingShip;
         public void Collision(Collider2D collider)
         {
-            GameObject collidingThing = collider.gameObject;
-            if (collidingThing.CompareTag("Ship"))
+            _collidingThing = collider.gameObject;
+            if (_collidingThing.CompareTag("Ship"))
             {
-                Ship ship = collidingThing.GetComponent<Ship>();
-                ShipCollision(ship);
+                _collidingShip = _collidingThing.GetComponent<Ship>();
+                ShipCollision(_collidingShip);
             }
         }
 

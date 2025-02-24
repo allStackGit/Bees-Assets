@@ -169,4 +169,5 @@ MonoBehaviour:
   Collider: {fileID: 6610865759102504746}
   ProximityCollider: {fileID: 0}
   ClearanceMappingCollider: {fileID: 0}
+  SpriteRenderer: {fileID: 8637692631591286298}
   SquadsMining: []

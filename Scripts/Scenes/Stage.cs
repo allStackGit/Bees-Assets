@@ -265,6 +265,7 @@ public class Stage : Scene
     /// The box for selecting squads and patrol areas
     /// </summary>
     public GameObject SelectionBox;
+    public List<GameObject> UIElements;
     /// <summary>
     /// The container for the MiniMap Camera
     /// </summary>
@@ -397,6 +398,14 @@ public class Stage : Scene
         if (IsTrainingHiveMind || IsTrainingNueralNetwork)
         {
             IsTraining = true;
+            UIElements.ForEach((go) =>
+            {
+                Destroy(go);
+            });
+            if (!IsRendering)
+            {
+                Destroy(Camera.gameObject);
+            }
         }
         else
         {
@@ -424,10 +433,6 @@ public class Stage : Scene
             {
                 Audio.Setup(PlayMusic, PrimaryLevel);
             }
-            else
-            {
-                Destroy(Audio);
-            }
 
             if (ConfigData.IsPlayingCampaign)
             {
@@ -439,15 +444,6 @@ public class Stage : Scene
             }
 
             //TargetingMouseTexture = TargetingMouse.sprite.texture;
-        }
-        else
-        {
-            //if (ActivateAudio)
-            //{
-            //    Audio.gameObject.SetActive(false);
-            //}
-            Destroy(Selector);
-            Destroy(Menus);
         }
 
 

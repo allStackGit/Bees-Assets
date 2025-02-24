@@ -1098,13 +1098,13 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         private float _maxSpeed, _rotation, _differenceInAngleToPoint;
         public void SetMovementVelocity()
         {
-            _maxSpeed = Stage.IsDebugging ? CurrentSpeed * Stage.SpeedMultiplier : CurrentSpeed;
+            //_maxSpeed = Stage.IsDebugging ? CurrentSpeed * Stage.SpeedMultiplier : CurrentSpeed;
+            _maxSpeed = CurrentSpeed;
 
             // Set the velocity of the ship
             if (HasTargetCoordinates)
             {
                 _rotation = GetDegreesTowardsPoint(TargetCoordinates);
-
             }
             else if (HasTargetDirection)
             {
@@ -1112,14 +1112,18 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             }
             else
             {
+                Debug.LogWarning($"{Name} is triyng to move without target coordinates or target direction");
                 return;
             }
-
             _differenceInAngleToPoint = Utilities.TimedRotationDifference(gameObject, _rotation, RotationSpeed);
+
             _tempAngle = (GetRotation() - 180) * Mathf.Deg2Rad;
+            Body.velocity = new Vector2((_maxSpeed * Mathf.Sin(_tempAngle)), (-1 * _maxSpeed * Mathf.Cos(_tempAngle)));
+            IsMoving = true;
 
             if (HasRocketFlares)
             {
+
                 CenterRocketFlares.ForEach((flare) =>
                 {
                     flare.SetActive(true);
@@ -1197,8 +1201,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             }
 
 
-            Body.velocity = new Vector2((_maxSpeed * Mathf.Sin(_tempAngle)), (-1 * _maxSpeed * Mathf.Cos(_tempAngle)));
-            IsMoving = true;
+
         }
         private void MoveInDirection()
         {
@@ -1242,7 +1245,9 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             {
 
                 //Debug.Log($"Ship {Name} is close enough ({distance}) to the target coordinates {TargetCoordinates} and will now stop moving.");
-                EndDestination($"Ship {Name} is close enough ({_tempDistance}) to the target coordinates {TargetCoordinates}");
+
+                // $"Ship {Name} is close enough ({_tempDistance}) to the target coordinates {TargetCoordinates}"
+                EndDestination();
 
                 //int stacked = GetCountOfSameShipsBelowThisShip();
                 //if (!IsBelowOtherShips())
@@ -1277,15 +1282,16 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 SetCurrentSpeed(TargetEnemyShipToFollow.CurrentSpeed);
                 if (Level.Stage.FixedUpdates % 10 == 0 && DistanceTo(TargetEnemyShipToFollow) < HalfMaxRange)
                 {
-                    EndDestination($"A target ship is within our range");
+                    // $"A target ship is within our range"
+                    EndDestination();
                 }
                 return;
             }
-            if (Squad.IsMatchingSpeed)
+            if (Squad.IsMatchingSpeed && CurrentSpeed != Squad.CurrentSpeed)
             {
                 SetCurrentSpeed(Squad.CurrentSpeed);
             }
-            else
+            else if (CurrentSpeed != Speed)
             {
                 SetCurrentSpeed(Speed);
             }
@@ -1296,7 +1302,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         /// Either stops the ship or sets it on course to the next destination
         /// </summary>
         /// <param name="reason"></param>
-        private void EndDestination(string reason)
+        private void EndDestination(string reason = null)
         {
             if (DestinationQueue.Count > 0)
             {
@@ -1319,14 +1325,14 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         /// <returns></returns>
         private bool IsCloseEnoughToTargetCoordinates(float distance)
         {
-            return distance < ConfigData.ShipTurningRadius && !(!IsFollowingPath && HasTargetEnemyShipToFollow && Squad.HasCommand && Squad.GetCommand().CommandType == ConfigData.CommandTypes.BombingRun
+            return distance < ConfigData.ShipTurningRadius && !(Squad.HasOnlyBombers && !IsFollowingPath && HasTargetEnemyShipToFollow && Squad.HasCommand && Squad.GetCommand().CommandType == ConfigData.CommandTypes.BombingRun
                 && Vision.NearbyEnemyShips.Contains(TargetEnemyShipToFollow));
         }
         /// <summary>
         /// Stop the ship from moving at all
         /// </summary>
         /// <param name="reason"></param>
-        public void StopMoving(string reason)
+        public void StopMoving(string reason = null)
         {
             if (IsMobile)
             {
@@ -1785,7 +1791,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
                 if (Squad.GetShips().Count == 0)
                 {
-                    Debug.Log($"Killing squad {Squad.Name} because it doesn't have any ships left");
+                    //Debug.Log($"Killing squad {Squad.Name} because it doesn't have any ships left");
                     Squad.Kill(endKill);
                 }
                 else
@@ -1793,7 +1799,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                     //Debug.Log($"Not killing squad {Squad.Name} because it has {Squad.GetShips().Count} ships left");
                     Squad.SetOffsets();
                 }
-                Debug.Log($"{Name} has been killed and will be returned");
+                //Debug.Log($"{Name} has been killed and will be returned");
                 Level.CancelTimer(_asteroidDoubleCheckTimer);
                 Level.CancelTimer(_combatTimerScaledTimer);
                 if (HasWeapons)
@@ -1869,6 +1875,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             //Debug.Log($"{Name} has been killed and will be returned");
             Deactivate();
         }
+        private int _maxLoops;
         /// <summary>
         /// Returns the target enemy ship to follow for this ship. The Target enemy ship will be the first in the targeting queue for this ship's squad's command. This is different from which ship its weapons are targeting
         /// </summary>
@@ -1876,7 +1883,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         public Ship SetAndGetTargetEnemy()
         {
             _tempIndex = 0;
-            while (!HasTargetEnemyShipToFollow && _tempIndex < Squad.GetCommand().EnemySquad.GetShips().Count) // [note] the loop check should be removed if no longer needed
+            _maxLoops = math.max(Squad.GetCommand().EnemySquad.GetShips().Count, 10);
+            while (!HasTargetEnemyShipToFollow && _tempIndex < _maxLoops) // [note] the loop check should be removed if no longer needed
             {
                 _tempIndex++;
 
@@ -1889,7 +1897,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                     Squad.GetCommand().TargetingQueue = new Queue<Ship>(Squad.GetCommand().OriginalQueue);
                 }
                 TargetEnemyShipToFollow = Squad.GetCommand().TargetingQueue.Dequeue();
-                if (!TargetEnemyShipToFollow.IsDead)
+                if (TargetEnemyShipToFollow.IsDead)
                 {
                     Squad.GetCommand().OriginalQueue = new Queue<Ship>(Squad.GetCommand().MakeTargetingQueue());
                 }
@@ -1933,7 +1941,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
                 //Debug.Log($"{Name} doesn't have target ships so it's moving towards the target ship in the squad, {TargetEnemy.Name}");
             }
-            if (_tempIndex == Squad.GetCommand().EnemySquad.GetShips().Count)
+            if (_tempIndex == _maxLoops)
             {
                 Debug.Log($"Squad: {Squad}");
                 Debug.Log($"Command: {Squad?.GetCommand()}"); 
@@ -1941,6 +1949,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 Debug.Log($"TargetingQueue Content: {Utilities.ListToString(Squad?.GetCommand()?.TargetingQueue?.ToList())}");
                 Debug.Log($"Enemy: {Squad?.GetCommand()?.EnemySquad?.Name}");
                 Debug.Log($"TargetEnemyShipToFollow: {TargetEnemyShipToFollow}");
+                Debug.Log($"_maxLoops: {_maxLoops}");
                 //Debug.Log($"Make Targeting Queue: {Squad?.Command?.MakeTargetingQueue()}");
                 Debug.LogException(new Exception($"Hit loop limit for getTargetEnemy()"));
             }

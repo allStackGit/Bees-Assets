@@ -529,7 +529,7 @@ namespace Assets.Scripts.Server
                 }
                 else
                 {
-                    Debug.LogWarning($"Matchup strategy #{_handleMatchupResponse_matchupResponse.OutcomeId} was received for squad #{_handleMatchupResponse_matchupResponse.SquadHash}, but the squad no longer exists.");
+                    //Debug.LogWarning($"Matchup strategy #{_handleMatchupResponse_matchupResponse.OutcomeId} was received for squad #{_handleMatchupResponse_matchupResponse.SquadHash}, but the squad no longer exists.");
                 }
             }
             else
@@ -760,7 +760,7 @@ namespace Assets.Scripts.Server
                 }
                 else
                 {
-                    Debug.LogWarning($"Strategic command {_handleStrategicCommandResponse_command} was received for squad {_tempSquad} but that squad no longer exists.");
+                    //Debug.LogWarning($"Strategic command {_handleStrategicCommandResponse_command} was received for squad {_tempSquad} but that squad no longer exists.");
                 }
             }
             else

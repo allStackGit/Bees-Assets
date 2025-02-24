@@ -8,6 +8,7 @@ namespace Assets.Scripts.Entities.Ships
     public class ShipAnimationController : MonoBehaviour
     {
         public SpriteRenderer SpriteRenderer;
+        public Animator Animator;
         public Ship Ship;
         public Sprite CurrentSprite;
         public Sprite[] RecoloredSprites;
@@ -66,11 +67,13 @@ namespace Assets.Scripts.Entities.Ships
         public void Activate()
         {
             SpriteRenderer.enabled = true;
+            Animator.enabled = true;
             enabled = true;
         }
         public void Deactivate()
         {
             SpriteRenderer.enabled = false;
+            Animator.enabled = false;
             enabled = false;
         }
 

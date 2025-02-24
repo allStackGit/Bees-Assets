@@ -159,7 +159,7 @@ MonoBehaviour:
   IsMiningShip: 0
   IsWarpGate: 0
   HasTargetDirection: 0
-  HasVision: 0
+  HasUserVision: 0
   HasProximityCollider: 0
   HasShipAnimation: 0
   HasRocketFlares: 0
@@ -204,6 +204,7 @@ MonoBehaviour:
   DamagePerSecond: 0
   Tsv: 0
   HasWeapons: 0
+  HasTurrets: 0
   IsCarrierShip: 0
   IsMoving: 0
   PathfindingThreadComplete: 0
@@ -982,7 +983,8 @@ PrefabInstance:
       propertyPath: m_SortingLayerID
       value: -905707147
       objectReference: {fileID: 0}
-    m_RemovedComponents: []
+    m_RemovedComponents:
+    - {fileID: 8170048920833663200, guid: 71c0a6c1936d8af4687d27665fd09231, type: 3}
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
     m_AddedComponents: []

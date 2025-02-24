@@ -114,7 +114,10 @@ public class FullRetreat : Command
     {
         if (!IsDead)
         {
-            Tsv += (int)(ship.Tsv * .05f);
+            if (ship.ShipType != ConfigData.ShipTypes.Striker && ship.ShipType != ConfigData.ShipTypes.Drone)
+            {
+                Tsv += (int)(ship.Tsv * .05f);
+            }
             TargetWarpGate.ShipsWarpingHere.Remove(ship.Id);
             ship.EndKill(); // if this is the last ship, this call could kill the command as well
             if (!IsDead && TargetWarpGate.ShipsWarpingHere.Count == 0)

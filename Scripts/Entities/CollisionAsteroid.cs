@@ -23,7 +23,6 @@ namespace Assets.Scripts.Entities
         public bool HasCollisionAnimation, HasCrackedSprite;
         public bool HasDroppedDestructionAnimation, IsImmune, HasTouchedMapBorder, HasEnteredMap;
         public Sprite CrackedSprite;
-        public SpriteRenderer SpriteRenderer;
 
         private int _overlaps;
         private bool _isColliding => _overlaps > 0;
