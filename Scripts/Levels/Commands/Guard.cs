@@ -14,15 +14,14 @@ namespace Assets.Scripts.Levels.Commands
          * If the Squad is an AI squad, a timer will stop the command 
          */
         private Squad _guardedSquad;
-        private int _guardedSquadId;
         public List<Squad> OtherGuardSquads = new List<Squad>();
         /// <summary>
         /// The position of the squad as either, 0, 1, 2, or 3. Corresponds to the cardinal directions to determine where the squad should be
         /// </summary>
         public int GuardPosition;
-        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy, Squad guardedSquad)
+        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, Squad guardedSquad)
         {
-            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
+            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
             if (IsHiveMindCommand)
             {
                 _guardedSquad = GetClosestAvailableSquadToGuard();
@@ -33,7 +32,6 @@ namespace Assets.Scripts.Levels.Commands
             }
             if (_guardedSquad != null)
             {
-                _guardedSquadId = _guardedSquad.Id;
                 // add this squad to the list for all other guard squads
                 Level.State.GetSquadsBySide(GetSquad().Side).ForEach((guardingSquad) =>
                 {
@@ -48,12 +46,17 @@ namespace Assets.Scripts.Levels.Commands
                 GuardPosition = GetGuardingSquads().Count % 4;
                 //Debug.Log($"{Squad.Name} is guarding {_guardedSquad.Name} at position #{GuardPosition}");
                 GetSquad().Status = $"Guarding {_guardedSquad.Name}";
+
+                CommandTimer.Reuse(CommandFrequency, Timer, true);
+                Level.AddTimer(CommandTimer);
                 if (IsHiveMindCommand)
                 {
-                    Invoke(nameof(FinishGuardingCommand), ConfigData.Configuration.AISquadGuardTime);
+                    TimeoutTimer.Reuse(ConfigData.Configuration.AISquadGuardTime, FinishGuardingCommand);
+                    Level.AddTimer(TimeoutTimer);
+                    //Invoke(nameof(FinishGuardingCommand), ConfigData.Configuration.AISquadGuardTime);
 
                 }
-                InvokeRepeating(nameof(Timer), 0, CommandFrequency);
+                //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
             }
             else
             {
@@ -67,7 +70,6 @@ namespace Assets.Scripts.Levels.Commands
         {
             base.ClearData();
             _guardedSquad = null;
-            _guardedSquadId = 0;
             OtherGuardSquads.Clear();
         }
         //////////////////////////////////////////////////////////////////////////////
@@ -83,7 +85,7 @@ namespace Assets.Scripts.Levels.Commands
             // Determine initial destination based on other guarding squads
             if (!IsDead)
             {
-                if (_guardedSquad.IsSameSquad(_guardedSquadId) && !_guardedSquad.IsDead)
+                if (!_guardedSquad.IsDead)
                 {
                     _timer_position = _guardedSquad.GetCenterPoint();
                     _timer_offsetFromSquad = new Vector2(GetSquad().GetWidth() + _timer_offset, GetSquad().GetHeight() + _timer_offset);
@@ -114,7 +116,7 @@ namespace Assets.Scripts.Levels.Commands
                 else
                 {
                     GetSquad().SetSquadSpeed(GetSquad().MaxSpeed);
-                    CancelInvoke(nameof(Timer));
+                    //CancelInvoke(nameof(Timer));
                     SetFinalize("Guarded squad died");
                 }
             }
@@ -154,7 +156,7 @@ namespace Assets.Scripts.Levels.Commands
                 {
                     ((Guard)squad.GetCommand()).OtherGuardSquads.Remove(GetSquad());
                 }); // [alert] need to do this when the user finishes too
-                CancelInvoke(nameof(Timer));
+                //CancelInvoke(nameof(Timer));
                 SetFinalize("Finished Guarding");
 
             }

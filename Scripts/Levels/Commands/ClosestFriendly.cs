@@ -12,17 +12,22 @@ namespace Assets.Scripts.Levels.Commands
         just follow that squad for a period before finalizing the strategy.
         */
         private Squad _closestFriendlySquad;
-        public override void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
+        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId)
         {
-            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
+            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
 
 
             //_parameters.setTimer = false;
             _closestFriendlySquad = GetSquad().GetClosestValidFriendlySquad();
             if (_closestFriendlySquad != null )
             {
-                InvokeRepeating(nameof(Timer), CommandFrequency, CommandFrequency);
-                Invoke(nameof(FinishFollowing), ConfigData.Configuration.AISquadFollowingTime);
+                //InvokeRepeating(nameof(Timer), CommandFrequency, CommandFrequency);
+                //Invoke(nameof(FinishFollowing), ConfigData.Configuration.AISquadFollowingTime);
+
+                CommandTimer.Reuse(CommandFrequency, Timer, true);
+                Level.AddTimer(CommandTimer);
+                TimeoutTimer.Reuse(ConfigData.Configuration.AISquadFollowingTime, Timeout);
+                Level.AddTimer(TimeoutTimer);
             }
             else
             {
@@ -62,15 +67,11 @@ namespace Assets.Scripts.Levels.Commands
                 }
                 else
                 {
-                    CancelInvoke(nameof(Timer));
+                    //CancelInvoke(nameof(Timer));
                     SetFinalize("The friendly squad to follow is gone or dead");
                 }
             }
             
-        }
-        private void FinishFollowing()
-        {
-            SetFinalize("Finished following friendly squad");
         }
     }
 }

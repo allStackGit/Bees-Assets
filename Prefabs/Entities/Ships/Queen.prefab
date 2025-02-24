@@ -115,7 +115,7 @@ MonoBehaviour:
   Side: 1
   Collider: {fileID: 2932568822215041311}
   Body: {fileID: 2066278837942174322}
-  _entity: {fileID: 0}
+  SpriteRenderer: {fileID: 4725796339288062923}
   ShowDebug: 0
   Health: 0
   MaxHealth: 0
@@ -159,7 +159,7 @@ MonoBehaviour:
   IsMiningShip: 0
   IsWarpGate: 0
   HasTargetDirection: 0
-  HasVision: 0
+  HasUserVision: 0
   HasProximityCollider: 0
   HasShipAnimation: 0
   HasRocketFlares: 0
@@ -204,6 +204,7 @@ MonoBehaviour:
   DamagePerSecond: 0
   Tsv: 0
   HasWeapons: 0
+  HasTurrets: 0
   IsCarrierShip: 0
   IsMoving: 0
   PathfindingThreadComplete: 0
@@ -1302,10 +1303,6 @@ PrefabInstance:
       propertyPath: m_Size.y
       value: 6
       objectReference: {fileID: 0}
-    - target: {fileID: 1937345152625916287, guid: 6420dac0b77c67f459df205649de83dc, type: 3}
-      propertyPath: m_Sprite
-      value: 
-      objectReference: {fileID: 21300000, guid: 03888ed2f02dfed46b5e2b61943e6779, type: 3}
     - target: {fileID: 1937345152625916287, guid: 6420dac0b77c67f459df205649de83dc, type: 3}
       propertyPath: m_SortingLayer
       value: 6

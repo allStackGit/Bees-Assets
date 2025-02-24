@@ -13,7 +13,8 @@ public class Pool : MonoBehaviour
 {
     public Stage Stage;
     /// <summary>
-    /// The number of every kind of entity/thing in the game, ships, projectiles, asteroids, obstacles, maps, obstacle maps, commands, squads, and so on
+    /// The number of every kind of entity/thing in the game, ships, projectiles, asteroids, obstacles, maps, obstacle maps, commands, squads, and so on. 
+    /// Used as a unique game-level Id for every created thing
     /// </summary>
     public int ItemCount = 0;
 
@@ -652,7 +653,7 @@ public class Pool : MonoBehaviour
     {
         // Here the map is instantiated locally because the prefab array is indexed.
         _spawn_map = Instantiate(Stage.Prefabs.Maps[index]).GetComponent<Assets.Scripts.UI_Components.Map>();
-        _spawn_map.Setup(index, ItemCount++, ConfigData.Maps[index].Name, ConfigData.Maps[index].UserStartingPosition, ConfigData.Maps[index].AIStartingPosition);
+        _spawn_map.Create(Stage, index, ItemCount++, ConfigData.Maps[index].Name, ConfigData.Maps[index].UserStartingPosition, ConfigData.Maps[index].AIStartingPosition);
         _spawn_map.name = _spawn_map.Name;
         return _spawn_map;
     }
@@ -1089,7 +1090,7 @@ public class Pool : MonoBehaviour
     }
     public void ReturnProjectileToPool(Projectile projectile)
     {
-        projectile.gameObject.SetActive(false);
+        //projectile.gameObject.SetActive(false);
         switch (projectile.Type)
         {
             case ConfigData.ProjectileTypes.BeeSmall:

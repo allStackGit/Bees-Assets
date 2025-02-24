@@ -1,7 +1,9 @@
 ﻿using Assets.Scripts;
+using Assets.Scripts.Data;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships.Weapons;
+using Assets.Scripts.Levels;
 using Assets.Scripts.Levels.Commands;
 using System.Collections.Generic;
 using System.Linq;
@@ -46,9 +48,16 @@ namespace Assets.Scripts.Entities.Ships
                 _indicatorSprite = LoadedIndicator.GetComponent<SpriteRenderer>();
                 SetBombsReadyStatus(true);
             }
-            InvokeRepeating(nameof(CheckCarrierReload), 1, 1);
             Bomb = Weapons.First();
 
+        }
+        private ScaledTimer _checkCarrierReloadTimer = new ScaledTimer();
+        public override void Setup(Level level, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
+        {
+            base.Setup(level, fleetShip, squad, offsetFromCenter);
+            _checkCarrierReloadTimer.Reuse(1, CheckCarrierReload, true);
+            Level.AddTimer(_checkCarrierReloadTimer);
+            //InvokeRepeating(nameof(CheckCarrierReload), 1, 1);
         }
         public override void ClearData()
         {
@@ -221,6 +230,12 @@ namespace Assets.Scripts.Entities.Ships
                     }
                 }
             }
+        }
+
+        public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false)
+        {
+            Level.CancelTimer(_checkCarrierReloadTimer);
+            base.Kill(killer, killerFleetShip, killerSavedSquad, endKill);
         }
     }
 }

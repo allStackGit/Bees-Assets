@@ -10,13 +10,18 @@ namespace Assets.Scripts.Entities.Projectiles
     public class StrikerBomb : Projectile
     {
         public Ship ContactedShip;
+        private ScaledTimer _killSequenceTimer = new ScaledTimer();
+        private ScaledTimer _damageTimer = new ScaledTimer();
         // Use this for initialization
+
         public void Setup(Level level, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power, Ship contactedShip)
         {
             base.Setup(level, weapon, shooter, target, startingPosition, angle, range, power);
             ContactedShip = contactedShip;
             transform.parent = ContactedShip.transform;
-            Invoke(nameof(KillSequence), 1.5f);
+            _killSequenceTimer.Reuse(1.5f, KillSequence);
+            Level.AddTimer(_killSequenceTimer);
+            //Invoke(nameof(KillSequence), 1.5f);
         }
 
 
@@ -31,8 +36,10 @@ namespace Assets.Scripts.Entities.Projectiles
                     Explosion.SetActive(true);
                 }
 
+                _damageTimer.Reuse(.5f, Damage);
+                Level.AddTimer(_damageTimer);
+                //Invoke(nameof(Damage), .5f);
                 Kill();
-                Invoke(nameof(Damage), .5f);
             }
             else
             {

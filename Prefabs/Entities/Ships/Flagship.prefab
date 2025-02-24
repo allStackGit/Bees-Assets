@@ -133,6 +133,7 @@ GameObject:
   - component: {fileID: -4715382473049808703}
   - component: {fileID: 7203189950192011832}
   - component: {fileID: 7185360336040675276}
+  - component: {fileID: 6154153135837887658}
   m_Layer: 12
   m_Name: Flagship
   m_TagString: Ship
@@ -242,7 +243,7 @@ MonoBehaviour:
   Side: 2
   Collider: {fileID: 7185360336040675276}
   Body: {fileID: 7203189950192011832}
-  _entity: {fileID: 0}
+  SpriteRenderer: {fileID: 4525937326214591361}
   ShowDebug: 0
   Health: 0
   MaxHealth: 0
@@ -286,7 +287,7 @@ MonoBehaviour:
   IsMiningShip: 0
   IsWarpGate: 0
   HasTargetDirection: 0
-  HasVision: 0
+  HasUserVision: 0
   HasProximityCollider: 0
   HasShipAnimation: 0
   HasRocketFlares: 0
@@ -336,6 +337,7 @@ MonoBehaviour:
   DamagePerSecond: 0
   Tsv: 0
   HasWeapons: 0
+  HasTurrets: 0
   IsCarrierShip: 0
   IsMoving: 0
   PathfindingThreadComplete: 0
@@ -488,6 +490,21 @@ PolygonCollider2D:
       - {x: -7.2954235, y: -3.4783843}
       - {x: -3.7343955, y: -3.6123695}
   m_UseDelaunayMesh: 0
+--- !u!114 &6154153135837887658
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4525937326214591363}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 36df057e0dea74e459638fbb1789b8b9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  SpriteRenderer: {fileID: 8823610144760354743}
+  SecondSpriteRenderer: {fileID: 0}
+  Animator: {fileID: 6007465061601035925}
 --- !u!1001 &1022177574750421151
 PrefabInstance:
   m_ObjectHideFlags: 0

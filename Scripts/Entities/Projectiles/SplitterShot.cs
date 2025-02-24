@@ -43,39 +43,40 @@ namespace Assets.Scripts.Entities.Projectiles
         }
 
 
-
+        private float _localAngle;
+        private int _shotNumber;
+        private Projectile _projectile;
         public void Split(Ship target) // [projectile-method] [note]
         {
             //Debug.Log($"Splitting into {SplitCount} more shots");
 
-            for (int shotNumber = 0; shotNumber < SplitCount; shotNumber++)
+            for (_shotNumber = 0; _shotNumber < SplitCount; _shotNumber++)
             {
-                float localAngle = Angle * Mathf.Rad2Deg; 
-                if (shotNumber == 0)
+                _localAngle = Angle * Mathf.Rad2Deg; 
+                if (_shotNumber == 0)
                 {
-                    localAngle += 45;
-                }else if (shotNumber == 1)
-                {
-                    localAngle -= 45;
+                    _localAngle += 45;
                 }
-                else if (shotNumber == 2)
+                else if (_shotNumber == 1)
                 {
-                    localAngle += 90;
+                    _localAngle -= 45;
                 }
-                else if (shotNumber == 3)
+                else if (_shotNumber == 2)
                 {
-                    localAngle -= 90;
+                    _localAngle += 90;
                 }
-                float radians = localAngle * Mathf.Deg2Rad;
+                else if (_shotNumber == 3)
+                {
+                    _localAngle -= 90;
+                }
                 //Debug.Log($"Split shot #{shotNumber} is at localAngle: {localAngle}, coming from eulerAngle: {transform.localEulerAngles.z}, and now at world" +
                 //    $"angle: {worldAngle} (rad) : {radians}");
 
 
-                Vector3 startingPosition = GetPosition();
-                Projectile projectile = Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.BeeSmall);
-                projectile.Setup(Level, Weapon, Shooter, Target, startingPosition, radians, Weapon.Range, (int)(Weapon.Power / 1.5f));
-                projectile.ShipsToIgnore.Add(target);
-                Shooter.ProjectilesInFlight.Add(projectile);
+                _projectile = Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.BeeSmall);
+                _projectile.Setup(Level, Weapon, Shooter, Target, GetPosition(), _localAngle * Mathf.Deg2Rad, Weapon.Range, (int)(Weapon.Power / 1.5f));
+                _projectile.ShipsToIgnore.Add(target);
+                Shooter.ProjectilesInFlight.Add(_projectile);
 
 
                 //GameObject shot =  Instantiate(SplitLaserPrefab, startingPosition, Quaternion.identity);

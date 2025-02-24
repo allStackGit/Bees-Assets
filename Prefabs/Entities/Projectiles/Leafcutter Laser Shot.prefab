@@ -12,8 +12,8 @@ GameObject:
   - component: {fileID: 5157191197253239833}
   - component: {fileID: 2050434655918324385}
   - component: {fileID: 3427265209652246652}
-  - component: {fileID: -5484365087596771074}
   - component: {fileID: 2936682856075937010}
+  - component: {fileID: -5484365087596771074}
   m_Layer: 10
   m_Name: Leafcutter Laser Shot
   m_TagString: Projectile
@@ -136,43 +136,6 @@ Rigidbody2D:
   m_SleepingMode: 1
   m_CollisionDetection: 0
   m_Constraints: 0
---- !u!114 &-5484365087596771074
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1332487207424970191}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: bfde275231e78804f9beb7fd1339b113, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  Id: 0
-  Age: 0
-  Level: {fileID: 0}
-  Stage: {fileID: 0}
-  Side: 1
-  Collider: {fileID: 2936682856075937010}
-  Body: {fileID: 3427265209652246652}
-  _entity: {fileID: 0}
-  Power: 0
-  Range: 0
-  Speed: 100
-  Shooter: {fileID: 0}
-  Target: {fileID: 0}
-  Weapon: {fileID: 0}
-  StartingPosition: {x: 0, y: 0}
-  Angle: 0
-  Explosion: {fileID: 0}
-  Name: 
-  Type: 9
-  HasExplosion: 1
-  ShipIsDead: 0
-  HasBody: 1
-  IsDead: 1
-  SplitCount: 4
-  SplitLaserPrefab: {fileID: 2378685256343899705, guid: 3b1a5274038082f4fb1be503df70d6de, type: 3}
 --- !u!58 &2936682856075937010
 CircleCollider2D:
   m_ObjectHideFlags: 0
@@ -208,3 +171,43 @@ CircleCollider2D:
   m_Offset: {x: 0, y: 0}
   serializedVersion: 2
   m_Radius: 0.5
+--- !u!114 &-5484365087596771074
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1332487207424970191}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bfde275231e78804f9beb7fd1339b113, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Id: 0
+  Age: 0
+  Level: {fileID: 0}
+  Stage: {fileID: 0}
+  Side: 1
+  Collider: {fileID: 2936682856075937010}
+  Body: {fileID: 3427265209652246652}
+  SpriteRenderer: {fileID: 5157191197253239833}
+  Power: 0
+  Range: 0
+  Speed: 100
+  Shooter: {fileID: 0}
+  Target: {fileID: 0}
+  Weapon: {fileID: 0}
+  StartingPosition: {x: 0, y: 0}
+  Angle: 0
+  Explosion: {fileID: 0}
+  Name: 
+  Type: 9
+  HasExplosion: 1
+  ShipIsDead: 0
+  HasBody: 1
+  HasCollider: 1
+  HasNecessaryAnimation: 0
+  Animator: {fileID: 2050434655918324385}
+  IsDead: 1
+  SplitCount: 4
+  SplitLaserPrefab: {fileID: 2378685256343899705, guid: 3b1a5274038082f4fb1be503df70d6de, type: 3}

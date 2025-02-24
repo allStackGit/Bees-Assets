@@ -1,11 +1,13 @@
 ﻿
 
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics.Contracts;
 using System.Linq;
 
 using UnityEngine;
+using static UnityEngine.GraphicsBuffer;
 
 namespace Assets.Scripts.Entities.Ships.Weapons
 {
@@ -52,8 +54,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 TargetingMarker.SetActive(false);
                 HasTargetingMarker = true;
             }
+
         }
 
+        private ScaledTimer _targetingSequenceTimer = new ScaledTimer();
         public override void Setup()
         {
             base.Setup();
@@ -65,11 +69,27 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             if (RateOfFire > 0)
             {
                 //Debug.Log($"Aiming rate: {TargetingRate} for {FleetShip.Name}");
-                InvokeRepeating(nameof(TargetingSequence), TargetingRate, TargetingRate);
+                _targetingSequenceTimer.Reuse(TargetingRate, TargetingSequence, true);
+                Level.AddTimer(_targetingSequenceTimer);
+                //InvokeRepeating(nameof(TargetingSequence), TargetingRate, TargetingRate);
                 //Invoke(nameof(Fire), RateOfFire);
             }
 
         }
+        public override void Deactivate()
+        {
+            base.Deactivate();
+            if (HasTargetingMarker)
+            {
+                TargetingMarker.SetActive(false);
+            }
+        }
+        public override void CancelTimer()
+        {
+            Level.CancelTimer(_targetingSequenceTimer);
+            base.CancelTimer();
+        }
+
         public override void ClearData()
         {
             base.ClearData();
@@ -102,7 +122,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// </summary>
         private void TargetingSequence()
         {
-            __NotShootingReason = $"Reset Reason.";
+            //__NotShootingReason = $"Reset Reason.";
             TargetingPasses++;
             if ((ReadyToFire && IsAimedAtTarget) || TargetingPasses == PassesPerFire)
             {
@@ -213,12 +233,12 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             base.SendProjectile();
             //Debug.Log("Sending turret projectile");
-            float angle = AngleToPoint(TargetPoint);
 
-            Level.AddProjectile(ProjectileType, this, GetPosition(), angle);
+            Level.AddProjectile(ProjectileType, this, GetPosition(), AngleToPoint(TargetPoint));
             Ship.FleetShip.ShotsFired++;
 
         }
+        private Vector2 _targetPoint, _frontOfShip, _colliderPoint;
         /// <summary>
         /// Gets the target point on a ship that should be fired at
         /// </summary>
@@ -226,25 +246,25 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// <returns></returns>
         protected Vector2 GetTargetPoint(Ship ship)
         {
-            Vector2 targetPoint = ship.GetPosition();
+            _targetPoint = ship.GetPosition();
             if (ShouldFireAtFrontOfShip)
             {
-                Vector2 frontOfShip = targetPoint + new Vector2(0, ship.GetHalfHeight() - ConfigData.OffsetFromFrontOfShip.GetValueOrDefault(ship.ShipType));
+                _frontOfShip = _targetPoint + new Vector2(0, ship.GetHalfHeight() - ConfigData.OffsetFromFrontOfShip.GetValueOrDefault(ship.ShipType));
                 //Debug.Log($"{ship} is positioned at {ship.GetPosition()} and target point is {frontOfShip}");
-                targetPoint = Utilities.RotatePointAroundPoint(targetPoint, frontOfShip, ship.GetRotation() * Mathf.Deg2Rad);
+                _targetPoint = Utilities.RotatePointAroundPoint(_targetPoint, _frontOfShip, ship.GetRotation() * Mathf.Deg2Rad);
 
             }
-            if (!RangeCollider.Collider.OverlapPoint(targetPoint+Level.GetPosition()))
+            if (!RangeCollider.Collider.OverlapPoint(_targetPoint + Level.GetPosition()))
             {
-                Vector2 colliderPoint = ship.Collider.ClosestPoint(GetPosition());
-                if (colliderPoint != GetPosition())
+                _colliderPoint = ship.Collider.ClosestPoint(GetPosition());
+                if (_colliderPoint != GetPosition())
                 {
-                    targetPoint = colliderPoint;
+                    _targetPoint = _colliderPoint;
                 }
                 //Debug.Log($"{Ship.Name} is firing at {ship.Name} but the target point is not within range. The new target point is: {targetPoint}");
 
             }
-            return targetPoint;
+            return _targetPoint;
         }
         /// <summary>Immediately fires at the next available target</summary>
         protected void FireNext()
@@ -304,6 +324,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             SendProjectile();
 
         }
+        private Ship _potentialTargetShip;
         /// <summary>
         /// Tries to fire if the weapon has a valid target. Second in the targeting sequence but only called on the 3rd pass
         /// </summary>
@@ -328,11 +349,11 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     }
                     else
                     {
-                        __NotShootingReason = $"{Ship.Name} is not firing {Name} because the piece is not aimed at the target: {TargetShip.Name}";
-                        Ship potentialTargetShip = GetAimedAtTarget();
-                        if (potentialTargetShip != null)
+                        //__NotShootingReason = $"{Ship.Name} is not firing {Name} because the piece is not aimed at the target: {TargetShip.Name}";
+                        _potentialTargetShip = GetAimedAtTarget();
+                        if (_potentialTargetShip != null)
                         {
-                            SetTargetShip(potentialTargetShip);
+                            SetTargetShip(_potentialTargetShip);
                             Fire();
                             //Debug.Log($"{Name} was not aimed at it's target but was aimed at another target: {TargetShip.Name}. Firing");
 
@@ -340,7 +361,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                         else
                         {
                             //Debug.Log($"{Ship.Name} is not firing {Name} because the piece is not aimed at any target");
-                            __NotShootingReason = $"{Ship.Name} is not firing {Name} because the piece is not aimed at any target";
+                            //__NotShootingReason = $"{Ship.Name} is not firing {Name} because the piece is not aimed at any target";
                             //Invoke(nameof(FireNext), .1f);
                             ReadyToFire = true;
                         }
@@ -352,20 +373,43 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     if (TargetShip == null)
                     {
                         //Debug.Log($"{Ship.Name} is not firing {Name} because the TargetShip is null");
-                        __NotShootingReason = $"{Ship.Name} is not firing {Piece.name} because the TargetShip is null";
+                        //__NotShootingReason = $"{Ship.Name} is not firing {Piece.name} because the TargetShip is null";
                         FireNext();
                     }
-                    else if (CeaseFire)
-                    {
-                        //Debug.Log($"{Ship.Name} is not firing {Piece.name} because CeaseFire is on");
-                        __NotShootingReason = $"{Ship.Name} is not firing {Name} because CeaseFire is on";
-                    }
+                    //else if (CeaseFire)
+                    //{
+                    //    //Debug.Log($"{Ship.Name} is not firing {Piece.name} because CeaseFire is on");
+                    //    __NotShootingReason = $"{Ship.Name} is not firing {Name} because CeaseFire is on";
+                    //}
                     //Invoke(nameof(Fire), RateOfFire);
                 }
             }
 
             // Reset
             TargetingPasses = 0;
+        }
+
+        public float GetRotation()
+        {
+            return Piece.transform.eulerAngles.z;
+        }
+        public float GetLocalRotation()
+        {
+            return Piece.transform.localEulerAngles.z;
+        }
+        public override Vector2 GetPosition()
+        {
+            return Ship.Level.Map.transform.InverseTransformPoint(Piece.transform.position);
+            //try
+            //{
+            //    return Ship.Level.Map.transform.InverseTransformPoint(Piece.transform.position);
+            //}
+            //catch (Exception e)
+            //{
+            //    Debug.Log($"Ship: {Ship}, Level: {Ship?.Level}, Map: {Ship?.Level?.Map}, Piece: {Piece}");
+            //    throw e;
+            //}
+
         }
 
     }

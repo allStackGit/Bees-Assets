@@ -10,12 +10,12 @@ public class FullRetreat : Command
 {
     public WarpGate TargetWarpGate;
     public List<Ship> ShipsWaitingToWarp = new List<Ship>();
-    public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy, WarpGate warpgate)
+    public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, WarpGate warpgate)
     {
         if (warpgate != null)
         {
             TargetWarpGate = warpgate;
-            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
+            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
 
             
             // The ToList() is necessary to prevent errors from warp killing while looping through the list of ships
@@ -38,14 +38,15 @@ public class FullRetreat : Command
                 if (!IsDead)
                 {
                     PrepareDamageToSendEntries("closest");
-                    InvokeRepeating(nameof(MoveToWarpGate), 0, CommandFrequency);
+                    CommandTimer.Reuse(CommandFrequency, MoveToWarpGate, true);
+                    Level.AddTimer(CommandTimer);
+                    //InvokeRepeating(nameof(MoveToWarpGate), 0, CommandFrequency);
                 }
 
             }
             else
             {
                 SetFinalize("The only ships in this squad are Warp Gates");
-                return;
             }
 
 
@@ -88,7 +89,8 @@ public class FullRetreat : Command
         
     }
 
-    List<Ship> _tempShips;
+    private List<Ship> _tempShips;
+    private ScaledTimer _waitToWarpTimer = new ScaledTimer();
     public void WaitToWarp()
     {
         if (TargetWarpGate.ShipAnimationController.IsReadyToWarp && TargetWarpGate.ShipsWarpingHere.Count > 0)
@@ -102,7 +104,9 @@ public class FullRetreat : Command
         }
         else
         {
-            Invoke(nameof(WaitToWarp), 2);
+            _waitToWarpTimer.Reuse(2, WaitToWarp);
+            Level.AddTimer(_waitToWarpTimer);
+            //Invoke(nameof(WaitToWarp), 2);
         }
     }
 
@@ -154,6 +158,7 @@ public class FullRetreat : Command
     public override void SetFinalize(string cause)
     {
         //Debug.Log($"Finalizing full retreat command for {Squad.Name}");
+        Level.CancelTimer(_waitToWarpTimer);
         CleanupWarpGate();
         base.SetFinalize(cause);
     }

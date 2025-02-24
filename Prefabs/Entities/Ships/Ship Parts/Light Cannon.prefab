@@ -9,6 +9,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 6336891931982589551}
+  - component: {fileID: 2266689825496288599}
   m_Layer: 0
   m_Name: Light Cannon
   m_TagString: Ship Component
@@ -26,14 +27,29 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
+  m_LocalScale: {x: 1, y: 1, z: 0}
+  m_ConstrainProportionsScale: 1
   m_Children:
   - {fileID: 4077603248122791560}
   - {fileID: 2499056857503811979}
   - {fileID: 1577060119241859008}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &2266689825496288599
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1334121294634142703}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 36df057e0dea74e459638fbb1789b8b9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  SpriteRenderer: {fileID: 8944574718199922162}
+  SecondSpriteRenderer: {fileID: 0}
+  Animator: {fileID: 0}
 --- !u!1 &4702379292404567260
 GameObject:
   m_ObjectHideFlags: 0
@@ -106,7 +122,7 @@ SpriteRenderer:
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: 1055962891
-  m_SortingLayer: 4
+  m_SortingLayer: 0
   m_SortingOrder: 2
   m_Sprite: {fileID: -1155882561, guid: a81bbe7a3c9280f47ac977331197b8ab, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}

@@ -44,6 +44,7 @@ namespace Assets.Scripts.Entities
             }
 
         }
+        private ScaledTimer _removeImmunityTimer = new ScaledTimer();
         // Use this for initialization
         public override void Setup(Level level)
         {
@@ -68,7 +69,9 @@ namespace Assets.Scripts.Entities
 
 
             IsImmune = true;
-            Invoke(nameof(RemoveImmunity), 4);
+            _removeImmunityTimer.Reuse(4, RemoveImmunity);
+            Level.AddTimer(_removeImmunityTimer);
+            //Invoke(nameof(RemoveImmunity), 4);
         }
         public override void ClearData()
         {
@@ -103,7 +106,7 @@ namespace Assets.Scripts.Entities
             Body.velocity = Speed * -Utilities.DirectionBetweenPoints(GetPosition(), randomPoint);
             Body.angularVelocity = Speed * Utilities.RandomFloat(ConfigData.MinimumAsteroidAngularSpeedMultiplier);
         }
-
+        private ScaledTimer _delayKillTimer = new ScaledTimer();
         public override void ShipCollision(Ship ship)
         {
             if (NearbyShips.Contains(ship))
@@ -132,7 +135,9 @@ namespace Assets.Scripts.Entities
                 if (Health == 0)
                 {
                     SpriteRenderer.sprite = CrackedSprite;
-                    Invoke(nameof(DelayKill), ConfigData.CollisionAsteroidKillDelay);
+                    _delayKillTimer.Reuse(ConfigData.CollisionAsteroidKillDelay, DelayKill);
+                    Level.AddTimer(_delayKillTimer);
+                    //Invoke(nameof(DelayKill), ConfigData.CollisionAsteroidKillDelay);
                 }
                 else if (HasCrackedSprite && (float) Health / OriginalHealth < .5f)
                 {
@@ -187,7 +192,9 @@ namespace Assets.Scripts.Entities
                     if (LastHitAsteroid.Health == 0)
                     {
                         LastHitAsteroid.SpriteRenderer.sprite = LastHitAsteroid.CrackedSprite;
-                        LastHitAsteroid.Invoke(nameof(DelayKill), ConfigData.CollisionAsteroidKillDelay);
+                        _delayKillTimer.Reuse(ConfigData.CollisionAsteroidKillDelay, DelayKill);
+                        Level.AddTimer(_delayKillTimer);
+                        //LastHitAsteroid.Invoke(nameof(DelayKill), ConfigData.CollisionAsteroidKillDelay);
                     }
                     else if (LastHitAsteroid.HasCrackedSprite && (float)LastHitAsteroid.Health / LastHitAsteroid.OriginalHealth < .5f)
                     {
@@ -196,7 +203,8 @@ namespace Assets.Scripts.Entities
                     if (Health == 0)
                     {
                         SpriteRenderer.sprite = CrackedSprite;
-                        Invoke(nameof(DelayKill), ConfigData.CollisionAsteroidKillDelay);
+                        _delayKillTimer.Reuse(ConfigData.CollisionAsteroidKillDelay, DelayKill);
+                        Level.AddTimer(_delayKillTimer);
                     }
                     else if (HasCrackedSprite && (float)Health / OriginalHealth < .5f)
                     {

@@ -35,13 +35,13 @@ namespace Assets.Scripts.Entities
             if (collidingThing.CompareTag("Ship"))
             {
                 Ship ship = collidingThing.GetComponent<Ship>();
-                if (ship.IsMiningShip && ship.Squad?.GetCommand()?.CommandType == ConfigData.CommandTypes.Mining)
+                if (ship.IsMiningShip && ship.Squad.HasCommand && ship.Squad.GetCommand().CommandType == ConfigData.CommandTypes.Mining)
                 {
-                    Mining command = ((Mining)ship.Squad?.GetCommand());
+                    Mining command = ((Mining)ship.Squad.GetCommand());
 
                     if (!command.ShipsCurrentlyMining.Contains(ship.Id) && command.TargetAstroid == this)
                     {
-                        //Debug.Log($"{ship.Name} is mining {Name}");
+                        Debug.Log($"{ship.Name} is mining {Name}");
                         if (!SquadsMining.Contains(ship.Squad))
                         {
                             SquadsMining.Add(ship.Squad);

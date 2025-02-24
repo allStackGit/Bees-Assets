@@ -1,12 +1,16 @@
 ﻿using System;
-using System.Collections;
 using UnityEngine;
 
 namespace Assets.Scripts
 {
+    /// <summary>
+    /// A custom timer that runs recurring actions after unscaled time
+    /// </summary>
     public class Timer
-
     {
+        /// <summary>
+        /// The amount of time to pass before running the action
+        /// </summary>
         public float Length;
         /// <summary>
         /// The amount of time in seconds that have elapsed since the last time the action has been run
@@ -38,7 +42,7 @@ namespace Assets.Scripts
             if (Elapsed > Length)
             {
                 Action();
-                Elapsed = 0;
+                Elapsed -= Length;
                 return true;
             }
             return false;

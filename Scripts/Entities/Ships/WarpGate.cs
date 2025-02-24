@@ -19,7 +19,7 @@ namespace Assets.Scripts.Entities.Ships
             ShipsWarpingHere.Clear();
         }
 
-        public void OnTriggerEnter2D(Collider2D collider)
+        protected override void OnTriggerEnter2D(Collider2D collider)
         {
             if (collider.gameObject.name == "Selection Box")
             {
@@ -52,6 +52,18 @@ namespace Assets.Scripts.Entities.Ships
                 Level.State.HasWarpGates = false;
             }
             base.Kill(killer, killerFleetShip, killerSavedSquad, endKill);
+        }
+        public override void Activate()
+        {
+            ShipAnimationController.Activate();
+            WarpCollider.enabled = true;
+            base.Activate();
+        }
+        public override void Deactivate()
+        {
+            ShipAnimationController.Deactivate();
+            WarpCollider.enabled = false;
+            base.Deactivate();
         }
     }
 }

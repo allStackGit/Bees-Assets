@@ -9,6 +9,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 644274878677795884}
+  - component: {fileID: 3938414611082607448}
   m_Layer: 0
   m_Name: Dual Cannon
   m_TagString: Ship Component
@@ -26,8 +27,8 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
+  m_LocalScale: {x: 1, y: 1, z: 0}
+  m_ConstrainProportionsScale: 1
   m_Children:
   - {fileID: 5219245501602822133}
   - {fileID: 3437291055483552359}
@@ -35,6 +36,21 @@ Transform:
   - {fileID: 8010624539938948804}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &3938414611082607448
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8301128086320306230}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 36df057e0dea74e459638fbb1789b8b9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  SpriteRenderer: {fileID: 1995127158016144050}
+  SecondSpriteRenderer: {fileID: 8966059605661026080}
+  Animator: {fileID: 0}
 --- !u!1001 &2278633956784675226
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -110,6 +126,11 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 562230a51d2eca44e85658480eb67c56, type: 3}
+--- !u!212 &1995127158016144050 stripped
+SpriteRenderer:
+  m_CorrespondingSourceObject: {fileID: 301538961799670568, guid: 562230a51d2eca44e85658480eb67c56, type: 3}
+  m_PrefabInstance: {fileID: 2278633956784675226}
+  m_PrefabAsset: {fileID: 0}
 --- !u!4 &5219245501602822133 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 6336891931982589551, guid: 562230a51d2eca44e85658480eb67c56, type: 3}
@@ -317,5 +338,10 @@ PrefabInstance:
 --- !u!4 &3437291055483552359 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 6336891931982589551, guid: 562230a51d2eca44e85658480eb67c56, type: 3}
+  m_PrefabInstance: {fileID: 8665664157966003208}
+  m_PrefabAsset: {fileID: 0}
+--- !u!212 &8966059605661026080 stripped
+SpriteRenderer:
+  m_CorrespondingSourceObject: {fileID: 301538961799670568, guid: 562230a51d2eca44e85658480eb67c56, type: 3}
   m_PrefabInstance: {fileID: 8665664157966003208}
   m_PrefabAsset: {fileID: 0}

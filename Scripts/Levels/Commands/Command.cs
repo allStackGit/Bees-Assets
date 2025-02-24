@@ -58,6 +58,8 @@ namespace Assets.Scripts.Levels.Commands
         public int OriginalEnemyId;
 
         public int OriginalSquadId, CreationId; // [debug]
+        public ScaledTimer CommandTimer = new ScaledTimer();
+        public ScaledTimer TimeoutTimer = new ScaledTimer();
 
 
         private List<Ship> _tempShips;
@@ -77,7 +79,6 @@ namespace Assets.Scripts.Levels.Commands
             OutcomeId = 0;
             OriginalEnemyId = 0;
             EnemySquad = null;
-            FinalizationCause = null;
             IsAttacking = false;
             IsCloseToTarget = false;
             HasShootingStrategy = false;
@@ -117,13 +118,13 @@ namespace Assets.Scripts.Levels.Commands
             enabled = true;
             //Debug.Log($"Just set up command {this}");
         }
-        public void Update()
-        {
-            if (!IsDead && OutcomeId > 0 && GetSquad().Id != OriginalSquadId)
-            {
-                Debug.LogError($"{this} no longer has the original squad id! {GetSquad().Id}");
-            }
-        }
+        //public void Update()
+        //{
+        //    if (!IsDead && OutcomeId > 0 && GetSquad().Id != OriginalSquadId)
+        //    {
+        //        Debug.LogError($"{this} no longer has the original squad id! {GetSquad().Id}");
+        //    }
+        //}
         public Squad GetSquad()
         {
             return _squad;
@@ -134,14 +135,6 @@ namespace Assets.Scripts.Levels.Commands
             _squad = squad;
             OriginalSquadId = GetSquad().Id;
             GetSquad().HasCommand = true;
-        }
-        /// <summary>
-        /// Checks to see if the command has an enemy and if it does, if that enemy is alive and is the same squad that the command started with
-        /// </summary>
-        /// <returns></returns>
-        public bool HasSameEnemy()
-        {
-            return !HasEnemy || (!EnemySquad.IsDead && EnemySquad.ItemId == OriginalEnemyId);
         }
         public virtual void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
         {
@@ -384,7 +377,7 @@ namespace Assets.Scripts.Levels.Commands
             {
                 ((FullRetreat)this).CleanupWarpGate();
             }
-            Finalize("This squad got killed");
+            SetFinalize("This squad got killed");
         }
         //////////////////////////////////////////////////////////////////////////////
         // Class-level variables for Finalize() method:
@@ -399,8 +392,15 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (!IsDead)
             {
+
                 //Debug.Log($"Finalizing Command {this} because of {cause}");
-                CancelInvoke();
+                if (cause == "")
+                {
+                    Debug.LogError($"Trying to finalize Command without cause");
+                }
+                Level.CancelTimer(CommandTimer);
+                Level.CancelTimer(TimeoutTimer);
+                //CancelInvoke();
                 StopAllCoroutines();
 
                 FinalizationCause = cause;
@@ -434,16 +434,17 @@ namespace Assets.Scripts.Levels.Commands
                 }
                 if (IsHiveMindCommand && OutcomeId > 0)
                 {
-                    try
-                    {
-                        _finalize_storedCommand = Level.State.PastCommands[Level.State.OutcomeIdToPastCommandIndex[OutcomeId]];
+                    _finalize_storedCommand = Level.State.PastCommands[Level.State.OutcomeIdToPastCommandIndex[OutcomeId]];
+                    //try
+                    //{
+                    //    _finalize_storedCommand = Level.State.PastCommands[Level.State.OutcomeIdToPastCommandIndex[OutcomeId]];
 
-                    }
-                    catch (Exception e)
-                    {
-                        Debug.Log($"OutcomeId: {OutcomeId}, Past Commands Count: {Level.State.PastCommands.Count}");
-                        throw e;
-                    }
+                    //}
+                    //catch (Exception e)
+                    //{
+                    //    Debug.Log($"OutcomeId: {OutcomeId}, Past Commands Count: {Level.State.PastCommands.Count}");
+                    //    throw e;
+                    //}
                     if (_finalize_storedCommand.IsStored)
                     {
                         Debug.LogError($"Trying to finalize a command #${OutcomeId} with cause [{cause}] that has already been stored");
@@ -472,7 +473,7 @@ namespace Assets.Scripts.Levels.Commands
             }
             else
             {
-                Debug.Log($"Trying to finalize a command ({this}) that's already been finalized with {FinalizationCause}");
+                Debug.LogError($"Trying to finalize a command ({this}) that's already been finalized with {FinalizationCause}");
             }
             
         }

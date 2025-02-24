@@ -7,7 +7,7 @@ namespace Assets.Scripts.Server
     {
         public string Name, ShootingStrategyName, MatchupString, ShootingStrategyMatchupString;
         public int StrategyId, ShootingStrategyId;
-        public long SquadHash, MatchupId, OutcomeId, ShootingStrategyMatchupId, ShootingStrategyOutcomeId;
+        public long MatchupId, OutcomeId, ShootingStrategyMatchupId, ShootingStrategyOutcomeId;
         public bool IsCached;
        
         public CommandResponse(string type, int status, int hash, string name, string shootingStrategyName, string matchupString, string shootingStrategyMatchupString, int strategyId, int shootingStrategyId,

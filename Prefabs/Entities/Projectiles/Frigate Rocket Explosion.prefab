@@ -162,6 +162,7 @@ MonoBehaviour:
   Side: 2
   Collider: {fileID: -4927107212366897339}
   Body: {fileID: 0}
+  SpriteRenderer: {fileID: 5119618451134409999}
   Power: 0
   Range: 0
   Speed: 0
@@ -176,5 +177,8 @@ MonoBehaviour:
   HasExplosion: 0
   ShipIsDead: 0
   HasBody: 0
+  HasCollider: 1
+  HasNecessaryAnimation: 1
+  Animator: {fileID: 8276411991474546587}
   IsDead: 1
-  CircleCollider: {fileID: 0}
+  CircleCollider: {fileID: -4927107212366897339}

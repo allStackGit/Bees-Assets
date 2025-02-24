@@ -13,17 +13,21 @@ namespace Assets.Scripts.Levels.Commands
 
         private bool _gotToEnemy;
         private Vector2 _swipeDestination = Vector2.zero;
-        public void Execute(ConfigData.CommandTypes commandType, ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
+        public void Execute(ConfigData.CommandTypes commandType, ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId)
         {
             CommandType = commandType;
-            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
+            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, false);
 
             IsAttacking = true;
             PrepareDamageToSendEntries();
-            InvokeRepeating(nameof(Timer), 0, CommandFrequency);
+            CommandTimer.Reuse(CommandFrequency, Timer, true);
+            Level.AddTimer(CommandTimer);
+            //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
             if (IsHiveMindCommand)
             {
-                Invoke(nameof(Timeout), ConfigData.StandardMaxCommandTime);
+                TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
+                Level.AddTimer(TimeoutTimer);
+                //Invoke(nameof(Timeout), ConfigData.StandardMaxCommandTime);
             }
         }
         public override void ClearData()
@@ -38,7 +42,7 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (!IsDead)
             {
-                if (HasSameEnemy())
+                if (!EnemySquad.IsDead)
                 {
                     GetSquad().Status = $"Targeting enemy squad {EnemySquad.Name} #{EnemySquad.Id} with {CommandType}";
 
@@ -93,13 +97,13 @@ namespace Assets.Scripts.Levels.Commands
                     }
                     else if (GetSquad().HasReachedDestination) // if we've reached the swiping destination
                     {
-                        CancelInvoke(nameof(Timer));
+                        //CancelInvoke(nameof(Timer));
                         SetFinalize("Finished swiping past the enemy");
                     }
                 }
                 else
                 {
-                    CancelInvoke(nameof(Timer));
+                    //CancelInvoke(nameof(Timer));
                     SetFinalize("The enemy squad is gone or dead");
                 }
             }

@@ -8,7 +8,13 @@ namespace Assets.Scripts.Entities.Ships.Weapons
     /// </summary>
     public class FullShipTurret : LaserBuilder
     {
-
+        private Vector3 _rightRotationRate, _leftRotationRate;
+        public override void Create(Ship ship, ConfigData.WeaponTypes type, int range, int power, float rateOfFire, float projectileValue, GameObject piece, ConfigData.ProjectileTypes projectileType, bool fireAtFrontOfShip, float rotationRate)
+        {
+            base.Create(ship, type, range, power, rateOfFire, projectileValue, piece, projectileType, fireAtFrontOfShip, rotationRate);
+            _rightRotationRate = new Vector3(0, 0, 1 * Time.fixedDeltaTime * RotationRate);
+            _leftRotationRate = new Vector3(0, 0, 1 * Time.fixedDeltaTime * RotationRate * -1);
+        }
         protected override void Aim()
         {
             if (!Ship.IsMoving)
@@ -62,52 +68,64 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             MoveTargetingMarker();
 
         }
-
+        private float _difference;
         protected bool RotateShipTowardsTargetPoint(float rotation)
         {
-            float difference = Mathf.DeltaAngle(Piece.transform.eulerAngles.z, rotation);
+            _difference = Mathf.DeltaAngle(Piece.transform.eulerAngles.z, rotation);
             //Debug.Log($"Difference in angles {difference}, {(difference > closeEnough ? "counter-clockwise" : "clockwise")}");
-            if (difference > 3)
+            if (_difference > 3)
             {
-                Piece.transform.Rotate(new Vector3(0, 0, 1 * Time.fixedDeltaTime * RotationRate));
+                Piece.transform.Rotate(_rightRotationRate);
 
-                Ship.RightRocketFlares.ForEach((flare) =>
+                if (Ship.HasRocketFlares)
                 {
-                    flare.SetActive(true);
-                });
+                    Ship.RightRocketFlares.ForEach((flare) =>
+                    {
+                        flare.SetActive(true);
+                    });
 
-                Ship.LeftRocketFlares.ForEach((flare) =>
-                {
-                    flare.SetActive(false);
-                });
+                    Ship.LeftRocketFlares.ForEach((flare) =>
+                    {
+                        flare.SetActive(false);
+                    });
+                }
+
             }
-            else if (difference < -3)
+            else if (_difference < -3)
             {
-                Piece.transform.Rotate(new Vector3(0, 0, 1 * Time.fixedDeltaTime * RotationRate * -1));
+                Piece.transform.Rotate(_leftRotationRate);
 
-                Ship.RightRocketFlares.ForEach((flare) =>
+                if (Ship.HasRocketFlares)
                 {
-                    flare.SetActive(false);
-                });
+                    Ship.RightRocketFlares.ForEach((flare) =>
+                    {
+                        flare.SetActive(false);
+                    });
 
-                Ship.LeftRocketFlares.ForEach((flare) =>
-                {
-                    flare.SetActive(true);
-                });
+                    Ship.LeftRocketFlares.ForEach((flare) =>
+                    {
+                        flare.SetActive(true);
+                    });
+                }
+
             }
             else
             {
                 Piece.transform.eulerAngles = new Vector3(0, 0, rotation);
 
-                Ship.RightRocketFlares.ForEach((flare) =>
+                if (Ship.HasRocketFlares)
                 {
-                    flare.SetActive(false);
-                });
+                    Ship.RightRocketFlares.ForEach((flare) =>
+                    {
+                        flare.SetActive(false);
+                    });
 
-                Ship.LeftRocketFlares.ForEach((flare) =>
-                {
-                    flare.SetActive(false);
-                });
+                    Ship.LeftRocketFlares.ForEach((flare) =>
+                    {
+                        flare.SetActive(false);
+                    });
+                }
+
 
                 return true;
             }

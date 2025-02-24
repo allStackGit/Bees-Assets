@@ -12,8 +12,8 @@ GameObject:
   - component: {fileID: 6983214468218345639}
   - component: {fileID: 6983214468218345638}
   - component: {fileID: 8331629362155308964}
-  - component: {fileID: -3884800941988369417}
   - component: {fileID: 6984875223823359920}
+  - component: {fileID: -3884800941988369417}
   m_Layer: 10
   m_Name: Queen Stinger Laser Shot
   m_TagString: Projectile
@@ -136,41 +136,6 @@ Rigidbody2D:
   m_SleepingMode: 1
   m_CollisionDetection: 0
   m_Constraints: 0
---- !u!114 &-3884800941988369417
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 6983214468218345633}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 86d10c010b6b4024d8bae5887d026bc4, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  Id: 0
-  Age: 0
-  Level: {fileID: 0}
-  Stage: {fileID: 0}
-  Side: 1
-  Collider: {fileID: 6984875223823359920}
-  Body: {fileID: 8331629362155308964}
-  _entity: {fileID: 0}
-  Power: 0
-  Range: 0
-  Speed: 100
-  Shooter: {fileID: 0}
-  Target: {fileID: 0}
-  Weapon: {fileID: 0}
-  StartingPosition: {x: 0, y: 0}
-  Angle: 0
-  Explosion: {fileID: 0}
-  Name: 
-  Type: 11
-  HasExplosion: 1
-  ShipIsDead: 0
-  HasBody: 1
-  IsDead: 1
 --- !u!58 &6984875223823359920
 CircleCollider2D:
   m_ObjectHideFlags: 0
@@ -206,3 +171,41 @@ CircleCollider2D:
   m_Offset: {x: 0, y: 0}
   serializedVersion: 2
   m_Radius: 1.3
+--- !u!114 &-3884800941988369417
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6983214468218345633}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 86d10c010b6b4024d8bae5887d026bc4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Id: 0
+  Age: 0
+  Level: {fileID: 0}
+  Stage: {fileID: 0}
+  Side: 1
+  Collider: {fileID: 6984875223823359920}
+  Body: {fileID: 8331629362155308964}
+  SpriteRenderer: {fileID: 6983214468218345639}
+  Power: 0
+  Range: 0
+  Speed: 100
+  Shooter: {fileID: 0}
+  Target: {fileID: 0}
+  Weapon: {fileID: 0}
+  StartingPosition: {x: 0, y: 0}
+  Angle: 0
+  Explosion: {fileID: 0}
+  Name: 
+  Type: 11
+  HasExplosion: 1
+  ShipIsDead: 0
+  HasBody: 1
+  HasCollider: 1
+  HasNecessaryAnimation: 0
+  Animator: {fileID: 6983214468218345638}
+  IsDead: 1

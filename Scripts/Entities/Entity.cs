@@ -1,3 +1,4 @@
+using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
 using System;
@@ -18,6 +19,7 @@ namespace Assets.Scripts.Entities
 
         public Collider2D Collider;
         public Rigidbody2D Body;
+        public SpriteRenderer SpriteRenderer;
         //protected virtual void Update() // [alert] [training] Should probably just remove this during training
         //{
         //    if (!Level.IsTraining && !Level.IsPaused)
@@ -28,6 +30,14 @@ namespace Assets.Scripts.Entities
         //public int GetLifeTime() {
         //    return DateTime.Now.Subtract(StartTime).Seconds;
         //}
+        public virtual void Create(Stage stage)
+        {
+            Stage = stage;
+            if (!Stage.IsRendering)
+            {
+                Destroy(SpriteRenderer);
+            }
+        }
         public float DistanceToPoint(Vector2 point)
         {
             return Vector2.Distance(GetPosition(), point);
@@ -110,7 +120,7 @@ namespace Assets.Scripts.Entities
             return transform.eulerAngles.z;
         }
 
-        public Entity _entity;
+        private Entity _entity;
         public override bool Equals(System.Object obj)
         {
             if (obj == null)
@@ -158,6 +168,28 @@ namespace Assets.Scripts.Entities
         public static bool operator !=(Entity a, Entity b)
         {
             return !(a == b);
+        }
+        public virtual void Activate()
+        {
+            //gameObject.SetActive(true);
+            Collider.enabled = true;
+            Body.simulated = true;
+            if (Stage.IsRendering)
+            {
+                SpriteRenderer.enabled = true;
+            }
+            enabled = true;
+        }
+        public virtual void Deactivate()
+        {
+            //gameObject.SetActive(false);
+            Collider.enabled = false;
+            Body.simulated = false;
+            if (Stage.IsRendering)
+            {
+                SpriteRenderer.enabled = false;
+            }
+            enabled = false;
         }
     }
 

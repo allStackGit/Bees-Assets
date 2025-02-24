@@ -17,16 +17,19 @@ namespace Assets.Scripts.Levels.Commands
         /// <param name="noEnemy"></param>
         /// <param name="topLeft"></param>
         /// <param name="bottomRight"></param>
-        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy, Vector2 topLeft, Vector2 bottomRight)
+        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, Vector2 topLeft, Vector2 bottomRight)
         {
-            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
+            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
 
             _position = GetSquad().GetPosition();
             if (IsHiveMindCommand)
             {
                 topLeft = Utilities.RandomCoordinate(Level, _position, Vector2.one * ConfigData.Configuration.AIPatrolMaxSize, _ten);
                 bottomRight = Utilities.RandomCoordinate(Level, _position, Vector2.one * ConfigData.Configuration.AIPatrolMaxSize, _ten);
-                Invoke(nameof(FinishAIPatrol), ConfigData.Configuration.AISquadPatrolTime);
+
+                TimeoutTimer.Reuse(ConfigData.Configuration.AISquadPatrolTime, Timeout);
+                Level.AddTimer(TimeoutTimer);
+                //Invoke(nameof(FinishAIPatrol), ConfigData.Configuration.AISquadPatrolTime);
             }
 
             //Debug.Log($"topLeft: {topLeft}, bottomRight: {bottomRight}");
@@ -39,7 +42,9 @@ namespace Assets.Scripts.Levels.Commands
             AddDestination(bottomRight);
             AddDestination(_bottomLeft);
 
-            InvokeRepeating(nameof(Timer), 0, CommandFrequency);
+            CommandTimer.Reuse(CommandFrequency, Timer, true);
+            Level.AddTimer(CommandTimer);
+            //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
 
         }
         private Vector2 _destination;
@@ -60,10 +65,10 @@ namespace Assets.Scripts.Levels.Commands
                 GetSquad().Status = $"Patrolling towards {_destination}";
             }
         }
-        private void FinishAIPatrol()
-        {
-            CancelInvoke(nameof(Timer));
-            SetFinalize("Finished Patrol");
-        }
+        //private void FinishAIPatrol()
+        //{
+        //    CancelInvoke(nameof(Timer));
+        //    SetFinalize("Finished Patrol");
+        //}
     }
 }

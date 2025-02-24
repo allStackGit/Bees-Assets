@@ -2,6 +2,7 @@
 using Assets.Scripts.Levels;
 using Assets.Scripts.Levels.Commands;
 using Assets.Scripts.Scenes;
+using System;
 using System.Collections;
 using System.Xml.Linq;
 using UnityEngine;
@@ -14,23 +15,47 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public int Range;
         public CircleCollider2D Collider;
 
-        public virtual void Setup(Weapon weapon, int range)
+        public virtual void Create(Weapon weapon, int range)
         {
             Weapon = weapon;
             Range = range;
             Weapon.HasRangeCollider = true;
             Collider.radius = Range;
         }
+        public void Activate()
+        {
+            Collider.enabled = true;
+            enabled = true;
+        }
+        public void Deactivate()
+        {
+            Collider.enabled = false;
+            enabled = false;
+        }
+        private Ship _shipEnter;
+        private GameObject _colliderEnter;
         protected virtual void OnTriggerEnter2D(Collider2D collider)
         {
-            GameObject collidingThing = collider.gameObject;
-            if (collidingThing.CompareTag("Ship"))
+            _colliderEnter = collider.gameObject;
+            if (_colliderEnter.CompareTag("Ship"))
             {
-                Ship ship = collidingThing.GetComponent<Ship>();
-                if (!ship.IsDead)
+                _shipEnter = _colliderEnter.GetComponent<Ship>();
+                if (!_shipEnter.IsDead)
                 {
-                    Weapon.ShipsWithinRange.Add(ship.Id, ship);
-                    ship.WeaponsThatHaveUsWithinRange.Add(Weapon);
+                    Weapon.ShipsWithinRange.Add(_shipEnter.Id, _shipEnter);
+                    //try
+                    //{
+                    //    Weapon.ShipsWithinRange.Add(_shipEnter.Id, _shipEnter);
+
+                    //}
+                    //catch (Exception e)
+                    //{
+                    //    Debug.Log(Weapon);
+                    //    Debug.Log(Weapon.ShipsWithinRange);
+                    //    Debug.Log(_shipEnter);
+                    //    throw e;
+                    //}
+                    _shipEnter.WeaponsThatHaveUsWithinRange.Add(Weapon);
                     Weapon.HasCachedChanged = true;
                 }
 
@@ -48,20 +73,22 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
 
         }
-        ///
+        private Ship _shipExit;
+        private Projectile _projectileExit;
+        private GameObject _colliderExit;
         protected virtual void OnTriggerExit2D(Collider2D collider) // This is triggered by ships dying too 
         {
-            GameObject collidingThing = collider.gameObject;
-            if (collidingThing.CompareTag("Ship"))
+            _colliderExit = collider.gameObject;
+            if (_colliderExit.CompareTag("Ship"))
             {
-                Ship ship = collidingThing.GetComponent<Ship>();
+                _shipExit = _colliderExit.GetComponent<Ship>();
 
                 //Debug.Log($"{ship.Name} is no longer in {Weapon.Ship.Name} range");
-                Weapon.ShipsWithinRange.Remove(ship.Id);
+                Weapon.ShipsWithinRange.Remove(_shipExit.Id);
                 Weapon.HasCachedChanged = true;
-                if (!ship.IsDead)
+                if (!_shipExit.IsDead)
                 {
-                    ship.WeaponsThatHaveUsWithinRange.Remove(Weapon);
+                    _shipExit.WeaponsThatHaveUsWithinRange.Remove(Weapon);
                 }
 
 
@@ -70,13 +97,20 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 //    Level.State.HivemindShips[Weapon.Side - 1][Weapon.Ship.Id].Remove(ship);
                 //}
             }
-            else if (collidingThing.CompareTag("Projectile"))
+            else if (_colliderExit.CompareTag("Projectile"))
             {
-                Projectile projectile = collidingThing.GetComponent<Projectile>();
-                if (projectile.Weapon.Equals(Weapon) && !Weapon.Ship.IsDead)
+                _projectileExit = _colliderExit.GetComponent<Projectile>();
+                if (_projectileExit.Weapon.Equals(Weapon) && !Weapon.Ship.IsDead)
                 {
                     //Debug.Log($"{Weapon.Ship.Name}'s projectile left it's range!");
-                    projectile.Kill();
+                    if (_projectileExit.Type == ConfigData.ProjectileTypes.Rocket)
+                    {
+                        _projectileExit.KillSequence();
+                    }
+                    else
+                    {
+                        _projectileExit.Kill();
+                    }
                 }
             }
         }

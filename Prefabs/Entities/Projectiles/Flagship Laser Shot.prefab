@@ -200,6 +200,7 @@ MonoBehaviour:
   Side: 2
   Collider: {fileID: 157442685264321490}
   Body: {fileID: 4881685890803801593}
+  SpriteRenderer: {fileID: 5046848058992666463}
   Power: 0
   Range: 0
   Speed: 200
@@ -214,4 +215,7 @@ MonoBehaviour:
   HasExplosion: 1
   ShipIsDead: 0
   HasBody: 1
+  HasCollider: 1
+  HasNecessaryAnimation: 0
+  Animator: {fileID: 5555079385697380193}
   IsDead: 1

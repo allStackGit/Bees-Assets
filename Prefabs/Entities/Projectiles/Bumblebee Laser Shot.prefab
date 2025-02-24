@@ -12,8 +12,8 @@ GameObject:
   - component: {fileID: 7278664396504941289}
   - component: {fileID: 1620347580524154054}
   - component: {fileID: 6252646807954662412}
-  - component: {fileID: -4094084748593767591}
   - component: {fileID: 329058988261704629}
+  - component: {fileID: -4094084748593767591}
   m_Layer: 10
   m_Name: Bumblebee Laser Shot
   m_TagString: Projectile
@@ -136,41 +136,6 @@ Rigidbody2D:
   m_SleepingMode: 1
   m_CollisionDetection: 0
   m_Constraints: 0
---- !u!114 &-4094084748593767591
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3307778784346582978}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 86d10c010b6b4024d8bae5887d026bc4, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  Id: 0
-  Age: 0
-  Level: {fileID: 0}
-  Stage: {fileID: 0}
-  Side: 1
-  Collider: {fileID: 329058988261704629}
-  Body: {fileID: 6252646807954662412}
-  _entity: {fileID: 0}
-  Power: 0
-  Range: 0
-  Speed: 100
-  Shooter: {fileID: 0}
-  Target: {fileID: 0}
-  Weapon: {fileID: 0}
-  StartingPosition: {x: 0, y: 0}
-  Angle: 0
-  Explosion: {fileID: 0}
-  Name: 
-  Type: 3
-  HasExplosion: 1
-  ShipIsDead: 0
-  HasBody: 1
-  IsDead: 1
 --- !u!58 &329058988261704629
 CircleCollider2D:
   m_ObjectHideFlags: 0
@@ -206,3 +171,41 @@ CircleCollider2D:
   m_Offset: {x: 0, y: 0}
   serializedVersion: 2
   m_Radius: 1.25
+--- !u!114 &-4094084748593767591
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3307778784346582978}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 86d10c010b6b4024d8bae5887d026bc4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Id: 0
+  Age: 0
+  Level: {fileID: 0}
+  Stage: {fileID: 0}
+  Side: 1
+  Collider: {fileID: 329058988261704629}
+  Body: {fileID: 6252646807954662412}
+  SpriteRenderer: {fileID: 7278664396504941289}
+  Power: 0
+  Range: 0
+  Speed: 100
+  Shooter: {fileID: 0}
+  Target: {fileID: 0}
+  Weapon: {fileID: 0}
+  StartingPosition: {x: 0, y: 0}
+  Angle: 0
+  Explosion: {fileID: 0}
+  Name: 
+  Type: 3
+  HasExplosion: 1
+  ShipIsDead: 0
+  HasBody: 1
+  HasCollider: 1
+  HasNecessaryAnimation: 0
+  Animator: {fileID: 1620347580524154054}
+  IsDead: 1

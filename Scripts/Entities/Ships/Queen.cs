@@ -24,20 +24,22 @@ namespace Assets.Scripts.Entities.Ships
         public List<Squad> MinionSquads = new List<Squad>();
 
         private int _maxMinionsPerSquad = 16;
+        private ScaledTimer _spawnMinionsTimer = new ScaledTimer();
         public override void Create(Stage stage)
         {
             base.Create(stage);
             if (MinionCount > _maxMinionsPerSquad)
             {
                 Debug.LogError($"Queen Property [MinionCount] (MinionCount) cannot be greater than [_maxMinionsPerSquad] ({_maxMinionsPerSquad})");
-                RotationSpeed = Speed * ConfigData.Configuration.RotationMultiplier / 4;
-
             }
+            RotationSpeed = Speed * ConfigData.Configuration.RotationMultiplier / 4;
         }
         public override void Setup(Level level, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
         {
             base.Setup(level, fleetShip, squad, offsetFromCenter);
-            InvokeRepeating(nameof(SpawnMinions), SpawnFrequency, SpawnFrequency);
+            _spawnMinionsTimer.Reuse(SpawnFrequency, SpawnMinions, true);
+            Level.AddTimer(_spawnMinionsTimer);
+            //InvokeRepeating(nameof(SpawnMinions), SpawnFrequency, SpawnFrequency);
         }
         public override void ClearData()
         {
@@ -112,8 +114,7 @@ namespace Assets.Scripts.Entities.Ships
             ship.FleetShip = FleetShip;
 
             Vector2 position = GetPosition();
-            Vector2 rotatedSpawnPosition = Utilities.RotatePointAroundPoint(position, position + SpawnPoint, GetRotation() * Mathf.Deg2Rad);
-            ship.transform.localPosition = rotatedSpawnPosition;
+            ship.transform.localPosition = Utilities.RotatePointAroundPoint(position, position + SpawnPoint, GetRotation() * Mathf.Deg2Rad);
 
             if (shipIndex > 0 && squad.HasDestination)
             {
@@ -125,6 +126,12 @@ namespace Assets.Scripts.Entities.Ships
             }
             ship.SetSquadName();
 
+        }
+
+        public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false)
+        {
+            Level.CancelTimer(_spawnMinionsTimer);
+            base.Kill(killer, killerFleetShip, killerSavedSquad, endKill);
         }
     }
 

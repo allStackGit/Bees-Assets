@@ -14,10 +14,10 @@ namespace Assets.Scripts.Levels.Commands
         public bool HasReachedReturnPoint, HasReachedEnemySquad;
         Vector2 _position, _enemyPosition;
         float _distance;
-        public override void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
+        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId)
         {
-            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
-            if (HasSameEnemy())
+            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, false);
+            if (!EnemySquad.IsDead)
             {
                 IsAttacking = true;
 
@@ -29,10 +29,15 @@ namespace Assets.Scripts.Levels.Commands
                     Utilities.RandomCoordinate(Level, _position, Vector2.one * 45, Vector2.zero) :
                     Utilities.RandomCoordinate(Level, _enemyPosition, Vector2.one * (EnemySquad.MaxRange + 45), Vector2.one * (EnemySquad.MaxRange + 10));
 
-                InvokeRepeating(nameof(Timer), 0, CommandFrequency);
+                CommandTimer.Reuse(CommandFrequency, Timer, true);
+                Level.AddTimer(CommandTimer);
+
+                //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
                 if (IsHiveMindCommand)
                 {
-                    Invoke(nameof(Timeout), ConfigData.StandardMaxCommandTime);
+                    TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
+                    Level.AddTimer(TimeoutTimer);
+                    //Invoke(nameof(Timeout), ConfigData.StandardMaxCommandTime);
                 }
             }
 
@@ -48,7 +53,7 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (!GetSquad().IsDead)
             {
-                if (HasSameEnemy())
+                if (!EnemySquad.IsDead)
                 {
 
                     // if you haven't reached the enemy squad yet, check if you are within range and go to them
@@ -72,7 +77,7 @@ namespace Assets.Scripts.Levels.Commands
                     }
                     else if (GetSquad().HasReachedDestination) // if you have hit the return point, end the command
                     {
-                        CancelInvoke(nameof(Timer));
+                        //CancelInvoke(nameof(Timer));
                         SetFinalize("Returned to starting point");
                     }
 
@@ -133,7 +138,7 @@ namespace Assets.Scripts.Levels.Commands
                 }
                 else
                 {
-                    CancelInvoke(nameof(Timer));
+                    //CancelInvoke(nameof(Timer));
                     SetFinalize("The enemy squad is gone or dead");
                 }
             }

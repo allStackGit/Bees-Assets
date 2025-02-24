@@ -12,14 +12,20 @@ namespace Assets.Scripts.Entities.Ships
     public class FireBarge : Ship
     {
         RocketExplosion Explosion;
+        public Weapon Bomb;
+        private ScaledTimer _delayedKillTimer = new ScaledTimer();
+        public override void Create(Stage stage)
+        {
+            base.Create(stage);
+            Bomb = Weapons.First();
+            Destroy(Bomb.Piece);
+        }
         public void Detonate()
         {
             //Debug.Log("Detonating Fire Barge");
 
             Kill(null, null, null);
         }
-        public Weapon Bomb => Weapons.First();
-
         public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false) // [kill-method] [damage-method] [note] [stats-method]
         {
             if (!IsDead)
@@ -54,7 +60,7 @@ namespace Assets.Scripts.Entities.Ships
                     }
                     Squad.SavedSquad.Stats.ShipsLost++;
 
-                    if (HasVision)
+                    if (HasUserVision)
                     {
                         Vision.Kill(3);
                     }
@@ -81,8 +87,20 @@ namespace Assets.Scripts.Entities.Ships
                 {
                     Squad.SetOffsets();
                 }
-                gameObject.SetActive(false);
-                Invoke(nameof(DelayedKill), 5);
+                if (Stage.IsRendering)
+                {
+                    SpriteRenderer.enabled = false;
+                }
+                if (!Stage.IsTraining)
+                {
+                    _delayedKillTimer.Reuse(5f, DelayedKill);
+                    Level.AddTimer(_delayedKillTimer);
+                    //Invoke(nameof(DelayedKill), 5);
+                }
+                else
+                {
+                    Deactivate();
+                }
 
             }
            

@@ -16,6 +16,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             base.Create(ship, type, range, power, rateOfFire, projectileValue, piece, projectileType, fireAtFrontOfShip, rotationRate);
             Pupil = Piece.gameObject.transform.GetChild(0).GetComponent<SpriteRenderer>();
+            if (!Stage.IsRendering)
+            {
+                Destroy(Pupil);
+            }
         }
         public override void ClearData()
         {
@@ -26,8 +30,12 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             base.SendProjectile();
             //reset the targeting eye color
-            Pupil.color = Color.white;
-            _readyToChangeColor = false;
+            if (Stage.IsRendering)
+            {
+                Pupil.color = Color.white;
+                _readyToChangeColor = false;
+            }
+
             //Debug.Log("Sending projectile, Setting color white!");
 
         }
@@ -35,16 +43,20 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             //Debug.Log("Setting eye targeting");
             base.SetTargetShip(ship);
-            if (!_readyToChangeColor)
+            if (Stage.IsRendering)
             {
-                //Debug.Log($"Got target! {ship.name}");
-                _readyToChangeColor = true;
+                if (!_readyToChangeColor)
+                {
+                    //Debug.Log($"Got target! {ship.name}");
+                    _readyToChangeColor = true;
+                }
+                else if (!CeaseFire)
+                {
+                    //Debug.Log("Setting color red!");
+                    Pupil.color = ConfigData.GetUIColor("eye-aiming");
+                }
             }
-            else if (!CeaseFire)
-            {
-                //Debug.Log("Setting color red!");
-                Pupil.color = ConfigData.GetUIColor("eye-aiming");
-            }
+
 
         }
         protected override void Aim()
@@ -52,23 +64,28 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             //Debug.Log("Hornet aiming");
             base.Aim();
             // resets the eye color if there is no target
-            if ((!HasTargetShip && !IsFiringManually) || CeaseFire || !IsAimedAtTarget)
+            if (Stage.IsRendering)
             {
-                //Debug.Log("Setting color white!");
-                Pupil.color = Color.white;
-            }else if (IsFiringManually)
-            {
-                if (!_readyToChangeColor)
+                if ((!HasTargetShip && !IsFiringManually) || CeaseFire || !IsAimedAtTarget)
                 {
-                    //Debug.Log($"Got target! {ship.name}");
-                    _readyToChangeColor = true;
+                    //Debug.Log("Setting color white!");
+                    Pupil.color = Color.white;
                 }
-                else
+                else if (IsFiringManually)
                 {
-                    //Debug.Log("Setting color red!");
-                    Pupil.color = ConfigData.GetUIColor("eye-aiming");
+                    if (!_readyToChangeColor)
+                    {
+                        //Debug.Log($"Got target! {ship.name}");
+                        _readyToChangeColor = true;
+                    }
+                    else
+                    {
+                        //Debug.Log("Setting color red!");
+                        Pupil.color = ConfigData.GetUIColor("eye-aiming");
+                    }
                 }
             }
+
         }
     }
 }

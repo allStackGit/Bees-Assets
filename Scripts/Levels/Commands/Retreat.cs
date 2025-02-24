@@ -12,11 +12,12 @@ namespace Assets.Scripts.Levels.Commands
          */
         private Vector2 _retreatPoint, _enemyPosition, _position;
         private float _distance, _idealDistance, _angle;
-        public override void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
+        private ScaledTimer _delayedSetFinalizeTimer = new ScaledTimer();
+        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId)
         {
-            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
+            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, false);
 
-            if (HasSameEnemy())
+            if (!EnemySquad.IsDead)
             {
                 _enemyPosition = EnemySquad.GetPosition();
                 _distance = GetSquad().DistanceToPoint(_enemyPosition);
@@ -30,11 +31,16 @@ namespace Assets.Scripts.Levels.Commands
                     _position = GetSquad().GetPosition();
                     _retreatPoint = new Vector2((Mathf.Sin(_angle) * (_idealDistance - _distance) + _position.x), (Mathf.Cos(_angle) * (_idealDistance - _distance) + _position.y));
                     SetAndMove(_retreatPoint);
-                    InvokeRepeating(nameof(Timer), 0, CommandFrequency);
+
+                    CommandTimer.Reuse(CommandFrequency, Timer, true);
+                    Level.AddTimer(CommandTimer);
+                    //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
                 }
                 else
                 {
-                    Invoke(nameof(DelaySetFinalize), 3f);
+                    _delayedSetFinalizeTimer.Reuse(3, DelaySetFinalize);
+                    Level.AddTimer(_delayedSetFinalizeTimer);
+                    //Invoke(nameof(DelaySetFinalize), 3f);
                 }
             }
             else
@@ -51,7 +57,7 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (GetSquad().HasReachedDestination)
             {
-                CancelInvoke(nameof(Timer));
+                //CancelInvoke(nameof(Timer));
                 SetFinalize($"Retreating and got far enough away.");
             }
             else
@@ -63,6 +69,12 @@ namespace Assets.Scripts.Levels.Commands
         private void DelaySetFinalize()
         {
             SetFinalize($"Retreating and already far enough away.");
+        }
+
+        public override void SetFinalize(string cause)
+        {
+            Level.CancelTimer(_delayedSetFinalizeTimer);
+            base.SetFinalize(cause);
         }
     }
 }

@@ -23,13 +23,13 @@ namespace Assets.Scripts.Levels.Commands
         /// </summary>
         public List<long> ShipsCurrentlyMining = new List<long>();
 
-        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy, MiningAsteroid asteroid)
+        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, MiningAsteroid asteroid)
         {
             if (asteroid != null) // Needs to be null check in case there were no asteroids
             {
                 MiningShips = GetSquad().GetShips().Where((ship) => ship.IsMiningShip).Select((s) => s.Id).ToList();
                 TargetAstroid = asteroid;
-                base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
+                base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
                 PrepareDamageToSendEntries("closest");
 
                 // Check if any ships are already on the asteroid
@@ -45,10 +45,14 @@ namespace Assets.Scripts.Levels.Commands
                         FoundAsteroid(ship);
                     }
                 });
-                InvokeRepeating(nameof(MoveToAsteroid), 0, CommandFrequency);
+                CommandTimer.Reuse(CommandFrequency, MoveToAsteroid, true);
+                Level.AddTimer(CommandTimer);
+                //InvokeRepeating(nameof(MoveToAsteroid), 0, CommandFrequency);
                 if (IsHiveMindCommand)
                 {
-                    Invoke(nameof(EndCommand), 300); // 5 minutes
+                    TimeoutTimer.Reuse(300, Timeout);
+                    Level.AddTimer(TimeoutTimer);
+                    //Invoke(nameof(EndCommand), 300); // 5 minutes
                 }
             }
             else
@@ -80,6 +84,8 @@ namespace Assets.Scripts.Levels.Commands
                 SetFinalize("Mining asteroid was destroyed");
             }
         }
+        private ScaledTimer _miningTimer = new ScaledTimer();
+        private ScaledTimer _stopMovingTowardsAsteroidTimer = new ScaledTimer();
         public void FoundAsteroid(Ship ship)
         {
             ShipsCurrentlyMining.Add(ship.Id);
@@ -89,17 +95,22 @@ namespace Assets.Scripts.Levels.Commands
             }
             if (ShipsCurrentlyMining.Count == 1)
             {
-                InvokeRepeating(nameof(Mine), 0, 3);
+                _miningTimer.Reuse(3, Mine, true);
+                Level.AddTimer(_miningTimer);
+                //InvokeRepeating(nameof(Mine), 0, 3);
             }
             if (MiningShips.All((s) => Level.State.GetShipById(s) != null || ShipsCurrentlyMining.Contains(s)))
             {
-                Invoke(nameof(StopMovingTowardsAsteroid), 5);
+                _stopMovingTowardsAsteroidTimer.Reuse(5, StopMovingTowardsAsteroid);
+                Level.AddTimer(_stopMovingTowardsAsteroidTimer);
+                //Invoke(nameof(StopMovingTowardsAsteroid), 5);
             }
         }
 
         public void StopMovingTowardsAsteroid()
         {
-            CancelInvoke(nameof(MoveToAsteroid));
+            Level.CancelTimer(CommandTimer);
+            //CancelInvoke(nameof(MoveToAsteroid));
         }
         private int _miningRate, _amountMined, _amountPerShip;
         public void Mine() // [stats-method]
@@ -115,7 +126,7 @@ namespace Assets.Scripts.Levels.Commands
 
                     Tsv += _amountMined;
                     TargetAstroid.Health -= _amountMined;
-                    //Debug.Log($"{Squad.Name} mined {amountMined} from {TargetAstroid.Name}. It has {TargetAstroid.Health} health left");
+                    Debug.Log($"{GetSquad().Name} mined {_amountMined} from {TargetAstroid.Name}. It has {TargetAstroid.Health} health left");
 
                     _amountPerShip = _amountMined / ShipsCurrentlyMining.Count;
                     ShipsCurrentlyMining.Select((s) => Level.State.GetShipById(s)).ToList().ForEach((ship) =>
@@ -146,6 +157,7 @@ namespace Assets.Scripts.Levels.Commands
         }
         public override void SetFinalize(string cause)
         {
+            Level.CancelTimer(_miningTimer);
             CleanupAsteroid();
             //Debug.Log($"Finalizing mining command for {Squad}");
             GetSquad().GetShips().ForEach((ship) =>
@@ -157,10 +169,6 @@ namespace Assets.Scripts.Levels.Commands
                 }
             });
             base.SetFinalize(cause);
-        }
-        public void EndCommand()
-        {
-            SetFinalize("Ran of out of time while mining");
         }
     }
 }

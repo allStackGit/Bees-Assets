@@ -21,7 +21,6 @@ namespace Assets.Scripts.Levels.Commands
         private ConfigData.ShootingStrategyTypes _execute_shootingStrategy;
         private long _execute_commandOutcomeId;
         private long _execute_shootingStrategyOutcomeId;
-        private bool _execute_noEnemy;
 
         // List of ships retrieved from the squad.
         private List<Ship> _execute_ships;
@@ -37,21 +36,20 @@ namespace Assets.Scripts.Levels.Commands
 
         /// <summary>
         ///  Sends the squad towards the enemy and follows them, when the ship is close enough, it pauses to build up "steam" and then charges forward, ramming the ship(s) in front
-        ///  and damaging them. The ship takes damage from the charge even if it doesn't hit another ship. Currently only works for squads of barges
+        ///  and damaging them. The ship takes damage from the charge even if it doesn't hit another ship. Currently only works for squads of barges. Hivemind-only command.
         /// </summary>
         /// <param name="strategy"></param>
         /// <param name="shootingStrategy"></param>
         /// <param name="commandOutcomeId"></param>
         /// <param name="noEnemy"></param>
-        public override void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
+        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId)
         {
             // Store method parameters in class-level variables.
             _execute_shootingStrategy = shootingStrategy;
             _execute_commandOutcomeId = commandOutcomeId;
             _execute_shootingStrategyOutcomeId = shootingStrategyOutcomeId;
-            _execute_noEnemy = noEnemy;
 
-            base.Execute(_execute_shootingStrategy, _execute_commandOutcomeId, _execute_shootingStrategyOutcomeId, _execute_noEnemy);
+            base.Execute(_execute_shootingStrategy, _execute_commandOutcomeId, _execute_shootingStrategyOutcomeId, false);
             //Debug.Log("Executing bombing run");
 
             IsAttacking = true;
@@ -62,8 +60,9 @@ namespace Assets.Scripts.Levels.Commands
 
             _execute_ships = GetSquad().GetShips();
 
-            // Use a for loop with a class-level loop counter.
-            for (_execute_loopIndex = 0; _execute_loopIndex < _execute_ships.Count; _execute_loopIndex++)
+            // Command could be dead if the command has an enemy and the enemy is dead and the command finalized during base.Execute()
+            // Or if there were no more enemy ships to target for GetTargetShip() and the command finalized
+            for (_execute_loopIndex = 0; _execute_loopIndex < _execute_ships.Count && !IsDead; _execute_loopIndex++)
             {
                 _execute_currentShip = _execute_ships[_execute_loopIndex];
 
@@ -76,12 +75,17 @@ namespace Assets.Scripts.Levels.Commands
                 }
                 GetTargetShip(_execute_currentShip);
             }
-
-            InvokeRepeating(nameof(Timer), 0, CommandFrequency);
-            if (IsHiveMindCommand)
+            if (!IsDead)
             {
-                Invoke(nameof(Timeout), ConfigData.StandardMaxCommandTime);
+                //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
+                CommandTimer.Reuse(CommandFrequency, Timer, true);
+                Level.AddTimer(CommandTimer);
+                TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
+                Level.AddTimer(TimeoutTimer);
+                //Invoke(nameof(Timeout), ConfigData.StandardMaxCommandTime);
             }
+
+
         }
         public override void ClearData()
         {
@@ -175,7 +179,7 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (!GetSquad().IsDead)
             {
-                if (HasSameEnemy())
+                if (!EnemySquad.IsDead)
                 {
                     //Debug.Log("Bombing timer");
                     GetSquad().Status = $"In the middle of charging run against {EnemySquad.Name}";
@@ -221,7 +225,7 @@ namespace Assets.Scripts.Levels.Commands
                 }
                 else
                 {
-                    CancelInvoke(nameof(Timer));
+                    //CancelInvoke(nameof(Timer));
                     SetFinalize("The enemy squad is gone or dead");
                 }
             }

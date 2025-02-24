@@ -134,6 +134,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   DegreesPerSecond: 6
   UpdatesPerSecond: 5
+  Level: {fileID: 0}
 --- !u!1 &7112091651330518199
 GameObject:
   m_ObjectHideFlags: 0
@@ -245,6 +246,9 @@ MonoBehaviour:
   UserStartingPosition: {x: 0, y: -430}
   AIStartingPosition: {x: 0, y: 430}
   Name: Uranus
+  Index: 0
+  RingSparkle: {fileID: 7210241141521788838}
+  ItemId: 0
 --- !u!1001 &1225857934425999943
 PrefabInstance:
   m_ObjectHideFlags: 0

@@ -528,6 +528,7 @@ namespace Assets.Scripts
             { "Rocket Turret", ConfigData.WeaponTypes.RocketTurret },
             { "Dual Cannon", ConfigData.WeaponTypes.DualCannon },
             { "Eye", ConfigData.WeaponTypes.Eye },
+            { "Queen Eye", ConfigData.WeaponTypes.QueenEye },
             { "Split Shot", ConfigData.WeaponTypes.SplitShot },
         };
 
@@ -581,7 +582,6 @@ namespace Assets.Scripts
         // Class-level fields for Hash methods
         // ===========================================================
         private static readonly Random _rnd = new Random();
-        private static long _uniqueHash_value;
         private static long _uniqueHash_tempHash;
 
         public static int Hash()

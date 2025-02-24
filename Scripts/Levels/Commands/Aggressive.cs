@@ -16,18 +16,22 @@ namespace Assets.Scripts.Levels.Commands
         /// <param name="shootingStrategy"></param>
         /// <param name="commandOutcomeId"></param>
         /// <param name="noEnemy"></param>
-        public override void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
+        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId)
         {
-            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
+            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, false);
 
             if (!GetSquad().IsDead)
             {
                 IsAttacking = true;
                 PrepareDamageToSendEntries();
-                InvokeRepeating(nameof(Timer), 0, CommandFrequency);
+                CommandTimer.Reuse(CommandFrequency, Timer, true);
+                Level.AddTimer(CommandTimer);
+                //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
                 if (IsHiveMindCommand)
                 {
-                    Invoke(nameof(Timeout), ConfigData.StandardMaxCommandTime);
+                    TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
+                    Level.AddTimer(TimeoutTimer);
+                    //Invoke(nameof(Timeout), ConfigData.StandardMaxCommandTime);
                 }
             }
             
@@ -42,7 +46,7 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (!GetSquad().IsDead)
             {
-                if (HasSameEnemy())
+                if (!EnemySquad.IsDead)
                 {
                     GetSquad().Status = $"Targeting enemy squad #{EnemySquad.SquadNumber}";
                     if (!IsComfortablyWithinRange) // check if all of their squad ships are comfortably within range of all of our squad ships
@@ -69,10 +73,13 @@ namespace Assets.Scripts.Levels.Commands
                         if (!IsCloseToTarget && GetSquad().DistanceToPoint(EnemySquad.GetPosition()) < GetSquad().MaxRange * 2)
                         {
                             //Debug.Log($"{Squad.Name} is close to {Enemy.Name}");
-                            CancelInvoke(nameof(Timer));
+                            Level.CancelTimer(CommandTimer);
+                            //CancelInvoke(nameof(Timer));
                             CommandFrequency = .25f;
                             IsCloseToTarget = true;
-                            InvokeRepeating(nameof(Timer), CommandFrequency, CommandFrequency);
+                            CommandTimer.Reuse(CommandFrequency, Timer, true);
+                            Level.AddTimer(CommandTimer);
+                            //InvokeRepeating(nameof(Timer), CommandFrequency, CommandFrequency);
                         }
                     }
                     else if (GetSquad().MaxRange >= 45 && GetSquad().AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
@@ -86,7 +93,7 @@ namespace Assets.Scripts.Levels.Commands
                 }
                 else
                 {
-                    CancelInvoke(nameof(Timer));
+                    //CancelInvoke(nameof(Timer));
                     SetFinalize("The enemy squad is gone or dead");
                 }
             }

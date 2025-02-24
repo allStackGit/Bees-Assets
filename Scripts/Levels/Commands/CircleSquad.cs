@@ -13,15 +13,19 @@ namespace Assets.Scripts.Levels.Commands
         private bool _gotToEnemy, _hasSetIdealDistance;
         private float _idealDistance, _angle;
         private Vector2 _lastDestination;
-        public override void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
+        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId)
         {
-            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
+            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, false);
             IsAttacking = true;
             PrepareDamageToSendEntries();
-            InvokeRepeating(nameof(Timer), .1f, CommandFrequency);
+            CommandTimer.Reuse(CommandFrequency, Timer, true);
+            Level.AddTimer(CommandTimer);
+            //InvokeRepeating(nameof(Timer), .1f, CommandFrequency);
             if (IsHiveMindCommand)
             {
-                Invoke(nameof(Timeout), ConfigData.StandardMaxCommandTime);
+                TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
+                Level.AddTimer(TimeoutTimer);
+                //Invoke(nameof(Timeout), ConfigData.StandardMaxCommandTime);
             }
         }
         public override void ClearData()
@@ -47,7 +51,7 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (!GetSquad().IsDead)
             {
-                if (HasSameEnemy())
+                if (!EnemySquad.IsDead)
                 {
                     GetSquad().Status = $"Moving to circle enemy squad #{EnemySquad.SquadNumber}";
                     if (!_gotToEnemy && !GetSquad().AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
@@ -68,10 +72,13 @@ namespace Assets.Scripts.Levels.Commands
                         }
                         if (!_gotToEnemy)
                         {
-                            CancelInvoke(nameof(Timer));
+                            Level.CancelTimer(CommandTimer);
+                            //CancelInvoke(nameof(Timer));
                             CommandFrequency = .1f;
                             _gotToEnemy = true;
-                            InvokeRepeating(nameof(Timer), CommandFrequency, CommandFrequency);
+                            CommandTimer.Reuse(CommandFrequency, Timer, true);
+                            Level.AddTimer(CommandTimer);
+                            //InvokeRepeating(nameof(Timer), CommandFrequency, CommandFrequency);
                         }
 
                         _timer_angle = EnemySquad.AngleToPoint(_timer_squadPosition);
@@ -98,7 +105,7 @@ namespace Assets.Scripts.Levels.Commands
                 else
                 {
                     //Debug.Log("The enemy is dead or does not exist.");
-                    CancelInvoke(nameof(Timer));
+                    //CancelInvoke(nameof(Timer));
                     SetFinalize("The enemy squad is gone or dead");
                 }
             }

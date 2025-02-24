@@ -13,10 +13,14 @@ namespace Assets.Scripts.Entities.Ships
         public SpriteRenderer Pupil;
         public LaserBuilderControl LaserBuilderControl;
         public GameObject LaserBuilderAnimation;
+        public Animator Animator;
 
         public override void Create(Ship ship, ConfigData.WeaponTypes type, int range, int power, float rateOfFire, float projectileValue, GameObject piece,
             ConfigData.ProjectileTypes projectileType, bool fireAtFrontOfShip, float rotationRate)
         {
+            WeaponsData weaponsData = piece.GetComponent<WeaponsData>();
+            Animator = weaponsData.Animator;
+
             base.Create(ship, type, range, power, rateOfFire, projectileValue, piece, projectileType, fireAtFrontOfShip, rotationRate);
             LaserBuilderAnimation = Piece.transform.Find("Laser Animation").gameObject;
             LaserBuilderControl = LaserBuilderAnimation.GetComponent<LaserBuilderControl>();
@@ -26,6 +30,16 @@ namespace Assets.Scripts.Entities.Ships
         {
             base.ClearData();
             IsReadyForFiring = false;
+        }
+        public override void Activate()
+        {
+            base.Activate();
+            Animator.enabled = true;
+        }
+        public override void Deactivate()
+        {
+            base.Deactivate();
+            Animator.enabled = false;
         }
         protected override void SendProjectile() // [projectile-method] [note] this doesn't actually send the projectile because we need to wait for the animation to finish
         {

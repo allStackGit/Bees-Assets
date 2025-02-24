@@ -146,6 +146,7 @@ namespace Assets.Scripts.Levels
             CreationId = Utilities.Hash();
             //Debug.Log($"Created squad {this}");
         }
+        private ScaledTimer _checkChaseTimer = new ScaledTimer();
         public void Setup(Level level, SavedSquad savedSquad, ConfigData.ShootingStrategyTypes shootingStrategy, bool ceaseFire, bool isMatchingSpeed, bool shouldChase,
             int id, int side, int squadNumber, string name, Color color)
         {
@@ -198,7 +199,9 @@ namespace Assets.Scripts.Levels
 
             if (IsUserControlled)
             {
-                InvokeRepeating(nameof(CheckChase), 5, 1);
+                _checkChaseTimer.Reuse(1, CheckChase, true);
+                Level.AddTimer(_checkChaseTimer);
+                //InvokeRepeating(nameof(CheckChase), 5, 1);
             }
             if (Stage.FullCeaseFire || Side == ConfigData.Configuration.AISide && Stage.MakeEnemyCeaseFire)
             {
@@ -310,32 +313,34 @@ namespace Assets.Scripts.Levels
                 ship.SetSquadName();
             }
         }
-        protected void Update() // [testing]
-        {
-            //if (!IsDead && GetShips().Count == 0)
-            //{
-            //    Debug.LogError($"{Name} has no ships and isn't dead at frame #{Stage.__Updates}");
-            //}
-            //else
-            //{
-            //    Debug.Log($"{Name} has {GetShips().Count} ships and isDead? {IsDead} at frame #{Stage.__Updates}");
-            //}
-            if (!Level.State.IsPaused)
-            {
-                Age++;
-                if (HasCommand)
-                {
-                    GetCommand().Age++;
-                }
-            }
+        //protected void Update() // [testing]
+        //{
+        //    //if (!IsDead && GetShips().Count == 0)
+        //    //{
+        //    //    Debug.LogError($"{Name} has no ships and isn't dead at frame #{Stage.__Updates}");
+        //    //}
+        //    //else
+        //    //{
+        //    //    Debug.Log($"{Name} has {GetShips().Count} ships and isDead? {IsDead} at frame #{Stage.__Updates}");
+        //    //}
 
-            //if (!IsDead && HasCommand && OriginalCommandId > 0 && OriginalCommandId != GetCommand().ItemId || (HasCommand && PastCommands.Any((pc) => pc.OutcomeId != GetCommand().OutcomeId && !pc.IsFinalized)))
-            //{
-            //    Debug.LogError($"{this} no longer has the original command id! #{GetCommand().ItemId}");
-            //}
 
-            // Debug.Log($"{name} ship has lived for {tickLife} ticks and {ShowLifeTime()} seconds with {GetHealth()} health");
-        }
+        //    //if (!Level.State.IsPaused)
+        //    //{
+        //    //    Age++;
+        //    //    if (HasCommand)
+        //    //    {
+        //    //        GetCommand().Age++;
+        //    //    }
+        //    //}
+
+        //    //if (!IsDead && HasCommand && OriginalCommandId > 0 && OriginalCommandId != GetCommand().ItemId || (HasCommand && PastCommands.Any((pc) => pc.OutcomeId != GetCommand().OutcomeId && !pc.IsFinalized)))
+        //    //{
+        //    //    Debug.LogError($"{this} no longer has the original command id! #{GetCommand().ItemId}");
+        //    //}
+
+        //    // Debug.Log($"{name} ship has lived for {tickLife} ticks and {ShowLifeTime()} seconds with {GetHealth()} health");
+        //}
         public void FixedUpdate()
         {
             if (IsUserControlled && !Level.State.IsPaused)
@@ -471,7 +476,7 @@ namespace Assets.Scripts.Levels
         }
         public void Kill(bool endKill = false)
         {
-            //Debug.Log($"Killing squad {Name}");
+            Debug.Log($"Killing squad {Name}");
             if (!IsDead)
             {
                 IsDead = true;
@@ -518,6 +523,7 @@ namespace Assets.Scripts.Levels
                     SquadBox.gameObject.SetActive(false);
                     Level.State.DeselectSquad(this);
                 }
+                Level.CancelTimer(_checkChaseTimer);
                 Level.State.RemoveSquad(this);
                 enabled = false;
                 //Stage.Pool.ReturnSquadToPool(this);
@@ -617,15 +623,6 @@ namespace Assets.Scripts.Levels
         {
             //Debug.Log($"Setting {this} Command to {command}");
             _command = command;
-        }
-        /// <summary>
-        /// Checks whether this squad still has the same Id and is alive, or if it has since died and become a new squad
-        /// </summary>
-        /// <param name="id"></param>
-        /// <returns></returns>
-        public bool IsSameSquad(int id)
-        {
-            return ItemId == id && !IsDead;
         }
         public void AddToCommandList()
         {          
@@ -848,7 +845,7 @@ namespace Assets.Scripts.Levels
         {
 
             MakeUserCommand(ConfigData.CommandTypes.Guard, null);
-            ((Guard)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, true, squad);
+            ((Guard)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, squad);
             
             if (Level.Stage.DoesUserHaveController)
             {
@@ -858,7 +855,7 @@ namespace Assets.Scripts.Levels
         public void UserPatrol(Vector2 topLeft, Vector2 bottomRight)
         {
             MakeUserCommand(ConfigData.CommandTypes.Patrol, null);
-            ((Patrol)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, true, topLeft, bottomRight);
+            ((Patrol)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, topLeft, bottomRight);
             if (Level.Stage.DoesUserHaveController)
             {
                 Level.Stage.Menus.ActionBox.HighlightSelectedButtons();
@@ -871,7 +868,7 @@ namespace Assets.Scripts.Levels
             if (HasMiningShips)
             {
                 MakeUserCommand(ConfigData.CommandTypes.Mining, null);
-                ((Mining)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, true, miningAsteroid);
+                ((Mining)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, miningAsteroid);
             }
             else
             {
@@ -883,7 +880,7 @@ namespace Assets.Scripts.Levels
         public void UserFullRetreat(WarpGate warpGate)
         {
             MakeUserCommand(ConfigData.CommandTypes.FullRetreat, null);
-            ((FullRetreat)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, true, warpGate);
+            ((FullRetreat)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, warpGate);
 
         }
         public void UserAggressive(Squad enemy)
@@ -894,14 +891,14 @@ namespace Assets.Scripts.Levels
                 return;
             }
             MakeUserCommand(ConfigData.CommandTypes.Aggressive, enemy);
-            ((Aggressive)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, false);
+            ((Aggressive)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0);
 
         }
         public void UserBombingRun(Squad enemy)
         {
             //Debug.Log($"Creating \"Bombing Run\" command for {Name} against {enemy.Name}");
             MakeUserCommand(ConfigData.CommandTypes.BombingRun, enemy);
-            ((BombingRun)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, false);
+            ((BombingRun)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0);
 
         }
         public void MakeUserCommand(ConfigData.CommandTypes command, Squad enemy)

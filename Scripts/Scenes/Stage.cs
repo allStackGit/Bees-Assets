@@ -34,6 +34,10 @@ public class Stage : Scene
     /// </summary>
     public bool IsDebugging;
     /// <summary>
+    /// Whether or not the game will be rendered and visual objects should be used
+    /// </summary>
+    public bool IsRendering;
+    /// <summary>
     /// Whether or not the Neural Network is being trained
     /// </summary>
     public bool IsTrainingNueralNetwork;
@@ -317,6 +321,8 @@ public class Stage : Scene
         __TotalLength = ConfigData.__TotalLength;
         __AverageLength = ConfigData.__AverageLength;
         __TotalShips = Levels.Sum((l) => l.State.Ships.Count);
+
+        
     }
 
 
@@ -325,7 +331,7 @@ public class Stage : Scene
     new void Start()
     {
         StartTime = Time.realtimeSinceStartup;
-        Debug.Log($"Start level stage");
+        //Debug.Log($"Start level stage");
         Name = "Level";
         base.Start();
         __CommandCounts = new int[18];
@@ -367,7 +373,7 @@ public class Stage : Scene
     Transform _finalize_colliderContainer;
     protected override void FinalizeSceneWithUserData()
     {
-        Debug.Log($"Finalize scene");
+        //Debug.Log($"Finalize scene");
 
 
         base.FinalizeSceneWithUserData();
@@ -416,7 +422,11 @@ public class Stage : Scene
             // Setup Squad Action Box
             if (ActivateAudio)
             {
-                Audio.Setup(PlayMusic);
+                Audio.Setup(PlayMusic, PrimaryLevel);
+            }
+            else
+            {
+                Destroy(Audio);
             }
 
             if (ConfigData.IsPlayingCampaign)
@@ -432,10 +442,12 @@ public class Stage : Scene
         }
         else
         {
-            if (ActivateAudio)
-            {
-                Audio.gameObject.SetActive(false);
-            }
+            //if (ActivateAudio)
+            //{
+            //    Audio.gameObject.SetActive(false);
+            //}
+            Destroy(Selector);
+            Destroy(Menus);
         }
 
 
@@ -499,6 +511,7 @@ public class Stage : Scene
             TimeScale = OverrideTimeScale;
 
         }
+        Time.timeScale = TimeScale;
         if (GeneratedSquadCountOverride > 0)
         {
             PrimaryLevel.CurrentLevelOptions.EnemySquadGenerationCount = GeneratedSquadCountOverride;
@@ -593,6 +606,10 @@ public class Stage : Scene
         {
             DebugLogger();
             Pool.DebugLogger();
+        }
+        if (WatchServerRequests)
+        {
+            UpdateTestVariables();
         }
     }
     void FixedUpdate()

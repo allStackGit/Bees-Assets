@@ -116,7 +116,7 @@ MonoBehaviour:
   Side: 2
   Collider: {fileID: 4005957847551047737}
   Body: {fileID: 9209194230390332424}
-  _entity: {fileID: 0}
+  SpriteRenderer: {fileID: 2518675752222090673}
   ShowDebug: 0
   Health: 0
   MaxHealth: 0
@@ -160,7 +160,7 @@ MonoBehaviour:
   IsMiningShip: 0
   IsWarpGate: 0
   HasTargetDirection: 0
-  HasVision: 0
+  HasUserVision: 0
   HasProximityCollider: 1
   HasShipAnimation: 0
   HasRocketFlares: 0
@@ -205,6 +205,7 @@ MonoBehaviour:
   DamagePerSecond: 0
   Tsv: 0
   HasWeapons: 0
+  HasTurrets: 0
   IsCarrierShip: 0
   IsMoving: 0
   PathfindingThreadComplete: 0
@@ -503,34 +504,6 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 2518675752222090672}
     m_Modifications:
-    - target: {fileID: 172821519076649908, guid: 9b99fc9739de1804ca5c1dc2968281d9, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 172821519076649908, guid: 9b99fc9739de1804ca5c1dc2968281d9, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 172821519076649908, guid: 9b99fc9739de1804ca5c1dc2968281d9, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 172821519076649908, guid: 9b99fc9739de1804ca5c1dc2968281d9, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 172821519076649908, guid: 9b99fc9739de1804ca5c1dc2968281d9, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: -0
-      objectReference: {fileID: 0}
-    - target: {fileID: 172821519076649908, guid: 9b99fc9739de1804ca5c1dc2968281d9, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: -0
-      objectReference: {fileID: 0}
-    - target: {fileID: 172821519076649908, guid: 9b99fc9739de1804ca5c1dc2968281d9, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: -0
-      objectReference: {fileID: 0}
     - target: {fileID: 172821519076649908, guid: 9b99fc9739de1804ca5c1dc2968281d9, type: 3}
       propertyPath: m_LocalEulerAnglesHint.x
       value: 0

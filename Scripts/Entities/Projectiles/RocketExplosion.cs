@@ -56,7 +56,7 @@ namespace Assets.Scripts.Entities.Projectiles
             return _shipsHit.Contains(ship);
         }
 
-        public new virtual void Kill()
+        public override void Kill()
         {
             //Debug.Log("Killed off the rocket explosion");
             if (Type == ConfigData.ProjectileTypes.FireBargeExplosion)
@@ -64,7 +64,17 @@ namespace Assets.Scripts.Entities.Projectiles
                 Level.State.FireBargeExplosions.Remove(this);
             }
             base.Kill();
-        } 
+        }
+        public override void Activate()
+        {
+            base.Activate();
+            Animator.enabled = true;
+        }
+        public override void Deactivate()
+        {
+            base.Deactivate();
+            Animator.enabled = false;
+        }
 
         public void SetHarmless()
         {
@@ -76,6 +86,7 @@ namespace Assets.Scripts.Entities.Projectiles
             //Debug.Log($"Setting collider size to {size} for {Name}");
             CircleCollider.radius = size;
         }
+        private int _index;
         protected override void FixedUpdate()
         {
             if (!Level.State.IsPaused)
@@ -83,7 +94,7 @@ namespace Assets.Scripts.Entities.Projectiles
                 if (CollidingQueue.Count > 0)
                 {
                     //Debug.Log($"Pulled collision for {Name} off of rocket explosion queue");
-                    for (int i = 0; i < CollidingQueue.Count; i++)
+                    for (_index = 0; _index < CollidingQueue.Count; _index++)
                     {
                         ShipCollision(CollidingQueue.Dequeue());
                     }

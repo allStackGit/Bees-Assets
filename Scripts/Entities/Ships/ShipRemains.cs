@@ -13,6 +13,7 @@ namespace Assets.Scripts.Entities.Ships
         /// </summary>
         public RemainsAnimationController AnimationController;
         public bool HasAnimationController;
+        private ScaledTimer _killTimer = new ScaledTimer();
         public void Create(Ship ship)
         {
             Ship = ship;
@@ -51,7 +52,9 @@ namespace Assets.Scripts.Entities.Ships
                 GetComponent<SpriteRenderer>().sprite = recolored;
             }
 
-            Invoke(nameof(Kill), 5);
+            _killTimer.Reuse(5, Kill);
+            Ship.Level.AddTimer(_killTimer);
+            //Invoke(nameof(Kill), 5);
         }
 
         public void Kill()

@@ -9,6 +9,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 6336891931982589551}
+  - component: {fileID: 1473311776735959309}
   m_Layer: 0
   m_Name: Small Cannon
   m_TagString: Ship Component
@@ -34,6 +35,21 @@ Transform:
   - {fileID: 8597523077607012885}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1473311776735959309
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1334121294634142703}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 36df057e0dea74e459638fbb1789b8b9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  SpriteRenderer: {fileID: 301538961799670568}
+  SecondSpriteRenderer: {fileID: 0}
+  Animator: {fileID: 0}
 --- !u!1 &4100548376408920609
 GameObject:
   m_ObjectHideFlags: 0
@@ -83,9 +99,6 @@ SpriteRenderer:
   m_ReflectionProbeUsage: 1
   m_RayTracingMode: 0
   m_RayTraceProcedural: 0
-  m_RayTracingAccelStructBuildFlagsOverride: 0
-  m_RayTracingAccelStructBuildFlags: 1
-  m_SmallMeshCulling: 1
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:

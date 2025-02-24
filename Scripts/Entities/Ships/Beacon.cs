@@ -1,4 +1,5 @@
-﻿using Assets.Scripts.Levels;
+﻿using Assets.Scripts.Data;
+using Assets.Scripts.Levels;
 using NUnit.Framework;
 using System;
 using System.Collections;
@@ -10,13 +11,15 @@ namespace Assets.Scripts.Entities.Ships
     public class Beacon : Ship
     {
         public Sprite StandardSprite, EnemySprite;
-        public SpriteRenderer SpriteRenderer;
+        private ScaledTimer _beaconStatusTimer = new ScaledTimer();
 
         public void LookForShips()
         {
             if (!Stage.IsTraining && IsUserControlled)
             {
-                InvokeRepeating(nameof(SetBeaconStatus), ConfigData.BeaconUpdateFrequency, ConfigData.BeaconUpdateFrequency);
+                _beaconStatusTimer.Reuse(ConfigData.BeaconUpdateFrequency, SetBeaconStatus, true);
+                Level.AddTimer(_beaconStatusTimer);
+                //InvokeRepeating(nameof(SetBeaconStatus), ConfigData.BeaconUpdateFrequency, ConfigData.BeaconUpdateFrequency);
             }
         }
         public void SetBeaconStatus()
@@ -43,6 +46,12 @@ namespace Assets.Scripts.Entities.Ships
                 EnemySprite = Utilities.SetImageColor(Squad.Color, EnemySprite, changeablePixels);
             }
             base.SetColor();
+        }
+
+        public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false)
+        {
+            Level.CancelTimer(_beaconStatusTimer);
+            base.Kill(killer, killerFleetShip, killerSavedSquad, endKill);
         }
     }
 }

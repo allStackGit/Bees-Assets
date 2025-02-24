@@ -17,17 +17,29 @@ namespace Assets.Scripts.Entities.Projectiles
         //public GameObject RocketExplosion;
         public int MaxSpeed;
         public RocketExplosion RocketExplosion;
+        private ScaledTimer _speedIncreaseTimer = new ScaledTimer();
 
         public override void Setup(Level level, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power)
         {
             base.Setup(level, weapon, shooter, target, startingPosition, angle, range, power);
-            InvokeRepeating(nameof(IncreaseSpeed), .1f, .1f);
+            _speedIncreaseTimer.Reuse(.1f, IncreaseSpeed, true);
+            Level.AddTimer(_speedIncreaseTimer);
+            //InvokeRepeating(nameof(IncreaseSpeed), .1f, .1f);
         }
         private void IncreaseSpeed()
         {
             Body.velocity *= 1.5f;
         }
-
+        public override void Deactivate()
+        {
+            //CancelInvoke();
+            base.Deactivate();
+        }
+        public override void Kill()
+        {
+            Level.CancelTimer(_speedIncreaseTimer);
+            base.Kill();
+        }
         public override void ContactTarget(Ship target)
         {
             //Debug.Log($"Rocket hit {target.Name} and exploded");
@@ -36,7 +48,8 @@ namespace Assets.Scripts.Entities.Projectiles
 
         public override void KillSequence()
         {
-            CancelInvoke(nameof(IncreaseSpeed));
+            //CancelInvoke(nameof(IncreaseSpeed));
+            //Level.CancelTimer(_speedIncreaseTimer);
             AddExplosion();
             Kill();
         }

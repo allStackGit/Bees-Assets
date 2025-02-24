@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using Assets.Scripts.Levels;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -38,9 +39,11 @@ namespace Assets.Scripts
 
         public float IntroLength;
         public bool IntroEnded;
+        public Level Level;
 
-        public void Setup(bool playMusic)
+        public void Setup(bool playMusic, Level level)
         {
+            Level = level;
             // Setup audio [make audio controller]
             //BeesLoops.Add("Carpenter Bee", CarpenterBeeLoop);
             //BeesLoops.Add("Honeybee", HoneybeeLoop);
@@ -104,8 +107,9 @@ namespace Assets.Scripts
                 //PlayLoop(IntroLength, WaspLoop);
                 PlayLoop(IntroLength, HumanLoop);
 
-                StartCoroutine(nameof(EndIntro), IntroLength);
-                Invoke(nameof(EndIntro), IntroLength);
+                //StartCoroutine(nameof(EndIntro), IntroLength);
+                //Invoke(nameof(EndIntro), IntroLength);
+                Level.AddTimer(new ScaledTimer(IntroLength, EndIntro));
             }
 
 

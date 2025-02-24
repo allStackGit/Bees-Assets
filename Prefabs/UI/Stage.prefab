@@ -48,13 +48,13 @@ MonoBehaviour:
   Camera: {fileID: 0}
   DialoguePrefab: {fileID: 4693076599736100422, guid: cf96c357f9237f545b82628a7c3499b7, type: 3}
   EventSystem: {fileID: 0}
-  FinalizedScene: 0
+  IsFinalized: 0
   WatchServerRequests: 0
   IsSocketManager: 0
   IsMainScene: 0
   TimeScale: 1
   TargetFrameRate: 0
-  IsLevel: 0
+  Type: 1
   __PastServerRequests: []
   __SocketLevels: []
   __StandingRequests: []
@@ -63,6 +63,8 @@ MonoBehaviour:
   __Updates: 0
   LevelCount: 0
   DoesUserHaveController: 0
+  IsDebugging: 0
+  IsRendering: 0
   IsTrainingNueralNetwork: 0
   IsTrainingHiveMind: 0
   IsTraining: 0
@@ -71,11 +73,44 @@ MonoBehaviour:
   ActivateAudio: 0
   PlayMusic: 0
   UnlockCamera: 0
+  ReplaceDeadShips: 0
+  RecordStats: 0
+  UseFullyRandomSquads: 0
+  UseFullyRandomEnemySquads: 0
+  UseOverrideSquads: 0
+  UseOverrideEnemySquads: 0
+  UseMouseScrolling: 0
+  IsTestFiring: 0
+  MakeEnemyCeaseFire: 0
+  FullCeaseFire: 0
+  MakeShotsHarmless: 0
+  HasRandomizedOptions: 0
   OverrideUserSide: 0
   TimeoutTime: 0
   OverrideTimeScale: 0
   GeneratedSquadCountOverride: 0
+  GeneratedSquadCountMinimum: 0
+  ObstacleListCount: 0
+  OverrideMapIndex: 0
+  OverrideObstacleMapIndex: 0
+  SpeedMultiplier: 0
+  InitialCommandDelay: 0
+  AsteroidMaxSpawnRate: 0
+  AsteroidMinimumSpawnRate: 0
+  CurrentAsteroidMaxSpawnRate: 0
+  CurrentAsteroidMinimumSpawnRate: 0
+  AsteroidMaxSpeed: 0
+  DefaultZoom: 0
+  ZoomSpeed: 0
+  ScrollSpeed: 0
+  MouseScrollDistanceFromEdge: {x: 0, y: 0}
+  DefaultCameraPosition: {x: 0, y: 0}
+  OverrideBeeShipTypes: 
+  OverrideHumanShipTypes: 
+  OverrideStrats: 
+  VisonSprite: {fileID: 0}
   Prefabs: {fileID: 0}
+  Pool: {fileID: 0}
   Menus: {fileID: 0}
   Selector: {fileID: 0}
   Audio: {fileID: 0}
@@ -84,8 +119,16 @@ MonoBehaviour:
   SelectionBox: {fileID: 0}
   MiniMapCameraContainer: {fileID: 0}
   MiniMapDisplayCanvas: {fileID: 0}
+  SquadTabs: []
   PrimaryLevel: {fileID: 0}
-  OverrideBeeShipTypes: []
-  OverrideHumanShipTypes: []
-  BeeShipTypes: []
-  HumanShipTypes: []
+  Levels: []
+  BeeShipTypes: 
+  HumanShipTypes: 
+  FixedUpdates: 0
+  StartTime: 0
+  HasAsteroids: 0
+  __HivemindCommands: 0
+  __LevelTimeouts: 0
+  __TotalShips: 0
+  __LevelCompletes: 0
+  __CommandCounts: 

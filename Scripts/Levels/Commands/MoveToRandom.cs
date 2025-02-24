@@ -9,13 +9,15 @@ namespace Assets.Scripts.Levels.Commands
         Sends the squad towards a random spot on the map
          */
         private Vector2 _destination;
-        public override void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
+        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId)
         {
-            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy); 
+            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true); 
 
             PrepareDamageToSendEntries("closest");
             SetAndMove(Utilities.RandomCoordinate(Level, GetSquad().GetPosition(), Vector2.one * ConfigData.Configuration.AIRandomMovementMaxDistance, Vector2.one * 10));
-            InvokeRepeating(nameof(Timer), 0, CommandFrequency);
+            CommandTimer.Reuse(CommandFrequency, Timer, true);
+            Level.AddTimer(CommandTimer);
+            //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
 
 
         }
@@ -25,7 +27,7 @@ namespace Assets.Scripts.Levels.Commands
             {
                 if (GetSquad().HasReachedDestination)
                 {
-                    CancelInvoke(nameof(Timer));
+                    //CancelInvoke(nameof(Timer));
                     SetFinalize("Reached the random destination on the map");
                 }
                 _destination = GetDestination();

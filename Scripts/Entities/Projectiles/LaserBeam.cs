@@ -1,11 +1,8 @@
 ﻿
 
 using Assets.Scripts.Entities.Ships;
-using System.Collections;
 using UnityEngine;
 using Assets.Scripts.Entities.Ships.Weapons;
-using System.Security.Cryptography;
-using static UnityEngine.GraphicsBuffer;
 using System.Collections.Generic;
 using Assets.Scripts.Levels;
 
@@ -19,9 +16,12 @@ namespace Assets.Scripts.Entities.Projectiles
         private Ship _target;
         private int _powerLoss;
         private HashSet<Ship> _shipsHit = new HashSet<Ship>();
-        public override void Setup(Level level, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power)
+        private Vector2 _oneAndHalf = new Vector2(1, .5f);
+        private BeamCannon BeamCannon;
+        public void Setup(Level level, BeamCannon beamCannon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power)
         {
-            base.Setup(level, weapon, shooter, target, startingPosition, angle, range, power);
+            base.Setup(level, beamCannon, shooter, target, startingPosition, angle, range, power);
+            BeamCannon = beamCannon;
             _lastShooterPosition = Weapon.GetPosition();
             _target = Weapon.TargetShip;
             if (_target != null)
@@ -29,6 +29,7 @@ namespace Assets.Scripts.Entities.Projectiles
                 _lastTargetPoint = _target.GetPosition();
             }
         }
+
         public override void ClearData()
         {
             base.ClearData();
@@ -36,19 +37,20 @@ namespace Assets.Scripts.Entities.Projectiles
             _lastTargetPoint = Vector2.zero;
             _target = null;
             _powerLoss = 0;
-            transform.localScale = new Vector2(1, .5f);
+            transform.localScale = _oneAndHalf;
             _shipsHit.Clear();
             Angle = 0;
         }
+        private int _halfHealth;
         public override void ContactTarget(Ship target)
         {
             if (!_shipsHit.Contains(target))
             {
                 _shipsHit.Add(target);
                 //Debug.Log($"{Name} hit {target.Name}");
-                int halfHealth = target.Health / 2;
-                _powerLoss = Mathf.Clamp(halfHealth, 0, Power);
-                if (Power <= halfHealth)
+                _halfHealth = target.Health / 2;
+                _powerLoss = Mathf.Clamp(_halfHealth, 0, Power);
+                if (Power <= _halfHealth)
                 {
                     Kill();
                 }
@@ -65,32 +67,36 @@ namespace Assets.Scripts.Entities.Projectiles
             if (!IsDead)
             {
                 IsDead = true;
-                BeamCannon weapon = (BeamCannon)Weapon;
-                weapon.IsFiringLaserBeam = false;
-                weapon.LaserBeamTarget = null;
+                BeamCannon.IsFiringLaserBeam = false;
+                BeamCannon.LaserBeamTarget = null;
                 RemoveDamageSentEntry();
                 if (!ShipIsDead)
                 {
                     Shooter.ProjectilesInFlight.Remove(this);
                 }
                 //Debug.Log($"{Name} has been killed and will be returned");
+                Level.State.RemoveProjectile(this);
+                Deactivate();
                 Stage.Pool.ReturnProjectileToPool(this);
             }
 
         }
-        private Vector2 GetChangeInShooterPosition()
-        {
-            Vector2 position = Shooter.GetPosition();
-            Vector2 change = position - _lastShooterPosition;
-            _lastShooterPosition = position;
-            return change;
-        }
+        //private Vector2 GetChangeInShooterPosition()
+        //{
+        //    Vector2 position = Shooter.GetPosition();
+        //    Vector2 change = position - _lastShooterPosition;
+        //    _lastShooterPosition = position;
+        //    return change;
+        //}
         protected override void FixedUpdate()
         {
             base.FixedUpdate();
             ExtendBeam();
         }
 
+        private float _worldAngle, _localAngle;
+        private Vector2 _laserBeamOffset, _localCannonPoint, _rotatedLocalPosition, _offsetRotatedCannonPosition;
+        private Quaternion _localRotation;
         private void ExtendBeam()
         {
 
@@ -111,20 +117,20 @@ namespace Assets.Scripts.Entities.Projectiles
                     //}
                     transform.localScale = new Vector2(transform.localScale.x + _scale, transform.localScale.y);
 
-                    float worldAngle = Weapon.GetRotation() + 90;
-                    float localAngle = Weapon.GetLocalRotation() + 90;
+                    _worldAngle = BeamCannon.GetRotation() + 90;
+                    _localAngle = BeamCannon.GetLocalRotation() + 90;
 
-                    Vector2 LaserBeamOffset = new Vector2((transform.localScale.x), 0);
+                    _laserBeamOffset = new Vector2((transform.localScale.x), 0);
 
-                    Quaternion localRotation = Quaternion.Euler(0, 0, localAngle);
+                    _localRotation = Quaternion.Euler(0, 0, _localAngle);
 
-                    Vector2 localCannonPoint = Vector2.zero + LaserBeamOffset;
+                    _localCannonPoint = Vector2.zero + _laserBeamOffset;
                     //Debug.Log($"Beamcannon local position: {Weapon.GetLocalPosition()}");
-                    Vector2 rotatedLocalPosition = localRotation * localCannonPoint;
+                    _rotatedLocalPosition = _localRotation * _localCannonPoint;
                     //Vector2 rotatedCannonPosition = (Vector2)Shooter.transform.TransformPoint(rotatedLocalPosition);
                     //Vector2 rotatedMapPosition = (Vector2)Level.Map.transform.TransformPoint(rotatedLocalPosition);
-                    Vector2 offsetRotatedCannonPosition = (Vector2)Shooter.transform.TransformPoint(rotatedLocalPosition) - Level.GetPosition();
-                    Angle = worldAngle * Mathf.Deg2Rad * -1;
+                    _offsetRotatedCannonPosition = (Vector2)Shooter.transform.TransformPoint(_rotatedLocalPosition) - Level.GetPosition();
+                    Angle = _worldAngle * Mathf.Deg2Rad * -1;
 
                     //Debug.Log($"Cruiser world rotation: {Shooter.transform.eulerAngles.z}");
                     //Debug.Log($"Cannon local rotation: {Weapon.GetLocalRotation()}, world rotation: {Weapon.GetRotation()}");
@@ -138,22 +144,22 @@ namespace Assets.Scripts.Entities.Projectiles
 
                     //Debug.Log($"Extending Laser Beam #{Id} to rotated cannon position: {offsetRotatedCannonPosition}");
 
-                    transform.localEulerAngles = new Vector3(0, 0, worldAngle);
-                    transform.localPosition = offsetRotatedCannonPosition;
+                    transform.localEulerAngles = new Vector3(0, 0, _worldAngle);
+                    transform.localPosition = _offsetRotatedCannonPosition;
                     Body.velocity = Shooter.Body.velocity;
                     return;
 
                     //+ GetChangeInShooterPosition();
                 }
-                else
-                {
-                    //Debug.Log($"Killing {gameObject.name} at position ({transform.localPosition}) because distance ({distance}) > range ({Range})");
-                }
+                //else
+                //{
+                //    //Debug.Log($"Killing {gameObject.name} at position ({transform.localPosition}) because distance ({distance}) > range ({Range})");
+                //}
             }
-            else
-            {
-                //Debug.Log($"Killing {gameObject.name} at position ({transform.localPosition}) because the shooter is dead");
-            }
+            //else
+            //{
+            //    //Debug.Log($"Killing {gameObject.name} at position ({transform.localPosition}) because the shooter is dead");
+            //}
             RemoveDamageSentEntry();
             Kill();
         }

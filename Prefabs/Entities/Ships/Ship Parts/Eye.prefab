@@ -71,7 +71,7 @@ SpriteRenderer:
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: 1055962891
-  m_SortingLayer: 4
+  m_SortingLayer: 0
   m_SortingOrder: 2
   m_Sprite: {fileID: 21300000, guid: 0fae2b069db611c44ade234289f27738, type: 3}
   m_Color: {r: 0, g: 0, b: 0, a: 1}
@@ -93,6 +93,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 6765156073663602559}
+  - component: {fileID: 8500205379737839121}
   m_Layer: 0
   m_Name: Eye
   m_TagString: Ship Component
@@ -110,7 +111,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: -0, z: 0.7071068, w: -0.7071068}
   m_LocalPosition: {x: 0, y: 1, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_LocalScale: {x: 1, y: 1, z: 0}
   m_ConstrainProportionsScale: 1
   m_Children:
   - {fileID: 5320597171931355892}
@@ -118,6 +119,21 @@ Transform:
   - {fileID: 3887756321467414244}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 270}
+--- !u!114 &8500205379737839121
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7214296237679840584}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 36df057e0dea74e459638fbb1789b8b9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  SpriteRenderer: {fileID: 3993640273857290599}
+  SecondSpriteRenderer: {fileID: 0}
+  Animator: {fileID: 0}
 --- !u!1001 &617580603033236148
 PrefabInstance:
   m_ObjectHideFlags: 0

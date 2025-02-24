@@ -12,8 +12,8 @@ GameObject:
   - component: {fileID: 7174349494957649560}
   - component: {fileID: 9042024677244152868}
   - component: {fileID: -433847355909050064}
-  - component: {fileID: -7301245187212021690}
   - component: {fileID: 4271669994345912639}
+  - component: {fileID: -7301245187212021690}
   m_Layer: 18
   m_Name: Frigate Missle Release
   m_TagString: Projectile
@@ -136,43 +136,6 @@ Rigidbody2D:
   m_SleepingMode: 1
   m_CollisionDetection: 0
   m_Constraints: 0
---- !u!114 &-7301245187212021690
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 5542536910484813896}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: da1e9c3d3a5b68c429d3ed977fc42ee5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  Id: 0
-  Age: 0
-  Level: {fileID: 0}
-  Stage: {fileID: 0}
-  Side: 2
-  Collider: {fileID: 4271669994345912639}
-  Body: {fileID: -433847355909050064}
-  _entity: {fileID: 0}
-  Power: 0
-  Range: 0
-  Speed: 60
-  Shooter: {fileID: 0}
-  Target: {fileID: 0}
-  Weapon: {fileID: 0}
-  StartingPosition: {x: 0, y: 0}
-  Angle: 0
-  Explosion: {fileID: 0}
-  Name: 
-  Type: 5
-  HasExplosion: 0
-  ShipIsDead: 0
-  HasBody: 1
-  IsDead: 1
-  MaxSpeed: 160
-  RocketExplosion: {fileID: 0}
 --- !u!58 &4271669994345912639
 CircleCollider2D:
   m_ObjectHideFlags: 0
@@ -208,3 +171,43 @@ CircleCollider2D:
   m_Offset: {x: 0, y: 0}
   serializedVersion: 2
   m_Radius: 2.5
+--- !u!114 &-7301245187212021690
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5542536910484813896}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: da1e9c3d3a5b68c429d3ed977fc42ee5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Id: 0
+  Age: 0
+  Level: {fileID: 0}
+  Stage: {fileID: 0}
+  Side: 2
+  Collider: {fileID: 4271669994345912639}
+  Body: {fileID: -433847355909050064}
+  SpriteRenderer: {fileID: 7174349494957649560}
+  Power: 0
+  Range: 0
+  Speed: 60
+  Shooter: {fileID: 0}
+  Target: {fileID: 0}
+  Weapon: {fileID: 0}
+  StartingPosition: {x: 0, y: 0}
+  Angle: 0
+  Explosion: {fileID: 0}
+  Name: 
+  Type: 5
+  HasExplosion: 0
+  ShipIsDead: 0
+  HasBody: 1
+  HasCollider: 1
+  HasNecessaryAnimation: 1
+  Animator: {fileID: 9042024677244152868}
+  IsDead: 1
+  MaxSpeed: 160
+  RocketExplosion: {fileID: 0}

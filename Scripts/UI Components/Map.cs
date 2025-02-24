@@ -1,4 +1,5 @@
-﻿using Assets.Scripts.Scenes;
+﻿using Assets.Scripts.Levels;
+using Assets.Scripts.Scenes;
 using System.Collections;
 using UnityEngine;
 
@@ -12,18 +13,43 @@ namespace Assets.Scripts.UI_Components
         public Vector2 UserStartingPosition, AIStartingPosition;
         public string Name;
         public int Index;
+        public ImageSpinner RingSparkle;
         /// <summary>
         /// The Id of this map relative to the stage. Guarenteed unique for this stage.
         /// </summary>
         public int ItemId;
 
-        public void Setup(int index, int itemId, string name, Vector2 userStartingPosition, Vector2 aiStartingPosition)
+        public void Create(Stage stage, int index, int itemId, string name, Vector2 userStartingPosition, Vector2 aiStartingPosition)
         {
             Index = index;
             ItemId = itemId;
             Name = name;
             UserStartingPosition = userStartingPosition;
             AIStartingPosition = aiStartingPosition;
+            if (stage.IsTraining)
+            {
+                if (RingSparkle != null)
+                {
+                    Destroy(RingSparkle.gameObject);
+
+                }
+                Destroy(FogOfWar);
+                if (!stage.IsRendering)
+                {
+                    Destroy(SpriteRenderer);
+                }
+            }
+        }
+
+        public void Setup(Level level)
+        {
+            transform.parent = level.transform;
+            transform.localPosition = Vector2.zero;
+            if (RingSparkle != null && !level.Stage.IsTraining)
+            {
+                RingSparkle.Setup(level);
+            }
+            gameObject.SetActive(true);
         }
         public override bool Equals(System.Object obj)
         {

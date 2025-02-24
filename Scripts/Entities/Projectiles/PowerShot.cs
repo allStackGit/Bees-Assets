@@ -12,7 +12,6 @@ namespace Assets.Scripts.Entities.Projectiles
         public override void ClearData()
         {
             base.ClearData();
-            _powerLoss = 0;
             _shipsHit.Clear();
         }
         public override void ContactTarget(Ship target)

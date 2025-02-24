@@ -7,7 +7,7 @@ namespace Assets.Scripts.Entities
     public class MapBorder : Obstacle
     {
 
-        private void OnTriggerExit2D(Collider2D collider)
+        protected void OnTriggerExit2D(Collider2D collider)
         {
             //Debug.Log($"{Name} collided");
             GameObject collidingThing = collider.gameObject;
@@ -30,7 +30,7 @@ namespace Assets.Scripts.Entities
             }
         }
 
-        private void OnTriggerEnter2D(Collider2D collider)
+        protected override void OnTriggerEnter2D(Collider2D collider)
         {
             //Debug.Log($"{Name} collided");
             GameObject collidingThing = collider.gameObject;

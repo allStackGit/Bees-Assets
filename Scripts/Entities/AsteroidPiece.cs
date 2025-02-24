@@ -11,6 +11,7 @@ namespace Assets.Scripts.Entities
         public int Speed;
         public int HalfSeconds;
         public SpriteRenderer SpriteRenderer;
+        private ScaledTimer _deathTimer = new ScaledTimer();
         public override void Create(Stage stage)
         {
             base.Create(stage);
@@ -34,7 +35,10 @@ namespace Assets.Scripts.Entities
             Vector2 randomPoint = Utilities.RandomCoordinate(Level, Level.GetPosition(), new Vector2(Level.HalfMapWidth, Level.HalfMapHeight), Vector2.zero);
             Body.velocity = Speed * -Utilities.DirectionBetweenPoints(GetPosition(), randomPoint);
             Body.angularVelocity = parent.Body.angularVelocity;
-            InvokeRepeating(nameof(DeathTimer), 1f, .5f);
+
+            _deathTimer.Reuse(.5f, DeathTimer, true);
+            Level.AddTimer(_deathTimer);
+            //InvokeRepeating(nameof(DeathTimer), 1f, .5f);
         }
         public void DeathTimer()
         {
@@ -55,6 +59,7 @@ namespace Assets.Scripts.Entities
             {
                 IsDead = true;
                 Level.State.RemoveObstacle(this);
+                Level.CancelTimer(_deathTimer);
                 Debug.LogError($"No pool for asteroid pieces");
             }
         }

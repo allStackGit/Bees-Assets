@@ -114,7 +114,7 @@ MonoBehaviour:
   Side: 2
   Collider: {fileID: 1768310455394373730}
   Body: {fileID: 9209194230390332424}
-  _entity: {fileID: 0}
+  SpriteRenderer: {fileID: 2518675752222090673}
   ShowDebug: 0
   Health: 0
   MaxHealth: 0
@@ -158,7 +158,7 @@ MonoBehaviour:
   IsMiningShip: 0
   IsWarpGate: 0
   HasTargetDirection: 0
-  HasVision: 0
+  HasUserVision: 0
   HasProximityCollider: 1
   HasShipAnimation: 0
   HasRocketFlares: 0
@@ -201,6 +201,7 @@ MonoBehaviour:
   DamagePerSecond: 0
   Tsv: 0
   HasWeapons: 0
+  HasTurrets: 0
   IsCarrierShip: 0
   IsMoving: 0
   PathfindingThreadComplete: 0
@@ -741,14 +742,6 @@ PrefabInstance:
     - target: {fileID: 8383538919454772690, guid: 05ccb1a46192c8245a4092c59f416f37, type: 3}
       propertyPath: m_SortingLayer
       value: 25
-      objectReference: {fileID: 0}
-    - target: {fileID: 8383538919454772690, guid: 05ccb1a46192c8245a4092c59f416f37, type: 3}
-      propertyPath: m_SortingOrder
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 8383538919454772690, guid: 05ccb1a46192c8245a4092c59f416f37, type: 3}
-      propertyPath: m_SortingLayerID
-      value: -1182350415
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []

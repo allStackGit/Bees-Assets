@@ -66,32 +66,38 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 base.SetTargetShip(targetShip);
             }
         }
+        private LaserBeam _beam;
         protected override void SendProjectile() // [projectile-method] [note] [stats-method]
         {
             if (!IsFiringLaserBeam)
             {
                 //Debug.Log("Sending beam cannon projectile");
 
-                
-                float angle = AngleToPoint(TargetPoint);
+
 
                 //Vector2 mapTransformPoint = Ship.Level.Map.transform.InverseTransformPoint(Piece.transform.position);
                 //Vector2 shipOffset = Ship.GetPosition() + (Vector2) transform.position;
 
                 //Debug.Log($"Potential spawn point for laser beam, mapTransformPoint: {mapTransformPoint}, shipOffset: {shipOffset}");
 
-                Projectile beam = Level.AddProjectile(ConfigData.ProjectileTypes.Beam, this, GetPosition(), angle);
+                //Projectile beam = Level.AddProjectile(ConfigData.ProjectileTypes.Beam, this, GetPosition(), angle);
+
+                _beam = (LaserBeam) Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.Beam);
+                _beam.transform.parent = Level.Map.transform;
+
+                //Debug.Log($"Position before setup for {projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
+                _beam.Setup(Level, this, Ship, TargetShip, GetPosition(), AngleToPoint(TargetPoint), Range, Power);
+                Ship.ProjectilesInFlight.Add(_beam);
 
                 if (Ship.Squad.HasCustomColor)
                 {
-                    beam.GetComponent<SpriteRenderer>().color = Ship.Squad.Color;
+                    _beam.SpriteRenderer.color = Ship.Squad.Color;
                 }
 
                 Ship.FleetShip.ShotsFired++;
                 if (!IsFiringManually && !IsFiringAtAsteroid)
                 {
-                    ShipDamageStatus shipDamageStatus = Level.State.GetShipDamageStatus(Side, TargetShip);
-                    shipDamageStatus.TotalDamageSentToShip += Power;
+                    Level.State.GetShipDamageStatus(Side, TargetShip).TotalDamageSentToShip += Power;
                     LaserBeamTarget = TargetShip;
                 }
                 IsFiringLaserBeam = true;

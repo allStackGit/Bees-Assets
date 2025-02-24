@@ -10,10 +10,10 @@ GameObject:
   m_Component:
   - component: {fileID: 2587070028850966723}
   - component: {fileID: 8383538919454772690}
-  - component: {fileID: 7842972634725915881}
+  - component: {fileID: -1714828156640222812}
   m_Layer: 0
   m_Name: Carried Striker Bomb
-  m_TagString: Projectile
+  m_TagString: UI
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -28,8 +28,8 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
+  m_LocalScale: {x: 1, y: 1, z: 0}
+  m_ConstrainProportionsScale: 1
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
@@ -71,9 +71,9 @@ SpriteRenderer:
   m_AutoUVMaxDistance: 0.5
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
-  m_SortingLayerID: 1055962891
-  m_SortingLayer: 0
-  m_SortingOrder: -1
+  m_SortingLayerID: -1182350415
+  m_SortingLayer: 25
+  m_SortingOrder: 0
   m_Sprite: {fileID: 1301645835, guid: d403a940e86120f42a5bb4e0cda36f6f, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
@@ -85,7 +85,7 @@ SpriteRenderer:
   m_WasSpriteAssigned: 1
   m_MaskInteraction: 0
   m_SpriteSortPoint: 0
---- !u!114 &7842972634725915881
+--- !u!114 &-1714828156640222812
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -94,10 +94,9 @@ MonoBehaviour:
   m_GameObject: {fileID: 1478250756334867065}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 0db5a75519756f24c80c634c95c7cf2e, type: 3}
+  m_Script: {fileID: 11500000, guid: 36df057e0dea74e459638fbb1789b8b9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  Power: 0
-  Striker: {fileID: 0}
-  ContactedShip: {fileID: 0}
-  Explosion: {fileID: 1876865744220396715, guid: 1ebf17173a9bfcb418de1262ddb23e5d, type: 3}
+  SpriteRenderer: {fileID: 8383538919454772690}
+  SecondSpriteRenderer: {fileID: 0}
+  Animator: {fileID: 0}

@@ -144,6 +144,7 @@ namespace Assets.Scripts
             RocketTurret,
             DualCannon,
             Eye,
+            QueenEye,
             SplitShot
         }
         public enum RequestTypes
@@ -450,7 +451,7 @@ namespace Assets.Scripts
         };
 
         /// <summary>
-        /// Offset in world units from the front of a ship when aiming at the front of a ship
+        /// Offset in world units from the front of a ship when aiming at the front of a ship. Bigger is closer to center.
         /// </summary>
         public static readonly Dictionary<ShipTypes, float> OffsetFromFrontOfShip = new Dictionary<ShipTypes, float>()
         {
@@ -471,7 +472,7 @@ namespace Assets.Scripts
 
             { ShipTypes.Beehive, 4f },
             { ShipTypes.Bumblebee, .35f },
-            { ShipTypes.CarpenterBee, .35f },
+            { ShipTypes.CarpenterBee, 1.55f },
             { ShipTypes.Honeybee, .35f },
             { ShipTypes.Hornet, .35f },
             { ShipTypes.Leafcutter, .35f },
@@ -812,7 +813,7 @@ namespace Assets.Scripts
         {
             if (!AreAllSettingsLoaded)
             {
-                Debug.Log("Trying to load settings");
+                //Debug.Log("Trying to load settings");
                 ShipInfo = new ShipStats(GetUserId());
                 Configuration = new Configuration(GetUserId());
                 StartingSettings = new StartingSettings(GetUserId());

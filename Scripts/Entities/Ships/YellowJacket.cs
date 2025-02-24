@@ -18,6 +18,7 @@ namespace Assets.Scripts.Entities.Ships
         {
             base.Create(stage);
             Bomb = Weapons.First();
+            Destroy(Bomb.Piece);
         }
         public override void ClearData()
         {

@@ -1,3 +1,4 @@
+using Assets.Scripts;
 using Assets.Scripts.Entities.Ships;
 using System.Collections;
 using System.Collections.Generic;
@@ -58,7 +59,8 @@ public class ChargingBar : MonoBehaviour
         PercentCharged += math.min(100, ChargingIncrement);
         if (PercentCharged == 100)
         {
-            CancelInvoke(nameof(ChargeBar));
+            Ship.Level.CancelTimer(_chargeBarTimer);
+            //CancelInvoke(nameof(ChargeBar));
             IsCharging = false;
             IsFullyCharged = true;
         }
@@ -66,14 +68,6 @@ public class ChargingBar : MonoBehaviour
         SetBarFill();
     }
 
-    public void FixedUpdate()
-    {
-        if (!IsCharging && !IsFullyCharged)
-        {
-            InvokeRepeating(nameof(ChargeBar), 0, .5f);
-            IsCharging = true;
-        }
-    }
     /// <summary>
     /// Updates the visual appearance of the charging bar to match the PercentCharged
     /// </summary>
@@ -81,6 +75,7 @@ public class ChargingBar : MonoBehaviour
     {
         BarFiller.transform.localScale = new Vector2(PercentCharged / 100.0f, BarFiller.transform.localScale.y);
     }
+    private ScaledTimer _chargeBarTimer = new ScaledTimer();
     /// <summary>
     /// Drains the bar by the amount specified
     /// </summary>
@@ -90,6 +85,13 @@ public class ChargingBar : MonoBehaviour
         PercentCharged -= percent;
         IsFullyCharged = false;
         SetBarFill();
+        if (!IsCharging)
+        {
+            _chargeBarTimer.Reuse(.5f, ChargeBar, true);
+            Ship.Level.AddTimer(_chargeBarTimer);
+            //InvokeRepeating(nameof(ChargeBar), 0, .5f);
+            IsCharging = true;
+        }
     }
 
 

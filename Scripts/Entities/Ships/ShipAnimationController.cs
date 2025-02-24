@@ -63,6 +63,16 @@ namespace Assets.Scripts.Entities.Ships
                 ShouldSwapSprite = true;
             }
         }
+        public void Activate()
+        {
+            SpriteRenderer.enabled = true;
+            enabled = true;
+        }
+        public void Deactivate()
+        {
+            SpriteRenderer.enabled = false;
+            enabled = false;
+        }
 
         /// <summary>
         /// This changes the animation by making it skip a certain number of sprites and loop a different number of sprites, effectively creating a new loop from a subset of sprites
@@ -72,7 +82,7 @@ namespace Assets.Scripts.Entities.Ships
         public void ChangeSpriteLoop()
         {
             UseSecondaryLoop = true;
-            IsReadyToWarp = true;
+            IsReadyToWarp = true; // this is called by the warp gate animation which makes the animation necessary for non-visual reasons
         }
     }
 }

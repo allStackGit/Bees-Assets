@@ -10,39 +10,67 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         public Vector2 LeftCannonOffset = new Vector2(-1.1f, .5f);
         public Vector2 RightCannonOffset = new Vector2(1.1f, .5f);
+        public SpriteRenderer SecondCannonSpriteRenderer;
         //public GameObject RangeCircleLeft; // For the second cannon in the dual cannon, the first one being the right one
         //public CircleCollider2D RangeColliderLeft; // Likewise for the range collider
+        public override void Create(Ship ship, ConfigData.WeaponTypes type, int range, int power, float rateOfFire, float projectileValue, GameObject piece, ConfigData.ProjectileTypes projectileType, bool fireAtFrontOfShip, float rotationRate)
+        {
+            WeaponsData weaponsData = piece.GetComponent<WeaponsData>();
+            SecondCannonSpriteRenderer = weaponsData.SecondSpriteRenderer;
+            if (!ship.Stage.IsRendering)
+            {
+                Destroy(SecondCannonSpriteRenderer);
+            }
+            base.Create(ship, type, range, power, rateOfFire, projectileValue, piece, projectileType, fireAtFrontOfShip, rotationRate);
+        }
+        private float _angle, _cannonAngle;
+        private Vector2 _position, _shipPosition, _leftCannonPosition, _rightCannonPosition, _rotatedLeftCannonPosition, _rotatedRightCannonPosition;
         protected override void SendProjectile() // [projectile-method] [note] [stats-method]
         {
 
             //get the angle to the target ship
-            float angle = Ship.AngleToPoint(TargetPoint);
+            _angle = Ship.AngleToPoint(TargetPoint);
 
             // get the targetShipPosition of the cannons
-            Vector2 shipPosition = Ship.GetPosition();
-            Vector2 position = GetPosition();
-            Vector2 leftCannonPosition = position + LeftCannonOffset;
-            Vector2 rightCannonPosition = position + RightCannonOffset;
+            _shipPosition = Ship.GetPosition();
+            _position = GetPosition();
+            _leftCannonPosition = _position + LeftCannonOffset;
+            _rightCannonPosition = _position + RightCannonOffset;
 
             // get the angle of the cannons
-            float cannonAngle = GetRotation() * Mathf.Deg2Rad;
+            _cannonAngle = GetRotation() * Mathf.Deg2Rad;
 
             // calculate the rotated targetShipPosition of the end of the cannons
-            Vector2 rotatedLeftCannonPosition = Utilities.RotatePointAroundPoint(shipPosition, leftCannonPosition, cannonAngle);
-            Vector2 rotatedRightCannonPosition = Utilities.RotatePointAroundPoint(shipPosition, rightCannonPosition, cannonAngle);
+            _rotatedLeftCannonPosition = Utilities.RotatePointAroundPoint(_shipPosition, _leftCannonPosition, _cannonAngle);
+            _rotatedRightCannonPosition = Utilities.RotatePointAroundPoint(_shipPosition, _rightCannonPosition, _cannonAngle);
 
             // instantiate the projectiles
-            Level.AddProjectile(ConfigData.ProjectileTypes.HumanSmall, this, rotatedLeftCannonPosition, angle);
-            Level.AddProjectile(ConfigData.ProjectileTypes.HumanSmall, this, rotatedRightCannonPosition, angle);
+            Level.AddProjectile(ConfigData.ProjectileTypes.HumanSmall, this, _rotatedLeftCannonPosition, _angle);
+            Level.AddProjectile(ConfigData.ProjectileTypes.HumanSmall, this, _rotatedRightCannonPosition, _angle);
             Ship.FleetShip.ShotsFired += 2;
 
             // Set the damage status
             if (!IsFiringManually && !IsFiringAtAsteroid)
             {
-                ShipDamageStatus shipDamageStatus = Level.State.GetShipDamageStatus(Side, TargetShip);
-                shipDamageStatus.TotalDamageSentToShip += Power * 2;
+                Level.State.GetShipDamageStatus(Side, TargetShip).TotalDamageSentToShip += Power * 2;
             }
 
+        }
+        public override void Activate()
+        {
+            base.Activate();
+            if (Stage.IsRendering)
+            {
+                SecondCannonSpriteRenderer.enabled = true;
+            }
+        }
+        public override void Deactivate()
+        {
+            base.Deactivate();
+            if (Stage.IsRendering)
+            {
+                SecondCannonSpriteRenderer.enabled = false;
+            }
         }
 
         // UI Methods

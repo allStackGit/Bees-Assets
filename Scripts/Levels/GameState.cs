@@ -21,6 +21,7 @@ namespace Assets.Scripts.Levels
 {
     public class GameState : MonoBehaviour
     {
+        public HashSet<Projectile> Projectiles = new HashSet<Projectile>();
         public List<Ship> Ships = new List<Ship>();
         public List<Ship> ShipsToRelease = new List<Ship>();
         public Dictionary<long, Ship> ShipsById = new Dictionary<long, Ship>();
@@ -102,6 +103,7 @@ namespace Assets.Scripts.Levels
             CommandsToRelease.Clear();
             AsteroidsToRelease.Clear();
             MiningAsteroidsToRelease.Clear();
+            Projectiles.Clear();
 
         }
 
@@ -126,7 +128,11 @@ namespace Assets.Scripts.Levels
                 _spottedShips.Add(new SpottedShip(_spottedShip, spotter.Id));
             }
         }
-        public bool CanUserKeepMining()
+        /// <summary>
+        /// If either there is a user and the user has mining ships and the level has mining asteroids, or there is no user and there are mining ships and mining asteroids
+        /// </summary>
+        /// <returns></returns>
+        public bool CanShipsKeepMining()
         {
             return MiningShips.Count > 0 && MiningAsteroids.Count > 0;
         }
@@ -158,6 +164,14 @@ namespace Assets.Scripts.Levels
         {
             Squads.Remove(squad);
             SquadsToRelease.Add(squad);
+        }
+        public void AddProjectile(Projectile projectile)
+        {
+            Projectiles.Add(projectile);
+        }
+        public void RemoveProjectile(Projectile projectile)
+        {
+            Projectiles.Remove(projectile);
         }
         public void AddObstacle(Obstacle obstacle)
         {
@@ -436,7 +450,7 @@ namespace Assets.Scripts.Levels
             _targetedSquads = new List<Squad>();
             GetAllSquads().Where((s) => s.Side == side).ToList().ForEach((s) =>
             {
-                if (s.HasCommand && s.GetCommand().HasEnemy && s.GetCommand().HasSameEnemy())
+                if (s.HasCommand && s.GetCommand().HasEnemy && !s.GetCommand().EnemySquad.IsDead)
                 {
                     _targetedSquads.Add(s.GetCommand().EnemySquad);
                 }

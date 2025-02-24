@@ -16,17 +16,26 @@ namespace Assets.Scripts.Levels.Commands
         HashSet<long> ScoutIds = new HashSet<long>();
         private Vector2 _position, _randomPoint;
         private Vector2 _ten = Vector2.one * 10;
-        public override void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
+        private ScaledTimer _dropBeaconsTimer = new ScaledTimer();
+        public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId)
         {
-            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, noEnemy);
+            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
 
             PrepareDamageToSendEntries("closest");
             _position = GetSquad().GetPosition();
             _randomPoint = Utilities.RandomCoordinate(Level, _position, Vector2.one * ConfigData.Configuration.AIRandomMovementMaxDistance, Vector2.one * GetSquad().MaxSight);
             SetAndMove(_randomPoint);
             CommandFrequency = 5;
-            InvokeRepeating(nameof(Timer), 0, CommandFrequency);
-            Invoke(nameof(EndCommand), ConfigData.Configuration.AISquadPatrolTime);
+
+
+            CommandTimer.Reuse(CommandFrequency, Timer, true);
+            Level.AddTimer(CommandTimer);
+            //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
+
+
+            TimeoutTimer.Reuse(ConfigData.Configuration.AISquadPatrolTime, EndCommand);
+            Level.AddTimer(TimeoutTimer);
+            //Invoke(nameof(EndCommand), ConfigData.Configuration.AISquadPatrolTime);
 
             if (GetSquad().Side == ConfigData.Configuration.HumanSide)
             {
@@ -41,7 +50,8 @@ namespace Assets.Scripts.Levels.Commands
 
                 if (Scouts.Count > 0)
                 {
-                    InvokeRepeating(nameof(DropScoutBeacons), ConfigData.MinimumDelayPerBeacon, ConfigData.MinimumDelayPerBeacon);
+                    _dropBeaconsTimer.Reuse(ConfigData.MinimumDelayPerBeacon, DropScoutBeacons, true);
+                    //InvokeRepeating(nameof(DropScoutBeacons), ConfigData.MinimumDelayPerBeacon, ConfigData.MinimumDelayPerBeacon);
                 }
             }
 
@@ -87,10 +97,13 @@ namespace Assets.Scripts.Levels.Commands
             }
         }
 
+        private ScaledTimer _endCommandTimer = new ScaledTimer();
         public void FoundShips()
         {
             _foundShips = true;
-            Invoke(nameof(EndCommand), 5);
+            _endCommandTimer.Reuse(5, EndCommand);
+            Level.AddTimer(_endCommandTimer);
+            //Invoke(nameof(EndCommand), 5);
         }
 
         private void EndCommand()
@@ -105,6 +118,13 @@ namespace Assets.Scripts.Levels.Commands
                 SetFinalize("Ran out of time");
                 //Debug.Log($"Ending scouting command for {Squad.Name} because we ran out of time");
             }
+        }
+
+        public override void SetFinalize(string cause)
+        {
+            Level.CancelTimer(_dropBeaconsTimer);
+            Level.CancelTimer(_endCommandTimer);
+            base.SetFinalize(cause);
         }
 
 

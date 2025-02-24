@@ -59,7 +59,7 @@ MonoBehaviour:
   Side: 1
   Collider: {fileID: -3050644928751882725}
   Body: {fileID: 4115822477820707354}
-  _entity: {fileID: 0}
+  SpriteRenderer: {fileID: 7216971811449879459}
   ShowDebug: 0
   Health: 0
   MaxHealth: 0

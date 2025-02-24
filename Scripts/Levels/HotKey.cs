@@ -125,7 +125,23 @@ namespace Assets.Scripts.Levels
         {
             return Id == other.Id;
         }
+        private HotKey _hotKey;
+        public override bool Equals(System.Object obj)
+        {
+            if (obj == null)
+            {
+                return false;
+            }
 
+            // If parameter cannot be cast to class return false.
+            _hotKey = obj as HotKey;
+            if (_hotKey == null)
+            {
+                return false;
+            }
+
+            return Id == _hotKey.Id;
+        }
         public override int GetHashCode()
         {
             return Id.GetHashCode();

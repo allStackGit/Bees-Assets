@@ -71,9 +71,10 @@ namespace Assets.Scripts.Levels
         /// The chosen obstacle map
         /// </summary>
         public ObstacleMap ObstacleMap;
+        public List<ScaledTimer> Timers = new List<ScaledTimer>();
 
 
-        public List<string> __BeeHivemindShips, __HumanHivemindShips, __PastCommands, __PathfindingThreads, __CustomLevels;
+        public List<string> __BeeHivemindShips, __HumanHivemindShips, __PastCommands, __PathfindingThreads, __CustomLevels, __Timers;
 
 
         private void UpdateDebugVariables()
@@ -87,6 +88,7 @@ namespace Assets.Scripts.Levels
             {
                 __PathfindingThreads = Pathfinder.IsThreadActive.Select((s, i) => $"#{i} - {(s ? Pathfinder.Ships[i].Name : s)}").ToList();
             }
+            __Timers = Timers.Select((t) => t.ToString()).ToList();
 
             //string path = $"{ConfigData.GetBasePath()}/debug/minimap_{Utilities.Hash()}.png";
             //Texture2D dest = new Texture2D(MiniMapTexture.width, MiniMapTexture.height, TextureFormat.RGB24, false);
@@ -159,7 +161,8 @@ namespace Assets.Scripts.Levels
 
             if (Stage.IsTraining)
             {
-                Invoke(nameof(TimeOut), Stage.TimeoutTime);
+                AddTimer(_timeoutTimer);
+                //Invoke(nameof(TimeOut), Stage.TimeoutTime);
             }
             SetupLevel();
         }
@@ -256,9 +259,9 @@ namespace Assets.Scripts.Levels
             }
 
         }
-        List<Ship> _clearance_Ships = new List<Ship>();
-        float _clearance_width, _clearance_height;
-        int _f_clearance;
+        private List<Ship> _clearance_Ships = new List<Ship>();
+        private float _clearance_width, _clearance_height;
+        private int _f_clearance;
         public void CalculateShipClearances()
         {
             _clearance_Ships = State.GetShips();
@@ -300,7 +303,7 @@ namespace Assets.Scripts.Levels
                 _clearance_Ships = _clearance_Ships.Where((s) => s.ShipType != _clearance_Ships[0].ShipType).ToList();
             }
         }
-        Vector2 _spawn_position;
+        private Vector2 _spawn_position;
         private void SpawnObstacles()
         {
             Stage.CurrentAsteroidMaxSpawnRate = Stage.AsteroidMaxSpawnRate;
@@ -321,12 +324,13 @@ namespace Assets.Scripts.Levels
                     Stage.CurrentAsteroidMaxSpawnRate /= 2;
                     Stage.CurrentAsteroidMinimumSpawnRate /= 2;
                 }
-                Invoke(nameof(SpawnAsteroid), Stage.AsteroidMinimumSpawnRate + Utilities.RandomInt(Stage.CurrentAsteroidMaxSpawnRate - Stage.CurrentAsteroidMinimumSpawnRate));
+                _asteroidSpawnTimer = new ScaledTimer(Stage.AsteroidMinimumSpawnRate + Utilities.RandomInt(Stage.CurrentAsteroidMaxSpawnRate - Stage.CurrentAsteroidMinimumSpawnRate), SpawnAsteroid);
+                //Invoke(nameof(SpawnAsteroid), Stage.AsteroidMinimumSpawnRate + Utilities.RandomInt(Stage.CurrentAsteroidMaxSpawnRate - Stage.CurrentAsteroidMinimumSpawnRate));
             }
         }
-        MiningAsteroid _spawn_miningAsteroid;
+        private MiningAsteroid _spawn_miningAsteroid;
         public Vector2 MiningAsteroidSpawnDistance;
-        int _spawn_i;
+        private int _spawn_i;
         private void SpawnMiningAsteroids()
         {
             MiningAsteroidSpawnDistance = new Vector2(HalfMapWidth - 64, HalfMapHeight - 64);
@@ -336,14 +340,19 @@ namespace Assets.Scripts.Levels
                 _spawn_miningAsteroid.Setup(this);
             }
         }
+        private ScaledTimer _asteroidSpawnTimer;
         private void SpawnAsteroid()
         {
+            _asteroidSpawnTimer.Reuse(Stage.AsteroidMinimumSpawnRate + Utilities.RandomInt(Stage.CurrentAsteroidMaxSpawnRate - Stage.CurrentAsteroidMinimumSpawnRate), SpawnAsteroid);
+
             //GameObject instance = Instantiate(Stage.Prefabs.CollisionAsteroidPrefabs[Utilities.RandomInt(Stage.Prefabs.CollisionAsteroidPrefabs.Count)]);
             Stage.Pool.GetCollisionAsteroidFromPool().Setup(this);
-            Invoke(nameof(SpawnAsteroid), Stage.AsteroidMinimumSpawnRate + Utilities.RandomInt(Stage.CurrentAsteroidMaxSpawnRate - Stage.CurrentAsteroidMinimumSpawnRate));
+            AddTimer(_asteroidSpawnTimer);
+            //Invoke(nameof(SpawnAsteroid), Stage.AsteroidMinimumSpawnRate + Utilities.RandomInt(Stage.CurrentAsteroidMaxSpawnRate - Stage.CurrentAsteroidMinimumSpawnRate));
+
         }
-        Vector2 _trigger_moveToPoint;
-        Vector2 _trigger_double = new Vector2(0, 2);
+        private Vector2 _trigger_moveToPoint;
+        private Vector2 _trigger_double = new Vector2(0, 2);
         private void SetTriggers()
         {
             Triggers.Clear();
@@ -353,7 +362,7 @@ namespace Assets.Scripts.Levels
                 return Time.realtimeSinceStartup - StartTime >= CurrentLevelOptions.EnemyReinforcementDelay;
             }, () =>
             {
-                Debug.Log($"{CurrentLevelOptions.EnemyReinforcementDelay} seconds have passed, spawning new enemy ships for side {ConfigData.Configuration.AISide}: {Utilities.ListToString(CurrentLevelOptions.EnemyReinforcements)}");
+                //Debug.Log($"{CurrentLevelOptions.EnemyReinforcementDelay} seconds have passed, spawning new enemy ships for side {ConfigData.Configuration.AISide}: {Utilities.ListToString(CurrentLevelOptions.EnemyReinforcements)}");
                 _trigger_moveToPoint = StartingPositions[ConfigData.Configuration.AISide - 1];
                 LevelConstructor.SpawnShipsAndSquads(CurrentLevelOptions.EnemyReinforcements, StartingPositions[ConfigData.Configuration.AISide - 1] * _trigger_double, _trigger_moveToPoint);
 
@@ -385,10 +394,25 @@ namespace Assets.Scripts.Levels
                 }
             });
             Triggers = Triggers.Where((trigger) => !trigger.HasBeenTriggered).ToList();   
-            if (Triggers.Count == 0) { 
-                CancelInvoke(nameof(CheckTriggers));
+            if (Triggers.Count == 0) {
+                CancelTimer(_checkTriggersTimer);
+                //CancelInvoke(nameof(CheckTriggers));
             }
         }
+        private int _updateIndex;
+        public void CancelTimer(ScaledTimer scaledTimer)
+        {
+           
+            Timers.Remove(scaledTimer);
+            scaledTimer.IsCanceled = true;
+            //Debug.Log($"Canceled {scaledTimer}");
+        }
+        public void AddTimer(ScaledTimer scaledTimer)
+        {
+            //Debug.Log($"Adding {scaledTimer}");
+            Timers.Add(scaledTimer);
+        }
+        private ScaledTimer[] _loopTimers;
         void Update()
         {
             //GameObject.Find("Rotated Point").transform.position = Utilities.RotatePointAroundPoint(GameObject.Find("Pivot").transform.position, __OriginalPosition, __RotationTest);
@@ -396,40 +420,51 @@ namespace Assets.Scripts.Levels
             //{
             //    RLSocket.Update();
             //}
-            if (State.GameOver && !State.LevelEnded)
+            if (State.GameOver && !State.LevelEnded /*&& !State.CanShipsKeepMining()*/) // Need to make sure minig command works first
             {
-                if (!State.CanUserKeepMining())
-                {
-                    LevelOver();
-                }
+                LevelOver();
+                return;
 
+            }
+            if ((State.IsPaused || ConfigData.SocketManager.NetworkDisconnection.IsOpen || !IsLevelConnectedToServer) && !Stage.IsTraining)
+            {
+                if (IsPausedByTester && Stage.InputManager.HasPauseInput() && Time.realtimeSinceStartup - TimePaused > 1)
+                {
+                    IsPausedByTester = false;
+                    TimePaused = Time.realtimeSinceStartup;
+                    UnPause();
+                }
             }
             else
             {
-                if ((State.IsPaused || ConfigData.SocketManager.NetworkDisconnection.IsOpen || !IsLevelConnectedToServer) && !Stage.IsTraining)
+                if (HasObstacles)
                 {
-                    if (IsPausedByTester && Stage.InputManager.HasPauseInput() && Time.realtimeSinceStartup - TimePaused > 1)
-                    {
-                        IsPausedByTester = false;
-                        TimePaused = Time.realtimeSinceStartup;
-                        UnPause();
-                    }
+                    //Debug.Log($"Calling path finder update again");
+                    Pathfinder.Update();
                 }
-                else
+                if (Timers.Count > 0)
                 {
-                    if (HasObstacles)
+                    _loopTimers = Timers.ToArray();
+
+                    for (_updateIndex = 0; _updateIndex < _loopTimers.Length; _updateIndex++)
                     {
-                        //Debug.Log($"Calling path finder update again");
-                        Pathfinder.Update();
+                        if (_loopTimers[_updateIndex].Update() && !_loopTimers[_updateIndex].IsRecurring && !_loopTimers[_updateIndex].IsCanceled)
+                        {
+                            CancelTimer(_loopTimers[_updateIndex]);
+                        }
                     }
 
+
                 }
+
             }
 
 
 
         }
-        float _levelOver_fps, _levelOver_fups;
+        private float _levelOver_fps, _levelOver_fups;
+        private ScaledTimer _saveAndEndHalfSecond = new ScaledTimer();
+        private ScaledTimer _saveAndEndFiveSecond = new ScaledTimer();
         /// <summary>
         /// Ends the level and marks the winner
         /// </summary>
@@ -517,12 +552,16 @@ namespace Assets.Scripts.Levels
                 {
                     if (State.FireBargeExplosions.Count > 0)
                     {
-                        Invoke(nameof(SaveAndEnd), 5f); // invoke after 5 seconds because the explosion should be fully seen
+                        //Invoke(nameof(SaveAndEnd), 5f); // invoke after 5 seconds because the explosion should be fully seen
+                        _saveAndEndFiveSecond.Reuse(5f, SaveAndEnd);
+                        AddTimer(_saveAndEndFiveSecond);
 
                     }
                     else
                     {
-                        Invoke(nameof(SaveAndEnd), .5f); // inoke after half a second 
+                        _saveAndEndHalfSecond.Reuse(.5f, SaveAndEnd);
+                        AddTimer(_saveAndEndHalfSecond);
+                        //Invoke(nameof(SaveAndEnd), .5f); // inoke after half a second 
                     }
 
                 }
@@ -531,11 +570,11 @@ namespace Assets.Scripts.Levels
 
 
         }
-        Ship[] _reset_ships;
-        float _reset_remainingHumanTsv, _reset_remainingHumanTSVPercentage, _reset_remainingBeeTsv, _reset_remainingBeeTSVPercentage;
-        Vector2 _reset_swap;
+        private Ship[] _reset_ships;
+        private float _reset_remainingHumanTsv, _reset_remainingHumanTSVPercentage, _reset_remainingBeeTsv, _reset_remainingBeeTSVPercentage;
+        private Vector2 _reset_swap;
         readonly List<SpottedShip>[] _reset_spottedShips = new List<SpottedShip>[] { new List<SpottedShip>(), new List<SpottedShip>() };
-        int _reset_i;
+        private int _reset_i;
         /// <summary>
         /// Used for Nueral Network training. Resets the level.
         /// </summary>
@@ -630,7 +669,7 @@ namespace Assets.Scripts.Levels
             //Invoke(nameof(StartNew), .1f);
             //WinningSide = 0;
         }
-        List<LevelOptions> _setup_possibleLevels;
+        private List<LevelOptions> _setup_possibleLevels;
         /// <summary>
         /// Called by both ResetLevel(), FinalizeSceneWithUserData(), and SaveAndEnd(). Prepares the LevelStage for a new level
         /// </summary>
@@ -732,6 +771,39 @@ namespace Assets.Scripts.Levels
         /// </summary>
         public void ResetGameData()
         {
+            //int count = 0;
+            //GameObject.FindGameObjectsWithTag("Projectile").ToList().ForEach((projectileObject) =>
+            //{
+            //    Projectile projectile = projectileObject.GetComponent<Projectile>();
+            //    try
+            //    {
+            //        if (!projectile.IsDead)
+            //        {
+            //            if (projectile.Type == ConfigData.ProjectileTypes.FireBargeExplosion)
+            //            {
+            //                projectile.Deactivate();
+            //            }
+            //            else
+            //            {
+            //                count++;
+            //                Debug.Log($"{Name} ended with {projectile.Name} still alive");
+            //                Debug.Log(projectile);
+            //            }
+
+            //        }
+            //    }
+            //    catch (Exception e)
+            //    {
+            //        Debug.Log(projectileObject.name);
+            //        throw e;
+            //    }
+
+            //});
+            //if (count > 0)
+            //{
+            //    Debug.LogError($"Found alive projectiles at end of level");
+            //} 
+            Timers.Clear();
             ConfigData.CurrentShips.ReplaceDeadSquadShips();
             State.ResetState();
             State.GameOver = false;
@@ -752,22 +824,40 @@ namespace Assets.Scripts.Levels
             AllSquads.Clear();
             CurrentLevelOptions.ChosenSquads.Clear();
         }
+        private ScaledTimer _hivemindTimer = new ScaledTimer();
+        private ScaledTimer _checkTriggersTimer = new ScaledTimer();
+        private ScaledTimer _updateDebugTimer = new ScaledTimer();
+        private ScaledTimer _initialCommandDelayTimer = new ScaledTimer();
         public void SetupHivemind()
         {
-            CancelInvoke(nameof(GetHiveMindCommands));
+            CancelTimer(_hivemindTimer);
+            CancelTimer(_updateDebugTimer);
+            //CancelInvoke(nameof(GetHiveMindCommands));
             if (Stage.ActivateHiveMind)
             {
-                Invoke(nameof(GetHiveMindCommands), Stage.InitialCommandDelay);
+                //Invoke(nameof(GetHiveMindCommands), Stage.InitialCommandDelay);
+                _hivemindTimer.Reuse(.25f, GetHiveMindCommands, true);
+                _initialCommandDelayTimer.Reuse(Stage.InitialCommandDelay - .25f, () =>
+                {
+
+                    AddTimer(_hivemindTimer);
+                });
+                AddTimer(_initialCommandDelayTimer);
             }
             if (Stage.IsDebugging)
             {
-                InvokeRepeating(nameof(UpdateDebugVariables), 1, 1);
+                _updateDebugTimer.Reuse(1, UpdateDebugVariables, true);
+                AddTimer(_updateDebugTimer);
+                //InvokeRepeating(nameof(UpdateDebugVariables), 1, 1);
             }
-            CancelInvoke(nameof(CheckTriggers));
+            CancelTimer(_checkTriggersTimer);
+            //CancelInvoke(nameof(CheckTriggers));
             if (ActivateLoadingShipsMidLevel)
             {
                 SetTriggers();
-                InvokeRepeating(nameof(CheckTriggers), 5, 5);
+                _checkTriggersTimer.Reuse(5, CheckTriggers, true);
+                AddTimer(_checkTriggersTimer);
+                //InvokeRepeating(nameof(CheckTriggers), 5, 5);
             }
         }
         public void MakeSaveLevel()
@@ -813,11 +903,10 @@ namespace Assets.Scripts.Levels
                 CurrentLevelOptions.EnemyReinforcementDelay = ConfigData.StandardReinforcementsDelay;
             }
         }
+        private ScaledTimer _timeoutTimer = new ScaledTimer();
         public void SetupMapAndCamera()
         {
-            Map.transform.parent = this.transform;
-            Map.transform.localPosition = Vector2.zero;
-            Map.gameObject.SetActive(true);
+            Map.Setup(this);
 
             StartingPositions[ConfigData.Configuration.AISide - 1] = Map.AIStartingPosition;
             StartingPositions[ConfigData.Configuration.UserSide - 1] = Map.UserStartingPosition;
@@ -858,14 +947,17 @@ namespace Assets.Scripts.Levels
                     Stage.MiniMapDisplayCanvas.SetActive(false);
                     //Camera.gameObject.SetActive(false);
                 }
-                CancelInvoke(nameof(TimeOut));
-                Invoke(nameof(TimeOut), Stage.TimeoutTime);
+                //CancelInvoke(nameof(TimeOut));
+                _timeoutTimer .Reuse(Stage.TimeoutTime, TimeOut);
+                CancelTimer(_timeoutTimer);
+                AddTimer(_timeoutTimer);
+                //Invoke(nameof(TimeOut), Stage.TimeoutTime);
             }
 
 
             if (HasObstacles)
             {
-                CancelInvoke(nameof(SpawnAsteroid));
+                //CancelInvoke(nameof(SpawnAsteroid));
                 //CancelInvoke(nameof(SetLocationHistory));
                 //InvokeRepeating(nameof(SetLocationHistory), .5f, .5f);
                 
@@ -879,16 +971,17 @@ namespace Assets.Scripts.Levels
         /// </summary>
         private void TimeOut()
         {
-            //Debug.Log("Level timed out!");
+            Debug.Log("Level timed out!");
             Stage.__LevelTimeouts++;
             IsRestarting = true;
             SaveAndEnd();
         }
-        int _save_i;
-        SavedSquad _save_savedSquad;
-        FleetShip _save_fleetship;
-        Ship[] _save_ships;
-        Obstacle[] _save_obstacles;
+        private int _save_i;
+        private SavedSquad _save_savedSquad;
+        private FleetShip _save_fleetship;
+        private Ship[] _save_ships;
+        private Obstacle[] _save_obstacles;
+        private ScaledTimer _levelEndedDialogueTimer = new ScaledTimer();
         /// <summary>
         /// Used for standard play and Hivemind Training. Stores commands, cleans the map, and records the stats.
         /// </summary>
@@ -987,13 +1080,22 @@ namespace Assets.Scripts.Levels
                 }
             }
 
+            if (State.Projectiles.Count > 0)
+            {
+                State.Projectiles.ToList().ForEach((projectile) =>
+                {
+                    //Debug.Log($"Killing {projectile.Name} at the end of the level");
+                    projectile.Kill();
+                });
+            }
+
 
             while (State.Deadbodies.Count > 0)
             {
                 State.Deadbodies.Remove(State.Deadbodies[0]);
             }
 
-
+            
 
 
             //StartNew();
@@ -1012,7 +1114,10 @@ namespace Assets.Scripts.Levels
 
             if (Stage.DoesUserHaveController && !IsRestarting)
             {
-                Invoke(nameof(LevelEndedDialogue), 1f);
+                _levelEndedDialogueTimer.Reuse(1, LevelEndedDialogue);
+                AddTimer(_levelEndedDialogueTimer);
+
+                //Invoke(nameof(LevelEndedDialogue), 1f);
             }
             else
             {
@@ -1021,10 +1126,10 @@ namespace Assets.Scripts.Levels
             }
 
         }
-        UserProgressData _saveCampaign_progress = ConfigData.GetUserProgressData();
-        int _saveCampaign_i;
-        SavedSquad _saveCampaign_savedSquad;
-        FleetShip _saveCampaign_fleetShip;
+        private UserProgressData _saveCampaign_progress = ConfigData.GetUserProgressData();
+        private int _saveCampaign_i;
+        private SavedSquad _saveCampaign_savedSquad;
+        private FleetShip _saveCampaign_fleetShip;
         private void SaveCampaignStats()
         {
             if (WinningSide == ConfigData.Configuration.HumanSide)
@@ -1104,8 +1209,8 @@ namespace Assets.Scripts.Levels
             }
             Time.timeScale = Stage.TimeScale;
         }
-        Projectile _f_projectile;
-        int _projectile_power;
+        private Projectile _f_projectile;
+        private int _projectile_power;
         /// <summary>
         /// Adds projectiles to the game. Some projectiles don't use this
         /// </summary>
@@ -1132,8 +1237,9 @@ namespace Assets.Scripts.Levels
             //Debug.Log($"Position after setup for #{projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
             return _f_projectile;
         }
-        Queue<Squad> _hive_squads;
-        Squad _hive_squad;
+        private Queue<Squad> _hive_squads;
+        private Squad _hive_squad;
+        //private ScaledTimer _hivemindTimer;
         /// <summary>
         /// Runs though all the hive mind squads that need commands and makes matchup strategy requests for them
         /// </summary>
@@ -1155,7 +1261,7 @@ namespace Assets.Scripts.Levels
                     }
                 }
             }
-            Invoke(nameof(GetHiveMindCommands), .25f);
+            //Invoke(nameof(GetHiveMindCommands), .25f); // No longer needs to be reused as this can just be called repeatedly on a timer
         }
 
         public Vector2 GetPosition()

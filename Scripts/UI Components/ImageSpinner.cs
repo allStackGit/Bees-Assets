@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using Assets.Scripts.Levels;
+using System.Collections;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -8,15 +9,18 @@ namespace Assets.Scripts.UI_Components
     {
         public int DegreesPerSecond;
         public float UpdatesPerSecond;
-        void Start()
+        public Level Level;
+        public ScaledTimer Timer = new ScaledTimer();
+        public void Setup(Level level)
         {
-            Invoke(nameof(Rotate), 1 / UpdatesPerSecond);
+            Level = level;
+            Timer.Reuse(1 / UpdatesPerSecond, Rotate, true);
+            Level.AddTimer(Timer);
         }
-
         private void Rotate()
         {
             transform.eulerAngles = new Vector3(transform.eulerAngles.x, transform.eulerAngles.y, transform.eulerAngles.z + DegreesPerSecond / UpdatesPerSecond);
-            Invoke(nameof(Rotate), 1 / UpdatesPerSecond);
+            //Invoke(nameof(Rotate), 1 / UpdatesPerSecond);
         }
     }
 }

@@ -37,6 +37,7 @@ namespace Assets.Scripts.Entities.Ships
                 Destroy(ChargingBar.gameObject);
             }
             Charge = Weapons.First();
+            //Destroy(Charge.Piece);
         }
 
         public override void Setup(Level level, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
@@ -109,10 +110,10 @@ namespace Assets.Scripts.Entities.Ships
                 int damage = math.min(Charge.Power, ship.Health);
                 LogAttackingDamage(damage, this, FleetShip, Squad.SavedSquad, ship);
                 LogAttackingDamage((int)(damage * .75f), ship, ship.FleetShip, ship.Squad.SavedSquad, this); // Barge takes 75% of the damage it inflicts
-                Charge.Power -= damage;
-                //Debug.Log($"{Name} hit {ship.Name} and did {damage} damage");
+                //Charge.Power -= damage;
+                Debug.Log($"{Name} hit {ship.Name} and did {damage} damage");
 
-                if ((Charge.Power == 0 || Level.State.GameOver) && gameObject.activeSelf) // if ran out of power or we killed the last ship stop the charge immediately
+                if ((ship.Health > 0 || Level.State.GameOver) && gameObject.activeSelf) // if ran out of power or we killed the last ship stop the charge immediately
                 {
                     StartCoroutine(StopCharge());
                 }
@@ -173,7 +174,7 @@ namespace Assets.Scripts.Entities.Ships
 
                 LogDamage(200);
 
-                //Debug.Log($"Stopped charging for {Name}");
+                Debug.Log($"Stopped charging for {Name}");
                 if (IsUserControlled)
                 {
                     ChargingBar.DrainBar();

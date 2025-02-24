@@ -12,7 +12,6 @@ GameObject:
   - component: {fileID: 2518675752222090673}
   - component: {fileID: -8530047549913418819}
   - component: {fileID: 9209194230390332424}
-  - component: {fileID: 657987285933729593}
   - component: {fileID: 2839659447535748788}
   m_Layer: 13
   m_Name: Yellow Jacket
@@ -112,7 +111,7 @@ MonoBehaviour:
   Side: 1
   Collider: {fileID: 2839659447535748788}
   Body: {fileID: 9209194230390332424}
-  _entity: {fileID: 0}
+  SpriteRenderer: {fileID: 2518675752222090673}
   ShowDebug: 0
   Health: 0
   MaxHealth: 0
@@ -156,7 +155,7 @@ MonoBehaviour:
   IsMiningShip: 0
   IsWarpGate: 0
   HasTargetDirection: 0
-  HasVision: 0
+  HasUserVision: 0
   HasProximityCollider: 1
   HasShipAnimation: 0
   HasRocketFlares: 0
@@ -187,7 +186,6 @@ MonoBehaviour:
   ShipAnimationController: {fileID: 0}
   RotationSpeed: 0
   TargetEnemyShipToFollow: {fileID: 0}
-  TargetEnemyShipToFollowId: 0
   Killer: {fileID: 0}
   ShipRemains: {fileID: 0}
   ShipTypeLetter: 11
@@ -198,6 +196,7 @@ MonoBehaviour:
   DamagePerSecond: 0
   Tsv: 0
   HasWeapons: 0
+  HasTurrets: 0
   IsCarrierShip: 0
   IsMoving: 0
   PathfindingThreadComplete: 0
@@ -285,67 +284,6 @@ Rigidbody2D:
   m_SleepingMode: 1
   m_CollisionDetection: 0
   m_Constraints: 0
---- !u!60 &657987285933729593
-PolygonCollider2D:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2518675752222090675}
-  m_Enabled: 0
-  m_Density: 1
-  m_Material: {fileID: 0}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_LayerOverridePriority: 0
-  m_ForceSendLayers:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  m_ForceReceiveLayers:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  m_ContactCaptureLayers:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  m_CallbackLayers:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  m_IsTrigger: 1
-  m_UsedByEffector: 0
-  m_UsedByComposite: 0
-  m_Offset: {x: 0, y: 0}
-  m_SpriteTilingProperty:
-    border: {x: 0, y: 0, z: 0, w: 0}
-    pivot: {x: 0.5, y: 0.5}
-    oldSize: {x: 4, y: 4}
-    newSize: {x: 3.3333333, y: 3.3333333}
-    adaptiveTilingThreshold: 0.5
-    drawMode: 0
-    adaptiveTiling: 0
-  m_AutoTiling: 0
-  m_Points:
-    m_Paths:
-    - - {x: -0.75, y: -1.1750001}
-      - {x: -0.3966102, y: -1.9862628}
-      - {x: 0.37275934, y: -2}
-      - {x: 0.925, y: -1.075}
-      - {x: 1.3000001, y: -2}
-      - {x: 1.6750001, y: -2}
-      - {x: 2, y: -1.575}
-      - {x: 2.0421386, y: -0.91090125}
-      - {x: 1.525, y: 0.2}
-      - {x: 0.5377949, y: 1.2796874}
-      - {x: -0.4433373, y: 1.2949882}
-      - {x: -1.575, y: 0.15}
-      - {x: -2, y: -0.77500004}
-      - {x: -2, y: -1.6}
-      - {x: -1.7, y: -2}
-      - {x: -1.3000001, y: -2}
-  m_UseDelaunayMesh: 0
 --- !u!58 &2839659447535748788
 CircleCollider2D:
   m_ObjectHideFlags: 0
@@ -389,34 +327,6 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 2518675752222090672}
     m_Modifications:
-    - target: {fileID: 172821519076649908, guid: 9b99fc9739de1804ca5c1dc2968281d9, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 172821519076649908, guid: 9b99fc9739de1804ca5c1dc2968281d9, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 172821519076649908, guid: 9b99fc9739de1804ca5c1dc2968281d9, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 172821519076649908, guid: 9b99fc9739de1804ca5c1dc2968281d9, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 172821519076649908, guid: 9b99fc9739de1804ca5c1dc2968281d9, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: -0
-      objectReference: {fileID: 0}
-    - target: {fileID: 172821519076649908, guid: 9b99fc9739de1804ca5c1dc2968281d9, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: -0
-      objectReference: {fileID: 0}
-    - target: {fileID: 172821519076649908, guid: 9b99fc9739de1804ca5c1dc2968281d9, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: -0
-      objectReference: {fileID: 0}
     - target: {fileID: 172821519076649908, guid: 9b99fc9739de1804ca5c1dc2968281d9, type: 3}
       propertyPath: m_LocalEulerAnglesHint.x
       value: 0

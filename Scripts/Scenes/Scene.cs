@@ -70,10 +70,10 @@ namespace Assets.Scripts.Scenes
             SocketTimer = new Timer(.1f, ConfigData.Socket.Update);
             AutomaticReconnectTimer = new Timer(10f, AutomaticConnectionRetry);
 
-            if (WatchServerRequests)
-            {
-                InvokeRepeating(nameof(UpdateTestVariables), 1f, 1f);
-            }
+            //if (WatchServerRequests)
+            //{
+            //    InvokeRepeating(nameof(UpdateTestVariables), 1f, 1f);
+            //}
 
 
 
