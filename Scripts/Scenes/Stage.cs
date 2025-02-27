@@ -306,6 +306,7 @@ public class Stage : Scene
     /// Whether or not there are any asteroids on any levels in this stage
     /// </summary>
     public bool HasAsteroids;
+    public float FixedDeltaTime;
 
 
     public int __HivemindCommands, __LevelTimeouts, __TotalShips, __LevelCompletes;
@@ -331,6 +332,7 @@ public class Stage : Scene
     // Start is called before the first frame update
     new void Start()
     {
+        FixedDeltaTime = Time.fixedDeltaTime;
         StartTime = Time.realtimeSinceStartup;
         //Debug.Log($"Start level stage");
         Name = "Level";
@@ -402,9 +404,11 @@ public class Stage : Scene
             {
                 Destroy(go);
             });
+            UIElements.Clear();
             if (!IsRendering)
             {
                 Destroy(Camera.gameObject);
+                //Camera.gameObject.SetActive(false);
             }
         }
         else
@@ -589,13 +593,9 @@ public class Stage : Scene
     new void Update()
     {
         base.Update();
-        if (!IsTrainingNueralNetwork)
+        if (!IsTraining && IsFinalized)
         {
-            //Time.timeScale = TimeScale;
-            if (!IsTrainingHiveMind && IsFinalized)
-            {
-                InputManager.Update();
-            }
+            InputManager.Update();
         }
 
         if (IsDebugging && FixedUpdates > 1000)

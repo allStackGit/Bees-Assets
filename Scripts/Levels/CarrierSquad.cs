@@ -27,7 +27,8 @@ namespace Assets.Scripts.Levels
             SetSquadTab();
             IsDroneSquad = CarrierSquadType == ConfigData.ShipTypes.Drone;
         }
-        private int _shipCount, _shipIndex, _id;
+        private int _shipCount, _shipIndex;
+        private long _id;
         private CarrierShip _ship;
         private void SetupShips()
         {

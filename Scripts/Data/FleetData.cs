@@ -70,7 +70,7 @@ namespace Assets.Scripts.Data
         {
             return _shipList;
         }
-        public FleetShip GetFleetShip(int id)
+        public FleetShip GetFleetShip(long id)
         {
             return GetShips().Find((ship) => ship.Id == id);
         }

@@ -13,7 +13,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         public Ship Ship, TargetShip;
         public int Range, Power; 
-        public float RateOfFire, ProjectileValue, RotationRate, SpecialFirepower, Firepower;
+        public float RateOfFire, ProjectileValue, RotationRate, SpecialFirepower, Firepower, Rotation;
         public GameObject Piece, RangeCircle;
         public ConfigData.ProjectileTypes ProjectileType;
         public List<Ship> CachedTargetingQueue = new List<Ship>();
@@ -36,6 +36,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public bool HasRangeCircle, HasRangeCollider, HasSpriteRenderer;
         public RangeCollider RangeCollider;
         public SpriteRenderer SpriteRenderer;
+        public Transform PieceTransform;
 
         //public string __NotShootingReason;
         //public List<Ship> __ShipsWithinRange;
@@ -60,6 +61,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             //Piece =  Instantiate(piece, Vector2.zero, Quaternion.identity);
             //Piece.transform.localScale = Ship.RelativeSizeScale();
             Piece = piece;
+            PieceTransform = Piece.transform;
+            Rotation = PieceTransform.eulerAngles.z;
             WeaponsData weaponsData = Piece.GetComponent<WeaponsData>();
             SpriteRenderer = weaponsData.SpriteRenderer;
             if (SpriteRenderer != null && Stage.IsRendering)
@@ -74,7 +77,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 HasSoundEffect = true;
                 SoundEffect = Instantiate(Stage.Audio.WeaponSounds[Type][Utilities.RandomInt(Stage.Audio.WeaponSounds[Type].Length)]);
-                SoundEffect.transform.parent = Piece.transform;
+                SoundEffect.transform.parent = PieceTransform;
                 SoundEffect.transform.localPosition = Vector2.zero;
 
             }
@@ -143,8 +146,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         }
         public void SetupRangeCircleAndCollider()
         {
-            Transform rangeCircle = Piece.transform.Find("Range Circle");
-            Transform rangeColliderTransform = Piece.transform.Find("Range Collider");
+            Transform rangeCircle = PieceTransform.Find("Range Circle");
+            Transform rangeColliderTransform = PieceTransform.Find("Range Collider");
             if (Ship.IsUserControlled && rangeCircle != null)
             {
                 RangeCircle = rangeCircle.gameObject;
@@ -268,7 +271,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             //Debug.Log($"Targeting! with {Ship.FleetShip.Name}");
 
             TargetShip = null;
-            if (!Level.State.IsPaused && !CeaseFire)
+            if (!CeaseFire)
             {
                 if (Ship.IsUserControlled) // user controlled fire sequence
                 {
@@ -514,26 +517,30 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             return Ship.GetPosition();
         }
-        public float AngleToPoint(Vector3 point)
+        public float AngleToPoint(Vector2 point)
         {
             return Utilities.AngleBetweenPoints(GetPosition(), point);
         }
-        private float _degrees;
+        //private float _degrees;
+        private Vector2 _direction;
         public float GetDegreesTowardsPoint(Vector2 point)
         {
-            _degrees = AngleToPoint(point) * Mathf.Rad2Deg;
-            //Debug.Log($"Angle towards movement point before adjustment {degrees}");
-            if (_degrees > 0) // if the angle is greater than PI, subtract 2 PI to get the equivilent negative angle
-            {
-                _degrees = Mathf.Abs(_degrees - 180);
+            //_degrees = AngleToPoint(point) * Mathf.Rad2Deg;
+            ////Debug.Log($"Angle towards movement point before adjustment {degrees}");
+            //if (_degrees > 0) // if the angle is greater than PI, subtract 2 PI to get the equivilent negative angle
+            //{
+            //    _degrees = Mathf.Abs(_degrees - 180);
 
-            }
-            if (_degrees < 0) // if the angle is less than negative PI, add 2 PI to get the equivilent negative angle
-            {
-                _degrees = Mathf.Abs(_degrees) + 180;
-            }
-            //Debug.Log($"Angle towards movement point after adjustment {degrees}");
-            return _degrees;
+            //}
+            //else if (_degrees < 0) // if the angle is less than negative PI, add 2 PI to get the equivilent negative angle
+            //{
+            //    _degrees = Mathf.Abs(_degrees) + 180;
+            //}
+            ////Debug.Log($"Angle towards movement point after adjustment {degrees}");
+            //return _degrees;
+
+            _direction = point - GetPosition();
+            return Mathf.Repeat(-Mathf.Atan2(_direction.x, _direction.y) * Mathf.Rad2Deg, 360f);
         }
 
 

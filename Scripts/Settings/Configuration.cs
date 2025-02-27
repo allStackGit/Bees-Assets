@@ -99,7 +99,7 @@ namespace Assets.Scripts.Settings
             DoesUserHaveController = (bool)so.DoesUserHaveController;
             StorageChunkSize = (int)so.StorageChunkSize;
             StandardMaxTimeOnQueue = (int)so.StandardMaxTimeOnQueue;
-            ConfigData.StandardMaxTimeOnQueue = StandardMaxTimeOnQueue;
+            //ConfigData.StandardMaxTimeOnQueue = StandardMaxTimeOnQueue;
             TimeScale = (int)so.TimeScale;
             AISquadPatrolTime = (int)so.AISquadPatrolTime;
             AIPatrolMaxSize = (int)so.AIPatrolMaxSize;

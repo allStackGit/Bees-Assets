@@ -23,7 +23,7 @@ namespace Assets.Scripts.Entities
             base.ClearData();
             SquadsMining.Clear();
         }
-        protected override void OnTriggerEnter2D(Collider2D collider)
+        protected void OnTriggerEnter2D(Collider2D collider)
         {
             MiningCollision(collider);
         }

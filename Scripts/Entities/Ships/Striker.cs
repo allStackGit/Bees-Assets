@@ -70,20 +70,15 @@ namespace Assets.Scripts.Entities.Ships
             TouchingShip = null;
             LastCarrierPosition = Vector2.zero;
         }
+        private GameObject _collidingThing;
+        private Ship _collidingShip;
         protected override void OnTriggerEnter2D(Collider2D collider) // projectile collision
         {
-            GameObject collidingThing = collider.gameObject;
-            if (collidingThing.name == "Selection Box")
+            _collidingThing = collider.gameObject;
+            
+            if (_collidingThing.CompareTag("Ship") && Collider.IsTouching(collider))
             {
-                //Debug.Log("Striker hit selection box");
-                if (IsUserControlled)
-                {
-                    Stage.Selector.SelectShip(this);
-                }
-            }
-            else if (collidingThing.CompareTag("Ship") && Collider.IsTouching(collider))
-            {
-                TouchingShip = collidingThing.GetComponent<Ship>();
+                TouchingShip = _collidingThing.GetComponent<Ship>();
                 //Debug.Log($"Striker collided with a ship!" +
                 //    $"{TouchingShip}, " +
                 //    $"{Squad}, " +
@@ -97,19 +92,25 @@ namespace Assets.Scripts.Entities.Ships
 
                 }
             }
-            
+            else if (IsUserControlled && _collidingThing.name == "Selection Box")
+            {
+                //Debug.Log("Striker hit selection box");
+                Stage.Selector.SelectShip(this);
+            }
+
         }
         protected override void OnTriggerExit2D(Collider2D collider)
         {
-            GameObject collidingThing = collider.gameObject;
-            if (TouchingShip != null  && collidingThing.CompareTag("Ship") && Collider.IsTouching(collider))
+            _collidingThing = collider.gameObject;
+            if (TouchingShip != null  && _collidingThing.CompareTag("Ship") && Collider.IsTouching(collider))
             {
-                Ship ship = collidingThing.GetComponent<Ship>();
-                if (ship == TouchingShip)
+                _collidingShip = _collidingThing.GetComponent<Ship>();
+                if (_collidingShip == TouchingShip)
                 {
                     TouchingShip = null;
                 }
-            }else if (collidingThing.name == ("Selection Box") && IsUserControlled)
+            }
+            else if (IsUserControlled && _collidingThing.name == "Selection Box")
             {
                 Stage.Selector.DeselectShip(this);
             }
@@ -165,29 +166,32 @@ namespace Assets.Scripts.Entities.Ships
             }
 
         }
+        private StrikerBomb _bomb;
+        private ScaledTimer _damageTimer = new ScaledTimer();
         private void DropBomb()
         {
             //Debug.Log($"Striker #{Id} is dropping bombs");
             HasDroppedBomb = true;
-            SetBombsReadyStatus(false);
 
-            // drop bomb animation
-            Vector2 bombPosition = ContactedShip.GetRandomPointOnShip(GetPosition());
-            //if (ContactedShip.ShipType == "Beehive")
-            //{
-            //    Vector2 targetPoint = GetPosition();
-            //    Vector2 frontOfShip = targetPoint + new Vector2(0, GetHalfHeight() + 2);
-            //    bombPosition = ContactedShip.GetRandomPointOnShip(Utilities.RotatePointAroundPoint(targetPoint, frontOfShip, GetRotation() * Mathf.Deg2Rad));
-            //}
-
-
-
-            StrikerBomb bomb = (StrikerBomb) Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.StrikerBomb);
-            bomb.transform.parent = Level.Map.transform;
-            bomb.Setup(Level, Bomb, this, ContactedShip, bombPosition, 0, 0, Bomb.Power, ContactedShip);
+            if (!Level.Stage.IsTraining)
+            {
+                SetBombsReadyStatus(false);
+                _bomb = (StrikerBomb)Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.StrikerBomb);
+                _bomb.transform.parent = Level.Map.transform;
+                _bomb.Setup(Level, Bomb, this, ContactedShip, ContactedShip.GetRandomPointOnShip(GetPosition()), 0, 0, Bomb.Power, ContactedShip);
+            }
+            else
+            {
+                _damageTimer.Reuse(2, LogBombDamage);
+                Level.AddTimer(_damageTimer);
+            }
 
             CompleteRun();
 
+        }
+        public void LogBombDamage()
+        {
+            LogAttackingDamage(Bomb.Power, this, FleetShip, Squad.SavedSquad, ContactedShip);
         }
         public void CompleteRun()
         {
@@ -196,6 +200,7 @@ namespace Assets.Scripts.Entities.Ships
             SetIndicatorColor();
 
         }
+        private Vector2 _destination;
         public void ReturnToCarrierIfNecessary()
         {
             // If you haven't returned to the carrier and you've either dropped your bombs or don't have them
@@ -205,11 +210,10 @@ namespace Assets.Scripts.Entities.Ships
                 //Debug.Log($"Sending {striker.Id} back to its carrier");
                 if (!Carrier.IsDead)
                 {
-                    Vector2 destination = Carrier.GetPosition() + OffsetFromCenter;
+                    _destination = Carrier.GetPosition() + OffsetFromCenter;
                     //Vector2 targetPoint = Level.ForceBounds(destination + OffsetFromCenter);
-                    float distance = DistanceToPoint(destination);
 
-                    if (distance < ConfigData.RefillDistanceToCarrier || DistanceTo(Carrier) < ConfigData.RefillDistanceToCarrier)
+                    if (DistanceToPoint(_destination) < ConfigData.RefillDistanceToCarrier || DistanceTo(Carrier) < ConfigData.RefillDistanceToCarrier)
                     {
                         //Debug.Log($"{Name} has returned to carrier and is moving towards {destination}");
                         SetBombsReadyStatus(true);
@@ -226,7 +230,7 @@ namespace Assets.Scripts.Entities.Ships
                     else
                     {
                         //Debug.Log($"{striker.Id} is still {distance} away from {targetPoint}");
-                        MoveToPoint(destination);
+                        MoveToPoint(_destination);
                     }
                 }
             }

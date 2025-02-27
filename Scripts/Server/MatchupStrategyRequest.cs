@@ -12,7 +12,7 @@ namespace Assets.Scripts.Server
         public new GetMatchupStrategy Request = null;
         public MatchupStrategyResponse Response = null;
         public readonly Squad Squad;
-        public readonly int SquadId;
+        public readonly long SquadId;
         public readonly Level Level;
 
 

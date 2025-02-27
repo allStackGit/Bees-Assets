@@ -31,6 +31,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public CollisionAsteroid TargetAsteroid;
         public bool HasTargetAsteroid;
         public bool IsFiringAtAsteroid;
+
         /// <summary>
         /// Whether or not the ship should fire at the asteroid: If it's not cease fire and it has a target asteroid, and it does not have a target ship
         /// </summary>
@@ -178,20 +179,20 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             if (IsFiringManually)
             {
                 TargetPoint = Stage.InputManager.GetMousePosition();
-                IsAimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                IsAimedAtTarget = Utilities.TimedRotation(this, GetDegreesTowardsPoint(TargetPoint), RotationRate);
             }
             else
             {
                 if (ShouldFire)
                 {
                     TargetPoint = GetTargetPoint(TargetShip);
-                    IsAimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                    IsAimedAtTarget = Utilities.TimedRotation(this, GetDegreesTowardsPoint(TargetPoint), RotationRate);
                     IsFiringAtAsteroid = false;
                 }
                 else if (ShouldFireAtAsteroid)
                 {
                     TargetPoint = TargetAsteroid.GetPosition();
-                    IsAimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                    IsAimedAtTarget = Utilities.TimedRotation(this, GetDegreesTowardsPoint(TargetPoint), RotationRate);
                     IsFiringAtAsteroid = true;
                 }
                 else
@@ -200,7 +201,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     if (CeaseFire || !HasValidTarget())
                     {
                         //Debug.Log($"{Name} has no ships to fire at, returning to default aim");
-                        Utilities.TimedRotation(Piece, Ship.GetRotation(), RotationRate);
+                        Utilities.TimedRotation(this, Ship.Rotation, RotationRate);
                     }
                     IsFiringAtAsteroid = false;
                 }
@@ -209,13 +210,25 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
 
         }
+        //private Ship _validTarget;
+        private int _index;
+        private IEnumerable<Ship> _shipsWithinRange;
         /// <summary>
         /// Checks all ships within range to see if this turret can fire upon them
         /// </summary>
         /// <returns></returns>
         public bool HasValidTarget()
         {
-            return ShipsWithinRange.Any((targetShip) => IsShipValidTarget(targetShip.Value));
+            _shipsWithinRange = ShipsWithinRange.Values;
+            for (_index = 0; _index < ShipsWithinRange.Count; _index++)
+            {
+                if (IsShipValidTarget(_shipsWithinRange.ElementAt(_index)))
+                {
+                    return true;
+                }
+            }
+            return false;
+            //return ShipsWithinRange.Any((targetShip) => IsShipValidTarget(targetShip.Value));
         }
         /// <summary>
         /// Checks if the ship is a) alive, b within range, c) In the map, and d) Not blocked by obstacles
@@ -251,7 +264,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 _frontOfShip = _targetPoint + new Vector2(0, ship.GetHalfHeight() - ConfigData.OffsetFromFrontOfShip.GetValueOrDefault(ship.ShipType));
                 //Debug.Log($"{ship} is positioned at {ship.GetPosition()} and target point is {frontOfShip}");
-                _targetPoint = Utilities.RotatePointAroundPoint(_targetPoint, _frontOfShip, ship.GetRotation() * Mathf.Deg2Rad);
+                _targetPoint = Utilities.RotatePointAroundPoint(_targetPoint, _frontOfShip, ship.Rotation * Mathf.Deg2Rad);
 
             }
             if (!RangeCollider.Collider.OverlapPoint(_targetPoint + Level.GetPosition()))
@@ -294,9 +307,9 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             foreach (Ship ship in CachedTargetingQueue)
             {
-                if (ship != null)
+                if (!ship.IsDead)
                 {
-                    if (Utilities.IsAimedAt(Piece, GetDegreesTowardsPoint(GetTargetPoint(ship))))
+                    if (Utilities.IsAimedAt(this, GetDegreesTowardsPoint(GetTargetPoint(ship))))
                     {
                         return ship;
                     }
@@ -388,18 +401,16 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             // Reset
             TargetingPasses = 0;
         }
-
-        public float GetRotation()
-        {
-            return Piece.transform.eulerAngles.z;
-        }
         public float GetLocalRotation()
         {
-            return Piece.transform.localEulerAngles.z;
+            return PieceTransform.localEulerAngles.z;
         }
         public override Vector2 GetPosition()
         {
-            return Ship.Level.Map.transform.InverseTransformPoint(Piece.transform.position);
+            //Debug.Log($"Turret piece has position of {Piece.transform.position}, local position of {Piece.transform.localPosition}, and " +
+                //$"inverseTransform position of {Ship.Level.Map.transform.InverseTransformPoint(Piece.transform.position)}. Local+Ship: {Ship.GetPosition()+(Vector2)Piece.transform.localPosition}");
+            
+            return Ship.Level.Map.transform.InverseTransformPoint(PieceTransform.position);
             //try
             //{
             //    return Ship.Level.Map.transform.InverseTransformPoint(Piece.transform.position);

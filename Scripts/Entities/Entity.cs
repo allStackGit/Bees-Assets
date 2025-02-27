@@ -20,6 +20,11 @@ namespace Assets.Scripts.Entities
         public Collider2D Collider;
         public Rigidbody2D Body;
         public SpriteRenderer SpriteRenderer;
+        public Transform Transform;
+        /// <summary>
+        /// The rotation of the entity, in degrees
+        /// </summary>
+        public float Rotation;
         //protected virtual void Update() // [alert] [training] Should probably just remove this during training
         //{
         //    if (!Level.IsTraining && !Level.IsPaused)
@@ -37,6 +42,7 @@ namespace Assets.Scripts.Entities
             {
                 Destroy(SpriteRenderer);
             }
+            Rotation = Transform.eulerAngles.z;
         }
         public float DistanceToPoint(Vector2 point)
         {
@@ -63,11 +69,9 @@ namespace Assets.Scripts.Entities
         {
             return Utilities.DirectionBetweenPoints(GetPosition(), point);
         }
-        public void SetAngleTowardsPoint(Vector2 point)
-        {
-            transform.eulerAngles = new Vector3(0, 0, GetDegreesTowardsPoint(point));
-        }
-        private float _degrees;
+        //private float _degrees;
+        //private Vector2 _direction;
+        private Vector2 _position;
         /// <summary>
         /// Gets the angle (0-360) in degrees
         /// </summary>
@@ -75,30 +79,36 @@ namespace Assets.Scripts.Entities
         /// <returns></returns>
         public float GetDegreesTowardsPoint(Vector2 point)
         {
-            _degrees = AngleToPoint(point) * Mathf.Rad2Deg;
-            //Debug.Log($"Angle towards movement point before adjustment {degrees}");
-            if (_degrees > 0) // if the angle is greater than PI, subtract 2 PI to get the equivilent negative angle
-            {
-                _degrees = Mathf.Abs(_degrees - 180);
+            //_degrees = AngleToPoint(point) * Mathf.Rad2Deg;
+            ////Debug.Log($"Angle towards movement point before adjustment {degrees}");
+            //if (_degrees > 0) // if the angle is greater than PI, subtract 2 PI to get the equivilent negative angle
+            //{
+            //    _degrees = Mathf.Abs(_degrees - 180);
 
-            }
-            if (_degrees < 0) // if the angle is less than negative PI, add 2 PI to get the equivilent negative angle
-            {
-                _degrees = Mathf.Abs(_degrees) + 180;
-            }
-            //Debug.Log($"Angle towards movement point after adjustment {degrees}");
-            return _degrees;
+            //}
+            //else if (_degrees < 0) // if the angle is less than negative PI, add 2 PI to get the equivilent negative angle
+            //{
+            //    _degrees = Mathf.Abs(_degrees) + 180;
+            //}
+            ////Debug.Log($"Angle towards movement point after adjustment {_degrees}");
+            //return _degrees;
+
+            _position = GetPosition();
+            return Mathf.Repeat(-Mathf.Atan2(point.x - _position.x, point.y - _position.y) * Mathf.Rad2Deg, 360f);
+
+
+
         }
-        private float _result;
-        public float GetRotatedAngleToPoint(Vector2 point)
-        {
-            _result = GetDegreesTowardsPoint(point) - GetRotation();
-            if (_result < 0)
-            {
-                _result += 360;
-            }
-            return _result;
-        }
+        //private float _result;
+        //public float GetRotatedAngleToPoint(Vector2 point)
+        //{
+        //    _result = GetDegreesTowardsPoint(point) - GetRotation();
+        //    if (_result < 0)
+        //    {
+        //        _result += 360;
+        //    }
+        //    return _result;
+        //}
         public bool IsFriendly(Entity entity)
         {
             return Side == entity.Side;
@@ -113,11 +123,7 @@ namespace Assets.Scripts.Entities
         }
         public Vector2 GetPosition()
         {
-            return transform.localPosition;
-        }
-        public float GetRotation()
-        {
-            return transform.eulerAngles.z;
+            return Transform.localPosition;
         }
 
         private Entity _entity;
@@ -172,7 +178,7 @@ namespace Assets.Scripts.Entities
         public virtual void Activate()
         {
             //gameObject.SetActive(true);
-            Collider.enabled = true;
+            //Collider.enabled = true;
             Body.simulated = true;
             if (Stage.IsRendering)
             {
@@ -183,7 +189,7 @@ namespace Assets.Scripts.Entities
         public virtual void Deactivate()
         {
             //gameObject.SetActive(false);
-            Collider.enabled = false;
+            //Collider.enabled = false;
             Body.simulated = false;
             if (Stage.IsRendering)
             {

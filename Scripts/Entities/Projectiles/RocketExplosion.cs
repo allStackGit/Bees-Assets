@@ -81,6 +81,13 @@ namespace Assets.Scripts.Entities.Projectiles
             _isHarmless = true;
             //Debug.Log($"{Name} is now harmless");
         }
+        public override void RemoveDamageSentEntry()
+        {
+            if (Target != null)
+            {
+                base.RemoveDamageSentEntry();
+            }
+        }
         public void SetColliderSize(int size)
         {
             //Debug.Log($"Setting collider size to {size} for {Name}");
@@ -89,27 +96,24 @@ namespace Assets.Scripts.Entities.Projectiles
         private int _index;
         protected override void FixedUpdate()
         {
-            if (!Level.State.IsPaused)
+            if (CollidingQueue.Count > 0)
             {
-                if (CollidingQueue.Count > 0)
+                //Debug.Log($"Pulled collision for {Name} off of rocket explosion queue");
+                for (_index = 0; _index < CollidingQueue.Count; _index++)
                 {
-                    //Debug.Log($"Pulled collision for {Name} off of rocket explosion queue");
-                    for (_index = 0; _index < CollidingQueue.Count; _index++)
-                    {
-                        ShipCollision(CollidingQueue.Dequeue());
-                    }
+                    ShipCollision(CollidingQueue.Dequeue());
                 }
-                if (CollidingObstacleQueue.Count > 0)
-                {
-                    ContactObstacle(CollidingObstacleQueue.Dequeue());
-                }
+            }
+            if (CollidingObstacleQueue.Count > 0)
+            {
+                ContactObstacle(CollidingObstacleQueue.Dequeue());
             }
         }
 
         protected override void ShipCollision(Ship ship)
         {
             //Debug.Log($"Rocket explosion collided with {ship.Name}");
-            if (ship != null)
+            if (!ship.IsDead)
             {
                 // if hit enemy projectile or Fire Barge explosion
                 if ((!IsFriendly(ship) || (Shooter.ShipType == ConfigData.ShipTypes.FireBarge && this != Shooter)))

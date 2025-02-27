@@ -11,9 +11,9 @@ namespace Assets.Scripts.Entities.Projectiles
     public class LaserBeam : Projectile
     {
 
-        private Vector2 _lastShooterPosition, _lastTargetPoint;
+        //private Vector2 _lastTargetPoint;
         private float _scale = 2f;
-        private Ship _target;
+        //private Ship _target;
         private int _powerLoss;
         private HashSet<Ship> _shipsHit = new HashSet<Ship>();
         private Vector2 _oneAndHalf = new Vector2(1, .5f);
@@ -22,22 +22,23 @@ namespace Assets.Scripts.Entities.Projectiles
         {
             base.Setup(level, beamCannon, shooter, target, startingPosition, angle, range, power);
             BeamCannon = beamCannon;
-            _lastShooterPosition = Weapon.GetPosition();
-            _target = Weapon.TargetShip;
-            if (_target != null)
-            {
-                _lastTargetPoint = _target.GetPosition();
-            }
+            //_lastShooterPosition = Weapon.GetPosition();
+            //_target = Weapon.TargetShip;
+            //if (_target != null)
+            //{
+            //    _lastTargetPoint = _target.GetPosition();
+            //}
+            _halfRange = Range / 2;
         }
 
         public override void ClearData()
         {
             base.ClearData();
-            _lastShooterPosition = Vector2.zero;
-            _lastTargetPoint = Vector2.zero;
-            _target = null;
+            //_lastShooterPosition = Vector2.zero;
+            //_lastTargetPoint = Vector2.zero;
+            //_target = null;
             _powerLoss = 0;
-            transform.localScale = _oneAndHalf;
+            Transform.localScale = _oneAndHalf;
             _shipsHit.Clear();
             Angle = 0;
         }
@@ -97,30 +98,32 @@ namespace Assets.Scripts.Entities.Projectiles
         private float _worldAngle, _localAngle;
         private Vector2 _laserBeamOffset, _localCannonPoint, _rotatedLocalPosition, _offsetRotatedCannonPosition;
         private Quaternion _localRotation;
+        private float _halfRange;
+        private Vector3 _forward = Vector3.forward;
         private void ExtendBeam()
         {
 
-            if (Shooter != null)
+            if (!Shooter.IsDead)
             {
                 //Debug.Log($"Extending beam towards {_target.Name}");
-                if (_target != null)
-                {
-                    _lastTargetPoint = _target.GetPosition();
-                }
+                //if (_target != null)
+                //{
+                //    _lastTargetPoint = _target.GetPosition();
+                //}
                 //float distance = Weapon.DistanceToPoint(_lastTargetPoint);
 
-                if (transform.localScale.x < Range / 2)
+                if (Transform.localScale.x < _halfRange)
                 {
                     //if (_scale == 0)
                     //{
                     //    transform.localScale = new Vector2(Weapon.DistanceToPoint(_lastTargetPoint) / 2, transform.localScale.y);
                     //}
-                    transform.localScale = new Vector2(transform.localScale.x + _scale, transform.localScale.y);
+                    Transform.localScale = new Vector2(Transform.localScale.x + _scale, Transform.localScale.y);
 
-                    _worldAngle = BeamCannon.GetRotation() + 90;
+                    _worldAngle = BeamCannon.Rotation + 90;
                     _localAngle = BeamCannon.GetLocalRotation() + 90;
 
-                    _laserBeamOffset = new Vector2((transform.localScale.x), 0);
+                    _laserBeamOffset = new Vector2(Transform.localScale.x, 0);
 
                     _localRotation = Quaternion.Euler(0, 0, _localAngle);
 
@@ -130,7 +133,7 @@ namespace Assets.Scripts.Entities.Projectiles
                     //Vector2 rotatedCannonPosition = (Vector2)Shooter.transform.TransformPoint(rotatedLocalPosition);
                     //Vector2 rotatedMapPosition = (Vector2)Level.Map.transform.TransformPoint(rotatedLocalPosition);
                     _offsetRotatedCannonPosition = (Vector2)Shooter.transform.TransformPoint(_rotatedLocalPosition) - Level.GetPosition();
-                    Angle = _worldAngle * Mathf.Deg2Rad * -1;
+                    Angle = _worldAngle * -Mathf.Deg2Rad;
 
                     //Debug.Log($"Cruiser world rotation: {Shooter.transform.eulerAngles.z}");
                     //Debug.Log($"Cannon local rotation: {Weapon.GetLocalRotation()}, world rotation: {Weapon.GetRotation()}");
@@ -144,8 +147,8 @@ namespace Assets.Scripts.Entities.Projectiles
 
                     //Debug.Log($"Extending Laser Beam #{Id} to rotated cannon position: {offsetRotatedCannonPosition}");
 
-                    transform.localEulerAngles = new Vector3(0, 0, _worldAngle);
-                    transform.localPosition = _offsetRotatedCannonPosition;
+                    Transform.localEulerAngles = _forward * _worldAngle;
+                    Transform.localPosition = _offsetRotatedCannonPosition;
                     Body.velocity = Shooter.Body.velocity;
                     return;
 

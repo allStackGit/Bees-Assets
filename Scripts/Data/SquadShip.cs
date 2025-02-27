@@ -10,7 +10,7 @@ namespace Assets.Scripts.Data
 {
     public class SquadShip : ICloneable
     {
-        public int FleetId;
+        public long FleetId;
         public ConfigData.ShipTypes ShipType;
         public Vector2 Offset;
 
@@ -18,7 +18,7 @@ namespace Assets.Scripts.Data
         private Vector2 _size => ConfigData.ShipSizes.GetValueOrDefault(GetFleetShip().Type);
 
 
-        public SquadShip(int fleetId, ConfigData.ShipTypes shipType, Vector2 offset, SavedSquad squad)
+        public SquadShip(long fleetId, ConfigData.ShipTypes shipType, Vector2 offset, SavedSquad squad)
         {
             FleetId = fleetId;
             ShipType = shipType;

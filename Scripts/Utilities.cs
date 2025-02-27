@@ -2,6 +2,7 @@
 using Assets.Scripts.Data;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
+using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
 using Assets.Scripts.UI_Components;
@@ -584,18 +585,26 @@ namespace Assets.Scripts
         private static readonly Random _rnd = new Random();
         private static long _uniqueHash_tempHash;
 
-        public static int Hash()
+        public static long Hash()
         {
-            return RandomInt(); 
+            //long hash = UniqueHash();
+            //Debug.Log($"Hash: {hash}");
+            //return hash;
+            return UniqueHash();
+            //return RandomInt(); 
         }
 
+        /// <summary>
+        /// Generates a number that's guarenteed to be unique (for this game load) and is less than 10t
+        /// </summary>
+        /// <returns></returns>
         public static long UniqueHash()
         {
-            _uniqueHash_tempHash = RandomLong() * RandomLong();
+            _uniqueHash_tempHash = RandomLong(10000000); // If you don't pass 10m in, it could potentially generate a number larger than JS's MAX_SAFE_INT
             while (ConfigData.UsedHashes.Contains(_uniqueHash_tempHash))
             {
-                Debug.Log($"A duplicate hash was found! {_uniqueHash_tempHash}");
-                _uniqueHash_tempHash = RandomLong() * RandomLong();
+                Debug.LogWarning($"A duplicate hash was found! {_uniqueHash_tempHash} There are {ConfigData.UsedHashes.Count} unique hashes stored");
+                _uniqueHash_tempHash = RandomLong(10000000);
             }
             ConfigData.UsedHashes.Add(_uniqueHash_tempHash);
             return _uniqueHash_tempHash;
@@ -635,9 +644,14 @@ namespace Assets.Scripts
         {
             return _rnd.Next(max);
         }
+        /// <summary>
+        /// Generates a long by multiplying to random numbers no larger than max
+        /// </summary>
+        /// <param name="max"></param>
+        /// <returns></returns>
         public static long RandomLong(int max = int.MaxValue)
         {
-            return (long) _rnd.Next(max);
+            return (long) _rnd.Next(max) * _rnd.Next(max);
         }
         /// <summary>
         /// Returns a float between 0 (inclusive) and max (exclusive)
@@ -1140,36 +1154,75 @@ namespace Assets.Scripts
         /// <param name="rotation"></param>
         /// <param name="rotationSpeed"></param>
         /// <returns></returns>
-        public static bool TimedRotation(GameObject entity, float rotation, float rotationSpeed)
+        public static bool TimedRotation(Weapon weapon, float rotation, float rotationSpeed)
         {
-            return TimedRotationDifference(entity, rotation, rotationSpeed) == 0;
+            return TimedRotationDifference(weapon, rotation, rotationSpeed) == 0;
         }
 
         // Private class-level variables for TimedRotationDifference method
         private static float _timedRotationDifferenceDifference; // Method: TimedRotationDifference
+        private static float _rotationRate;
+        private static Vector3 _forward = Vector3.forward;
+        private const int _levelOfPrecision = 3;
+        private const int _levelOfPrecisionNegative = -_levelOfPrecision;
         //private static Vector3 _timedRotationDifferenceRotationVector; // Method: TimedRotationDifference
 
-        public static float TimedRotationDifference(GameObject entity, float rotation, float rotationSpeed)
+        public static float TimedRotationDifference(Ship ship, float rotation, float rotationSpeed)
         {
-            _timedRotationDifferenceDifference = Mathf.DeltaAngle(entity.transform.eulerAngles.z, rotation);
+            _timedRotationDifferenceDifference = Mathf.DeltaAngle(ship.Rotation, rotation);
+            _rotationRate = ship.Stage.FixedDeltaTime * rotationSpeed;
 
-            if (_timedRotationDifferenceDifference > 3)
+            if (_timedRotationDifferenceDifference > _levelOfPrecision)
             {
                 //_timedRotationDifferenceRotationVector = new Vector3(0, 0, 1 * Time.fixedDeltaTime * rotationSpeed);
-                entity.transform.Rotate(Vector3.forward * Time.fixedDeltaTime * rotationSpeed);
+                ship.Transform.Rotate(_forward * _rotationRate);
+                ship.Rotation += _rotationRate;
                 return _timedRotationDifferenceDifference;
             }
-            else if (_timedRotationDifferenceDifference < -3)
+            else if (_timedRotationDifferenceDifference < _levelOfPrecisionNegative)
             {
                 //_timedRotationDifferenceRotationVector = new Vector3(0, 0, 1 * Time.fixedDeltaTime * rotationSpeed * -1);
-                entity.transform.Rotate(Vector3.forward * Time.fixedDeltaTime * -rotationSpeed);
+                ship.Transform.Rotate(_forward * -_rotationRate);
+                ship.Rotation += -_rotationRate;
                 return _timedRotationDifferenceDifference;
             }
-            else
+            return 0;
+            //else
+            //{
+            //    //entity.Transform.eulerAngles = _forward * rotation;
+            //    //entity.Rotation = rotation;
+            //    return 0;
+            //}
+        }
+        public static float TimedRotationDifference(Weapon weapon, float rotation, float rotationSpeed)
+        {
+            _timedRotationDifferenceDifference = Mathf.DeltaAngle(weapon.Rotation, rotation);
+            _rotationRate = weapon.Stage.FixedDeltaTime * rotationSpeed;
+
+            if (_timedRotationDifferenceDifference > _levelOfPrecision)
             {
-                entity.transform.eulerAngles = Vector3.forward * rotation;
-                return 0;
+                //_timedRotationDifferenceRotationVector = new Vector3(0, 0, 1 * Time.fixedDeltaTime * rotationSpeed);
+                weapon.PieceTransform.Rotate(_forward * _rotationRate);
+                weapon.Rotation += _rotationRate;
+                return _timedRotationDifferenceDifference;
             }
+            else if (_timedRotationDifferenceDifference < _levelOfPrecisionNegative)
+            {
+                //_timedRotationDifferenceRotationVector = new Vector3(0, 0, 1 * Time.fixedDeltaTime * rotationSpeed * -1);
+                weapon.PieceTransform.Rotate(_forward * -_rotationRate);
+                weapon.Rotation += -_rotationRate;
+                return _timedRotationDifferenceDifference;
+            }
+            else if (_timedRotationDifferenceDifference != 0)
+            {
+                //weapon.PieceTransform.Rotate(_forward * _timedRotationDifferenceDifference);
+                //weapon.Rotation = _timedRotationDifferenceDifference;
+                //Debug.Log(_timedRotationDifferenceDifference);
+                weapon.PieceTransform.eulerAngles = _forward * rotation;
+                weapon.Rotation = rotation;
+            }
+            return 0;
+
         }
 
         /// <summary>
@@ -1180,11 +1233,21 @@ namespace Assets.Scripts
         /// <returns></returns>
         private static float _isRotatedTowardsDifference; // Method: IsRotatedTowards
 
-        public static bool IsRotatedTowards(GameObject entity, float rotation)
+        public static bool IsRotatedTowards(Weapon weapon, float rotation)
         {
-            _isRotatedTowardsDifference = Mathf.DeltaAngle(entity.transform.eulerAngles.z, rotation);
+            _isRotatedTowardsDifference = Mathf.DeltaAngle(weapon.Rotation, rotation);
 
-            if (_isRotatedTowardsDifference > 3 || _isRotatedTowardsDifference < -3)
+            if (_isRotatedTowardsDifference > _levelOfPrecision || _isRotatedTowardsDifference < _levelOfPrecisionNegative)
+            {
+                return false;
+            }
+            return true;
+        }
+        public static bool IsRotatedTowards(Entity entity, float rotation)
+        {
+            _isRotatedTowardsDifference = Mathf.DeltaAngle(entity.Rotation, rotation);
+
+            if (_isRotatedTowardsDifference > _levelOfPrecision || _isRotatedTowardsDifference < _levelOfPrecisionNegative)
             {
                 return false;
             }
@@ -1199,12 +1262,11 @@ namespace Assets.Scripts
         /// <returns></returns>
         // Private class-level variables for IsAimedAt method
         private static float _isAimedAtDifference; // Method: IsAimedAt
-        private static float _isAimedAtCloseEnough; // Method: IsAimedAt
+        private static float _isAimedAtCloseEnough = 3; // Method: IsAimedAt
 
-        public static bool IsAimedAt(GameObject entity, float rotation)
+        public static bool IsAimedAt(Weapon weapon, float rotation)
         {
-            _isAimedAtDifference = Mathf.DeltaAngle(entity.transform.eulerAngles.z, rotation);
-            _isAimedAtCloseEnough = 3;
+            _isAimedAtDifference = Mathf.DeltaAngle(weapon.Rotation, rotation);
 
             if (_isAimedAtDifference > _isAimedAtCloseEnough)
             {
@@ -1453,11 +1515,11 @@ namespace Assets.Scripts
             File.WriteAllBytes(path, texture.EncodeToPNG());
         }
 
-        public static int GetNegativeFleetshipId()
+        public static long GetNegativeFleetshipId()
         {
             return -(Hash() + ConfigData.CurrentShips.GetFleetShips().Count);
         }
-        public static int GetNegativeSavedSquadId()
+        public static long GetNegativeSavedSquadId()
         {
             return -(Hash() + ConfigData.CurrentShips.GetSavedSquads().Count);
         }

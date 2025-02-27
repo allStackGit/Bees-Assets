@@ -22,7 +22,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             if (IsFiringManually)
             {
                 TargetPoint = Stage.InputManager.GetMousePosition();
-                IsAimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                IsAimedAtTarget = Utilities.TimedRotation(this, GetDegreesTowardsPoint(TargetPoint), RotationRate);
             }
             else
             {
@@ -33,14 +33,14 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 if (ShouldFire)
                 {
                     TargetPoint = GetTargetPoint(TargetShip);
-                    IsAimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                    IsAimedAtTarget = Utilities.TimedRotation(this, GetDegreesTowardsPoint(TargetPoint), RotationRate);
                     IsFiringAtAsteroid = false;
 
                 }
                 else if (ShouldFireAtAsteroid)
                 {
                     TargetPoint = TargetAsteroid.GetPosition();
-                    IsAimedAtTarget = Utilities.TimedRotation(Piece, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                    IsAimedAtTarget = Utilities.TimedRotation(this, GetDegreesTowardsPoint(TargetPoint), RotationRate);
                     IsFiringAtAsteroid = true;
                 }
                 else
@@ -49,7 +49,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     {
                         //Debug.Log($"TargetShip is null, rotating back");
                         IsAimedAtTarget = false;
-                        Utilities.TimedRotation(Piece, Ship.GetRotation(), RotationRate);
+                        Utilities.TimedRotation(this, Ship.Rotation, RotationRate);
                     }
                     IsFiringAtAsteroid = false;
 
@@ -83,7 +83,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 //Projectile beam = Level.AddProjectile(ConfigData.ProjectileTypes.Beam, this, GetPosition(), angle);
 
                 _beam = (LaserBeam) Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.Beam);
-                _beam.transform.parent = Level.Map.transform;
+                _beam.Transform.parent = Level.Map.transform;
 
                 //Debug.Log($"Position before setup for {projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
                 _beam.Setup(Level, this, Ship, TargetShip, GetPosition(), AngleToPoint(TargetPoint), Range, Power);

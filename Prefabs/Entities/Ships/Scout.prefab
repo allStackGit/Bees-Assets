@@ -113,6 +113,8 @@ MonoBehaviour:
   Collider: {fileID: 5542042087589235750}
   Body: {fileID: 273038934896497789}
   SpriteRenderer: {fileID: 6841957851019292100}
+  Transform: {fileID: 6841957851019292101}
+  Rotation: 0
   ShowDebug: 0
   Health: 0
   MaxHealth: 0
@@ -135,8 +137,8 @@ MonoBehaviour:
   MovementMarker: {fileID: 0}
   TargetCoordinates: {x: 0, y: 0}
   FinalDestination: {x: 0, y: 0}
-  OffsetFromCenter: {x: 0, y: 0}
   PathfindingDestination: {x: 0, y: 0}
+  OffsetFromCenter: {x: 0, y: 0, z: 0}
   WaitingTargetCoordinates: {x: 0, y: 0}
   Squad: {fileID: 0}
   MotherSquad: {fileID: 0}
@@ -156,7 +158,7 @@ MonoBehaviour:
   IsMiningShip: 0
   IsWarpGate: 0
   HasTargetDirection: 0
-  HasVision: 0
+  HasUserVision: 0
   HasProximityCollider: 0
   HasShipAnimation: 0
   HasRocketFlares: 0
@@ -197,6 +199,7 @@ MonoBehaviour:
   DamagePerSecond: 0
   Tsv: 0
   HasWeapons: 0
+  HasTurrets: 0
   IsCarrierShip: 0
   IsMoving: 0
   PathfindingThreadComplete: 0

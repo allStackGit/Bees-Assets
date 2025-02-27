@@ -38,7 +38,7 @@ namespace Assets.Scripts.Entities.Ships
         public void Place()
         {
             transform.localPosition = Ship.GetPosition();
-            transform.eulerAngles = Ship.transform.eulerAngles;
+            transform.eulerAngles = Vector3.forward * Ship.Rotation;
             gameObject.SetActive(true);
             Ship.Level.State.AddDeadBody(this);
 

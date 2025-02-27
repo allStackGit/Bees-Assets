@@ -201,6 +201,8 @@ MonoBehaviour:
   Collider: {fileID: 157442685264321490}
   Body: {fileID: 4881685890803801593}
   SpriteRenderer: {fileID: 5046848058992666463}
+  Transform: {fileID: 8529984986193344732}
+  Rotation: 0
   Power: 0
   Range: 0
   Speed: 200

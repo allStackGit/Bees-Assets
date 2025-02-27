@@ -34,7 +34,7 @@ namespace Assets.Scripts.Entities
             }
         }
 
-        protected override void OnTriggerEnter2D(Collider2D collider)
+        protected void OnTriggerEnter2D(Collider2D collider)
         {
             //Debug.Log($"{Name} collided");
             _collidingThing = collider.gameObject;

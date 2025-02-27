@@ -33,7 +33,7 @@ namespace Assets.Scripts
         public const int TestPort = 7143;
         public const int ProductionPort = 7144;
         public const int RLPort = 7242;
-        public static int StandardMaxTimeOnQueue = 20;
+        public static int StandardMaxTimeOnQueue = 5;
 
         public const int ObstaclesLayerMask = 1 << 19; // the layer masks need to all be 1 and then bitwise shifted to the left by the layer number
         public const int ObstacleProximityRangesLayerMask = 1 << 20;

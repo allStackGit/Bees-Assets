@@ -76,7 +76,7 @@ namespace Assets.Scripts.Entities.Ships
                 //Debug.Log($"{Name} is dropping a beacon");
                 TimeSinceLastBeaconDropped = Time.realtimeSinceStartup;
 
-                int id = Utilities.GetNegativeFleetshipId();
+                long id = Utilities.GetNegativeFleetshipId();
                 Beacon ship = (Beacon)Level.LevelConstructor.InstantiateShip(MinionType);
 
 

@@ -14,28 +14,30 @@ namespace Assets.Scripts.Entities.Ships
 
         public int TotalSprites, SpriteIndex;
 
+        private int _loopIndex;
         public void RecolorAnimationSprites()
         {
             RecoloredSprites = new Sprite[TotalSprites];
             if (Ship.FleetShip.HasCachedSprite)
             {
-                for (int i = 0; i < RecoloredSprites.Length; i++)
+                for (_loopIndex = 0; _loopIndex < RecoloredSprites.Length; _loopIndex++)
                 {
-                    RecoloredSprites[i] = Ship.FleetShip.LoadCachedSprite(i, "remains", ConfigData.ShipSizes[Ship.ShipType], Ship.Squad.SavedSquad.Color); 
+                    RecoloredSprites[_loopIndex] = Ship.FleetShip.LoadCachedSprite(_loopIndex, "remains", ConfigData.ShipSizes[Ship.ShipType], Ship.Squad.SavedSquad.Color); 
                 }
                 //Debug.Log($"Loaded cached sprites for Ship {Ship.Name}");
             }
         }
 
+        private int _index;
         void LateUpdate()
         {
             if (ShouldSwapSprite)
             {
-                int index = SpriteIndex % RecoloredSprites.Length;
+                _index = SpriteIndex % RecoloredSprites.Length;
                 
                 //Debug.Log($"Recolored index: {index}");
                 //Debug.Log($"Trying to swap {SpriteRenderer.sprite.name} with {RecoloredSprites[SpriteIndex % RecoloredSprites.Length].name} {FramesChange} over {timeDifference}s at {fps} fps");
-                SpriteRenderer.sprite = RecoloredSprites[index];
+                SpriteRenderer.sprite = RecoloredSprites[_index];
                 CurrentSprite = SpriteRenderer.sprite;
                 SpriteIndex++;
                 ShouldSwapSprite = false;

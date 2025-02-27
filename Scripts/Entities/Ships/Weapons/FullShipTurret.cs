@@ -12,8 +12,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public override void Create(Ship ship, ConfigData.WeaponTypes type, int range, int power, float rateOfFire, float projectileValue, GameObject piece, ConfigData.ProjectileTypes projectileType, bool fireAtFrontOfShip, float rotationRate)
         {
             base.Create(ship, type, range, power, rateOfFire, projectileValue, piece, projectileType, fireAtFrontOfShip, rotationRate);
-            _rightRotationRate = new Vector3(0, 0, 1 * Time.fixedDeltaTime * RotationRate);
-            _leftRotationRate = new Vector3(0, 0, 1 * Time.fixedDeltaTime * RotationRate * -1);
+            _rightRotationRate = new Vector3(0, 0, 1 * Stage.FixedDeltaTime * RotationRate);
+            _leftRotationRate = new Vector3(0, 0, 1 * Stage.FixedDeltaTime * RotationRate * -1);
         }
         protected override void Aim()
         {
@@ -37,7 +37,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                         if (CeaseFire || !HasValidTarget())
                         {
                             //Debug.Log($"{Name} has no ships to fire at, returning to default aim");
-                            RotateShipTowardsTargetPoint(Ship.GetRotation());
+                            RotateShipTowardsTargetPoint(Ship.Rotation);
                         }
                     }
                 }
@@ -52,7 +52,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 {
                     TargetPoint = GetTargetPoint(TargetShip);
                 }
-                IsAimedAtTarget = Utilities.IsRotatedTowards(Piece, GetDegreesTowardsPoint(TargetPoint));
+                IsAimedAtTarget = Utilities.IsRotatedTowards(this, GetDegreesTowardsPoint(TargetPoint));
 
             }
 
@@ -69,13 +69,15 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         }
         private float _difference;
+        private static Vector3 _forward = Vector3.forward;
         protected bool RotateShipTowardsTargetPoint(float rotation)
         {
-            _difference = Mathf.DeltaAngle(Piece.transform.eulerAngles.z, rotation);
+            _difference = Mathf.DeltaAngle(Ship.Rotation, rotation);
             //Debug.Log($"Difference in angles {difference}, {(difference > closeEnough ? "counter-clockwise" : "clockwise")}");
             if (_difference > 3)
             {
-                Piece.transform.Rotate(_rightRotationRate);
+                PieceTransform.Rotate(_rightRotationRate);
+                Ship.Rotation += _rightRotationRate.z;
 
                 if (Ship.HasRocketFlares)
                 {
@@ -93,7 +95,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
             else if (_difference < -3)
             {
-                Piece.transform.Rotate(_leftRotationRate);
+                PieceTransform.Rotate(_leftRotationRate);
+                Ship.Rotation += _leftRotationRate.z;
 
                 if (Ship.HasRocketFlares)
                 {
@@ -111,7 +114,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
             else
             {
-                Piece.transform.eulerAngles = new Vector3(0, 0, rotation);
+                PieceTransform.eulerAngles = _forward * rotation;
+                Ship.Rotation = rotation;
 
                 if (Ship.HasRocketFlares)
                 {

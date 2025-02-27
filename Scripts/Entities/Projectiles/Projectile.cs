@@ -75,10 +75,11 @@ namespace Assets.Scripts.Entities.Projectiles
             Name = $"{Shooter.Name}: {Type} - #{Id}";
             gameObject.name = Name;
             StartingPosition = startingPosition;
-            transform.parent = Level.Map.transform;
-            transform.localPosition = StartingPosition;
+            Transform.parent = Level.Map.transform;
+            Transform.localPosition = StartingPosition;
             IsDead = false;
             Level.State.AddProjectile(this);
+            Rotation = -(Angle * Mathf.Rad2Deg);
 
 
             FleetShip = shooter.FleetShip;
@@ -123,13 +124,14 @@ namespace Assets.Scripts.Entities.Projectiles
             //Debug.Log($"Projectile hit {target.name}");
             KillSequence();
         }
+        private Vector3 _reverse = new Vector3(0, 0, 180);
         public virtual void KillSequence()
         {
             if (HasExplosion)
             {
                 Explosion.transform.parent = Level.Map.transform;
                 Explosion.transform.localPosition = GetPosition();
-                Explosion.transform.eulerAngles = transform.eulerAngles - new Vector3(0, 0, 180);
+                Explosion.transform.eulerAngles = Transform.eulerAngles - _reverse;
                 Explosion.SetActive(true);
             }
             Kill();
@@ -190,19 +192,16 @@ namespace Assets.Scripts.Entities.Projectiles
         }
 
         ShipDamageStatus _status;
-        public void RemoveDamageSentEntry()
+        public virtual void RemoveDamageSentEntry()
         {
-            if (Target != null)
+            _status = Level.State.GetShipDamageStatus(Shooter.Side, Target);
+            if (_status.TotalDamageSentToShip >= Power)
             {
-                _status = Level.State.GetShipDamageStatus(Shooter.Side, Target);
-                if (_status.TotalDamageSentToShip >= Power)
-                {
-                    _status.TotalDamageSentToShip -= Power;
-                }
-                else
-                {
-                    _status.TotalDamageSentToShip = 0;
-                }
+                _status.TotalDamageSentToShip -= Power;
+            }
+            else
+            {
+                _status.TotalDamageSentToShip = 0;
             }
 
         }
@@ -212,7 +211,7 @@ namespace Assets.Scripts.Entities.Projectiles
         /// </summary>
         protected void SetMovement()
         {
-            transform.eulerAngles = Vector3.back * (Angle * Mathf.Rad2Deg);
+            Transform.eulerAngles = Vector3.forward * Rotation;
 
             Body.velocity = new Vector2((float)(-Speed * Mathf.Sin(Angle)), (float)(-Speed * Mathf.Cos(Angle)));
             //Debug.Log($"Setting {Name} to an initial velocity of {Body.velocity}");
@@ -238,15 +237,12 @@ namespace Assets.Scripts.Entities.Projectiles
         protected virtual void ShipCollision(Ship ship)
         {
             //Debug.Log("Basic ship collision");
-            if (ship != null)
+            // if hit enemy projectile or Fire Barge explosion. the ships to ignore is for leafcutter split shots
+            if ((!IsFriendly(ship) || (Shooter.ShipType == ConfigData.ShipTypes.FireBarge && this != Shooter)) && !ShipsToIgnore.Contains(ship))
             {
-                // if hit enemy projectile or Fire Barge explosion. the ships to ignore is for leafcutter split shots
-                if ((!IsFriendly(ship) || (Shooter.ShipType == ConfigData.ShipTypes.FireBarge && this != Shooter)) && !ShipsToIgnore.Contains(ship))
-                {
-                    _originalPower = Power;
-                    ContactTarget(ship);
-                    Ship.LogAttackingDamage(_originalPower, Shooter, FleetShip, SavedSquad, ship);
-                }
+                _originalPower = Power;
+                ContactTarget(ship);
+                Ship.LogAttackingDamage(_originalPower, Shooter, FleetShip, SavedSquad, ship);
             }
 
         }
@@ -259,10 +255,10 @@ namespace Assets.Scripts.Entities.Projectiles
             {
                 Body.simulated = true;
             }
-            if (HasCollider)
-            {
-                Collider.enabled = true;
-            }
+            //if (HasCollider)
+            //{
+            //    Collider.enabled = true;
+            //}
             if (Stage.IsRendering)
             {
                 SpriteRenderer.enabled = true;
@@ -284,10 +280,10 @@ namespace Assets.Scripts.Entities.Projectiles
             {
                 Body.simulated = false;
             }
-            if (HasCollider)
-            {
-                Collider.enabled = false;
-            }
+            //if (HasCollider)
+            //{
+            //    Collider.enabled = false;
+            //}
             if (Stage.IsRendering)
             {
                 SpriteRenderer.enabled = false;

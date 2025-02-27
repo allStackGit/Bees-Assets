@@ -116,6 +116,8 @@ MonoBehaviour:
   Collider: {fileID: 2932568822215041311}
   Body: {fileID: 2066278837942174322}
   SpriteRenderer: {fileID: 4725796339288062923}
+  Transform: {fileID: 4725796339288062922}
+  Rotation: 0
   ShowDebug: 0
   Health: 0
   MaxHealth: 0
@@ -138,8 +140,8 @@ MonoBehaviour:
   MovementMarker: {fileID: 0}
   TargetCoordinates: {x: 0, y: 0}
   FinalDestination: {x: 0, y: 0}
-  OffsetFromCenter: {x: 0, y: 0}
   PathfindingDestination: {x: 0, y: 0}
+  OffsetFromCenter: {x: 0, y: 0, z: 0}
   WaitingTargetCoordinates: {x: 0, y: 0}
   Squad: {fileID: 0}
   MotherSquad: {fileID: 0}
@@ -263,7 +265,7 @@ MonoBehaviour:
   _retries: 0
   MinionType: 22
   MinionCount: 8
-  SpawnPoint: {x: 0, y: -48}
+  SpawnPoint: {x: 0, y: -48, z: 0}
   SpawnFrequency: 45
   TimeBetweenMinions: 5
   MinionSquadsCount: 0

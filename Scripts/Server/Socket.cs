@@ -36,7 +36,7 @@ namespace Assets.Scripts.Server
         /// <summary>
         /// A hashset of all request IDs that have been handled. Resets every level
         /// </summary>
-        public HashSet<int> HandledRequests = new HashSet<int>();
+        public HashSet<long> HandledRequests = new HashSet<long>();
         /// <summary>
         /// A queue of all messages received from the server
         /// </summary>
@@ -167,7 +167,7 @@ namespace Assets.Scripts.Server
             StandingRequests.ToList().ForEach((sr) =>
             {
                 StandingRequests.Remove(sr);
-                Debug.Log($"Resending #{sr.Hash}");
+                Debug.LogWarning($"Resending #{sr.Hash}");
                 SendRequest(sr);
             });
         }
@@ -188,6 +188,7 @@ namespace Assets.Scripts.Server
             if (!HandledRequests.Contains(_message_response.Hash))
             {
                 HandledRequests.Add(_message_response.Hash);
+                //Debug.Log($"Received response for request #{_message_response.Hash}");
                 switch (_message_response.RequestType)
                 {
                     case ConfigData.RequestTypes.GetMatchupStrategy:
@@ -225,7 +226,7 @@ namespace Assets.Scripts.Server
             }
             else
             {
-                Debug.Log($"Got a response for #{_message_response.Hash} Status: {_message_response.Status} which has already been handled");
+                Debug.LogWarning($"Got a response for #{_message_response.Hash} Status: {_message_response.Status} which has already been handled");
                 _message_request = GetStandingRequest(_message_response.Hash);
                 if (_message_request != null)
                 {
@@ -240,7 +241,7 @@ namespace Assets.Scripts.Server
         {
             //Debug.Log($"Content: {content}");
             _send_json = JsonConvert.SerializeObject(content);
-            //Debug.Log($"Message to server: {json}");
+            //Debug.Log($"Message to server: {_send_json}");
             ConfigData.__TotalRequests++;
             if (_useWebSocketSharp)
             {
@@ -269,10 +270,76 @@ namespace Assets.Scripts.Server
             }
             CheckStandingRequests();
         }
+        private List<ServerRequest> _standingRequests;
+        private ServerRequest _sr;
+        private int _index;
+        /// <summary>
+        /// Loops through all requests, updates their time on the queue and resends requests that have been on the queue for more than 5 seconds
+        /// </summary>
+        public void CheckForResends()
+        {
+            _standingRequests = StandingRequests.ToList();
+            for (_index = 0; _index < _standingRequests.Count; _index++)
+            {
+                _sr = _standingRequests[_index];
+                if ((Time.unscaledTime - _sr.StartTime) > ConfigData.StandardMaxTimeOnQueue)
+                {
+                    StandingRequests.Remove(_sr);
+                    Debug.LogWarning($"Resending #{_sr.Hash} because it's been waiting for more than {ConfigData.StandardMaxTimeOnQueue}s");
+                    SendRequest(_sr);
+                }
+            }
+
+        }
+        public void SendRequest(MatchupStrategyRequest serverRequest)
+        {
+            StandingRequests.Add(serverRequest);
+            //Debug.Log($"Sending matchup request #{serverRequest.Hash} at update #{serverRequest.Squad.Level.Stage.__Updates}");
+            //serverRequest.Squad.Status = $"Waiting for matchup request #{serverRequest.Hash} since update #{serverRequest.Squad.Level.Stage.__Updates}";
+            Send(serverRequest.Request);
+        }
+        public void SendRequest(CommandRequest serverRequest)
+        {
+            StandingRequests.Add(serverRequest);
+            //serverRequest.Squad.Status = $"Waiting for strategy request #{serverRequest.Hash} since update #{serverRequest.Squad.Level.Stage.__Updates}";
+            //Debug.Log($"Sending strategy request #{serverRequest.Hash} at update #{serverRequest.Squad.Level.Stage.__Updates}");
+            Send(serverRequest.Request);
+        }
+        public void SendRequest(StoreCommandsRequest serverRequest)
+        {
+            StandingRequests.Add(serverRequest);
+            Send(serverRequest.Request);
+        }
+        public void SendRequest(SetupLevelRequest serverRequest)
+        {
+            StandingRequests.Add(serverRequest);
+            Send(serverRequest.Request);
+        }
+        public void SendRequest(ReconnectLevelRequest serverRequest)
+        {
+            StandingRequests.Add(serverRequest);
+            Send(serverRequest.Request);
+        }
+        public void SendRequest(StoreUserDataRequest serverRequest)
+        {
+            StandingRequests.Add(serverRequest);
+            Send(serverRequest.Request);
+        }
+        public void SendRequest(DataFileRequest serverRequest)
+        {
+            StandingRequests.Add(serverRequest);
+            Send(serverRequest.Request);
+        }
+        public void SendRequest(SettingsRequest serverRequest)
+        {
+            //Debug.Log($"Sending request #{serverRequest.Hash}");
+            StandingRequests.Add(serverRequest);
+            Send(serverRequest.Request);
+        }
         public void SendRequest(ServerRequest serverRequest)
         {
             StandingRequests.Add(serverRequest);
-            ConfigData.__PastServerRequests.Add(serverRequest);
+            //ConfigData.__PastServerRequests.Add(serverRequest);
             switch (serverRequest.Type)
             {
                 case ConfigData.RequestTypes.GetMatchupStrategy:
@@ -305,7 +372,7 @@ namespace Assets.Scripts.Server
                     Debug.LogError($"No request type from {serverRequest}");
                     return;
             }
-            
+
         }
         // ===========================
         // Class-Level Static Variables
@@ -486,6 +553,7 @@ namespace Assets.Scripts.Server
             }
             else
             {
+                Debug.Log($"Standing requests: {Utilities.ListToString(StandingRequests.ToList())}");
                 Debug.LogError($"Couldn't find a matching request for {_settingsResponse_userData.Hash}");
             }
         }

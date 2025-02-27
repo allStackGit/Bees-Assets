@@ -13,7 +13,7 @@ namespace Assets.Scripts.Data
         /// <summary>
         /// Unique identifier for the squad. A negative Id indicates a randomly generated squad
         /// </summary>
-        public int Id;
+        public long Id;
         public int Side;
         public string Name;
         public Color Color;
@@ -31,7 +31,7 @@ namespace Assets.Scripts.Data
         public bool HasAliveShips => GetDeadShips().Count < GetSquadShips().Count;
         public bool HasShips => GetSquadShips().Any();
 
-        public SavedSquad(int id, int side, string name, Vector2 startingPosition, bool ceaseFire, bool isMatchingSpeed,
+        public SavedSquad(long id, int side, string name, Vector2 startingPosition, bool ceaseFire, bool isMatchingSpeed,
             ConfigData.ShootingStrategyTypes chosenShootingStrategy, Color color, SquadStatBlock stats = null)
         {
             this.Id = id;
@@ -79,7 +79,7 @@ namespace Assets.Scripts.Data
 
             for (int shipIndex = 0; shipIndex < shipCount; shipIndex++)
             {
-                int id = Utilities.GetNegativeFleetshipId();
+                long id = Utilities.GetNegativeFleetshipId();
 
                 FleetShip fleetShip = new FleetShip(id, $"{squadType} - #{id}", squadType, false, true, false, 0, 0, 0, 0, 0, 0, 0);
                 Vector2 offset = ConfigData.GeneratedSquadFormationOffsets[shipIndex];
@@ -96,7 +96,7 @@ namespace Assets.Scripts.Data
         {
             return GetSquadShips().Where((ship) => !ship.GetFleetShip().IsDead).ToList();
         }
-        public SquadShip GetShip(int fleetId)
+        public SquadShip GetShip(long fleetId)
         {
             return GetSquadShips().FirstOrDefault((ship) => ship.FleetId == fleetId);
         }

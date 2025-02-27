@@ -98,7 +98,7 @@ namespace Assets.Scripts.Entities.Ships
                 squad = CreateMinionSquad();
                 squad.SetSquadTab();
             }
-            int id = Utilities.GetNegativeFleetshipId();
+            long id = Utilities.GetNegativeFleetshipId();
             Vector2 offset = ConfigData.QueenYellowJacketSpawnFormation[shipIndex];
 
             Ship ship = Level.LevelConstructor.InstantiateShip(MinionType);
@@ -114,7 +114,7 @@ namespace Assets.Scripts.Entities.Ships
             ship.FleetShip = FleetShip;
 
             Vector2 position = GetPosition();
-            ship.transform.localPosition = Utilities.RotatePointAroundPoint(position, position + SpawnPoint, GetRotation() * Mathf.Deg2Rad);
+            ship.Transform.localPosition = Utilities.RotatePointAroundPoint(position, position + SpawnPoint, Rotation * Mathf.Deg2Rad);
 
             if (shipIndex > 0 && squad.HasDestination)
             {

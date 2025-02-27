@@ -64,7 +64,7 @@ namespace Assets.Scripts.Data
         /// </summary>
         public int SupplyCapacity;
         /// <summary>
-        /// Whether or not the map has Reinforcements
+        /// Whether or not the map has enemy reinforcements
         /// -1 = Random
         /// 0 = No
         /// 1 = Yes
@@ -91,6 +91,10 @@ namespace Assets.Scripts.Data
         /// The enemy squad compositions of the reinforcements the enemy has. If it's empty there are not reinforcements
         /// </summary>
         public List<SavedSquad> EnemyReinforcements;
+        /// <summary>
+        /// The friendly squad compositions of the reinforcements the user/friendly side has. If it's empty there are not reinforcements
+        /// </summary>
+        public List<SavedSquad> FriendlyReinforcements;
         /// <summary>
         /// The enemy squad compositions that the player will face
         /// </summary>
@@ -133,6 +137,7 @@ namespace Assets.Scripts.Data
             Mining = -1;
             EnemyReinforcementsOption = -1;
             EnemyReinforcements = new List<SavedSquad>();
+            FriendlyReinforcements = new List<SavedSquad>();
             EnemySquads = new List<SavedSquad>();
             ChosenSquads = new List<SavedSquad>();
         }

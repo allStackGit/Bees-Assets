@@ -116,6 +116,8 @@ MonoBehaviour:
   Collider: {fileID: 3900632696964081159}
   Body: {fileID: -6981222202424921526}
   SpriteRenderer: {fileID: 4765992002712767475}
+  Transform: {fileID: 4765992002712767474}
+  Rotation: 0
   ShowDebug: 0
   Health: 0
   MaxHealth: 0
@@ -138,8 +140,8 @@ MonoBehaviour:
   MovementMarker: {fileID: 0}
   TargetCoordinates: {x: 0, y: 0}
   FinalDestination: {x: 0, y: 0}
-  OffsetFromCenter: {x: 0, y: 0}
   PathfindingDestination: {x: 0, y: 0}
+  OffsetFromCenter: {x: 0, y: 0, z: 0}
   WaitingTargetCoordinates: {x: 0, y: 0}
   Squad: {fileID: 0}
   MotherSquad: {fileID: 0}

@@ -10,7 +10,8 @@ namespace Assets.Scripts.Data
 {
     public class FleetShip 
     {
-        public int Id, Side;
+        public long Id;
+        public int Side;
         public string Name;
         public ConfigData.ShipTypes Type;
         public bool IsVisibleToUser, IsDead, HasCachedSprite;
@@ -25,7 +26,7 @@ namespace Assets.Scripts.Data
        
         public float Firepower => GetFirepower();
 
-        public FleetShip(int id, string name, ConfigData.ShipTypes type, bool hasCachedSprite, bool isVisibleToUser, bool isDead, int shotsFired, int damageDone, int damageReceived, int kills, int battlesFought, int battlesWon, int mineralsMined)
+        public FleetShip(long id, string name, ConfigData.ShipTypes type, bool hasCachedSprite, bool isVisibleToUser, bool isDead, int shotsFired, int damageDone, int damageReceived, int kills, int battlesFought, int battlesWon, int mineralsMined)
         {
             Id = id;
             Name = name;

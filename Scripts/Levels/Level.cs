@@ -64,7 +64,7 @@ namespace Assets.Scripts.Levels
         /// <summary>
         /// All the ids of requests that have been handled by this level. Must be level specific because it's used to remove handled requests from ConfigData
         /// </summary>
-        public HashSet<int> HandledRequests = new HashSet<int>();
+        public HashSet<long> HandledRequests = new HashSet<long>();
         public Stage Stage;
         public bool DidUserWin;
         /// <summary>
@@ -357,26 +357,35 @@ namespace Assets.Scripts.Levels
         {
             Triggers.Clear();
 
-            Triggers.Add(new Trigger(() =>
+            if (Utilities.CoinToss())
             {
-                return Time.realtimeSinceStartup - StartTime >= CurrentLevelOptions.EnemyReinforcementDelay;
-            }, () =>
+                Triggers.Add(new Trigger(() =>
+                {
+                    return Time.realtimeSinceStartup - StartTime >= CurrentLevelOptions.EnemyReinforcementDelay;
+                }, () =>
+                {
+                    //Debug.Log($"{CurrentLevelOptions.EnemyReinforcementDelay} seconds have passed, spawning new enemy ships for side {ConfigData.Configuration.AISide}: {Utilities.ListToString(CurrentLevelOptions.EnemyReinforcements)}");
+                    _trigger_moveToPoint = StartingPositions[ConfigData.Configuration.AISide - 1];
+                    LevelConstructor.SpawnShipsAndSquads(CurrentLevelOptions.EnemyReinforcements, StartingPositions[ConfigData.Configuration.AISide - 1] * _trigger_double, _trigger_moveToPoint);
+
+                }));
+            }
+            else
             {
-                //Debug.Log($"{CurrentLevelOptions.EnemyReinforcementDelay} seconds have passed, spawning new enemy ships for side {ConfigData.Configuration.AISide}: {Utilities.ListToString(CurrentLevelOptions.EnemyReinforcements)}");
-                _trigger_moveToPoint = StartingPositions[ConfigData.Configuration.AISide - 1];
-                LevelConstructor.SpawnShipsAndSquads(CurrentLevelOptions.EnemyReinforcements, StartingPositions[ConfigData.Configuration.AISide - 1] * _trigger_double, _trigger_moveToPoint);
+                Triggers.Add(new Trigger(() =>
+                {
+                    return Time.realtimeSinceStartup - StartTime >= CurrentLevelOptions.EnemyReinforcementDelay;
+                }, () =>
+                {
+                    //Debug.Log($"{CurrentLevelOptions.EnemyReinforcementDelay} seconds have passed, spawning new enemy ships for side {ConfigData.Configuration.AISide}: {Utilities.ListToString(CurrentLevelOptions.EnemyReinforcements)}");
+                    _trigger_moveToPoint = StartingPositions[ConfigData.Configuration.UserSide - 1];
+                    LevelConstructor.SpawnShipsAndSquads(CurrentLevelOptions.FriendlyReinforcements, StartingPositions[ConfigData.Configuration.UserSide - 1] * _trigger_double, _trigger_moveToPoint);
 
-            }));
+                }));
+            }
 
-            //Triggers.Add(new Trigger(() =>
-            //{
-            //    return GetState().GetShips(ConfigData.Configuration.UserSide).Count <= 3;
-            //}, () =>
-            //{
-            //    Debug.Log($"There are only three (or fewer) of our ships left, spawning new friendly ships");
-            //    LevelConstructor.AddShipsMidLevel(MidLevelSquads[ConfigData.Configuration.UserSide - 1], StartingPositions[ConfigData.Configuration.UserSide - 1] * new Vector2(0, 3), StartingPositions[ConfigData.Configuration.UserSide - 1]);
 
-            //}));
+
 
         }
         /// <summary>
@@ -420,7 +429,7 @@ namespace Assets.Scripts.Levels
             //{
             //    RLSocket.Update();
             //}
-            if (State.GameOver && !State.LevelEnded && !State.CanShipsKeepMining())
+            if (State.GameOver && !State.LevelEnded /*&& !State.CanShipsKeepMining()*/) // Turn this back on when the hivemind is better trained at mining
             {
                 LevelOver();
                 return;
@@ -492,7 +501,7 @@ namespace Assets.Scripts.Levels
 
                 Debug.Log($"{$"fps: {_levelOver_fps}".PadRight(10).Substring(0, 10)}  {$"fups: {_levelOver_fups}".PadRight(10).Substring(0, 10)}     " +
                       $"{$"latency: {(int)(ConfigData.__AverageLatency * 1000)}ms".PadRight(18)} {$"CPS: {Stage.__HivemindCommands / Time.unscaledTime}".PadRight(9).Substring(0, 9)}   " +
-                      $"LTO: {Stage.__LevelTimeouts} LC: {Stage.__LevelCompletes} AveLT: {(int)ConfigData.__AverageLength}s"
+                      $"LTO: {Stage.__LevelTimeouts} LC: {Stage.__LevelCompletes} AveLT: {(int)ConfigData.__AverageLength}s || Hashes: {ConfigData.UsedHashes.Count}"
                 );
 
                 if (State.IsSideKilled(ConfigData.Configuration.BeeSide) && !State.IsSideKilled(ConfigData.Configuration.HumanSide))
@@ -746,6 +755,7 @@ namespace Assets.Scripts.Levels
             AllSquads.AddRange(CurrentLevelOptions.EnemySquads);
             AllSquads.AddRange(CurrentLevelOptions.ChosenSquads);
             AllSquads.AddRange(CurrentLevelOptions.EnemyReinforcements);
+            AllSquads.AddRange(CurrentLevelOptions.FriendlyReinforcements);
 
             if (ActivateMining)
             {
@@ -850,9 +860,12 @@ namespace Assets.Scripts.Levels
             //CancelInvoke(nameof(CheckTriggers));
             if (ActivateLoadingShipsMidLevel)
             {
-                SetTriggers();
-                _checkTriggersTimer.Reuse(5, CheckTriggers, true);
-                AddTimer(_checkTriggersTimer);
+                // Removed this to avoid dealing with reinforcements
+                //SetTriggers();
+                //_checkTriggersTimer.Reuse(5, CheckTriggers, true);
+                //AddTimer(_checkTriggersTimer);
+
+
                 //InvokeRepeating(nameof(CheckTriggers), 5, 5);
             }
         }

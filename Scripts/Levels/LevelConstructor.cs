@@ -61,11 +61,11 @@ namespace Assets.Scripts.Levels
                     {
                         type = Stage.HumanShipTypes.ElementAt(Random.Range(0, Stage.HumanShipTypes.Count));
                     }
-                    while ((Level.HasObstacles || _queenCount == 2) && side == ConfigData.Configuration.BeeSide && type == ConfigData.ShipTypes.Queen && Stage.BeeShipTypes.Count > 1)
+                    while (side == ConfigData.Configuration.BeeSide && type == ConfigData.ShipTypes.Queen && Stage.BeeShipTypes.Count > 1 && (Level.HasObstacles || _queenCount == 2 || Utilities.RandomInt(4) != 3))
                     {
                         type = Stage.BeeShipTypes.ElementAt(Random.Range(0, Stage.BeeShipTypes.Count));
                     }
-                    int squadId = Utilities.GetNegativeSavedSquadId();
+                    long squadId = Utilities.GetNegativeSavedSquadId();
                     SavedSquad savedSquad = new SavedSquad(squadId, side, $"{type}s #{squadId}", Vector2.zero, false, false,
                         ConfigData.DefaultShootingStrategy, ConfigData.UnsetColor, null);
                     savedSquad.SetupRandomShips(type);
@@ -107,6 +107,10 @@ namespace Assets.Scripts.Levels
                     {
                         //Debug.Log($"Adding randomly generated enemy reinforcement squads");
                         Level.CurrentLevelOptions.EnemyReinforcements.AddRange(squadsList);
+                    }
+                    else
+                    {
+                        Level.CurrentLevelOptions.FriendlyReinforcements.AddRange(squadsList);
                     }
                 }
             }

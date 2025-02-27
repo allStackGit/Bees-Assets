@@ -27,26 +27,27 @@ namespace Assets.Scripts.Entities.Ships
             TouchingShip = null;
             HasCompletedRun = false;
         }
-
+        private GameObject _collidingThing;
+        private Ship _collidingShip;
         protected override void OnTriggerEnter2D(Collider2D collider) // projectile collision
         {
-            GameObject collidingThing = collider.gameObject;
-            if (collidingThing.name == ("Selection Box"))
+            _collidingThing = collider.gameObject;
+            if (_collidingThing.name == ("Selection Box"))
             {
                 if (IsUserControlled)
                 {
                     Stage.Selector.SelectShip(this);
                 }
             }
-            else if (collidingThing.CompareTag("Ship") && Collider.IsTouching(collider))
+            else if (_collidingThing.CompareTag("Ship") && Collider.IsTouching(collider))
             {
-                TouchingShip = collidingThing.GetComponent<Ship>();
+                TouchingShip = _collidingThing.GetComponent<Ship>();
                 //Debug.Log($"Striker collided with a ship!" +
                 //    $"{ship}, " +
                 //    $"{Squad}, " +
                 //    $"{TargetShip}");
 
-                if (TouchingShip != null && TouchingShip.Side != Side && Squad.HasCommand && Bomb.TargetShip == TouchingShip)
+                if (TouchingShip.Side != Side && Squad.HasCommand && Bomb.TargetShip == TouchingShip)
                 {
                     //Debug.Log("Collided with our target ship!");
                     ContactedShip = TouchingShip;
@@ -58,16 +59,16 @@ namespace Assets.Scripts.Entities.Ships
 
         protected override void OnTriggerExit2D(Collider2D collider)
         {
-            GameObject collidingThing = collider.gameObject;
-            if (TouchingShip != null && collidingThing.CompareTag("Ship"))
+            _collidingThing = collider.gameObject;
+            if (TouchingShip != null && _collidingThing.CompareTag("Ship"))
             {
-                Ship ship = collidingThing.GetComponent<Ship>();
-                if (ship == TouchingShip)
+                _collidingShip = _collidingThing.GetComponent<Ship>();
+                if (_collidingShip == TouchingShip)
                 {
                     TouchingShip = null;
                 }
             }
-            else if (collidingThing.name == ("Selection Box") && IsUserControlled)
+            else if (_collidingThing.name == ("Selection Box") && IsUserControlled)
             {
                 Stage.Selector.DeselectShip(this);
             }
@@ -104,9 +105,10 @@ namespace Assets.Scripts.Entities.Ships
 
         }
 
+        private int _targetOldTSV, _targetTSVChange;
         private void LogDetonationDamage(int power, Ship attacker, Ship target) // [damage-method] [note]
         {
-            int targetOldTSV = target.Tsv;
+            _targetOldTSV = target.Tsv;
             target.Health -= power;
 
             if (target.Health < 0)
@@ -114,19 +116,19 @@ namespace Assets.Scripts.Entities.Ships
                 target.Health = 0;
             }
 
-            int targetTSVChange = target.Tsv - targetOldTSV; // this is a negative number since being hit by a projectile should induce a loss of TSV
+            _targetTSVChange = target.Tsv - _targetOldTSV; // this is a negative number since being hit by a projectile should induce a loss of TSV
             //Debug.Log($"Yellow Jacket #{Id} Detonation: {targetTSVChange} tsv inflicted on {target.Name}");
-            LogHitStats(attacker, attacker.FleetShip, attacker.Squad.SavedSquad, target, target.Squad, targetTSVChange);
+            LogHitStats(attacker, attacker.FleetShip, attacker.Squad.SavedSquad, target, target.Squad, _targetTSVChange);
 
             // each hit, add the negative TSV to the target's command and subtract the negative TSV from the shooter's command
 
             if (attacker.Squad.HasCommand)
             {
-                attacker.Squad.GetCommand().Tsv += -1 * targetTSVChange; // add the TSV to the shooter
+                attacker.Squad.GetCommand().Tsv += -_targetTSVChange; // add the TSV to the shooter
             }
             if (target.Squad.HasCommand)
             {
-                target.Squad.GetCommand().Tsv += targetTSVChange; // subtract the TSV from the target
+                target.Squad.GetCommand().Tsv += _targetTSVChange; // subtract the TSV from the target
             }
             target.UpdateHealthBar();
 

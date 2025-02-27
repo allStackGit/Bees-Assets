@@ -157,7 +157,7 @@ namespace Assets.Scripts.Levels.Commands
 
         private bool HasTargetsWithinChargingRange(Barge barge)
         {
-            return barge.Charge.HasTargetShip && Utilities.IsRotatedTowards(barge.gameObject, barge.GetDegreesTowardsPoint(barge.Charge.TargetShip.GetPosition())) &&
+            return barge.Charge.HasTargetShip && Utilities.IsRotatedTowards(barge, barge.GetDegreesTowardsPoint(barge.Charge.TargetShip.GetPosition())) &&
             !Utilities.HasObstaclesInTheWay(barge.GetPosition(), barge.Charge.TargetShip.GetPosition());
 
             //return ship.HasWeaponsTargetShips && ship.WeaponsTargetShips.Any((targetShip) => targetShip != null &&  ship.ShipsWithinRange.Contains(targetShip) 

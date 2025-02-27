@@ -237,7 +237,14 @@ namespace Assets.Scripts.Levels
             _shipDamageStatus = null;
             if (ShipDamageStatuses[side - 1].Count > 0)
             {
-                _shipDamageStatus = ShipDamageStatuses[side - 1].FirstOrDefault(s => !s.Ship.IsDead && s.Ship == potentialTargetShip);
+                for (_index = 0; _index < ShipDamageStatuses[side - 1].Count; _index++)
+                {
+                    if (ShipDamageStatuses[side - 1][_index].Ship == potentialTargetShip)
+                    {
+                        _shipDamageStatus = ShipDamageStatuses[side - 1][_index];
+                    }
+                }
+                //_shipDamageStatus = ShipDamageStatuses[side - 1].FirstOrDefault(s => !s.Ship.IsDead && s.Ship == potentialTargetShip);
             }
 
             if (_shipDamageStatus == null)

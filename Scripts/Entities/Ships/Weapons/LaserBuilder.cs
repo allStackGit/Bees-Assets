@@ -22,7 +22,7 @@ namespace Assets.Scripts.Entities.Ships
             Animator = weaponsData.Animator;
 
             base.Create(ship, type, range, power, rateOfFire, projectileValue, piece, projectileType, fireAtFrontOfShip, rotationRate);
-            LaserBuilderAnimation = Piece.transform.Find("Laser Animation").gameObject;
+            LaserBuilderAnimation = PieceTransform.Find("Laser Animation").gameObject;
             LaserBuilderControl = LaserBuilderAnimation.GetComponent<LaserBuilderControl>();
             LaserBuilderControl.Setup(this);
         }

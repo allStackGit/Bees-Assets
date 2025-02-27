@@ -1138,7 +1138,7 @@ namespace Assets.Scripts.Scenes
         public void ClearChanges()
         {
             //Debug.Log("Clearing changes");
-            int squadId = _currentSquad.Id;
+            long squadId = _currentSquad.Id;
             SavedSquad savedSquad = ConfigData.CurrentShips.GetSavedSquad(squadId);
             if (savedSquad != null)
             {

@@ -31,7 +31,7 @@ namespace Assets.Scripts
         {
             return GetVisibleAndAliveShips().Where((s) => s.Side == side).ToList();
         }
-        public FleetShip GetFleetShip(int id)
+        public FleetShip GetFleetShip(long id)
         {
             return GetFleetShips().Find((ship) => ship.Id == id);
         }
@@ -151,7 +151,7 @@ namespace Assets.Scripts
         {
             return GetSavedSquads().Where((s) => s.Side == side).ToList();
         }
-        public SavedSquad GetSavedSquad(int id)
+        public SavedSquad GetSavedSquad(long id)
         {
             return GetSavedSquads().Find((squad) => squad.Id == id);
         }
@@ -251,7 +251,7 @@ namespace Assets.Scripts
             }
             return false;
         }
-        public bool DoesSquadExist(int id)
+        public bool DoesSquadExist(long id)
         {
             return GetSavedSquad(id) != null;
         }

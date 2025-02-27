@@ -699,13 +699,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 MergePathfindingPaths();
                 PathfindingThreadComplete = false;
             }
-            if (!Level.State.IsPaused)
+            Move();
+            if (Stage.IsDebugging || ShowDebug) // [alert] [debug] remove this for release
             {
-                Move();
-                if (Stage.IsDebugging || ShowDebug) // [alert] [debug] remove this for release
-                {
-                    UpdateDebugProperties();
-                }
+                UpdateDebugProperties();
             }
         }
         private Color[] _colors;
@@ -1077,10 +1074,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             }
             if (!HasTargetCoordinates || DistanceToPoint(TargetCoordinates) > GetHeight())
             {
-                Utilities.TimedRotation(gameObject, Direction, RotationSpeed);
+                Utilities.TimedRotationDifference(this, Direction, RotationSpeed);
             }
 
-            _tempAngle = (transform.eulerAngles.z - 180) * Mathf.Deg2Rad;
+            _tempAngle = (Rotation - 180) * Mathf.Deg2Rad;
 
             //bool hitBoundaries = false;
 
@@ -1115,11 +1112,22 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 Debug.LogWarning($"{Name} is triyng to move without target coordinates or target direction");
                 return;
             }
-            _differenceInAngleToPoint = Utilities.TimedRotationDifference(gameObject, _rotation, RotationSpeed);
-
-            _tempAngle = (GetRotation() - 180) * Mathf.Deg2Rad;
-            Body.velocity = new Vector2((_maxSpeed * Mathf.Sin(_tempAngle)), (-1 * _maxSpeed * Mathf.Cos(_tempAngle)));
             IsMoving = true;
+            _differenceInAngleToPoint = Utilities.TimedRotationDifference(this, _rotation, RotationSpeed);
+
+            if (_differenceInAngleToPoint != 0)
+            {
+                _tempAngle = (Rotation - 180) * Mathf.Deg2Rad;
+                Body.velocity = new Vector2((_maxSpeed * Mathf.Sin(_tempAngle)), -(_maxSpeed * Mathf.Cos(_tempAngle)));
+            }
+            //if (ShipType != ConfigData.ShipTypes.Flagship)
+            //{
+            //    IsMoving = true;
+
+            //    _tempAngle = (Rotation - 180) * Mathf.Deg2Rad;
+            //    Body.velocity = new Vector2((_maxSpeed * Mathf.Sin(_tempAngle)), -(_maxSpeed * Mathf.Cos(_tempAngle)));
+            //}
+
 
             if (HasRocketFlares)
             {
@@ -1207,13 +1215,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         {
             SetMovementVelocity();
         }
-        private ConfigData.CommandTypes[] _attackTypes = new ConfigData.CommandTypes[] { ConfigData.CommandTypes.CircleSquad, ConfigData.CommandTypes.RightSwipe, ConfigData.CommandTypes.LeftSwipe,
-        ConfigData.CommandTypes.InAndOut,  ConfigData.CommandTypes.BombingRun };
 
-        /// <summary>
-        /// Returns the number of ships of the same type that are visually and spatially below this ship. Also keeps track of which ships those are
-        /// </summary>
-        /// <returns></returns>
+
         private void MoveToTargetCoordinates()
         {
 
@@ -1260,7 +1263,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             //if any of the target ship(s) if your weapons are not dead and are within range
             else if (
                 HasTargetEnemyShipToFollow &&
-                !(Squad.HasCommand && _attackTypes.Contains(Squad.GetCommand().CommandType)) &&  // Squad must either not have a command or not have a command of a certain type
+                !(Squad.HasCommand && Squad.HasMovementAttackType) &&  // Squad must either not have a command or not have a command of a certain type
 
                 //TargetShips.Any((ship) => ship != null && (!HasTargetEnemy || TargetEnemy.Equals(ship)) && IsShipWithinRange(ship)) // Ship must have target ships within range and they must be the target enemy or there must not be a target enemy 
 
@@ -1385,7 +1388,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             if (Side == ConfigData.Configuration.AISide) // Different from Hivemind controlled because AISide is the enemy side that comes from the top of the map
             {
                 //Debug.Log($"Set angle for {name} to {_reverse}");
-                transform.eulerAngles = _reverse;
+                Transform.eulerAngles = _reverse;
+                Rotation = 180;
                 //if (ShipType == ConfigData.ShipTypes.Queen)
                 //{
                 //    throw new Exception();
@@ -1440,13 +1444,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         }
         private void CombatTimer()
         {
-            if (!Level.State.IsPaused)
-            {
-                InCombat = false;
-                Level.CancelTimer(_combatTimerScaledTimer);
-                //CancelInvoke(nameof(CombatTimer));
-                _combatTimer = false;
-            }
+            InCombat = false;
+            Level.CancelTimer(_combatTimerScaledTimer);
+            //CancelInvoke(nameof(CombatTimer));
+            _combatTimer = false;
         }
         /// <summary>
         /// Set in Create() method
@@ -2028,7 +2029,15 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         }
         public bool IsShipWithinRange(Ship ship)
         {
-            return Weapons.Any((w) => w.IsShipValidTarget(ship));
+            for (_tempIndex = 0; _tempIndex < Weapons.Count; _tempIndex++)
+            {
+                if (Weapons[_tempIndex].IsShipValidTarget(ship))
+                {
+                    return true;
+                }
+            }
+            return false;
+            //return Weapons.Any((w) => w.IsShipValidTarget(ship));
         }
         public bool CanSeeShip(Ship ship)
         {
@@ -2041,9 +2050,21 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 return IsShipWithinRange(ship);
             }
         }
+
+        private int _index;
+        private List<Ship> _tempShips;
         public bool IsAnySquadShipWithinRange(Squad squad)
         {
-            return squad.GetShips().Any((ship) => IsShipWithinRange(ship));
+            _tempShips = squad.GetShips();
+            for (_index = 0; _index < _tempShips.Count; _index++)
+            {
+                if (IsShipWithinRange(_tempShips[_index]))
+                {
+                    return true;
+                }
+            }
+            return false;
+            //return squad.GetShips().Any((ship) => IsShipWithinRange(ship));
         }
         public bool AreAllSquadShipsWithinRange(Squad squad)
         {

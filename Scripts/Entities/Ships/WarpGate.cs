@@ -19,29 +19,30 @@ namespace Assets.Scripts.Entities.Ships
             ShipsWarpingHere.Clear();
         }
 
+        private GameObject _collidingThing;
+        private Ship _collidingShip;
+        private FullRetreat _command;
         protected override void OnTriggerEnter2D(Collider2D collider)
         {
-            if (collider.gameObject.name == "Selection Box")
+            _collidingThing = collider.gameObject;
+            
+            if (_collidingThing.CompareTag("Ship"))
             {
-                //Debug.Log("Striker hit selection box");
-                if (IsUserControlled)
+                _collidingShip = collider.GetComponent<Ship>();
+                if (_collidingShip.Side == Side && _collidingShip.Squad?.GetCommand()?.CommandType == ConfigData.CommandTypes.FullRetreat && _collidingShip.ShipType != this.ShipType)
                 {
-                    Stage.Selector.SelectShip(this);
-                }
-            }
-            else if (collider.gameObject.CompareTag("Ship"))
-            {
-                Ship ship = collider.GetComponent<Ship>();
-                if (ship.Side == Side && ship.Squad?.GetCommand()?.CommandType == ConfigData.CommandTypes.FullRetreat && ship.ShipType != this.ShipType)
-                {
-                    FullRetreat fullRetreat = (FullRetreat)ship.Squad.GetCommand();
-                    if (fullRetreat.TargetWarpGate == this)
+                    _command = (FullRetreat)_collidingShip.Squad.GetCommand();
+                    if (_command.TargetWarpGate == this)
                     {
                         //Debug.Log($"{ship.Name} hit {Name} and so we're warping it");
-                        fullRetreat.ShipsWaitingToWarp.Add(ship);
-                        fullRetreat.WaitToWarp();
+                        _command.ShipsWaitingToWarp.Add(_collidingShip);
+                        _command.WaitToWarp();
                     }
                 }
+            }
+            else if (IsUserControlled && _collidingThing.name == "Selection Box")
+            {
+                Stage.Selector.SelectShip(this);
             }
         }
 
@@ -56,13 +57,13 @@ namespace Assets.Scripts.Entities.Ships
         public override void Activate()
         {
             ShipAnimationController.Activate();
-            WarpCollider.enabled = true;
+            //WarpCollider.enabled = true;
             base.Activate();
         }
         public override void Deactivate()
         {
             ShipAnimationController.Deactivate();
-            WarpCollider.enabled = false;
+            //WarpCollider.enabled = false;
             base.Deactivate();
         }
     }

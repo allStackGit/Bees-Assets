@@ -66,8 +66,8 @@ namespace Assets.Scripts.Entities.Ships
 
         protected override void OnTriggerEnter2D(Collider2D collider) // ship collision
         {
-            GameObject collidingThing = collider.gameObject;
-            if (collidingThing.name == "Selection Box")
+            _collidingThing = collider.gameObject;
+            if (_collidingThing.name == "Selection Box")
             {
                 //Debug.Log("Striker hit selection box");
                 if (IsUserControlled)
@@ -75,28 +75,30 @@ namespace Assets.Scripts.Entities.Ships
                     Stage.Selector.SelectShip(this);
                 }
             }
-            else if (collidingThing.CompareTag("Ship") && Collider.IsTouching(collider))
+            else if (_collidingThing.CompareTag("Ship") && Collider.IsTouching(collider))
             {
-                Ship hit = collidingThing.GetComponent<Ship>();
+                _collidingShip = _collidingThing.GetComponent<Ship>();
 
-                if (hit.Side != Side && IsCharging)
+                if (_collidingShip.Side != Side && IsCharging)
                 {
-                    HitShip(hit);
+                    HitShip(_collidingShip);
                 }
             }
 
         }
 
+        private GameObject _collidingThing;
+        private Ship _collidingShip;
         protected void OnTriggerStay2D(Collider2D collider)
         {
-            GameObject collidingThing = collider.gameObject;
-            if (collidingThing.CompareTag("Ship") && Collider.IsTouching(collider))
+            _collidingThing = collider.gameObject;
+            if (_collidingThing.CompareTag("Ship") && Collider.IsTouching(collider))
             {
-                Ship hit = collidingThing.GetComponent<Ship>();
+                _collidingShip = _collidingThing.GetComponent<Ship>();
 
-                if (hit.Side != Side && IsCharging)
+                if (_collidingShip.Side != Side && IsCharging)
                 {
-                    HitShip(hit);
+                    HitShip(_collidingShip);
                 }
             }
         }
@@ -143,7 +145,7 @@ namespace Assets.Scripts.Entities.Ships
                 }
                 else
                 {
-                    MoveInDirection(GetRotation());
+                    MoveInDirection(Rotation);
 
                 }
                 CannotChangeMovementOrders = true;

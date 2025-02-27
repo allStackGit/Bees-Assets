@@ -22,7 +22,7 @@ namespace Assets.Scripts.Scenes
         //public List<Dialogue> Dialogues = new List<Dialogue>();
         public Dialogue NetworkDisconnection;
         public float TimeScale = 1;
-        public Timer SocketTimer, AutomaticReconnectTimer;
+        public Timer SocketTimer, AutomaticReconnectTimer, ResendTimer;
         /// <summary>
         /// The framerate that the application should try to hit. -1 Means syncing it to the monitor refresh rate.
         /// </summary>
@@ -68,6 +68,7 @@ namespace Assets.Scripts.Scenes
             }
             InvokeRepeating(nameof(LoadSettingsWhenOpen), .1f, .1f);
             SocketTimer = new Timer(.1f, ConfigData.Socket.Update);
+            ResendTimer = new Timer(ConfigData.StandardMaxTimeOnQueue, ConfigData.Socket.CheckForResends);
             AutomaticReconnectTimer = new Timer(10f, AutomaticConnectionRetry);
 
             //if (WatchServerRequests)
@@ -136,21 +137,25 @@ namespace Assets.Scripts.Scenes
         {
             __Updates++;
             SocketTimer.Update();
-            
+            ResendTimer.Update();
+
+
             if (ConfigData.Socket.HasClosed && IsSocketManager)
             {
                 AutomaticReconnectTimer.Update();
                 Debug.Log($"Updating the AutoReconnect Timer. {AutomaticReconnectTimer.Elapsed} seconds have elapsed");
-            }
-            if (ConfigData.Socket.HasClosed && IsSocketManager && !NetworkDisconnection.IsOpen)
-            {
-                Debug.Log($"Network disconnected!");
-                if (Type == ConfigData.SceneTypes.Stage)
+
+                if (!NetworkDisconnection.IsOpen)
                 {
-                    ((Stage)this).PrimaryLevel.Pause();
+                    Debug.Log($"Network disconnected!");
+                    if (Type == ConfigData.SceneTypes.Stage)
+                    {
+                        ((Stage)this).PrimaryLevel.Pause();
+                    }
+                    NetworkDisconnection.Show();
                 }
-                NetworkDisconnection.Show();
             }
+            
             else if (ConfigData.Socket.IsOpen && IsSocketManager && NetworkDisconnection.IsOpen)
             {
                 NetworkDisconnection.Hide();

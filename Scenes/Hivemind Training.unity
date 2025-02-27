@@ -7563,7 +7563,7 @@ PrefabInstance:
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: Pool
       value: 
-      objectReference: {fileID: 2006949729}
+      objectReference: {fileID: 2006949732}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: Audio
       value: 
@@ -7598,7 +7598,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: LevelCount
-      value: 8
+      value: 16
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: Scoreboard
@@ -7830,11 +7830,11 @@ PrefabInstance:
       objectReference: {fileID: 671516569}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: GeneratedSquadCountMinimum
-      value: 6
+      value: 8
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: GeneratedSquadCountOverride
-      value: 12
+      value: 16
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: OverrideStrats.Array.data[0]
@@ -7913,8 +7913,16 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
+      propertyPath: OverrideHumanShipTypes.Array.size
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: OverrideBeeShipTypes.Array.data[0]
-      value: 22
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
+      propertyPath: OverrideHumanShipTypes.Array.data[0]
+      value: 11
       objectReference: {fileID: 0}
     - target: {fileID: 5651911293931274906, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: m_Name
@@ -7966,10 +7974,10 @@ PrefabInstance:
     m_AddedComponents:
     - targetCorrespondingSourceObject: {fileID: 5651911293931274906, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       insertIndex: -1
-      addedObject: {fileID: 2006949729}
+      addedObject: {fileID: 2006949728}
     - targetCorrespondingSourceObject: {fileID: 5651911293931274906, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       insertIndex: -1
-      addedObject: {fileID: 2006949728}
+      addedObject: {fileID: 2006949732}
   m_SourcePrefab: {fileID: 100100000, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
 --- !u!1 &1159349887
 GameObject:
@@ -16111,7 +16119,7 @@ MonoBehaviour:
   Maps:
   - {fileID: 7112091651330518199, guid: 43e607b6c99ec5943beee4efcf0751f8, type: 3}
   - {fileID: 7112091651330518199, guid: 10affe0dca3641a42b875997bffcc24d, type: 3}
---- !u!114 &2006949729
+--- !u!114 &2006949732
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -16796,7 +16804,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 2944892714679254333, guid: e154edb1d8fb554428cdc7380556de19, type: 3}
       propertyPath: orthographic size
-      value: 550
+      value: 275
       objectReference: {fileID: 0}
     - target: {fileID: 2944892714679254333, guid: e154edb1d8fb554428cdc7380556de19, type: 3}
       propertyPath: m_CullingMask.m_Bits

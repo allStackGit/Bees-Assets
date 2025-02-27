@@ -20,7 +20,8 @@ namespace Assets.Scripts.Levels
     {
         public Level Level;
         public Stage Stage;
-        public int Side, SquadNumber, OpponentId, Id;
+        public int Side, SquadNumber, OpponentId;
+        public long Id;
         /// <summary>
         /// The Id of this squad relative to the stage. Guarenteed unique for this stage. Not the same as the saved squad Id
         /// </summary>
@@ -115,7 +116,7 @@ namespace Assets.Scripts.Levels
         // Setup methods
         public virtual void ClearData()
         {
-            SetCommand(null);
+            SetCommandNull();
             HasCommand = false;
             PastCommands.Clear();
             BannedStrats.Clear();
@@ -143,12 +144,12 @@ namespace Assets.Scripts.Levels
             Stage = stage;
             IsDead = true;
             enabled = false;
-            CreationId = Utilities.Hash();
+            //CreationId = Utilities.Hash();
             //Debug.Log($"Created squad {this}");
         }
         private ScaledTimer _checkChaseTimer = new ScaledTimer();
         public void Setup(Level level, SavedSquad savedSquad, ConfigData.ShootingStrategyTypes shootingStrategy, bool ceaseFire, bool isMatchingSpeed, bool shouldChase,
-            int id, int side, int squadNumber, string name, Color color)
+            long id, int side, int squadNumber, string name, Color color)
         {
             if (!IsDead)
             {
@@ -343,7 +344,7 @@ namespace Assets.Scripts.Levels
         //}
         public void FixedUpdate()
         {
-            if (IsUserControlled && !Level.State.IsPaused)
+            if (IsUserControlled)
             {
                 HasMovedBox = false;
             }
@@ -615,6 +616,16 @@ namespace Assets.Scripts.Levels
 
 
         // Command and control methods
+        public HashSet<ConfigData.CommandTypes> MovementAttackTypes = new HashSet<ConfigData.CommandTypes>{ ConfigData.CommandTypes.CircleSquad, ConfigData.CommandTypes.RightSwipe, ConfigData.CommandTypes.LeftSwipe,
+        ConfigData.CommandTypes.InAndOut,  ConfigData.CommandTypes.BombingRun };
+        public bool HasMovementAttackType;
+        /// <summary>
+        /// Clears cached variables that relate to the command
+        /// </summary>
+        public void ResetCommandCache()
+        {
+            HasMovementAttackType = MovementAttackTypes.Contains(GetCommand().CommandType);
+        }
         public Command GetCommand()
         {
             return _command;
@@ -623,6 +634,11 @@ namespace Assets.Scripts.Levels
         {
             //Debug.Log($"Setting {this} Command to {command}");
             _command = command;
+            ResetCommandCache();
+        }
+        public void SetCommandNull()
+        {
+            _command = null;
         }
         public void AddToCommandList()
         {          
@@ -1232,7 +1248,7 @@ namespace Assets.Scripts.Levels
                 if (GetShips().Count == 1)
                 {
                     _tempShip = GetShips().First();
-                    SquadBox.transform.eulerAngles = _tempShip.transform.eulerAngles;
+                    SquadBox.transform.eulerAngles = Vector3.forward * _tempShip.Rotation;
                 }
                 else
                 {

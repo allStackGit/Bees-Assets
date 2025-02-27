@@ -57,7 +57,7 @@ namespace Assets.Scripts.Levels.Commands
         /// </summary>
         public int OriginalEnemyId;
 
-        public int OriginalSquadId, CreationId; // [debug]
+        //public int OriginalSquadId, CreationId; // [debug]
         public ScaledTimer CommandTimer = new ScaledTimer();
         public ScaledTimer TimeoutTimer = new ScaledTimer();
 
@@ -71,7 +71,7 @@ namespace Assets.Scripts.Levels.Commands
             ShootingStrategy = new ShootingStrategy();
             CommandType = commandType;
             IsDead = true;
-            CreationId = Utilities.Hash();
+            //CreationId = Utilities.Hash();
         }
         public virtual void ClearData()
         {
@@ -90,10 +90,10 @@ namespace Assets.Scripts.Levels.Commands
         }
         public void Setup(Squad squad, bool isHiveMindCommand, Squad enemy, string matchup)
         {
-            if (!IsDead)
-            {
-                Debug.LogError($"Trying to setup a command that's already active! {this}");
-            }
+            //if (!IsDead)
+            //{
+            //    Debug.LogError($"Trying to setup a command that's already active! {this}");
+            //}
             
             IsDead = false;
             Level = squad.Level;
@@ -133,7 +133,7 @@ namespace Assets.Scripts.Levels.Commands
         {
             //Debug.Log($"Setting squad to {squad} for {this}");
             _squad = squad;
-            OriginalSquadId = GetSquad().Id;
+            //OriginalSquadId = GetSquad().Id;
             GetSquad().HasCommand = true;
         }
         public virtual void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
@@ -424,7 +424,7 @@ namespace Assets.Scripts.Levels.Commands
 
                 //Debug.Log($"Finalizing and setting Squad Command #{OutcomeId}:{Strategy?.CommandType} to null for {Squad.Name} because of {FinalizationCause}");
 
-                GetSquad().SetCommand(null);
+                GetSquad().SetCommandNull();
                 GetSquad().HasCommand = false;
                 Level.State.CommandsToRelease.Add(this);
 
@@ -481,7 +481,8 @@ namespace Assets.Scripts.Levels.Commands
         public override string ToString()
         {
             return $"Command #{(OutcomeId != 0 ? OutcomeId : "N/A")} with Strategy {CommandType} attached to " +
-                $"Squad {GetSquad()} with Enemy Squad: {EnemySquad?.Name} and OriginalId: #{OriginalSquadId} ItemId: #{ItemId} and CreationId: #{CreationId}";
+                $"Squad {GetSquad()} with Enemy Squad: {EnemySquad?.Name} and OriginalId: "; 
+                // +$"#{OriginalSquadId} ItemId: #{ItemId} and CreationId: #{CreationId}";
         }
 
         public override bool Equals(System.Object obj)

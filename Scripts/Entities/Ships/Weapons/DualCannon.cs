@@ -38,7 +38,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             _rightCannonPosition = _position + RightCannonOffset;
 
             // get the angle of the cannons
-            _cannonAngle = GetRotation() * Mathf.Deg2Rad;
+            _cannonAngle = Rotation * Mathf.Deg2Rad;
 
             // calculate the rotated targetShipPosition of the end of the cannons
             _rotatedLeftCannonPosition = Utilities.RotatePointAroundPoint(_shipPosition, _leftCannonPosition, _cannonAngle);

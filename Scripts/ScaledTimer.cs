@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections;
 using UnityEngine;
-using static UnityEditor.Progress;
 
 namespace Assets.Scripts
 {
@@ -33,7 +32,7 @@ namespace Assets.Scripts
         /// <summary>
         /// The unique Id of the ScaledTimer
         /// </summary>
-        public int Id;
+        public long Id;
         /// <summary>
         /// Takes the time in seconds to elapse before calling action()
         /// </summary>
