@@ -30,7 +30,7 @@ namespace Assets.Scripts.Levels.Commands
                 MiningShips = GetSquad().GetShips().Where((ship) => ship.IsMiningShip).Select((s) => s.Id).ToList();
                 TargetAstroid = asteroid;
                 base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
-                PrepareDamageToSendEntries("closest");
+                PrepareDamageToSendEntries(1);
 
                 // Check if any ships are already on the asteroid
                 GetSquad().GetShips().ForEach((ship) =>

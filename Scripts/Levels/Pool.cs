@@ -87,6 +87,8 @@ public class Pool : MonoBehaviour
     public ObjectPool<Retreat> RetreatCommandPool;
     public ObjectPool<Scouting> ScoutingCommandPool;
     public ObjectPool<SwipeSquad> SwipeSquadCommandPool;
+    public ObjectPool<Hold> HoldCommandPool;
+    public ObjectPool<Heal> HealCommandPool;
 
 
 
@@ -98,7 +100,8 @@ public class Pool : MonoBehaviour
         __FireBargeExplosionProjectilePoolSize, __EmptyObstacleListObjectPoolSize, __MazeObstacleListObjectPoolSize, __ThreePathsObstacleListObjectPoolSize, __ForestObstacleListObjectPoolSize,
         __TheWallObstacleListObjectPoolSize, __CollisionAsteroidPoolSize, __MiningAsteroidPoolSize, __SquadPoolSize, __CarrierSquadPoolSize, __AggressiveCommandPoolSize, __BombingRunCommandPoolSize,
         __ChargeCommandPoolSize, __CircleSquadCommandPoolSize, __ClosestFriendlyCommandPoolSize, __FullRetreatCommandPoolSize, __GuardCommandPoolSize, __InAndOutCommandPoolSize,
-        __MiningCommandPoolSize, __MoveToRandomCommandPoolSize, __PatrolCommandPoolSize, __RetreatCommandPoolSize, __ScoutingCommandPoolSize, __SwipeSquadCommandPoolSize;
+        __MiningCommandPoolSize, __MoveToRandomCommandPoolSize, __PatrolCommandPoolSize, __RetreatCommandPoolSize, __ScoutingCommandPoolSize, __SwipeSquadCommandPoolSize, __HoldCommandPoolSize,
+        __HealCommandPoolSize;
     public void DebugLogger()
     {
         __BargePoolSize = BargePool.CountAll;
@@ -163,6 +166,8 @@ public class Pool : MonoBehaviour
         __RetreatCommandPoolSize = RetreatCommandPool.CountAll;
         __ScoutingCommandPoolSize = ScoutingCommandPool.CountAll;
         __SwipeSquadCommandPoolSize = SwipeSquadCommandPool.CountAll;
+        __HoldCommandPoolSize = HoldCommandPool.CountAll;
+        __HealCommandPoolSize = HealCommandPool.CountAll;
     }
 
     public void Setup(Stage stage)
@@ -237,6 +242,8 @@ public class Pool : MonoBehaviour
         RetreatCommandPool = new ObjectPool<Retreat>(CreatePooledRetreatCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
         ScoutingCommandPool = new ObjectPool<Scouting>(CreatePooledScoutingCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
         SwipeSquadCommandPool = new ObjectPool<SwipeSquad>(CreatePooledSwipeSquadCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
+        HoldCommandPool = new ObjectPool<Hold>(CreatePooledHoldCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
+        HealCommandPool = new ObjectPool<Heal>(CreatePooledHealCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
 
         //FillPools();
     }
@@ -337,6 +344,20 @@ public class Pool : MonoBehaviour
         _spawn_swipeSquad = gameObject.AddComponent<SwipeSquad>();
         _spawn_swipeSquad.Create(Stage, ConfigData.CommandTypes.LeftSwipe);
         return _spawn_swipeSquad;
+    }
+    private Hold _spawn_hold;
+    public Hold CreatePooledHoldCommand()
+    {
+        _spawn_hold = gameObject.AddComponent<Hold>();
+        _spawn_hold.Create(Stage, ConfigData.CommandTypes.Hold);
+        return _spawn_hold;
+    }
+    private Heal _spawn_heal;
+    public Heal CreatePooledHealCommand()
+    {
+        _spawn_heal = gameObject.AddComponent<Heal>();
+        _spawn_heal.Create(Stage, ConfigData.CommandTypes.Heal);
+        return _spawn_heal;
     }
     CarrierSquad _spawn_carrierSquad;
     public CarrierSquad CreatePooledCarrierSquad()
@@ -1189,6 +1210,12 @@ public class Pool : MonoBehaviour
             case ConfigData.CommandTypes.RightSwipe:
                 SwipeSquadCommandPool.Release((SwipeSquad)command);
                 break;
+            case ConfigData.CommandTypes.Hold:
+                HoldCommandPool.Release((Hold)command);
+                break;
+            case ConfigData.CommandTypes.Heal:
+                HealCommandPool.Release((Heal)command);
+                break;
             default:
                 Debug.LogError($"Command type is invalid: {command.CommandType}");
                 break;
@@ -1228,6 +1255,10 @@ public class Pool : MonoBehaviour
             case ConfigData.CommandTypes.LeftSwipe:
             case ConfigData.CommandTypes.RightSwipe:
                 return SwipeSquadCommandPool.Get();
+            case ConfigData.CommandTypes.Hold:
+                return HoldCommandPool.Get();
+            case ConfigData.CommandTypes.Heal:
+                return HealCommandPool.Get();
             default:
                 Debug.LogError($"Command type is invalid: {type}");
                 return null;

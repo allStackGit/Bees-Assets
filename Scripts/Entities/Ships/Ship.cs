@@ -59,7 +59,7 @@ namespace Assets.Scripts.Entities.Ships
         /// <summary>
         /// Settings that are set when the ship is created and do not change
         /// </summary>
-        public bool HasBrain, IsHiveMindControlled, IsMinionShip, HasTargetCoordinates, IsMiningShip, IsWarpGate, HasTargetDirection, HasUserVision, HasProximityCollider, HasShipAnimation, HasRocketFlares,
+        public bool HasBrain, IsHiveMindControlled, IsMinionShip, HasTargetCoordinates, IsMiningShip, IsWarpGate, IsBeehive, HasTargetDirection, HasUserVision, HasProximityCollider, HasShipAnimation, HasRocketFlares,
             HasLeftRocketFlares, HasCenterRocketFlares, HasRightRocketFlares, HasOnlySideRocketFlares, HasMovementMarker, HasWaitingTargetCoordinates, HasRemainsShip, FireAtFrontOfShip;
         /// <summary>
         /// Whether the ship is spawned by the game and has a negative id or is part of the tracked fleets
@@ -427,6 +427,10 @@ namespace Assets.Scripts.Entities.Ships
             {
                 IsWarpGate = true;
             }
+            else if (ShipType == ConfigData.ShipTypes.Beehive)
+            {
+                IsBeehive = true;
+            }
 
             Weapon weapon;
             for (int i = 0; i < shipStats.ProjectileValues.Count; i++)
@@ -611,9 +615,13 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             //squad.AddShip(this);
             Level.State.AddShip(this);
 
-            if (ShipType == ConfigData.ShipTypes.WarpGate)
+            if (IsWarpGate)
             {
                 Level.State.HasWarpGates = true;
+            }
+            else if (IsBeehive)
+            {
+                Level.State.HasBeehives = true;
             }
 
             if (IsUserControlled)

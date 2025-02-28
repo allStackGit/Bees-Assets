@@ -7898,7 +7898,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: OverrideStrats.Array.data[13]
-      value: 16
+      value: 17
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: OverrideStrats.Array.data[14]
@@ -16195,6 +16195,8 @@ MonoBehaviour:
   __RetreatCommandPoolSize: 0
   __ScoutingCommandPoolSize: 0
   __SwipeSquadCommandPoolSize: 0
+  __HoldCommandPoolSize: 0
+  __HealCommandPoolSize: 0
 --- !u!1001 &2087423607
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -16804,7 +16806,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 2944892714679254333, guid: e154edb1d8fb554428cdc7380556de19, type: 3}
       propertyPath: orthographic size
-      value: 275
+      value: 2800
       objectReference: {fileID: 0}
     - target: {fileID: 2944892714679254333, guid: e154edb1d8fb554428cdc7380556de19, type: 3}
       propertyPath: m_CullingMask.m_Bits

@@ -300,6 +300,8 @@ namespace Assets.Scripts
             {"Scouting", ConfigData.CommandTypes.Scouting },
             {"Mining", ConfigData.CommandTypes.Mining },
             {"Full Retreat", ConfigData.CommandTypes.FullRetreat },
+            {"Hold", ConfigData.CommandTypes.Hold },
+            {"Heal", ConfigData.CommandTypes.Heal },
         };
 
         public static Dictionary<ConfigData.CommandTypes, string> ConvertCommandTypeToName = new Dictionary<ConfigData.CommandTypes, string>
@@ -319,6 +321,8 @@ namespace Assets.Scripts
             {ConfigData.CommandTypes.Scouting, "Scouting" },
             {ConfigData.CommandTypes.Mining, "Mining" },
             {ConfigData.CommandTypes.FullRetreat, "Full Retreat" },
+            {ConfigData.CommandTypes.Hold, "Hold" },
+            {ConfigData.CommandTypes.Heal, "Heal" },
         };
         public static Dictionary<ConfigData.MatchupStrategyTypes, ConfigData.ShipTypes> ConvertMatchupStrategyToShipType = new Dictionary<ConfigData.MatchupStrategyTypes, ConfigData.ShipTypes>
         {

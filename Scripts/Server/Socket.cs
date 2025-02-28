@@ -616,6 +616,7 @@ namespace Assets.Scripts.Server
         private ConfigData.CommandTypes _tempCommandType;
         private Command _handleStrategicCommandResponse_command;
         private WarpGate _handleStrategicCommandResponse_warpGate;
+        private List<Beehive> _beehives;
         private Vector2 _handleStrategicCommandResponse_position;
         private void HandleStrategicCommandResponse(string message)
         {
@@ -752,6 +753,14 @@ namespace Assets.Scripts.Server
                             _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.FullRetreat);
                             _handleStrategicCommandResponse_command.Setup(_tempSquad, true, _strategicStandingRequest.Enemy, _strategicStandingRequest.Matchup);
                             break;
+                        case ConfigData.CommandTypes.Hold:
+                            _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Hold);
+                            _handleStrategicCommandResponse_command.Setup(_tempSquad, true, _strategicStandingRequest.Enemy, _strategicStandingRequest.Matchup);
+                            break;
+                        case ConfigData.CommandTypes.Heal:
+                            _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Heal);
+                            _handleStrategicCommandResponse_command.Setup(_tempSquad, true, _strategicStandingRequest.Enemy, _strategicStandingRequest.Matchup);
+                            break;
                         default:
                             Debug.LogError($"commandResponse doesn't match a known command: {_commandResponse.Name}");
                             break;
@@ -819,6 +828,16 @@ namespace Assets.Scripts.Server
                         _handleStrategicCommandResponse_position = _tempSquad.GetPosition();
                         _handleStrategicCommandResponse_warpGate = (WarpGate) _handleStrategicCommandResponse_level.State.GetHumanShips().Where((s) => s.IsWarpGate).OrderBy((s) => s.DistanceToPoint(_handleStrategicCommandResponse_position)).FirstOrDefault();
                         ((FullRetreat)_tempSquad.GetCommand()).Execute(Utilities.ConvertShootingStrategyNameToType[_commandResponse.ShootingStrategyName], _commandResponse.OutcomeId, _commandResponse.ShootingStrategyOutcomeId, _handleStrategicCommandResponse_warpGate);
+                    }
+                    else if (_tempCommandType == ConfigData.CommandTypes.Hold)
+                    {
+                        ((Hold)_tempSquad.GetCommand()).Execute(Utilities.ConvertShootingStrategyNameToType[_commandResponse.ShootingStrategyName], _commandResponse.OutcomeId, _commandResponse.ShootingStrategyOutcomeId);
+                    }
+                    else if (_tempCommandType == ConfigData.CommandTypes.Heal)
+                    {
+                        _handleStrategicCommandResponse_position = _tempSquad.GetPosition();
+                        _beehives = _handleStrategicCommandResponse_level.State.GetBeeShips().Where((s) => s.IsBeehive && ((Beehive)s).ShipsHealingHere.Count < 4).Select((s) => (Beehive)s).OrderBy((s) => s.DistanceToPoint(_handleStrategicCommandResponse_position)).ToList();
+                        ((Heal)_tempSquad.GetCommand()).Execute(Utilities.ConvertShootingStrategyNameToType[_commandResponse.ShootingStrategyName], _commandResponse.OutcomeId, _commandResponse.ShootingStrategyOutcomeId, _beehives);
                     }
                     else
                     {

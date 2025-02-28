@@ -26,7 +26,7 @@ namespace Assets.Scripts.Entities.Ships
         {
             _collidingThing = collider.gameObject;
             
-            if (_collidingThing.CompareTag("Ship"))
+            if (_collidingThing.CompareTag("Ship") && WarpCollider.IsTouching(collider))
             {
                 _collidingShip = collider.GetComponent<Ship>();
                 if (_collidingShip.Side == Side && _collidingShip.Squad?.GetCommand()?.CommandType == ConfigData.CommandTypes.FullRetreat && _collidingShip.ShipType != this.ShipType)
@@ -48,7 +48,7 @@ namespace Assets.Scripts.Entities.Ships
 
         public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false)
         {
-            if (Level.State.GetHumanShips().Where((s) => s.ShipType == ShipType).Count() == 1) // check if this is the last warp gate
+            if (Level.State.GetHumanShips().Where((s) => s.IsWarpGate).Count() == 1) // check if this is the last warp gate
             {
                 Level.State.HasWarpGates = false;
             }

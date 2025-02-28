@@ -66,7 +66,6 @@ namespace Assets.Scripts.Entities.Ships
             HasCompletedRun = false;
             HasDroppedBomb = false;
             HasReturnedToCarrier = false;
-            ContactedShip = null;
             TouchingShip = null;
             LastCarrierPosition = Vector2.zero;
         }

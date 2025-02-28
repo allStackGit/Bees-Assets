@@ -198,7 +198,9 @@ namespace Assets.Scripts
             Guard, // 14
             Scouting, // 15
             Mining, // 16
-            FullRetreat // 17
+            FullRetreat, // 17
+            Hold, // 18
+            Heal, // 19
         }
 
         public enum ShootingStrategyTypes
@@ -483,7 +485,7 @@ namespace Assets.Scripts
 
         public static readonly HashSet<CommandTypes> TypesOfCommands = new HashSet<CommandTypes> { CommandTypes.Aggressive, CommandTypes.BombingRun, CommandTypes.Charge,
             CommandTypes.Retreat, CommandTypes.MoveToRandom, CommandTypes.CircleSquad, CommandTypes.RightSwipe, CommandTypes.LeftSwipe, CommandTypes.ClosestFriendly, CommandTypes.InAndOut,
-            CommandTypes.Patrol, CommandTypes.Guard, CommandTypes.Scouting, CommandTypes.Mining, CommandTypes.FullRetreat };
+            CommandTypes.Patrol, CommandTypes.Guard, CommandTypes.Scouting, CommandTypes.Mining, CommandTypes.FullRetreat, CommandTypes.Hold, CommandTypes.Heal };
 
         public static readonly List<ShootingStrategyTypes> TypesOfShootingStrategies = new List<ShootingStrategyTypes>
         {

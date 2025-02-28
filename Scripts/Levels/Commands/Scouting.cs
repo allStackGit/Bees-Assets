@@ -21,7 +21,7 @@ namespace Assets.Scripts.Levels.Commands
         {
             base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
 
-            PrepareDamageToSendEntries("closest");
+            PrepareDamageToSendEntries(1);
             _position = GetSquad().GetPosition();
             _randomPoint = Utilities.RandomCoordinate(Level, _position, Vector2.one * ConfigData.Configuration.AIRandomMovementMaxDistance, Vector2.one * GetSquad().MaxSight);
             SetAndMove(_randomPoint);

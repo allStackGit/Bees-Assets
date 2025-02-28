@@ -13,7 +13,6 @@ GameObject:
   - component: {fileID: 3738288260826810766}
   - component: {fileID: 9209194230390332424}
   - component: {fileID: 2779061522766282275}
-  - component: {fileID: 3350157427599320761}
   m_Layer: 11
   m_Name: Beehive
   m_TagString: Ship
@@ -38,6 +37,7 @@ Transform:
   - {fileID: 5631643433104327245}
   - {fileID: 1846001761017607641}
   - {fileID: 2562132678689413756}
+  - {fileID: 6845531604502717052}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!212 &2518675752222090673
@@ -136,8 +136,8 @@ MonoBehaviour:
   MovementMarker: {fileID: 0}
   TargetCoordinates: {x: 0, y: 0}
   FinalDestination: {x: 0, y: 0}
+  OffsetFromCenter: {x: 0, y: 0}
   PathfindingDestination: {x: 0, y: 0}
-  OffsetFromCenter: {x: 0, y: 0, z: 0}
   WaitingTargetCoordinates: {x: 0, y: 0}
   Squad: {fileID: 0}
   MotherSquad: {fileID: 0}
@@ -156,6 +156,7 @@ MonoBehaviour:
   HasTargetCoordinates: 0
   IsMiningShip: 0
   IsWarpGate: 0
+  IsBeehive: 0
   HasTargetDirection: 0
   HasUserVision: 0
   HasProximityCollider: 0
@@ -254,6 +255,7 @@ MonoBehaviour:
   RLHealth: 0
   RLShipType: 0
   _retries: 0
+  HealCollider: {fileID: 5004056910106965047}
 --- !u!50 &9209194230390332424
 Rigidbody2D:
   serializedVersion: 4
@@ -341,14 +343,46 @@ PolygonCollider2D:
       - {x: -6.035833, y: 10.840645}
       - {x: -8.5114, y: 6.444954}
   m_UseDelaunayMesh: 0
---- !u!68 &3350157427599320761
-EdgeCollider2D:
+--- !u!1 &5203477301686590496
+GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2518675752222090675}
-  m_Enabled: 0
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 6845531604502717052}
+  - component: {fileID: 5004056910106965047}
+  m_Layer: 29
+  m_Name: Heal Collider
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &6845531604502717052
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5203477301686590496}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 0}
+  m_ConstrainProportionsScale: 1
+  m_Children: []
+  m_Father: {fileID: 2518675752222090672}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!58 &5004056910106965047
+CircleCollider2D:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5203477301686590496}
+  m_Enabled: 1
   m_Density: 1
   m_Material: {fileID: 0}
   m_IncludeLayers:
@@ -374,19 +408,8 @@ EdgeCollider2D:
   m_UsedByEffector: 0
   m_UsedByComposite: 0
   m_Offset: {x: 0, y: 0}
-  m_EdgeRadius: 1.2
-  m_Points:
-  - {x: 7.078019, y: 12.426256}
-  - {x: -7.101161, y: 12.584166}
-  - {x: -14.454906, y: 0.016656399}
-  - {x: -7.0784616, y: -12.9168215}
-  - {x: 7.134693, y: -12.860436}
-  - {x: 14.316568, y: -0.036465168}
-  - {x: 7.1811094, y: 12.356009}
-  m_AdjacentStartPoint: {x: 0, y: 0}
-  m_AdjacentEndPoint: {x: 0, y: 0}
-  m_UseAdjacentStartPoint: 0
-  m_UseAdjacentEndPoint: 0
+  serializedVersion: 2
+  m_Radius: 10
 --- !u!1001 &61113685345501595
 PrefabInstance:
   m_ObjectHideFlags: 0

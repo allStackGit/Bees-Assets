@@ -13,7 +13,7 @@ namespace Assets.Scripts.Levels.Commands
         {
             base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true); 
 
-            PrepareDamageToSendEntries("closest");
+            PrepareDamageToSendEntries(1);
             SetAndMove(Utilities.RandomCoordinate(Level, GetSquad().GetPosition(), Vector2.one * ConfigData.Configuration.AIRandomMovementMaxDistance, Vector2.one * 10));
             CommandTimer.Reuse(CommandFrequency, Timer, true);
             Level.AddTimer(CommandTimer);

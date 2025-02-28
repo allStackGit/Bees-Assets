@@ -22,6 +22,10 @@ namespace Assets.Scripts.Levels.Commands
         /// The Id of this command relative to the server.
         /// </summary>
         public long OutcomeId = 0; 
+        /// <summary>
+        /// The enemy squad that this command is attacking, if it has one. Attack commands require an enemy and end when the enemy dies.
+        /// Other commands  may involve attacking but aren't about that and don't require an enemy
+        /// </summary>
         public Squad EnemySquad;
         private Squad _squad;
         public string Matchup, FinalizationCause;
@@ -330,13 +334,13 @@ namespace Assets.Scripts.Levels.Commands
         /// This method finds the enemies of the command's squad and makes sure there's a ship damage status entry for each enemy ship
         /// </summary>
         /// <param name="which"></param>
-        public void PrepareDamageToSendEntries(string which = "")
+        public void PrepareDamageToSendEntries(int which = 0)
         {
             if (!GetSquad().IsDefenseless)
             {
                 _tempShips = new List<Ship>();
 
-                if (which == "closest")
+                if (which == 1) // closest
                 {
                     _prepareDamage_closestEnemy = GetSquad().GetClosestEnemySquad();
                     if (_prepareDamage_closestEnemy != null)

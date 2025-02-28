@@ -91,7 +91,8 @@ namespace Assets.Scripts.Levels
         public bool HasOnlyBombers => GetShips().All((s) => s.ShipType == ConfigData.ShipTypes.Striker || s.ShipType == ConfigData.ShipTypes.YellowJacket || 
         s.ShipType == ConfigData.ShipTypes.FireBarge);
         public bool HasOnlyBarges => GetShips().All((s) => s.ShipType == ConfigData.ShipTypes.Barge);
-        public bool HasOnlyWarpGates => GetShips().All((s) => s.ShipType == ConfigData.ShipTypes.WarpGate);
+        public bool HasOnlyWarpGates => GetShips().All((s) => s.IsWarpGate);
+        public bool HasOnlyBeehives => GetShips().All((s) => s.IsBeehive);
 
         /// <summary>
         /// Whether or not the squad's ships have target coordinates. If they do, it hasn't reached the destination
@@ -791,6 +792,7 @@ namespace Assets.Scripts.Levels
                 _bannedStrats.Add(ConfigData.CommandTypes.RightSwipe);
                 _bannedStrats.Add(ConfigData.CommandTypes.LeftSwipe);
                 _bannedStrats.Add(ConfigData.CommandTypes.InAndOut);
+                _bannedStrats.Add(ConfigData.CommandTypes.Hold);
                 _matchup = "";
             }
 
@@ -809,6 +811,11 @@ namespace Assets.Scripts.Levels
             {
                 BannedStrats.Add(ConfigData.CommandTypes.FullRetreat);
                 _bannedStrats.Add(ConfigData.CommandTypes.FullRetreat);
+            }
+            if (!BannedStrats.Contains(ConfigData.CommandTypes.Heal) && (Side != ConfigData.Configuration.BeeSide || !Level.State.HasBeehives || HasOnlyBeehives))
+            {
+                BannedStrats.Add(ConfigData.CommandTypes.Heal);
+                _bannedStrats.Add(ConfigData.CommandTypes.Heal);
             }
 
             //if (HasOnlyYellowJackets)
@@ -1010,6 +1017,7 @@ namespace Assets.Scripts.Levels
                 BannedStrats.Add(ConfigData.CommandTypes.RightSwipe);
                 BannedStrats.Add(ConfigData.CommandTypes.LeftSwipe);
                 BannedStrats.Add(ConfigData.CommandTypes.InAndOut);
+                BannedStrats.Add(ConfigData.CommandTypes.Hold);
             }
             else if (HasOnlyBombers)
             {
@@ -1020,6 +1028,7 @@ namespace Assets.Scripts.Levels
                 BannedStrats.Add(ConfigData.CommandTypes.RightSwipe);
                 BannedStrats.Add(ConfigData.CommandTypes.LeftSwipe);
                 BannedStrats.Add(ConfigData.CommandTypes.InAndOut);
+                BannedStrats.Add(ConfigData.CommandTypes.Hold);
             }
             else
             {
@@ -1028,6 +1037,7 @@ namespace Assets.Scripts.Levels
                 BannedStrats.Remove(ConfigData.CommandTypes.RightSwipe);
                 BannedStrats.Remove(ConfigData.CommandTypes.LeftSwipe);
                 BannedStrats.Remove(ConfigData.CommandTypes.InAndOut);
+                BannedStrats.Remove(ConfigData.CommandTypes.Hold);
             }
             HasAddedShips = true;
         }
