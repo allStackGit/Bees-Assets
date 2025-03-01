@@ -792,6 +792,7 @@ namespace Assets.Scripts.Levels
                 _bannedStrats.Add(ConfigData.CommandTypes.RightSwipe);
                 _bannedStrats.Add(ConfigData.CommandTypes.LeftSwipe);
                 _bannedStrats.Add(ConfigData.CommandTypes.InAndOut);
+                _bannedStrats.Add(ConfigData.CommandTypes.FullRetreat);
                 _bannedStrats.Add(ConfigData.CommandTypes.Hold);
                 _matchup = "";
             }

@@ -33,7 +33,7 @@ namespace Assets.Scripts
         public const int TestPort = 7143;
         public const int ProductionPort = 7144;
         public const int RLPort = 7242;
-        public static int StandardMaxTimeOnQueue = 5;
+        public static int StandardMaxTimeOnQueue = 10;
 
         public const int ObstaclesLayerMask = 1 << 19; // the layer masks need to all be 1 and then bitwise shifted to the left by the layer number
         public const int ObstacleProximityRangesLayerMask = 1 << 20;
@@ -479,7 +479,7 @@ namespace Assets.Scripts
             { ShipTypes.Hornet, .35f },
             { ShipTypes.Leafcutter, .35f },
             { ShipTypes.Queen, .35f },
-            { ShipTypes.Wasp, .35f },
+            { ShipTypes.Wasp, .55f },
             { ShipTypes.YellowJacket, .35f },
         };
 

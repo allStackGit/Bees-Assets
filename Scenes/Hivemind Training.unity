@@ -7898,11 +7898,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: OverrideStrats.Array.data[13]
-      value: 17
+      value: 18
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: OverrideStrats.Array.data[14]
-      value: 17
+      value: 19
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: OverrideStrats.Array.data[15]
@@ -16806,7 +16806,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 2944892714679254333, guid: e154edb1d8fb554428cdc7380556de19, type: 3}
       propertyPath: orthographic size
-      value: 2800
+      value: 550
       objectReference: {fileID: 0}
     - target: {fileID: 2944892714679254333, guid: e154edb1d8fb554428cdc7380556de19, type: 3}
       propertyPath: m_CullingMask.m_Bits

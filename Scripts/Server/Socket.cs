@@ -226,7 +226,7 @@ namespace Assets.Scripts.Server
             }
             else
             {
-                Debug.LogWarning($"Got a response for #{_message_response.Hash} Status: {_message_response.Status} which has already been handled");
+                //Debug.LogWarning($"Got a response for #{_message_response.Hash} Status: {_message_response.Status} which has already been handled");
                 _message_request = GetStandingRequest(_message_response.Hash);
                 if (_message_request != null)
                 {
@@ -273,11 +273,13 @@ namespace Assets.Scripts.Server
         private List<ServerRequest> _standingRequests;
         private ServerRequest _sr;
         private int _index;
+        private int _resends;
         /// <summary>
         /// Loops through all requests, updates their time on the queue and resends requests that have been on the queue for more than 5 seconds
         /// </summary>
         public void CheckForResends()
         {
+            _resends = 0;
             _standingRequests = StandingRequests.ToList();
             for (_index = 0; _index < _standingRequests.Count; _index++)
             {
@@ -285,9 +287,14 @@ namespace Assets.Scripts.Server
                 if ((Time.unscaledTime - _sr.StartTime) > ConfigData.StandardMaxTimeOnQueue)
                 {
                     StandingRequests.Remove(_sr);
-                    Debug.LogWarning($"Resending #{_sr.Hash} because it's been waiting for more than {ConfigData.StandardMaxTimeOnQueue}s");
+                    //Debug.LogWarning($"Resending #{_sr.Hash} because it's been waiting for more than {ConfigData.StandardMaxTimeOnQueue}s");
                     SendRequest(_sr);
+                    _resends++;
                 }
+            }
+            if (_resends > 0)
+            {
+                Debug.LogWarning($"Resending {_resends} requests because they've been waiting for more than {ConfigData.StandardMaxTimeOnQueue}s");
             }
 
         }

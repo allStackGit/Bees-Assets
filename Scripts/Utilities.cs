@@ -594,7 +594,8 @@ namespace Assets.Scripts
             //long hash = UniqueHash();
             //Debug.Log($"Hash: {hash}");
             //return hash;
-            return UniqueHash();
+            return RandomLong(10000000);
+            //return UniqueHash();
             //return RandomInt(); 
         }
 
