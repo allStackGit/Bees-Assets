@@ -76,7 +76,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 _shipEnter = collider.GetComponent<Ship>();
                 //Debug.Log($"{Ship.Name} from {Ship.Level.gameObject.name} just saw {ship.Name} and added them to hivemind vision");
-                if (Ship.IsHiveMindControlled)
+                if (Ship.IsHiveMindControlled && !Ship.IsDead)
                 {
                     if (!Ship.Level.State.VisionCache[Ship.Side - 1].Contains(_shipEnter))
                     {

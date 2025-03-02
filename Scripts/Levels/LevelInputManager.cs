@@ -633,9 +633,13 @@ namespace Assets.Scripts.Levels
         private bool HasFullRetreatCommandInput()
         {
             // No locally declared variables.
-            return Input.GetMouseButtonUp(RightClick) && _clickedShip != null && _clickedShip.IsWarpGate;
+            return Input.GetMouseButtonUp(RightClick) && _clickedShip != null && _clickedShip.IsWarpGate && ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide;
         }
-
+        private bool HasHealCommandInput()
+        {
+            // No locally declared variables.
+            return Input.GetMouseButtonUp(RightClick) && _clickedShip != null && _clickedShip.IsBeehive && ConfigData.Configuration.UserSide == ConfigData.Configuration.BeeSide;
+        }
         private bool HasEitherControlKey()
         {
             // No locally declared variables.
@@ -696,6 +700,10 @@ namespace Assets.Scripts.Levels
                 else if (HasFullRetreatCommandInput())
                 {
                     SetSquadsToFullRetreat((WarpGate)_clickedShip);
+                }
+                else if (HasHealCommandInput())
+                {
+                    SetSquadsToHeal((Beehive)_clickedShip);
                 }
                 else if (HasMiningCommandInput())
                 {
@@ -961,6 +969,15 @@ namespace Assets.Scripts.Levels
             });
         }
 
+        private void SetSquadsToHeal(Beehive beehive)
+        {
+            // No local variables need extraction here.
+            Level.State.GetSelectedSquads().ForEach((squad) =>
+            {
+                squad.UserHeal(beehive);
+            });
+        }
+
         // ===========================================================
         // Method: CheckForSelectingPatrolArea()
         // ===========================================================
@@ -991,10 +1008,19 @@ namespace Assets.Scripts.Levels
                 for (_checkClickCollision_i = 0; _checkClickCollision_i < _checkClickCollision_hits.Length; _checkClickCollision_i++)
                 {
                     _checkClickCollision_hit = _checkClickCollision_hits[_checkClickCollision_i];
-                    if (_checkClickCollision_hit.collider != null && _checkClickCollision_hit.collider.CompareTag("Ship"))
+                    if (_checkClickCollision_hit.collider != null)
                     {
-                        _checkClickCollision_ship = _checkClickCollision_hit.collider.gameObject.GetComponent<Ship>();
-                        _clickedShip = _checkClickCollision_ship;
+                        if (_checkClickCollision_hit.collider.CompareTag("Ship"))
+                        {
+                            _checkClickCollision_ship = _checkClickCollision_hit.collider.gameObject.GetComponent<Ship>();
+                            _clickedShip = _checkClickCollision_ship;
+                        }
+                        else if (_checkClickCollision_hit.collider.CompareTag("Beehive Heal Collider"))
+                        {
+                            _checkClickCollision_ship = _checkClickCollision_hit.collider.transform.parent.gameObject.GetComponent<Ship>();
+                            _clickedShip = _checkClickCollision_ship;
+                        }
+
                     }
                 }
             }

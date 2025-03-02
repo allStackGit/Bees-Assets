@@ -513,8 +513,8 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 8248703207860107482}
-  - component: {fileID: 8161311709519680238}
   - component: {fileID: 6274348117036618027}
+  - component: {fileID: -2607691164336156677}
   m_Layer: 19
   m_Name: Block (2)
   m_TagString: Obstacle
@@ -553,33 +553,6 @@ Transform:
   - {fileID: 4182794719418236051}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &8161311709519680238
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2383396407300462798}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b193967b34ee82745a91937153b61fce, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  Health: 1000
-  OriginalHealth: 0
-  Id: 0
-  MapPointsIndex: 0
-  Name: Big Wall
-  IsCollisionAsteroid: 0
-  IsMapBorder: 0
-  HasEnteredMap: 0
-  IsDead: 0
-  IsMiningAsteroid: 0
-  IsRegularObstacle: 1
-  Level: {fileID: 0}
-  Collider: {fileID: 6274348117036618027}
-  ProximityCollider: {fileID: 0}
-  ClearanceMappingCollider: {fileID: 0}
 --- !u!60 &6274348117036618027
 PolygonCollider2D:
   m_ObjectHideFlags: 0
@@ -643,6 +616,31 @@ PolygonCollider2D:
       - {x: -1.343277, y: 15.236832}
       - {x: -5.9206924, y: 9.871979}
   m_UseDelaunayMesh: 0
+--- !u!114 &-2607691164336156677
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2383396407300462798}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fcbace8163939e342a70fc25d4be63c8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Health: 0
+  OriginalHealth: 0
+  Id: 0
+  MapPointsIndex: 0
+  Name: 
+  IsDead: 0
+  Level: {fileID: 0}
+  Stage: {fileID: 0}
+  ObstacleType: 0
+  Collider: {fileID: 6274348117036618027}
+  ProximityCollider: {fileID: 0}
+  ClearanceMappingCollider: {fileID: 0}
+  SpriteRenderer: {fileID: 0}
 --- !u!1 &4177666715519355063
 GameObject:
   m_ObjectHideFlags: 0

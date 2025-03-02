@@ -10,8 +10,8 @@ GameObject:
   m_Component:
   - component: {fileID: 458614025136086235}
   - component: {fileID: 4336409612573064695}
-  - component: {fileID: 389237123375953647}
   - component: {fileID: 109520144589758455}
+  - component: {fileID: 7279445775810481593}
   m_Layer: 19
   m_Name: Obstacle
   m_TagString: Obstacle
@@ -86,32 +86,6 @@ SpriteRenderer:
   m_WasSpriteAssigned: 1
   m_MaskInteraction: 0
   m_SpriteSortPoint: 0
---- !u!114 &389237123375953647
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 6140537953145453775}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b193967b34ee82745a91937153b61fce, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  Health: 1000
-  Id: 0
-  MapPointsIndex: 0
-  Name: Obstacle
-  IsCollisionAsteroid: 0
-  IsMapBorder: 0
-  HasEnteredMap: 0
-  IsDead: 0
-  IsMiningAsteroid: 0
-  IsRegularObstacle: 1
-  Level: {fileID: 0}
-  Collider: {fileID: 109520144589758455}
-  ProximityCollider: {fileID: 0}
-  ClearanceMappingCollider: {fileID: 0}
 --- !u!61 &109520144589758455
 BoxCollider2D:
   m_ObjectHideFlags: 0
@@ -157,3 +131,28 @@ BoxCollider2D:
   serializedVersion: 2
   m_Size: {x: 1, y: 1}
   m_EdgeRadius: 0
+--- !u!114 &7279445775810481593
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6140537953145453775}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fcbace8163939e342a70fc25d4be63c8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Health: 0
+  OriginalHealth: 0
+  Id: 0
+  MapPointsIndex: 0
+  Name: 
+  IsDead: 0
+  Level: {fileID: 0}
+  Stage: {fileID: 0}
+  ObstacleType: 0
+  Collider: {fileID: 109520144589758455}
+  ProximityCollider: {fileID: 0}
+  ClearanceMappingCollider: {fileID: 0}
+  SpriteRenderer: {fileID: 4336409612573064695}

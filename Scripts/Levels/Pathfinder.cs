@@ -458,7 +458,7 @@ namespace Assets.Scripts.Levels
             {
                 HasMovingObstacles = true;
             }
-            Debug.Log($"Adding {obstacle.Name} to Map with index: {(ObstaclePoints[0].Count - 1)}");
+            //Debug.Log($"Adding {obstacle.Name} to Map with index: {(ObstaclePoints[0].Count - 1)}");
             return ObstaclePoints[0].Count - 1;
         }
 

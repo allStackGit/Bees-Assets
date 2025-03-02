@@ -410,7 +410,7 @@ namespace Assets.Scripts.Levels.Commands
                 FinalizationCause = cause;
                 IsFinalized = true;
                 IsDead = true;
-                MatchupStrategy.Kill();
+                //MatchupStrategy.Kill(); // Only needed if we are storing the Matchup strategy which we are currently not
                 ShootingStrategy.Kill();
 
                 _tempShips = GetSquad().GetShips();

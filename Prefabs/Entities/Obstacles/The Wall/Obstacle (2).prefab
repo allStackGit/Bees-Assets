@@ -10,8 +10,8 @@ GameObject:
   m_Component:
   - component: {fileID: 7786577792955186862}
   - component: {fileID: 6231906188015427458}
-  - component: {fileID: 8013294757612721306}
   - component: {fileID: 7770749793335508354}
+  - component: {fileID: -1724958062726434647}
   m_Layer: 19
   m_Name: Obstacle (2)
   m_TagString: Obstacle
@@ -86,32 +86,6 @@ SpriteRenderer:
   m_WasSpriteAssigned: 1
   m_MaskInteraction: 0
   m_SpriteSortPoint: 0
---- !u!114 &8013294757612721306
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 4568262480907706042}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b193967b34ee82745a91937153b61fce, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  Health: 1000
-  Id: 0
-  MapPointsIndex: 0
-  Name: Obstacle
-  IsCollisionAsteroid: 0
-  IsMapBorder: 0
-  HasEnteredMap: 0
-  IsDead: 0
-  IsMiningAsteroid: 0
-  IsRegularObstacle: 1
-  Level: {fileID: 0}
-  Collider: {fileID: 7770749793335508354}
-  ProximityCollider: {fileID: 0}
-  ClearanceMappingCollider: {fileID: 0}
 --- !u!61 &7770749793335508354
 BoxCollider2D:
   m_ObjectHideFlags: 0
@@ -157,3 +131,28 @@ BoxCollider2D:
   serializedVersion: 2
   m_Size: {x: 1, y: 1}
   m_EdgeRadius: 0
+--- !u!114 &-1724958062726434647
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4568262480907706042}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fcbace8163939e342a70fc25d4be63c8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Health: 0
+  OriginalHealth: 0
+  Id: 0
+  MapPointsIndex: 0
+  Name: 
+  IsDead: 0
+  Level: {fileID: 0}
+  Stage: {fileID: 0}
+  ObstacleType: 0
+  Collider: {fileID: 109520144589758455, guid: 747e28e9e18bf7f4c87fd8e7c6f5343e, type: 3}
+  ProximityCollider: {fileID: 0}
+  ClearanceMappingCollider: {fileID: 0}
+  SpriteRenderer: {fileID: 4336409612573064695, guid: 747e28e9e18bf7f4c87fd8e7c6f5343e, type: 3}

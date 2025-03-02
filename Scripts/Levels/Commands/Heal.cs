@@ -14,6 +14,7 @@ namespace Assets.Scripts.Levels.Commands
         public List<Beehive> TargetBeehives;
         public List<Ship> ShipsWaitingToHeal = new List<Ship>();
         public List<Ship> ShipsHealing = new List<Ship>();
+        public bool IsHealing;
         private int _spotsAvailable;
         private int _index;
         private int _indexJ;
@@ -29,7 +30,7 @@ namespace Assets.Scripts.Levels.Commands
                 base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
                 GetSquad().CeaseFire = true;
 
-                _shipsThatNeedBeehive = new Queue<Ship>(GetSquad().GetShips());
+                _shipsThatNeedBeehive = new Queue<Ship>(GetSquad().GetShips().OrderBy((s) => s.Health));
 
                 for (_index = 0; _index < TargetBeehives.Count && _shipsThatNeedBeehive.Count > 0; _index++)
                 {
@@ -48,12 +49,15 @@ namespace Assets.Scripts.Levels.Commands
                 }
 
                 GetSquad().Status = $"Moving to {TargetBeehives.Count} beehives to heal";
-                CommandFrequency = 1;
                 CommandTimer.Reuse(CommandFrequency, Timer, true);
                 Level.AddTimer(CommandTimer);
 
-                TimeoutTimer.Reuse(300, Timeout);
-                Level.AddTimer(TimeoutTimer);
+                if (IsHiveMindCommand)
+                {
+                    TimeoutTimer.Reuse(300, Timeout);
+                    Level.AddTimer(TimeoutTimer);
+                }
+
 
             }
             else
@@ -70,6 +74,7 @@ namespace Assets.Scripts.Levels.Commands
             ShipsHealing.Clear();
             _shipsAndBeehives.Clear();
             _shipsThatLostBeehiveOrDied.Clear();
+            IsHealing = false;
         }
 
         private List<Ship> _shipsThatLostBeehiveOrDied = new List<Ship>();
@@ -93,6 +98,7 @@ namespace Assets.Scripts.Levels.Commands
         private ScaledTimer _healingTimer = new ScaledTimer();
         public void StartHealingTimer()
         {
+            IsHealing = true;
             _healingTimer.Reuse(1, HealShips, true);
             Level.AddTimer(_healingTimer);
         }
@@ -106,6 +112,7 @@ namespace Assets.Scripts.Levels.Commands
 
                 if (!_beehive.IsDead && !_ship.IsDead)
                 {
+                    //Debug.Log($"Moving {_ship.Name} to {_beehive.Name} to heal");
                     _ship.MoveToPoint(_beehive.GetPosition());
                 }
                 else
@@ -118,6 +125,7 @@ namespace Assets.Scripts.Levels.Commands
             {
                 ShipsWaitingToHeal.Remove(_shipsThatLostBeehiveOrDied[_index]);
             }
+            _shipsThatLostBeehiveOrDied.Clear();
         }
 
         int _oldTsv;
@@ -149,10 +157,21 @@ namespace Assets.Scripts.Levels.Commands
             {
                 ShipsHealing.Remove(_shipsThatLostBeehiveOrDied[_index]);
             }
+            _shipsThatLostBeehiveOrDied.Clear();
         }
 
         public override void SetFinalize(string cause)
         {
+            for (_index = 0; _index < ShipsHealing.Count; _index++)
+            {
+                _ship = ShipsHealing[_index];
+                _shipsAndBeehives[_ship.Id].ShipsHealingHere.Remove(_ship);
+            }
+            for (_index = 0; _index < ShipsWaitingToHeal.Count; _index++)
+            {
+                _ship = ShipsWaitingToHeal[_index];
+                _shipsAndBeehives[_ship.Id].ShipsHealingHere.Remove(_ship);
+            }
             GetSquad().CeaseFire = false;
             Level.CancelTimer(_healingTimer);
             base.SetFinalize(cause);

@@ -774,7 +774,8 @@ namespace Assets.Scripts.Server
                     }
 
                     _tempSquad.SetCommand(_handleStrategicCommandResponse_command);
-                    _tempSquad.GetCommand().MatchupStrategy = _tempSquad.MatchupStrategy;
+                    //_tempSquad.GetCommand().MatchupStrategy = _tempSquad.MatchupStrategy; // This is only used to store data and isn't important for functionality
+
                     //Debug.Log($"Command response {_handleStrategicCommandResponse_commandResponse}");
                     
                     if (_tempCommandType == ConfigData.CommandTypes.Aggressive)

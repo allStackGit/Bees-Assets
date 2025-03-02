@@ -93,6 +93,21 @@ namespace Assets.Scripts.Entities.Ships
                 }
                 if (!Stage.IsTraining)
                 {
+                    if (HasRocketFlares)
+                    {
+
+                        RightRocketFlares.ForEach((flare) =>
+                        {
+                            flare.SetActive(false);
+                        });
+
+                        LeftRocketFlares.ForEach((flare) =>
+                        {
+                            flare.SetActive(false);
+                        });
+
+                    }
+                    HealthBar.SetActive(false);
                     _delayedKillTimer.Reuse(5f, DelayedKill);
                     Level.AddTimer(_delayedKillTimer);
                     //Invoke(nameof(DelayedKill), 5);

@@ -22,10 +22,7 @@ namespace Assets.Scripts.Entities
 
         protected virtual void OnTriggerEnter2D(Collider2D collider)
         {
-            if (ObstacleType == ConfigData.ObstacleTypes.StaticObstacle)
-            {
-                Collision(collider);
-            }
+            Collision(collider);
         }
         protected virtual void OnTriggerStay2D(Collider2D collider)
         {

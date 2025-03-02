@@ -907,6 +907,13 @@ namespace Assets.Scripts.Levels
             ((FullRetreat)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, warpGate);
 
         }
+        public void UserHeal(Beehive beehive)
+        {
+            Debug.Log($"Starting new heal command for {Name}");
+            MakeUserCommand(ConfigData.CommandTypes.Heal, null);
+            ((Heal)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, new List<Beehive> { beehive });
+
+        }
         public void UserAggressive(Squad enemy)
         {
             if (HasOnlyBombers)
@@ -952,6 +959,9 @@ namespace Assets.Scripts.Levels
                     break;
                 case ConfigData.CommandTypes.FullRetreat:
                     SetCommand(Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.FullRetreat));
+                    break;
+                case ConfigData.CommandTypes.Heal:
+                    SetCommand(Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Heal));
                     break;
                 default:
                     Debug.LogError($"Invalid command {command} issued to user squad");

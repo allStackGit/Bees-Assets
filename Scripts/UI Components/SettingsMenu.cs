@@ -94,7 +94,7 @@ public class SettingsMenu : MonoBehaviour
         {
             Transform list = ControlsList.transform.GetChild(0).GetChild(0);
             GameObject entry = Instantiate(Entry);
-            entry.transform.parent = list;
+            entry.transform.SetParent(list);
             entry.transform.localScale = Vector3.one;
 
 

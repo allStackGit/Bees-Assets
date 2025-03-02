@@ -581,6 +581,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             if (IsHiveMindControlled)
             {
                 Level.State.HivemindShips[Side - 1].Add(Id, new HashSet<Ship>());
+                //Debug.Log($"Added {Name} to hivemind ships");
             }
 
 
@@ -1123,11 +1124,13 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             IsMoving = true;
             _differenceInAngleToPoint = Utilities.TimedRotationDifference(this, _rotation, RotationSpeed);
 
-            if (_differenceInAngleToPoint != 0)
+            if (_differenceInAngleToPoint != 0 || Stage.FixedUpdates % 10 == 0)
             {
                 _tempAngle = (Rotation - 180) * Mathf.Deg2Rad;
                 Body.velocity = new Vector2((_maxSpeed * Mathf.Sin(_tempAngle)), -(_maxSpeed * Mathf.Cos(_tempAngle)));
             }
+            //_tempAngle = (Rotation - 180) * Mathf.Deg2Rad;
+            //Body.velocity = new Vector2((_maxSpeed * Mathf.Sin(_tempAngle)), -(_maxSpeed * Mathf.Cos(_tempAngle)));
             //if (ShipType != ConfigData.ShipTypes.Flagship)
             //{
             //    IsMoving = true;
@@ -1837,10 +1840,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             base.Deactivate();
             //CancelInvoke();
             StopAllCoroutines();
-            if (HasMovementMarker)
-            {
-                MovementMarker.SetActive(false);
-            }
+
             if (HasWeapons)
             {
                 Weapons.ForEach(weapon =>
@@ -1854,6 +1854,37 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 HealthBar.SetActive(false);
             }
             Vision.Deactivate();
+
+            if (!Stage.IsTraining)
+            {
+                MiniMapIcon.SetActive(false);
+
+                if (HasRocketFlares)
+                {
+
+                    CenterRocketFlares.ForEach((flare) =>
+                    {
+                        flare.SetActive(false);
+                    });
+
+                    RightRocketFlares.ForEach((flare) =>
+                    {
+                        flare.SetActive(false);
+                    });
+
+                    LeftRocketFlares.ForEach((flare) =>
+                    {
+                        flare.SetActive(false);
+                    });
+
+                }
+
+                if (HasMovementMarker)
+                {
+                    MovementMarker.SetActive(false);
+                }
+            }
+
 
         }
         public override void Activate()
@@ -1872,6 +1903,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             if (Stage.IsRendering)
             {
                 HealthBar.SetActive(true);
+            }
+            if (!Stage.IsTraining)
+            {
+                MiniMapIcon.SetActive(true);
             }
             Vision.Activate();
         }

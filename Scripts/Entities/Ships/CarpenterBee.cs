@@ -19,10 +19,6 @@ namespace Assets.Scripts.Entities.Ships
         public override void Activate()
         {
             base.Activate();
-            if (!Stage.IsTraining)
-            {
-                MiningAnimation.SetActive(true);
-            }
         }
         public override void Deactivate()
         {

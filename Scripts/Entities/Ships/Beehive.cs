@@ -28,7 +28,7 @@ namespace Assets.Scripts.Entities.Ships
                     _command.ShipsHealing.Add(_collidingShip);
                     //_command.ShipsWaitingToHeal.Remove(_collidingShip);
 
-                    if (_command.ShipsHealing.Count == 1)
+                    if (!_command.IsHealing)
                     {
                         _command.StartHealingTimer();
                     }
