@@ -85,6 +85,7 @@ namespace Assets.Scripts.Levels.Commands
                 }
             }
 
+            Timer();
             CommandFrequency = 2;
             CommandTimer.Reuse(CommandFrequency, Timer, true);
             Level.AddTimer(CommandTimer);

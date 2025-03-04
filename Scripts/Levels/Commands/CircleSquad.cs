@@ -18,6 +18,7 @@ namespace Assets.Scripts.Levels.Commands
             base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, false);
             IsAttacking = true;
             PrepareDamageToSendEntries();
+            Timer();
             CommandTimer.Reuse(CommandFrequency, Timer, true);
             Level.AddTimer(CommandTimer);
             //InvokeRepeating(nameof(Timer), .1f, CommandFrequency);

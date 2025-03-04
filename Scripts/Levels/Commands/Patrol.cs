@@ -42,6 +42,7 @@ namespace Assets.Scripts.Levels.Commands
             AddDestination(bottomRight);
             AddDestination(_bottomLeft);
 
+            Timer();
             CommandTimer.Reuse(CommandFrequency, Timer, true);
             Level.AddTimer(CommandTimer);
             //InvokeRepeating(nameof(Timer), 0, CommandFrequency);

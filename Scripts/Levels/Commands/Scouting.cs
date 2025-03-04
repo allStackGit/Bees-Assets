@@ -27,7 +27,7 @@ namespace Assets.Scripts.Levels.Commands
             SetAndMove(_randomPoint);
             CommandFrequency = 5;
 
-
+            Timer();
             CommandTimer.Reuse(CommandFrequency, Timer, true);
             Level.AddTimer(CommandTimer);
             //InvokeRepeating(nameof(Timer), 0, CommandFrequency);

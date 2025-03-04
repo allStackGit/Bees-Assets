@@ -29,6 +29,7 @@ namespace Assets.Scripts.Levels.Commands
                     Utilities.RandomCoordinate(Level, _position, Vector2.one * 45, Vector2.zero) :
                     Utilities.RandomCoordinate(Level, _enemyPosition, Vector2.one * (EnemySquad.MaxRange + 45), Vector2.one * (EnemySquad.MaxRange + 10));
 
+                Timer();
                 CommandTimer.Reuse(CommandFrequency, Timer, true);
                 Level.AddTimer(CommandTimer);
 

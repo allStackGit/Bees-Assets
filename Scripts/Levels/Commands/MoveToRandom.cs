@@ -15,6 +15,7 @@ namespace Assets.Scripts.Levels.Commands
 
             PrepareDamageToSendEntries(1);
             SetAndMove(Utilities.RandomCoordinate(Level, GetSquad().GetPosition(), Vector2.one * ConfigData.Configuration.AIRandomMovementMaxDistance, Vector2.one * 10));
+            Timer();
             CommandTimer.Reuse(CommandFrequency, Timer, true);
             Level.AddTimer(CommandTimer);
             //InvokeRepeating(nameof(Timer), 0, CommandFrequency);

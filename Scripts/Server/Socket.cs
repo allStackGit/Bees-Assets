@@ -301,7 +301,7 @@ namespace Assets.Scripts.Server
         public void SendRequest(MatchupStrategyRequest serverRequest)
         {
             StandingRequests.Add(serverRequest);
-            //Debug.Log($"Sending matchup request #{serverRequest.Hash} at update #{serverRequest.Squad.Level.Stage.__Updates}");
+            Debug.Log($"Sending matchup request #{serverRequest.Hash} for Squad {serverRequest.Squad}");
             //serverRequest.Squad.Status = $"Waiting for matchup request #{serverRequest.Hash} since update #{serverRequest.Squad.Level.Stage.__Updates}";
             Send(serverRequest.Request);
         }
@@ -309,7 +309,7 @@ namespace Assets.Scripts.Server
         {
             StandingRequests.Add(serverRequest);
             //serverRequest.Squad.Status = $"Waiting for strategy request #{serverRequest.Hash} since update #{serverRequest.Squad.Level.Stage.__Updates}";
-            //Debug.Log($"Sending strategy request #{serverRequest.Hash} at update #{serverRequest.Squad.Level.Stage.__Updates}");
+            Debug.Log($"Sending strategy request #{serverRequest.Hash} for Squad {serverRequest.Squad}");
             Send(serverRequest.Request);
         }
         public void SendRequest(StoreCommandsRequest serverRequest)

@@ -672,8 +672,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         public virtual void ClearData()
         {
             Rotation = OriginalRotation;
+            Transform.eulerAngles = new Vector3 (0, 0, OriginalRotation); // Is this needed?
             PathfindingDestination = Vector2.zero;
             SetTargetCoordinates(Vector2.zero);
+            HasTargetCoordinates = false;
+            HasTargetDirection = false;
             FinalDestination = Vector2.zero;
             LastKilled = 0;
             CannotChangeMovementOrders = false;

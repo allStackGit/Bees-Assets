@@ -45,6 +45,7 @@ namespace Assets.Scripts.Levels.Commands
                         FoundAsteroid(ship);
                     }
                 });
+                MoveToAsteroid();
                 CommandTimer.Reuse(CommandFrequency, MoveToAsteroid, true);
                 Level.AddTimer(CommandTimer);
                 //InvokeRepeating(nameof(MoveToAsteroid), 0, CommandFrequency);

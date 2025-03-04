@@ -152,10 +152,6 @@ namespace Assets.Scripts.Levels
         public void Setup(Level level, SavedSquad savedSquad, ConfigData.ShootingStrategyTypes shootingStrategy, bool ceaseFire, bool isMatchingSpeed, bool shouldChase,
             long id, int side, int squadNumber, string name, Color color)
         {
-            if (!IsDead)
-            {
-                Debug.LogError($"Trying to setup a squad that's already active! {this}");
-            }
             ClearData();
             Level = level;
             SavedSquad = savedSquad;

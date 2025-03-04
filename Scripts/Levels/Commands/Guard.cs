@@ -47,6 +47,7 @@ namespace Assets.Scripts.Levels.Commands
                 //Debug.Log($"{Squad.Name} is guarding {_guardedSquad.Name} at position #{GuardPosition}");
                 GetSquad().Status = $"Guarding {_guardedSquad.Name}";
 
+                Timer();
                 CommandTimer.Reuse(CommandFrequency, Timer, true);
                 Level.AddTimer(CommandTimer);
                 if (IsHiveMindCommand)

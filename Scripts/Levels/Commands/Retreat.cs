@@ -32,6 +32,7 @@ namespace Assets.Scripts.Levels.Commands
                     _retreatPoint = new Vector2((Mathf.Sin(_angle) * (_idealDistance - _distance) + _position.x), (Mathf.Cos(_angle) * (_idealDistance - _distance) + _position.y));
                     SetAndMove(_retreatPoint);
 
+                    Timer();
                     CommandTimer.Reuse(CommandFrequency, Timer, true);
                     Level.AddTimer(CommandTimer);
                     //InvokeRepeating(nameof(Timer), 0, CommandFrequency);

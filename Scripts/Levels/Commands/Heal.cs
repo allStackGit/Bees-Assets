@@ -49,6 +49,7 @@ namespace Assets.Scripts.Levels.Commands
                 }
 
                 GetSquad().Status = $"Moving to {TargetBeehives.Count} beehives to heal";
+                Timer();
                 CommandTimer.Reuse(CommandFrequency, Timer, true);
                 Level.AddTimer(CommandTimer);
 

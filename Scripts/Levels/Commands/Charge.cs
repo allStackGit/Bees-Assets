@@ -78,6 +78,7 @@ namespace Assets.Scripts.Levels.Commands
             if (!IsDead)
             {
                 //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
+                Timer();
                 CommandTimer.Reuse(CommandFrequency, Timer, true);
                 Level.AddTimer(CommandTimer);
                 TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
