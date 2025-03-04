@@ -120,6 +120,24 @@ namespace Assets.Scripts.Entities.Ships
             //        $"the max number of beacons ({BeaconsDropped}/{ConfigData.MaxBeaconsDroppedPerScout})");
             //}
         }
+
+        public override void Deactivate()
+        {
+            base.Deactivate();
+            if (IsUserControlled)
+            {
+                ChargingBar.gameObject.SetActive(false);
+            }
+        }
+
+        public override void Activate()
+        {
+            base.Activate();
+            if (IsUserControlled)
+            {
+                ChargingBar.gameObject.SetActive(true);
+            }
+        }
     }
 
 

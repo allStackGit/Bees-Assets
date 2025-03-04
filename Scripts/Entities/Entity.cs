@@ -24,7 +24,7 @@ namespace Assets.Scripts.Entities
         /// <summary>
         /// The rotation of the entity, in degrees
         /// </summary>
-        public float Rotation;
+        public float OriginalRotation, Rotation;
         //protected virtual void Update() // [alert] [training] Should probably just remove this during training
         //{
         //    if (!Level.IsTraining && !Level.IsPaused)
@@ -42,7 +42,8 @@ namespace Assets.Scripts.Entities
             {
                 Destroy(SpriteRenderer);
             }
-            Rotation = Transform.eulerAngles.z;
+            OriginalRotation = Transform.eulerAngles.z;
+            Rotation = OriginalRotation;
         }
         public float DistanceToPoint(Vector2 point)
         {

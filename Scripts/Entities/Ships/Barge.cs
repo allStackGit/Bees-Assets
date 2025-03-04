@@ -57,12 +57,24 @@ namespace Assets.Scripts.Entities.Ships
             WaitingForNewCharge = false;
             HasCompletedRun = false;
         }
-
-
-        protected override void UpdateDebugProperties()
+        public override void Deactivate()
         {
-            base.UpdateDebugProperties();
+            base.Deactivate();
+            if (IsUserControlled)
+            {
+                ChargingBar.gameObject.SetActive(false);
+            }
         }
+
+        public override void Activate()
+        {
+            base.Activate();
+            if (IsUserControlled)
+            {
+                ChargingBar.gameObject.SetActive(true);
+            }
+        }
+
 
         protected override void OnTriggerEnter2D(Collider2D collider) // ship collision
         {
@@ -139,7 +151,7 @@ namespace Assets.Scripts.Entities.Ships
                 HasStartedCharging = true;
                 CannotChangeMovementOrders = false;
                 SetCurrentSpeed(80, 80);
-                if (!target.IsDead)
+                if (target != null && !target.IsDead)
                 {
                     MoveToDirectionOfPoint(target.GetPosition());
                 }

@@ -163,7 +163,10 @@ namespace Assets.Scripts.Entities.Projectiles
             //{
             //    //Debug.Log($"Killing {gameObject.name} at position ({transform.localPosition}) because the shooter is dead");
             //}
-            RemoveDamageSentEntry();
+            if (!BeamCannon.IsFiringManually)
+            {
+                RemoveDamageSentEntry();
+            }
             Kill();
         }
     }

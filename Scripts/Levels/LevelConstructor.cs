@@ -110,7 +110,7 @@ namespace Assets.Scripts.Levels
                     }
                     else
                     {
-                        Level.CurrentLevelOptions.FriendlyReinforcements.AddRange(squadsList);
+                        //Level.CurrentLevelOptions.FriendlyReinforcements.AddRange(squadsList);
                     }
                 }
             }

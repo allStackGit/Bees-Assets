@@ -13,7 +13,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         public Ship Ship, TargetShip;
         public int Range, Power; 
-        public float RateOfFire, ProjectileValue, RotationRate, SpecialFirepower, Firepower, Rotation;
+        public float RateOfFire, ProjectileValue, RotationRate, SpecialFirepower, Firepower, Rotation, OriginalRotation;
         public GameObject Piece, RangeCircle;
         public ConfigData.ProjectileTypes ProjectileType;
         public List<Ship> CachedTargetingQueue = new List<Ship>();
@@ -62,7 +62,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             //Piece.transform.localScale = Ship.RelativeSizeScale();
             Piece = piece;
             PieceTransform = Piece.transform;
-            Rotation = PieceTransform.eulerAngles.z;
+            OriginalRotation = PieceTransform.eulerAngles.z;
+            Rotation = OriginalRotation;
             WeaponsData weaponsData = Piece.GetComponent<WeaponsData>();
             SpriteRenderer = weaponsData.SpriteRenderer;
             if (SpriteRenderer != null && Stage.IsRendering)
@@ -108,6 +109,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         }
         public virtual void ClearData()
         {
+            Rotation = OriginalRotation;
             TargetShip = null;
             CachedTargetingQueue.Clear();
             ShipsWithinRange.Clear();

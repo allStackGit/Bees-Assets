@@ -372,16 +372,16 @@ namespace Assets.Scripts.Levels
             }
             else
             {
-                Triggers.Add(new Trigger(() =>
-                {
-                    return Time.realtimeSinceStartup - StartTime >= CurrentLevelOptions.EnemyReinforcementDelay;
-                }, () =>
-                {
-                    //Debug.Log($"{CurrentLevelOptions.EnemyReinforcementDelay} seconds have passed, spawning new enemy ships for side {ConfigData.Configuration.AISide}: {Utilities.ListToString(CurrentLevelOptions.EnemyReinforcements)}");
-                    _trigger_moveToPoint = StartingPositions[ConfigData.Configuration.UserSide - 1];
-                    LevelConstructor.SpawnShipsAndSquads(CurrentLevelOptions.FriendlyReinforcements, StartingPositions[ConfigData.Configuration.UserSide - 1] * _trigger_double, _trigger_moveToPoint);
+                //Triggers.Add(new Trigger(() =>
+                //{
+                //    return Time.realtimeSinceStartup - StartTime >= CurrentLevelOptions.EnemyReinforcementDelay;
+                //}, () =>
+                //{
+                //    //Debug.Log($"{CurrentLevelOptions.EnemyReinforcementDelay} seconds have passed, spawning new enemy ships for side {ConfigData.Configuration.AISide}: {Utilities.ListToString(CurrentLevelOptions.EnemyReinforcements)}");
+                //    _trigger_moveToPoint = StartingPositions[ConfigData.Configuration.UserSide - 1];
+                //    LevelConstructor.SpawnShipsAndSquads(CurrentLevelOptions.FriendlyReinforcements, StartingPositions[ConfigData.Configuration.UserSide - 1] * _trigger_double, _trigger_moveToPoint);
 
-                }));
+                //}));
             }
 
 
@@ -755,7 +755,7 @@ namespace Assets.Scripts.Levels
             AllSquads.AddRange(CurrentLevelOptions.EnemySquads);
             AllSquads.AddRange(CurrentLevelOptions.ChosenSquads);
             AllSquads.AddRange(CurrentLevelOptions.EnemyReinforcements);
-            AllSquads.AddRange(CurrentLevelOptions.FriendlyReinforcements);
+            //AllSquads.AddRange(CurrentLevelOptions.FriendlyReinforcements);
 
             if (ActivateMining)
             {

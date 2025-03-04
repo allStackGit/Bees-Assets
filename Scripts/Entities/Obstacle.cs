@@ -54,21 +54,7 @@ namespace Assets.Scripts.Entities
             return transform.localPosition;
         }
 
-        public virtual void ShipCollision(Ship ship)
-        {
-            //Debug.Log($"{Name} was hit by {ship.Name}");
-            if (ship.ShipType == ConfigData.ShipTypes.Barge)
-            {
-                Barge barge = ((Barge)ship);
-                if (barge.IsCharging)
-                {
-                    ship.LogDamage(ship.Health); // kills the ship but logs the damage and tsv change first
-                    return;
-                }
-            }
 
-            ship.LogDamage((int)(ship.MaxHealth * .2f)); // 20% of ship health
-        }
 
         public override bool Equals(System.Object obj)
         {

@@ -194,15 +194,20 @@ namespace Assets.Scripts.Entities.Projectiles
         ShipDamageStatus _status;
         public virtual void RemoveDamageSentEntry()
         {
-            _status = Level.State.GetShipDamageStatus(Shooter.Side, Target);
-            if (_status.TotalDamageSentToShip >= Power)
+            if (Target != null)
             {
-                _status.TotalDamageSentToShip -= Power;
+                _status = Level.State.GetShipDamageStatus(Shooter.Side, Target);
+
+                if (_status.TotalDamageSentToShip >= Power)
+                {
+                    _status.TotalDamageSentToShip -= Power;
+                }
+                else
+                {
+                    _status.TotalDamageSentToShip = 0;
+                }
             }
-            else
-            {
-                _status.TotalDamageSentToShip = 0;
-            }
+
 
         }
 
@@ -249,7 +254,7 @@ namespace Assets.Scripts.Entities.Projectiles
         public override void Activate()
         {
             //gameObject.SetActive(true);
-            //Debug.Log($"Activating {Name}");
+            Debug.Log($"Activating {Name}");
 
             if (HasBody)
             {
@@ -274,7 +279,7 @@ namespace Assets.Scripts.Entities.Projectiles
         public override void Deactivate()
         {
             //gameObject.SetActive(false);
-            //Debug.Log($"Deactivating {Name}");
+            Debug.Log($"Deactivating {Name}");
 
             if (HasBody)
             {

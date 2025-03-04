@@ -671,6 +671,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         }
         public virtual void ClearData()
         {
+            Rotation = OriginalRotation;
             PathfindingDestination = Vector2.zero;
             SetTargetCoordinates(Vector2.zero);
             FinalDestination = Vector2.zero;
@@ -1836,7 +1837,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             //}
             //gameObject.SetActive(false);
 
-
+            Body.velocity = Vector2.zero;
             base.Deactivate();
             //CancelInvoke();
             StopAllCoroutines();
@@ -1846,13 +1847,13 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 Weapons.ForEach(weapon =>
                 {
                     weapon.Deactivate();
-                    
+                    if (IsUserControlled && weapon.HasRangeCircle)
+                    {
+                        weapon.RangeCircle.SetActive(false);
+                    }
                 });
             }
-            if (Stage.IsRendering)
-            {
-                HealthBar.SetActive(false);
-            }
+
             Vision.Deactivate();
 
             if (!Stage.IsTraining)
@@ -1882,6 +1883,14 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 if (HasMovementMarker)
                 {
                     MovementMarker.SetActive(false);
+                }
+                HealthBar.SetActive(false);
+            }
+            else
+            {
+                if (Stage.IsRendering)
+                {
+                    HealthBar.SetActive(false);
                 }
             }
 

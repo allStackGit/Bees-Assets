@@ -106,7 +106,7 @@ namespace Assets.Scripts.Entities
             Body.angularVelocity = Speed * Utilities.RandomFloat(ConfigData.MinimumAsteroidAngularSpeedMultiplier);
         }
         private ScaledTimer _delayKillTimer = new ScaledTimer();
-        public override void ShipCollision(Ship ship)
+        public void ShipCollision(Ship ship)
         {
             if (NearbyShips.Contains(ship))
             {

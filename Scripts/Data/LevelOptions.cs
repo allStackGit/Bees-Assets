@@ -137,7 +137,7 @@ namespace Assets.Scripts.Data
             Mining = -1;
             EnemyReinforcementsOption = -1;
             EnemyReinforcements = new List<SavedSquad>();
-            FriendlyReinforcements = new List<SavedSquad>();
+            //FriendlyReinforcements = new List<SavedSquad>();
             EnemySquads = new List<SavedSquad>();
             ChosenSquads = new List<SavedSquad>();
         }

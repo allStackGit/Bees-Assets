@@ -10,6 +10,7 @@ namespace Assets.Scripts.Entities
         private GameObject _collidingThing;
         private Ship _collidingShip;
         private int _frameCollisions;
+        private Barge _barge;
         public void Collision(Collider2D collider)
         {
             _collidingThing = collider.gameObject;
@@ -29,13 +30,29 @@ namespace Assets.Scripts.Entities
             if (ObstacleType == ConfigData.ObstacleTypes.StaticObstacle)
             {
                 _frameCollisions++;
-                if (_frameCollisions == 50)
+                if (_frameCollisions == 25)
                 {
                     Collision(collider);
                     _frameCollisions = 0;
                 }
             }
 
+        }
+
+        public virtual void ShipCollision(Ship ship)
+        {
+            //Debug.Log($"{Name} was hit by {ship.Name}");
+            if (ship.ShipType == ConfigData.ShipTypes.Barge)
+            {
+                _barge = ((Barge)ship);
+                if (_barge.IsCharging)
+                {
+                    ship.LogDamage(ship.Health); // kills the ship but logs the damage and tsv change first
+                    return;
+                }
+            }
+
+            ship.LogDamage((int)(ship.MaxHealth * .2f)); // 20% of ship health
         }
     }
 }

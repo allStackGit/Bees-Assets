@@ -12,7 +12,10 @@ namespace Assets.Scripts.Entities.Projectiles
     // They operate like normal projectiles upon contact except that contact doesn't kill them and since they linger they can only damage a target once
     public class RocketExplosion : Projectile
     {
-        private bool _isHarmless; // After a few frames, the explosion is no longer damaging and becomes harmless to whoever hits it
+        /// <summary>
+        ///  After a few frames, the explosion is no longer damaging and becomes harmless to whoever hits it
+        /// </summary>
+        private bool _isHarmless;
         private HashSet<Ship> _shipsHit = new HashSet<Ship>();
         private HashSet<Obstacle> _obstaclesHit = new HashSet<Obstacle>();
         public CircleCollider2D CircleCollider;
@@ -64,16 +67,6 @@ namespace Assets.Scripts.Entities.Projectiles
                 Level.State.FireBargeExplosions.Remove(this);
             }
             base.Kill();
-        }
-        public override void Activate()
-        {
-            base.Activate();
-            Animator.enabled = true;
-        }
-        public override void Deactivate()
-        {
-            base.Deactivate();
-            Animator.enabled = false;
         }
 
         public void SetHarmless()

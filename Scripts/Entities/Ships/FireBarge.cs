@@ -30,6 +30,7 @@ namespace Assets.Scripts.Entities.Ships
         {
             if (!IsDead)
             {
+                StopMoving();
                 IsDead = true;
                 //Debug.Log("FireBarge exploding");
                 if (!endKill)
