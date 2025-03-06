@@ -168,7 +168,7 @@ namespace Assets.Scripts.Levels
         }
         private void RandomizeOptions()
         {
-            //Debug.Log($"Randomizing options...");
+            Debug.Log($"Randomizing options...");
             //Debug.Log($"Level selection option: {ConfigData.SelectedLevelMapIndex}");
 
             if (CurrentLevelOptions.MapIndex == -1)
@@ -183,7 +183,7 @@ namespace Assets.Scripts.Levels
             if (((CurrentLevelOptions.ObstacleMapIndex == -1 && Utilities.CoinToss()) || CurrentLevelOptions.ObstacleMapIndex > 0) && !Stage.IsTraining) // User chose random and random chose obstacles OR user chose obstacles
             {
                 HasObstacles = true;
-                //Debug.Log($"The map has obstacles");
+                Debug.Log($"The map has obstacles");
                 if (CurrentLevelOptions.ObstacleMapIndex == -1)
                 {
                     CurrentLevelOptions.ObstacleMapIndex = Utilities.RandomInt(Stage.ObstacleListCount - 1) + 1;
@@ -193,12 +193,12 @@ namespace Assets.Scripts.Levels
                 if ((CurrentLevelOptions.AsteroidOption == -1 && Utilities.RandomInt(4) == 0) || CurrentLevelOptions.AsteroidOption > 0) // User chose random and random chose asteroids OR User chose asteroids
                 {
                     ActivateCollisionAsteroids = true;
-                    //Debug.Log($"The map has obstacles and asteroids as well");
+                    Debug.Log($"The map has obstacles and asteroids as well");
                 }
                 else // user chose no asteroids or random chose no asteroids
                 {
                     ActivateCollisionAsteroids = false;
-                    //Debug.Log($"The map has obstacles and not asteroids");
+                    Debug.Log($"The map has obstacles and not asteroids");
                 }
             }
             else // either the user chose no obstacles or random chose no obstacles
@@ -210,52 +210,52 @@ namespace Assets.Scripts.Levels
                     ObstacleMap = Stage.Pool.GetObstacleMapFromPool(0);
                     CurrentLevelOptions.ObstacleMapIndex = 0;
                     ActivateCollisionAsteroids = true;
-                    //Debug.Log($"The map has asteroids but not obstacles");
+                    Debug.Log($"The map has asteroids but not obstacles");
                 }
                 else
                 {
                     CurrentLevelOptions.ObstacleMapIndex = 0;
                     ActivateCollisionAsteroids = false;
                     HasObstacles = false;
-                    //Debug.Log($"The map does not have asteroids or obstacles");
+                    Debug.Log($"The map does not have asteroids or obstacles");
                 }
             }
 
             if (Stage.DoesUserHaveController && ((CurrentLevelOptions.FogOfWar == -1 && Utilities.CoinToss()) || CurrentLevelOptions.FogOfWar == 1))
             {
                 ActivateFogOfWar = true;
-                //Debug.Log($"The map has fog of war");
+                Debug.Log($"The map has fog of war");
             }
             else
             {
                 ActivateFogOfWar = false;
-                //Debug.Log($"The map does not have fog of war");
+                Debug.Log($"The map does not have fog of war");
             }
 
             if ((CurrentLevelOptions.Mining == -1  && !HasObstacles && Utilities.CoinToss()) || CurrentLevelOptions.Mining == 1)
             {
                 ActivateMining = true;
-                //Debug.Log($"The map has mining");
+                Debug.Log($"The map has mining");
             }
             else
             {
                 ActivateMining = false;
-                //Debug.Log($"The map does not have mining");
+                Debug.Log($"The map does not have mining");
             }
 
             if ((CurrentLevelOptions.EnemyReinforcementsOption == -1 && Utilities.CoinToss()) || CurrentLevelOptions.EnemyReinforcementsOption == 1)
             {
                 ActivateLoadingShipsMidLevel = true;
-                //Debug.Log($"The map has ships loading midlevel");
-                //if (CurrentLevelOptions.EnemyReinforcements.Count == 0)
-                //{
-                //    CurrentLevelOptions.EnemyReinforcements = CurrentLevelOptions.EnemySquads.ToList();
-                //}
+                Debug.Log($"The map has ships loading midlevel");
+                if (CurrentLevelOptions.EnemyReinforcements.Count == 0)
+                {
+                    CurrentLevelOptions.EnemyReinforcements = CurrentLevelOptions.EnemySquads.ToList();
+                }
             }
             else
             {
                 ActivateLoadingShipsMidLevel = false;
-                //Debug.Log($"The map does not have ships loading midlevel");
+                Debug.Log($"The map does not have ships loading midlevel");
             }
 
         }
@@ -324,7 +324,8 @@ namespace Assets.Scripts.Levels
                     Stage.CurrentAsteroidMaxSpawnRate /= 2;
                     Stage.CurrentAsteroidMinimumSpawnRate /= 2;
                 }
-                _asteroidSpawnTimer = new ScaledTimer(Stage.AsteroidMinimumSpawnRate + Utilities.RandomInt(Stage.CurrentAsteroidMaxSpawnRate - Stage.CurrentAsteroidMinimumSpawnRate), SpawnAsteroid);
+                _asteroidSpawnTimer.Reuse(Stage.AsteroidMinimumSpawnRate + Utilities.RandomInt(Stage.CurrentAsteroidMaxSpawnRate - Stage.CurrentAsteroidMinimumSpawnRate), SpawnAsteroid, true);
+                AddTimer(_asteroidSpawnTimer);
                 //Invoke(nameof(SpawnAsteroid), Stage.AsteroidMinimumSpawnRate + Utilities.RandomInt(Stage.CurrentAsteroidMaxSpawnRate - Stage.CurrentAsteroidMinimumSpawnRate));
             }
         }
@@ -340,14 +341,14 @@ namespace Assets.Scripts.Levels
                 _spawn_miningAsteroid.Setup(this);
             }
         }
-        private ScaledTimer _asteroidSpawnTimer;
+        private ScaledTimer _asteroidSpawnTimer = new ScaledTimer();
         private void SpawnAsteroid()
         {
-            _asteroidSpawnTimer.Reuse(Stage.AsteroidMinimumSpawnRate + Utilities.RandomInt(Stage.CurrentAsteroidMaxSpawnRate - Stage.CurrentAsteroidMinimumSpawnRate), SpawnAsteroid);
-
+            //Debug.Log($"Spawning asteroid");
+            //_asteroidSpawnTimer.Reuse(Stage.AsteroidMinimumSpawnRate + Utilities.RandomInt(Stage.CurrentAsteroidMaxSpawnRate - Stage.CurrentAsteroidMinimumSpawnRate), SpawnAsteroid);
             //GameObject instance = Instantiate(Stage.Prefabs.CollisionAsteroidPrefabs[Utilities.RandomInt(Stage.Prefabs.CollisionAsteroidPrefabs.Count)]);
+            //AddTimer(_asteroidSpawnTimer);
             Stage.Pool.GetCollisionAsteroidFromPool().Setup(this);
-            AddTimer(_asteroidSpawnTimer);
             //Invoke(nameof(SpawnAsteroid), Stage.AsteroidMinimumSpawnRate + Utilities.RandomInt(Stage.CurrentAsteroidMaxSpawnRate - Stage.CurrentAsteroidMinimumSpawnRate));
 
         }
@@ -743,6 +744,15 @@ namespace Assets.Scripts.Levels
 
                 CurrentLevelOptions.ObstacleMapIndex = Stage.OverrideObstacleMapIndex;
                 ObstacleMap = Stage.Pool.GetObstacleMapFromPool(CurrentLevelOptions.ObstacleMapIndex);
+
+                if (CurrentLevelOptions.ObstacleMapIndex > 0)
+                {
+                    HasObstacles = true;
+                }
+                else
+                {
+                    HasObstacles = false;
+                }
             }
             SetupMapAndCamera();
 

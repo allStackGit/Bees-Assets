@@ -12,6 +12,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 {
     public class Bomb : Weapon
     {
+
+        
         protected override List<Ship> GetPotentialEnemyTargetShips(bool disregardRange)
         {
             //List<Ship> queue = new List<Ship>();

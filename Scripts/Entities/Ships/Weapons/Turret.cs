@@ -94,6 +94,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public override void ClearData()
         {
             base.ClearData();
+            Rotation = OriginalRotation;
+            PieceTransform.eulerAngles = new Vector3(0, 0, OriginalRotation);
             IsAimedAtTarget = false;
             IsFiringManually = false;
             ReadyToFire = false;

@@ -110,6 +110,7 @@ Transform:
   - {fileID: 5034380508932886171}
   - {fileID: 6140540805620065068}
   - {fileID: 2037769035629549440}
+  - {fileID: 5113596914790007740}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!212 &2518675752222090673
@@ -185,6 +186,7 @@ MonoBehaviour:
   Body: {fileID: 9209194230390332424}
   SpriteRenderer: {fileID: 2518675752222090673}
   Transform: {fileID: 2518675752222090672}
+  OriginalRotation: 0
   Rotation: 0
   ShowDebug: 0
   Health: 0
@@ -208,8 +210,8 @@ MonoBehaviour:
   MovementMarker: {fileID: 0}
   TargetCoordinates: {x: 0, y: 0}
   FinalDestination: {x: 0, y: 0}
+  OffsetFromCenter: {x: 0, y: 0}
   PathfindingDestination: {x: 0, y: 0}
-  OffsetFromCenter: {x: 0, y: 0, z: 0}
   WaitingTargetCoordinates: {x: 0, y: 0}
   Squad: {fileID: 0}
   MotherSquad: {fileID: 0}
@@ -218,7 +220,9 @@ MonoBehaviour:
   LastKilled: 0
   Name: 
   ShipType: 20
-  Vision: {fileID: 3187911397008965585}
+  HiveMindVision: {fileID: 3187911397008965585}
+  FogOfWarVision: {fileID: 517949681845354376}
+  ProximityCollider: {fileID: 0}
   IsDead: 1
   IsUserControlled: 0
   IsMobile: 0
@@ -228,8 +232,9 @@ MonoBehaviour:
   HasTargetCoordinates: 0
   IsMiningShip: 0
   IsWarpGate: 0
+  IsBeehive: 0
   HasTargetDirection: 0
-  HasUserVision: 0
+  HasUserFogOfWarVision: 0
   HasProximityCollider: 0
   HasShipAnimation: 0
   HasRocketFlares: 0
@@ -241,6 +246,7 @@ MonoBehaviour:
   HasWaitingTargetCoordinates: 0
   HasRemainsShip: 0
   FireAtFrontOfShip: 0
+  IsBomber: 0
   IsSpawnedShip: 0
   HasEnteredMap: 0
   AreRocketFlaresOutOfSync: 0
@@ -330,7 +336,7 @@ MonoBehaviour:
   RLHealth: 0
   RLShipType: 0
   _retries: 0
-  WarpPoint: {x: 0, y: 1, z: 0}
+  WarpPoint: {x: 0, y: 1}
   WarpCollider: {fileID: 3638994493780948175}
 --- !u!50 &9209194230390332424
 Rigidbody2D:
@@ -960,6 +966,79 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0fc40819321686541a3ab67842cc5a3c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+--- !u!1001 &5438250617886841291
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 2518675752222090672}
+    m_Modifications:
+    - target: {fileID: 977185816904604279, guid: 1429cf5d78eb23245a3de63436e624bf, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 977185816904604279, guid: 1429cf5d78eb23245a3de63436e624bf, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 977185816904604279, guid: 1429cf5d78eb23245a3de63436e624bf, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 977185816904604279, guid: 1429cf5d78eb23245a3de63436e624bf, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 977185816904604279, guid: 1429cf5d78eb23245a3de63436e624bf, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 977185816904604279, guid: 1429cf5d78eb23245a3de63436e624bf, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 977185816904604279, guid: 1429cf5d78eb23245a3de63436e624bf, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 977185816904604279, guid: 1429cf5d78eb23245a3de63436e624bf, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 977185816904604279, guid: 1429cf5d78eb23245a3de63436e624bf, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 977185816904604279, guid: 1429cf5d78eb23245a3de63436e624bf, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3970691368778635933, guid: 1429cf5d78eb23245a3de63436e624bf, type: 3}
+      propertyPath: m_Name
+      value: Fog Illuminator
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 1429cf5d78eb23245a3de63436e624bf, type: 3}
+--- !u!114 &517949681845354376 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 5496832884182001219, guid: 1429cf5d78eb23245a3de63436e624bf, type: 3}
+  m_PrefabInstance: {fileID: 5438250617886841291}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 13271c6ff25ca134283ed286a9c5101c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!4 &5113596914790007740 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 977185816904604279, guid: 1429cf5d78eb23245a3de63436e624bf, type: 3}
+  m_PrefabInstance: {fileID: 5438250617886841291}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &6169914124736905914
 PrefabInstance:
   m_ObjectHideFlags: 0

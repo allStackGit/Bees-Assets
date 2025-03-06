@@ -71,7 +71,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
         private void AddExplosion()
         {
-            Debug.Log($"{Name} is dying and dropping an explosion");
+            //Debug.Log($"{Name} is dying and dropping an explosion");
             RocketExplosion = (RocketExplosion)Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.RocketExplosion);
             RocketExplosion.transform.parent = Level.Map.transform;
             RocketExplosion.Setup(Level, Weapon, Shooter, Target, GetPosition(), 0, 0, Power);

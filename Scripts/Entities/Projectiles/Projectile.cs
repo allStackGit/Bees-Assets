@@ -254,7 +254,7 @@ namespace Assets.Scripts.Entities.Projectiles
         public override void Activate()
         {
             //gameObject.SetActive(true);
-            Debug.Log($"Activating {Name}");
+            //Debug.Log($"Activating {Name}");
 
             if (HasBody)
             {
@@ -279,7 +279,7 @@ namespace Assets.Scripts.Entities.Projectiles
         public override void Deactivate()
         {
             //gameObject.SetActive(false);
-            Debug.Log($"Deactivating {Name}");
+            //Debug.Log($"Deactivating {Name}");
 
             if (HasBody)
             {

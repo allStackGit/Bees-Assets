@@ -478,7 +478,7 @@ namespace Assets.Scripts.Levels
 
             Vector2 position = obstacle.GetPosition();
             Vector2 bounds = collider.bounds.size;
-
+            //Debug.Log($"{obstacle.Name} has bounds of {bounds}");
 
             int width = (int)Math.Ceiling(bounds.x);
             int height = (int)Math.Ceiling(bounds.y);
@@ -1071,7 +1071,7 @@ namespace Assets.Scripts.Levels
 
         public void FindPath(Ship ship, int startX, int startY, int endX, int endY, int maximumClearance)
         {
-
+            //Debug.Log($"Starting pathfinding for {ship.Name}");
             bool startedTask = false;
             //bool foundShipsThread = false;
 

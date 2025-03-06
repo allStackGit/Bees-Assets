@@ -13,12 +13,13 @@ namespace Assets.Scripts.Entities.Ships
         public bool HasCompletedRun;
         public Ship ContactedShip, TouchingShip;
 
-        public Weapon Bomb;
+        public Bomb Bomb;
         public override void Create(Stage stage)
         {
             base.Create(stage);
-            Bomb = Weapons.First();
+            Bomb = (Bomb) Weapons.First();
             Destroy(Bomb.Piece);
+            IsBomber = true;
         }
         public override void ClearData()
         {
@@ -29,6 +30,11 @@ namespace Assets.Scripts.Entities.Ships
         }
         private GameObject _collidingThing;
         private Ship _collidingShip;
+        public override bool IsCloseEnoughToTargetCoordinates(float distance)
+        {
+            return distance < ConfigData.ShipTurningRadius && !(Squad.HasOnlyBombers && !IsFollowingPath && HasTargetEnemyShipToFollow && Squad.HasCommand && Squad.GetCommand().CommandType == ConfigData.CommandTypes.BombingRun
+                && ProximityCollider.NearbyEnemyShips.Contains(TargetEnemyShipToFollow));
+        }
         protected override void OnTriggerEnter2D(Collider2D collider) // projectile collision
         {
             _collidingThing = collider.gameObject;

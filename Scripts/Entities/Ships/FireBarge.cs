@@ -18,6 +18,7 @@ namespace Assets.Scripts.Entities.Ships
         {
             base.Create(stage);
             Bomb = Weapons.First();
+            IsBomber = true;
             Destroy(Bomb.Piece);
         }
         public void Detonate()
@@ -61,9 +62,9 @@ namespace Assets.Scripts.Entities.Ships
                     }
                     Squad.SavedSquad.Stats.ShipsLost++;
 
-                    if (HasUserVision)
+                    if (HasUserFogOfWarVision)
                     {
-                        Vision.Kill(3);
+                        FogOfWarVision.Kill(3);
                     }
 
                     if (WeaponsThatHaveUsWithinRange.Count > 0)

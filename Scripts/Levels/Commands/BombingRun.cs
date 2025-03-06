@@ -236,8 +236,8 @@ namespace Assets.Scripts.Levels.Commands
         {
             return GetSquad().GetShips().All((ship) =>
             {
-                return ship.Vision.NearbyEnemyShips.Contains(ship.TargetEnemyShipToFollow) || (ship.ShipType == ConfigData.ShipTypes.Striker && ((Striker)ship).HasCompletedRun);
-            }) && GetSquad().GetShips().Any((ship) => ship.Vision.NearbyEnemyShips.Contains(ship.TargetEnemyShipToFollow));
+                return ship.ProximityCollider.NearbyEnemyShips.Contains(ship.TargetEnemyShipToFollow) || (ship.ShipType == ConfigData.ShipTypes.Striker && ((Striker)ship).HasCompletedRun);
+            }) && GetSquad().GetShips().Any((ship) => ship.ProximityCollider.NearbyEnemyShips.Contains(ship.TargetEnemyShipToFollow));
             //try
             //{
             //    return GetSquad().GetShips().All((ship) =>
@@ -386,7 +386,7 @@ namespace Assets.Scripts.Levels.Commands
                                 SendShipToTarget(_timer_currentShip);
                                 if (GetSquad().IsHiveMindControlled &&
                                     _timer_currentShip.ShipType == ConfigData.ShipTypes.FireBarge &&
-                                    _timer_currentShip.Vision.NearbyEnemyShips.Contains(_timer_currentShip.TargetEnemyShipToFollow))
+                                    _timer_currentShip.ProximityCollider.NearbyEnemyShips.Contains(_timer_currentShip.TargetEnemyShipToFollow))
                                 {
                                     // if you're a Fire Barge and within detonation distance of your target, detonate
                                     //Debug.Log($"{_timer_currentShip.Name} is hivemind controlled and on a bombing run and near its target enemy and so it's going to detonate. ");

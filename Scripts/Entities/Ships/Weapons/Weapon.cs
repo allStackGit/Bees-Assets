@@ -109,7 +109,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         }
         public virtual void ClearData()
         {
-            Rotation = OriginalRotation;
             TargetShip = null;
             CachedTargetingQueue.Clear();
             ShipsWithinRange.Clear();

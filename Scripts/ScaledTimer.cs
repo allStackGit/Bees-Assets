@@ -82,7 +82,7 @@ namespace Assets.Scripts
 
         public override string ToString()
         {
-            return $" #{Id}: {Action?.Method?.Name} at {Length}s";
+            return $" #{Id}: {Action?.Method?.Name} at {Length}s isCanceled? {IsCanceled}";
         }
         private ScaledTimer s;
         public override bool Equals(System.Object obj)

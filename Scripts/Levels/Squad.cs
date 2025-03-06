@@ -173,6 +173,10 @@ namespace Assets.Scripts.Levels
             {
                 IsHiveMindControlled = true;
             }
+            else
+            {
+                IsHiveMindControlled = false;
+            }
 
             if (Color != ConfigData.UnsetColor && IsUserControlled)
             {

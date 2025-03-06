@@ -226,10 +226,6 @@ public class Stage : Scene
     /// </summary>
     public Dictionary<ConfigData.ShipTypes, int> ShipClearances = new Dictionary<ConfigData.ShipTypes, int>();
     /// <summary>
-    /// The sprite used for user ship vision to clear the fog of war
-    /// </summary>
-    public Sprite VisonSprite;
-    /// <summary>
     /// Holds all the entity prefabs for the game (Ships, projectiles, Obstacles, Asteroids, etc.)
     /// </summary>
     public Prefabs Prefabs;

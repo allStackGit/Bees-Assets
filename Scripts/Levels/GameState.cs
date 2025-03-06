@@ -445,6 +445,7 @@ namespace Assets.Scripts.Levels
         }
         public void AddToSquadsAwaitingHiveMindCommands(Squad squad)
         {
+            //Debug.Log($"Adding {squad} to hive mind command queue");
             SquadsAwaitingCommands.Enqueue(squad);
         }
         public Queue<Squad> GetSquadsAwaitingHiveMindCommands()

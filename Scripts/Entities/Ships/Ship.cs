@@ -43,7 +43,9 @@ namespace Assets.Scripts.Entities.Ships
         public FleetShip FleetShip = null;
         public string Name;
         public ConfigData.ShipTypes ShipType;
-        public Vision Vision;
+        public HivemindVision HiveMindVision;
+        public FogOfWarVision FogOfWarVision;
+        public ProximityCollider ProximityCollider;
         /// <summary>
         /// If a ship has not been spawned into the game yet or it has been killed and returned to the pool then it is dead
         /// </summary>
@@ -59,8 +61,8 @@ namespace Assets.Scripts.Entities.Ships
         /// <summary>
         /// Settings that are set when the ship is created and do not change
         /// </summary>
-        public bool HasBrain, IsHiveMindControlled, IsMinionShip, HasTargetCoordinates, IsMiningShip, IsWarpGate, IsBeehive, HasTargetDirection, HasUserVision, HasProximityCollider, HasShipAnimation, HasRocketFlares,
-            HasLeftRocketFlares, HasCenterRocketFlares, HasRightRocketFlares, HasOnlySideRocketFlares, HasMovementMarker, HasWaitingTargetCoordinates, HasRemainsShip, FireAtFrontOfShip;
+        public bool HasBrain, IsHiveMindControlled, IsMinionShip, HasTargetCoordinates, IsMiningShip, IsWarpGate, IsBeehive, HasTargetDirection, HasUserFogOfWarVision, HasProximityCollider, HasShipAnimation, HasRocketFlares,
+            HasLeftRocketFlares, HasCenterRocketFlares, HasRightRocketFlares, HasOnlySideRocketFlares, HasMovementMarker, HasWaitingTargetCoordinates, HasRemainsShip, FireAtFrontOfShip, IsBomber;
         /// <summary>
         /// Whether the ship is spawned by the game and has a negative id or is part of the tracked fleets
         /// </summary>
@@ -233,7 +235,7 @@ namespace Assets.Scripts.Entities.Ships
             __DegreesToTargetCoordinates = GetDegreesTowardsPoint(TargetCoordinates);
             __DistanceToTargetCoordinates = DistanceToPoint(TargetCoordinates);
             __TurningRadius = ConfigData.ShipTurningRadius;
-            __NearbyShips = HasProximityCollider ? Vision.NearbyEnemyShips.ToList() : new List<Ship>();
+            __NearbyShips = HasProximityCollider ? ProximityCollider.NearbyEnemyShips.ToList() : new List<Ship>();
             __HivemindShips = Level.State.GetShipsVisibleToHiveMind(Side).Select(s => s.ToString()).ToList();
             __Clearance = GetClearance();
             __IsInBounds = IsInBounds();
@@ -542,9 +544,19 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                     HasMovementMarker = true;
                 }
 
-                HasUserVision = true;
+                HasUserFogOfWarVision = true;
+                FogOfWarVision.Create(this);
+                Destroy(HiveMindVision.gameObject);
             }
-            Vision.Create(this); // Has to happen after MaxRange is calculated
+            else
+            {
+                HiveMindVision.Create(this); // Has to happen after MaxRange is calculated
+                Destroy(FogOfWarVision.gameObject);
+            }
+            if (HasProximityCollider)
+            {
+                ProximityCollider.Create(this);
+            }
 
             if (GetWidth() > GetHeight())
             {
@@ -789,7 +801,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
                     if (foundObstacle)
                     {
-
+                        //Debug.Log($"Found obstacle in the way of {Name}");
                         _convertedStart = Level.Pathfinder.ConvertToMapCoordinates(_startPosition);
                         _convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
                         //StopMoving("Got a new destination");
@@ -816,7 +828,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                         if (_obstacleCollider != null)
                         {
                             _tempObstacle = _obstacleCollider.GetComponent<Obstacle>();
-                            //Debug.Log($"{obstacle.Name} is in the way of {Name}");
+                            //Debug.Log($"{_tempObstacle.Name} is in the way of {Name}");
                             if (_tempObstacle.ObstacleType != ConfigData.ObstacleTypes.CollisionAsteroid)
                             {
                                 //CollisionAsteroid asteroid = (CollisionAsteroid)obstacle;
@@ -1341,10 +1353,9 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         /// </summary>
         /// <param name="distance"></param>
         /// <returns></returns>
-        private bool IsCloseEnoughToTargetCoordinates(float distance)
+        public virtual bool IsCloseEnoughToTargetCoordinates(float distance)
         {
-            return distance < ConfigData.ShipTurningRadius && !(Squad.HasOnlyBombers && !IsFollowingPath && HasTargetEnemyShipToFollow && Squad.HasCommand && Squad.GetCommand().CommandType == ConfigData.CommandTypes.BombingRun
-                && Vision.NearbyEnemyShips.Contains(TargetEnemyShipToFollow));
+            return distance < ConfigData.ShipTurningRadius;
         }
         /// <summary>
         /// Stop the ship from moving at all
@@ -1716,6 +1727,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 weapon.HasCachedChanged = true;
             });
         }
+        public bool IsLastShipOnSide()
+        {
+            return Level.State.GetShips(Side).Count == 1;
+        }
         public virtual void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false) // [kill method] [stats-method] [note]
         {
             if (!IsDead)
@@ -1745,9 +1760,9 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                         LogKilledStats();
                     }
 
-                    if (HasUserVision)
+                    if (HasUserFogOfWarVision)
                     {
-                        Vision.Kill(0);
+                        FogOfWarVision.Kill(0);
                     }
 
                     if (WeaponsThatHaveUsWithinRange.Count > 0)
@@ -1856,8 +1871,18 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                     }
                 });
             }
-
-            Vision.Deactivate();
+            if (IsUserControlled)
+            {
+                FogOfWarVision.Deactivate();
+            }
+            else
+            {
+                HiveMindVision.Deactivate();
+            }
+            if (HasProximityCollider)
+            {
+                ProximityCollider.Deactivate();
+            }
 
             if (!Stage.IsTraining)
             {
@@ -1905,6 +1930,22 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
 
             base.Activate();
+
+            if (IsUserControlled)
+            {
+                if (Level.ActivateFogOfWar)
+                {
+                    FogOfWarVision.Activate();
+                }
+            }
+            else
+            {
+                HiveMindVision.Activate();
+            }
+            if (HasProximityCollider)
+            {
+                ProximityCollider.Activate();
+            }
             if (HasWeapons)
             {
                 Weapons.ForEach(weapon =>
@@ -1920,7 +1961,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             {
                 MiniMapIcon.SetActive(true);
             }
-            Vision.Activate();
         }
         /// <summary>
         /// Actually destroys the ship in the game

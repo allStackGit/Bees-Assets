@@ -32,7 +32,7 @@ namespace Assets.Scripts.Entities.Ships
         private SpriteRenderer _indicatorSprite;
         //private GameObject _droppedBomb;
         public Ship ContactedShip, TouchingShip;
-        public Weapon Bomb;
+        public Bomb Bomb;
         public Vector2 LastCarrierPosition;
 
         public override void Create(Stage stage)
@@ -48,7 +48,8 @@ namespace Assets.Scripts.Entities.Ships
                 _indicatorSprite = LoadedIndicator.GetComponent<SpriteRenderer>();
                 SetBombsReadyStatus(true);
             }
-            Bomb = Weapons.First();
+            Bomb = (Bomb)Weapons.First();
+            IsBomber = true;
 
         }
         private ScaledTimer _checkCarrierReloadTimer = new ScaledTimer();
@@ -71,6 +72,11 @@ namespace Assets.Scripts.Entities.Ships
         }
         private GameObject _collidingThing;
         private Ship _collidingShip;
+        public override bool IsCloseEnoughToTargetCoordinates(float distance)
+        {
+            return distance < ConfigData.ShipTurningRadius && !(Squad.HasOnlyBombers && !IsFollowingPath && HasTargetEnemyShipToFollow && Squad.HasCommand && Squad.GetCommand().CommandType == ConfigData.CommandTypes.BombingRun
+                && ProximityCollider.NearbyEnemyShips.Contains(TargetEnemyShipToFollow));
+        }
         protected override void OnTriggerEnter2D(Collider2D collider) // projectile collision
         {
             _collidingThing = collider.gameObject;

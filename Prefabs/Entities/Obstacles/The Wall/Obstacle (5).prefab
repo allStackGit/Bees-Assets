@@ -152,7 +152,7 @@ MonoBehaviour:
   Level: {fileID: 0}
   Stage: {fileID: 0}
   ObstacleType: 0
-  Collider: {fileID: 109520144589758455, guid: 747e28e9e18bf7f4c87fd8e7c6f5343e, type: 3}
+  Collider: {fileID: 4903452415147891405}
   ProximityCollider: {fileID: 0}
   ClearanceMappingCollider: {fileID: 0}
   SpriteRenderer: {fileID: 4336409612573064695, guid: 747e28e9e18bf7f4c87fd8e7c6f5343e, type: 3}

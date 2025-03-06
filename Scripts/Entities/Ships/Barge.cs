@@ -36,7 +36,8 @@ namespace Assets.Scripts.Entities.Ships
             {
                 Destroy(ChargingBar.gameObject);
             }
-            Charge = Weapons.First();
+            Charge = Weapons.First();            //IsBomber = true;
+
             //Destroy(Charge.Piece);
         }
 
