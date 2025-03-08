@@ -21,12 +21,12 @@ namespace Assets.Scripts.Entities
                 _collisionAsteroid = _collidingThing.GetComponent<CollisionAsteroid>();
                 if (_collisionAsteroid.HasEnteredMap) 
                 {
-                    Debug.Log($"{_collisionAsteroid.Name} left the map border and is being killed at {_collisionAsteroid.GetPosition()}");
+                    //Debug.Log($"{_collisionAsteroid.Name} left the map border and is being killed at {_collisionAsteroid.GetPosition()}");
                     _collisionAsteroid.Kill(true);
                 }
                 else
                 {
-                    Debug.Log($"{_collisionAsteroid.Name} entered the map border at {_collisionAsteroid.GetPosition()}");
+                    //Debug.Log($"{_collisionAsteroid.Name} entered the map border at {_collisionAsteroid.GetPosition()}");
                     _collisionAsteroid.HasEnteredMap = true;
                 }
 
@@ -61,7 +61,7 @@ namespace Assets.Scripts.Entities
             {
                 _collisionAsteroid = _collidingThing.GetComponent<CollisionAsteroid>();
                 _collisionAsteroid.HasTouchedMapBorder = true;
-                Debug.Log($"{_collisionAsteroid.Name} has touched the map border");
+                //Debug.Log($"{_collisionAsteroid.Name} has touched the map border");
 
             }
 

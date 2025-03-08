@@ -114,7 +114,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
             else
             {
-                PieceTransform.eulerAngles = _forward * rotation;
+                PieceTransform.localEulerAngles = _forward * rotation;
                 Ship.Rotation = rotation;
 
                 if (Ship.HasRocketFlares)

@@ -58,6 +58,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             MoveTargetingMarker();
 
         }
+        public float GetLocalRotation()
+        {
+            return PieceTransform.localEulerAngles.z;
+        }
         protected override void SetTargetShip(Ship targetShip)
         {
             if (!IsFiringLaserBeam)

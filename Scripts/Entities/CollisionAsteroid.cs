@@ -317,7 +317,7 @@ namespace Assets.Scripts.Entities
                     });
                 }
                 Level.State.RemoveObstacle(this);
-                Debug.Log($"Killing and returning {Name} to the pool");
+                //Debug.Log($"Killing and returning {Name} to the pool");
                 Level.State.AsteroidsToRelease.Add(this);
                 //Stage.Pool.ReturnCollisionAsteroidToPool(this);
                 gameObject.SetActive(false);

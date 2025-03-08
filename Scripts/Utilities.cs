@@ -995,6 +995,7 @@ namespace Assets.Scripts
 
         public static List<SavedSquad> LoadSquadsFromJson(List<dynamic> jsonSquads)
         {
+            savedSquads.Clear();
             // Iterating through each squad in the jsonSquads
             jsonSquads.ForEach((squad) =>
             {
@@ -1027,7 +1028,7 @@ namespace Assets.Scripts
             });
 
             // Returning the list of saved squads
-            return savedSquads;
+            return savedSquads.ToList();
         }
 
 
@@ -1159,9 +1160,9 @@ namespace Assets.Scripts
         /// <param name="rotation"></param>
         /// <param name="rotationSpeed"></param>
         /// <returns></returns>
-        public static bool TimedRotation(Weapon weapon, float rotation, float rotationSpeed)
+        public static bool TimedRotation(Turret turret, float rotation, float rotationSpeed)
         {
-            return TimedRotationDifference(weapon, rotation, rotationSpeed) == 0;
+            return TimedRotationDifference(turret, rotation, rotationSpeed) == 0;
         }
 
         // Private class-level variables for TimedRotationDifference method
@@ -1180,15 +1181,25 @@ namespace Assets.Scripts
             if (_timedRotationDifferenceDifference > _levelOfPrecision)
             {
                 //_timedRotationDifferenceRotationVector = new Vector3(0, 0, 1 * Time.fixedDeltaTime * rotationSpeed);
+                //Debug.Log($"For {ship}, the turret has a rotation of {ship.Turrets.First().Rotation}, and a z of {ship.Turrets.First().PieceTransform.eulerAngles.z} before rotating");
                 ship.Transform.Rotate(_forward * _rotationRate);
                 ship.Rotation += _rotationRate;
+                ship.Turrets.ForEach((t) => t.Rotation += _rotationRate);
+                //Debug.Log($"For {ship}, Rotation is {ship.Rotation}, z is {ship.Transform.localEulerAngles.z}, a rotation rate of {-_rotationRate} has been applied");
+                //Debug.Log($"For {ship}, the turret has a rotation of {ship.Turrets.First().Rotation}, and a z of {ship.Turrets.First().PieceTransform.eulerAngles.z} after rotating");
                 return _timedRotationDifferenceDifference;
+
             }
             else if (_timedRotationDifferenceDifference < _levelOfPrecisionNegative)
             {
                 //_timedRotationDifferenceRotationVector = new Vector3(0, 0, 1 * Time.fixedDeltaTime * rotationSpeed * -1);
+                //Debug.Log($"For {ship}, the turret has a rotation of {ship.Turrets.First().Rotation}, and a z of {ship.Turrets.First().PieceTransform.eulerAngles.z} before rotating");
                 ship.Transform.Rotate(_forward * -_rotationRate);
-                ship.Rotation += -_rotationRate;
+                ship.Rotation -= _rotationRate;
+                ship.Turrets.ForEach((t) => t.Rotation -= _rotationRate);
+                //Debug.Log($"For {ship}, Rotation is {ship.Rotation}, z is {ship.Transform.localEulerAngles.z}, a rotation rate of {-_rotationRate} has been applied");
+                //Debug.Log($"For {ship}, the turret has a rotation of {ship.Turrets.First().Rotation}, and a z of {ship.Turrets.First().PieceTransform.eulerAngles.z} after rotating");
+
                 return _timedRotationDifferenceDifference;
             }
             return 0;
@@ -1199,23 +1210,30 @@ namespace Assets.Scripts
             //    return 0;
             //}
         }
-        public static float TimedRotationDifference(Weapon weapon, float rotation, float rotationSpeed)
+        public static float TimedRotationDifference(Turret turret, float rotation, float rotationSpeed)
         {
-            _timedRotationDifferenceDifference = Mathf.DeltaAngle(weapon.Rotation, rotation);
-            _rotationRate = weapon.Stage.FixedDeltaTime * rotationSpeed;
+            _timedRotationDifferenceDifference = Mathf.DeltaAngle(turret.Rotation, rotation);
+            _rotationRate = turret.Stage.FixedDeltaTime * rotationSpeed;
+
+            //Debug.Log($"For turret ship {turret.Ship}, Rotation is {turret.Rotation}, z is {turret.PieceTransform.eulerAngles.z}, a rotation rate of {_rotationRate} is being applied");
+
+            //if (Math.Abs(turret.Rotation - turret.PieceTransform.eulerAngles.z) > 1)
+            //{
+            //    Debug.LogWarning($"{turret.Ship}, has out of sync turret rotation: Rotation is {turret.Rotation}, z is {turret.PieceTransform.eulerAngles.z}");
+            //}
 
             if (_timedRotationDifferenceDifference > _levelOfPrecision)
             {
                 //_timedRotationDifferenceRotationVector = new Vector3(0, 0, 1 * Time.fixedDeltaTime * rotationSpeed);
-                weapon.PieceTransform.Rotate(_forward * _rotationRate);
-                weapon.Rotation += _rotationRate;
+                turret.PieceTransform.Rotate(_forward * _rotationRate);
+                turret.Rotation += _rotationRate;
                 return _timedRotationDifferenceDifference;
             }
             else if (_timedRotationDifferenceDifference < _levelOfPrecisionNegative)
             {
                 //_timedRotationDifferenceRotationVector = new Vector3(0, 0, 1 * Time.fixedDeltaTime * rotationSpeed * -1);
-                weapon.PieceTransform.Rotate(_forward * -_rotationRate);
-                weapon.Rotation += -_rotationRate;
+                turret.PieceTransform.Rotate(_forward * -_rotationRate);
+                turret.Rotation -= _rotationRate;
                 return _timedRotationDifferenceDifference;
             }
             else if (_timedRotationDifferenceDifference != 0)
@@ -1223,8 +1241,8 @@ namespace Assets.Scripts
                 //weapon.PieceTransform.Rotate(_forward * _timedRotationDifferenceDifference);
                 //weapon.Rotation = _timedRotationDifferenceDifference;
                 //Debug.Log(_timedRotationDifferenceDifference);
-                weapon.PieceTransform.eulerAngles = _forward * rotation;
-                weapon.Rotation = rotation;
+                turret.PieceTransform.eulerAngles = _forward * rotation;
+                turret.Rotation = rotation;
             }
             return 0;
 
@@ -1238,9 +1256,9 @@ namespace Assets.Scripts
         /// <returns></returns>
         private static float _isRotatedTowardsDifference; // Method: IsRotatedTowards
 
-        public static bool IsRotatedTowards(Weapon weapon, float rotation)
+        public static bool IsRotatedTowards(Turret turret, float rotation)
         {
-            _isRotatedTowardsDifference = Mathf.DeltaAngle(weapon.Rotation, rotation);
+            _isRotatedTowardsDifference = Mathf.DeltaAngle(turret.Rotation, rotation);
 
             if (_isRotatedTowardsDifference > _levelOfPrecision || _isRotatedTowardsDifference < _levelOfPrecisionNegative)
             {
@@ -1269,9 +1287,9 @@ namespace Assets.Scripts
         private static float _isAimedAtDifference; // Method: IsAimedAt
         private static float _isAimedAtCloseEnough = 3; // Method: IsAimedAt
 
-        public static bool IsAimedAt(Weapon weapon, float rotation)
+        public static bool IsAimedAt(Turret turret, float rotation)
         {
-            _isAimedAtDifference = Mathf.DeltaAngle(weapon.Rotation, rotation);
+            _isAimedAtDifference = Mathf.DeltaAngle(turret.Rotation, rotation);
 
             if (_isAimedAtDifference > _isAimedAtCloseEnough)
             {

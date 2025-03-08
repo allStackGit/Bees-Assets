@@ -313,7 +313,7 @@ namespace Assets.Scripts.Scenes
         public void LoadLevel(int levelIndex)
         {
             _chosenLevel = _levelOptionIndexesToLevels[levelIndex];
-
+            Debug.Log($"Loading level {_chosenLevel}");
             LevelTitle.text = $"Level: {_chosenLevel.Name}";
             LevelDetails.text = _chosenLevel.GetLevelDetails();
             _capacity = _chosenLevel.SupplyCapacity;
@@ -955,9 +955,11 @@ namespace Assets.Scripts.Scenes
                 container.GetComponent<UnityEngine.UI.Image>().color = ConfigData.GetUIColor("supply-capacity-label");
             }
         }
+        // [alert] this should be rewritten to be more performant
         public void UpdateShipCounter(FleetShip fleetShip)
         {
-            GameObject inventoryContainer = GameObject.FindObjectsOfType<GameObject>(true).ToList().Find((gameObject) => gameObject.name == $"{fleetShip.Type} Inventory Ship");
+            GameObject inventoryContainer = GameObject.FindObjectsOfType<GameObject>(true).ToList().Find((gameObject) => gameObject.name == $"{Utilities.ConvertShipTypeToName[fleetShip.Type]} Inventory Ship");
+            Debug.Log($"{inventoryContainer}, {$"{Utilities.ConvertShipTypeToName[fleetShip.Type]} Inventory Ship"}");
             if (inventoryContainer != null)
             {
                 GameObject shipCountLabel = inventoryContainer.transform.GetChild(2).gameObject;

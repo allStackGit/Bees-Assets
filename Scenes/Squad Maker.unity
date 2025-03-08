@@ -10514,7 +10514,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6574226523048766265, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_Name
-      value: Fire Barge  Inventory Ship
+      value: Fire Barge Inventory Ship
       objectReference: {fileID: 0}
     - target: {fileID: 6574226523048766265, guid: 27946455f7dc86642b41c4c3ac211155, type: 3}
       propertyPath: m_IsActive
@@ -19410,6 +19410,7 @@ MonoBehaviour:
   IsMainScene: 0
   TimeScale: 1
   TargetFrameRate: 0
+  Type: 0
   __PastServerRequests: []
   __SocketLevels: []
   __StandingRequests: []
@@ -27898,7 +27899,7 @@ PrefabInstance:
       objectReference: {fileID: 21300000, guid: c2d50367ba7668e428d971aed684feb2, type: 3}
     - target: {fileID: 8241722512025787510, guid: ba8e735e9f2a5b542916479f7ec91750, type: 3}
       propertyPath: m_Name
-      value: Fire Barge  Drag Icon
+      value: Fire Barge Drag Icon
       objectReference: {fileID: 0}
     - target: {fileID: 8241722512025787510, guid: ba8e735e9f2a5b542916479f7ec91750, type: 3}
       propertyPath: m_IsActive

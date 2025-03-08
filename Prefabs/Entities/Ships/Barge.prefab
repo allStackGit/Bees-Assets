@@ -168,7 +168,7 @@ MonoBehaviour:
   IsBeehive: 0
   HasTargetDirection: 0
   HasUserFogOfWarVision: 0
-  HasProximityCollider: 1
+  HasProximityCollider: 0
   HasShipAnimation: 0
   HasRocketFlares: 0
   HasLeftRocketFlares: 0

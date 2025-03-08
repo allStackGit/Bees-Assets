@@ -520,11 +520,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             }
 
             Turrets = Weapons.Where((w) => w is Turret).ToList().ConvertAll((w) => (Turret)w);
-            MaxRange = HasWeapons ? Weapons.Max((w) => w.Range) : 0;
             HalfMaxRange = MaxRange / 2;
             OriginalTsv = Utilities.CalculateMaxTsv(this);
             HasWeapons = Weapons.Count > 0;
             HasTurrets = Turrets.Count > 0;
+            MaxRange = HasWeapons ? Weapons.Max((w) => w.Range) : 0;
             Firepower = HasWeapons ? Weapons.Sum(w => w.Firepower) : SpecialFirePower;
             DamagePerSecond = Turrets.Sum(t => t.DamagePerSecond);
             Tsv = OriginalTsv;
@@ -1871,11 +1871,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                     }
                 });
             }
-            if (IsUserControlled)
-            {
-                FogOfWarVision.Deactivate();
-            }
-            else
+            if (!IsUserControlled)
             {
                 HiveMindVision.Deactivate();
             }

@@ -25,6 +25,14 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public int TargetingPasses, PassesPerFire;
         /// <summary> How many times the targeting sequence runs per fire sequence </summary>
         public float TargetingRate;
+        /// <summary>
+        /// The current rotation of the turret in degrees (Should match PieceTransform.eulerAngles.z)
+        /// </summary>
+        public float Rotation;
+        /// <summary>
+        /// The original rotation of the turret in degrees for resetting the rotation of the turret. Most likely a value of 0.
+        /// </summary>
+        public float OriginalRotation;
         public float DamagePerSecond;
         public Vector2 TargetPoint;
         public GameObject TargetingMarker;
@@ -43,6 +51,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             bool fireAtFrontOfShip, float rotationRate)
         {
             base.Create(ship, type, range, power, 0, rateOfFire, projectileValue, piece, projectileType);
+            OriginalRotation = PieceTransform.eulerAngles.z;
+            Rotation = OriginalRotation;
             ShouldFireAtFrontOfShip = fireAtFrontOfShip;
             PassesPerFire = 3;
             TargetingRate = RateOfFire / PassesPerFire;
@@ -200,7 +210,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 else
                 {
                     IsAimedAtTarget = false;
-                    if (CeaseFire || !HasValidTarget())
+                    if ((CeaseFire || !HasValidTarget()) && Rotation != Ship.Rotation)
                     {
                         //Debug.Log($"{Name} has no ships to fire at, returning to default aim");
                         Utilities.TimedRotation(this, Ship.Rotation, RotationRate);
@@ -402,10 +412,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
             // Reset
             TargetingPasses = 0;
-        }
-        public float GetLocalRotation()
-        {
-            return PieceTransform.localEulerAngles.z;
         }
         public override Vector2 GetPosition()
         {

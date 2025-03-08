@@ -124,6 +124,7 @@ namespace Assets.Scripts.Data
             EnemyReinforcements = enemyReinforcements;
             EnemySquads = enemySquads;
             ChosenSquads = chosenSquads;
+            Debug.Log($"Creating level: {GetEnemyList()}");
         }
 
         public LevelOptions(int id, int side, string name)
@@ -134,6 +135,7 @@ namespace Assets.Scripts.Data
             MapIndex = -1;
             ObstacleMapIndex = -1;
             AsteroidOption = -1;
+            FogOfWar = -1;
             Mining = -1;
             EnemyReinforcementsOption = -1;
             EnemyReinforcements = new List<SavedSquad>();
