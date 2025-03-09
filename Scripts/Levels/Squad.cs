@@ -533,6 +533,10 @@ namespace Assets.Scripts.Levels
             
 
         }
+        /// <summary>
+        /// Returns the closest enemy squad visible to the hivemind or simply the closest squad if this is the user
+        /// </summary>
+        /// <returns></returns>
         public Squad GetClosestEnemySquad()
         {
             // Debug.Log($"Number of enemy squads {squads.Count}, {_Level.State.GetSquads()}");
@@ -544,21 +548,21 @@ namespace Assets.Scripts.Levels
             _tempSquads = Level.State.GetSquadsBySide(Side).Where(squad => squad != this && (!squad.HasCommand || squad.GetCommand().CommandType != ConfigData.CommandTypes.ClosestFriendly)).ToList();
             return _tempSquads.OrderBy(squad => squad.DistanceToPoint(GetPosition())).FirstOrDefault();
         }
-        public Squad GetEnemy()
-        {
-            if (HasCommand)
-            {
-                return GetCommand().EnemySquad;
-            }
-            else
-            {
-                if (IsUserControlled)
-                {
-                    return GetClosestEnemySquad();
-                }
-                return null;
-            }
-        }
+        //public Squad GetEnemy()
+        //{
+        //    if (HasCommand)
+        //    {
+        //        return GetCommand().EnemySquad;
+        //    }
+        //    else
+        //    {
+        //        if (IsUserControlled)
+        //        {
+        //            return GetClosestEnemySquad();
+        //        }
+        //        return null;
+        //    }
+        //}
         /// <summary>
         /// Gets all ships in the level that are on the opposing side
         /// </summary>
@@ -1158,15 +1162,15 @@ namespace Assets.Scripts.Levels
         {
             return GetShips().All((s) => s.IsAnySquadShipWithinRange(squad));
         }
-        public bool IsWithinRangeOfAnyShipInEnemySquad()
-        {
-            _tempSquad = GetEnemy();
-            if (_tempSquad != null)
-            {
-                return _tempSquad.IsAnySquadShipWithinRangeOfAnyOfOurSquadShips(this);
-            }
-            return false;
-        }
+        //public bool IsWithinRangeOfAnyShipInEnemySquad()
+        //{
+        //    _tempSquad = GetEnemy();
+        //    if (_tempSquad != null)
+        //    {
+        //        return _tempSquad.IsAnySquadShipWithinRangeOfAnyOfOurSquadShips(this);
+        //    }
+        //    return false;
+        //}
         public float DistanceToPoint(Vector2 point)
         {
             return Vector2.Distance(GetPosition(), point);

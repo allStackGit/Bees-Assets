@@ -331,7 +331,8 @@ namespace Assets.Scripts.Levels.Commands
 
         private Squad _prepareDamage_closestEnemy;
         /// <summary>
-        /// This method finds the enemies of the command's squad and makes sure there's a ship damage status entry for each enemy ship
+        /// This method finds the enemies of the command's squad and makes sure there's a ship damage status entry for each enemy ship.
+        /// If there's not an enemy squad it returns the closest visible squad
         /// </summary>
         /// <param name="which"></param>
         public void PrepareDamageToSendEntries(int which = 0)

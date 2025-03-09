@@ -10,7 +10,7 @@ using UnityEngine;
 namespace Assets.Scripts.Entities.Ships.Weapons
 {
     // A collider for clearinng fog of war for ships that don't have range colliders
-    public class HivemindVision: MonoBehaviour
+    public class HiveMindVision: MonoBehaviour
     {
 
         public CircleCollider2D Collider;

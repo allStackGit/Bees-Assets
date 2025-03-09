@@ -294,7 +294,7 @@ namespace Assets.Scripts.Scenes
                 int i = 2;
                 ConfigData.GetLevelData().GetLevels().Where((level) => level.Side != Side).ToList().ForEach((level) =>
                 {
-                    Debug.Log($"Adding option for {level} -> #{i}");
+                    //Debug.Log($"Adding option for {level} -> #{i}");
                     LevelDropdown.options.Add(new TMP_Dropdown.OptionData(level.Name));
                     _levelOptionIndexesToLevels[i] = level;
                     i++;
@@ -313,7 +313,7 @@ namespace Assets.Scripts.Scenes
         public void LoadLevel(int levelIndex)
         {
             _chosenLevel = _levelOptionIndexesToLevels[levelIndex];
-            Debug.Log($"Loading level {_chosenLevel}");
+            //Debug.Log($"Loading level {_chosenLevel}");
             LevelTitle.text = $"Level: {_chosenLevel.Name}";
             LevelDetails.text = _chosenLevel.GetLevelDetails();
             _capacity = _chosenLevel.SupplyCapacity;

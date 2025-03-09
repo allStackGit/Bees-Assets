@@ -43,7 +43,7 @@ namespace Assets.Scripts.Entities.Ships
         public FleetShip FleetShip = null;
         public string Name;
         public ConfigData.ShipTypes ShipType;
-        public HivemindVision HiveMindVision;
+        public HiveMindVision HiveMindVision;
         public FogOfWarVision FogOfWarVision;
         public ProximityCollider ProximityCollider;
         /// <summary>
@@ -546,7 +546,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
                 HasUserFogOfWarVision = true;
                 FogOfWarVision.Create(this);
-                Destroy(HiveMindVision.gameObject);
+                Destroy(HiveMindVision);
             }
             else
             {

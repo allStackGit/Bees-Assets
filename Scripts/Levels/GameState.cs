@@ -320,8 +320,17 @@ namespace Assets.Scripts.Levels
             return ShipsById.GetValueOrDefault(id);
         }
 
+        /// <summary>
+        /// If this is the user, returns all enemy squads, if this is the AI, returns all squads that have ships visible to the Hive Mind
+        /// </summary>
+        /// <param name="side"></param>
+        /// <returns></returns>
         public List<Squad> GetSquadsVisibleToHiveMind(int side = 0)
         {
+            if (side == ConfigData.Configuration.UserSide)
+            {
+                return GetEnemySquads(side);
+            }
             return GetShipsVisibleToHiveMind(side).Select((ship) => ship.Squad).ToList();
         }
         public List<Squad> GetSelectedSquads()

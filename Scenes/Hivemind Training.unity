@@ -7614,7 +7614,7 @@ PrefabInstance:
       objectReference: {fileID: 1128415138}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: IsDebugging
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: IsRendering

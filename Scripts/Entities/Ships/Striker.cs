@@ -70,6 +70,16 @@ namespace Assets.Scripts.Entities.Ships
             TouchingShip = null;
             LastCarrierPosition = Vector2.zero;
         }
+        public override void Deactivate()
+        {
+            base.Deactivate();
+            LoadedIndicator.SetActive(false);
+        }
+        public override void Activate()
+        {
+            base.Activate();
+            LoadedIndicator.SetActive(true);
+        }
         private GameObject _collidingThing;
         private Ship _collidingShip;
         public override bool IsCloseEnoughToTargetCoordinates(float distance)
