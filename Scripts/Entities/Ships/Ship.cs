@@ -546,7 +546,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
                 HasUserFogOfWarVision = true;
                 FogOfWarVision.Create(this);
-                Destroy(HiveMindVision);
+                Destroy(HiveMindVision.gameObject);
             }
             else
             {

@@ -9,7 +9,7 @@ using UnityEngine;
 
 namespace Assets.Scripts.Entities.Ships.Weapons
 {
-    // A collider for clearinng fog of war for ships that don't have range colliders
+    // A collider for identifying ships to the Hive Mind
     public class HiveMindVision: MonoBehaviour
     {
 

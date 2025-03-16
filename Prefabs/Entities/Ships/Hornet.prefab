@@ -96,7 +96,7 @@ MonoBehaviour:
   LastKilled: 0
   Name: 
   ShipType: 15
-  HiveMindVision: {fileID: 4247372727054605703}
+  HiveMindVision: {fileID: 2530134248073012348}
   FogOfWarVision: {fileID: 5902325744157839067}
   ProximityCollider: {fileID: 0}
   IsDead: 1
@@ -779,9 +779,9 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 6500008320206064219, guid: 752dd660be850b549a967e9e96f5ba1e, type: 3}
   m_PrefabInstance: {fileID: 6108123037322691630}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &4247372727054605703 stripped
+--- !u!114 &2530134248073012348 stripped
 MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 7941494824958056873, guid: 752dd660be850b549a967e9e96f5ba1e, type: 3}
+  m_CorrespondingSourceObject: {fileID: 8635861449476857938, guid: 752dd660be850b549a967e9e96f5ba1e, type: 3}
   m_PrefabInstance: {fileID: 6108123037322691630}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 0}
