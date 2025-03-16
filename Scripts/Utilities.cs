@@ -1420,43 +1420,71 @@ namespace Assets.Scripts
             return _jArrayToShipTypeDictionaryDictionary;
         }
 
-        public static int CalculateCarrierAdditionalTsv()
-        {
-            FleetShip striker = new FleetShip(-1, "", ConfigData.ShipTypes.Striker, false, false, false, 0, 0, 0, 0, 0, 0, 0);
-            FleetShip drone = new FleetShip(-1, "", ConfigData.ShipTypes.Drone, false, false, false, 0, 0, 0, 0, 0, 0, 0);
+        //public static int CalculateCarrierAdditionalTsv()
+        //{
+        //    FleetShip striker = new FleetShip(-1, "", ConfigData.ShipTypes.Striker, false, false, false, 0, 0, 0, 0, 0, 0, 0);
+        //    FleetShip drone = new FleetShip(-1, "", ConfigData.ShipTypes.Drone, false, false, false, 0, 0, 0, 0, 0, 0, 0);
 
-            return ((striker.GetTsv() * ConfigData.Configuration.CarrierCarryStrikerMax) * ConfigData.Configuration.CarrierSquadCount) + ((drone.GetTsv() * ConfigData.Configuration.CarrierCarryDroneMax) * ConfigData.Configuration.CarrierSquadCount);
-        }
+        //    return ((striker.GetTsv() * ConfigData.Configuration.CarrierCarryStrikerMax) * ConfigData.Configuration.CarrierSquadCount) + ((drone.GetTsv() * ConfigData.Configuration.CarrierCarryDroneMax) * ConfigData.Configuration.CarrierSquadCount);
+        //}
+        /// <summary>
+        /// Returns the rated TSV of the ship, weighted by its health
+        /// </summary>
+        /// <param name="ship"></param>
+        /// <returns></returns>
         public static int CalculateTsv(Ship ship)
         {
             //Debug.Log($"Calculating TSV for {ship.Name}");
-            return CalculateTsv(ship.Speed, ship.Firepower, ship.Health, ship.Sight);
+            return (int) (CalculateMaxTsv(ship.ShipType) * CalculateHealthFactor(ship));
+            //return CalculateTsv(ship.Speed, ship.Firepower, ship.Health, ship.Sight);
         }
-        public static int CalculateMaxTsv(Ship ship)
+        /// <summary>
+        /// Returns the health multiplier which ranges from > .5 to 1 if the ship has health, and returns 0 if the ship is dead
+        /// </summary>
+        /// <param name="ship"></param>
+        /// <returns></returns>
+        public static float CalculateHealthFactor(Ship ship)
         {
-            return CalculateTsv(ship.Speed, ship.Firepower, ship.MaxHealth, ship.Sight);
+            return ship.Health > 0 ? (float)(ship.MaxHealth + ship.Health) / (ship.MaxHealth * 2) : 0;
         }
-        public static int CalculateTsv(FleetShip ship)
+        /// <summary>
+        /// Returns the maximum value of the TSV for the ship i.e. when it has full health
+        /// </summary>
+        /// <param name="ship"></param>
+        /// <returns></returns>
+        //public static int CalculateMaxTsv(Ship ship)
+        //{
+        //    return CalculateMaxTsv(ship.ShipType);
+        //    //return CalculateTsv(ship.Speed, ship.Firepower, ship.MaxHealth, ship.Sight);
+        //}
+        //public static int CalculateTsv(FleetShip ship)
+        //{
+        //    return ship.RatedTsv;
+        //    //return CalculateTsv(ship.Speed, ship.Firepower, ship.Health, ship.Sight);
+        //}
+        /// <summary>
+        /// Returns the maximum value of the TSV for the fleet ship i.e. when it has full health
+        /// </summary>
+        /// <param name="ship"></param>
+        /// <returns></returns>
+        public static int CalculateMaxTsv(ConfigData.ShipTypes type)
         {
-            return CalculateTsv(ship.Speed, ship.Firepower, ship.Health, ship.Sight);
-        }
-        public static int CalculateMaxTsv(FleetShip ship)
-        {
-            return CalculateTsv(ship.Speed, ship.Firepower, ship.MaxHealth, ship.Sight);
+            return ConfigData.GetShipInfo(type).Tsv;
+            //return CalculateTsv(ship.Speed, ship.Firepower, ship.MaxHealth, ship.Sight);
         }
         // Private class-level variables for CalculateTsv method
-        private static double _calculateTsvSpeedValue; // Method: CalculateTsv
-        private static int _calculateTsvFullHealthTsv; // Method: CalculateTsv
-        private static int _calculateTsvTsv; // Method: CalculateTsv
+        //private static double _calculateTsvSpeedValue; // Method: CalculateTsv
+        //private static int _calculateTsvFullHealthTsv; // Method: CalculateTsv
+        //private static int _calculateTsvTsv; // Method: CalculateTsv
 
-        public static int CalculateTsv(float speed, float firepower, int health, int sight)
-        {
-            _calculateTsvSpeedValue = speed / 3;
-            _calculateTsvFullHealthTsv = (int)Math.Round((firepower > 0 ? firepower : 1) * (_calculateTsvSpeedValue > 1 ? _calculateTsvSpeedValue : 1) * (Math.Max(health / 200, 1)), 0) + sight;
-            _calculateTsvTsv = ((health > 0 ? 1 : 0) * _calculateTsvFullHealthTsv) + ((health > 0 ? 1 : 0) * health);
+        //public static int CalculateTsv(float speed, float firepower, int health, int sight)
+        //{
+        //    _calculateTsvSpeedValue = speed / 3;
+        //    _calculateTsvFullHealthTsv = (int)Math.Round((firepower > 0 ? firepower : 1) * (_calculateTsvSpeedValue > 1 ? _calculateTsvSpeedValue : 1) * (Math.Max(health / 200, 1)), 0) + sight;
+        //    _calculateTsvTsv = ((health > 0 ? 1 : 0) * _calculateTsvFullHealthTsv) + ((health > 0 ? 1 : 0) * health);
 
-            return _calculateTsvTsv;
-        }
+        //    return _calculateTsvTsv;
+        //}
 
         public static float CalculateFirepower(int power, int range, float rateOfFire, float rotationRate, float ProjectileValue, float specialFirepower)
         {

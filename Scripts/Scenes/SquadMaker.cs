@@ -283,7 +283,7 @@ namespace Assets.Scripts.Scenes
         }
         private void SetupLevelDropdown()
         {
-            Debug.Log($"Setting up level dropdown");
+            //Debug.Log($"Setting up level dropdown");
             if (ConfigData.IsPlayingCampaign)
             {
                 LevelDropdown.gameObject.SetActive(false);
@@ -959,7 +959,7 @@ namespace Assets.Scripts.Scenes
         public void UpdateShipCounter(FleetShip fleetShip)
         {
             GameObject inventoryContainer = GameObject.FindObjectsOfType<GameObject>(true).ToList().Find((gameObject) => gameObject.name == $"{Utilities.ConvertShipTypeToName[fleetShip.Type]} Inventory Ship");
-            Debug.Log($"{inventoryContainer}, {$"{Utilities.ConvertShipTypeToName[fleetShip.Type]} Inventory Ship"}");
+            //Debug.Log($"{inventoryContainer}, {$"{Utilities.ConvertShipTypeToName[fleetShip.Type]} Inventory Ship"}");
             if (inventoryContainer != null)
             {
                 GameObject shipCountLabel = inventoryContainer.transform.GetChild(2).gameObject;
@@ -1419,7 +1419,7 @@ namespace Assets.Scripts.Scenes
                     $"Power: {shipInfo.PrintPower()}\n" +
                     $"Rate of Fire: {shipInfo.PrintRateOfFire()}\n" +
                     $"Speed: {shipInfo.Speed}\n" +
-                    $"Capacity: {(shipType != ConfigData.ShipTypes.Drone && shipType != ConfigData.ShipTypes.Striker && shipType != ConfigData.ShipTypes.Beacon ? ConfigData.CurrentShips.GetShipsOfType(shipType).First().GetMaxCapacity().ToString("N0") : "N/A")}";
+                    $"Capacity: {(shipType != ConfigData.ShipTypes.Drone && shipType != ConfigData.ShipTypes.Striker && shipType != ConfigData.ShipTypes.Beacon ? ConfigData.CurrentShips.GetShipsOfType(shipType).First().GetCapacity().ToString("N0") : "N/A")}";
 
                 UnityEngine.UI.Image image = ShipInfoBoxIcon.GetComponent<UnityEngine.UI.Image>();
                 image.sprite = _spriteTypes.GetValueOrDefault(shipType);
@@ -1804,7 +1804,7 @@ namespace Assets.Scripts.Scenes
         private void SetLevelOptions(){
             ConfigData.IsUserLoadingCustomSquads = true;
 
-            Debug.Log($"Setting level options for configdata");
+            //Debug.Log($"Setting level options for configdata");
             ConfigData.LevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}",
                 _chosenMapOption, _chosenObstacleOption, _chosenAsteroidsOption, _chosenFogOfWarOption, _chosenMiningOption, -1,
                 _chosenEnemyReinforcementsOption, ConfigData.StandardReinforcementsDelay, _chosenEnemyShipTypes, _enemySquadGenerationCount, new List<SavedSquad>(),

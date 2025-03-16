@@ -116,6 +116,7 @@ namespace Assets.Scripts.Entities.Ships
         {
             _targetOldTSV = target.Tsv;
             target.Health -= power;
+            target.Tsv = Utilities.CalculateTsv(target);
 
             if (target.Health < 0)
             {
@@ -124,7 +125,7 @@ namespace Assets.Scripts.Entities.Ships
 
             _targetTSVChange = target.Tsv - _targetOldTSV; // this is a negative number since being hit by a projectile should induce a loss of TSV
             //Debug.Log($"Yellow Jacket #{Id} Detonation: {targetTSVChange} tsv inflicted on {target.Name}");
-            LogHitStats(attacker, attacker.FleetShip, attacker.Squad.SavedSquad, target, target.Squad, _targetTSVChange);
+            LogHitStats(attacker, attacker.FleetShip, attacker.Squad.SavedSquad, target, target.Squad, -_targetTSVChange);
 
             // each hit, add the negative TSV to the target's command and subtract the negative TSV from the shooter's command
 

@@ -124,7 +124,7 @@ namespace Assets.Scripts.Data
             EnemyReinforcements = enemyReinforcements;
             EnemySquads = enemySquads;
             ChosenSquads = chosenSquads;
-            Debug.Log($"Creating level: {GetEnemyList()}");
+            //Debug.Log($"Creating level: {GetEnemyList()}");
         }
 
         public LevelOptions(int id, int side, string name)

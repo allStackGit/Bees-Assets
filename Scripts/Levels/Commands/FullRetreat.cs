@@ -115,10 +115,12 @@ public class FullRetreat : Command
     {
         if (!IsDead)
         {
-            if (ship.ShipType != ConfigData.ShipTypes.Striker && ship.ShipType != ConfigData.ShipTypes.Drone)
-            {
-                Tsv += (int)(ship.Tsv * .05f);
-            }
+            // Commented this out because it seemed to give too high of a reward for Full Retreat. Now, it will always give 0 or less, which means it should be preferable to losing
+            // but not much better than that
+            //if (ship.ShipType != ConfigData.ShipTypes.Striker && ship.ShipType != ConfigData.ShipTypes.Drone)
+            //{
+            //    Tsv += (int)(ship.Tsv * .05f);
+            //}
             TargetWarpGate.ShipsWarpingHere.Remove(ship.Id);
             ship.EndKill(); // if this is the last ship, this call could kill the command as well
             if (!IsDead && TargetWarpGate.ShipsWarpingHere.Count == 0)

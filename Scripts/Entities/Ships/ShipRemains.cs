@@ -41,26 +41,23 @@ namespace Assets.Scripts.Entities.Ships
         {
 
 
-            if (!Ship.IsLastShipOnSide())
+            Transform.localPosition = Ship.GetPosition();
+            Transform.eulerAngles = Vector3.forward * Ship.Rotation;
+            gameObject.SetActive(true);
+            Ship.Level.State.AddDeadBody(this);
+
+            if (Ship.Squad.HasCustomColor && AnimationController == null)
             {
-                Transform.localPosition = Ship.GetPosition();
-                Transform.eulerAngles = Vector3.forward * Ship.Rotation;
-                gameObject.SetActive(true);
-                Ship.Level.State.AddDeadBody(this);
-
-                if (Ship.Squad.HasCustomColor && AnimationController == null)
-                {
-                    Color[] colors = ConfigData.ChangeableShipColors.GetValueOrDefault(Ship.ShipType);
-                    Sprite prefabSprite = GetComponent<SpriteRenderer>().sprite;
-                    Sprite shipIcon = prefabSprite;
-                    int[] changeablePixels = Utilities.SetChangablePixelsForImage(colors, shipIcon);
-                    Sprite recolored = Utilities.SetImageColor(Ship.Squad.Color, shipIcon, changeablePixels);
-                    GetComponent<SpriteRenderer>().sprite = recolored;
-                }
-
-                _killTimer.Reuse(5, Kill);
-                Ship.Level.AddTimer(_killTimer);
+                Color[] colors = ConfigData.ChangeableShipColors.GetValueOrDefault(Ship.ShipType);
+                Sprite prefabSprite = GetComponent<SpriteRenderer>().sprite;
+                Sprite shipIcon = prefabSprite;
+                int[] changeablePixels = Utilities.SetChangablePixelsForImage(colors, shipIcon);
+                Sprite recolored = Utilities.SetImageColor(Ship.Squad.Color, shipIcon, changeablePixels);
+                GetComponent<SpriteRenderer>().sprite = recolored;
             }
+
+            _killTimer.Reuse(5, Kill);
+            Ship.Level.AddTimer(_killTimer);
 
 
             //Invoke(nameof(Kill), 5);

@@ -18,7 +18,7 @@ namespace Assets.Scripts.Data
         public int ShotsFired, DamageDone, DamageReceived, Kills, BattlesFought, BattlesWon, MineralsMined, MineralsMinedThisLevel;
         public int BattlesLost => BattlesFought - BattlesWon;
 
-        public int Health, MaxHealth, Sight, RatedTsv;
+        public int Health, MaxHealth, Sight;
         public List<int> Range, Power;
         public List<float> RateOfFire, ProjectileValue, RotationRates;
         public float Speed;
@@ -86,7 +86,6 @@ namespace Assets.Scripts.Data
             Range = shipInfo.Ranges;
             Power = shipInfo.Powers;
             Sight = shipInfo.Sight;
-            RatedTsv = shipInfo.Tsv;
             ProjectileValue = shipInfo.ProjectileValues;
             RotationRates = shipInfo.RotationRates;
 
@@ -135,21 +134,17 @@ namespace Assets.Scripts.Data
             }
             return sum;
         }
-        public int GetTsv() { 
-            return Utilities.CalculateTsv(this);
-        }
-        public int GetMaxTsv() 
+        //public int GetTsv() { 
+        //    return Utilities.CalculateTsv(this);
+        //}
+        public int GetTsv() 
         {
-            return Utilities.CalculateMaxTsv(this);
+            return Utilities.CalculateMaxTsv(this.Type);
         }
         public int GetCapacity()
         {
-            return GetTsv();
-        }
-        public int GetMaxCapacity()
-        {
             //Debug.Log($"Calculating TSV for {Type}. Firepower: {Firepower}");
-            return GetMaxTsv();
+            return GetTsv();
         }
         public bool Equals(FleetShip ship)
         {

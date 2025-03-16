@@ -17,14 +17,14 @@ namespace Assets.Scripts.Data
             dynamic json = SetupFile(shouldFileExist, ConfigData.LevelsDataFilenames[type], (json) =>
             {
                 ConfigData.IsLevelsDataLoaded[type] = true;
-                Debug.Log($"Setting up LevelData file for {ConfigData.LevelsDataFilenames[type]}");
+                //Debug.Log($"Setting up LevelData file for {ConfigData.LevelsDataFilenames[type]}");
                 //Debug.Log($"JSON from DataFile: {json}");
                 List<dynamic> levels = Utilities.JArrayToList<dynamic>(json.Levels);
                 levels.ForEach(level =>
                 {
                     List<SavedSquad> enemyReinforcements = Utilities.LoadSquadsFromJson(Utilities.JArrayToList<dynamic>(level.EnemyReinforcements));
                     List<SavedSquad> enemySquads = Utilities.LoadSquadsFromJson(Utilities.JArrayToList<dynamic>(level.EnemySquads));
-                    Debug.Log(level.Name);
+                    //Debug.Log(level.Name);
                     _levels.Add(new LevelOptions((int)level.Id, (int)level.Side, (string)level.Name, (int)level.MapIndex, (int)level.ObstacleMapIndex, (int)level.AsteroidOption, (int)level.FogOfWar,
                         (int)level.Mining, (int)level.SupplyCapacity, (int) level.EnemyReinforcementsOption, (int)level.EnemyReinforcementDelay, 0, 0, enemyReinforcements, enemySquads, new List<SavedSquad>()));
                 });

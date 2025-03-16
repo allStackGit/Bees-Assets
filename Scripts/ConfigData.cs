@@ -824,15 +824,16 @@ namespace Assets.Scripts
         }
         public static ShipStatBlock GetShipInfo(ConfigData.ShipTypes shipType)
         {
-            if (ShipInfo != null)
-            {
-                return ShipInfo.ShipStatsList.GetValueOrDefault(shipType);
-            }
-            else
-            {
-                Debug.LogError("Tried to get ship info before it was loaded");
-            }
-            return null;
+            return ShipInfo.ShipStatsList[shipType];
+            //if (ShipInfo != null)
+            //{
+            //    return ShipInfo.ShipStatsList.GetValueOrDefault(shipType);
+            //}
+            //else
+            //{
+            //    Debug.LogError("Tried to get ship info before it was loaded");
+            //}
+            //return null;
         }
 
         public static float GetShipSizeFactor(ConfigData.ShipTypes shipType)

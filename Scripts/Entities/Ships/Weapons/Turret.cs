@@ -33,6 +33,9 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// The original rotation of the turret in degrees for resetting the rotation of the turret. Most likely a value of 0.
         /// </summary>
         public float OriginalRotation;
+        /// <summary>
+        /// The turret's power / rate of fire. Used only for debugging purposes
+        /// </summary>
         public float DamagePerSecond;
         public Vector2 TargetPoint;
         public GameObject TargetingMarker;
@@ -104,8 +107,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public override void ClearData()
         {
             base.ClearData();
-            Rotation = OriginalRotation;
-            PieceTransform.eulerAngles = new Vector3(0, 0, OriginalRotation);
+            ResetRotation();
             IsAimedAtTarget = false;
             IsFiringManually = false;
             ReadyToFire = false;
@@ -113,6 +115,11 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             TargetAsteroid = null;
             HasTargetAsteroid = false;
             IsFiringAtAsteroid = false;
+        }
+        public virtual void ResetRotation()
+        {
+            Rotation = OriginalRotation;
+            PieceTransform.eulerAngles = new Vector3(0, 0, OriginalRotation);
         }
         protected void MoveTargetingMarker()
         {

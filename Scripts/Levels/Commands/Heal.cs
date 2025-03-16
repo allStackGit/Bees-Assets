@@ -142,7 +142,7 @@ namespace Assets.Scripts.Levels.Commands
                 {
                     _oldTsv = _ship.Tsv;
                     _ship.Health += math.min(_ship.MaxHealth - _ship.Health, 50);
-
+                    _ship.Tsv = Utilities.CalculateTsv(_ship);
                     _tsvDifference = _ship.Tsv - _oldTsv;
 
                     Tsv += _tsvDifference;

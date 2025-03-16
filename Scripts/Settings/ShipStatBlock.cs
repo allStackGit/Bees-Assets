@@ -13,7 +13,11 @@ namespace Assets.Scripts.Settings
          */
         public string Description, CodexDescription;
         public ConfigData.ShipTypes Type;
-        public int Health, Sight, Tsv;
+        public int Health, Sight;
+        /// <summary>
+        /// The developer rated TSV of the ship. Comes from the server
+        /// </summary>
+        public int Tsv;
         public float Speed;
         public List<int> Ranges, Powers;
         public List<float> RatesOfFire, ProjectileValues, RotationRates;

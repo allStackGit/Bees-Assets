@@ -102,7 +102,7 @@ namespace Assets.Scripts.Data
         }
         public SquadShip GetMostValuableShip()
         {
-            return GetSquadShips().OrderByDescending(s => s.GetFleetShip().GetMaxTsv()).First();
+            return GetSquadShips().OrderByDescending(s => s.GetFleetShip().GetTsv()).First();
         }
         public void AddShipToSquad(SquadShip ship)
         {
@@ -196,22 +196,30 @@ namespace Assets.Scripts.Data
                 //Debug.Log($"Squad ship offset after orienting around center: {ship.Offset}");
             });
         }
-        public int GetTsv()
-        {
-            return GetAliveSquadShips().Sum((s) => s.GetFleetShip().GetTsv());
-        }
+        //public int GetTsv()
+        //{
+        //    return GetAliveSquadShips().Sum((s) => s.GetFleetShip().GetTsv());
+        //}
+        /// <summary>
+        /// The capacity of the squad as it stands now, potentially less than full capacity if the squad isn't filled
+        /// </summary>
+        /// <returns></returns>
         public int GetCapacity()
         {
             return GetAliveSquadShips().Sum((s) => s.GetFleetShip().GetCapacity());
         }
+        /// <summary>
+        /// The capacity of the squad if all the ships were alive and the squad was filled
+        /// </summary>
+        /// <returns></returns>
         public int GetMaxCapacity()
         {
-            return GetSquadShips().Sum((s) => s.GetFleetShip().GetMaxCapacity());
+            return GetSquadShips().Sum((s) => s.GetFleetShip().GetCapacity());
         }
-        public int GetMaxTsv()
-        {
-            return GetSquadShips().Sum((s) => s.GetFleetShip().GetMaxTsv());
-        }
+        //public int GetMaxTsv()
+        //{
+        //    return GetSquadShips().Sum((s) => s.GetFleetShip().GetMaxTsv());
+        //}
         public bool Equals(SavedSquad squad)
         {
             return squad.Id == Id;

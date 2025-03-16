@@ -15,6 +15,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             _rightRotationRate = new Vector3(0, 0, 1 * Stage.FixedDeltaTime * RotationRate);
             _leftRotationRate = new Vector3(0, 0, 1 * Stage.FixedDeltaTime * RotationRate * -1);
         }
+        public override void ResetRotation()
+        {
+            Rotation = OriginalRotation;
+        }
         protected override void Aim()
         {
             if (!Ship.IsMoving)

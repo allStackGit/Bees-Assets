@@ -122,9 +122,12 @@ namespace Assets.Scripts.Entities.Ships
         public AudioSource ShipExplosionSoundEffect;
         public bool HasShipExplosionSoundEffect;
         public float Firepower;
+        /// <summary>
+        /// The sum of the ship's turrets' power over their rate of fire. Used only for debugging purposes.
+        /// </summary>
         public float DamagePerSecond;
         /// <summary>
-        /// The value of the ship + the value of all minerals mined
+        /// The value of the ship's TSV + the value of all minerals mined
         /// </summary>
         public int Tsv;
         public bool HasWeapons, HasTurrets;
@@ -521,18 +524,18 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
             Turrets = Weapons.Where((w) => w is Turret).ToList().ConvertAll((w) => (Turret)w);
             HalfMaxRange = MaxRange / 2;
-            OriginalTsv = Utilities.CalculateMaxTsv(this);
             HasWeapons = Weapons.Count > 0;
             HasTurrets = Turrets.Count > 0;
             MaxRange = HasWeapons ? Weapons.Max((w) => w.Range) : 0;
             Firepower = HasWeapons ? Weapons.Sum(w => w.Firepower) : SpecialFirePower;
             DamagePerSecond = Turrets.Sum(t => t.DamagePerSecond);
-            Tsv = OriginalTsv;
             _maxRateOfFire = HasWeapons ? Weapons.Max((w) => w.RateOfFire) : 2;
             _repeatRate = Mathf.Clamp(5f, _maxRateOfFire + 1, _maxRateOfFire + 2);
 
             _size = ConfigData.ShipSizes[ShipType] / ConfigData.PixelsPerUnit;
 
+            OriginalTsv = Utilities.CalculateMaxTsv(this.ShipType); // Must be calculated after health, firepower, and speed are set
+            Tsv = OriginalTsv;
             SetCurrentSpeed(Speed);
 
             if (IsUserControlled)
@@ -1533,7 +1536,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         {
             _oldTsv = Tsv;
             Health -= math.min(damage, Health);
-
+            Tsv = Utilities.CalculateTsv(this);
 
             _tsvChange = Tsv - _oldTsv;
             FleetShip.DamageReceived += -_tsvChange;
@@ -1567,10 +1570,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             _targetOldTSV = target.Tsv;
 
             target.Health -= math.min(power, target.Health);
-
+            target.Tsv = Utilities.CalculateTsv(target);
 
             _targetTSVChange = target.Tsv - _targetOldTSV; // this is a negative number since being hit by a projectile should induce a loss of TSV
-            LogHitStats(attacker, attackerFleetShip, attackerSavedSquad, target, target.Squad, _targetTSVChange);
+            LogHitStats(attacker, attackerFleetShip, attackerSavedSquad, target, target.Squad, -_targetTSVChange);
 
 
             if (target.Health == 0)
@@ -1606,33 +1609,37 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         /// <summary>
         /// Logs the stats to the fleet ships, saved squads, and commands of the shooter and the target 
         /// </summary>
-        protected static void LogHitStats(Ship attacker, FleetShip attackerFleetShip, SavedSquad attackerSavedSquad, Ship target, Squad targetSquad, int tsvChange) // [stats-method] [note]
+        protected static void LogHitStats(Ship attacker, FleetShip attackerFleetShip, SavedSquad attackerSavedSquad, Ship target, Squad targetSquad, int tsvLoss) // [stats-method] [note]
         {
-
+            if (tsvLoss < 0)
+            {
+                Debug.LogError($"The tsv change is negative when it should be positive");
+            }
+            //Debug.Log($"Logging hit stats");
             // tsvChange is a negative number, -tsvChange is a positive number
 
-            _isFriendlyFire = false; // So far friendly fire can only occur if a Fire Barge blows up and kills its own side's ships
+            _isFriendlyFire = false; // So far, friendly fire can only occur if a Fire Barge blows up and kills its own side's ships
             if (attackerFleetShip.Side != target.Side)
             {
-                attackerFleetShip.DamageDone += -tsvChange;
+                attackerFleetShip.DamageDone += tsvLoss;
                 //Debug.Log($"shooter {shooter}");
                 //Debug.Log($"squad {shooter.Squad}");
                 //Debug.Log($"saved Squad {shooter.Squad.SavedSquad}");
                 //Debug.Log($"stats {shooter.Squad.SavedSquad.Stats}");
-                attackerSavedSquad.Stats.DamageDone += -tsvChange;
+                attackerSavedSquad.Stats.DamageDone += tsvLoss;
             }
             else
             {
                 if (attacker.KillerFleetShip != null) // someone killed the ship that damaged this ship. (e.g. a Bumblebee killing a Fire Barge that exploded and killed this ship) The killer should receive stats for the damage
                 {
                     _isFriendlyFire = true;
-                    //Debug.Log($"{shooter.Killer.Name} has killed {shooter.Name} who has in turn damaged {target.Name} on the same side. {shooter.Killer.Name} has done {-tsvChange} additional damage");
-                    attacker.KillerFleetShip.DamageDone += -tsvChange;
-                    attacker.KillerSavedSquad.Stats.DamageDone += -tsvChange;
+                    //Debug.Log($"{shooter.Killer.Name} has killed {shooter.Name} who has in turn damaged {target.Name} on the same side. {shooter.Killer.Name} has done {tsvChange} additional damage");
+                    attacker.KillerFleetShip.DamageDone += tsvLoss;
+                    attacker.KillerSavedSquad.Stats.DamageDone += tsvLoss;
 
                     if (attacker.Killer != null && attacker.Killer.Squad.HasCommand)
                     {
-                        attacker.Killer.Squad.GetCommand().Tsv += -tsvChange; // add the TSV (it's negative so it needs to be reversed to be positive) to the shooter
+                        attacker.Killer.Squad.GetCommand().Tsv += tsvLoss; // add the TSV to the shooter
                     }
                 }
                
@@ -1642,7 +1649,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
             if (attacker != null && attacker.Squad.HasCommand)
             {
-                attacker.Squad.GetCommand().Tsv += tsvChange * (_isFriendlyFire ? 1 : -1); // add the already negative TSV to the shooter if it's friendly fire
+                attacker.Squad.GetCommand().Tsv += tsvLoss * (_isFriendlyFire ? 1 : -1); // add the already negative TSV to the shooter if it's friendly fire
                                                                                      // multiply by -1 to add the positive number if it's not friendly fire
             }
 
@@ -1650,19 +1657,19 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             if (target != null)
             {
                 //Debug.Log($"{target.Name} has been hit by {attacker.Name} and so {target.FleetShip.Name} and {target.Squad.SavedSquad.Name} will increase damage received");
-                target.FleetShip.DamageReceived += -tsvChange;
-                target.Squad.SavedSquad.Stats.DamageReceived += -tsvChange;
+                target.FleetShip.DamageReceived += tsvLoss;
+                target.Squad.SavedSquad.Stats.DamageReceived += tsvLoss;
 
                 if (targetSquad.HasCommand)
                 {
-                    targetSquad.GetCommand().Tsv += tsvChange; // add the negative TSV to the target command because it took damage
+                    targetSquad.GetCommand().Tsv += tsvLoss; // add the negative TSV to the target command because it took damage
                 }
 
                 if (target.Stage.IsTrainingNueralNetwork)
                 {
                     _initialTsv = target.Level.State.InitialTsv;
                     //Debug.Log($"Initial TSV: {initialTsv[0]}, {initialTsv[1]}");
-                    _percentageTsvDestroyed = (float)Math.Round(((-1.0f * tsvChange) / _initialTsv[target.Side - 1]), 3);
+                    _percentageTsvDestroyed = (float)Math.Round(((double)tsvLoss / _initialTsv[target.Side - 1]), 3);
                     //Debug.Log($"{shooter.Name} destroyed {percentageTsvDestroyed}  {tsvChange} / {initialTsv[target.Side - 1]} of the total initial tsv of the enemy");
                     target.Brain.AddReward(-_percentageTsvDestroyed);
 
@@ -1675,12 +1682,12 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             }
             else if (targetSquad != null)
             {
-                Debug.LogException(new Exception($"There was {tsvChange} damage done by {attacker.Name} but the target is null. The target squad got stats though."));
-                targetSquad.SavedSquad.Stats.DamageReceived += -tsvChange;
+                Debug.LogException(new Exception($"There was {tsvLoss} damage done by {attacker.Name} but the target is null. The target squad got stats though."));
+                targetSquad.SavedSquad.Stats.DamageReceived += tsvLoss;
             }
             else
             {
-                Debug.LogException(new Exception($"There was {tsvChange} damage done by {attacker.Name} but the target is null and the targetSquad is null. "));
+                Debug.LogException(new Exception($"There was {tsvLoss} damage done by {attacker.Name} but the target is null and the targetSquad is null. "));
             }
 
 

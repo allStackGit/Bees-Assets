@@ -1105,6 +1105,7 @@ namespace Assets.Scripts.Levels
 
             while (State.Deadbodies.Count > 0)
             {
+                State.Deadbodies[0].Kill();
                 State.Deadbodies.Remove(State.Deadbodies[0]);
             }
 
