@@ -74,7 +74,7 @@ namespace Assets.Scripts.Scenes
             BargeGameSprite, CarrierGameSprite, CruiserGameSprite, CruiserCannonGameSprite, DreadnoughtGameSprite, DroneGameSprite, FactoryGameSprite, FactoryAnimationSprite, FireBargeGameSprite, FlagshipGameSprite, FrigateGameSprite,
             GunshipGameSprite, ScoutGameSprite, StrikerGameSprite, WarpGateGameSprite, WarpGateAnimationSprite, WarpGateAnimationLoopSprite;
 
-        public Sprite DroneRemainsSprite, StrikerRemainsSprite, GunshipRemainsSprite;
+        public Sprite DroneRemainsSprite, StrikerRemainsSprite, GunshipRemainsSprite, ScoutRemainsSprite;
 
         public Canvas DragCanvas;
         public Vector2 TooltipOffset, ShipStatsBoxOffset, ScreenScaleFactor, ReferenceScreenSize;
@@ -415,7 +415,7 @@ namespace Assets.Scripts.Scenes
 
 
             _shipPartSprites[ConfigData.ShipTypes.Barge] = new List<Sprite> { BargeGameSprite };
-            //_shipPartSprites[ConfigData.ShipTypes.Beacon] = new List<Sprite> { BeaconGameSprite }; // no beacon because we won't be caching sprites for scout ships
+            //_shipPartSprites[ConfigData.ShipTypes.Beacon] = new List<Sprite> { BeaconGameSprite }; // no beacon because we won't be caching sprites for beacons
             _shipPartSprites[ConfigData.ShipTypes.Carrier] = new List<Sprite> { CarrierGameSprite };
             _shipPartSprites[ConfigData.ShipTypes.Cruiser] = new List<Sprite> { CruiserGameSprite, CruiserCannonGameSprite };
             _shipPartSprites[ConfigData.ShipTypes.Dreadnought] = new List<Sprite> { DreadnoughtGameSprite };
@@ -436,6 +436,7 @@ namespace Assets.Scripts.Scenes
             _shipRemainsSprites[ConfigData.ShipTypes.Gunship] = new List<Sprite> { GunshipRemainsSprite };
             _shipRemainsSprites[ConfigData.ShipTypes.Drone] = new List<Sprite> { DroneRemainsSprite };
             _shipRemainsSprites[ConfigData.ShipTypes.Striker] = new List<Sprite> { StrikerRemainsSprite };
+            _shipRemainsSprites[ConfigData.ShipTypes.Scout] = new List<Sprite> { ScoutRemainsSprite };
 
             ActionBox = SquadActionBox.GetComponent<SquadActionBox>();
             ActionBox.Setup(this, EventSystem, ConfigData.Configuration.HumanSide);

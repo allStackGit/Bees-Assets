@@ -750,7 +750,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         private Vector2Int _setColorSize = Vector2Int.zero;
         private bool _hasLoadedSprite;
         private int[] _changablePixels;
-        private string _status;
+        //private string _status;
         public virtual void SetColor()
         {
             // set the color

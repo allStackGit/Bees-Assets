@@ -335,7 +335,7 @@ namespace Assets.Scripts.Levels
         private void SpawnMiningAsteroids()
         {
             MiningAsteroidSpawnDistance = new Vector2(HalfMapWidth - 64, HalfMapHeight - 64);
-            for (_spawn_i = 0; _spawn_i < Utilities.RandomInt(5); _spawn_i++)
+            for (_spawn_i = 0; _spawn_i < Utilities.RandomInt(5) + 1; _spawn_i++)
             {
                 _spawn_miningAsteroid = Stage.Pool.GetMiningAsteroidFromPool();
                 _spawn_miningAsteroid.Setup(this);

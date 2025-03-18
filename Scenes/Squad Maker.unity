@@ -19581,6 +19581,7 @@ MonoBehaviour:
   DroneRemainsSprite: {fileID: 469268118, guid: 4fe3df014dac5d5469d53dafc63999fe, type: 3}
   StrikerRemainsSprite: {fileID: -1365477261, guid: e6e772497241d124499dc9fa438b8740, type: 3}
   GunshipRemainsSprite: {fileID: -280745679, guid: e7dea394453fe3e40915540570452b79, type: 3}
+  ScoutRemainsSprite: {fileID: 208123445, guid: acc90def10e5cf8458401654732b74e6, type: 3}
   DragCanvas: {fileID: 1320965603}
   TooltipOffset: {x: 18, y: 2.5}
   ShipStatsBoxOffset: {x: 30, y: 20}

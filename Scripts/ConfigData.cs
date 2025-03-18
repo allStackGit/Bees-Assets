@@ -372,14 +372,14 @@ namespace Assets.Scripts
             { ShipTypes.Carrier,       new Vector2Int(0, 0)},
             { ShipTypes.Cruiser,       new Vector2Int(0, 0)},
             { ShipTypes.Dreadnought,   new Vector2Int(0, 0)},
-            { ShipTypes.Drone,         new Vector2Int(430, 344)},
+            { ShipTypes.Drone,         new Vector2Int(430, 430)},
             { ShipTypes.Factory,       new Vector2Int(0, 0)},
             { ShipTypes.FireBarge,     new Vector2Int(0, 0)},
             { ShipTypes.Flagship,      new Vector2Int(0, 0)},
             { ShipTypes.Frigate,       new Vector2Int(0, 0)},
             { ShipTypes.Gunship,       new Vector2Int(420, 420)},
-            { ShipTypes.Scout,         new Vector2Int(0, 0)},
-            { ShipTypes.Striker,       new Vector2Int(390, 312)},
+            { ShipTypes.Scout,         new Vector2Int(400, 400)},
+            { ShipTypes.Striker,       new Vector2Int(390, 390)},
             { ShipTypes.WarpGate,      new Vector2Int(0, 0)},
 
             { ShipTypes.Beehive,       new Vector2Int(0, 0)},
@@ -436,7 +436,12 @@ namespace Assets.Scripts
             new Color(0.1450f, 0.4588f, 0.2941f, 1)} },
 
 
-            { ShipTypes.Scout, new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
+            { ShipTypes.Scout, new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.1843f, 0.5686f, 0.3725f, 1),
+                new Color(0.1607f, 0.4823f, 0.3215f, 1), new Color(0.1921f, 0.6039f, 0.3960f, 1), new Color(0.1607f, 0.5098f, 0.3215f, 1),
+            new Color(0.1450f, 0.4588f, 0.2941f, 1), new Color(0.1921f, 0.6039f, 0.3882f, 1), new Color(0.1921f, 0.5882f, 0.3882f, 1), new Color(0.1921f, 0.5568f, 0.3882f, 1),
+            new Color(0.1921f, 0.5882f, 0.4196f, 1), } },
+
+
             { ShipTypes.Striker, new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
             { ShipTypes.WarpGate, new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
 

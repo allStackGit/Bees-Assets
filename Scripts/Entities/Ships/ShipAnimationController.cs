@@ -5,6 +5,9 @@ using UnityEngine;
 
 namespace Assets.Scripts.Entities.Ships
 {
+    /// <summary>
+    /// Controls the sprite loading and swapping for ship animations that have custom colors (e.g. the Warp Gate and Factory) See Also: RemainsAnimationController
+    /// </summary>
     public class ShipAnimationController : MonoBehaviour
     {
         public SpriteRenderer SpriteRenderer;

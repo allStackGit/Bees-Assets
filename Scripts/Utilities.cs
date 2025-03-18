@@ -832,7 +832,7 @@ namespace Assets.Scripts
             sourceTexture_SetChangablePixelsForImage = sprite.texture;
             pixels_SetChangablePixelsForImage = sourceTexture_SetChangablePixelsForImage.GetPixels();
             indexes_SetChangablePixelsForImage = new List<int>();
-            threshhold_SetChangablePixelsForImage = .005f;
+            threshhold_SetChangablePixelsForImage = .035f;
 
             // Loop through the colors and pixels to find matching colors
             for (c_SetChangablePixelsForImage = 0; c_SetChangablePixelsForImage < colors.Length; c_SetChangablePixelsForImage++)

@@ -58,7 +58,7 @@ namespace Assets.Scripts.Data
             }
             catch (Exception e)
             {
-                Debug.Log($"Error while trying to load cached sprites: {e}");
+                Debug.LogError($"Error while trying to load cached sprites: {e}");
                 throw e;
                 //return null;
             }
