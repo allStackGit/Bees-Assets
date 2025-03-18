@@ -39,6 +39,7 @@ Transform:
   - {fileID: 2562132678689413756}
   - {fileID: 6845531604502717052}
   - {fileID: 1863041022979137029}
+  - {fileID: 4949891781438509375}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!212 &2518675752222090673
@@ -261,6 +262,7 @@ MonoBehaviour:
   RLShipType: 0
   _retries: 0
   HealCollider: {fileID: 5004056910106965047}
+  ShrinkingAnimation: {fileID: 8403046089957085241}
 --- !u!50 &9209194230390332424
 Rigidbody2D:
   serializedVersion: 4
@@ -488,6 +490,81 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 42a9c0cc5fd6f664f8b7fac23cb6cf97, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+--- !u!1001 &1172263335186118875
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 2518675752222090672}
+    m_Modifications:
+    - target: {fileID: 2607146674780096514, guid: a16d813c5a77c234abf9758910036be5, type: 3}
+      propertyPath: Beehive
+      value: 
+      objectReference: {fileID: 3738288260826810766}
+    - target: {fileID: 6121864223984134628, guid: a16d813c5a77c234abf9758910036be5, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6121864223984134628, guid: a16d813c5a77c234abf9758910036be5, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6121864223984134628, guid: a16d813c5a77c234abf9758910036be5, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6121864223984134628, guid: a16d813c5a77c234abf9758910036be5, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6121864223984134628, guid: a16d813c5a77c234abf9758910036be5, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6121864223984134628, guid: a16d813c5a77c234abf9758910036be5, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6121864223984134628, guid: a16d813c5a77c234abf9758910036be5, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6121864223984134628, guid: a16d813c5a77c234abf9758910036be5, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6121864223984134628, guid: a16d813c5a77c234abf9758910036be5, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6121864223984134628, guid: a16d813c5a77c234abf9758910036be5, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7266886405313997026, guid: a16d813c5a77c234abf9758910036be5, type: 3}
+      propertyPath: m_Name
+      value: Beehive Shrinking
+      objectReference: {fileID: 0}
+    - target: {fileID: 7266886405313997026, guid: a16d813c5a77c234abf9758910036be5, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: a16d813c5a77c234abf9758910036be5, type: 3}
+--- !u!4 &4949891781438509375 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 6121864223984134628, guid: a16d813c5a77c234abf9758910036be5, type: 3}
+  m_PrefabInstance: {fileID: 1172263335186118875}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1 &8403046089957085241 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 7266886405313997026, guid: a16d813c5a77c234abf9758910036be5, type: 3}
+  m_PrefabInstance: {fileID: 1172263335186118875}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &1465201095679722610
 PrefabInstance:
   m_ObjectHideFlags: 0

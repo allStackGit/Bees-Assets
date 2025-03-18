@@ -1,8 +1,5 @@
 ﻿using Assets.Scripts.Data;
 using Assets.Scripts.Levels;
-using NUnit.Framework;
-using System;
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 

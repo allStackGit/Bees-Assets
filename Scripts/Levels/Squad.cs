@@ -425,6 +425,7 @@ namespace Assets.Scripts.Levels
             _tempShips = GetShips();
             foreach (Ship ship in _tempShips)
             {
+                //Debug.Log($"Unmatching speed for {ship.Name} and setting speed to {ship.Speed}");
                 ship.SetCurrentSpeed(ship.Speed);
             }
             IsMatchingSpeed = false;
@@ -435,6 +436,7 @@ namespace Assets.Scripts.Levels
             _tempShips = GetShips();
             foreach (Ship ship in _tempShips)
             {
+                //Debug.Log($"Matching speed for {ship.Name} and setting speed to {speed}");
                 ship.SetCurrentSpeed(speed);
             }
         }

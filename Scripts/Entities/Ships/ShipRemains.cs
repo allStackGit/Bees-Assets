@@ -31,6 +31,7 @@ namespace Assets.Scripts.Entities.Ships
         {
             name = $"Remains - {Ship.Name}"; // [debug] not necessary for anything else
             Transform.parent = Ship.Level.Map.transform;
+
             if (HasAnimationController && Ship.Squad.HasCustomColor)
             {
                 AnimationController.RecolorAnimationSprites();
@@ -46,7 +47,8 @@ namespace Assets.Scripts.Entities.Ships
             gameObject.SetActive(true);
             Ship.Level.State.AddDeadBody(this);
 
-            if (Ship.Squad.HasCustomColor && AnimationController == null)
+            // If the squad has a custom color and doesn't have an animation controller, color the singular sprite of the ship remains
+            if (Ship.Squad.HasCustomColor && !HasAnimationController)
             {
                 Color[] colors = ConfigData.ChangeableShipColors.GetValueOrDefault(Ship.ShipType);
                 Sprite prefabSprite = GetComponent<SpriteRenderer>().sprite;

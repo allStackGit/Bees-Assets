@@ -451,7 +451,7 @@ namespace Assets.Scripts.Levels.Commands
                         {
                             if (AreBombersCloseToEnemyTargets())
                             {
-                                Debug.Log($"{GetSquad().Name} is on a bombing run and close to {EnemySquad.Name}");
+                                //Debug.Log($"{GetSquad().Name} is on a bombing run and close to {EnemySquad.Name}");
                                 Level.CancelTimer(CommandTimer);
                                 //CancelInvoke(nameof(Timer));
                                 CommandFrequency = .25f;
@@ -463,7 +463,7 @@ namespace Assets.Scripts.Levels.Commands
                         }
                         else if (IsCloseToTarget && _timerLoops % 4 == 0 && (HaveAllShipsBombed(_timer_ships) || (EnemySquad.IsDead || !AreBombersCloseToEnemyTargets())))
                         {
-                            Debug.Log($"{GetSquad().Name} is on a bombing run and no longer close to {EnemySquad.Name}");
+                            //Debug.Log($"{GetSquad().Name} is on a bombing run and no longer close to {EnemySquad.Name}");
                             Level.CancelTimer(CommandTimer);
                             //CancelInvoke(nameof(Timer));
                             CommandFrequency = 2f;

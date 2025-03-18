@@ -24,7 +24,7 @@ namespace Assets.Scripts.Entities.Ships
                 {
                     RecoloredSprites[_loopIndex] = Ship.FleetShip.LoadCachedSprite(_loopIndex, "remains", ConfigData.ShipSizes[Ship.ShipType], Ship.Squad.SavedSquad.Color); 
                 }
-                //Debug.Log($"Loaded cached sprites for Ship {Ship.Name}");
+                Debug.Log($"Loaded cached sprites for Ship {Ship.Name}");
             }
         }
 
@@ -35,8 +35,8 @@ namespace Assets.Scripts.Entities.Ships
             {
                 _index = SpriteIndex % RecoloredSprites.Length;
                 
-                //Debug.Log($"Recolored index: {index}");
-                //Debug.Log($"Trying to swap {SpriteRenderer.sprite.name} with {RecoloredSprites[SpriteIndex % RecoloredSprites.Length].name} {FramesChange} over {timeDifference}s at {fps} fps");
+                Debug.Log($"Recolored index: {_index}");
+                Debug.Log($"Trying to swap {SpriteRenderer.sprite.name} with {RecoloredSprites[SpriteIndex % RecoloredSprites.Length].name}");
                 SpriteRenderer.sprite = RecoloredSprites[_index];
                 CurrentSprite = SpriteRenderer.sprite;
                 SpriteIndex++;
@@ -46,7 +46,7 @@ namespace Assets.Scripts.Entities.Ships
             else if (Ship.Squad.HasCustomColor)
             {
                 SpriteRenderer.sprite = CurrentSprite;
-                //Debug.Log($"Should not swap sprite yet");
+                Debug.Log($"Should not swap sprite yet");
             }
 
         }
@@ -57,6 +57,11 @@ namespace Assets.Scripts.Entities.Ships
             {
                 ShouldSwapSprite = true;
             }
+        }
+
+        public void Kill()
+        {
+            gameObject.SetActive(false);
         }
     }
 }

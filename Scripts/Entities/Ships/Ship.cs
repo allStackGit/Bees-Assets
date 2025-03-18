@@ -41,6 +41,9 @@ namespace Assets.Scripts.Entities.Ships
         public float DefaultAngle, TargetDirection;
         public int LastKilled;
         public FleetShip FleetShip = null;
+        /// <summary>
+        /// The name of the fleetship and the ship Id
+        /// </summary>
         public string Name;
         public ConfigData.ShipTypes ShipType;
         public HiveMindVision HiveMindVision;
@@ -72,7 +75,15 @@ namespace Assets.Scripts.Entities.Ships
         /// </summary>
         public bool HasEnteredMap, AreRocketFlaresOutOfSync, InCombat, IsFollowingPath, CannotChangeMovementOrders;
         public List<Weapon> Weapons;
-        public List<GameObject> WeaponPrefabs, ColoredPrefabs, LeftRocketFlares, CenterRocketFlares, RightRocketFlares;
+        /// <summary>
+        /// All the prefabs on the ship that need to be recolored to the squad color
+        /// </summary>
+        public List<GameObject> ColoredPrefabs;
+        /// <summary>
+        /// The original uncolored sprites of the ship's prefabs
+        /// </summary>
+        public List<Sprite> OriginalSprites;
+        public List<GameObject> WeaponPrefabs, LeftRocketFlares, CenterRocketFlares, RightRocketFlares;
         public Brain Brain = null;
         public Queue<Vector2> DestinationQueue = new Queue<Vector2>();
         public List<CollisionAsteroid> NearbyAsteroids = new List<CollisionAsteroid>();
@@ -369,6 +380,7 @@ namespace Assets.Scripts.Entities.Ships
                 {
                     ShipExplosion = Instantiate(Stage.Prefabs.ConvertShipTypeToExplosionPrefab[ShipType], Vector2.zero, Quaternion.identity);
                     ShipExplosion.SetActive(false);
+                    //ShipExplosion.GetComponent<ShipExplosionAnimation>().Create(this);
 
                 }
 
@@ -535,7 +547,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             _size = ConfigData.ShipSizes[ShipType] / ConfigData.PixelsPerUnit;
 
             OriginalTsv = Utilities.CalculateMaxTsv(this.ShipType); // Must be calculated after health, firepower, and speed are set
-            Tsv = OriginalTsv;
             SetCurrentSpeed(Speed);
 
             if (IsUserControlled)
@@ -589,7 +600,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             FleetShip = fleetShip;
             OffsetFromCenter = offsetFromCenter;
             Health = OriginalHealth;
-            Name = $"{ShipType} #{Id}";
+            Name = $"{FleetShip.Name} #{Id}";
             gameObject.name = Name;
             ClearData();
 
@@ -687,6 +698,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         public virtual void ClearData()
         {
             Rotation = OriginalRotation;
+            Tsv = OriginalTsv;
             Transform.eulerAngles = new Vector3 (0, 0, OriginalRotation); // Is this needed?
             PathfindingDestination = Vector2.zero;
             SetTargetCoordinates(Vector2.zero);
@@ -738,6 +750,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         private Vector2Int _setColorSize = Vector2Int.zero;
         private bool _hasLoadedSprite;
         private int[] _changablePixels;
+        private string _status;
         public virtual void SetColor()
         {
             // set the color
@@ -746,6 +759,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 //Debug.Log("Setting sprite for ship");
                 //float start = Time.realtimeSinceStartup;
                 //string status = "Loading";
+                OriginalSprites.Clear();
+                ColoredPrefabs.Clear();
                 ColoredPrefabs.Insert(0, gameObject);
                 _colors = ConfigData.ChangeableShipColors.GetValueOrDefault(ShipType);
                 _tempIndex = 0;
@@ -753,10 +768,13 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 ColoredPrefabs.ForEach((prefab) =>
                 {
                     _prefabSprite = prefab.GetComponent<SpriteRenderer>().sprite;
+                    OriginalSprites.Add(_prefabSprite);
                     _setColorSize = new Vector2Int(_prefabSprite.texture.width, _prefabSprite.texture.height);
                     _hasLoadedSprite = false;
                     if (FleetShip.HasCachedSprite)
                     {
+                        //_status = "loading";
+
                         _loadedSprite = FleetShip.LoadCachedSprite(_tempIndex, "ship", _setColorSize, Squad.SavedSquad.Color);
                         if (_loadedSprite != null)
                         {
@@ -766,7 +784,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                     }
                     if (!_hasLoadedSprite)
                     {
-                        //status = "Drawing";
+                        //_status = "Drawing";
                         _shipIcon = _prefabSprite;
                         _changablePixels = Utilities.SetChangablePixelsForImage(_colors, _shipIcon);
                         _recolored = Utilities.SetImageColor(Squad.Color, _shipIcon, _changablePixels);
@@ -775,7 +793,17 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                     _tempIndex++;
                 });
 
-                //Debug.Log($"{status} sprites for {FleetShip.Name} took {(Time.realtimeSinceStartup - start)*1000}ms");
+                //Debug.Log($"{_status} sprites for {FleetShip.Name} took {(Time.realtimeSinceStartup - start)*1000}ms");
+            }
+            else if (OriginalSprites.Count > 0)
+            {
+                _tempIndex = 0;
+
+                ColoredPrefabs.ForEach((prefab) =>
+                {
+                    prefab.GetComponent<SpriteRenderer>().sprite = OriginalSprites[_tempIndex];
+                    _tempIndex++;
+                });
             }
         }
         public void SetSquadName()
@@ -879,6 +907,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
                 //}
                 //StopMoving("Got a new destination");
+                //Debug.Log($"Got a new destination for {Name}, moving to {destination}");
                 ClearPreviousDesintation();
                 IsFollowingPath = false;
                 SetTargetCoordinates(destination);
@@ -1123,8 +1152,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         private float _maxSpeed, _rotation, _differenceInAngleToPoint;
         public void SetMovementVelocity()
         {
-            //_maxSpeed = Stage.IsDebugging ? CurrentSpeed * Stage.SpeedMultiplier : CurrentSpeed;
-            _maxSpeed = CurrentSpeed;
+
 
             // Set the velocity of the ship
             if (HasTargetCoordinates)
@@ -1143,8 +1171,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             IsMoving = true;
             _differenceInAngleToPoint = Utilities.TimedRotationDifference(this, _rotation, RotationSpeed);
 
-            if (_differenceInAngleToPoint != 0 || Stage.FixedUpdates % 10 == 0)
+            if (_differenceInAngleToPoint != 0 || Stage.FixedUpdates % 10 == 0 || _maxSpeed != CurrentSpeed)
             {
+                //_maxSpeed = Stage.IsDebugging ? CurrentSpeed * Stage.SpeedMultiplier : CurrentSpeed;
+                _maxSpeed = CurrentSpeed;
                 _tempAngle = (Rotation - 180) * Mathf.Deg2Rad;
                 Body.velocity = new Vector2((_maxSpeed * Mathf.Sin(_tempAngle)), -(_maxSpeed * Mathf.Cos(_tempAngle)));
             }
@@ -1613,7 +1643,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         {
             if (tsvLoss < 0)
             {
-                Debug.LogError($"The tsv change is negative when it should be positive");
+                Debug.LogError($"The tsv loss for target {target.Name} is negative when it should be positive: {tsvLoss}");
             }
             //Debug.Log($"Logging hit stats");
             // tsvChange is a negative number, -tsvChange is a positive number
@@ -2343,7 +2373,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         /// <summary>
         /// Spawns the ship explosion and shattered ship 
         /// </summary>
-        protected void DropExplosionAnimation()
+        protected virtual void DropExplosionAnimation()
         {
             if (!Stage.IsTraining)
             {
@@ -2355,7 +2385,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 {
                     ShipExplosionSoundEffect.Play();
                 }
-
 
                 if (HasRemainsShip)
                 {

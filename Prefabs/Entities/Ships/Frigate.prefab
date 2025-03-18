@@ -155,7 +155,7 @@ MonoBehaviour:
   HiveMindVision: {fileID: 2938868259214460491}
   FogOfWarVision: {fileID: 8284954362193332364}
   ProximityCollider: {fileID: 0}
-  IsDead: 0
+  IsDead: 1
   IsUserControlled: 0
   IsMobile: 0
   HasBrain: 0

@@ -38,7 +38,7 @@ namespace Assets.Scripts.Entities.Ships
         protected void OnTriggerEnter2D(Collider2D collider)
         {
             NearbyEnemyShips.Add(collider.GetComponent<Ship>());
-            Debug.Log($"Just added {collider.GetComponent<Ship>()} to {Ship} NearbyShips");
+            //Debug.Log($"Just added {collider.GetComponent<Ship>()} to {Ship} NearbyShips");
 
         }
         protected void OnTriggerExit2D(Collider2D collider)

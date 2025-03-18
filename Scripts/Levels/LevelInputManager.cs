@@ -75,11 +75,6 @@ namespace Assets.Scripts.Levels
         }
 
         // ================================
-        // Fields for LoadHotKeySettings method
-        // ================================
-        private int _loadHotKey_number; // Used to hold the parsed squad number in the "Select Squad #" case
-
-        // ================================
         // Fields for SelectSquadByNumber method
         // ================================
         private int _selectSquad_friendlySquads;
@@ -183,10 +178,10 @@ namespace Assets.Scripts.Levels
                         break;
                     case var _ when hotKey.Name.StartsWith("Select Squad #"):
                         // Instead of declaring a local int here, we use a class-level field.
-                        _loadHotKey_number = int.Parse(hotKey.Name.Substring(hotKey.Name.Length - 1));
+                        //Debug.Log($"Hot key: {hotKey.Name}, {hotKey.Name.Substring(hotKey.Name.Length - 1)}");
                         hotKey.SetAction(() =>
                         {
-                            SelectSquadByNumber(_loadHotKey_number);
+                            SelectSquadByNumber(int.Parse(hotKey.Name.Substring(hotKey.Name.Length - 1)));
                         });
                         break;
                     case "Open Menu":
@@ -348,18 +343,21 @@ namespace Assets.Scripts.Levels
 
         public void SelectSquadByNumber(int squadNumber)
         {
+            //Debug.Log($"Squad #{squadNumber}");
             if (squadNumber == 0)
             {
                 squadNumber = 10;
             }
 
             // Instead of a locally declared variable, use class-level fields.
+            //Debug.Log($"Config UserSide: {ConfigData.Configuration.UserSide}, squads: {Level.State.OriginalSquadCounts[ConfigData.Configuration.UserSide - 1]}");
             _selectSquad_friendlySquads = Level.State.OriginalSquadCounts[ConfigData.Configuration.UserSide - 1];
             squadNumber %= _selectSquad_friendlySquads;
             if (squadNumber == 0)
             {
                 squadNumber = _selectSquad_friendlySquads;
             }
+            //Debug.Log($"Modded Squad #{squadNumber}");
 
             _selectSquad_squad = Level.State.GetSquadByNumber(ConfigData.Configuration.UserSide, squadNumber);
             if (_selectSquad_squad != null)
@@ -368,8 +366,8 @@ namespace Assets.Scripts.Levels
                 Stage.Camera.transform.position = new Vector3(_selectSquad_position.x, _selectSquad_position.y, -10) + Level.Get3DPosition();
                 //ToggleZoom();
                 MaintainScrollBoundary();
+                Level.State.SelectSquad(_selectSquad_squad);
             }
-            Level.State.SelectSquad(_selectSquad_squad);
         }
 
         public void Update()

@@ -10,7 +10,7 @@ GameObject:
   m_Component:
   - component: {fileID: 3006095412329282366}
   - component: {fileID: 5964085054442081890}
-  - component: {fileID: 8577489860871491757}
+  - component: {fileID: 2633263744584195235}
   m_Layer: 28
   m_Name: Bee Proximity Collider
   m_TagString: Ship Component
@@ -68,7 +68,7 @@ CircleCollider2D:
   m_Offset: {x: 0, y: 0}
   serializedVersion: 2
   m_Radius: 0.5
---- !u!114 &8577489860871491757
+--- !u!114 &2633263744584195235
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -77,9 +77,8 @@ MonoBehaviour:
   m_GameObject: {fileID: 7908384552572958469}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 466dc5d84d510f746b6a52c9b8235010, type: 3}
+  m_Script: {fileID: 11500000, guid: 6a71fad4628f98042bc79df8d24e33b2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  Ship: {fileID: 0}
-  Range: 0
   Collider: {fileID: 5964085054442081890}
+  Ship: {fileID: 0}

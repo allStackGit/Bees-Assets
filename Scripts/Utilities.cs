@@ -852,90 +852,77 @@ namespace Assets.Scripts
             return indexes_SetChangablePixelsForImage.ToArray();
         }
 
-        // Class-level static variables for CacheSquadCustomSprites method
-        private static float cacheSquadStartTime; // Method: CacheSquadCustomSprites
-        private static List<SquadShip> cacheSquadShips; // Method: CacheSquadCustomSprites
-        private static SquadShip cacheSquadShip; // Method: CacheSquadCustomSprites
-        private static Color[] cacheSquadColors; // Method: CacheSquadCustomSprites
-        private static int cacheSquadIndex; // Method: CacheSquadCustomSprites
-        private static List<Sprite> cacheSquadSprites; // Method: CacheSquadCustomSprites
-        private static Sprite cacheSquadSprite; // Method: CacheSquadCustomSprites
-        private static int[] cacheSquadChangeablePixels; // Method: CacheSquadCustomSprites
-        private static Texture2D cacheSquadSourceTexture; // Method: CacheSquadCustomSprites
-        private static Color[] cacheSquadPixels; // Method: CacheSquadCustomSprites
-        private static Texture2D cacheSquadChangedTexture; // Method: CacheSquadCustomSprites
-        private static Vector2Int cacheSquadSpriteSize; // Method: CacheSquadCustomSprites
-        private static int cacheSquadSpriteRows; // Method: CacheSquadCustomSprites
-        private static int cacheSquadSpriteColumns; // Method: CacheSquadCustomSprites
-        private static Sprite cacheSquadRecoloredSprite; // Method: CacheSquadCustomSprites
-        private static int cacheSquadI, cacheSquadJ, cacheSquadP, cacheSquadX, cacheSquadY; // Loop variables for `for` loops in CacheSquadCustomSprites
-
         public static IEnumerator CacheSquadCustomSprites(SavedSquad squad, Dictionary<ConfigData.ShipTypes, List<Sprite>> shipPartSprites, string type, Dictionary<ConfigData.ShipTypes, Vector2Int> sizes, Dialogue dialogue = null)
         {
             // Start the timer to measure how long the sprite processing takes
-            cacheSquadStartTime = Time.realtimeSinceStartup;
+            float cacheSquadStartTime = Time.realtimeSinceStartup;
 
             if (squad.HasCustomColor)
             {
-                Debug.Log($"Saving custom color ({squad.Color}) sprites for {squad.Name}");
+                Debug.Log($"Saving custom color ({squad.Color}) {type} sprites for {squad.Name}");
 
                 // Getting the list of ships in the squad
-                cacheSquadShips = squad.GetSquadShips();
-                for (cacheSquadI = 0; cacheSquadI < cacheSquadShips.Count; cacheSquadI++) // Use class-level static `cacheSquadI`
+                List<SquadShip>  cacheSquadShips = squad.GetSquadShips();
+                for (int i = 0; i < cacheSquadShips.Count; i++) 
                 {
-                    cacheSquadShip = cacheSquadShips[cacheSquadI];
+                    SquadShip cacheSquadShip = cacheSquadShips[i];
+                    if (cacheSquadShip.ShipType == ConfigData.ShipTypes.Carrier)
+                    {
+                        cacheSquadShips.Add(new SquadShip(-1, ConfigData.ShipTypes.Drone, Vector2.zero, squad));
+                        cacheSquadShips.Add(new SquadShip(-1, ConfigData.ShipTypes.Striker, Vector2.zero, squad));
+                    }
 
                     // If the ship's type exists in the dictionary
                     if (shipPartSprites.ContainsKey(cacheSquadShip.ShipType))
                     {
                         // Get the colors for the current ship type
-                        cacheSquadColors = ConfigData.ChangeableShipColors.GetValueOrDefault(cacheSquadShip.ShipType);
-                        cacheSquadIndex = 0;
+                        Color[]  cacheSquadColors = ConfigData.ChangeableShipColors.GetValueOrDefault(cacheSquadShip.ShipType);
+                        int cacheSquadIndex = 0;
 
                         // Get the list of sprites for the ship type
-                        cacheSquadSprites = shipPartSprites[cacheSquadShip.ShipType];
-                        for (cacheSquadJ = 0; cacheSquadJ < cacheSquadSprites.Count; cacheSquadJ++) // Use class-level static `cacheSquadJ`
+                        List<Sprite> cacheSquadSprites = shipPartSprites[cacheSquadShip.ShipType];
+                        for (int j = 0; j < cacheSquadSprites.Count; j++) // Use class-level static `cacheSquadJ`
                         {
-                            cacheSquadSprite = cacheSquadSprites[cacheSquadJ];
+                            Sprite cacheSquadSprite = cacheSquadSprites[j];
 
                             // Check if the ship type requires special handling (e.g., Factory or WarpGate)
                             if (((cacheSquadShip.ShipType == ConfigData.ShipTypes.Factory || cacheSquadShip.ShipType == ConfigData.ShipTypes.WarpGate) && cacheSquadIndex > 0) || type == "remains")
                             {
-                                cacheSquadChangeablePixels = SetChangablePixelsForImage(cacheSquadColors, cacheSquadSprite);
+                                int[] cacheSquadChangeablePixels = SetChangablePixelsForImage(cacheSquadColors, cacheSquadSprite);
                                 yield return ConfigData.WaitForEndOfFrame;
 
                                 // Process the sprite
-                                cacheSquadSourceTexture = cacheSquadSprite.texture;
-                                cacheSquadPixels = cacheSquadSourceTexture.GetPixels();
+                                Texture2D cacheSquadSourceTexture = cacheSquadSprite.texture;
+                                Color[]  cacheSquadPixels = cacheSquadSourceTexture.GetPixels();
                                 yield return ConfigData.WaitForEndOfFrame;
 
-                                for (cacheSquadP = 0; cacheSquadP < cacheSquadChangeablePixels.Length; cacheSquadP++) // Use class-level static `cacheSquadP`
+                                for (int p = 0; p < cacheSquadChangeablePixels.Length; p++) // Use class-level static `cacheSquadP`
                                 {
-                                    squad.Color.a = cacheSquadPixels[cacheSquadChangeablePixels[cacheSquadP]].a; // match the alpha value
-                                    cacheSquadPixels[cacheSquadChangeablePixels[cacheSquadP]] = squad.Color;
+                                    squad.Color.a = cacheSquadPixels[cacheSquadChangeablePixels[p]].a; // match the alpha value
+                                    cacheSquadPixels[cacheSquadChangeablePixels[p]] = squad.Color;
                                 }
 
                                 // Create a new texture for the changed sprite
-                                cacheSquadChangedTexture = new Texture2D(cacheSquadSourceTexture.width, cacheSquadSourceTexture.height);
+                                Texture2D cacheSquadChangedTexture = new Texture2D(cacheSquadSourceTexture.width, cacheSquadSourceTexture.height);
                                 yield return ConfigData.WaitForEndOfFrame;
                                 cacheSquadChangedTexture.SetPixels(cacheSquadPixels);
 
                                 // Get the sprite's size and calculate rows/columns
-                                cacheSquadSpriteSize = sizes[cacheSquadShip.ShipType];
-                                cacheSquadSpriteRows = cacheSquadSourceTexture.height / cacheSquadSpriteSize.y;
-                                cacheSquadSpriteColumns = cacheSquadSourceTexture.width / cacheSquadSpriteSize.x;
+                                Vector2Int cacheSquadSpriteSize = sizes[cacheSquadShip.ShipType];
+                                int cacheSquadSpriteRows = cacheSquadSourceTexture.height / cacheSquadSpriteSize.y;
+                                int cacheSquadSpriteColumns = cacheSquadSourceTexture.width / cacheSquadSpriteSize.x;
 
                                 // Create new sprites from the modified texture
-                                for (cacheSquadY = 0; cacheSquadY < cacheSquadSpriteRows; cacheSquadY++) // Use class-level static `cacheSquadY`
+                                for (int y = 0; y < cacheSquadSpriteRows; y++) // Use class-level static `cacheSquadY`
                                 {
-                                    for (cacheSquadX = 0; cacheSquadX < cacheSquadSpriteColumns; cacheSquadX++) // Use class-level static `cacheSquadX`
+                                    for (int x = 0; x < cacheSquadSpriteColumns; x++) // Use class-level static `cacheSquadX`
                                     {
-                                        cacheSquadRecoloredSprite = Sprite.Create(cacheSquadChangedTexture, new Rect(cacheSquadSpriteSize.x * cacheSquadX, (cacheSquadSourceTexture.height - cacheSquadSpriteSize.y * cacheSquadY) - cacheSquadSpriteSize.y, cacheSquadSpriteSize.x, cacheSquadSpriteSize.y), ConfigData.HalfSize, ConfigData.PixelsPerUnit);
+                                        Sprite cacheSquadRecoloredSprite = Sprite.Create(cacheSquadChangedTexture, new Rect(cacheSquadSpriteSize.x * x, (cacheSquadSourceTexture.height - cacheSquadSpriteSize.y * y) - cacheSquadSpriteSize.y, cacheSquadSpriteSize.x, cacheSquadSpriteSize.y), ConfigData.HalfSize, ConfigData.PixelsPerUnit);
                                         yield return ConfigData.WaitForEndOfFrame;
 
                                         try
                                         {
-                                            cacheSquadShip.GetFleetShip().SaveSpriteToCache(cacheSquadIndex, type, cacheSquadRecoloredSprite.texture.GetPixels(cacheSquadSpriteSize.x * cacheSquadX, (cacheSquadSourceTexture.height - cacheSquadSpriteSize.y * cacheSquadY) - cacheSquadSpriteSize.y, cacheSquadSpriteSize.x, cacheSquadSpriteSize.y), cacheSquadSpriteSize, squad.Color);
+                                            cacheSquadShip.GetFleetShip().SaveSpriteToCache(cacheSquadIndex, type, cacheSquadRecoloredSprite.texture.GetPixels(cacheSquadSpriteSize.x * x, (cacheSquadSourceTexture.height - cacheSquadSpriteSize.y * y) - cacheSquadSpriteSize.y, cacheSquadSpriteSize.x, cacheSquadSpriteSize.y), cacheSquadSpriteSize, squad.Color);
                                         }
                                         catch (Exception e)
                                         {
@@ -949,11 +936,11 @@ namespace Assets.Scripts
                             else
                             {
                                 // Handle regular ship sprite coloring
-                                cacheSquadSpriteSize = new Vector2Int(cacheSquadSprite.texture.width, cacheSquadSprite.texture.height);
+                                Vector2Int cacheSquadSpriteSize = new Vector2Int(cacheSquadSprite.texture.width, cacheSquadSprite.texture.height);
 
-                                cacheSquadChangeablePixels = Utilities.SetChangablePixelsForImage(cacheSquadColors, cacheSquadSprite);
+                                int[]  cacheSquadChangeablePixels = SetChangablePixelsForImage(cacheSquadColors, cacheSquadSprite);
                                 yield return ConfigData.WaitForEndOfFrame;
-                                cacheSquadRecoloredSprite = Utilities.SetImageColor(squad.Color, cacheSquadSprite, cacheSquadChangeablePixels);
+                                Sprite cacheSquadRecoloredSprite = SetImageColor(squad.Color, cacheSquadSprite, cacheSquadChangeablePixels);
                                 yield return ConfigData.WaitForEndOfFrame;
 
                                 try

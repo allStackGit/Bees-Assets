@@ -118,10 +118,13 @@ namespace Assets.Scripts.Entities.Ships
 
             if (shipIndex > 0 && squad.HasDestination)
             {
+                //Debug.Log($"Moving minion {ship.Name} to gathering point: {squad.Destination + ship.OffsetFromCenter}");
                 ship.MoveToPoint(squad.Destination + ship.OffsetFromCenter);
             }
             else
             {
+                squad.Move(squadGatheringPoint + new Vector2(0, -10));
+                //Debug.Log($"Moving minion {ship.Name} to gathering point: {squadGatheringPoint + offset + new Vector2(0, -10)}");
                 ship.MoveToPoint(squadGatheringPoint + offset + new Vector2(0, -10));
             }
             ship.SetSquadName();

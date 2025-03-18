@@ -71,10 +71,10 @@ namespace Assets.Scripts.Scenes
             WaspSprite, YellowJacketSprite;
 
         public Sprite
-            BargeGameSprite, CarrierGameSprite, CruiserGameSprite, CruiserCannonGameSprite, DreadnoughtGameSprite, FactoryGameSprite, FactoryAnimationSprite, FireBargeGameSprite, FlagshipGameSprite, FrigateGameSprite,
-            GunshipGameSprite, ScoutGameSprite, WarpGateGameSprite, WarpGateAnimationSprite, WarpGateAnimationLoopSprite;
+            BargeGameSprite, CarrierGameSprite, CruiserGameSprite, CruiserCannonGameSprite, DreadnoughtGameSprite, DroneGameSprite, FactoryGameSprite, FactoryAnimationSprite, FireBargeGameSprite, FlagshipGameSprite, FrigateGameSprite,
+            GunshipGameSprite, ScoutGameSprite, StrikerGameSprite, WarpGateGameSprite, WarpGateAnimationSprite, WarpGateAnimationLoopSprite;
 
-        public Sprite GunshipRemainsSprite;
+        public Sprite DroneRemainsSprite, StrikerRemainsSprite, GunshipRemainsSprite;
 
         public Canvas DragCanvas;
         public Vector2 TooltipOffset, ShipStatsBoxOffset, ScreenScaleFactor, ReferenceScreenSize;
@@ -419,14 +419,14 @@ namespace Assets.Scripts.Scenes
             _shipPartSprites[ConfigData.ShipTypes.Carrier] = new List<Sprite> { CarrierGameSprite };
             _shipPartSprites[ConfigData.ShipTypes.Cruiser] = new List<Sprite> { CruiserGameSprite, CruiserCannonGameSprite };
             _shipPartSprites[ConfigData.ShipTypes.Dreadnought] = new List<Sprite> { DreadnoughtGameSprite };
-            //_shipPartSprites[ConfigData.ShipTypes.Drone] = new List<Sprite> { DroneGameSprite }; // no drone because we won't be caching sprites for carrier ships
+            _shipPartSprites[ConfigData.ShipTypes.Drone] = new List<Sprite> { DroneGameSprite };
             _shipPartSprites[ConfigData.ShipTypes.Factory] = new List<Sprite> { FactoryGameSprite, FactoryAnimationSprite };
             _shipPartSprites[ConfigData.ShipTypes.FireBarge] = new List<Sprite> { FireBargeGameSprite };
             _shipPartSprites[ConfigData.ShipTypes.Flagship] = new List<Sprite> { FlagshipGameSprite };
             _shipPartSprites[ConfigData.ShipTypes.Frigate] = new List<Sprite> { FrigateGameSprite };
             _shipPartSprites[ConfigData.ShipTypes.Gunship] = new List<Sprite> { GunshipGameSprite };
             _shipPartSprites[ConfigData.ShipTypes.Scout] = new List<Sprite> { ScoutGameSprite };
-            //_shipPartSprites[ConfigData.ShipTypes.Striker] = new List<Sprite> { StrikerGameSprite }; // no striker because we won't be caching sprites for carrier ships
+            _shipPartSprites[ConfigData.ShipTypes.Striker] = new List<Sprite> { StrikerGameSprite };
             _shipPartSprites[ConfigData.ShipTypes.WarpGate] = new List<Sprite> { WarpGateGameSprite, WarpGateAnimationSprite, WarpGateAnimationLoopSprite };
 
 
@@ -434,6 +434,8 @@ namespace Assets.Scripts.Scenes
 
             // Same thing as above but for ship remains animations
             _shipRemainsSprites[ConfigData.ShipTypes.Gunship] = new List<Sprite> { GunshipRemainsSprite };
+            _shipRemainsSprites[ConfigData.ShipTypes.Drone] = new List<Sprite> { DroneRemainsSprite };
+            _shipRemainsSprites[ConfigData.ShipTypes.Striker] = new List<Sprite> { StrikerRemainsSprite };
 
             ActionBox = SquadActionBox.GetComponent<SquadActionBox>();
             ActionBox.Setup(this, EventSystem, ConfigData.Configuration.HumanSide);
@@ -1220,7 +1222,6 @@ namespace Assets.Scripts.Scenes
             SquadSavingStatus.Show();
             StartCoroutine(Utilities.CacheSquadCustomSprites((SavedSquad)_currentSquad.Clone(), _shipPartSprites, "ship", ConfigData.ShipSizes, SquadSavingStatus));
             StartCoroutine(Utilities.CacheSquadCustomSprites((SavedSquad)_currentSquad.Clone(), _shipRemainsSprites, "remains", ConfigData.ShipRemainsSizes));
-            //StartCoroutine(Utilities.CacheSquadRemainsSprites((SavedSquad)_currentSquad.Clone(), _shipRemainsSprites));
             ClearUnsavedSquad();
 
 

@@ -19566,6 +19566,7 @@ MonoBehaviour:
   CruiserGameSprite: {fileID: 21300000, guid: e7fb5631d08227448bd1191172718349, type: 3}
   CruiserCannonGameSprite: {fileID: 21300000, guid: 7f06402aeed0869408c38f2ae04432a1, type: 3}
   DreadnoughtGameSprite: {fileID: 21300000, guid: 9d1da2457f17a044aaafc79785166d43, type: 3}
+  DroneGameSprite: {fileID: 21300000, guid: 2b78f9fd4ca958844b8fb256917a56e7, type: 3}
   FactoryGameSprite: {fileID: 21300000, guid: 14f4d00d7d052d44d9cadf895b3b1b8d, type: 3}
   FactoryAnimationSprite: {fileID: 133110120, guid: ad7cd14d465132d4bac615c7c4626be7, type: 3}
   FireBargeGameSprite: {fileID: 21300000, guid: c2d50367ba7668e428d971aed684feb2, type: 3}
@@ -19573,9 +19574,12 @@ MonoBehaviour:
   FrigateGameSprite: {fileID: 21300000, guid: 98a7996dce48e4e458fafc0e7a3d5f94, type: 3}
   GunshipGameSprite: {fileID: 21300000, guid: 8ef5bc21746b9bc4f9254b84f7ab4ece, type: 3}
   ScoutGameSprite: {fileID: 21300000, guid: 775173d4a1edb6c4ea54dfa4ae144930, type: 3}
+  StrikerGameSprite: {fileID: 21300000, guid: 20f97832794fb0a429d20009ebc2aedf, type: 3}
   WarpGateGameSprite: {fileID: 21300000, guid: 0aa980f13ad03b241a711695b2681ced, type: 3}
   WarpGateAnimationSprite: {fileID: -2033554761, guid: b13582e85569bdb4faa43a6baa403a38, type: 3}
   WarpGateAnimationLoopSprite: {fileID: 508279725, guid: 7a84976b5be42594ca7a932ae81b88ae, type: 3}
+  DroneRemainsSprite: {fileID: 469268118, guid: 4fe3df014dac5d5469d53dafc63999fe, type: 3}
+  StrikerRemainsSprite: {fileID: -1365477261, guid: e6e772497241d124499dc9fa438b8740, type: 3}
   GunshipRemainsSprite: {fileID: -280745679, guid: e7dea394453fe3e40915540570452b79, type: 3}
   DragCanvas: {fileID: 1320965603}
   TooltipOffset: {x: 18, y: 2.5}

@@ -11,10 +11,15 @@ namespace Assets.Scripts.Entities.Ships
     {
         public HashSet<Ship> ShipsHealingHere = new HashSet<Ship>();
         public Collider2D HealCollider;
+        /// <summary>
+        /// The Beehive has the shrinking and warping animation as it's "explosion" animation and the end of that animation triggers an actual explosion animation
+        /// </summary>
+        public GameObject ShrinkingAnimation;
 
         private GameObject _collidingThing;
         private Ship _collidingShip;
         private Heal _command;
+
         protected override void OnTriggerEnter2D(Collider2D collider)
         {
             _collidingThing = collider.gameObject;
@@ -56,5 +61,28 @@ namespace Assets.Scripts.Entities.Ships
             });
             base.Kill(killer, killerFleetShip, killerSavedSquad, endKill);
         }
+        protected override void DropExplosionAnimation()
+        {
+            if (!Stage.IsTraining)
+            {
+                ShrinkingAnimation.transform.SetParent(Level.Map.transform);
+                ShrinkingAnimation.transform.localPosition = GetPosition();
+                ShrinkingAnimation.SetActive(true);
+            }
+        }
+
+        public void FinalExplosion()
+        {
+            ShipExplosion.transform.parent = Level.Map.transform;
+            ShipExplosion.transform.localPosition = GetPosition();
+            ShipExplosion.SetActive(true);
+
+            if (Level.Stage.ActivateAudio && HasShipExplosionSoundEffect)
+            {
+                ShipExplosionSoundEffect.Play();
+            }
+
+        }
+
     }
 }

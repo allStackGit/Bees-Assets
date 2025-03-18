@@ -53,7 +53,7 @@ namespace Assets.Scripts.Data
                 byte[] bytes = File.ReadAllBytes(path);
                 Texture2D texture = new Texture2D(size.x, size.y);
                 texture.LoadImage(bytes);
-                //Debug.Log($"Loaded cached sprites from {path} for Fleetship {Name}");
+                Debug.Log($"Loaded cached sprites from {path} for Fleetship {Name}");
                 return Sprite.Create(texture, new Rect(0, 0, size.x, size.y), ConfigData.HalfSize, ConfigData.PixelsPerUnit);
             }
             catch (Exception e)
@@ -67,6 +67,7 @@ namespace Assets.Scripts.Data
         public void SaveSpriteToCache(int index, string type, Color[] pixels, Vector2Int size, Color squadColor)
         {
             string path = $"{ConfigData.GetCachePath()}{type}_{Type}_{ColorUtility.ToHtmlStringRGB(squadColor)}_{index}.png";
+            //Debug.Log($"Saving {path}");
             if (!File.Exists(path))
             {
                 Texture2D export = new Texture2D(size.x, size.y);

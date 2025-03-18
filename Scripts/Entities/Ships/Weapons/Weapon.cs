@@ -44,7 +44,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// <summary>
         /// Whether a weapon has a target ship and is not cease fire and therefore *should* fire at a target. It may still not be *able* to fire at a target, if for instance it's a turret and not aimed at the target.
         /// </summary>
-        public virtual bool ShouldFire => TargetShip != null && !CeaseFire;
+        public virtual bool ShouldFire => TargetShip != null && !TargetShip.IsDead && !CeaseFire;
 
         public virtual void Create(Ship ship, ConfigData.WeaponTypes type, int range, int power, float specialFirePower, float rateOfFire, float projectileValue, GameObject piece,
             ConfigData.ProjectileTypes projectileType)

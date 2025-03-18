@@ -900,13 +900,13 @@ MonoBehaviour:
   Camera: {fileID: 1378310526}
   DialoguePrefab: {fileID: 4693076599736100422, guid: cf96c357f9237f545b82628a7c3499b7, type: 3}
   EventSystem: {fileID: 780873088}
-  FinalizedScene: 0
+  IsFinalized: 0
   WatchServerRequests: 0
   IsSocketManager: 0
   IsMainScene: 0
   TimeScale: 1
   TargetFrameRate: 0
-  IsLevel: 0
+  Type: 0
   __PastServerRequests: []
   __SocketLevels: []
   __StandingRequests: []

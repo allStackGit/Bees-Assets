@@ -86,6 +86,10 @@ namespace Assets.Scripts.Levels
                 { ConfigData.ShipTypes.Scout, ScoutRemainsPrefab },
                 { ConfigData.ShipTypes.Striker, StrikerRemainsPrefab }, 
                 { ConfigData.ShipTypes.YellowJacket, YellowJacketRemainsPrefab },
+                { ConfigData.ShipTypes.Wasp, WaspRemainsPrefab },
+                { ConfigData.ShipTypes.Leafcutter, LeafcutterRemainsPrefab },
+                { ConfigData.ShipTypes.Bumblebee, BumblebeeRemainsPrefab },
+                { ConfigData.ShipTypes.CarpenterBee, CarpenterBeeRemainsPrefab },
             };
 
             ConvertShipTypeToExplosionPrefab = new Dictionary<ConfigData.ShipTypes, GameObject>
@@ -117,7 +121,7 @@ namespace Assets.Scripts.Levels
 
                 { ConfigData.ShipTypes.FireBarge, FireBargeExplosionPrefab },
 
-                { ConfigData.ShipTypes.Beehive, TinyShipExplosionPrefab },
+                { ConfigData.ShipTypes.Beehive, MediumShipExplosionPrefab },
                 { ConfigData.ShipTypes.Queen, TinyShipExplosionPrefab },
 
             };
