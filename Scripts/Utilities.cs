@@ -819,32 +819,32 @@ namespace Assets.Scripts
         private static Texture2D sourceTexture_SetChangablePixelsForImage;
         private static Color[] pixels_SetChangablePixelsForImage;
         private static List<int> indexes_SetChangablePixelsForImage;
-        private static float threshhold_SetChangablePixelsForImage;
-        private static int c_SetChangablePixelsForImage;
-        private static int i_SetChangablePixelsForImage;
-        private static Vector3 colorWithoutAlpha_SetChangablePixelsForImage;
-        private static Vector3 pixelWithoutAlpha_SetChangablePixelsForImage;
-        private static float distance_SetChangablePixelsForImage;
+        private static float threshhold;
+        private static int c;
+        private static int _i;
+        private static Vector3 colorWithoutAlpha;
+        private static Vector3 pixelWithoutAlpha;
+        private static float _distance;
 
-        public static int[] SetChangablePixelsForImage(Color[] colors, Sprite sprite)
+        public static int[] GetChangablePixelsForImage(Color[] colors, Sprite sprite)
         {
             // Declare all local variables as class-level static variables
             sourceTexture_SetChangablePixelsForImage = sprite.texture;
             pixels_SetChangablePixelsForImage = sourceTexture_SetChangablePixelsForImage.GetPixels();
             indexes_SetChangablePixelsForImage = new List<int>();
-            threshhold_SetChangablePixelsForImage = .035f;
+            threshhold = .035f;
 
             // Loop through the colors and pixels to find matching colors
-            for (c_SetChangablePixelsForImage = 0; c_SetChangablePixelsForImage < colors.Length; c_SetChangablePixelsForImage++)
+            for (c = 0; c < colors.Length; c++)
             {
-                for (i_SetChangablePixelsForImage = 0; i_SetChangablePixelsForImage < pixels_SetChangablePixelsForImage.Length; i_SetChangablePixelsForImage++)
+                for (_i = 0; _i < pixels_SetChangablePixelsForImage.Length; _i++)
                 {
-                    colorWithoutAlpha_SetChangablePixelsForImage = new Vector3(colors[c_SetChangablePixelsForImage].r, colors[c_SetChangablePixelsForImage].g, colors[c_SetChangablePixelsForImage].b);
-                    pixelWithoutAlpha_SetChangablePixelsForImage = new Vector3(pixels_SetChangablePixelsForImage[i_SetChangablePixelsForImage].r, pixels_SetChangablePixelsForImage[i_SetChangablePixelsForImage].g, pixels_SetChangablePixelsForImage[i_SetChangablePixelsForImage].b);
-                    distance_SetChangablePixelsForImage = Vector3.Distance(pixelWithoutAlpha_SetChangablePixelsForImage, colorWithoutAlpha_SetChangablePixelsForImage);
-                    if (distance_SetChangablePixelsForImage < threshhold_SetChangablePixelsForImage)
+                    colorWithoutAlpha = new Vector3(colors[c].r, colors[c].g, colors[c].b);
+                    pixelWithoutAlpha = new Vector3(pixels_SetChangablePixelsForImage[_i].r, pixels_SetChangablePixelsForImage[_i].g, pixels_SetChangablePixelsForImage[_i].b);
+                    _distance = Vector3.Distance(pixelWithoutAlpha, colorWithoutAlpha);
+                    if (_distance < threshhold)
                     {
-                        indexes_SetChangablePixelsForImage.Add(i_SetChangablePixelsForImage);
+                        indexes_SetChangablePixelsForImage.Add(_i);
                     }
                 }
             }
@@ -888,7 +888,7 @@ namespace Assets.Scripts
                             // Check if the ship type requires special handling (e.g., Factory or WarpGate)
                             if (((cacheSquadShip.ShipType == ConfigData.ShipTypes.Factory || cacheSquadShip.ShipType == ConfigData.ShipTypes.WarpGate) && cacheSquadIndex > 0) || type == "remains")
                             {
-                                int[] cacheSquadChangeablePixels = SetChangablePixelsForImage(cacheSquadColors, cacheSquadSprite);
+                                int[] cacheSquadChangeablePixels = GetChangablePixelsForImage(cacheSquadColors, cacheSquadSprite);
                                 yield return ConfigData.WaitForEndOfFrame;
 
                                 // Process the sprite
@@ -938,7 +938,7 @@ namespace Assets.Scripts
                                 // Handle regular ship sprite coloring
                                 Vector2Int cacheSquadSpriteSize = new Vector2Int(cacheSquadSprite.texture.width, cacheSquadSprite.texture.height);
 
-                                int[]  cacheSquadChangeablePixels = SetChangablePixelsForImage(cacheSquadColors, cacheSquadSprite);
+                                int[]  cacheSquadChangeablePixels = GetChangablePixelsForImage(cacheSquadColors, cacheSquadSprite);
                                 yield return ConfigData.WaitForEndOfFrame;
                                 Sprite cacheSquadRecoloredSprite = SetImageColor(squad.Color, cacheSquadSprite, cacheSquadChangeablePixels);
                                 yield return ConfigData.WaitForEndOfFrame;

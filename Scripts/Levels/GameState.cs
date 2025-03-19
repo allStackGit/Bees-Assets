@@ -441,7 +441,7 @@ namespace Assets.Scripts.Levels
         }
         public List<Squad> GetSquadsBySide(int side)
         {
-            return GetAllSquads().Where(squad => squad.Side == side).ToList();
+            return GetAllSquads().Where(squad => squad.Side == side && !squad.IsDead).ToList();
         }
         /// <summary>
         /// Get all squads where the side does not match the side given

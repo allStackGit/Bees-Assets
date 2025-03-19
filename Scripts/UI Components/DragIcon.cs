@@ -60,7 +60,7 @@ namespace Assets.Scripts.UIComponents
         {
             //Debug.Log($"Setting changable pixels for {_icon.name}");
             UnityEngine.UI.Image image = _icon.GetComponent<UnityEngine.UI.Image>();
-            _changeablePixels = Utilities.SetChangablePixelsForImage(colors, image.sprite);
+            _changeablePixels = Utilities.GetChangablePixelsForImage(colors, image.sprite);
         }
         public void SetColor(Color color)
         {

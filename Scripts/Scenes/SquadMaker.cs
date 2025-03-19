@@ -74,7 +74,8 @@ namespace Assets.Scripts.Scenes
             BargeGameSprite, CarrierGameSprite, CruiserGameSprite, CruiserCannonGameSprite, DreadnoughtGameSprite, DroneGameSprite, FactoryGameSprite, FactoryAnimationSprite, FireBargeGameSprite, FlagshipGameSprite, FrigateGameSprite,
             GunshipGameSprite, ScoutGameSprite, StrikerGameSprite, WarpGateGameSprite, WarpGateAnimationSprite, WarpGateAnimationLoopSprite;
 
-        public Sprite DroneRemainsSprite, StrikerRemainsSprite, GunshipRemainsSprite, ScoutRemainsSprite;
+        public Sprite BargeRemainsSprite, CarrierRemainsSprite, CruiserRemainsSprite, DreadnoughtRemainsSprite, DroneRemainsSprite, FactoryRemainsSprite, FlagshipRemainsSprite,
+            FrigateRemainsSprite, GunshipRemainsSprite, ScoutRemainsSprite, StrikerRemainsSprite, WarpGateRemainsSprite;
 
         public Canvas DragCanvas;
         public Vector2 TooltipOffset, ShipStatsBoxOffset, ScreenScaleFactor, ReferenceScreenSize;
@@ -433,10 +434,18 @@ namespace Assets.Scripts.Scenes
             // No bee sprites because those don't change colors
 
             // Same thing as above but for ship remains animations
-            _shipRemainsSprites[ConfigData.ShipTypes.Gunship] = new List<Sprite> { GunshipRemainsSprite };
+            _shipRemainsSprites[ConfigData.ShipTypes.Barge] = new List<Sprite> { BargeRemainsSprite };
+            _shipRemainsSprites[ConfigData.ShipTypes.Carrier] = new List<Sprite> { CarrierRemainsSprite };
+            _shipRemainsSprites[ConfigData.ShipTypes.Cruiser] = new List<Sprite> { CruiserRemainsSprite };
+            _shipRemainsSprites[ConfigData.ShipTypes.Dreadnought] = new List<Sprite> { DreadnoughtRemainsSprite };
             _shipRemainsSprites[ConfigData.ShipTypes.Drone] = new List<Sprite> { DroneRemainsSprite };
-            _shipRemainsSprites[ConfigData.ShipTypes.Striker] = new List<Sprite> { StrikerRemainsSprite };
+            _shipRemainsSprites[ConfigData.ShipTypes.Factory] = new List<Sprite> { FactoryRemainsSprite };
+            _shipRemainsSprites[ConfigData.ShipTypes.Flagship] = new List<Sprite> { FlagshipRemainsSprite };
+            _shipRemainsSprites[ConfigData.ShipTypes.Frigate] = new List<Sprite> { FrigateRemainsSprite };
+            _shipRemainsSprites[ConfigData.ShipTypes.Gunship] = new List<Sprite> { GunshipRemainsSprite };
             _shipRemainsSprites[ConfigData.ShipTypes.Scout] = new List<Sprite> { ScoutRemainsSprite };
+            _shipRemainsSprites[ConfigData.ShipTypes.Striker] = new List<Sprite> { StrikerRemainsSprite };
+            _shipRemainsSprites[ConfigData.ShipTypes.WarpGate] = new List<Sprite> { WarpGateRemainsSprite };
 
             ActionBox = SquadActionBox.GetComponent<SquadActionBox>();
             ActionBox.Setup(this, EventSystem, ConfigData.Configuration.HumanSide);
@@ -824,7 +833,7 @@ namespace Assets.Scripts.Scenes
                 //Debug.Log($"Setting changable pixels for {savedSquad.Name}");
                 UnityEngine.UI.Image squadIconImage = squadIconContainer.transform.GetChild(0).GetComponent<UnityEngine.UI.Image>();
 
-                int[] changeablePixels = Utilities.SetChangablePixelsForImage(ConfigData.ChangeableShipColors.GetValueOrDefault(shipType), squadIconImage.sprite);
+                int[] changeablePixels = Utilities.GetChangablePixelsForImage(ConfigData.ChangeableShipColors.GetValueOrDefault(shipType), squadIconImage.sprite);
                 //Debugger.PrintList(changeablePixels.ToList());
                 squadIconImage.sprite = Utilities.SetImageColor(savedSquad.Color, squadIconImage.sprite, changeablePixels);
             }
@@ -863,7 +872,7 @@ namespace Assets.Scripts.Scenes
                 //Debug.Log($"Setting changable pixels for {savedSquad.Name}");
                 UnityEngine.UI.Image squadIconImage = squadIconContainer.transform.GetChild(0).GetComponent<UnityEngine.UI.Image>();
 
-                int[] changeablePixels = Utilities.SetChangablePixelsForImage(ConfigData.ChangeableShipColors.GetValueOrDefault(shipType), squadIconImage.sprite);
+                int[] changeablePixels = Utilities.GetChangablePixelsForImage(ConfigData.ChangeableShipColors.GetValueOrDefault(shipType), squadIconImage.sprite);
                 //Debugger.PrintList(changeablePixels.ToList());
                 squadIconImage.sprite = Utilities.SetImageColor(chosenSquad.Color, squadIconImage.sprite, changeablePixels);
             }
@@ -908,7 +917,7 @@ namespace Assets.Scripts.Scenes
             // change the color of the icon
             if (savedSquad.HasCustomColor)
             {
-                int[] changeablePixels = Utilities.SetChangablePixelsForImage(ConfigData.ChangeableShipColors.GetValueOrDefault(shipType), squadIconImage.sprite);
+                int[] changeablePixels = Utilities.GetChangablePixelsForImage(ConfigData.ChangeableShipColors.GetValueOrDefault(shipType), squadIconImage.sprite);
                 squadIconImage.sprite = Utilities.SetImageColor(savedSquad.Color, squadIconImage.sprite, changeablePixels);
             }
 

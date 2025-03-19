@@ -1,5 +1,5 @@
 fileFormatVersion: 2
-guid: e7dea394453fe3e40915540570452b79
+guid: 3c8bf7f1999e7e2498d4afe5f44d1bfe
 TextureImporter:
   internalIDToNameTable: []
   externalObjects: {}
@@ -69,7 +69,7 @@ TextureImporter:
   platformSettings:
   - serializedVersion: 3
     buildTarget: DefaultTexturePlatform
-    maxTextureSize: 8192
+    maxTextureSize: 4096
     resizeAlgorithm: 0
     textureFormat: -1
     textureCompression: 1
@@ -101,9 +101,9 @@ TextureImporter:
       rect:
         serializedVersion: 2
         x: 0
-        y: 0
-        width: 100
-        height: 100
+        y: 1500
+        width: 500
+        height: 500
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -111,8 +111,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: e860855bce42af2468fe4ab55b902bd7
-      internalID: -280745679
+      spriteID: d7c5aae2f7b9ede4c9552b4167c33ef8
+      internalID: 2077926716
       vertices: []
       indices: 
       edges: []
@@ -121,10 +121,10 @@ TextureImporter:
       name: gunship_remains_1
       rect:
         serializedVersion: 2
-        x: 100
-        y: 0
-        width: 100
-        height: 100
+        x: 500
+        y: 1500
+        width: 500
+        height: 500
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -132,8 +132,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 1c41bda22e9f91f4d9beaf676c50e337
-      internalID: -1904946656
+      spriteID: 2da478d3097d0504a9e279eb369b9db9
+      internalID: -111770325
       vertices: []
       indices: 
       edges: []
@@ -142,10 +142,10 @@ TextureImporter:
       name: gunship_remains_2
       rect:
         serializedVersion: 2
-        x: 200
-        y: 0
-        width: 100
-        height: 100
+        x: 1000
+        y: 1500
+        width: 500
+        height: 500
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -153,8 +153,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 1d74ed67e419974408af794dfd589915
-      internalID: -1204325228
+      spriteID: f253fbebd5a4c1041b2bdf6a97ef0161
+      internalID: -181069614
       vertices: []
       indices: 
       edges: []
@@ -163,10 +163,10 @@ TextureImporter:
       name: gunship_remains_3
       rect:
         serializedVersion: 2
-        x: 300
-        y: 0
-        width: 100
-        height: 100
+        x: 1500
+        y: 1500
+        width: 500
+        height: 500
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -174,8 +174,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 5f65d8ab2d91d984ebcc08b1243f9d4e
-      internalID: 439060327
+      spriteID: a9d2a37562fdaa748b0220598416dcf0
+      internalID: 1356377700
       vertices: []
       indices: 
       edges: []
@@ -184,10 +184,10 @@ TextureImporter:
       name: gunship_remains_4
       rect:
         serializedVersion: 2
-        x: 400
-        y: 0
-        width: 100
-        height: 100
+        x: 2000
+        y: 1500
+        width: 500
+        height: 500
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -195,8 +195,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: a613c2fb9e2e22a428d146a2e90ec10e
-      internalID: -628212809
+      spriteID: 3bea9dc57a973b84091366a43f6fa318
+      internalID: -161912173
       vertices: []
       indices: 
       edges: []
@@ -205,10 +205,10 @@ TextureImporter:
       name: gunship_remains_5
       rect:
         serializedVersion: 2
-        x: 500
-        y: 0
-        width: 100
-        height: 100
+        x: 0
+        y: 1000
+        width: 500
+        height: 500
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -216,8 +216,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 091bb0cb29d913f48beb0e00ec9de5f5
-      internalID: -1220351180
+      spriteID: 3be11c9ea26c6114dad967a22545a8c6
+      internalID: 49949302
       vertices: []
       indices: 
       edges: []
@@ -226,10 +226,10 @@ TextureImporter:
       name: gunship_remains_6
       rect:
         serializedVersion: 2
-        x: 600
-        y: 0
-        width: 100
-        height: 100
+        x: 500
+        y: 1000
+        width: 500
+        height: 500
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -237,8 +237,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 85178cf7fb147d34ca22f3578647adb8
-      internalID: -1470504157
+      spriteID: d4d1651e94f5a8c4ea72cae2f84cf3b8
+      internalID: 968812601
       vertices: []
       indices: 
       edges: []
@@ -247,10 +247,10 @@ TextureImporter:
       name: gunship_remains_7
       rect:
         serializedVersion: 2
-        x: 700
-        y: 0
-        width: 100
-        height: 100
+        x: 1000
+        y: 1000
+        width: 500
+        height: 500
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -258,8 +258,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: f467371cf4a90904495b3a2a590ebab4
-      internalID: -55034435
+      spriteID: 952c5065c1059324b9c6ba1134481b7c
+      internalID: 1314945925
       vertices: []
       indices: 
       edges: []
@@ -268,10 +268,10 @@ TextureImporter:
       name: gunship_remains_8
       rect:
         serializedVersion: 2
-        x: 800
-        y: 0
-        width: 100
-        height: 100
+        x: 1500
+        y: 1000
+        width: 500
+        height: 500
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -279,8 +279,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: e45ffb951d167a3439c309fd4398709a
-      internalID: 226924284
+      spriteID: 0a4fb3f36df9f77419174815b85493af
+      internalID: -1820998104
       vertices: []
       indices: 
       edges: []
@@ -289,10 +289,10 @@ TextureImporter:
       name: gunship_remains_9
       rect:
         serializedVersion: 2
-        x: 900
-        y: 0
-        width: 100
-        height: 100
+        x: 2000
+        y: 1000
+        width: 500
+        height: 500
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -300,8 +300,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 8327a23dacf95d94ab0ca0ff28d4c013
-      internalID: 1747255186
+      spriteID: 9cc538094c5069b4e9d0b5db269bbd8b
+      internalID: -1063733851
       vertices: []
       indices: 
       edges: []
@@ -310,10 +310,10 @@ TextureImporter:
       name: gunship_remains_10
       rect:
         serializedVersion: 2
-        x: 1000
-        y: 0
-        width: 100
-        height: 100
+        x: 0
+        y: 500
+        width: 500
+        height: 500
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -321,8 +321,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 4d0cd980bd0509b4b95cd0dc4265185a
-      internalID: -1789424180
+      spriteID: 591afcb3a42b6504d935e0461baf967b
+      internalID: -1824838869
       vertices: []
       indices: 
       edges: []
@@ -331,10 +331,10 @@ TextureImporter:
       name: gunship_remains_11
       rect:
         serializedVersion: 2
-        x: 1100
-        y: 0
-        width: 100
-        height: 100
+        x: 500
+        y: 500
+        width: 500
+        height: 500
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -342,8 +342,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 218413d23902ff64680aac3b388a6259
-      internalID: 1110939844
+      spriteID: 6f707e9070f3e944784a73d9c63bdb28
+      internalID: -1064145450
       vertices: []
       indices: 
       edges: []
@@ -352,10 +352,10 @@ TextureImporter:
       name: gunship_remains_12
       rect:
         serializedVersion: 2
-        x: 1200
-        y: 0
-        width: 100
-        height: 100
+        x: 1000
+        y: 500
+        width: 500
+        height: 500
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -363,8 +363,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 914b430f12b462d4ab4282b6dcf70c62
-      internalID: 1932588699
+      spriteID: 742957df4e8a39340870ec1f9985f2fb
+      internalID: -1171989426
       vertices: []
       indices: 
       edges: []
@@ -373,10 +373,10 @@ TextureImporter:
       name: gunship_remains_13
       rect:
         serializedVersion: 2
-        x: 1300
-        y: 0
-        width: 100
-        height: 100
+        x: 1500
+        y: 500
+        width: 500
+        height: 500
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -384,8 +384,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 26496ce043bb55240a7d03e7752382f0
-      internalID: -614858359
+      spriteID: b93aa2ade98e6f34f812fd1d7e1440a0
+      internalID: -547996099
       vertices: []
       indices: 
       edges: []
@@ -394,10 +394,10 @@ TextureImporter:
       name: gunship_remains_14
       rect:
         serializedVersion: 2
-        x: 1400
-        y: 0
-        width: 100
-        height: 100
+        x: 2000
+        y: 500
+        width: 500
+        height: 500
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -405,8 +405,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: b0cadc71ebe0de04e950b457b62886ee
-      internalID: 1775185516
+      spriteID: aa7fbf6c25d3b98489ac0ff1b9dba67e
+      internalID: -698302445
       vertices: []
       indices: 
       edges: []
@@ -415,10 +415,10 @@ TextureImporter:
       name: gunship_remains_15
       rect:
         serializedVersion: 2
-        x: 1500
+        x: 0
         y: 0
-        width: 100
-        height: 100
+        width: 500
+        height: 500
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -426,8 +426,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 087a46bcd4f3e23428db9e52e1805cc7
-      internalID: -411065359
+      spriteID: 1892029f3c47e9349a2dff7051737c77
+      internalID: 919113926
       vertices: []
       indices: 
       edges: []
@@ -436,10 +436,10 @@ TextureImporter:
       name: gunship_remains_16
       rect:
         serializedVersion: 2
-        x: 1600
+        x: 500
         y: 0
-        width: 100
-        height: 100
+        width: 500
+        height: 500
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -447,8 +447,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 89024b1b4f784d841bef0034a69d5c64
-      internalID: 226071907
+      spriteID: a143392af62b30a44aecaff5d0dfe914
+      internalID: -1150935660
       vertices: []
       indices: 
       edges: []
@@ -457,10 +457,10 @@ TextureImporter:
       name: gunship_remains_17
       rect:
         serializedVersion: 2
-        x: 1700
+        x: 1000
         y: 0
-        width: 100
-        height: 100
+        width: 500
+        height: 500
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -468,8 +468,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 39204a6be532a384f8faa397c1112953
-      internalID: -1588927282
+      spriteID: 936202d32b7c31c4cb51351837fc999a
+      internalID: -1792270568
       vertices: []
       indices: 
       edges: []
@@ -478,10 +478,10 @@ TextureImporter:
       name: gunship_remains_18
       rect:
         serializedVersion: 2
-        x: 1800
+        x: 1500
         y: 0
-        width: 100
-        height: 100
+        width: 500
+        height: 500
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -489,8 +489,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 282ed0dfa9913ec4ba4c46ad6bc18125
-      internalID: -216761447
+      spriteID: ca5447c6fcb5e954c84c143a309d99db
+      internalID: 825784476
       vertices: []
       indices: 
       edges: []
@@ -499,10 +499,10 @@ TextureImporter:
       name: gunship_remains_19
       rect:
         serializedVersion: 2
-        x: 1900
+        x: 2000
         y: 0
-        width: 100
-        height: 100
+        width: 500
+        height: 500
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -510,8 +510,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: d630fc2992a66cb49a3afd39cadab28d
-      internalID: 1814175833
+      spriteID: 91dbda12d7a2150468475bcf9508cdc2
+      internalID: -1776489953
       vertices: []
       indices: 
       edges: []
@@ -527,26 +527,26 @@ TextureImporter:
     weights: []
     secondaryTextures: []
     nameFileIdTable:
-      gunship_remains_0: -280745679
-      gunship_remains_1: -1904946656
-      gunship_remains_10: -1789424180
-      gunship_remains_11: 1110939844
-      gunship_remains_12: 1932588699
-      gunship_remains_13: -614858359
-      gunship_remains_14: 1775185516
-      gunship_remains_15: -411065359
-      gunship_remains_16: 226071907
-      gunship_remains_17: -1588927282
-      gunship_remains_18: -216761447
-      gunship_remains_19: 1814175833
-      gunship_remains_2: -1204325228
-      gunship_remains_3: 439060327
-      gunship_remains_4: -628212809
-      gunship_remains_5: -1220351180
-      gunship_remains_6: -1470504157
-      gunship_remains_7: -55034435
-      gunship_remains_8: 226924284
-      gunship_remains_9: 1747255186
+      gunship_remains_0: 2077926716
+      gunship_remains_1: -111770325
+      gunship_remains_10: -1824838869
+      gunship_remains_11: -1064145450
+      gunship_remains_12: -1171989426
+      gunship_remains_13: -547996099
+      gunship_remains_14: -698302445
+      gunship_remains_15: 919113926
+      gunship_remains_16: -1150935660
+      gunship_remains_17: -1792270568
+      gunship_remains_18: 825784476
+      gunship_remains_19: -1776489953
+      gunship_remains_2: -181069614
+      gunship_remains_3: 1356377700
+      gunship_remains_4: -161912173
+      gunship_remains_5: 49949302
+      gunship_remains_6: 968812601
+      gunship_remains_7: 1314945925
+      gunship_remains_8: -1820998104
+      gunship_remains_9: -1063733851
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

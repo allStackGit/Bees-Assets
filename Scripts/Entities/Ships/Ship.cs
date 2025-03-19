@@ -786,7 +786,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                     {
                         //_status = "Drawing";
                         _shipIcon = _prefabSprite;
-                        _changablePixels = Utilities.SetChangablePixelsForImage(_colors, _shipIcon);
+                        _changablePixels = Utilities.GetChangablePixelsForImage(_colors, _shipIcon);
                         _recolored = Utilities.SetImageColor(Squad.Color, _shipIcon, _changablePixels);
                         prefab.GetComponent<SpriteRenderer>().sprite = _recolored;
                     }

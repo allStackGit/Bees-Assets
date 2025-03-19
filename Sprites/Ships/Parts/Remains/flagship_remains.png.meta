@@ -1,0 +1,554 @@
+fileFormatVersion: 2
+guid: 4d58643867a85b6459654274eb125073
+TextureImporter:
+  internalIDToNameTable: []
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 1
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 40
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 3
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 8192
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 3
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: flagship_remains_0
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 3570
+        width: 1050
+        height: 1190
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: dc036f11e9a6d0245943859f173c04c9
+      internalID: -476304649
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: flagship_remains_1
+      rect:
+        serializedVersion: 2
+        x: 1050
+        y: 3570
+        width: 1050
+        height: 1190
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 076fd70ebf1c2b34e9c92d7ecb3c92bf
+      internalID: -1591130719
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: flagship_remains_2
+      rect:
+        serializedVersion: 2
+        x: 2100
+        y: 3570
+        width: 1050
+        height: 1190
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: a0046159c7c262148a33e5769a9646f5
+      internalID: -2026187169
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: flagship_remains_3
+      rect:
+        serializedVersion: 2
+        x: 3150
+        y: 3570
+        width: 1050
+        height: 1190
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 5217590c374880a4a8be695681dab89f
+      internalID: 375023608
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: flagship_remains_4
+      rect:
+        serializedVersion: 2
+        x: 4200
+        y: 3570
+        width: 1050
+        height: 1190
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 463dcefd566ef344c8a419602d35665f
+      internalID: -1884978001
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: flagship_remains_5
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 2380
+        width: 1050
+        height: 1190
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 545b88412b199ac41942cf34917fc01a
+      internalID: -1735578537
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: flagship_remains_6
+      rect:
+        serializedVersion: 2
+        x: 1050
+        y: 2380
+        width: 1050
+        height: 1190
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: d45c751c2a0b3004cb6d7b5e80c098b6
+      internalID: -813933985
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: flagship_remains_7
+      rect:
+        serializedVersion: 2
+        x: 2100
+        y: 2380
+        width: 1050
+        height: 1190
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: bd45e441a34a47842b8398cddc8de611
+      internalID: -1474752902
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: flagship_remains_8
+      rect:
+        serializedVersion: 2
+        x: 3150
+        y: 2380
+        width: 1050
+        height: 1190
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 730fe2beb6da19b4b93e4670bcb395d9
+      internalID: -2098309452
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: flagship_remains_9
+      rect:
+        serializedVersion: 2
+        x: 4200
+        y: 2380
+        width: 1050
+        height: 1190
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: a5b9151062f490a4b8880251d1a7eeb7
+      internalID: -757283458
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: flagship_remains_10
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 1190
+        width: 1050
+        height: 1190
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 1915c9e89ed0fa44ebde35d769747be0
+      internalID: -166922556
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: flagship_remains_11
+      rect:
+        serializedVersion: 2
+        x: 1050
+        y: 1190
+        width: 1050
+        height: 1190
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 1ae41dfeb968df74cbe8468f6101c1b4
+      internalID: -278699764
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: flagship_remains_12
+      rect:
+        serializedVersion: 2
+        x: 2100
+        y: 1190
+        width: 1050
+        height: 1190
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 05e673aad6e98cb4488a3e95258eb710
+      internalID: -598087317
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: flagship_remains_13
+      rect:
+        serializedVersion: 2
+        x: 3150
+        y: 1190
+        width: 1050
+        height: 1190
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 3e60519953a22dd47ac8721cd02116ad
+      internalID: -480576316
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: flagship_remains_14
+      rect:
+        serializedVersion: 2
+        x: 4200
+        y: 1190
+        width: 1050
+        height: 1190
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 8b1e2e95ce5323b48b6235a64066d211
+      internalID: -399209496
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: flagship_remains_15
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 0
+        width: 1050
+        height: 1190
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: bb041ce8ddead7644a464cab6a7ceb11
+      internalID: -1254415840
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: flagship_remains_16
+      rect:
+        serializedVersion: 2
+        x: 1050
+        y: 0
+        width: 1050
+        height: 1190
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 0e1abddf28a8d12408a74d92a14ad3ff
+      internalID: -575293016
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: flagship_remains_17
+      rect:
+        serializedVersion: 2
+        x: 2100
+        y: 0
+        width: 1050
+        height: 1190
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: c0c76b689dba2f142aa685f22ed0b85d
+      internalID: 1679800101
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: flagship_remains_18
+      rect:
+        serializedVersion: 2
+        x: 3150
+        y: 0
+        width: 1050
+        height: 1190
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 68753ea9b5880014c91e0c4b4407f960
+      internalID: -1010083091
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: flagship_remains_19
+      rect:
+        serializedVersion: 2
+        x: 4200
+        y: 0
+        width: 1050
+        height: 1190
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: ad6d32d03c7738841b6592f7489e143e
+      internalID: -446425544
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    physicsShape: []
+    bones: []
+    spriteID: 5e97eb03825dee720800000000000000
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    nameFileIdTable:
+      flagship_remains_0: -476304649
+      flagship_remains_1: -1591130719
+      flagship_remains_10: -166922556
+      flagship_remains_11: -278699764
+      flagship_remains_12: -598087317
+      flagship_remains_13: -480576316
+      flagship_remains_14: -399209496
+      flagship_remains_15: -1254415840
+      flagship_remains_16: -575293016
+      flagship_remains_17: 1679800101
+      flagship_remains_18: -1010083091
+      flagship_remains_19: -446425544
+      flagship_remains_2: -2026187169
+      flagship_remains_3: 375023608
+      flagship_remains_4: -1884978001
+      flagship_remains_5: -1735578537
+      flagship_remains_6: -813933985
+      flagship_remains_7: -1474752902
+      flagship_remains_8: -2098309452
+      flagship_remains_9: -757283458
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

@@ -367,20 +367,20 @@ namespace Assets.Scripts
         };
 
         public static readonly Dictionary<ShipTypes, Vector2Int> ShipRemainsSizes = new Dictionary<ShipTypes, Vector2Int>() {
-            { ShipTypes.Barge,         new Vector2Int(0, 0)},
+            { ShipTypes.Barge,         new Vector2Int(1270, 1270)},
             { ShipTypes.Beacon,        new Vector2Int(0, 0)},
-            { ShipTypes.Carrier,       new Vector2Int(0, 0)},
-            { ShipTypes.Cruiser,       new Vector2Int(0, 0)},
-            { ShipTypes.Dreadnought,   new Vector2Int(0, 0)},
+            { ShipTypes.Carrier,       new Vector2Int(990, 990)},
+            { ShipTypes.Cruiser,       new Vector2Int(790, 790)},
+            { ShipTypes.Dreadnought,   new Vector2Int(670, 670)},
             { ShipTypes.Drone,         new Vector2Int(430, 430)},
-            { ShipTypes.Factory,       new Vector2Int(0, 0)},
+            { ShipTypes.Factory,       new Vector2Int(1190, 1190)},
             { ShipTypes.FireBarge,     new Vector2Int(0, 0)},
-            { ShipTypes.Flagship,      new Vector2Int(0, 0)},
-            { ShipTypes.Frigate,       new Vector2Int(0, 0)},
-            { ShipTypes.Gunship,       new Vector2Int(420, 420)},
+            { ShipTypes.Flagship,      new Vector2Int(1050, 1190)},
+            { ShipTypes.Frigate,       new Vector2Int(500, 500)},
+            { ShipTypes.Gunship,       new Vector2Int(500, 500)},
             { ShipTypes.Scout,         new Vector2Int(400, 400)},
             { ShipTypes.Striker,       new Vector2Int(390, 390)},
-            { ShipTypes.WarpGate,      new Vector2Int(0, 0)},
+            { ShipTypes.WarpGate,      new Vector2Int(1910, 1190)},
 
             { ShipTypes.Beehive,       new Vector2Int(0, 0)},
             { ShipTypes.Bumblebee,     new Vector2Int(0, 0)},
@@ -419,21 +419,69 @@ namespace Assets.Scripts
             { ShipTypes.YellowJacket,  Tiny},
         };
         public static readonly Dictionary<ShipTypes, Color[]> ChangeableShipColors = new Dictionary<ShipTypes, Color[]>() {
-            { ShipTypes.Barge, new Color[] {new Color(0.235f, 0.753f, 0.498f, 1), new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.196f, 0.6f, 0.4f, 1) } },
+            { ShipTypes.Barge, new Color[] {
+                new Color(0.235f, 0.753f, 0.498f, 1), 
+                new Color(0.161f, 0.510f, 0.337f, 1), 
+                new Color(0.196f, 0.6f, 0.4f, 1),
+                new Color(0.1098f, 0.3568f, 0.2352f, 1)
+            } },
             { ShipTypes.Beacon, new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
-            { ShipTypes.Carrier, new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
-            { ShipTypes.Cruiser, new Color[] {new Color(0.184f, 0.569f, 0.380f, 1), new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.196f, 0.6f, 0.4f, 1) } },
-            { ShipTypes.Dreadnought, new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1)  } },
+            { ShipTypes.Carrier, new Color[] { 
+                new Color(0.196f, 0.6f, 0.4f, 1),
+                new Color(0.161f, 0.510f, 0.337f, 1),
+                new Color(0.1098f, 0.3568f, 0.2352f, 1)
+            } },
+            { ShipTypes.Cruiser, new Color[] {
+                new Color(0.184f, 0.569f, 0.380f, 1), 
+                new Color(0.161f, 0.510f, 0.337f, 1), 
+                new Color(0.196f, 0.6f, 0.4f, 1),
+                new Color(0.1098f, 0.3568f, 0.2352f, 1)
+            } },
+            { ShipTypes.Dreadnought, new Color[] { 
+                new Color(0.196f, 0.6f, 0.4f, 1), 
+                new Color(0.161f, 0.510f, 0.337f, 1), 
+                new Color(0.1176f, 0.3725f, 0.2470f, 1)
+            } },
             { ShipTypes.Drone, new Color[] {new Color(.729f, .729f, .729f, 1) } },
-            { ShipTypes.Factory, new Color[] { new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.196f, 0.6f, 0.4f, 1) } },
+            { ShipTypes.Factory, new Color[] { 
+                new Color(0.161f, 0.510f, 0.337f, 1), 
+                new Color(0.196f, 0.6f, 0.4f, 1),
+                new Color(0.1176f, 0.3725f, 0.2470f, 1),
+                new Color(0.1098f, 0.3568f, 0.2352f, 1),
+                new Color(0.0509f, 0.1607f, 0.1058f, 1),
+            } },
             { ShipTypes.FireBarge, new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.235f, 0.753f, 0.498f, 1) } },
-            { ShipTypes.Flagship, new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
-            { ShipTypes.Frigate, new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
+            { ShipTypes.Flagship, new Color[] { 
+                new Color(0.196f, 0.6f, 0.4f, 1), 
+                new Color(0.161f, 0.510f, 0.337f, 1),
+                new Color(0.1098f, 0.3568f, 0.2352f, 1),
+            } },
+            { ShipTypes.Frigate, new Color[] { 
+                new Color(0.196f, 0.6f, 0.4f, 1), 
+                new Color(0.161f, 0.510f, 0.337f, 1),
+                new Color(0.1058f, 0.3607f, 0.2352f, 1),
+                new Color(0.1607f, 0.5411f, 0.3529f, 1),
+                new Color(0.0941f, 0.3019f, 0.2235f, 1),
+                new Color(0.1607f, 0.4431f, 0.2901f, 1),
+                new Color(0.1294f, 0.3176f, 0.2235f, 1),
+            } },
 
 
-            { ShipTypes.Gunship, new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.1843f, 0.5686f, 0.3725f, 1),
-                new Color(0.1607f, 0.4823f, 0.3215f, 1), new Color(0.1921f, 0.6039f, 0.3960f, 1), new Color(0.1607f, 0.5098f, 0.3215f, 1),
-            new Color(0.1450f, 0.4588f, 0.2941f, 1)} },
+            { ShipTypes.Gunship, new Color[] { 
+                new Color(0.196f, 0.6f, 0.4f, 1), 
+                new Color(0.161f, 0.510f, 0.337f, 1), 
+                new Color(0.1843f, 0.5686f, 0.3725f, 1),
+                new Color(0.1607f, 0.4823f, 0.3215f, 1), 
+                new Color(0.1921f, 0.6039f, 0.3960f, 1), 
+                new Color(0.1607f, 0.5098f, 0.3215f, 1),
+                new Color(0.1450f, 0.4588f, 0.2941f, 1), 
+                new Color(0.1921f, 0.6039f, 0.3882f, 1), 
+                new Color(0.1921f, 0.5882f, 0.3882f, 1), 
+                new Color(0.1921f, 0.5568f, 0.3882f, 1),
+                new Color(0.1921f, 0.5882f, 0.4196f, 1), 
+                new Color(0.2f, 0.5607f, 0.3803f, 1),  
+                new Color(0.1647f, 0.5254f, 0.3450f, 1),
+            } },
 
 
             { ShipTypes.Scout, new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.1843f, 0.5686f, 0.3725f, 1),
@@ -443,7 +491,11 @@ namespace Assets.Scripts
 
 
             { ShipTypes.Striker, new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
-            { ShipTypes.WarpGate, new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1) } },
+            { ShipTypes.WarpGate, new Color[] { 
+                new Color(0.196f, 0.6f, 0.4f, 1), 
+                new Color(0.161f, 0.510f, 0.337f, 1),
+                new Color(0.1098f, 0.3568f, 0.2352f, 1)
+            } },
 
             // Set the bees to the unset color because none of their colors will change ... Unless the player is the bees?
             { ShipTypes.Beehive,        new Color[] {UnsetColor } },

@@ -16035,18 +16035,18 @@ MonoBehaviour:
   QueenSmallProjectileExplosionAnimationPrefab: {fileID: 3345242948093166458, guid: 621b0d5f7c5f78d4f8d62b7b997cc1a9, type: 3}
   QueenLargeProjectileExplosionAnimationPrefab: {fileID: 3345242948093166458, guid: 79f29d6ea5220e04fab074511cc6287a, type: 3}
   StrikerBombProjectileExplosionAnimationPrefab: {fileID: 1876865744220396715, guid: 9f4ad1076c8f24f4ab42adc2d5009d87, type: 3}
-  BargeRemainsPrefab: {fileID: 0}
+  BargeRemainsPrefab: {fileID: 3284305956443189761, guid: 62a909aee6d9840468d4abfa8bb3d91d, type: 3}
   BeehiveRemainsPrefab: {fileID: 0}
   BumblebeeRemainsPrefab: {fileID: 3284305956443189761, guid: f72b6b854c10e2d4398a1c62af0618ed, type: 3}
   CarpenterBeeRemainsPrefab: {fileID: 3284305956443189761, guid: a0bc54e6c2f6e6742bb97f7441b8e2b8, type: 3}
-  CarrierRemainsPrefab: {fileID: 0}
-  CruiserRemainsPrefab: {fileID: 0}
-  DreadnoughtRemainsPrefab: {fileID: 0}
+  CarrierRemainsPrefab: {fileID: 3284305956443189761, guid: 3123f5543c2395543b3a5b96d2fc1f10, type: 3}
+  CruiserRemainsPrefab: {fileID: 3284305956443189761, guid: 0ce91c18efe54394e97d5ff97e6f15ca, type: 3}
+  DreadnoughtRemainsPrefab: {fileID: 3284305956443189761, guid: 7dd835e374d493e499e585c7c86511a9, type: 3}
   DroneRemainsPrefab: {fileID: 3284305956443189761, guid: e1645a44ab1f1054d876dd172a8ff1e9, type: 3}
-  FactoryRemainsPrefab: {fileID: 0}
+  FactoryRemainsPrefab: {fileID: 3284305956443189761, guid: dc354a61318cdd2408ec1b047bc21bef, type: 3}
   FireBargeRemainsPrefab: {fileID: 0}
-  FlagshipRemainsPrefab: {fileID: 0}
-  FrigateRemainsPrefab: {fileID: 0}
+  FlagshipRemainsPrefab: {fileID: 3284305956443189761, guid: 983a646804cd7b343951e8b023294270, type: 3}
+  FrigateRemainsPrefab: {fileID: 3284305956443189761, guid: ddf2826eae7cb7649830970e1fab8adf, type: 3}
   GunshipRemainsPrefab: {fileID: 8509169495103239065, guid: db15dd052b3f4154089d2e57294c1df6, type: 3}
   HoneybeeRemainsPrefab: {fileID: 3284305956443189761, guid: c622be5f7d500034a8a9c6094904f2ee, type: 3}
   HornetRemainsPrefab: {fileID: 3284305956443189761, guid: abc976f81f683a8488eeb2e7cb347509, type: 3}
@@ -16054,7 +16054,7 @@ MonoBehaviour:
   QueenRemainsPrefab: {fileID: 0}
   ScoutRemainsPrefab: {fileID: 3284305956443189761, guid: 9155b5af830f51c48ab1b31e8596c5f8, type: 3}
   StrikerRemainsPrefab: {fileID: 3284305956443189761, guid: 25c7ec7d55baae94baf69847d9c97eb8, type: 3}
-  WarpGateRemainsPrefab: {fileID: 0}
+  WarpGateRemainsPrefab: {fileID: 3284305956443189761, guid: 7089c8925e0a0254fa01ae4cdca4e461, type: 3}
   WaspRemainsPrefab: {fileID: 3284305956443189761, guid: f7370e6b68fbd6e47b80b457dbde05c2, type: 3}
   YellowJacketRemainsPrefab: {fileID: 3284305956443189761, guid: 5af1c72d8dd080b4582e97265edfb4e8, type: 3}
   BeaconRemainsPrefab: {fileID: 0}
@@ -16063,7 +16063,6 @@ MonoBehaviour:
   MediumShipExplosionPrefab: {fileID: 5251504260705199934, guid: 9b9ec98e14c9ff04db5cf9584f56ae1c, type: 3}
   LargeShipExplosionPrefab: {fileID: 5251504260705199934, guid: 70dc82c9665ce3f4eb24bbfe8e62b2c9, type: 3}
   HugeShipExplosionPrefab: {fileID: 5251504260705199934, guid: 6a4063a718e9d7341ac9460de59edcb0, type: 3}
-  BeehiveShipExplosionPrefab: {fileID: 0}
   QueenShipExplosionPrefab: {fileID: 0}
   MovementMarkerPrefab: {fileID: 2507697582912947509, guid: d5ee77a24c7f6a6499324a8a600b4943, type: 3}
   TargetingMarkerPrefab: {fileID: 2507697582912947509, guid: 60a6013777594eb47842724022e04add, type: 3}

@@ -53,7 +53,7 @@ namespace Assets.Scripts.Entities.Ships
                 Color[] colors = ConfigData.ChangeableShipColors.GetValueOrDefault(Ship.ShipType);
                 Sprite prefabSprite = GetComponent<SpriteRenderer>().sprite;
                 Sprite shipIcon = prefabSprite;
-                int[] changeablePixels = Utilities.SetChangablePixelsForImage(colors, shipIcon);
+                int[] changeablePixels = Utilities.GetChangablePixelsForImage(colors, shipIcon);
                 Sprite recolored = Utilities.SetImageColor(Ship.Squad.Color, shipIcon, changeablePixels);
                 GetComponent<SpriteRenderer>().sprite = recolored;
             }

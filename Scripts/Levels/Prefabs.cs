@@ -31,7 +31,7 @@ namespace Assets.Scripts.Levels
     FactoryRemainsPrefab, FireBargeRemainsPrefab, FlagshipRemainsPrefab, FrigateRemainsPrefab, GunshipRemainsPrefab, HoneybeeRemainsPrefab, HornetRemainsPrefab, LeafcutterRemainsPrefab, QueenRemainsPrefab,
     ScoutRemainsPrefab, StrikerRemainsPrefab, WarpGateRemainsPrefab, WaspRemainsPrefab, YellowJacketRemainsPrefab, BeaconRemainsPrefab,
             
-            TinyShipExplosionPrefab, SmallShipExplosionPrefab, MediumShipExplosionPrefab, LargeShipExplosionPrefab, HugeShipExplosionPrefab, BeehiveShipExplosionPrefab, QueenShipExplosionPrefab;
+            TinyShipExplosionPrefab, SmallShipExplosionPrefab, MediumShipExplosionPrefab, LargeShipExplosionPrefab, HugeShipExplosionPrefab, QueenShipExplosionPrefab;
         /// <summary>
         /// UI Prefabs
         /// </summary>
@@ -79,12 +79,20 @@ namespace Assets.Scripts.Levels
 
             ConvertShipTypeToRemainsPrefab = new Dictionary<ConfigData.ShipTypes, GameObject>
             {
+                { ConfigData.ShipTypes.Barge, BargeRemainsPrefab },
+                { ConfigData.ShipTypes.Carrier, CarrierRemainsPrefab },
+                { ConfigData.ShipTypes.Cruiser, CruiserRemainsPrefab },
                 { ConfigData.ShipTypes.Drone, DroneRemainsPrefab },
+                { ConfigData.ShipTypes.Dreadnought, DreadnoughtRemainsPrefab },
+                { ConfigData.ShipTypes.Factory, FactoryRemainsPrefab },
+                { ConfigData.ShipTypes.Flagship, FlagshipRemainsPrefab },
+                { ConfigData.ShipTypes.Frigate, FrigateRemainsPrefab },
                 { ConfigData.ShipTypes.Gunship, GunshipRemainsPrefab },
                 { ConfigData.ShipTypes.Honeybee, HoneybeeRemainsPrefab },
                 { ConfigData.ShipTypes.Hornet, HornetRemainsPrefab },
                 { ConfigData.ShipTypes.Scout, ScoutRemainsPrefab },
-                { ConfigData.ShipTypes.Striker, StrikerRemainsPrefab }, 
+                { ConfigData.ShipTypes.Striker, StrikerRemainsPrefab },
+                { ConfigData.ShipTypes.WarpGate, WarpGateRemainsPrefab },
                 { ConfigData.ShipTypes.YellowJacket, YellowJacketRemainsPrefab },
                 { ConfigData.ShipTypes.Wasp, WaspRemainsPrefab },
                 { ConfigData.ShipTypes.Leafcutter, LeafcutterRemainsPrefab },

@@ -36,10 +36,10 @@ namespace Assets.Scripts.Entities.Ships
             if (Squad.HasCustomColor)
             {
                 Color[] colors = ConfigData.ChangeableShipColors.GetValueOrDefault(ShipType);
-                int[] changeablePixels = Utilities.SetChangablePixelsForImage(colors, StandardSprite);
+                int[] changeablePixels = Utilities.GetChangablePixelsForImage(colors, StandardSprite);
                 StandardSprite = Utilities.SetImageColor(Squad.Color, StandardSprite, changeablePixels);
 
-                changeablePixels = Utilities.SetChangablePixelsForImage(colors, EnemySprite);
+                changeablePixels = Utilities.GetChangablePixelsForImage(colors, EnemySprite);
                 EnemySprite = Utilities.SetImageColor(Squad.Color, EnemySprite, changeablePixels);
             }
             base.SetColor();

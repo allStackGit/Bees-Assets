@@ -1,0 +1,554 @@
+fileFormatVersion: 2
+guid: 477e952324315b4488d0c6a0fc0c7565
+TextureImporter:
+  internalIDToNameTable: []
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 1
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 40
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 3
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 8192
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 3
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: barge_remains_0
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 3810
+        width: 1270
+        height: 1270
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: b4ff509778d67a143af087d50b31cb36
+      internalID: -1430245057
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: barge_remains_1
+      rect:
+        serializedVersion: 2
+        x: 1270
+        y: 3810
+        width: 1270
+        height: 1270
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: ee9b26e9e51eb8845882d80ed318de34
+      internalID: 871214836
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: barge_remains_2
+      rect:
+        serializedVersion: 2
+        x: 2540
+        y: 3810
+        width: 1270
+        height: 1270
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: ac612ef855f604a4c82d2712f2dc4617
+      internalID: 209460308
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: barge_remains_3
+      rect:
+        serializedVersion: 2
+        x: 3810
+        y: 3810
+        width: 1270
+        height: 1270
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 9f868333d5317514ea60c0a77ae408e6
+      internalID: 1559703961
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: barge_remains_4
+      rect:
+        serializedVersion: 2
+        x: 5080
+        y: 3810
+        width: 1270
+        height: 1270
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 4743544286e71aa41be7b11d3b73c6a6
+      internalID: -69604358
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: barge_remains_5
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 2540
+        width: 1270
+        height: 1270
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 94a9a324f311e054682955907fe9450b
+      internalID: -1363104829
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: barge_remains_6
+      rect:
+        serializedVersion: 2
+        x: 1270
+        y: 2540
+        width: 1270
+        height: 1270
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 83820abae0b51e74bb60124de3cf607e
+      internalID: -1106255201
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: barge_remains_7
+      rect:
+        serializedVersion: 2
+        x: 2540
+        y: 2540
+        width: 1270
+        height: 1270
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: f631ea6f6b2b27c43a062d94c0cfc091
+      internalID: 1708430342
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: barge_remains_8
+      rect:
+        serializedVersion: 2
+        x: 3810
+        y: 2540
+        width: 1270
+        height: 1270
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 806e333d7a5d0bc42b93907b67cbd5d5
+      internalID: -1839204597
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: barge_remains_9
+      rect:
+        serializedVersion: 2
+        x: 5080
+        y: 2540
+        width: 1270
+        height: 1270
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 5fe788966b2aa434996390662f30f05b
+      internalID: -1885187224
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: barge_remains_10
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 1270
+        width: 1270
+        height: 1270
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 9c6c4753b0c49b543a42de1a4fcd5099
+      internalID: 1945855541
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: barge_remains_11
+      rect:
+        serializedVersion: 2
+        x: 1270
+        y: 1270
+        width: 1270
+        height: 1270
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: e8c7cf653b0ea1a4b828528383a4b674
+      internalID: 792876922
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: barge_remains_12
+      rect:
+        serializedVersion: 2
+        x: 2540
+        y: 1270
+        width: 1270
+        height: 1270
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 2c995d8d68c37b8468517c2dd213d322
+      internalID: 2133559823
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: barge_remains_13
+      rect:
+        serializedVersion: 2
+        x: 3810
+        y: 1270
+        width: 1270
+        height: 1270
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: c0e8c2ac5cf9124458c396b8000054c5
+      internalID: -7177344
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: barge_remains_14
+      rect:
+        serializedVersion: 2
+        x: 5080
+        y: 1270
+        width: 1270
+        height: 1270
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 2b031e1963b82ae4b99ab9c284b95d54
+      internalID: -754105245
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: barge_remains_15
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 0
+        width: 1270
+        height: 1270
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: db0f398fd157105439156f88aa717293
+      internalID: 201005649
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: barge_remains_16
+      rect:
+        serializedVersion: 2
+        x: 1270
+        y: 0
+        width: 1270
+        height: 1270
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: ef4fccc5d0d17b64c9bb4bb2059366dc
+      internalID: -900937081
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: barge_remains_17
+      rect:
+        serializedVersion: 2
+        x: 2540
+        y: 0
+        width: 1270
+        height: 1270
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 17c46113b12cf09488093f511ba0ce72
+      internalID: 1899961247
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: barge_remains_18
+      rect:
+        serializedVersion: 2
+        x: 3810
+        y: 0
+        width: 1270
+        height: 1270
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: ec704dc3ba827ac478aa641111568af3
+      internalID: -609335497
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: barge_remains_19
+      rect:
+        serializedVersion: 2
+        x: 5080
+        y: 0
+        width: 1270
+        height: 1270
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 301b478228bd02345aa9232439eda66d
+      internalID: 821498471
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    physicsShape: []
+    bones: []
+    spriteID: 5e97eb03825dee720800000000000000
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    nameFileIdTable:
+      barge_remains_0: -1430245057
+      barge_remains_1: 871214836
+      barge_remains_10: 1945855541
+      barge_remains_11: 792876922
+      barge_remains_12: 2133559823
+      barge_remains_13: -7177344
+      barge_remains_14: -754105245
+      barge_remains_15: 201005649
+      barge_remains_16: -900937081
+      barge_remains_17: 1899961247
+      barge_remains_18: -609335497
+      barge_remains_19: 821498471
+      barge_remains_2: 209460308
+      barge_remains_3: 1559703961
+      barge_remains_4: -69604358
+      barge_remains_5: -1363104829
+      barge_remains_6: -1106255201
+      barge_remains_7: 1708430342
+      barge_remains_8: -1839204597
+      barge_remains_9: -1885187224
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

@@ -176,7 +176,7 @@ MonoBehaviour:
   HasOnlySideRocketFlares: 0
   HasMovementMarker: 0
   HasWaitingTargetCoordinates: 0
-  HasRemainsShip: 0
+  HasRemainsShip: 1
   FireAtFrontOfShip: 1
   IsBomber: 0
   IsSpawnedShip: 0
@@ -186,10 +186,11 @@ MonoBehaviour:
   IsFollowingPath: 0
   CannotChangeMovementOrders: 0
   Weapons: []
+  ColoredPrefabs: []
+  OriginalSprites: []
   WeaponPrefabs:
   - {fileID: 1256838388324771284}
   - {fileID: 38226734839496550}
-  ColoredPrefabs: []
   LeftRocketFlares:
   - {fileID: 8995762424950434141}
   CenterRocketFlares:
