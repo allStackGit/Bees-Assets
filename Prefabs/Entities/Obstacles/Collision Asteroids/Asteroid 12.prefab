@@ -198,19 +198,19 @@ MonoBehaviour:
   Collider: {fileID: 3873131917324500913}
   ProximityCollider: {fileID: 6330246999587551277}
   ClearanceMappingCollider: {fileID: 4327743194160671326}
+  SpriteRenderer: {fileID: 1846929101835880065}
   Body: {fileID: 2812687852296569020}
   Speed: 0
   SizeClass: 2
   LastHitAsteroid: {fileID: 0}
   ExplosionAnimation: {fileID: 0}
   HasCollisionAnimation: 0
-  HasCrackedSprite: 0
+  HasCrackedSprite: 1
   HasDroppedDestructionAnimation: 0
   IsImmune: 0
   HasTouchedMapBorder: 0
   HasEnteredMap: 0
   CrackedSprite: {fileID: 21300000, guid: 99ec107a5c5b47a4ea298525274eb70d, type: 3}
-  SpriteRenderer: {fileID: 1846929101835880065}
 --- !u!1 &5206769835850001811
 GameObject:
   m_ObjectHideFlags: 0

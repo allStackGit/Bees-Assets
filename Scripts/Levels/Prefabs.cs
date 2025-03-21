@@ -130,7 +130,7 @@ namespace Assets.Scripts.Levels
                 { ConfigData.ShipTypes.FireBarge, FireBargeExplosionPrefab },
 
                 { ConfigData.ShipTypes.Beehive, MediumShipExplosionPrefab },
-                { ConfigData.ShipTypes.Queen, TinyShipExplosionPrefab },
+                { ConfigData.ShipTypes.Queen, QueenShipExplosionPrefab },
 
             };
         }

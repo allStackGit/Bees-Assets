@@ -42,8 +42,15 @@ Transform:
   - {fileID: 1321072230027699658}
   - {fileID: 5193694780766573873}
   - {fileID: 945021548312606397}
+  - {fileID: 1418504395454788325}
+  - {fileID: 4939799858169692996}
+  - {fileID: 980907257527268238}
+  - {fileID: 5293932446217793213}
   - {fileID: 6838597938239274596}
   - {fileID: 4000979523590310570}
+  - {fileID: 7151128429223889107}
+  - {fileID: 8883326815159064876}
+  - {fileID: 8292671714425321198}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!212 &2518675752222090673
@@ -278,6 +285,15 @@ MonoBehaviour:
   OriginalPower: 0
   Charge: {fileID: 0}
   ChargingBar: {fileID: 7819204345052517670}
+  BargeChargeAnimation: {fileID: 6515246988498313324}
+  BargeChargingAnimation: {fileID: 2271205332708648667}
+  BargeChargeImageAnimation: {fileID: 116322746065067607}
+  BargeChargeImageAnimator: {fileID: 3969404016288029411}
+  ChargeRocketFlares:
+  - {fileID: 4183400637249483949}
+  - {fileID: 7866758581980661004}
+  - {fileID: 2611251572022162886}
+  - {fileID: 6977823009230137589}
 --- !u!50 &9209194230390332424
 Rigidbody2D:
   serializedVersion: 4
@@ -504,6 +520,89 @@ PrefabInstance:
 Transform:
   m_CorrespondingSourceObject: {fileID: 3006095412329282366, guid: 61aca1eb0b0c2364cbdccbd7752de890, type: 3}
   m_PrefabInstance: {fileID: 2165722101128184093}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1001 &2466506880086205423
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 2518675752222090672}
+    m_Modifications:
+    - target: {fileID: 4369132556778096620, guid: 50494d53815674a4db4be6349a9d352b, type: 3}
+      propertyPath: m_SortingLayer
+      value: 13
+      objectReference: {fileID: 0}
+    - target: {fileID: 4369132556778096620, guid: 50494d53815674a4db4be6349a9d352b, type: 3}
+      propertyPath: m_SortingOrder
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4369132556778096620, guid: 50494d53815674a4db4be6349a9d352b, type: 3}
+      propertyPath: m_SortingLayerID
+      value: 1001197481
+      objectReference: {fileID: 0}
+    - target: {fileID: 4449059207966754100, guid: 50494d53815674a4db4be6349a9d352b, type: 3}
+      propertyPath: m_Name
+      value: Barge Charging Animation
+      objectReference: {fileID: 0}
+    - target: {fileID: 4449059207966754100, guid: 50494d53815674a4db4be6349a9d352b, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4685753087817558844, guid: 50494d53815674a4db4be6349a9d352b, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4685753087817558844, guid: 50494d53815674a4db4be6349a9d352b, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4685753087817558844, guid: 50494d53815674a4db4be6349a9d352b, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4685753087817558844, guid: 50494d53815674a4db4be6349a9d352b, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4685753087817558844, guid: 50494d53815674a4db4be6349a9d352b, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4685753087817558844, guid: 50494d53815674a4db4be6349a9d352b, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4685753087817558844, guid: 50494d53815674a4db4be6349a9d352b, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4685753087817558844, guid: 50494d53815674a4db4be6349a9d352b, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4685753087817558844, guid: 50494d53815674a4db4be6349a9d352b, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4685753087817558844, guid: 50494d53815674a4db4be6349a9d352b, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 50494d53815674a4db4be6349a9d352b, type: 3}
+--- !u!1 &2271205332708648667 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 4449059207966754100, guid: 50494d53815674a4db4be6349a9d352b, type: 3}
+  m_PrefabInstance: {fileID: 2466506880086205423}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &7151128429223889107 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 4685753087817558844, guid: 50494d53815674a4db4be6349a9d352b, type: 3}
+  m_PrefabInstance: {fileID: 2466506880086205423}
   m_PrefabAsset: {fileID: 0}
 --- !u!1001 &3675568173796971960
 PrefabInstance:
@@ -732,6 +831,204 @@ GameObject:
   m_CorrespondingSourceObject: {fileID: 6138492006316565239, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
   m_PrefabInstance: {fileID: 3783620284682793358}
   m_PrefabAsset: {fileID: 0}
+--- !u!1001 &3883924745664023042
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 2518675752222090672}
+    m_Modifications:
+    - target: {fileID: 5842864600162321386, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_Size.x
+      value: 2.125
+      objectReference: {fileID: 0}
+    - target: {fileID: 5842864600162321386, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_Size.y
+      value: 1.75
+      objectReference: {fileID: 0}
+    - target: {fileID: 5842864600162321386, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_Sprite
+      value: 
+      objectReference: {fileID: 95964183, guid: 34ed49bd7d764ea41a62b3898c98bf30, type: 3}
+    - target: {fileID: 5842864600162321386, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_SortingLayer
+      value: 13
+      objectReference: {fileID: 0}
+    - target: {fileID: 5842864600162321386, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_SortingOrder
+      value: -1
+      objectReference: {fileID: 0}
+    - target: {fileID: 5842864600162321386, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_SortingLayerID
+      value: 1001197481
+      objectReference: {fileID: 0}
+    - target: {fileID: 5934326579379477309, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_Controller
+      value: 
+      objectReference: {fileID: 9100000, guid: a2b8d1823624a9e44b09b2372a495f05, type: 2}
+    - target: {fileID: 6138492006316565239, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_Name
+      value: Barge Charge Rocket Flare Right
+      objectReference: {fileID: 0}
+    - target: {fileID: 6138492006316565239, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 5.55
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: -4.75
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+--- !u!4 &5293932446217793213 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+  m_PrefabInstance: {fileID: 3883924745664023042}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1 &6977823009230137589 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 6138492006316565239, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+  m_PrefabInstance: {fileID: 3883924745664023042}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1001 &4043135930056599547
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 2518675752222090672}
+    m_Modifications:
+    - target: {fileID: 5842864600162321386, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_Size.x
+      value: 2.125
+      objectReference: {fileID: 0}
+    - target: {fileID: 5842864600162321386, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_Size.y
+      value: 1.75
+      objectReference: {fileID: 0}
+    - target: {fileID: 5842864600162321386, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_Sprite
+      value: 
+      objectReference: {fileID: 95964183, guid: 34ed49bd7d764ea41a62b3898c98bf30, type: 3}
+    - target: {fileID: 5842864600162321386, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_SortingLayer
+      value: 13
+      objectReference: {fileID: 0}
+    - target: {fileID: 5842864600162321386, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_SortingOrder
+      value: -1
+      objectReference: {fileID: 0}
+    - target: {fileID: 5842864600162321386, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_SortingLayerID
+      value: 1001197481
+      objectReference: {fileID: 0}
+    - target: {fileID: 5934326579379477309, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_Controller
+      value: 
+      objectReference: {fileID: 9100000, guid: a2b8d1823624a9e44b09b2372a495f05, type: 2}
+    - target: {fileID: 6138492006316565239, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_Name
+      value: Barge Charge Rocket Flare Inner Left
+      objectReference: {fileID: 0}
+    - target: {fileID: 6138492006316565239, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -2.45
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: -4.75
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+--- !u!4 &4939799858169692996 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+  m_PrefabInstance: {fileID: 4043135930056599547}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1 &7866758581980661004 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 6138492006316565239, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+  m_PrefabInstance: {fileID: 4043135930056599547}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &4182151901154922717
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -895,6 +1192,112 @@ GameObject:
 Transform:
   m_CorrespondingSourceObject: {fileID: 9044662742910573377, guid: 500bf95a1f16a1346b248d228d4dc203, type: 3}
   m_PrefabInstance: {fileID: 4361201460426663623}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1001 &6244745713311964418
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 2518675752222090672}
+    m_Modifications:
+    - target: {fileID: -2179763316891514911, guid: 95bed359f43bc444c8c22cd099257e20, type: 3}
+      propertyPath: Barge
+      value: 
+      objectReference: {fileID: 6497241460149046658}
+    - target: {fileID: -2179763316891514911, guid: 95bed359f43bc444c8c22cd099257e20, type: 3}
+      propertyPath: OriginalPosition.y
+      value: -1.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 2719250443495173100, guid: 95bed359f43bc444c8c22cd099257e20, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2719250443495173100, guid: 95bed359f43bc444c8c22cd099257e20, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: -1.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 2719250443495173100, guid: 95bed359f43bc444c8c22cd099257e20, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2719250443495173100, guid: 95bed359f43bc444c8c22cd099257e20, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 2719250443495173100, guid: 95bed359f43bc444c8c22cd099257e20, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2719250443495173100, guid: 95bed359f43bc444c8c22cd099257e20, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2719250443495173100, guid: 95bed359f43bc444c8c22cd099257e20, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2719250443495173100, guid: 95bed359f43bc444c8c22cd099257e20, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2719250443495173100, guid: 95bed359f43bc444c8c22cd099257e20, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2719250443495173100, guid: 95bed359f43bc444c8c22cd099257e20, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6283798873049383765, guid: 95bed359f43bc444c8c22cd099257e20, type: 3}
+      propertyPath: m_Name
+      value: Barge Charge Image Animation
+      objectReference: {fileID: 0}
+    - target: {fileID: 6283798873049383765, guid: 95bed359f43bc444c8c22cd099257e20, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8094051094519917730, guid: 95bed359f43bc444c8c22cd099257e20, type: 3}
+      propertyPath: m_Sprite
+      value: 
+      objectReference: {fileID: 1560365060, guid: 93cd946eadbbc5e4c807b7d547c8b267, type: 3}
+    - target: {fileID: 8094051094519917730, guid: 95bed359f43bc444c8c22cd099257e20, type: 3}
+      propertyPath: m_SortingLayer
+      value: 13
+      objectReference: {fileID: 0}
+    - target: {fileID: 8094051094519917730, guid: 95bed359f43bc444c8c22cd099257e20, type: 3}
+      propertyPath: m_SortingOrder
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8094051094519917730, guid: 95bed359f43bc444c8c22cd099257e20, type: 3}
+      propertyPath: m_SortingLayerID
+      value: 1001197481
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 95bed359f43bc444c8c22cd099257e20, type: 3}
+--- !u!1 &116322746065067607 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 6283798873049383765, guid: 95bed359f43bc444c8c22cd099257e20, type: 3}
+  m_PrefabInstance: {fileID: 6244745713311964418}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &3969404016288029411 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: -2179763316891514911, guid: 95bed359f43bc444c8c22cd099257e20, type: 3}
+  m_PrefabInstance: {fileID: 6244745713311964418}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 116322746065067607}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b03a0ddfb1d471b4a90db8a0b4a0c553, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!4 &8292671714425321198 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 2719250443495173100, guid: 95bed359f43bc444c8c22cd099257e20, type: 3}
+  m_PrefabInstance: {fileID: 6244745713311964418}
   m_PrefabAsset: {fileID: 0}
 --- !u!1001 &6386772937941524166
 PrefabInstance:
@@ -1187,6 +1590,89 @@ GameObject:
   m_CorrespondingSourceObject: {fileID: 6138492006316565239, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
   m_PrefabInstance: {fileID: 7655886244883581960}
   m_PrefabAsset: {fileID: 0}
+--- !u!1001 &7807586690934044895
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 2518675752222090672}
+    m_Modifications:
+    - target: {fileID: 1665755814862971379, guid: a78021cff18980a4a9e0dc51d34d20c0, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1665755814862971379, guid: a78021cff18980a4a9e0dc51d34d20c0, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: -1.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 1665755814862971379, guid: a78021cff18980a4a9e0dc51d34d20c0, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1665755814862971379, guid: a78021cff18980a4a9e0dc51d34d20c0, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 1665755814862971379, guid: a78021cff18980a4a9e0dc51d34d20c0, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1665755814862971379, guid: a78021cff18980a4a9e0dc51d34d20c0, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1665755814862971379, guid: a78021cff18980a4a9e0dc51d34d20c0, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1665755814862971379, guid: a78021cff18980a4a9e0dc51d34d20c0, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1665755814862971379, guid: a78021cff18980a4a9e0dc51d34d20c0, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1665755814862971379, guid: a78021cff18980a4a9e0dc51d34d20c0, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3904849744049002675, guid: a78021cff18980a4a9e0dc51d34d20c0, type: 3}
+      propertyPath: m_Name
+      value: Barge Charge Animation
+      objectReference: {fileID: 0}
+    - target: {fileID: 3904849744049002675, guid: a78021cff18980a4a9e0dc51d34d20c0, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4319982639288642527, guid: a78021cff18980a4a9e0dc51d34d20c0, type: 3}
+      propertyPath: m_SortingLayer
+      value: 13
+      objectReference: {fileID: 0}
+    - target: {fileID: 4319982639288642527, guid: a78021cff18980a4a9e0dc51d34d20c0, type: 3}
+      propertyPath: m_SortingOrder
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4319982639288642527, guid: a78021cff18980a4a9e0dc51d34d20c0, type: 3}
+      propertyPath: m_SortingLayerID
+      value: 1001197481
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: a78021cff18980a4a9e0dc51d34d20c0, type: 3}
+--- !u!1 &6515246988498313324 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 3904849744049002675, guid: a78021cff18980a4a9e0dc51d34d20c0, type: 3}
+  m_PrefabInstance: {fileID: 7807586690934044895}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &8883326815159064876 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 1665755814862971379, guid: a78021cff18980a4a9e0dc51d34d20c0, type: 3}
+  m_PrefabInstance: {fileID: 7807586690934044895}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &7981732352708673909
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1261,6 +1747,204 @@ Transform:
 GameObject:
   m_CorrespondingSourceObject: {fileID: 6138492006316565239, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
   m_PrefabInstance: {fileID: 7981732352708673909}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1001 &8015880962396591706
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 2518675752222090672}
+    m_Modifications:
+    - target: {fileID: 5842864600162321386, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_Size.x
+      value: 2.125
+      objectReference: {fileID: 0}
+    - target: {fileID: 5842864600162321386, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_Size.y
+      value: 1.75
+      objectReference: {fileID: 0}
+    - target: {fileID: 5842864600162321386, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_Sprite
+      value: 
+      objectReference: {fileID: 95964183, guid: 34ed49bd7d764ea41a62b3898c98bf30, type: 3}
+    - target: {fileID: 5842864600162321386, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_SortingLayer
+      value: 13
+      objectReference: {fileID: 0}
+    - target: {fileID: 5842864600162321386, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_SortingOrder
+      value: -1
+      objectReference: {fileID: 0}
+    - target: {fileID: 5842864600162321386, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_SortingLayerID
+      value: 1001197481
+      objectReference: {fileID: 0}
+    - target: {fileID: 5934326579379477309, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_Controller
+      value: 
+      objectReference: {fileID: 9100000, guid: a2b8d1823624a9e44b09b2372a495f05, type: 2}
+    - target: {fileID: 6138492006316565239, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_Name
+      value: Barge Charge Rocket Flare Left
+      objectReference: {fileID: 0}
+    - target: {fileID: 6138492006316565239, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -5.55
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: -4.75
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+--- !u!4 &1418504395454788325 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+  m_PrefabInstance: {fileID: 8015880962396591706}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1 &4183400637249483949 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 6138492006316565239, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+  m_PrefabInstance: {fileID: 8015880962396591706}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1001 &8146249268900747057
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 2518675752222090672}
+    m_Modifications:
+    - target: {fileID: 5842864600162321386, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_Size.x
+      value: 2.125
+      objectReference: {fileID: 0}
+    - target: {fileID: 5842864600162321386, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_Size.y
+      value: 1.75
+      objectReference: {fileID: 0}
+    - target: {fileID: 5842864600162321386, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_Sprite
+      value: 
+      objectReference: {fileID: 95964183, guid: 34ed49bd7d764ea41a62b3898c98bf30, type: 3}
+    - target: {fileID: 5842864600162321386, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_SortingLayer
+      value: 13
+      objectReference: {fileID: 0}
+    - target: {fileID: 5842864600162321386, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_SortingOrder
+      value: -1
+      objectReference: {fileID: 0}
+    - target: {fileID: 5842864600162321386, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_SortingLayerID
+      value: 1001197481
+      objectReference: {fileID: 0}
+    - target: {fileID: 5934326579379477309, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_Controller
+      value: 
+      objectReference: {fileID: 9100000, guid: a2b8d1823624a9e44b09b2372a495f05, type: 2}
+    - target: {fileID: 6138492006316565239, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_Name
+      value: Barge Charge Rocket Flare Inner Right
+      objectReference: {fileID: 0}
+    - target: {fileID: 6138492006316565239, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 2.45
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: -4.75
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+--- !u!4 &980907257527268238 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 8976144066460689599, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+  m_PrefabInstance: {fileID: 8146249268900747057}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1 &2611251572022162886 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 6138492006316565239, guid: c509e0f0d94dc564fb7ff432bf60df1d, type: 3}
+  m_PrefabInstance: {fileID: 8146249268900747057}
   m_PrefabAsset: {fileID: 0}
 --- !u!1001 &8182142702337233410
 PrefabInstance:

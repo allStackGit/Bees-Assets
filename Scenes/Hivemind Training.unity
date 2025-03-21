@@ -16063,7 +16063,7 @@ MonoBehaviour:
   MediumShipExplosionPrefab: {fileID: 5251504260705199934, guid: 9b9ec98e14c9ff04db5cf9584f56ae1c, type: 3}
   LargeShipExplosionPrefab: {fileID: 5251504260705199934, guid: 70dc82c9665ce3f4eb24bbfe8e62b2c9, type: 3}
   HugeShipExplosionPrefab: {fileID: 5251504260705199934, guid: 6a4063a718e9d7341ac9460de59edcb0, type: 3}
-  QueenShipExplosionPrefab: {fileID: 0}
+  QueenShipExplosionPrefab: {fileID: 1317667449522872329, guid: 3916e7d63e371ed4ab56cbc6ead366b2, type: 3}
   MovementMarkerPrefab: {fileID: 2507697582912947509, guid: d5ee77a24c7f6a6499324a8a600b4943, type: 3}
   TargetingMarkerPrefab: {fileID: 2507697582912947509, guid: 60a6013777594eb47842724022e04add, type: 3}
   SquadBoxPrefab: {fileID: 4393128050314196725, guid: 606f56cf5efd9f84d9e877d10187ad8b, type: 3}
@@ -16133,6 +16133,18 @@ MonoBehaviour:
   - {fileID: 2899863341814993073, guid: a1969efbfb7bd964d87858bba1ec1393, type: 3}
   - {fileID: 2899863341814993073, guid: db2b908a39a40f941944e2633da344c8, type: 3}
   - {fileID: 226534545502904114, guid: af099394451a42e4aaf76305d2f2edd2, type: 3}
+  - {fileID: 226534545502904114, guid: 62cfe7f8e6b98f743bf30a2fc30ccd57, type: 3}
+  - {fileID: 226534545502904114, guid: c547cdd7e5d321744aa47a8fe890691f, type: 3}
+  - {fileID: 226534545502904114, guid: dc1cb0ca67bdac6408a1a899f52b5b00, type: 3}
+  - {fileID: 226534545502904114, guid: 7d7978a7f82873d4991a528034d573d5, type: 3}
+  - {fileID: 226534545502904114, guid: 570030df691a39d4db43bdeadfef55ca, type: 3}
+  - {fileID: 226534545502904114, guid: 982fb12ed47b8754a9764290ad2a57dc, type: 3}
+  - {fileID: 226534545502904114, guid: 412c4c8f7387e4942a3226c94090d5eb, type: 3}
+  - {fileID: 2899863341814993073, guid: cab8a174a65353442a9f2e956121ee0f, type: 3}
+  - {fileID: 2899863341814993073, guid: b4b8c8a91120b8242978dbcbdb7bf5c9, type: 3}
+  - {fileID: 2899863341814993073, guid: 50540889fd9064747b0b45a45ef5bc62, type: 3}
+  - {fileID: 2899863341814993073, guid: d0ac82fd3cc850c4bb430360b3efb597, type: 3}
+  - {fileID: 2899863341814993073, guid: 44a41557357e0bf46b67f03efeee9492, type: 3}
   BreakawayAsteroids: []
   AsteroidPieces: []
   Maps:

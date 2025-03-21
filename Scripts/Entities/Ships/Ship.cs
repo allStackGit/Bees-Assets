@@ -1149,7 +1149,84 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             Body.velocity = _tempVelocity;
             IsMoving = true;
         }
-        private float _maxSpeed, _rotation, _differenceInAngleToPoint;
+        public virtual void SetRocketFlares()
+        {
+            CenterRocketFlares.ForEach((flare) =>
+            {
+                flare.SetActive(true);
+            });
+
+            //Debug.Log($"differenceInAngleToPoint: {differenceInAngleToPoint}");
+            if (HasRightRocketFlares && HasLeftRocketFlares)
+            {
+                if (_differenceInAngleToPoint > 0)
+                {
+                    //Debug.Log($"Moving to the left, activating right rocket flares");
+                    RightRocketFlares.ForEach((flare) =>
+                    {
+                        flare.SetActive(true);
+                    });
+
+                    LeftRocketFlares.ForEach((flare) =>
+                    {
+                        flare.SetActive(false);
+                    });
+
+                    AreRocketFlaresOutOfSync = true;
+                }
+                else if (_differenceInAngleToPoint < 0)
+                {
+                    //Debug.Log($"Moving to the right, activating left rocket flares");
+                    LeftRocketFlares.ForEach((flare) =>
+                    {
+                        flare.SetActive(true);
+                    });
+
+                    RightRocketFlares.ForEach((flare) =>
+                    {
+                        flare.SetActive(false);
+                    });
+
+                    AreRocketFlaresOutOfSync = true;
+                }
+                else if (!HasOnlySideRocketFlares) // moving straight, activate both sides unless they are side rocket flares like with the factory
+                {
+                    RightRocketFlares.ForEach((flare) =>
+                    {
+                        if (AreRocketFlaresOutOfSync)
+                        {
+                            flare.SetActive(false);
+                        }
+                        flare.SetActive(true);
+                    });
+
+                    LeftRocketFlares.ForEach((flare) =>
+                    {
+                        if (AreRocketFlaresOutOfSync)
+                        {
+                            flare.SetActive(false);
+                        }
+                        flare.SetActive(true);
+                    });
+
+                    AreRocketFlaresOutOfSync = false;
+                }
+                else // moving straight and only has side rocket flares
+                {
+                    RightRocketFlares.ForEach((flare) =>
+                    {
+                        flare.SetActive(false);
+                    });
+
+                    LeftRocketFlares.ForEach((flare) =>
+                    {
+                        flare.SetActive(false);
+                    });
+                }
+            }
+        }
+        private float _maxSpeed, _rotation;
+        protected float _differenceInAngleToPoint;
         public void SetMovementVelocity()
         {
 
@@ -1191,81 +1268,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
             if (HasRocketFlares)
             {
-
-                CenterRocketFlares.ForEach((flare) =>
-                {
-                    flare.SetActive(true);
-                });
-
-                //Debug.Log($"differenceInAngleToPoint: {differenceInAngleToPoint}");
-                if (HasRightRocketFlares && HasLeftRocketFlares)
-                {
-                    if (_differenceInAngleToPoint > 0)
-                    {
-                        //Debug.Log($"Moving to the left, activating right rocket flares");
-                        RightRocketFlares.ForEach((flare) =>
-                        {
-                            flare.SetActive(true);
-                        });
-
-                        LeftRocketFlares.ForEach((flare) =>
-                        {
-                            flare.SetActive(false);
-                        });
-
-                        AreRocketFlaresOutOfSync = true;
-                    }
-                    else if (_differenceInAngleToPoint < 0)
-                    {
-                        //Debug.Log($"Moving to the right, activating left rocket flares");
-                        LeftRocketFlares.ForEach((flare) =>
-                        {
-                            flare.SetActive(true);
-                        });
-
-                        RightRocketFlares.ForEach((flare) =>
-                        {
-                            flare.SetActive(false);
-                        });
-
-                        AreRocketFlaresOutOfSync = true;
-                    }
-                    else if (!HasOnlySideRocketFlares) // moving straight, activate both sides unless they are side rocket flares like with the factory
-                    {
-                        RightRocketFlares.ForEach((flare) =>
-                        {
-                            if (AreRocketFlaresOutOfSync)
-                            {
-                                flare.SetActive(false);
-                            }
-                            flare.SetActive(true);
-                        });
-
-                        LeftRocketFlares.ForEach((flare) =>
-                        {
-                            if (AreRocketFlaresOutOfSync)
-                            {
-                                flare.SetActive(false);
-                            }
-                            flare.SetActive(true);
-                        });
-
-                        AreRocketFlaresOutOfSync = false;
-                    }
-                    else // moving straight and only has side rocket flares
-                    {
-                        RightRocketFlares.ForEach((flare) =>
-                        {
-                            flare.SetActive(false);
-                        });
-
-                        LeftRocketFlares.ForEach((flare) =>
-                        {
-                            flare.SetActive(false);
-                        });
-                    }
-                }
-
+                SetRocketFlares();
             }
 
 
@@ -2379,6 +2382,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             {
                 ShipExplosion.transform.parent = Level.Map.transform;
                 ShipExplosion.transform.localPosition = GetPosition();
+                ShipExplosion.transform.eulerAngles = Vector3.forward * Rotation;
                 ShipExplosion.SetActive(true);
 
                 if (Level.Stage.ActivateAudio && HasShipExplosionSoundEffect)

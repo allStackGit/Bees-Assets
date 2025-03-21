@@ -1,0 +1,994 @@
+fileFormatVersion: 2
+guid: a41a8090432320a4d9f73d518c143a9f
+TextureImporter:
+  internalIDToNameTable: []
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 8
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 3
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 16384
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 3
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: queen_death_rings_0
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: d9f458c7b87270d468aa98dcb42a9034
+      internalID: 54214679
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_1
+      rect:
+        serializedVersion: 2
+        x: 1672
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 7b0af4833012ab84b8879e606a05ea04
+      internalID: 487947361
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_2
+      rect:
+        serializedVersion: 2
+        x: 3344
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 582dd2e82c8d30e4491a872652c89884
+      internalID: 1592155058
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_3
+      rect:
+        serializedVersion: 2
+        x: 5016
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: deb6427fa4ab3cf41acee24d5adfea88
+      internalID: -211651413
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_4
+      rect:
+        serializedVersion: 2
+        x: 6688
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 7ea84f94d12dccd40a44eb96e28633f0
+      internalID: -683005736
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_5
+      rect:
+        serializedVersion: 2
+        x: 8360
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: e068cd99dff148a4d841b9fd4c6b5e49
+      internalID: 1184220702
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_6
+      rect:
+        serializedVersion: 2
+        x: 10032
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 6364251ae32cab94ab5773ce3bd6921d
+      internalID: -1912136639
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_7
+      rect:
+        serializedVersion: 2
+        x: 11704
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 9afd6ffefa5b597438e90c3d142d8327
+      internalID: -954638852
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_8
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: f7768e39906fcc84895192e616d63870
+      internalID: -219371709
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_9
+      rect:
+        serializedVersion: 2
+        x: 1672
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 3c055db40bff5974b92f201deeda7c77
+      internalID: 1158681054
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_10
+      rect:
+        serializedVersion: 2
+        x: 3344
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 7206786bfd7d7064c919c471cf3609b2
+      internalID: 1635877332
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_11
+      rect:
+        serializedVersion: 2
+        x: 5016
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 5913fdf679dc0dc4b82bce3148ba6f97
+      internalID: -1604722043
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_12
+      rect:
+        serializedVersion: 2
+        x: 6688
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: e08da5d7e54cfc740a68148218bd7241
+      internalID: 1984080073
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_13
+      rect:
+        serializedVersion: 2
+        x: 8360
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: b899c4ea932d6064a9340e82a68a53a0
+      internalID: -425616066
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_14
+      rect:
+        serializedVersion: 2
+        x: 10032
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 93162d9c48ca42441b477672b1910956
+      internalID: -894527817
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_15
+      rect:
+        serializedVersion: 2
+        x: 11704
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 2496ffece96a0db429b96c68f76ca7be
+      internalID: 943289169
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_16
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 12bb65aca53eb6b418da95c219c70dff
+      internalID: 1011637011
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_17
+      rect:
+        serializedVersion: 2
+        x: 1672
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 97ad7e9842eb7e442bf15c69c3b89677
+      internalID: 1727570703
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_18
+      rect:
+        serializedVersion: 2
+        x: 3344
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: dcdf98c4c77c2ac478968e4dd1032ef3
+      internalID: 94912899
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_19
+      rect:
+        serializedVersion: 2
+        x: 5016
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 965a05ad59f389445b2fdf921cf0aba6
+      internalID: 353794864
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_20
+      rect:
+        serializedVersion: 2
+        x: 6688
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: bbf0bf2847bf919478764c73505ff0ab
+      internalID: 631685229
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_21
+      rect:
+        serializedVersion: 2
+        x: 8360
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 6703110c353cd884eb8370e970a3f5fe
+      internalID: -240965108
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_22
+      rect:
+        serializedVersion: 2
+        x: 10032
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: f85f28d197565fa4786e724460e6770c
+      internalID: 1270021879
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_23
+      rect:
+        serializedVersion: 2
+        x: 11704
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 30794aed60c01144082a78fbc5602745
+      internalID: -1650083435
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_24
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 8781573c095731d4c88e6c154326fe74
+      internalID: -1553170912
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_25
+      rect:
+        serializedVersion: 2
+        x: 1672
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 4914910a831bcfc45a601ea5eeca1d0f
+      internalID: -192465029
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_26
+      rect:
+        serializedVersion: 2
+        x: 3344
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: cd9378ed786e73d4091c06b419792aec
+      internalID: -1540252766
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_27
+      rect:
+        serializedVersion: 2
+        x: 5016
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 1aa61e9a176c8c044bdddb713dc03b2f
+      internalID: 439250539
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_28
+      rect:
+        serializedVersion: 2
+        x: 6688
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: d8eaf62bcb8f71345a537768a0a6d455
+      internalID: 1390920622
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_29
+      rect:
+        serializedVersion: 2
+        x: 8360
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: d050a668969d17b4dba6143d660805ef
+      internalID: -391702209
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_30
+      rect:
+        serializedVersion: 2
+        x: 10032
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 1a6034594c9dd1b4798da43a78282f9c
+      internalID: -648047395
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_31
+      rect:
+        serializedVersion: 2
+        x: 11704
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 4cb0776815e3df745b0b9cfb62c54152
+      internalID: 587487586
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_32
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 443546b23e2c1954c8df4ca46a6f3ed7
+      internalID: -96816803
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_33
+      rect:
+        serializedVersion: 2
+        x: 1672
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 4fb463871406d4242b917de3bdb993ce
+      internalID: 448702956
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_34
+      rect:
+        serializedVersion: 2
+        x: 3344
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 8ba39a1b4a22f344e9c7af1bd94e101a
+      internalID: 1069445815
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_35
+      rect:
+        serializedVersion: 2
+        x: 5016
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 7d70ec455f8bc304195e9c3b5547bfd7
+      internalID: 1770487422
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_36
+      rect:
+        serializedVersion: 2
+        x: 6688
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: f43b79a56034ba44bb7f73f49a55486a
+      internalID: -1091398885
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_37
+      rect:
+        serializedVersion: 2
+        x: 8360
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 398909ca109496e468f098d503350c23
+      internalID: -1713579096
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_38
+      rect:
+        serializedVersion: 2
+        x: 10032
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: d06674790beb16c45a4ddadc731b18db
+      internalID: 2144720215
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_rings_39
+      rect:
+        serializedVersion: 2
+        x: 11704
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 0d5b522abd7f3b74284f20bf13d20b93
+      internalID: -372980520
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    physicsShape: []
+    bones: []
+    spriteID: 5e97eb03825dee720800000000000000
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    nameFileIdTable:
+      queen_death_rings_0: 54214679
+      queen_death_rings_1: 487947361
+      queen_death_rings_10: 1635877332
+      queen_death_rings_11: -1604722043
+      queen_death_rings_12: 1984080073
+      queen_death_rings_13: -425616066
+      queen_death_rings_14: -894527817
+      queen_death_rings_15: 943289169
+      queen_death_rings_16: 1011637011
+      queen_death_rings_17: 1727570703
+      queen_death_rings_18: 94912899
+      queen_death_rings_19: 353794864
+      queen_death_rings_2: 1592155058
+      queen_death_rings_20: 631685229
+      queen_death_rings_21: -240965108
+      queen_death_rings_22: 1270021879
+      queen_death_rings_23: -1650083435
+      queen_death_rings_24: -1553170912
+      queen_death_rings_25: -192465029
+      queen_death_rings_26: -1540252766
+      queen_death_rings_27: 439250539
+      queen_death_rings_28: 1390920622
+      queen_death_rings_29: -391702209
+      queen_death_rings_3: -211651413
+      queen_death_rings_30: -648047395
+      queen_death_rings_31: 587487586
+      queen_death_rings_32: -96816803
+      queen_death_rings_33: 448702956
+      queen_death_rings_34: 1069445815
+      queen_death_rings_35: 1770487422
+      queen_death_rings_36: -1091398885
+      queen_death_rings_37: -1713579096
+      queen_death_rings_38: 2144720215
+      queen_death_rings_39: -372980520
+      queen_death_rings_4: -683005736
+      queen_death_rings_5: 1184220702
+      queen_death_rings_6: -1912136639
+      queen_death_rings_7: -954638852
+      queen_death_rings_8: -219371709
+      queen_death_rings_9: 1158681054
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

@@ -25,6 +25,20 @@ namespace Assets.Scripts.Entities.Ships
         public Weapon Charge;
         public HashSet<Ship> ShipsHit = new HashSet<Ship>();
         public ChargingBar ChargingBar;
+        /// <summary>
+        /// The animation that runs while the barge is charging forward
+        /// </summary>
+        public GameObject BargeChargeAnimation;
+        /// <summary>
+        /// The animation that runs while the barge is charging up to charge... but currently staying put
+        /// </summary>
+        public GameObject BargeChargingAnimation;
+        /// <summary>
+        /// The "after image" of the barge as it's charging
+        /// </summary>
+        public GameObject BargeChargeImageAnimation;
+        public BargeChargeImageAnimation BargeChargeImageAnimator;
+        public List<GameObject> ChargeRocketFlares;
         public override void Create(Stage stage)
         {
             base.Create(stage);
@@ -48,6 +62,19 @@ namespace Assets.Scripts.Entities.Ships
             {
                 ChargingBar.Setup(); 
             }
+            if (Stage.IsTraining)
+            {
+                ChargeRocketFlares.ForEach((flare) =>
+                {
+                    Destroy(flare);
+                });
+                ChargeRocketFlares.Clear();
+                Destroy(BargeChargeAnimation);
+                Destroy(BargeChargingAnimation);
+                Destroy(BargeChargeImageAnimation);
+
+            }
+
         }
         public override void ClearData()
         {
@@ -65,6 +92,18 @@ namespace Assets.Scripts.Entities.Ships
             {
                 ChargingBar.gameObject.SetActive(false);
             }
+            if (!Stage.IsTraining)
+            {
+                ChargeRocketFlares.ForEach((flare) =>
+                {
+                    flare.SetActive(false);
+                });
+                BargeChargeAnimation.SetActive(false);
+                BargeChargingAnimation.SetActive(false);
+                BargeChargeImageAnimation.SetActive(false);
+            }
+
+
         }
 
         public override void Activate()
@@ -76,6 +115,20 @@ namespace Assets.Scripts.Entities.Ships
             }
         }
 
+        public override void SetRocketFlares()
+        {
+            if (!IsCharging)
+            {
+                base.SetRocketFlares();
+            }
+            else
+            {
+                ChargeRocketFlares.ForEach((flare) =>
+                {
+                    flare.SetActive(true);
+                });
+            }
+        }
 
         protected override void OnTriggerEnter2D(Collider2D collider) // ship collision
         {
@@ -142,12 +195,25 @@ namespace Assets.Scripts.Entities.Ships
 
             StopMoving("Pausing to build up steam before charging");
             CannotChangeMovementOrders = true;
+
+            if (!Stage.IsTraining)
+            {
+                BargeChargingAnimation.SetActive(true);
+            }
+            
             //Debug.Log($"{Name} is about to charge");
 
             yield return new WaitForSeconds(2);
 
             if (!IsDead)
             {
+                if (!Stage.IsTraining)
+                {
+                    BargeChargingAnimation.SetActive(false);
+                    BargeChargeAnimation.SetActive(true);
+                    BargeChargeImageAnimation.SetActive(true);
+                    BargeChargeImageAnimator.StartCharge();
+                }
                 IsCharging = true;
                 HasStartedCharging = true;
                 CannotChangeMovementOrders = false;
@@ -184,6 +250,21 @@ namespace Assets.Scripts.Entities.Ships
             {
                 IsCharging = false;
                 SetCurrentSpeed(0, 0);
+
+
+
+                if (!Stage.IsTraining)
+                {
+                    BargeChargeAnimation.SetActive(false);
+                    BargeChargeImageAnimation?.SetActive(false);
+
+                    ChargeRocketFlares.ForEach((flare) =>
+                    {
+                        flare.SetActive(false);
+                    });
+                }
+
+
                 StopMoving($"Finished charging");
                 Charge.Power = OriginalPower;
 

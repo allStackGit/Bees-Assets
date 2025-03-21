@@ -1,0 +1,994 @@
+fileFormatVersion: 2
+guid: 255961e686f9f5d43b3e898b89da7aaa
+TextureImporter:
+  internalIDToNameTable: []
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 8
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 3
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 16384
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 3
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: queen_death_crown_0
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: b61fee2ec9876fc43b561257e7756483
+      internalID: 2106563050
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_1
+      rect:
+        serializedVersion: 2
+        x: 1672
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 409889c44fb50c0489f0c4c54d82f4a1
+      internalID: -1681736020
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_2
+      rect:
+        serializedVersion: 2
+        x: 3344
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: f4cbba3b7d938fb4e9af84ff20e679a5
+      internalID: 256916240
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_3
+      rect:
+        serializedVersion: 2
+        x: 5016
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 8bfc491b373904f4a8d25ad15bf78635
+      internalID: -1738480940
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_4
+      rect:
+        serializedVersion: 2
+        x: 6688
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: a48e7eaff2e7c5640959419b09bcaf8e
+      internalID: 462876501
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_5
+      rect:
+        serializedVersion: 2
+        x: 8360
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: cb2119977e218ec49bebab8b73be3744
+      internalID: -1990576023
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_6
+      rect:
+        serializedVersion: 2
+        x: 10032
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: ffe3579dfb8b8894dbc1fc9b27ae1ac4
+      internalID: -2055417953
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_7
+      rect:
+        serializedVersion: 2
+        x: 11704
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: f8c46f980a3123145a8f8e7f09a307b4
+      internalID: -597384918
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_8
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 889dddbfc65bc7140b7354c465b380e5
+      internalID: 1777301602
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_9
+      rect:
+        serializedVersion: 2
+        x: 1672
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: eebd945783e3c33489dc468d108618bf
+      internalID: 753608567
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_10
+      rect:
+        serializedVersion: 2
+        x: 3344
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: fe72570a883c71a47b63fffc818b5fac
+      internalID: -340704480
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_11
+      rect:
+        serializedVersion: 2
+        x: 5016
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: cfd06470216e3364cb5c9b301a7eb6ee
+      internalID: 207342611
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_12
+      rect:
+        serializedVersion: 2
+        x: 6688
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 3365f304bf2ebe444bc42a34231c4d95
+      internalID: 237451930
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_13
+      rect:
+        serializedVersion: 2
+        x: 8360
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: fc4b1b6ed20cf0b4ab2035ae6eb644ff
+      internalID: 1477174298
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_14
+      rect:
+        serializedVersion: 2
+        x: 10032
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 63a1b3d6639eac643afc1a5f52c0731b
+      internalID: 1206644074
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_15
+      rect:
+        serializedVersion: 2
+        x: 11704
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 33963fd5e7e661c47bfe14c83770594f
+      internalID: 1866146185
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_16
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: f7c4485dc719ac94a92bf6a26e5ce387
+      internalID: -751429661
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_17
+      rect:
+        serializedVersion: 2
+        x: 1672
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 3779e1ff27b3c6e47ab27ac99d64421c
+      internalID: 485280215
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_18
+      rect:
+        serializedVersion: 2
+        x: 3344
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: a984153622dec214ba914303da28c37c
+      internalID: -1124364046
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_19
+      rect:
+        serializedVersion: 2
+        x: 5016
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 9d14271c28b02374eaf2752b895ae4ad
+      internalID: -306956823
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_20
+      rect:
+        serializedVersion: 2
+        x: 6688
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 35f7ff7c3bf30be43a081473f33489df
+      internalID: 1117562644
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_21
+      rect:
+        serializedVersion: 2
+        x: 8360
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: cc48f886915f2534cad989a0cd396229
+      internalID: -882697579
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_22
+      rect:
+        serializedVersion: 2
+        x: 10032
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: ee8156e909cf1014f934c34657056967
+      internalID: -1549740824
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_23
+      rect:
+        serializedVersion: 2
+        x: 11704
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: a3ab3df93ff670244a98a828a3248921
+      internalID: 479275439
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_24
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 33f8c498da620c947ac1094432d105fa
+      internalID: 446127986
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_25
+      rect:
+        serializedVersion: 2
+        x: 1672
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 9acd6a1bad642284db079024944e4e47
+      internalID: -1711139857
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_26
+      rect:
+        serializedVersion: 2
+        x: 3344
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: d815784dfb200404fb804146c7d0db2b
+      internalID: -1229302319
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_27
+      rect:
+        serializedVersion: 2
+        x: 5016
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 68161b46e378092459b9e25294354b6a
+      internalID: 1949930664
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_28
+      rect:
+        serializedVersion: 2
+        x: 6688
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 6e2853a6d0a0879458243d04f0cdaa79
+      internalID: -942080939
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_29
+      rect:
+        serializedVersion: 2
+        x: 8360
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: b791b97720cadd949bb1d7ca313ee977
+      internalID: 1773964339
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_30
+      rect:
+        serializedVersion: 2
+        x: 10032
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 75ffe3da74308944a803465ea2e6f0f4
+      internalID: -2084765292
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_31
+      rect:
+        serializedVersion: 2
+        x: 11704
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 60fcdd044a2217645b397d120db8fe3a
+      internalID: -227625413
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_32
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: d6b18262d39196d489965b29dea65159
+      internalID: 2064628705
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_33
+      rect:
+        serializedVersion: 2
+        x: 1672
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: dab031ee478a69346a32e18d24edac38
+      internalID: 968942065
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_34
+      rect:
+        serializedVersion: 2
+        x: 3344
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 5073bae4cc21aff45a8db65fa03db652
+      internalID: -1351080426
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_35
+      rect:
+        serializedVersion: 2
+        x: 5016
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 6c4927a0494845a4ebe2826f916e70a9
+      internalID: -157765531
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_36
+      rect:
+        serializedVersion: 2
+        x: 6688
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 545937e87cf466e46b2c6f5472914131
+      internalID: 2112756863
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_37
+      rect:
+        serializedVersion: 2
+        x: 8360
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 691f332d23b81d94897b99cc1b4d7596
+      internalID: -1778289051
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_38
+      rect:
+        serializedVersion: 2
+        x: 10032
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 206f0bfcb945d7a469914d1e7e691b89
+      internalID: -978164040
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_crown_39
+      rect:
+        serializedVersion: 2
+        x: 11704
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: bd2466ce11d0ff7448d7bf45e86ad0cd
+      internalID: -1602517116
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    physicsShape: []
+    bones: []
+    spriteID: 5e97eb03825dee720800000000000000
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    nameFileIdTable:
+      queen_death_crown_0: 2106563050
+      queen_death_crown_1: -1681736020
+      queen_death_crown_10: -340704480
+      queen_death_crown_11: 207342611
+      queen_death_crown_12: 237451930
+      queen_death_crown_13: 1477174298
+      queen_death_crown_14: 1206644074
+      queen_death_crown_15: 1866146185
+      queen_death_crown_16: -751429661
+      queen_death_crown_17: 485280215
+      queen_death_crown_18: -1124364046
+      queen_death_crown_19: -306956823
+      queen_death_crown_2: 256916240
+      queen_death_crown_20: 1117562644
+      queen_death_crown_21: -882697579
+      queen_death_crown_22: -1549740824
+      queen_death_crown_23: 479275439
+      queen_death_crown_24: 446127986
+      queen_death_crown_25: -1711139857
+      queen_death_crown_26: -1229302319
+      queen_death_crown_27: 1949930664
+      queen_death_crown_28: -942080939
+      queen_death_crown_29: 1773964339
+      queen_death_crown_3: -1738480940
+      queen_death_crown_30: -2084765292
+      queen_death_crown_31: -227625413
+      queen_death_crown_32: 2064628705
+      queen_death_crown_33: 968942065
+      queen_death_crown_34: -1351080426
+      queen_death_crown_35: -157765531
+      queen_death_crown_36: 2112756863
+      queen_death_crown_37: -1778289051
+      queen_death_crown_38: -978164040
+      queen_death_crown_39: -1602517116
+      queen_death_crown_4: 462876501
+      queen_death_crown_5: -1990576023
+      queen_death_crown_6: -2055417953
+      queen_death_crown_7: -597384918
+      queen_death_crown_8: 1777301602
+      queen_death_crown_9: 753608567
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

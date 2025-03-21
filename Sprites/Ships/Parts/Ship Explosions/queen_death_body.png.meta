@@ -1,0 +1,994 @@
+fileFormatVersion: 2
+guid: 9632ebda51f64fb4d98ff22d34b3fc42
+TextureImporter:
+  internalIDToNameTable: []
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 8
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 3
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 16384
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 3
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: queen_death_body_0
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: cbea977206ad08542938212095cf5306
+      internalID: 238291407
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_1
+      rect:
+        serializedVersion: 2
+        x: 1672
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 28c4074305855b54d8668b7822524e49
+      internalID: -1749581791
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_2
+      rect:
+        serializedVersion: 2
+        x: 3344
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 49206a2646bfc7947b648f6be7d80dfb
+      internalID: 11636501
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_3
+      rect:
+        serializedVersion: 2
+        x: 5016
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: bf030e0e2e855024fa4a6c273482a5e1
+      internalID: 417761629
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_4
+      rect:
+        serializedVersion: 2
+        x: 6688
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 21a6f42afded1b245b828939da87b79c
+      internalID: 1988669721
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_5
+      rect:
+        serializedVersion: 2
+        x: 8360
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: c9c4549e0c01a5a4499f85965a5bef76
+      internalID: 1776061741
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_6
+      rect:
+        serializedVersion: 2
+        x: 10032
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: f4b1633d723c05240a82bc7754d4b739
+      internalID: 1155882785
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_7
+      rect:
+        serializedVersion: 2
+        x: 11704
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 82667b3870f311443a748300982e3faf
+      internalID: -217697559
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_8
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: b78e45e6a90805a41bf2c8fea3c748d4
+      internalID: 2022618794
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_9
+      rect:
+        serializedVersion: 2
+        x: 1672
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 75244391d39bb434abe2ccc7b9b8cf27
+      internalID: -625702257
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_10
+      rect:
+        serializedVersion: 2
+        x: 3344
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 0d290f6d745dcbe4ead4075d34dd2b89
+      internalID: 1107212738
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_11
+      rect:
+        serializedVersion: 2
+        x: 5016
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 1befca609440aaf43bb649c86eb78eab
+      internalID: -91499187
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_12
+      rect:
+        serializedVersion: 2
+        x: 6688
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: ca44d0031837eb842b34277b3998adad
+      internalID: -196493508
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_13
+      rect:
+        serializedVersion: 2
+        x: 8360
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: de104fba27b94a8448863f52132ea764
+      internalID: -1067594802
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_14
+      rect:
+        serializedVersion: 2
+        x: 10032
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 69383eb0fdc1ea642ad6944daaf82d7d
+      internalID: 345990537
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_15
+      rect:
+        serializedVersion: 2
+        x: 11704
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 1303bc74cecb37948862f5e2eb921148
+      internalID: 290367727
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_16
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: b75ea46f4e0cfd54eadb81cf4db16064
+      internalID: -874114903
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_17
+      rect:
+        serializedVersion: 2
+        x: 1672
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 2f38b2e520cf7434f99f717992e58481
+      internalID: -432080030
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_18
+      rect:
+        serializedVersion: 2
+        x: 3344
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: b8d109d421b8c7040a323dedd4a5da2b
+      internalID: -388491320
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_19
+      rect:
+        serializedVersion: 2
+        x: 5016
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: fd75bdb3aae19e447aaafc915dd5b38d
+      internalID: -780901425
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_20
+      rect:
+        serializedVersion: 2
+        x: 6688
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 24148d0c7d442e64a996b3239491695c
+      internalID: -1242828194
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_21
+      rect:
+        serializedVersion: 2
+        x: 8360
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: d8890dac8bc44e249b5a359cd6fbb5cd
+      internalID: -364749319
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_22
+      rect:
+        serializedVersion: 2
+        x: 10032
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 8d5a5de2b0931564dbdef6128f9b4ae0
+      internalID: -2012947814
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_23
+      rect:
+        serializedVersion: 2
+        x: 11704
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: c10e7a06c6210004f957c5959398b5ce
+      internalID: -1498550358
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_24
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 4889bf989078fe14094f2af8d430ab16
+      internalID: -2100515016
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_25
+      rect:
+        serializedVersion: 2
+        x: 1672
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 3d9884315a1ca834f9b3af1fd94d4c98
+      internalID: -1714016404
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_26
+      rect:
+        serializedVersion: 2
+        x: 3344
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: cf9d4540c2e74734aa577e80eba45920
+      internalID: 522081532
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_27
+      rect:
+        serializedVersion: 2
+        x: 5016
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: a8aefb2f42fbe9a43897649a0e08fc59
+      internalID: 1105110505
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_28
+      rect:
+        serializedVersion: 2
+        x: 6688
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 72573468e7763b7458a5327086592607
+      internalID: -1850575588
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_29
+      rect:
+        serializedVersion: 2
+        x: 8360
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: eebf55d23ae2e9345ba554ce235f12e8
+      internalID: -1805742330
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_30
+      rect:
+        serializedVersion: 2
+        x: 10032
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 07b1c109bbf2dc6418c6b95ee4f1ccbf
+      internalID: 1515462520
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_31
+      rect:
+        serializedVersion: 2
+        x: 11704
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: fa286a668187daa4bad9ed43907d8424
+      internalID: 1874033165
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_32
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 916178137f1ec1c49bfe8a857eb43093
+      internalID: 1051711472
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_33
+      rect:
+        serializedVersion: 2
+        x: 1672
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 32ab3ee1d1e52af4c9d40e254f3af56d
+      internalID: -2099041726
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_34
+      rect:
+        serializedVersion: 2
+        x: 3344
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: bf8dcc385080f5a4a8bb422c657800ed
+      internalID: -264802226
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_35
+      rect:
+        serializedVersion: 2
+        x: 5016
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 6deb5a2ccbaa1f24c93b4386a64c13f8
+      internalID: -1108894908
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_36
+      rect:
+        serializedVersion: 2
+        x: 6688
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 5db5c3a1879d8a14ab9273fcc93b10af
+      internalID: -1010555521
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_37
+      rect:
+        serializedVersion: 2
+        x: 8360
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 898f3984f6772e44d9d21f32de53434f
+      internalID: 105602195
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_38
+      rect:
+        serializedVersion: 2
+        x: 10032
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: b29c95dc2693d2b43b9daf1bb7e88639
+      internalID: 3630057
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_body_39
+      rect:
+        serializedVersion: 2
+        x: 11704
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: e466f9b8c9dea8e4aaa688b884f281e2
+      internalID: -46836640
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    physicsShape: []
+    bones: []
+    spriteID: 5e97eb03825dee720800000000000000
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    nameFileIdTable:
+      queen_death_body_0: 238291407
+      queen_death_body_1: -1749581791
+      queen_death_body_10: 1107212738
+      queen_death_body_11: -91499187
+      queen_death_body_12: -196493508
+      queen_death_body_13: -1067594802
+      queen_death_body_14: 345990537
+      queen_death_body_15: 290367727
+      queen_death_body_16: -874114903
+      queen_death_body_17: -432080030
+      queen_death_body_18: -388491320
+      queen_death_body_19: -780901425
+      queen_death_body_2: 11636501
+      queen_death_body_20: -1242828194
+      queen_death_body_21: -364749319
+      queen_death_body_22: -2012947814
+      queen_death_body_23: -1498550358
+      queen_death_body_24: -2100515016
+      queen_death_body_25: -1714016404
+      queen_death_body_26: 522081532
+      queen_death_body_27: 1105110505
+      queen_death_body_28: -1850575588
+      queen_death_body_29: -1805742330
+      queen_death_body_3: 417761629
+      queen_death_body_30: 1515462520
+      queen_death_body_31: 1874033165
+      queen_death_body_32: 1051711472
+      queen_death_body_33: -2099041726
+      queen_death_body_34: -264802226
+      queen_death_body_35: -1108894908
+      queen_death_body_36: -1010555521
+      queen_death_body_37: 105602195
+      queen_death_body_38: 3630057
+      queen_death_body_39: -46836640
+      queen_death_body_4: 1988669721
+      queen_death_body_5: 1776061741
+      queen_death_body_6: 1155882785
+      queen_death_body_7: -217697559
+      queen_death_body_8: 2022618794
+      queen_death_body_9: -625702257
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

@@ -1,0 +1,994 @@
+fileFormatVersion: 2
+guid: 8c6843abedd181e48b2216025d610b6e
+TextureImporter:
+  internalIDToNameTable: []
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 8
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 3
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 16384
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 3
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_0
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: db5497b999521d54ea0d0726898ca181
+      internalID: -624121650
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_1
+      rect:
+        serializedVersion: 2
+        x: 1672
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 9ab0cacfb1c35c2489531ab1ddbb0aeb
+      internalID: 389636491
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_2
+      rect:
+        serializedVersion: 2
+        x: 3344
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 0c66e549fbf6d13408cf0683b5ba891c
+      internalID: 1866479884
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_3
+      rect:
+        serializedVersion: 2
+        x: 5016
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 3568fa66ae1c3cc458f42c7537709786
+      internalID: -319715073
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_4
+      rect:
+        serializedVersion: 2
+        x: 6688
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: cf3ba95de46865741bab3160d89694f1
+      internalID: 1868875042
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_5
+      rect:
+        serializedVersion: 2
+        x: 8360
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 58568d49732f58f4097f6fc963f53003
+      internalID: -1545929312
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_6
+      rect:
+        serializedVersion: 2
+        x: 10032
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 7c7017d72f573514d9c6187425dd495c
+      internalID: -406381830
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_7
+      rect:
+        serializedVersion: 2
+        x: 11704
+        y: 5536
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 708adfb84a292254e8cda5fc007fd941
+      internalID: -2069426471
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_8
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: fdd2b963abbe53148a1e08f873d5fbdb
+      internalID: 1455596270
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_9
+      rect:
+        serializedVersion: 2
+        x: 1672
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: a35dcf41e17094e498bb596690c44877
+      internalID: -1820224904
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_10
+      rect:
+        serializedVersion: 2
+        x: 3344
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 9e8a5b30287d9684ea95cf77262a22b7
+      internalID: -783119901
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_11
+      rect:
+        serializedVersion: 2
+        x: 5016
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 14ceaed47dc6e7f408d7bd3522916ca1
+      internalID: -1032768632
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_12
+      rect:
+        serializedVersion: 2
+        x: 6688
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: e57e50bd1b0344843a5027b140c7bc5c
+      internalID: -455133428
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_13
+      rect:
+        serializedVersion: 2
+        x: 8360
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 229d592784f4a8c44b95a6a1482fdfa4
+      internalID: 1301985122
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_14
+      rect:
+        serializedVersion: 2
+        x: 10032
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 348944facbf089d4f8bdc1fedd2bc5f0
+      internalID: -1085988979
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_15
+      rect:
+        serializedVersion: 2
+        x: 11704
+        y: 4152
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 3635bbfbdef32ff439302000ed119ea5
+      internalID: 117209187
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_16
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 82b32d4b4511d6749916ed47547f467e
+      internalID: 176748148
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_17
+      rect:
+        serializedVersion: 2
+        x: 1672
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: da51eff99155e0b458cc02e42ba64f22
+      internalID: 2051360163
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_18
+      rect:
+        serializedVersion: 2
+        x: 3344
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 1006de1ccb5f194409e568ed3a13d776
+      internalID: -1572259926
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_19
+      rect:
+        serializedVersion: 2
+        x: 5016
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 4a821fe771ebf1643a8222ab22c3ee6a
+      internalID: 1289136214
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_20
+      rect:
+        serializedVersion: 2
+        x: 6688
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: a4cde531fb8023a4f8e5846e7982596c
+      internalID: 1196767945
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_21
+      rect:
+        serializedVersion: 2
+        x: 8360
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 18e4657e389ea054fae1a63094aac5cf
+      internalID: 1563416588
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_22
+      rect:
+        serializedVersion: 2
+        x: 10032
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 1dc759fb59aae744a97c094e48b317cd
+      internalID: -593335218
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_23
+      rect:
+        serializedVersion: 2
+        x: 11704
+        y: 2768
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 08f77a7339dec5042911f5585ed80243
+      internalID: 562863812
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_24
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 8fa2210edbab43246a0d1e85bb9c47c1
+      internalID: -2014173152
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_25
+      rect:
+        serializedVersion: 2
+        x: 1672
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 9a2170957db6c3a4c9c1818f2b235a93
+      internalID: 2051515708
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_26
+      rect:
+        serializedVersion: 2
+        x: 3344
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: c7d2b4d630601354da47089671785131
+      internalID: -1452344511
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_27
+      rect:
+        serializedVersion: 2
+        x: 5016
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: eba2c630019e74f46837e41e5b9df2ad
+      internalID: -509962003
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_28
+      rect:
+        serializedVersion: 2
+        x: 6688
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: a13063eedb4992041a57f28432634ef1
+      internalID: 1676648761
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_29
+      rect:
+        serializedVersion: 2
+        x: 8360
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: c796b8617bd4a7443a2a8bcb1b02de58
+      internalID: -143137699
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_30
+      rect:
+        serializedVersion: 2
+        x: 10032
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 2f3d460e0179ebd40aff68b3f39c07e6
+      internalID: -1943316043
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_31
+      rect:
+        serializedVersion: 2
+        x: 11704
+        y: 1384
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 1f6748ca948e8bf49bccdb363d157306
+      internalID: -792807830
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_32
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 5e798e80cb967b2478aca4165e82099c
+      internalID: -602917629
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_33
+      rect:
+        serializedVersion: 2
+        x: 1672
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 3ce0692bdba81604dbe8731ac74ee7c3
+      internalID: 269539615
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_34
+      rect:
+        serializedVersion: 2
+        x: 3344
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 11e8cb93511ec9949a24bdbfd9f35cc6
+      internalID: -1584142320
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_35
+      rect:
+        serializedVersion: 2
+        x: 5016
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: e509ccf3c3599fd47925775dd3da26be
+      internalID: -1668757668
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_36
+      rect:
+        serializedVersion: 2
+        x: 6688
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 6fea74cc2fb382f4690719de8cfb19f2
+      internalID: -136917814
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_37
+      rect:
+        serializedVersion: 2
+        x: 8360
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 72489c06112839244ad2b9739bd589ab
+      internalID: -964681
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_38
+      rect:
+        serializedVersion: 2
+        x: 10032
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 0b0083c9645515c4da72d2b2f364caf1
+      internalID: -374429240
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: queen_death_wings_eyes_39
+      rect:
+        serializedVersion: 2
+        x: 11704
+        y: 0
+        width: 1672
+        height: 1384
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 0fab4f18e67829c4fb0bcc13051e6f00
+      internalID: 1892962549
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    physicsShape: []
+    bones: []
+    spriteID: 5e97eb03825dee720800000000000000
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    nameFileIdTable:
+      queen_death_wings_eyes_0: -624121650
+      queen_death_wings_eyes_1: 389636491
+      queen_death_wings_eyes_10: -783119901
+      queen_death_wings_eyes_11: -1032768632
+      queen_death_wings_eyes_12: -455133428
+      queen_death_wings_eyes_13: 1301985122
+      queen_death_wings_eyes_14: -1085988979
+      queen_death_wings_eyes_15: 117209187
+      queen_death_wings_eyes_16: 176748148
+      queen_death_wings_eyes_17: 2051360163
+      queen_death_wings_eyes_18: -1572259926
+      queen_death_wings_eyes_19: 1289136214
+      queen_death_wings_eyes_2: 1866479884
+      queen_death_wings_eyes_20: 1196767945
+      queen_death_wings_eyes_21: 1563416588
+      queen_death_wings_eyes_22: -593335218
+      queen_death_wings_eyes_23: 562863812
+      queen_death_wings_eyes_24: -2014173152
+      queen_death_wings_eyes_25: 2051515708
+      queen_death_wings_eyes_26: -1452344511
+      queen_death_wings_eyes_27: -509962003
+      queen_death_wings_eyes_28: 1676648761
+      queen_death_wings_eyes_29: -143137699
+      queen_death_wings_eyes_3: -319715073
+      queen_death_wings_eyes_30: -1943316043
+      queen_death_wings_eyes_31: -792807830
+      queen_death_wings_eyes_32: -602917629
+      queen_death_wings_eyes_33: 269539615
+      queen_death_wings_eyes_34: -1584142320
+      queen_death_wings_eyes_35: -1668757668
+      queen_death_wings_eyes_36: -136917814
+      queen_death_wings_eyes_37: -964681
+      queen_death_wings_eyes_38: -374429240
+      queen_death_wings_eyes_39: 1892962549
+      queen_death_wings_eyes_4: 1868875042
+      queen_death_wings_eyes_5: -1545929312
+      queen_death_wings_eyes_6: -406381830
+      queen_death_wings_eyes_7: -2069426471
+      queen_death_wings_eyes_8: 1455596270
+      queen_death_wings_eyes_9: -1820224904
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
