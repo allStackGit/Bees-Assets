@@ -778,6 +778,10 @@ namespace Assets.Scripts.Levels
             }
 
             SetupHivemind();
+            if (Stage.ActivateAudio && Stage.PlayMusic)
+            {
+                Stage.Audio.SetupMusic();
+            }
 
             //float end = (Time.realtimeSinceStartup - StartTime) * 1000; // seconds to milliseconds
             //Debug.Log($"It took {Math.Round(end, 2)} ms to set up the level and {Math.Round(Time.realtimeSinceStartup, 2)}s total time.");
@@ -1043,6 +1047,7 @@ namespace Assets.Scripts.Levels
 
                 }
 
+                ConfigData.CurrentShips.ReplaceDeadSquadShips();
                 ConfigData.CurrentShips.SaveFleetData();
                 ConfigData.CurrentShips.SaveSquadData();
 

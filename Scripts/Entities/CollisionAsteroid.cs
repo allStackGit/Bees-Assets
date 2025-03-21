@@ -33,15 +33,6 @@ namespace Assets.Scripts.Entities
             base.Create(stage);
             Speed = Utilities.RandomInt(Stage.AsteroidMaxSpeed) + ConfigData.MinimumAsteroidSpeed;
 
-            if (ExplosionAnimation != null)
-            {
-                HasCollisionAnimation = true;
-            }
-            if (CrackedSprite != null)
-            {
-                HasCrackedSprite = true;
-            }
-
         }
         private ScaledTimer _removeImmunityTimer = new ScaledTimer();
         // Use this for initialization

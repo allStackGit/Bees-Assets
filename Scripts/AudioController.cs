@@ -8,6 +8,26 @@ namespace Assets.Scripts
 {
     public class AudioController : MonoBehaviour
     {
+        public AudioSource PlutoIntro;
+        public AudioSource NeptuneIntro;
+        public AudioSource UranusIntro;
+
+        public AudioSource PlutoLoop;
+        public AudioSource NeptuneLoop;
+        public AudioSource UranusLoop;
+
+        public AudioSource PlutoHumanLoop;
+        public AudioSource NeptuneHumanLoop;
+        public AudioSource UranusHumanLoop;
+
+        public AudioSource PlutoBeesLoop;
+        public AudioSource NeptuneBeesLoop;
+        public AudioSource UranusBeesLoop;
+
+        public float PlutoIntroLength;
+        public float NeptuneIntroLength;
+        public float UranusIntroLength;
+
         public AudioSource LocationIntro;
         //public AudioSource CarpenterBeeIntro;
         //public AudioSource HoneybeeIntro;
@@ -20,6 +40,7 @@ namespace Assets.Scripts
         //public AudioSource HornetLoop;
         //public AudioSource WaspLoop;
         public AudioSource HumanLoop;
+        public AudioSource BeesLoop;
 
         public AudioSource LightCannonSound;
         public AudioSource LightCannonSound2;
@@ -44,6 +65,72 @@ namespace Assets.Scripts
         public void Setup(bool playMusic, Level level)
         {
             Level = level;
+
+            WeaponSounds.Add(ConfigData.WeaponTypes.LightCannon, new AudioSource[] { LightCannonSound, LightCannonSound2 });
+            WeaponSounds.Add(ConfigData.WeaponTypes.Turret, new AudioSource[] { SmallCannonSound, SmallCannonSound2 });
+            WeaponSounds.Add(ConfigData.WeaponTypes.FullShipTurret, new AudioSource[] { BigCannonSound, BigCannonSound2 });
+
+            ExplosionSounds.Add(ConfigData.Tiny, TinyShipExplosionSounds);
+
+
+            //mute bee intros
+            //MuteSource(CarpenterBeeIntro);
+            //MuteSource(HoneybeeIntro);
+            //MuteSource(HornetIntro);
+            //MuteSource(WaspIntro);
+
+
+
+
+            // mute bee loops
+            //MuteSource(CarpenterBeeLoop);
+            //MuteSource(HoneybeeLoop);
+            //MuteSource(HornetLoop);
+            //MuteSource(WaspLoop);
+
+
+
+        }
+        public void SetupMusic()
+        {
+            IntroEnded = false;
+            Intros.ForEach((source) =>
+            {
+                source.Stop();
+            });
+            Loops.ForEach((source) =>
+            {
+                source.Stop();
+            });
+            Intros.Clear();
+            Loops.Clear();
+
+
+            switch (Level.MapData.Location)
+            {
+                case ConfigData.Locations.Pluto:
+                    LocationIntro = PlutoIntro;
+                    LocationLoop = PlutoLoop;
+                    HumanLoop = PlutoHumanLoop;
+                    BeesLoop = PlutoBeesLoop;
+                    IntroLength = PlutoIntroLength;
+                    break;
+                case ConfigData.Locations.Neptune:
+                    LocationIntro = NeptuneIntro;
+                    LocationLoop = NeptuneLoop;
+                    HumanLoop = NeptuneHumanLoop;
+                    BeesLoop = NeptuneBeesLoop;
+                    IntroLength = NeptuneIntroLength;
+                    break;
+                case ConfigData.Locations.Uranus:
+                    LocationIntro = UranusIntro;
+                    LocationLoop = UranusLoop;
+                    HumanLoop = UranusHumanLoop;
+                    BeesLoop = UranusBeesLoop;
+                    IntroLength = UranusIntroLength;
+                    break;
+            }
+
             // Setup audio [make audio controller]
             //BeesLoops.Add("Carpenter Bee", CarpenterBeeLoop);
             //BeesLoops.Add("Honeybee", HoneybeeLoop);
@@ -68,56 +155,32 @@ namespace Assets.Scripts
             //Loops.Add(HornetLoop);
             //Loops.Add(WaspLoop);
             Loops.Add(HumanLoop);
+            Loops.Add(BeesLoop);
 
-            WeaponSounds.Add(ConfigData.WeaponTypes.LightCannon, new AudioSource[] { LightCannonSound, LightCannonSound2 });
-            WeaponSounds.Add(ConfigData.WeaponTypes.Turret, new AudioSource[] { SmallCannonSound, SmallCannonSound2 });
-            WeaponSounds.Add(ConfigData.WeaponTypes.FullShipTurret, new AudioSource[] { BigCannonSound, BigCannonSound2 });
+            // play intros
+            PlayIntro(LocationIntro);
+            //PlayIntro(CarpenterBeeIntro);
+            //PlayIntro(HoneybeeIntro);
+            //PlayIntro(HornetIntro);
+            //PlayIntro(WaspIntro);
 
-            ExplosionSounds.Add(ConfigData.Tiny, TinyShipExplosionSounds);
+            // play loops
+            PlayLoop(IntroLength, LocationLoop);
+            //PlayLoop(IntroLength, CarpenterBeeLoop);
+            //PlayLoop(IntroLength, HoneybeeLoop);
+            //PlayLoop(IntroLength, HornetLoop);
+            //PlayLoop(IntroLength, WaspLoop);
+            PlayLoop(IntroLength, HumanLoop);
+            PlayLoop(IntroLength, BeesLoop);
 
-            //mute bee intros
-            //MuteSource(CarpenterBeeIntro);
-            //MuteSource(HoneybeeIntro);
-            //MuteSource(HornetIntro);
-            //MuteSource(WaspIntro);
-
-
-
-
-            // mute bee loops
-            //MuteSource(CarpenterBeeLoop);
-            //MuteSource(HoneybeeLoop);
-            //MuteSource(HornetLoop);
-            //MuteSource(WaspLoop);
-
-            if (playMusic)
-            {
-                // play intros
-                PlayIntro(LocationIntro);
-                //PlayIntro(CarpenterBeeIntro);
-                //PlayIntro(HoneybeeIntro);
-                //PlayIntro(HornetIntro);
-                //PlayIntro(WaspIntro);
-
-                // play loops
-                PlayLoop(IntroLength, LocationLoop);
-                //PlayLoop(IntroLength, CarpenterBeeLoop);
-                //PlayLoop(IntroLength, HoneybeeLoop);
-                //PlayLoop(IntroLength, HornetLoop);
-                //PlayLoop(IntroLength, WaspLoop);
-                PlayLoop(IntroLength, HumanLoop);
-
-                //StartCoroutine(nameof(EndIntro), IntroLength);
-                //Invoke(nameof(EndIntro), IntroLength);
-                Level.AddTimer(new ScaledTimer(IntroLength, EndIntro));
-            }
-
-
-
+            //StartCoroutine(nameof(EndIntro), IntroLength);
+            //Invoke(nameof(EndIntro), IntroLength);
+            Level.AddTimer(new ScaledTimer(IntroLength, EndIntro));
         }
 
         private void EndIntro()
         {
+            Debug.Log($"The intro has ended");
             IntroEnded = true;
         }
         private void PlayLoop(float delay, AudioSource loop)
@@ -146,6 +209,7 @@ namespace Assets.Scripts
             
             if (IntroEnded)
             {
+                // The intro has ended, the loops need to be paused
                 Loops.ForEach((source) =>
                 {
                     source.Pause();
@@ -153,6 +217,7 @@ namespace Assets.Scripts
             }
             else
             {
+                /// The intro has not ended, the loops need to be stopped and the intros need to be paused
                 Loops.ForEach((source) =>
                 {
                     source.Stop();
@@ -168,6 +233,7 @@ namespace Assets.Scripts
         {
             if (IntroEnded)
             {
+                // The intro has ended, play the loops
                 Loops.ForEach((source) =>
                 {
                     source.Play();
@@ -182,7 +248,7 @@ namespace Assets.Scripts
                     timeLeft = IntroLength - source.time;
                 });
 
-                //Debug.Log($"Setting the loops to play after being paused. They were delayed by {IntroLength}s initially but they are now delayed by {timeLeft}s.");
+                Debug.Log($"Setting the loops to play after being paused. They were delayed by {IntroLength}s initially but they are now delayed by {timeLeft}s.");
                 // play loops
                 Loops.ForEach((source) =>
                 {

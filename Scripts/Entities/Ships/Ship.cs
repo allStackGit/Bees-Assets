@@ -387,11 +387,16 @@ namespace Assets.Scripts.Entities.Ships
 
                 if (Stage.ActivateAudio)
                 {
-                    ShipExplosionSoundEffect = ShipExplosion.GetComponent<AudioSource>();
-                    if (ShipExplosionSoundEffect != null)
+                    if (ShipType != ConfigData.ShipTypes.FireBarge)
                     {
-                        HasShipExplosionSoundEffect = true;
+                        ShipExplosionSoundEffect = ShipExplosion.GetComponent<AudioSource>();
+                        if (ShipExplosionSoundEffect != null)
+                        {
+                            HasShipExplosionSoundEffect = true;
+                        }
+
                     }
+                    
                 }
             }
             else

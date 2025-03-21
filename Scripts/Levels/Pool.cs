@@ -44,6 +44,7 @@ public class Pool : MonoBehaviour
 
 
     public ObjectPool<Assets.Scripts.UI_Components.Map> PlutoMapPool;
+    public ObjectPool<Assets.Scripts.UI_Components.Map> NeptuneMapPool;
     public ObjectPool<Assets.Scripts.UI_Components.Map> UranusMapPool;
 
     public ObjectPool<Projectile> BeeSmallProjectilePool;
@@ -199,6 +200,7 @@ public class Pool : MonoBehaviour
         YellowJacketPool = new ObjectPool<YellowJacket>(CreatePooledYellowJacket, OnTakeShipFromPool, OnReturnShipToPool, null, true);
 
         PlutoMapPool = new ObjectPool<Assets.Scripts.UI_Components.Map>(CreatePooledPlutoMap, null, null, null, true);
+        NeptuneMapPool = new ObjectPool<Assets.Scripts.UI_Components.Map>(CreatePooledNeptuneMap, null, null, null, true);
         UranusMapPool = new ObjectPool<Assets.Scripts.UI_Components.Map>(CreatePooledUranusMap, null, null, null, true);
 
         BeeSmallProjectilePool = new ObjectPool<Projectile>(CreatePooledBeeSmallProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
@@ -665,9 +667,13 @@ public class Pool : MonoBehaviour
        return CreatePooledMap(0);
     }
 
-    public Assets.Scripts.UI_Components.Map CreatePooledUranusMap()
+    public Assets.Scripts.UI_Components.Map CreatePooledNeptuneMap()
     {
         return CreatePooledMap(1);
+    }
+    public Assets.Scripts.UI_Components.Map CreatePooledUranusMap()
+    {
+        return CreatePooledMap(2);
     }
 
     public Assets.Scripts.UI_Components.Map CreatePooledMap(int index)
@@ -1030,6 +1036,8 @@ public class Pool : MonoBehaviour
             case 0:
                 return PlutoMapPool.Get();
             case 1:
+                return NeptuneMapPool.Get();
+            case 2:
                 return UranusMapPool.Get();
             default:
                 Debug.LogError($"Map index is invalid: {index}");
@@ -1049,6 +1057,9 @@ public class Pool : MonoBehaviour
                 break;
 
             case 1:
+                NeptuneMapPool.Release(map);
+                break;
+            case 2:
                 UranusMapPool.Release(map);
                 break;
 

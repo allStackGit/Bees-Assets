@@ -53,7 +53,7 @@ namespace Assets.Scripts.Data
                 byte[] bytes = File.ReadAllBytes(path);
                 Texture2D texture = new Texture2D(size.x, size.y);
                 texture.LoadImage(bytes);
-                Debug.Log($"Loaded cached sprites from {path} for Fleetship {Name}");
+                //Debug.Log($"Loaded cached sprites from {path} for Fleetship {Name}");
                 return Sprite.Create(texture, new Rect(0, 0, size.x, size.y), ConfigData.HalfSize, ConfigData.PixelsPerUnit);
             }
             catch (Exception e)
@@ -157,6 +157,10 @@ namespace Assets.Scripts.Data
                 $"\"s\": {(HasCachedSprite ? 1 : 0)}, \"f\": {ShotsFired}, \"dd\": {DamageDone}, \"r\": {DamageReceived}, \"k\": {Kills}, \"b\": {BattlesFought}, \"w\": {BattlesWon}, " +
                 $"\"m\": {MineralsMined}}}";
         }
-          
+        public override string ToString()
+        {
+            return $"#{Id} - {Name} HCS? {HasCachedSprite}";
+        }
+
     }
 }

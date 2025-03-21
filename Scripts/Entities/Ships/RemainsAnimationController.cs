@@ -29,6 +29,10 @@ namespace Assets.Scripts.Entities.Ships
                 }
                 Debug.Log($"Loaded cached sprites for Ship {Ship.Name}");
             }
+            else
+            {
+                Debug.Log($"Tried to recolor remains but {Ship.FleetShip.Name} doesn't have a cached sprite");
+            }
         }
 
         private int _index;
@@ -38,8 +42,8 @@ namespace Assets.Scripts.Entities.Ships
             {
                 _index = SpriteIndex % RecoloredSprites.Length;
                 
-                Debug.Log($"Recolored index: {_index}");
-                Debug.Log($"Trying to swap {SpriteRenderer.sprite.name} with {RecoloredSprites[_index].name}");
+                //Debug.Log($"Recolored index: {_index}");
+                Debug.Log($"Trying to swap {SpriteRenderer?.sprite?.name} with {RecoloredSprites[_index]?.name}");
                 SpriteRenderer.sprite = RecoloredSprites[_index];
                 CurrentSprite = SpriteRenderer.sprite;
                 SpriteIndex++;

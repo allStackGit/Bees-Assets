@@ -302,9 +302,9 @@ namespace Assets.Scripts
                     {
                         replacement.HasCachedSprite = true;
                     }
+                    Debug.Log($"Replaced dead {squadShip.GetFleetShip()} with {replacement}");
                     squadShip.FleetId = replacement.Id;
                     replaced = true;
-                    //Debug.Log($"Replaced dead {squadShip} with {replacement}");
                 }
                 //else
                 //{
@@ -329,7 +329,7 @@ namespace Assets.Scripts
         }
         public void SaveFleetData()
         {
-            //Debug.Log($"Saving the fleet data");
+            Debug.Log($"Saving the fleet data");
             _fleetData.Save();
         }
 

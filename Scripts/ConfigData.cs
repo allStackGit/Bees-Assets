@@ -264,6 +264,12 @@ namespace Assets.Scripts
             MiningAsteroid,
             AsteroidPiece
         }
+        public enum Locations
+        {
+            Pluto,
+            Neptune,
+            Uranus
+        }
 
         public enum MatchupStrategyTypes
         {
@@ -606,9 +612,19 @@ namespace Assets.Scripts
         public static readonly HashSet<ShipTypes> SpawnedOnlyShipTypes = new HashSet<ShipTypes> { ShipTypes.Drone, ShipTypes.Striker, ShipTypes.Beacon };
         public static readonly HashSet<ShipTypes> ArmedShipTypes = new HashSet<ShipTypes> { ShipTypes.Cruiser, ShipTypes.Dreadnought, ShipTypes.Flagship, ShipTypes.Frigate, ShipTypes.Gunship, ShipTypes.Bumblebee, ShipTypes.Hornet,
             ShipTypes.Leafcutter, ShipTypes.Queen, ShipTypes.Wasp };
-        public static readonly List<Map> Maps = new List<Map> { new Map(0, new Vector2(0, -230), new Vector2(0, 230), "Pluto"), new Map(1, new Vector2(0, -430), new Vector2(0, 430), "Uranus") };
-        public static readonly List<Data.ObstacleMap> ObstacleMaps = new List<Data.ObstacleMap> { new Data.ObstacleMap(0, "None"), new Data.ObstacleMap(1, "Maze") , new Data.ObstacleMap(2, "Three Paths") , 
-            new Data.ObstacleMap(0, "Forest"), new Data.ObstacleMap(0, "The Wall") };
+        public static readonly List<Map> Maps = new List<Map> { 
+            new Map(0, new Vector2(0, -230), new Vector2(0, 230), Locations.Pluto),
+            new Map(1, new Vector2(0, -430), new Vector2(0, 430), Locations.Neptune),
+            new Map(2, new Vector2(0, -430), new Vector2(0, 430), Locations.Uranus),
+            
+        };
+        public static readonly List<Data.ObstacleMap> ObstacleMaps = new List<Data.ObstacleMap> { 
+            new Data.ObstacleMap(0, "None"), 
+            new Data.ObstacleMap(1, "Maze") , 
+            new Data.ObstacleMap(2, "Three Paths") , 
+            new Data.ObstacleMap(0, "Forest"), 
+            new Data.ObstacleMap(0, "The Wall") 
+        };
         public static int SquadMakerSide;
 
         public const bool UseWebSocketSharp = true; // Whether to use the "WebSocketSharp" implementation of WebSockets or use the "NativeWebSocket" implmentation
