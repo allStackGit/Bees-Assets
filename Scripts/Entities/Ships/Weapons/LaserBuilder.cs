@@ -66,7 +66,35 @@ namespace Assets.Scripts.Entities.Ships
         protected override void Aim()
         {
             //Debug.Log("Leafcutter aiming");
-            base.Aim();
+            //base.Aim();
+
+            if (IsFiringManually)
+            {
+                TargetPoint = Stage.InputManager.GetMousePosition();
+                IsAimedAtTarget = true;
+            }
+            else
+            {
+                if (ShouldFire)
+                {
+                    TargetPoint = GetTargetPoint(TargetShip);
+                    IsAimedAtTarget = true;
+                    IsFiringAtAsteroid = false;
+                }
+                else if (ShouldFireAtAsteroid)
+                {
+                    TargetPoint = TargetAsteroid.GetPosition();
+                    IsAimedAtTarget = true;
+                    IsFiringAtAsteroid = true;
+                }
+                else
+                {
+                    IsAimedAtTarget = false;
+                    IsFiringAtAsteroid = false;
+                }
+            }
+            MoveTargetingMarker();
+
             if (IsFiringManually && IsAimedAtTarget)
             {
                 LaserBuilderAnimation.SetActive(true);

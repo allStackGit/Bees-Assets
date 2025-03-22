@@ -313,6 +313,10 @@ namespace Assets.Scripts.Levels
                     {
                         squad.MatchSpeed();
                     }
+                    else
+                    {
+                        //Debug.Log($"{squad} is not matching speed");
+                    }
                     // set initial tsv
                     Level.State.InitialTsv[squad.Side - 1] += squad.Tsv;
                     //Debug.Log($"Increase side TSV by {squad.Tsv} / {state.InitialTsv[squad.Side - 1]}");

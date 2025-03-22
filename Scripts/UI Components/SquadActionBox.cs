@@ -43,7 +43,7 @@ namespace Assets.Scripts.UIComponents
             Destroy(DetonateButton);
             Destroy(ChargeButton);
             Destroy(DropBeaconButton);
-            ActualSetup();
+            SetDropdownOptions();
             
         }
         public void Setup(Level level, EventSystem eventSystem, int side)
@@ -51,16 +51,12 @@ namespace Assets.Scripts.UIComponents
             this.Level = level;
             _eventSystem = eventSystem;
             Side = side;
-            ActualSetup();
+            SetDropdownOptions();
 
         }
         public void Hide()
         {
             gameObject.SetActive(false);
-        }
-        private void ActualSetup()
-        {
-            SetDropdownOptions();
         }
         public void SetupForSquad()
         {
@@ -646,6 +642,7 @@ namespace Assets.Scripts.UIComponents
                     }
                 }
                 DeselectButton();
+                HighlightSelectedButtons();
             }
                 
         }

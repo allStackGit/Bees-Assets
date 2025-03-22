@@ -1257,6 +1257,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             {
                 //_maxSpeed = Stage.IsDebugging ? CurrentSpeed * Stage.SpeedMultiplier : CurrentSpeed;
                 _maxSpeed = CurrentSpeed;
+                //Debug.Log($"Setting _maxSpeed to {_maxSpeed} for {Name}");
                 _tempAngle = (Rotation - 180) * Mathf.Deg2Rad;
                 Body.velocity = new Vector2((_maxSpeed * Mathf.Sin(_tempAngle)), -(_maxSpeed * Mathf.Cos(_tempAngle)));
             }
@@ -1362,7 +1363,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             {
                 SetCurrentSpeed(Squad.CurrentSpeed);
             }
-            else if (CurrentSpeed != Speed)
+            else if (!Squad.IsMatchingSpeed && CurrentSpeed != Speed)
             {
                 SetCurrentSpeed(Speed);
             }

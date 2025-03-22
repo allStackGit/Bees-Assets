@@ -87,6 +87,17 @@ namespace Assets.Scripts.Scenes
             }
             SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
         }
+        public void PlayBeesCampaign()
+        {
+            DeselectButton();
+            ConfigData.IsPlayingCampaign = true;
+            ConfigData.CurrentShips = ConfigData.CampaignShips;
+            if (ConfigData.Configuration.UserSide != ConfigData.Configuration.BeeSide)
+            {
+                ConfigData.SwapSides();
+            }
+            SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
+        }
 
         public void ExitGame()
         {

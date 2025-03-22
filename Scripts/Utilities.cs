@@ -994,7 +994,7 @@ namespace Assets.Scripts
                     (int)squad.Stats.ShipsLost, (int)squad.Stats.DamageDone, (int)squad.Stats.DamageReceived, (int)squad.Stats.Kills);
 
                 // Creating the SavedSquad object
-                savedSquad = new SavedSquad((int)squad.Id, (int)squad.Side, (string)squad.Name, new Vector2((float)squad.StartingPosition.x, (float)squad.StartingPosition.y),
+                savedSquad = new SavedSquad((long)squad.Id, (int)squad.Side, (string)squad.Name, new Vector2((float)squad.StartingPosition.x, (float)squad.StartingPosition.y),
                     (bool)squad.CeaseFire, (bool)squad.IsMatchingSpeed, ConvertShootingStrategyNameToType[(string)squad.ChosenShootingStrategy], color, Stats);
 
                 // Convert squad's ships data to list of dynamic objects
@@ -1004,7 +1004,7 @@ namespace Assets.Scripts
                 ships.ForEach((ship) =>
                 {
                     // Adding each ship to the squad
-                    squadShip = new SquadShip((int)ship.FleetId, ConvertShipNameToShipType[(string)ship.ShipType], new Vector2((float)ship.Offset.x, (float)ship.Offset.y),
+                    squadShip = new SquadShip((long)ship.FleetId, ConvertShipNameToShipType[(string)ship.ShipType], new Vector2((float)ship.Offset.x, (float)ship.Offset.y),
                      savedSquad);
 
                     savedSquad.AddShipToSquad(squadShip);

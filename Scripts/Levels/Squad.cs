@@ -209,6 +209,7 @@ namespace Assets.Scripts.Levels
             {
                 CeaseFire = true;
             }
+
             //Debug.Log($"Setup squad {this}");
 
         }
