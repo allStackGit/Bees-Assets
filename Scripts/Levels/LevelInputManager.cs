@@ -701,7 +701,7 @@ namespace Assets.Scripts.Levels
                 }
                 else if (HasHealCommandInput())
                 {
-                    SetSquadsToHeal((Beehive)_clickedShip);
+                    SetSquadsToHeal(_clickedShip.Squad.GetShips().Where((s) => s.ShipType == ConfigData.ShipTypes.Beehive).Select((b) => (Beehive)b).ToList());
                 }
                 else if (HasMiningCommandInput())
                 {
@@ -967,12 +967,12 @@ namespace Assets.Scripts.Levels
             });
         }
 
-        private void SetSquadsToHeal(Beehive beehive)
+        private void SetSquadsToHeal(List<Beehive> beehives)
         {
             // No local variables need extraction here.
             Level.State.GetSelectedSquads().ForEach((squad) =>
             {
-                squad.UserHeal(beehive);
+                squad.UserHeal(beehives);
             });
         }
 

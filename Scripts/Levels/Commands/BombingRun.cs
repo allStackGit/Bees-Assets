@@ -86,16 +86,20 @@ namespace Assets.Scripts.Levels.Commands
             }
 
             Timer();
-            CommandFrequency = 2;
-            CommandTimer.Reuse(CommandFrequency, Timer, true);
-            Level.AddTimer(CommandTimer);
-            //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
-            if (IsHiveMindCommand)
+            if (!IsDead)
             {
-                TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
-                Level.AddTimer(TimeoutTimer);
-                //Invoke(nameof(Timeout), ConfigData.StandardMaxCommandTime);
+                CommandFrequency = 2;
+                CommandTimer.Reuse(CommandFrequency, Timer, true);
+                Level.AddTimer(CommandTimer);
+                //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
+                if (IsHiveMindCommand)
+                {
+                    TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
+                    Level.AddTimer(TimeoutTimer);
+                    //Invoke(nameof(Timeout), ConfigData.StandardMaxCommandTime);
+                }
             }
+
         }
 
         public override void ClearData()

@@ -129,9 +129,9 @@ namespace Assets.Scripts.Entities
                     Level.AddTimer(_delayKillTimer);
                     //Invoke(nameof(DelayKill), ConfigData.CollisionAsteroidKillDelay);
                 }
-                else if (HasCrackedSprite && (float) Health / OriginalHealth < .5f)
+                else if (CheckForCrackedSprite())
                 {
-                    SpriteRenderer.sprite = CrackedSprite;
+                    SwitchToCrackedSprite();
                 }
             }
             else
@@ -186,19 +186,20 @@ namespace Assets.Scripts.Entities
                         Level.AddTimer(_delayKillTimer);
                         //LastHitAsteroid.Invoke(nameof(DelayKill), ConfigData.CollisionAsteroidKillDelay);
                     }
-                    else if (LastHitAsteroid.HasCrackedSprite && (float)LastHitAsteroid.Health / LastHitAsteroid.OriginalHealth < .5f)
+                    else if (LastHitAsteroid.CheckForCrackedSprite())
                     {
-                        LastHitAsteroid.SpriteRenderer.sprite = LastHitAsteroid.CrackedSprite;
+                        LastHitAsteroid.SwitchToCrackedSprite();
                     }
                     if (Health == 0)
                     {
                         SpriteRenderer.sprite = CrackedSprite;
                         _delayKillTimer.Reuse(ConfigData.CollisionAsteroidKillDelay, DelayKill);
                         Level.AddTimer(_delayKillTimer);
+                        LastHitAsteroid = null;
                     }
-                    else if (HasCrackedSprite && (float)Health / OriginalHealth < .5f)
+                    else if (CheckForCrackedSprite())
                     {
-                        SpriteRenderer.sprite = CrackedSprite;
+                        SwitchToCrackedSprite();
                         LastHitAsteroid = null;
                     }
                     else
@@ -235,6 +236,15 @@ namespace Assets.Scripts.Entities
                 
             }
         }
+        public bool CheckForCrackedSprite()
+        {
+            return HasCrackedSprite && (float)Health / OriginalHealth < .5f;
+        }
+        public void SwitchToCrackedSprite()
+        {
+            SpriteRenderer.sprite = CrackedSprite;
+        }
+
 
         private void OnTriggerExit2D(Collider2D collider)
         {

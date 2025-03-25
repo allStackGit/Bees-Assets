@@ -33,8 +33,12 @@ namespace Assets.Scripts.Levels.Commands
                     SetAndMove(_retreatPoint);
 
                     Timer();
-                    CommandTimer.Reuse(CommandFrequency, Timer, true);
-                    Level.AddTimer(CommandTimer);
+                    if (!IsDead) // The previous run of Timer() could have killed the command
+                    {
+                        CommandTimer.Reuse(CommandFrequency, Timer, true);
+                        Level.AddTimer(CommandTimer);
+                    }
+
                     //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
                 }
                 else

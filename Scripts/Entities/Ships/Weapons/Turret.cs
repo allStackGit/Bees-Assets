@@ -46,7 +46,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// <summary>
         /// Whether or not the ship should fire at the asteroid: If it's not cease fire and it has a target asteroid, and it does not have a target ship
         /// </summary>
-        public bool ShouldFireAtAsteroid => !CeaseFire && HasTargetAsteroid && TargetShip == null && !TargetAsteroid.IsDead;
+        public bool ShouldFireAtAsteroid => !Ship.IsCeaseFire && HasTargetAsteroid && TargetShip == null && !TargetAsteroid.IsDead;
 
         //public override bool ShouldFire => TargetShip != null && !CeaseFire && IsShipValidTarget(TargetShip);
 
@@ -135,7 +135,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         }
         private void FixedUpdate()
         {
-            Aim();
+            if (!Ship.IsCeaseFire)
+            {
+                Aim();
+            }
         }
         /// <summary>
         /// First in the Targeting sequence. On Passes #1 and #2 it runs Targeting. On Pass #3 it runs TryToFire()
@@ -151,7 +154,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
             else if (!IsFiringManually)
             {
-                if (!CeaseFire)
+                if (!Ship.IsCeaseFire)
                 {
                     Targeting();
                 }
@@ -217,7 +220,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 else
                 {
                     IsAimedAtTarget = false;
-                    if ((CeaseFire || !HasValidTarget()) && Rotation != Ship.Rotation)
+                    if ((Ship.IsCeaseFire || !HasValidTarget()) && Rotation != Ship.Rotation)
                     {
                         //Debug.Log($"{Name} has no ships to fire at, returning to default aim");
                         Utilities.TimedRotation(this, Ship.Rotation, RotationRate);

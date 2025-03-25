@@ -22,16 +22,21 @@ namespace Assets.Scripts.Entities.Ships
         public int MinionSquadsCount = 0;
         public Squad CurrentMinionSquad;
         public List<Squad> MinionSquads = new List<Squad>();
+        public QueenExplosionAnimation QueenExplosionAnimation;
 
-        private int _maxMinionsPerSquad = 16;
+        //private int _maxMinionsPerSquad = 16;
         private ScaledTimer _spawnMinionsTimer = new ScaledTimer();
         public override void Create(Stage stage)
         {
             base.Create(stage);
-            if (MinionCount > _maxMinionsPerSquad)
-            {
-                Debug.LogError($"Queen Property [MinionCount] (MinionCount) cannot be greater than [_maxMinionsPerSquad] ({_maxMinionsPerSquad})");
-            }
+            //if (MinionCount > _maxMinionsPerSquad)
+            //{
+            //    Debug.LogError($"Queen Property [MinionCount] (MinionCount) cannot be greater than [_maxMinionsPerSquad] ({_maxMinionsPerSquad})");
+            //}
+            QueenExplosionAnimation = ShipExplosion.GetComponentInChildren<QueenExplosionAnimation>();
+            QueenExplosionAnimation.Queen = this;
+            QueenExplosionAnimation.Remains = ShipRemains;
+            HasRemainsShip = false;
             RotationSpeed = Speed * ConfigData.Configuration.RotationMultiplier / 4;
         }
         public override void Setup(Level level, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
@@ -136,6 +141,7 @@ namespace Assets.Scripts.Entities.Ships
             Level.CancelTimer(_spawnMinionsTimer);
             base.Kill(killer, killerFleetShip, killerSavedSquad, endKill);
         }
+
     }
 
 

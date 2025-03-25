@@ -25,8 +25,12 @@ namespace Assets.Scripts.Levels.Commands
                 IsAttacking = true;
                 PrepareDamageToSendEntries();
                 Timer();
-                CommandTimer.Reuse(CommandFrequency, Timer, true);
-                Level.AddTimer(CommandTimer);
+                if (!IsDead)
+                {
+                    CommandTimer.Reuse(CommandFrequency, Timer, true);
+                    Level.AddTimer(CommandTimer);
+                }
+
                 //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
                 if (IsHiveMindCommand)
                 {

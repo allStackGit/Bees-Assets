@@ -80,6 +80,10 @@ namespace Assets.Scripts.Entities.Ships
         /// </summary>
         public List<GameObject> ColoredPrefabs;
         /// <summary>
+        /// All of the original colored prefabs belonging to the ship before alteration
+        /// </summary>
+        public List<GameObject> OriginalColoredPrefabs;
+        /// <summary>
         /// The original uncolored sprites of the ship's prefabs
         /// </summary>
         public List<Sprite> OriginalSprites;
@@ -144,6 +148,10 @@ namespace Assets.Scripts.Entities.Ships
         public bool HasWeapons, HasTurrets;
         public bool IsCarrierShip;
         public bool IsMoving;
+        /// <summary>
+        /// Whether or not the ship has the Cease Fire command from the squad or from being healed
+        /// </summary>
+        public bool IsCeaseFire;
 
         public volatile bool PathfindingThreadComplete, IsPathfinding;
         public volatile Pathfinder.Path PathfindingValue;
@@ -566,6 +574,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 HasUserFogOfWarVision = true;
                 FogOfWarVision.Create(this);
                 Destroy(HiveMindVision.gameObject);
+
+                OriginalColoredPrefabs.Insert(0, gameObject);
             }
             else
             {
@@ -765,8 +775,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 //float start = Time.realtimeSinceStartup;
                 //string status = "Loading";
                 OriginalSprites.Clear();
-                ColoredPrefabs.Clear();
-                ColoredPrefabs.Insert(0, gameObject);
+                ColoredPrefabs = OriginalColoredPrefabs.ToList();
                 _colors = ConfigData.ChangeableShipColors.GetValueOrDefault(ShipType);
                 _tempIndex = 0;
 
@@ -797,6 +806,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                     }
                     _tempIndex++;
                 });
+
 
                 //Debug.Log($"{_status} sprites for {FleetShip.Name} took {(Time.realtimeSinceStartup - start)*1000}ms");
             }
@@ -1359,7 +1369,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 }
                 return;
             }
-            if (Squad.IsMatchingSpeed && CurrentSpeed != Squad.CurrentSpeed)
+            if (Squad.IsMatchingSpeed && CurrentSpeed != Squad.CurrentSpeed && Squad.CurrentSpeed > 0)
             {
                 SetCurrentSpeed(Squad.CurrentSpeed);
             }

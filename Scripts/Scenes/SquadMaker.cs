@@ -374,7 +374,7 @@ namespace Assets.Scripts.Scenes
             ConfigData.HumanShipTypes.ToList().ForEach(ship =>
             {
                 //Debug.Log("Setting drop down option");
-                dropdown.options.Add(new TMP_Dropdown.OptionData($"{ship}"));
+                dropdown.options.Add(new TMP_Dropdown.OptionData($"{Utilities.ConvertShipTypeToName[ship]}"));
             });
 
 
@@ -457,7 +457,7 @@ namespace Assets.Scripts.Scenes
             ConfigData.BeeShipTypes.ToList().ForEach(ship =>
             {
                 //Debug.Log("Setting drop down option");
-                dropdown.options.Add(new TMP_Dropdown.OptionData($"{ship}"));
+                dropdown.options.Add(new TMP_Dropdown.OptionData($"{Utilities.ConvertShipTypeToName[ship]}"));
             });
             //Debug.Log("End of human setup");
         }

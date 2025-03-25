@@ -203,7 +203,7 @@ namespace Assets.Scripts.Data
         }
         public string GetLevelDetails()
         {
-            return $"Map: {ConfigData.Maps[MapIndex]}\n" +
+            return $"Map: {ConfigData.Maps[MapIndex].Name}\n" +
                 $"Obstacles: {ConfigData.ObstacleMaps[ObstacleMapIndex]}\n" +
                 $"Asteroids: {(AsteroidOption == 0 ? "None" : (AsteroidOption == 1 ? "Yes" : "Double"))}\n" +
                 $"Fog of War: {(FogOfWar == 1 ? "Yes" : "No")}\n" +

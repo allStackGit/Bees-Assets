@@ -101,7 +101,7 @@ namespace Assets.Scripts.Entities.Ships
             }
             else
             {
-                if (LaserBuilderAnimation.activeSelf && (!HasTargetShip || CeaseFire || !IsAimedAtTarget))
+                if (LaserBuilderAnimation.activeSelf && (!HasTargetShip || Ship.IsCeaseFire || !IsAimedAtTarget))
                 {
                     //Debug.Log($"{Name} has no TargetShip, deactivating animation");
                     LaserBuilderAnimation.SetActive(false);

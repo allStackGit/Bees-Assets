@@ -25,9 +25,9 @@ namespace Assets.Scripts.Levels
             ConfigData.Socket.SendRequest(new SetupLevelRequest(new SetupLevel(ConfigData.GetUserProgressData().CurrentLevel, ConfigData.GetUserId(), ConfigData.Version),
                 ConfigData.StandardMaxTimeOnQueue, Level));
         }
-        public void SetCarrierShipFleetships()
+        public void SetCarrierShipFleetships(List<Squad> squads)
         {
-            Level.State.GetSquadsBySide(ConfigData.Configuration.HumanSide).ForEach((squad) =>
+            squads.ForEach((squad) =>
             {
                 if (squad is CarrierSquad)
                 {
@@ -252,11 +252,6 @@ namespace Assets.Scripts.Levels
                 SpawnShipsAndSquads(Level.CurrentLevelOptions.ChosenSquads, Level.StartingPositions[side - 1], Vector2.zero);
             }
 
-            if (side == ConfigData.Configuration.HumanSide)
-            {
-                // set the fleetships for the carrier ships
-                SetCarrierShipFleetships();
-            }
         }
         public void SpawnShipsAndSquads(List<SavedSquad> squads, Vector2 startingPosition, Vector2 moveToPoint)
         {
@@ -377,6 +372,12 @@ namespace Assets.Scripts.Levels
             });
 
             PositionSquads(setupSquads, startingPosition, moveToPoint);
+
+            if (carriers.Count > 0)
+            {
+                // set the fleetships for the carrier ships
+                SetCarrierShipFleetships(setupSquads);
+            }
 
 
             //Debug.Log($"Initial TSV is Humans: {Level.State.InitialTsv[ConfigData.Configuration.HumanSide-1]}, " +

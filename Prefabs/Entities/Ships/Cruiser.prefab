@@ -175,7 +175,7 @@ MonoBehaviour:
   HasMovementMarker: 0
   HasWaitingTargetCoordinates: 0
   HasRemainsShip: 1
-  FireAtFrontOfShip: 1
+  FireAtFrontOfShip: 0
   IsBomber: 0
   IsSpawnedShip: 0
   HasEnteredMap: 0

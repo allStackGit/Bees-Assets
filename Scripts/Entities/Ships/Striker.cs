@@ -73,12 +73,18 @@ namespace Assets.Scripts.Entities.Ships
         public override void Deactivate()
         {
             base.Deactivate();
-            LoadedIndicator.SetActive(false);
+            if (!Stage.IsTraining)
+            {
+                LoadedIndicator.SetActive(false);
+            }
         }
         public override void Activate()
         {
             base.Activate();
-            LoadedIndicator.SetActive(true);
+            if (!Stage.IsTraining)
+            {
+                LoadedIndicator.SetActive(true);
+            }
         }
         private GameObject _collidingThing;
         private Ship _collidingShip;

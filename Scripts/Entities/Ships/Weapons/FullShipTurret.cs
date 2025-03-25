@@ -38,7 +38,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     else
                     {
                         IsAimedAtTarget = false;
-                        if (CeaseFire || !HasValidTarget())
+                        if (Ship.IsCeaseFire || !HasValidTarget())
                         {
                             //Debug.Log($"{Name} has no ships to fire at, returning to default aim");
                             RotateShipTowardsTargetPoint(Ship.Rotation);

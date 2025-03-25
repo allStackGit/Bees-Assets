@@ -39,8 +39,12 @@ public class FullRetreat : Command
                 {
                     PrepareDamageToSendEntries(1);
                     MoveToWarpGate();
-                    CommandTimer.Reuse(CommandFrequency, MoveToWarpGate, true);
-                    Level.AddTimer(CommandTimer);
+                    if (!IsDead)
+                    {
+                        CommandTimer.Reuse(CommandFrequency, MoveToWarpGate, true);
+                        Level.AddTimer(CommandTimer);
+                    }
+
                     //InvokeRepeating(nameof(MoveToWarpGate), 0, CommandFrequency);
                 }
 

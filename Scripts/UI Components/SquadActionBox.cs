@@ -743,7 +743,7 @@ namespace Assets.Scripts.UIComponents
             {
                 Level.State.GetSelectedSquads().ForEach((squad) =>
                 {
-                    squad.CeaseFire = true;
+                    squad.SetSquadCeaseFire(true);
                 });
                 HighlightSelectedButtons();
             }
@@ -755,7 +755,10 @@ namespace Assets.Scripts.UIComponents
             {
                 Level.State.GetSelectedSquads().ForEach((squad) =>
                 {
-                    squad.CeaseFire = false;
+                    if (!squad.HasCommand || squad.GetCommand().CommandType != ConfigData.CommandTypes.Heal)
+                    {
+                        squad.SetSquadCeaseFire(false);
+                    }
                 });
                 HighlightSelectedButtons();
             }

@@ -28,9 +28,8 @@ namespace Assets.Scripts.Levels.Commands
             {
                 TargetBeehives = beehives;
                 base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
-                GetSquad().CeaseFire = true;
 
-                _shipsThatNeedBeehive = new Queue<Ship>(GetSquad().GetShips().OrderBy((s) => s.Health));
+                _shipsThatNeedBeehive = new Queue<Ship>(GetSquad().GetShips().OrderBy((s) => s.Health - s.OriginalHealth));
 
                 for (_index = 0; _index < TargetBeehives.Count && _shipsThatNeedBeehive.Count > 0; _index++)
                 {
@@ -50,14 +49,18 @@ namespace Assets.Scripts.Levels.Commands
 
                 GetSquad().Status = $"Moving to {TargetBeehives.Count} beehives to heal";
                 Timer();
-                CommandTimer.Reuse(CommandFrequency, Timer, true);
-                Level.AddTimer(CommandTimer);
-
-                if (IsHiveMindCommand)
+                if (!IsDead) // The previous run of Timer() could have killed the command
                 {
-                    TimeoutTimer.Reuse(300, Timeout);
-                    Level.AddTimer(TimeoutTimer);
+                    CommandTimer.Reuse(CommandFrequency, Timer, true);
+                    Level.AddTimer(CommandTimer);
+
+                    if (IsHiveMindCommand)
+                    {
+                        TimeoutTimer.Reuse(300, Timeout);
+                        Level.AddTimer(TimeoutTimer);
+                    }
                 }
+
 
 
             }
@@ -148,6 +151,7 @@ namespace Assets.Scripts.Levels.Commands
                     Tsv += _tsvDifference;
 
                     _ship.UpdateHealthBar();
+                    _ship.IsCeaseFire = true;
                 }
                 else
                 {
@@ -166,6 +170,7 @@ namespace Assets.Scripts.Levels.Commands
             for (_index = 0; _index < ShipsHealing.Count; _index++)
             {
                 _ship = ShipsHealing[_index];
+                _ship.IsCeaseFire = false;
                 _shipsAndBeehives[_ship.Id].ShipsHealingHere.Remove(_ship);
             }
             for (_index = 0; _index < ShipsWaitingToHeal.Count; _index++)
@@ -173,7 +178,6 @@ namespace Assets.Scripts.Levels.Commands
                 _ship = ShipsWaitingToHeal[_index];
                 _shipsAndBeehives[_ship.Id].ShipsHealingHere.Remove(_ship);
             }
-            GetSquad().CeaseFire = false;
             Level.CancelTimer(_healingTimer);
             base.SetFinalize(cause);
         }

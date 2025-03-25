@@ -164,6 +164,10 @@ namespace Assets.Scripts.Entities.Projectiles
             {
                 asteroid.Kill(false);
             }
+            else if (asteroid.CheckForCrackedSprite())
+            {
+                asteroid.SwitchToCrackedSprite();
+            }
 
         }
         

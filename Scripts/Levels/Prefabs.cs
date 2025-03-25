@@ -98,6 +98,7 @@ namespace Assets.Scripts.Levels
                 { ConfigData.ShipTypes.Leafcutter, LeafcutterRemainsPrefab },
                 { ConfigData.ShipTypes.Bumblebee, BumblebeeRemainsPrefab },
                 { ConfigData.ShipTypes.CarpenterBee, CarpenterBeeRemainsPrefab },
+                { ConfigData.ShipTypes.Queen, QueenRemainsPrefab },
             };
 
             ConvertShipTypeToExplosionPrefab = new Dictionary<ConfigData.ShipTypes, GameObject>

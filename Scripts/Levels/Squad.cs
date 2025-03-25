@@ -207,11 +207,19 @@ namespace Assets.Scripts.Levels
             }
             if (Stage.FullCeaseFire || Side == ConfigData.Configuration.AISide && Stage.MakeEnemyCeaseFire)
             {
-                CeaseFire = true;
+                SetSquadCeaseFire(true);
+               
             }
 
             //Debug.Log($"Setup squad {this}");
 
+        }
+        public void SetSquadCeaseFire(bool ceasefire)
+        {
+            CeaseFire = ceasefire;
+            GetShips().ForEach((s) => {
+                s.IsCeaseFire = CeaseFire;
+            });
         }
         private void SetSquadBox()
         {
@@ -468,7 +476,7 @@ namespace Assets.Scripts.Levels
         private void CheckChase()
         {
             //Debug.Log($"Checking if {Name} should chase.");
-            if (_shouldChase && GetCommand()?.CommandType != ConfigData.CommandTypes.Aggressive)
+            if (_shouldChase && GetCommand()?.CommandType != ConfigData.CommandTypes.Aggressive && !Level.State.GameOver)
             {
                 _tempSquad = GetClosestEnemySquad();
                 //Debug.Log($"The closest Enemy to {Name} is {closestSquad.Name}");
@@ -914,11 +922,11 @@ namespace Assets.Scripts.Levels
             ((FullRetreat)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, warpGate);
 
         }
-        public void UserHeal(Beehive beehive)
+        public void UserHeal(List<Beehive> beehives)
         {
             Debug.Log($"Starting new heal command for {Name}");
             MakeUserCommand(ConfigData.CommandTypes.Heal, null);
-            ((Heal)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, new List<Beehive> { beehive });
+            ((Heal)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, beehives);
 
         }
         public void UserAggressive(Squad enemy)

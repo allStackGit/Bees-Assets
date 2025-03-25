@@ -256,7 +256,7 @@ namespace Assets.Scripts.Levels.Commands
                     _tempShips.Sort((a, b) => b.FleetShip.DamageDone - a.FleetShip.DamageDone);
                     break;
                 case ConfigData.ShootingStrategyTypes.LeastHealth:
-                    _tempShips.Sort((a, b) => a.Health - b.Health);
+                    _tempShips.Sort((a, b) => (a.Health - a.OriginalHealth) - (b.Health - b.OriginalHealth));
                     break;
                 case ConfigData.ShootingStrategyTypes.MostHealth:
                     _tempShips.Sort((a, b) => b.Health - a.Health);

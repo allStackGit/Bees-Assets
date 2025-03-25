@@ -358,32 +358,43 @@ namespace Assets.Scripts.Levels
         {
             Triggers.Clear();
 
-            if (Utilities.CoinToss())
+            Triggers.Add(new Trigger(() =>
             {
-                Triggers.Add(new Trigger(() =>
-                {
-                    return Time.realtimeSinceStartup - StartTime >= CurrentLevelOptions.EnemyReinforcementDelay;
-                }, () =>
-                {
-                    //Debug.Log($"{CurrentLevelOptions.EnemyReinforcementDelay} seconds have passed, spawning new enemy ships for side {ConfigData.Configuration.AISide}: {Utilities.ListToString(CurrentLevelOptions.EnemyReinforcements)}");
-                    _trigger_moveToPoint = StartingPositions[ConfigData.Configuration.AISide - 1];
-                    LevelConstructor.SpawnShipsAndSquads(CurrentLevelOptions.EnemyReinforcements, StartingPositions[ConfigData.Configuration.AISide - 1] * _trigger_double, _trigger_moveToPoint);
-
-                }));
-            }
-            else
+                return Time.realtimeSinceStartup - StartTime >= CurrentLevelOptions.EnemyReinforcementDelay;
+            }, () =>
             {
-                //Triggers.Add(new Trigger(() =>
-                //{
-                //    return Time.realtimeSinceStartup - StartTime >= CurrentLevelOptions.EnemyReinforcementDelay;
-                //}, () =>
-                //{
-                //    //Debug.Log($"{CurrentLevelOptions.EnemyReinforcementDelay} seconds have passed, spawning new enemy ships for side {ConfigData.Configuration.AISide}: {Utilities.ListToString(CurrentLevelOptions.EnemyReinforcements)}");
-                //    _trigger_moveToPoint = StartingPositions[ConfigData.Configuration.UserSide - 1];
-                //    LevelConstructor.SpawnShipsAndSquads(CurrentLevelOptions.FriendlyReinforcements, StartingPositions[ConfigData.Configuration.UserSide - 1] * _trigger_double, _trigger_moveToPoint);
+                Debug.Log($"{CurrentLevelOptions.EnemyReinforcementDelay} seconds have passed, spawning new enemy ships for side {ConfigData.Configuration.AISide}: {Utilities.ListToString(CurrentLevelOptions.EnemyReinforcements)}");
+                _trigger_moveToPoint = StartingPositions[ConfigData.Configuration.AISide - 1];
+                LevelConstructor.SpawnShipsAndSquads(CurrentLevelOptions.EnemyReinforcements, StartingPositions[ConfigData.Configuration.AISide - 1] * _trigger_double, _trigger_moveToPoint);
 
-                //}));
-            }
+            }));
+
+            //if (Utilities.CoinToss())
+            //{
+            //    Triggers.Add(new Trigger(() =>
+            //    {
+            //        return Time.realtimeSinceStartup - StartTime >= CurrentLevelOptions.EnemyReinforcementDelay;
+            //    }, () =>
+            //    {
+            //        Debug.Log($"{CurrentLevelOptions.EnemyReinforcementDelay} seconds have passed, spawning new enemy ships for side {ConfigData.Configuration.AISide}: {Utilities.ListToString(CurrentLevelOptions.EnemyReinforcements)}");
+            //        _trigger_moveToPoint = StartingPositions[ConfigData.Configuration.AISide - 1];
+            //        LevelConstructor.SpawnShipsAndSquads(CurrentLevelOptions.EnemyReinforcements, StartingPositions[ConfigData.Configuration.AISide - 1] * _trigger_double, _trigger_moveToPoint);
+
+            //    }));
+            //}
+            //else
+            //{
+            //    Triggers.Add(new Trigger(() =>
+            //    {
+            //        return Time.realtimeSinceStartup - StartTime >= CurrentLevelOptions.EnemyReinforcementDelay;
+            //    }, () =>
+            //    {
+            //        //Debug.Log($"{CurrentLevelOptions.EnemyReinforcementDelay} seconds have passed, spawning new enemy ships for side {ConfigData.Configuration.AISide}: {Utilities.ListToString(CurrentLevelOptions.EnemyReinforcements)}");
+            //        _trigger_moveToPoint = StartingPositions[ConfigData.Configuration.UserSide - 1];
+            //        LevelConstructor.SpawnShipsAndSquads(CurrentLevelOptions.FriendlyReinforcements, StartingPositions[ConfigData.Configuration.UserSide - 1] * _trigger_double, _trigger_moveToPoint);
+
+            //    }));
+            //}
 
 
 
@@ -874,10 +885,12 @@ namespace Assets.Scripts.Levels
             //CancelInvoke(nameof(CheckTriggers));
             if (ActivateLoadingShipsMidLevel)
             {
-                // Removed this to avoid dealing with reinforcements
-                //SetTriggers();
-                //_checkTriggersTimer.Reuse(5, CheckTriggers, true);
-                //AddTimer(_checkTriggersTimer);
+                 // Removed this to avoid dealing with reinforcements during training - Unremoved
+
+
+                SetTriggers();
+                _checkTriggersTimer.Reuse(5, CheckTriggers, true);
+                AddTimer(_checkTriggersTimer);
 
 
                 //InvokeRepeating(nameof(CheckTriggers), 5, 5);

@@ -28,8 +28,11 @@ namespace Assets.Scripts.Levels.Commands
             CommandFrequency = 5;
 
             Timer();
-            CommandTimer.Reuse(CommandFrequency, Timer, true);
-            Level.AddTimer(CommandTimer);
+            if (!IsDead) // The previous run of Timer() could have killed the command
+            {
+                CommandTimer.Reuse(CommandFrequency, Timer, true);
+                Level.AddTimer(CommandTimer);
+            }
             //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
 
 

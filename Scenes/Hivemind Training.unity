@@ -7646,7 +7646,7 @@ PrefabInstance:
       objectReference: {fileID: 2108627698}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: UnlockCamera
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: ActivateAudio
@@ -7726,7 +7726,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: DoesUserHaveController
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: MiniMapCameraContainer
@@ -7854,11 +7854,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: GeneratedSquadCountMinimum
-      value: 0
+      value: 4
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: GeneratedSquadCountOverride
-      value: 0
+      value: 12
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: OverrideStrats.Array.data[0]
@@ -16031,7 +16031,7 @@ MonoBehaviour:
   HoneybeeRemainsPrefab: {fileID: 3284305956443189761, guid: c622be5f7d500034a8a9c6094904f2ee, type: 3}
   HornetRemainsPrefab: {fileID: 3284305956443189761, guid: abc976f81f683a8488eeb2e7cb347509, type: 3}
   LeafcutterRemainsPrefab: {fileID: 3284305956443189761, guid: dc9007da7c8bbac4fafaa89663fee71f, type: 3}
-  QueenRemainsPrefab: {fileID: 0}
+  QueenRemainsPrefab: {fileID: 3284305956443189761, guid: d52f411b839b60849b9d3f2e8ac99f2f, type: 3}
   ScoutRemainsPrefab: {fileID: 3284305956443189761, guid: 9155b5af830f51c48ab1b31e8596c5f8, type: 3}
   StrikerRemainsPrefab: {fileID: 3284305956443189761, guid: 25c7ec7d55baae94baf69847d9c97eb8, type: 3}
   WarpGateRemainsPrefab: {fileID: 3284305956443189761, guid: 7089c8925e0a0254fa01ae4cdca4e461, type: 3}
@@ -16125,6 +16125,7 @@ MonoBehaviour:
   - {fileID: 2899863341814993073, guid: 50540889fd9064747b0b45a45ef5bc62, type: 3}
   - {fileID: 2899863341814993073, guid: d0ac82fd3cc850c4bb430360b3efb597, type: 3}
   - {fileID: 2899863341814993073, guid: 44a41557357e0bf46b67f03efeee9492, type: 3}
+  - {fileID: 2899863341814993073, guid: a2cbb974f155b164cb4df7c96f9fd59b, type: 3}
   BreakawayAsteroids: []
   AsteroidPieces: []
   Maps:

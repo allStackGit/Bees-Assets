@@ -97,6 +97,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 {
                     _beam.SpriteRenderer.color = Ship.Squad.Color;
                 }
+                else
+                {
+                    _beam.SpriteRenderer.color = Color.white;
+                }
 
                 Ship.FleetShip.ShotsFired++;
                 if (!IsFiringManually && !IsFiringAtAsteroid)

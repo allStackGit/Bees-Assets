@@ -30,16 +30,20 @@ namespace Assets.Scripts.Levels.Commands
                     Utilities.RandomCoordinate(Level, _enemyPosition, Vector2.one * (EnemySquad.MaxRange + 45), Vector2.one * (EnemySquad.MaxRange + 10));
 
                 Timer();
-                CommandTimer.Reuse(CommandFrequency, Timer, true);
-                Level.AddTimer(CommandTimer);
-
-                //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
-                if (IsHiveMindCommand)
+                if (!IsDead) // The previous run of Timer() could have killed the command
                 {
-                    TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
-                    Level.AddTimer(TimeoutTimer);
-                    //Invoke(nameof(Timeout), ConfigData.StandardMaxCommandTime);
+                    CommandTimer.Reuse(CommandFrequency, Timer, true);
+                    Level.AddTimer(CommandTimer);
+
+                    //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
+                    if (IsHiveMindCommand)
+                    {
+                        TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
+                        Level.AddTimer(TimeoutTimer);
+                        //Invoke(nameof(Timeout), ConfigData.StandardMaxCommandTime);
+                    }
                 }
+                
             }
 
         }

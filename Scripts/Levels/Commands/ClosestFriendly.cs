@@ -23,7 +23,6 @@ namespace Assets.Scripts.Levels.Commands
             {
                 //InvokeRepeating(nameof(Timer), CommandFrequency, CommandFrequency);
                 //Invoke(nameof(FinishFollowing), ConfigData.Configuration.AISquadFollowingTime);
-                Timer();
                 CommandTimer.Reuse(CommandFrequency, Timer, true);
                 Level.AddTimer(CommandTimer);
                 TimeoutTimer.Reuse(ConfigData.Configuration.AISquadFollowingTime, Timeout);

@@ -48,15 +48,19 @@ namespace Assets.Scripts.Levels.Commands
                 GetSquad().Status = $"Guarding {_guardedSquad.Name}";
 
                 Timer();
-                CommandTimer.Reuse(CommandFrequency, Timer, true);
-                Level.AddTimer(CommandTimer);
-                if (IsHiveMindCommand)
+                if (!IsDead)
                 {
-                    TimeoutTimer.Reuse(ConfigData.Configuration.AISquadGuardTime, FinishGuardingCommand);
-                    Level.AddTimer(TimeoutTimer);
-                    //Invoke(nameof(FinishGuardingCommand), ConfigData.Configuration.AISquadGuardTime);
+                    CommandTimer.Reuse(CommandFrequency, Timer, true);
+                    Level.AddTimer(CommandTimer);
+                    if (IsHiveMindCommand)
+                    {
+                        TimeoutTimer.Reuse(ConfigData.Configuration.AISquadGuardTime, FinishGuardingCommand);
+                        Level.AddTimer(TimeoutTimer);
+                        //Invoke(nameof(FinishGuardingCommand), ConfigData.Configuration.AISquadGuardTime);
 
+                    }
                 }
+
                 //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
             }
             else

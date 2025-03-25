@@ -46,7 +46,7 @@ GameObject:
   - component: {fileID: 4256908550698491397}
   - component: {fileID: 996527621038280574}
   - component: {fileID: 5471931390679818006}
-  - component: {fileID: 2844100659756994057}
+  - component: {fileID: 3948277733766850358}
   m_Layer: 0
   m_Name: queen_death_body_0
   m_TagString: Untagged
@@ -142,7 +142,7 @@ Animator:
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorStateOnDisable: 0
   m_WriteDefaultValuesOnDisable: 0
---- !u!114 &2844100659756994057
+--- !u!114 &3948277733766850358
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -151,9 +151,10 @@ MonoBehaviour:
   m_GameObject: {fileID: 1610560476144832850}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: dcac2c4df5778a44499270e3c3b971a2, type: 3}
+  m_Script: {fileID: 11500000, guid: 5e1561603f9bfb2429e7345fe26c117b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  Container: {fileID: 1317667449522872329}
 --- !u!1 &1637480959050046487
 GameObject:
   m_ObjectHideFlags: 0
@@ -165,7 +166,6 @@ GameObject:
   - component: {fileID: 6970007843139321114}
   - component: {fileID: 4494665353215374828}
   - component: {fileID: 119505216296900062}
-  - component: {fileID: 719696884252107518}
   m_Layer: 0
   m_Name: queen_death_crown_0
   m_TagString: Untagged
@@ -261,18 +261,6 @@ Animator:
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorStateOnDisable: 0
   m_WriteDefaultValuesOnDisable: 0
---- !u!114 &719696884252107518
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1637480959050046487}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: dcac2c4df5778a44499270e3c3b971a2, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!1 &3308985311029919399
 GameObject:
   m_ObjectHideFlags: 0
@@ -284,7 +272,6 @@ GameObject:
   - component: {fileID: 7592326033421312434}
   - component: {fileID: 4871470044194711459}
   - component: {fileID: 7859398310624266174}
-  - component: {fileID: 3378735884555045105}
   m_Layer: 0
   m_Name: queen_death_wings_eyes_0
   m_TagString: Untagged
@@ -380,18 +367,6 @@ Animator:
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorStateOnDisable: 0
   m_WriteDefaultValuesOnDisable: 0
---- !u!114 &3378735884555045105
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3308985311029919399}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: dcac2c4df5778a44499270e3c3b971a2, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!1 &5971896881005361207
 GameObject:
   m_ObjectHideFlags: 0
@@ -403,7 +378,6 @@ GameObject:
   - component: {fileID: 7417779781433394765}
   - component: {fileID: 3448664340945407998}
   - component: {fileID: 5836380459022893734}
-  - component: {fileID: 583061817819068465}
   m_Layer: 0
   m_Name: queen_death_rings_0
   m_TagString: Untagged
@@ -499,15 +473,3 @@ Animator:
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorStateOnDisable: 0
   m_WriteDefaultValuesOnDisable: 0
---- !u!114 &583061817819068465
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 5971896881005361207}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: dcac2c4df5778a44499270e3c3b971a2, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 

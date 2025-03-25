@@ -46,15 +46,19 @@ namespace Assets.Scripts.Levels.Commands
                     }
                 });
                 MoveToAsteroid();
-                CommandTimer.Reuse(CommandFrequency, MoveToAsteroid, true);
-                Level.AddTimer(CommandTimer);
-                //InvokeRepeating(nameof(MoveToAsteroid), 0, CommandFrequency);
-                if (IsHiveMindCommand)
+                if (!IsDead) // The previous run of MoveToAsteroid() could have killed the command
                 {
-                    TimeoutTimer.Reuse(300, Timeout);
-                    Level.AddTimer(TimeoutTimer);
-                    //Invoke(nameof(EndCommand), 300); // 5 minutes
+                    CommandTimer.Reuse(CommandFrequency, MoveToAsteroid, true);
+                    Level.AddTimer(CommandTimer);
+                    //InvokeRepeating(nameof(MoveToAsteroid), 0, CommandFrequency);
+                    if (IsHiveMindCommand)
+                    {
+                        TimeoutTimer.Reuse(300, Timeout);
+                        Level.AddTimer(TimeoutTimer);
+                        //Invoke(nameof(EndCommand), 300); // 5 minutes
+                    }
                 }
+                
             }
             else
             {
