@@ -24,10 +24,28 @@ namespace Assets.Scripts.Entities.Ships
             RecoloredSprites = new Sprite[TotalSprites];
             if (Ship.FleetShip.HasCachedSprite)
             {
-                for (int i = 0; i < RecoloredSprites.Length; i++)
+
+                int key = (Ship.ShipType, Ship.Squad.SavedSquad.Color).GetHashCode();
+
+                if (Ship.Stage.LoadedRemainsSprites.ContainsKey(key))
                 {
-                    RecoloredSprites[i] = Ship.FleetShip.LoadCachedSprite(i+1, "ship", ConfigData.ShipSizes[Ship.ShipType], Ship.Squad.SavedSquad.Color); // skips the first sprite because that's the base sprite
+                    RecoloredSprites = Ship.Stage.LoadedRemainsSprites[key];
+                    Debug.Log($"Loaded cached sprites from Stage instead of Disk for {Ship.ShipType} with {Ship.Squad.SavedSquad.Color}");
                 }
+                else
+                {
+                    for (int i = 0; i < RecoloredSprites.Length; i++)
+                    {
+                        RecoloredSprites[i] = Ship.FleetShip.LoadCachedSprite(i + 1, "ship", ConfigData.ShipSizes[Ship.ShipType], Ship.Squad.SavedSquad.Color); // skips the first sprite because that's the base sprite
+                    }
+
+                    Ship.Stage.LoadedRemainsSprites[key] = RecoloredSprites;
+                }
+
+
+                //Debug.Log($"Loaded cached sprites for Ship {Ship.Name}");
+
+
             }
         }
 

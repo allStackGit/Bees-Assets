@@ -51,8 +51,16 @@ namespace Assets.Scripts.Entities
                     return;
                 }
             }
+            else if (ship.Speed >= 8)
+            {
+                ship.LogDamage((int)(ship.OriginalHealth * .5f)); // 50% of ship health
+            }
+            else
+            {
+                ship.LogDamage((int)(ship.OriginalHealth * .2f)); // 20% of ship health
+            }
 
-            ship.LogDamage((int)(ship.MaxHealth * .2f)); // 20% of ship health
+            
         }
     }
 }

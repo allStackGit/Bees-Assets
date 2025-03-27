@@ -121,7 +121,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
         public virtual void ContactTarget(Ship target)
         {
-            //Debug.Log($"Projectile hit {target.name}");
+            //Debug.Log($"{Name} contacted {target.Name}");
             KillSequence();
         }
         private Vector3 _reverse = new Vector3(0, 0, 180);
@@ -246,6 +246,8 @@ namespace Assets.Scripts.Entities.Projectiles
         protected virtual void ShipCollision(Ship ship)
         {
             //Debug.Log("Basic ship collision");
+            //Debug.Log($"{Name} hit {ship.Name}. Contact? {(!IsFriendly(ship) || (Shooter.ShipType == ConfigData.ShipTypes.FireBarge && this != Shooter)) && !ShipsToIgnore.Contains(ship)}," +
+            //    $"IsFriendly? {IsFriendly(ship)}");
             // if hit enemy projectile or Fire Barge explosion. the ships to ignore is for leafcutter split shots
             if ((!IsFriendly(ship) || (Shooter.ShipType == ConfigData.ShipTypes.FireBarge && this != Shooter)) && !ShipsToIgnore.Contains(ship))
             {

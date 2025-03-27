@@ -517,6 +517,11 @@ namespace Assets.Scripts.Entities.Ships
                     //Debug.Log($"it's a turret!");
                     if (weapon is Eye)
                     {
+                        //if (ShipType == ConfigData.ShipTypes.Hornet)
+                        //{
+                        //    shipStats.Ranges[i] = 80;
+                        //}
+
                         ((Eye)weapon).Create(this, shipStats.WeaponTypes[i], shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
 shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], FireAtFrontOfShip, shipStats.RotationRates[i]);
                     }

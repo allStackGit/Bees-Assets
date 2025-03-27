@@ -606,6 +606,10 @@ namespace Assets.Scripts
         public static HashSet<ShipTypes> BeeShipTypes = new HashSet<ShipTypes>();
         public static HashSet<ShipTypes> HumanShipTypes = new HashSet<ShipTypes>();
         public static readonly HashSet<ShipTypes> BeeSwarmShips = new HashSet<ShipTypes> { ShipTypes.Honeybee, ShipTypes.Hornet, ShipTypes.YellowJacket };
+        public static readonly HashSet<ShipTypes> SmallShips = new HashSet<ShipTypes> { ShipTypes.Honeybee, ShipTypes.Hornet, ShipTypes.YellowJacket, ShipTypes.Scout, 
+            ShipTypes.Gunship, ShipTypes.Drone, ShipTypes.Wasp, ShipTypes.Striker, ShipTypes.Beacon, ShipTypes.Cruiser, ShipTypes.Dreadnought, ShipTypes.Frigate, ShipTypes.Leafcutter  };
+        public static readonly HashSet<ShipTypes> LargeShips = new HashSet<ShipTypes> { ShipTypes.Queen, ShipTypes.Flagship, ShipTypes.Barge, ShipTypes.FireBarge, ShipTypes.Bumblebee,
+        ShipTypes.WarpGate, ShipTypes.Beehive, ShipTypes.CarpenterBee, ShipTypes.Factory, ShipTypes.Carrier};
         public static readonly HashSet<ShipTypes> HumanSwarmShips = new HashSet<ShipTypes> { ShipTypes.Scout, ShipTypes.Carrier, ShipTypes.Gunship };
         public static readonly HashSet<ShipTypes> BeePowerfulShips = new HashSet<ShipTypes> { ShipTypes.Queen, ShipTypes.Bumblebee, ShipTypes.Leafcutter };
         public static readonly HashSet<ShipTypes> HumanPowerfulShips = new HashSet<ShipTypes> { ShipTypes.Flagship, ShipTypes.FireBarge, ShipTypes.Cruiser, ShipTypes.Dreadnought };
@@ -713,28 +717,54 @@ namespace Assets.Scripts
         };
 
         /// <summary>
-        /// Supports up to 10 ships, five rows of two columns
+        /// The amount that each ship in a formation is seperated from other ships, horizontally (Formation Offset X)
         /// </summary>
-        public static Vector2[] GeneratedSquadFormationOffsets = new Vector2[] {
-            (ShipOffset * new Vector2(-.5f, 0)), (ShipOffset * new Vector2(.5f, 0)), 
-            (ShipOffset * new Vector2(-.5f, -.75f)), (ShipOffset * new Vector2(.5f, -.75f)),
-            (ShipOffset * new Vector2(-.5f, .75f)), (ShipOffset * new Vector2(.5f, .75f)),
-            (ShipOffset * new Vector2(-.5f, -1.5f)), (ShipOffset * new Vector2(.5f, -1.5f)),
-            (ShipOffset * new Vector2(-.5f, 1.5f)),  (ShipOffset * new Vector2(.5f, 1.5f)),
+        public const float FOX = .5f;
+        /// <summary>
+        /// The amount that each ship in a formation is seperated from other ships, vertically (Formation Offset Y)
+        /// </summary>
+        public const float FOY = .6f;
+
+        /// <summary>
+        /// Supports up to 12 ships, four rows of three columns
+        /// </summary>
+        public static Vector2[] GeneratedSquadFormationOffsets4x4 = new Vector2[] {
+            (ShipOffset * new Vector2(-FOX, 0)), (ShipOffset * new Vector2(0, 0)),  (ShipOffset * new Vector2(FOX, 0)), 
+            (ShipOffset * new Vector2(-FOX, -FOY)), (ShipOffset * new Vector2(0, -FOY)), (ShipOffset * new Vector2(FOX, -FOY)),
+            (ShipOffset * new Vector2(-FOX, FOY)), (ShipOffset * new Vector2(0, FOY)), (ShipOffset * new Vector2(FOX, FOY)),
+            (ShipOffset * new Vector2(-FOX, -FOY * 2)), (ShipOffset * new Vector2(0, -FOY * 2)), (ShipOffset * new Vector2(FOX, -FOY * 2)),
         };
 
+        /// <summary>
+        /// Supports up to 4 SMALL ships, two rows of two columns
+        /// </summary>
+        public static Vector2[] GeneratedSquadFormationOffsets2x2 = new Vector2[] {
+            (ShipOffset * new Vector2(-FOX, 0)), (ShipOffset * new Vector2(0, 0)),
+            (ShipOffset * new Vector2(-FOX, -FOY)), (ShipOffset * new Vector2(0, -FOY)), 
+        };
+
+        /// <summary>
+        /// Supports up to 4 LARGE ships, two rows of two columns
+        /// </summary>
+        public static Vector2[] GeneratedSquadFormationOffsets2x2Large = new Vector2[] {
+            (ShipOffset * new Vector2(-FOX, 0)), (ShipOffset * new Vector2(FOX, 0)),
+            (ShipOffset * new Vector2(-FOX, -FOY)), (ShipOffset * new Vector2(FOX, -FOY)),
+        };
+
+
+
         public static Vector2[] CarrierColumnFormationOffsets = new Vector2[] {
-             (ShipOffset * new Vector2(-.5f, 0)),  (ShipOffset * new Vector2(.5f, 0)),
-             (ShipOffset * new Vector2(-.5f, -1)),  (ShipOffset * new Vector2(.5f, -1)),
-             (ShipOffset * new Vector2(-.5f, -2)),  (ShipOffset * new Vector2(.5f, -2)),
-             (ShipOffset * new Vector2(-.5f, -3)),  (ShipOffset * new Vector2(.5f, -3)),
-             (ShipOffset * new Vector2(-.5f, -4)),  (ShipOffset * new Vector2(.5f, -4)),
-             (ShipOffset * new Vector2(-.5f, -5)),  (ShipOffset * new Vector2(.5f, -5)),
-             (ShipOffset * new Vector2(-.5f, -6)),  (ShipOffset * new Vector2(.5f, -6)),
-             (ShipOffset * new Vector2(-.5f, -7)),  (ShipOffset * new Vector2(.5f, -7)),
-             (ShipOffset * new Vector2(-.5f, -8)),  (ShipOffset * new Vector2(.5f, -8)),
-             (ShipOffset * new Vector2(-.5f, -9)),  (ShipOffset * new Vector2(.5f, -9)),
-             (ShipOffset * new Vector2(-.5f, -10)),  (ShipOffset * new Vector2(.5f, -10)),
+             (ShipOffset * new Vector2(-FOX, 0)),  (ShipOffset * new Vector2(0, 0)),
+             (ShipOffset * new Vector2(-FOX, -FOY)),  (ShipOffset * new Vector2(0, -FOY)),
+             //(ShipOffset * new Vector2(-FOX, -2)),  (ShipOffset * new Vector2(FOX, -2)),
+             //(ShipOffset * new Vector2(-FOX, -3)),  (ShipOffset * new Vector2(FOX, -3)),
+             //(ShipOffset * new Vector2(-FOX, -4)),  (ShipOffset * new Vector2(FOX, -4)),
+             //(ShipOffset * new Vector2(-FOX, -5)),  (ShipOffset * new Vector2(FOX, -5)),
+             //(ShipOffset * new Vector2(-FOX, -6)),  (ShipOffset * new Vector2(FOX, -6)),
+             //(ShipOffset * new Vector2(-FOX, -7)),  (ShipOffset * new Vector2(FOX, -7)),
+             //(ShipOffset * new Vector2(-FOX, -8)),  (ShipOffset * new Vector2(FOX, -8)),
+             //(ShipOffset * new Vector2(-FOX, -9)),  (ShipOffset * new Vector2(FOX, -9)),
+             //(ShipOffset * new Vector2(-FOX, -10)),  (ShipOffset * new Vector2(FOX, -10)),
         };
 
         public static Vector2[] QueenYellowJacketSpawnFormation = new Vector2[] { // Supports up to 16 slots

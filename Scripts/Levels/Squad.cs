@@ -1177,6 +1177,7 @@ namespace Assets.Scripts.Levels
         {
             return GetShips().All((s) => s.IsAnySquadShipWithinRange(squad));
         }
+
         //public bool IsWithinRangeOfAnyShipInEnemySquad()
         //{
         //    _tempSquad = GetEnemy();

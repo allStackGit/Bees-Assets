@@ -55,19 +55,19 @@ namespace Assets.Scripts.Entities.Projectiles
                 _localAngle = Angle * Mathf.Rad2Deg; 
                 if (_shotNumber == 0)
                 {
-                    _localAngle += 45;
+                    _localAngle += 30;
                 }
                 else if (_shotNumber == 1)
                 {
-                    _localAngle -= 45;
+                    _localAngle -= 30;
                 }
                 else if (_shotNumber == 2)
                 {
-                    _localAngle += 90;
+                    _localAngle += 45;
                 }
                 else if (_shotNumber == 3)
                 {
-                    _localAngle -= 90;
+                    _localAngle -= 45;
                 }
                 //Debug.Log($"Split shot #{shotNumber} is at localAngle: {localAngle}, coming from eulerAngle: {transform.localEulerAngles.z}, and now at world" +
                 //    $"angle: {worldAngle} (rad) : {radians}");

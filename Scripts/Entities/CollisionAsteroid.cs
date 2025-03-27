@@ -155,14 +155,14 @@ namespace Assets.Scripts.Entities
                 LastHitAsteroid = (CollisionAsteroid)obstacle;
                 if (!LastHitAsteroid.IsImmune && LastHitAsteroid.HasTouchedMapBorder)
                 {
-                    Debug.Log($"It looks like {LastHitAsteroid.Name} hit {Name}");
+                    //Debug.Log($"It looks like {LastHitAsteroid.Name} hit {Name}");
                     AsteroidsHit.Add(LastHitAsteroid);
                     if (LastHitAsteroid.AsteroidsHit.Contains(this))
                     {
-                        Debug.Log($"{LastHitAsteroid.Name} has already registered the hit against {Name}");
+                        //Debug.Log($"{LastHitAsteroid.Name} has already registered the hit against {Name}");
                         return;
                     }
-                    Debug.Log($"{Name} ({SizeClass}) has been hit by {LastHitAsteroid.Name} ({LastHitAsteroid.SizeClass}) and will take {LastHitAsteroid.Health} damage against {Health}");
+                    //Debug.Log($"{Name} ({SizeClass}) has been hit by {LastHitAsteroid.Name} ({LastHitAsteroid.SizeClass}) and will take {LastHitAsteroid.Health} damage against {Health}");
                     if (LastHitAsteroid.SizeClass < SizeClass) // kill the other asteroid, damage this asteroid
                     {
 

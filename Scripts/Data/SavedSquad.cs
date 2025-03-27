@@ -77,14 +77,26 @@ namespace Assets.Scripts.Data
                 shipCount = UnityEngine.Random.Range(4, 10);
             }
 
+            Vector2[] offsets = ConfigData.GeneratedSquadFormationOffsets4x4;
+
+            if (shipCount <= 4)
+            {
+                if (ConfigData.LargeShips.Contains(squadType))
+                {
+                    offsets = ConfigData.GeneratedSquadFormationOffsets2x2Large;
+                }
+                else
+                {
+                    offsets = ConfigData.GeneratedSquadFormationOffsets2x2;
+                }
+            }
+
             for (int shipIndex = 0; shipIndex < shipCount; shipIndex++)
             {
                 long id = Utilities.GetNegativeFleetshipId();
 
                 FleetShip fleetShip = new FleetShip(id, $"{squadType} - #{id}", squadType, false, true, false, 0, 0, 0, 0, 0, 0, 0);
-                Vector2 offset = ConfigData.GeneratedSquadFormationOffsets[shipIndex];
-                SquadShip squadShip = new SquadShip(fleetShip.Id, fleetShip.Type, offset, this);
-                AddShipToSquad(squadShip);
+                AddShipToSquad(new SquadShip(fleetShip.Id, fleetShip.Type, offsets[shipIndex], this));
 
             }
         }

@@ -23,15 +23,29 @@ namespace Assets.Scripts.Entities.Ships
             RecoloredSprites = new Sprite[TotalSprites];
             if (Ship.FleetShip.HasCachedSprite)
             {
-                for (_loopIndex = 0; _loopIndex < RecoloredSprites.Length; _loopIndex++)
+                int key = (Ship.ShipType, Ship.Squad.SavedSquad.Color).GetHashCode();
+
+                if (Ship.Stage.LoadedRemainsSprites.ContainsKey(key))
                 {
-                    RecoloredSprites[_loopIndex] = Ship.FleetShip.LoadCachedSprite(_loopIndex, "remains", ConfigData.ShipRemainsSizes[Ship.ShipType], Ship.Squad.SavedSquad.Color); 
+                    RecoloredSprites = Ship.Stage.LoadedRemainsSprites[key];
+                    Debug.Log($"Loaded cached sprites from Stage instead of Disk for {Ship.ShipType} with {Ship.Squad.SavedSquad.Color}");
                 }
-                Debug.Log($"Loaded cached sprites for Ship {Ship.Name}");
+                else
+                {
+                    for (_loopIndex = 0; _loopIndex < RecoloredSprites.Length; _loopIndex++)
+                    {
+                        RecoloredSprites[_loopIndex] = Ship.FleetShip.LoadCachedSprite(_loopIndex, "remains", ConfigData.ShipRemainsSizes[Ship.ShipType], Ship.Squad.SavedSquad.Color);
+                    }
+
+                    Ship.Stage.LoadedRemainsSprites[key] = RecoloredSprites;
+                }
+
+                
+                //Debug.Log($"Loaded cached sprites for Ship {Ship.Name}");
             }
             else
             {
-                Debug.Log($"Tried to recolor remains but {Ship.FleetShip.Name} doesn't have a cached sprite");
+                Debug.LogError($"Tried to recolor remains but {Ship.FleetShip.Name} doesn't have a cached sprite");
             }
         }
 

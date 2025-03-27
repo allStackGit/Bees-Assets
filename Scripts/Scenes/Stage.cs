@@ -302,7 +302,14 @@ public class Stage : Scene
     /// Whether or not there are any asteroids on any levels in this stage
     /// </summary>
     public bool HasAsteroids;
+    /// <summary>
+    /// Cached value of Time.fixedDeltaTime;
+    /// </summary>
     public float FixedDeltaTime;
+    /// <summary>
+    /// All the unique colored remains sprites that have been loaded from disk, keyed by the hash code of a tuple of their ship type and color
+    /// </summary>
+    public Dictionary<int, Sprite[]> LoadedRemainsSprites = new Dictionary<int, Sprite[]>();
 
 
     public int __HivemindCommands, __LevelTimeouts, __TotalShips, __LevelCompletes;
