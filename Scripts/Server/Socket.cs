@@ -125,7 +125,7 @@ namespace Assets.Scripts.Server
                 Debug.Log("Connection re-opened!");
                 OpenLevels.ForEach((level) =>
                 {
-                    ConfigData.Socket.SendRequest(new ReconnectLevelRequest(new SetupLevel(ConfigData.GetUserProgressData().CurrentLevel, ConfigData.GetUserId(), ConfigData.Version),
+                    ConfigData.Socket.SendRequest(new ReconnectLevelRequest(new SetupLevel(ConfigData.GetUserProgressData().GetCurrentLevel(), ConfigData.GetUserId(), ConfigData.Version),
                     ConfigData.StandardMaxTimeOnQueue,level));
                     Debug.Log($"Trying to reconnect {level.Name} to the server");
                 });

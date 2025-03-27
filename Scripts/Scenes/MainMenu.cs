@@ -23,7 +23,7 @@ namespace Assets.Scripts.Scenes
         }
         public void ContinueGame()
         {
-            Debug.Log($"Continuing Game! User is on level #{ConfigData.GetUserProgressData().CurrentLevel}");
+            Debug.Log($"Continuing Game! User is on level #{ConfigData.GetUserProgressData().GetCurrentLevel()}");
             //SceneManager.LoadSceneAsync("Level Intro"); 
             //SceneManager.LoadSceneAsync("Squad Maker");
             DeselectButton();

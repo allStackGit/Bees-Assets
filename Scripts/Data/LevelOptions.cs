@@ -182,7 +182,7 @@ namespace Assets.Scripts.Data
 
             shipTypes.ForEach((type) =>
             {
-                enemyList += $"\t- {type}: {EnemySquads.Sum((squad) => squad.GetSquadShips().Where((ship) => ship.ShipType == type).Count())}\n";
+                enemyList += $"\t- {Utilities.ConvertShipTypeToName[type]}: {EnemySquads.Sum((squad) => squad.GetSquadShips().Where((ship) => ship.ShipType == type).Count())}\n";
             });
 
             enemyList += "\nReinforcements: \n";
@@ -191,7 +191,7 @@ namespace Assets.Scripts.Data
             {
                 shipTypes.ForEach((type) =>
                 {
-                    enemyList += $"\t- {type}: {EnemyReinforcements.Sum((squad) => squad.GetSquadShips().Where((ship) => ship.ShipType == type).Count())}\n";
+                    enemyList += $"\t- {Utilities.ConvertShipTypeToName[type]}: {EnemyReinforcements.Sum((squad) => squad.GetSquadShips().Where((ship) => ship.ShipType == type).Count())}\n";
                 });
             }
             else

@@ -278,9 +278,9 @@ namespace Assets.Scripts.Scenes
                 _levelOptionIndexesToLevels[i] = level;
                 i++;
             });
-            Debug.Log($"User is on level #{ConfigData.GetUserProgressData().CurrentLevel}");
+            Debug.Log($"User is on level #{ConfigData.GetUserProgressData().GetCurrentLevel()}");
 
-            LoadLevel(ConfigData.GetUserProgressData().CurrentLevel);
+            LoadLevel(ConfigData.GetUserProgressData().GetCurrentLevel());
         }
         private void SetupLevelDropdown()
         {
@@ -313,6 +313,7 @@ namespace Assets.Scripts.Scenes
         }
         public void LoadLevel(int levelIndex)
         {
+            //levelIndex = 11;
             _chosenLevel = _levelOptionIndexesToLevels[levelIndex];
             //Debug.Log($"Loading level {_chosenLevel}");
             LevelTitle.text = $"Level: {_chosenLevel.Name}";
