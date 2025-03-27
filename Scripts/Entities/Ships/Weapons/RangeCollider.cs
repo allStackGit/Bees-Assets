@@ -100,7 +100,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             else if (_colliderExit.CompareTag("Projectile"))
             {
                 _projectileExit = _colliderExit.GetComponent<Projectile>();
-                if (_projectileExit.Weapon.Equals(Weapon) && !Weapon.Ship.IsDead)
+                if (_projectileExit.Weapon.Equals(Weapon) && !Weapon.Ship.IsDead && _projectileExit.Type != ConfigData.ProjectileTypes.RocketExplosion)
                 {
                     //Debug.Log($"{Weapon.Ship.Name}'s projectile left it's range!");
                     if (_projectileExit.Type == ConfigData.ProjectileTypes.Rocket)

@@ -204,7 +204,10 @@ MonoBehaviour:
   IsImmune: 0
   HasTouchedMapBorder: 0
   HasEnteredMap: 0
+  OriginalSprite: {fileID: 21300000, guid: 9831400aaeeac6b418139a414c3a0325, type: 3}
   CrackedSprite: {fileID: 21300000, guid: 6f1e6ef83bd001446986692d95baaeb7, type: 3}
+  OriginalName: 
+  IsDelayKilled: 0
 --- !u!1 &5206769835850001811
 GameObject:
   m_ObjectHideFlags: 0

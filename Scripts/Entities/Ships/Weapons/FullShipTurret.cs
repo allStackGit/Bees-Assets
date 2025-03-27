@@ -51,12 +51,13 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 if (IsFiringManually)
                 {
                     TargetPoint = Stage.InputManager.GetMousePosition();
+                    IsAimedAtTarget = Utilities.IsRotatedTowards(this, GetDegreesTowardsPoint(TargetPoint));
                 }
                 else if (ShouldFire)
                 {
                     TargetPoint = GetTargetPoint(TargetShip);
+                    IsAimedAtTarget = Utilities.IsRotatedTowards(this, GetDegreesTowardsPoint(TargetPoint));
                 }
-                IsAimedAtTarget = Utilities.IsRotatedTowards(this, GetDegreesTowardsPoint(TargetPoint));
 
             }
 

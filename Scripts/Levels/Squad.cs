@@ -729,6 +729,10 @@ namespace Assets.Scripts.Levels
             if (enemy != null)
             {
                 _matchupEnemies = GetPotentialEnemies(enemy);
+                if (_matchupEnemies.Count == 0)
+                {
+                    Debug.LogError($"{this} has a matchup against {enemy} but there are no enemy ships");
+                }
                 _matchupAllies = GetPotentialAllies(enemy);
 
                 //Debug.Log($"Strategy matchup: {AddToMatchup(_matchupAllies)}|{AddToMatchup(_matchupEnemies)}");
@@ -924,7 +928,7 @@ namespace Assets.Scripts.Levels
         }
         public void UserHeal(List<Beehive> beehives)
         {
-            Debug.Log($"Starting new heal command for {Name}");
+            //Debug.Log($"Starting new heal command for {Name}");
             MakeUserCommand(ConfigData.CommandTypes.Heal, null);
             ((Heal)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, beehives);
 

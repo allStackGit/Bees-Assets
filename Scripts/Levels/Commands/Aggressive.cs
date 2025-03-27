@@ -29,15 +29,15 @@ namespace Assets.Scripts.Levels.Commands
                 {
                     CommandTimer.Reuse(CommandFrequency, Timer, true);
                     Level.AddTimer(CommandTimer);
+
+                    if (IsHiveMindCommand)
+                    {
+                        TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
+                        Level.AddTimer(TimeoutTimer);
+                    }
                 }
 
-                //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
-                if (IsHiveMindCommand)
-                {
-                    TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
-                    Level.AddTimer(TimeoutTimer);
-                    //Invoke(nameof(Timeout), ConfigData.StandardMaxCommandTime);
-                }
+
             }
             
         }

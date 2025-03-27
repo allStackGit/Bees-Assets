@@ -47,7 +47,11 @@ PrefabInstance:
     - target: {fileID: 2520248311329120408, guid: c56c01c11c9ad6a4aa3c7694969bdc5b, type: 3}
       propertyPath: CrackedSprite
       value: 
-      objectReference: {fileID: 21300000, guid: 4c23b447b84da9540a663c1ec9bae831, type: 3}
+      objectReference: {fileID: 21300000, guid: c9c2364490e3b0540a5a45a32fe92047, type: 3}
+    - target: {fileID: 2520248311329120408, guid: c56c01c11c9ad6a4aa3c7694969bdc5b, type: 3}
+      propertyPath: OriginalSprite
+      value: 
+      objectReference: {fileID: 21300000, guid: 027add712bd37c34baaca61fe1515965, type: 3}
     - target: {fileID: 2520248311329120408, guid: c56c01c11c9ad6a4aa3c7694969bdc5b, type: 3}
       propertyPath: HasCrackedSprite
       value: 1

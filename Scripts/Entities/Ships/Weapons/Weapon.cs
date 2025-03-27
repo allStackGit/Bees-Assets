@@ -160,7 +160,17 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 RangeCollider rangeCollider = rangeColliderTransform.GetComponent<RangeCollider>();
                 RangeCollider = rangeCollider;
-                RangeCollider.Create(this, Range);
+
+                // This is because the circle collider of the frigate rocket allows it to travel a little further outside of the range of the circle so it needs to be reduced
+                if (Ship.ShipType == ConfigData.ShipTypes.Frigate)
+                {
+                    RangeCollider.Create(this, Range - 7);
+
+                }
+                else
+                {
+                    RangeCollider.Create(this, Range);
+                }
 
             }
         }

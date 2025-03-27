@@ -669,14 +669,15 @@ namespace Assets.Scripts.Levels
             }
             if (HasPauseInput())
             {
-                if (!Level.State.IsPaused && Time.realtimeSinceStartup - Level.TimePaused > 1)
-                {
-                    Level.IsPausedByTester = true;
-                    Level.TimePaused = Time.realtimeSinceStartup;
-                    Level.Pause();
-                    Debug.Break();
-                    return;
-                }
+                Debug.Break();
+                //if (!Level.State.IsPaused && Time.realtimeSinceStartup - Level.TimePaused > 1)
+                //{
+                //    Level.IsPausedByTester = true;
+                //    Level.TimePaused = Time.realtimeSinceStartup;
+                //    Level.Pause();
+                //    Debug.Break();
+                //    return;
+                //}
             }
 
             if (!Level.State.IsPaused)

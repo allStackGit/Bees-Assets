@@ -30,11 +30,6 @@ namespace Assets.Scripts.Entities.Projectiles
         {
             Body.velocity *= 1.5f;
         }
-        public override void Deactivate()
-        {
-            //CancelInvoke();
-            base.Deactivate();
-        }
         public override void Kill()
         {
             Level.CancelTimer(_speedIncreaseTimer);

@@ -327,7 +327,7 @@ namespace Assets.Scripts.Levels
         /// <returns></returns>
         public List<Squad> GetSquadsVisibleToHiveMind(int side = 0)
         {
-            if (side == ConfigData.Configuration.UserSide)
+            if (side == ConfigData.Configuration.UserSide && Level.HasPlayer)
             {
                 return GetEnemySquads(side);
             }

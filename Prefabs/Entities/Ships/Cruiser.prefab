@@ -184,7 +184,8 @@ MonoBehaviour:
   IsFollowingPath: 0
   CannotChangeMovementOrders: 0
   Weapons: []
-  ColoredPrefabs:
+  ColoredPrefabs: []
+  OriginalColoredPrefabs:
   - {fileID: 716252764927314901}
   OriginalSprites: []
   WeaponPrefabs:
@@ -213,6 +214,7 @@ MonoBehaviour:
   HasTurrets: 0
   IsCarrierShip: 0
   IsMoving: 0
+  IsCeaseFire: 0
   PathfindingThreadComplete: 0
   IsPathfinding: 0
   PathfindingThread: 0

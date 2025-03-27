@@ -971,7 +971,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             //Debug.Log($"There's an asteroid {asteroid.Name} nearby on our path: {Name}");
 
             // If we're following a pathfinder path, recalculate the path because we're near an asteroid
-            if (IsMobile)
+            if (IsMobile && ShipType != ConfigData.ShipTypes.Queen)
             {
                 if (!IsFollowingPath && !HasTargetCoordinates)
                 {
@@ -1174,7 +1174,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             //Debug.Log($"differenceInAngleToPoint: {differenceInAngleToPoint}");
             if (HasRightRocketFlares && HasLeftRocketFlares)
             {
-                if (_differenceInAngleToPoint > 0)
+                //Debug.Log($"The difference in angle for {Name} is {_differenceInAngleToPoint}");
+                if (_differenceInAngleToPoint > 5)
                 {
                     //Debug.Log($"Moving to the left, activating right rocket flares");
                     RightRocketFlares.ForEach((flare) =>
@@ -1189,7 +1190,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
                     AreRocketFlaresOutOfSync = true;
                 }
-                else if (_differenceInAngleToPoint < 0)
+                else if (_differenceInAngleToPoint < -5)
                 {
                     //Debug.Log($"Moving to the right, activating left rocket flares");
                     LeftRocketFlares.ForEach((flare) =>
@@ -1783,10 +1784,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 weapon.HasCachedChanged = true;
             });
         }
-        public bool IsLastShipOnSide()
-        {
-            return Level.State.GetShips(Side).Count == 1;
-        }
+        //public bool IsLastShipOnSide()
+        //{
+        //    return Level.State.GetShips(Side).Count == 1;
+        //}
         public virtual void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false) // [kill method] [stats-method] [note]
         {
             if (!IsDead)

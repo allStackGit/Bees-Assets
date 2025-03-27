@@ -37,6 +37,10 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 21300000, guid: 5d035b61adae5994cb0ff6e2319a6aae, type: 3}
     - target: {fileID: 2520248311329120408, guid: c56c01c11c9ad6a4aa3c7694969bdc5b, type: 3}
+      propertyPath: OriginalSprite
+      value: 
+      objectReference: {fileID: 21300000, guid: f50630cfbb6d11e4ba33b3430488406d, type: 3}
+    - target: {fileID: 2520248311329120408, guid: c56c01c11c9ad6a4aa3c7694969bdc5b, type: 3}
       propertyPath: HasCrackedSprite
       value: 1
       objectReference: {fileID: 0}

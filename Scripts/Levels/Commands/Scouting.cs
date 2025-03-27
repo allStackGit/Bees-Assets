@@ -32,13 +32,11 @@ namespace Assets.Scripts.Levels.Commands
             {
                 CommandTimer.Reuse(CommandFrequency, Timer, true);
                 Level.AddTimer(CommandTimer);
+
+                TimeoutTimer.Reuse(ConfigData.Configuration.AISquadPatrolTime, EndCommand);
+                Level.AddTimer(TimeoutTimer);
             }
-            //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
 
-
-            TimeoutTimer.Reuse(ConfigData.Configuration.AISquadPatrolTime, EndCommand);
-            Level.AddTimer(TimeoutTimer);
-            //Invoke(nameof(EndCommand), ConfigData.Configuration.AISquadPatrolTime);
 
             if (GetSquad().Side == ConfigData.Configuration.HumanSide)
             {

@@ -26,9 +26,6 @@ namespace Assets.Scripts.Levels.Commands
             {
                 topLeft = Utilities.RandomCoordinate(Level, _position, Vector2.one * ConfigData.Configuration.AIPatrolMaxSize, _ten);
                 bottomRight = Utilities.RandomCoordinate(Level, _position, Vector2.one * ConfigData.Configuration.AIPatrolMaxSize, _ten);
-
-                TimeoutTimer.Reuse(ConfigData.Configuration.AISquadPatrolTime, Timeout);
-                Level.AddTimer(TimeoutTimer);
                 //Invoke(nameof(FinishAIPatrol), ConfigData.Configuration.AISquadPatrolTime);
             }
 
@@ -47,6 +44,12 @@ namespace Assets.Scripts.Levels.Commands
             {
                 CommandTimer.Reuse(CommandFrequency, Timer, true);
                 Level.AddTimer(CommandTimer);
+
+                if (IsHiveMindCommand)
+                {
+                    TimeoutTimer.Reuse(ConfigData.Configuration.AISquadPatrolTime, Timeout);
+                    Level.AddTimer(TimeoutTimer);
+                }
             }
             //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
 

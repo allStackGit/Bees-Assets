@@ -20,6 +20,9 @@ namespace Assets.Scripts.Levels.Commands
             {
                 CommandTimer.Reuse(CommandFrequency, Timer, true);
                 Level.AddTimer(CommandTimer);
+
+                TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
+                Level.AddTimer(TimeoutTimer);
             }
 
             //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
