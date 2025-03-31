@@ -14,21 +14,21 @@ namespace Assets.Scripts.Levels.Commands
         /// The matchup outcome Id, not the strategy outcomeId
         /// </summary>
         public long OutcomeId;
-        public bool IsDead;
+        //public bool IsDead;
         public ShootingStrategy()
         {
-            IsDead = true;
+            //IsDead = true;
         }
         public void Setup(ConfigData.ShootingStrategyTypes type, long outcomeId)
         {
             ShootingStrategyType = type;
-            IsDead = false;
+            //IsDead = false;
             OutcomeId = outcomeId;
         }
-        public void Kill()
-        {
-            IsDead = true;
-        }
+        //public void Kill()
+        //{
+        //    IsDead = true;
+        //}
 
     }
 }

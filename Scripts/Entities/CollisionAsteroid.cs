@@ -332,7 +332,7 @@ namespace Assets.Scripts.Entities
             }
             else
             {
-                Debug.Log($"Tried to kill already dead asteroid {Name}");
+                Debug.LogWarning($"Tried to kill already dead asteroid {Name}");
             }
         }
 

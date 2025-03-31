@@ -59,17 +59,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     Weapon.HasCachedChanged = true;
                 }
 
-
-                //if (Weapon.Ship.IsHiveMindControlled && Weapon.Ship.HasCommand)
-                //{
-                //    //Debug.Log($"{Weapon.Ship.Name} just saw {ship.Name} and added them to hivemind vision");
-                //    Level.State.HivemindShips[Weapon.Side - 1][Weapon.Ship.Id].Add(ship);
-                //    Weapon.Ship.Squad.Command.Tsv += 100;
-                //    if (Weapon.Squad.Command.Type == "Scouting")
-                //    {
-                //        ((Scouting) Weapon.Squad.Command).HasFoundShips = true;
-                //    }
-                //}
             }
 
         }

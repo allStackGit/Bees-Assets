@@ -14,13 +14,13 @@ namespace Assets.Scripts.Levels.Commands
         private Squad _closestFriendlySquad;
         public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId)
         {
-            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
 
 
             //_parameters.setTimer = false;
             _closestFriendlySquad = GetSquad().GetClosestValidFriendlySquad();
             if (_closestFriendlySquad != null )
             {
+                base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
                 //InvokeRepeating(nameof(Timer), CommandFrequency, CommandFrequency);
                 //Invoke(nameof(FinishFollowing), ConfigData.Configuration.AISquadFollowingTime);
                 CommandTimer.Reuse(CommandFrequency, Timer, true);

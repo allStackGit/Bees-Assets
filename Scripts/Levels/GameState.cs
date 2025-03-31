@@ -480,9 +480,12 @@ namespace Assets.Scripts.Levels
         private List<StoredCommand> _commands = new List<StoredCommand>();
         private List<StoredCommand> _shootingCommands = new List<StoredCommand>();
         private List<StoredCommand> _targetingCommands = new List<StoredCommand>();
+        /// <summary>
+        /// Stores all the finalized hivemind commands with the server. 
+        /// </summary>
         public void StoreCommands()
         {
-            _completes = PastCommands.Where((c) => c.IsHiveMindCommand && c.IsFinalized && !c.IsStored).ToList();
+            _completes = PastCommands.Where((c) => c.IsHiveMindCommand && c.IsFinalized).ToList();
             //Debug.Log($"_completes list: {_completes.Count} / {PastCommands.Count}");
             if (_completes.Count > 0)
             {
@@ -496,12 +499,20 @@ namespace Assets.Scripts.Levels
                         _shootingCommands.Add(command);
 
                     }
+                    else
+                    {
+                        Debug.LogError($"Stored command didn't have a shooting strategy");
+                    }
                     if (command.MatchupStrategy != null)
                     {
                         _targetingCommands.Add(command);
                     }
+                    else
+                    {
+                        Debug.LogError($"Stored command didn't have a matchup strategy");
+                    }
+                    Debug.Log($"Stored past command {command}");
 
-                    command.IsStored = true;
                 });
 
                 ConfigData.Socket.SendRequest(new StoreCommandsRequest(new StoreCommands(_commands, _shootingCommands, _targetingCommands),

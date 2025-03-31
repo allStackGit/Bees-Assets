@@ -78,7 +78,7 @@ namespace Assets.Scripts.Data
             HasCachedSprite = true;
 
         }
-        private void GetStats() // [tsv-calculation]
+        private void GetStats()
         {
             ShipStatBlock shipInfo = ConfigData.GetShipInfo(Type);
             //Debug.Log($"Got ship info for {Type}. [{shipInfo}]");
@@ -135,12 +135,9 @@ namespace Assets.Scripts.Data
             }
             return sum;
         }
-        //public int GetTsv() { 
-        //    return Utilities.CalculateTsv(this);
-        //}
         public int GetTsv() 
         {
-            return Utilities.CalculateMaxTsv(this.Type);
+            return Utilities.GetMaxTsv(this.Type);
         }
         public int GetCapacity()
         {

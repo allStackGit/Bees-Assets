@@ -604,7 +604,7 @@ namespace Assets.Scripts.Server
                 }
                 else
                 {
-                    //Debug.LogWarning($"Matchup strategy #{_handleMatchupResponse_matchupResponse.OutcomeId} was received for squad #{_handleMatchupResponse_matchupResponse.SquadHash}, but the squad no longer exists.");
+                    Debug.LogWarning($"Matchup strategy #{_handleMatchupResponse_matchupResponse.OutcomeId} was received for squad #{_handleMatchupResponse_matchupResponse.SquadHash}, but the squad no longer exists.");
                 }
             }
             else

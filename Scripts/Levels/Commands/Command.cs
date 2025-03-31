@@ -17,7 +17,11 @@ namespace Assets.Scripts.Levels.Commands
 {
     public class Command : MonoBehaviour
     {
-        public long Age, Tsv;  
+        public long Age;
+        /// <summary>
+        /// How much TSV has been gained or lost over the lifetime of the command
+        /// </summary>
+        public long Tsv;  
         /// <summary>
         /// The Id of this command relative to the server.
         /// </summary>
@@ -55,7 +59,9 @@ namespace Assets.Scripts.Levels.Commands
 
         private List<Vector2> _destinations = new List<Vector2>();
 
-        public bool IsFinalized, IsHiveMindCommand;
+
+        public bool IsFinalized;
+        public bool IsHiveMindCommand;
         /// <summary>
         /// Keeps the Id of the original enemy squad so we can check if the enemy has died and been respawned as a new squad in between timer() calls
         /// </summary>
@@ -72,6 +78,7 @@ namespace Assets.Scripts.Levels.Commands
         public virtual void Create(Stage stage, ConfigData.CommandTypes commandType)
         {
             Stage = stage;
+            MatchupStrategy = new MatchupStrategy();
             ShootingStrategy = new ShootingStrategy();
             CommandType = commandType;
             IsDead = true;
@@ -147,10 +154,11 @@ namespace Assets.Scripts.Levels.Commands
                 OutcomeId = commandOutcomeId;
                 ShootingStrategy.Setup(shootingStrategy, shootingStrategyOutcomeId);
                 HasShootingStrategy = true;
+                MatchupStrategy.Setup(GetSquad().MatchupStrategy.MatchupType, GetSquad().MatchupStrategy.OutcomeId, GetSquad());
                 GetSquad().SetShootingStrategy(ShootingStrategy.ShootingStrategyType);
                 GetSquad().ClearTargets(); // Clear all old targets before starting the new command
 
-                if (!Stage.IsTraining)
+                if (Stage.IsDebugging)
                 {
                     GetSquad().PastCommands.Add(new StoredCommand(this));
                 }
@@ -411,8 +419,10 @@ namespace Assets.Scripts.Levels.Commands
                 FinalizationCause = cause;
                 IsFinalized = true;
                 IsDead = true;
+
+                // It seems like none of these are needed
                 //MatchupStrategy.Kill(); // Only needed if we are storing the Matchup strategy which we are currently not
-                ShootingStrategy.Kill();
+                //ShootingStrategy.Kill();
 
                 _tempShips = GetSquad().GetShips();
                 _tempShips.ForEach(ship => ship.TargetEnemyShipToFollow = null);
@@ -437,8 +447,10 @@ namespace Assets.Scripts.Levels.Commands
                 {
                     GetSquad().AddToCommandList();
                 }
+                // If this is a hivemind command with an outcomeId then find the past command in the state, update the TSV, and finalize it
                 if (IsHiveMindCommand && OutcomeId > 0)
                 {
+
                     _finalize_storedCommand = Level.State.PastCommands[Level.State.OutcomeIdToPastCommandIndex[OutcomeId]];
                     //try
                     //{
@@ -450,11 +462,11 @@ namespace Assets.Scripts.Levels.Commands
                     //    Debug.Log($"OutcomeId: {OutcomeId}, Past Commands Count: {Level.State.PastCommands.Count}");
                     //    throw e;
                     //}
-                    if (_finalize_storedCommand.IsStored)
-                    {
-                        Debug.LogError($"Trying to finalize a command #${OutcomeId} with cause [{cause}] that has already been stored");
-                        return;
-                    }
+                    //if (_finalize_storedCommand.IsStored)
+                    //{
+                    //    Debug.LogError($"Trying to finalize a command #${OutcomeId} with cause [{cause}] that has already been stored");
+                    //    return;
+                    //}
 
                     _finalize_storedCommand.Tsv = Tsv;
                     _finalize_storedCommand.IsFinalized = true;

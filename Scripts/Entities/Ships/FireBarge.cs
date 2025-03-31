@@ -110,8 +110,17 @@ namespace Assets.Scripts.Entities.Ships
 
                     }
                     HealthBar.SetActive(false);
-                    _delayedKillTimer.Reuse(5f, DelayedKill);
-                    Level.AddTimer(_delayedKillTimer);
+
+                    if (!endKill) // if the level isn't training and this fire barge got killed, delay the deactivation until after the explosion is done
+                    {
+                        _delayedKillTimer.Reuse(5f, DelayedKill);
+                        Level.AddTimer(_delayedKillTimer);
+                    }
+                    else // if it is the endkill then the explosion doesn't go off, deactivate immediately 
+                    {
+                        Deactivate();
+                    }
+
                     //Invoke(nameof(DelayedKill), 5);
                 }
                 else

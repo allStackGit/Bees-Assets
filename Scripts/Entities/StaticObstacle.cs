@@ -47,7 +47,7 @@ namespace Assets.Scripts.Entities
                 _barge = ((Barge)ship);
                 if (_barge.IsCharging)
                 {
-                    ship.LogDamage(ship.Health); // kills the ship but logs the damage and tsv change first
+                    ship.LogDamage(ship.Health); // kills the barge but logs the damage and tsv change first
                     return;
                 }
             }

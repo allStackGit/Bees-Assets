@@ -16,7 +16,11 @@ namespace Assets.Scripts.Levels
         public ShootingStrategy ShootingStrategy;
         public List<Vector2> Destinations = new List<Vector2>();
         //public List<ShipStatus> damageSent = new List<ShipStatus>();
-        public bool IsFinalized, IsStored, IsHiveMindCommand;
+        /// <summary>
+        /// A StoredCommand can only be finalized if the command is a Hive mind command and if it's been completed and gotten an outcomeId from the server.
+        /// </summary>
+        public bool IsFinalized;
+        public bool IsHiveMindCommand;
 
         // current this is just used to get the outcome Id and TSV of a command for sending to the server
         // if was used for more things, like viewing past commands for debugging, it might be useful to use the rest of the properties
@@ -31,7 +35,6 @@ namespace Assets.Scripts.Levels
             //damageSent = command.damageSent;
             IsFinalized = command.IsFinalized;
             CommandType = command.CommandType;
-            IsStored = false;
             IsHiveMindCommand = command.IsHiveMindCommand;
 
             Enemy = command.EnemySquad != null ? command.EnemySquad.Name : "Null";
@@ -40,6 +43,13 @@ namespace Assets.Scripts.Levels
             // these are important for sending the results of these strategies back tot he Hive Mind server
             MatchupStrategy = command.MatchupStrategy;
             ShootingStrategy = command.ShootingStrategy;
+
+            Debug.Log($"Made new {this}");
+        }
+
+        public override string ToString()
+        {
+            return $"Stored command C#{OutcomeId}:M{MatchupStrategy.OutcomeId}-S{ShootingStrategy.OutcomeId}";
         }
 
     }

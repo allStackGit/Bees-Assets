@@ -21,7 +21,6 @@ namespace Assets.Scripts.Levels.Commands
         public int GuardPosition;
         public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, Squad guardedSquad)
         {
-            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
             if (IsHiveMindCommand)
             {
                 _guardedSquad = GetClosestAvailableSquadToGuard();
@@ -32,6 +31,7 @@ namespace Assets.Scripts.Levels.Commands
             }
             if (_guardedSquad != null)
             {
+                base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
                 // add this squad to the list for all other guard squads
                 Level.State.GetSquadsBySide(GetSquad().Side).ForEach((guardingSquad) =>
                 {

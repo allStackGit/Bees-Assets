@@ -610,10 +610,10 @@ namespace Assets.Scripts.Levels
 
             State.GameOver = false;
             State.LevelEnded = false;
-            _reset_remainingHumanTsv = _reset_ships.Where((s) => s.Side == ConfigData.Configuration.HumanSide).Sum((s) => s.Tsv);
+            _reset_remainingHumanTsv = State.GetTsvBySide(ConfigData.Configuration.HumanSide);
             _reset_remainingHumanTSVPercentage = _reset_remainingHumanTsv / State.InitialTsv[ConfigData.Configuration.HumanSide - 1];
 
-            _reset_remainingBeeTsv = _reset_ships.Where((s) => s.Side == ConfigData.Configuration.BeeSide).Sum((s) => s.Tsv);
+            _reset_remainingBeeTsv = State.GetTsvBySide(ConfigData.Configuration.BeeSide);
             _reset_remainingBeeTSVPercentage = _reset_remainingBeeTsv / State.InitialTsv[ConfigData.Configuration.BeeSide - 1];
 
             //if (Utilities.RandomInt(10) > 7)

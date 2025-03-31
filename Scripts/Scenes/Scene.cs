@@ -143,7 +143,7 @@ namespace Assets.Scripts.Scenes
             if (ConfigData.Socket.HasClosed && IsSocketManager)
             {
                 AutomaticReconnectTimer.Update();
-                Debug.Log($"Updating the AutoReconnect Timer. {AutomaticReconnectTimer.Elapsed} seconds have elapsed");
+                //Debug.Log($"Updating the AutoReconnect Timer. {AutomaticReconnectTimer.Elapsed} seconds have elapsed");
 
                 if (!NetworkDisconnection.IsOpen)
                 {

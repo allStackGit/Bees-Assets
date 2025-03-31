@@ -127,13 +127,13 @@ namespace Assets.Scripts.Levels.Commands
                 {
                     //Debug.Log($"There are {ShipsMining.Count} ships mining for {Squad.Name}");
                     _miningRate = ConfigData.MiningRate * ShipsCurrentlyMining.Count;
-                    _amountMined = math.min(_miningRate, TargetAstroid.Health);
+                    _amountMined = math.min(_miningRate, TargetAstroid.Health); // [TSV] The health of the mining asteroids should be adjusted if the TSV is adjusted
 
                     Tsv += _amountMined;
                     TargetAstroid.Health -= _amountMined;
                     //Debug.Log($"{GetSquad().Name} mined {_amountMined} from {TargetAstroid.Name}. It has {TargetAstroid.Health} health left");
 
-                    _amountPerShip = _amountMined / ShipsCurrentlyMining.Count;
+                    _amountPerShip = _amountMined / ShipsCurrentlyMining.Count; // this isn't exactly the same as MiningRate because the shsip might have mined the last of the asteroid
                     ShipsCurrentlyMining.Select((s) => Level.State.GetShipById(s)).ToList().ForEach((ship) =>
                     {
                         ship.FleetShip.MineralsMinedThisLevel += _amountPerShip;

@@ -42,13 +42,14 @@ namespace Assets.Scripts.Levels.Commands
                             long commandOutcomeId,
                             long shootingStrategyOutcomeId)
         {
-            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, false);
             // Debug.Log("Executing bombing run");
 
             if (CheckIfStrikersAreDefenseless())
             {
                 return;
             }
+            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, false);
+
 
             // Setup status and damage
             IsAttacking = true;

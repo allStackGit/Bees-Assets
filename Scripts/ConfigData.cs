@@ -648,14 +648,18 @@ namespace Assets.Scripts
         public const int MinimumAsteroidAngularSpeedMultiplier = 5;
         public const int CollisionAsteroidHealthIncrement = 250;
         public const int CollisionAsteroidKillDelay = 1;
-        public const int MaximumTsvValueForSeeingAShip = 500;
-        public const int MinimumTsvValueForSeeingAShip = 50;
+        public const int MaximumTsvValueForSeeingAShip = 20; // [Tsv]
+        public const int MinimumTsvValueForSeeingAShip = 1; // [Tsv]
         public const int StandardReinforcementsDelay = 60;
         public const int StandardMaxCommandTime = 120;
-        public const float TsvMultiplierForVision = .05f;
+        public const float TsvMultiplierForVision = .05f; // [Tsv]
         public const float VisionShrinkingMultiplier = .8f;
         public static Vector2 HalfSize = new Vector2(.5f, .5f);
-        public const int MiningRate = 750;
+        /// <summary>
+        /// This is how fast the the ships mine the asteroids. The Mine() method is called every 3 seconds so the the ships gather TSV (and destroy the asteroid) at a
+        /// rate of MiningRate / 3 per second [TSV]
+        /// </summary>
+        public const int MiningRate = 10;
         public static float ShipTurningRadius; 
         public static List<Scene> Scenes = new List<Scene>();
         public static Scene SocketManager;

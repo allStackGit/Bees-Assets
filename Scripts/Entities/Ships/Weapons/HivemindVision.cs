@@ -44,11 +44,13 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 {
                     if (!Ship.Level.State.VisionCache[Ship.Side - 1].Contains(_shipEnter))
                     {
-                        Ship.Squad.GetCommand().Tsv += (int)Math.Min(Math.Max(_shipEnter.Tsv * ConfigData.TsvMultiplierForVision, ConfigData.MinimumTsvValueForSeeingAShip), ConfigData.MaximumTsvValueForSeeingAShip);
-                        Ship.Level.State.HivemindShips[Ship.Side - 1][Ship.Id].Add(_shipEnter);
+                        // Clamp the value of seeing the ship between 1 & 20 TSV and add it to the command regardless of what the command is
+                        Ship.Squad.GetCommand().Tsv += (int) Mathf.Clamp(_shipEnter.Tsv * ConfigData.TsvMultiplierForVision, ConfigData.MinimumTsvValueForSeeingAShip, ConfigData.MaximumTsvValueForSeeingAShip);
+
+                        Ship.Level.State.HivemindShips[Ship.Side - 1][Ship.Id].Add(_shipEnter); // Add the newly seen ship to the hivemind
                         if (Ship.Squad.GetCommand().CommandType == ConfigData.CommandTypes.Scouting)
                         {
-                            ((Scouting)Ship.Squad.GetCommand()).FoundShips();
+                            ((Scouting)Ship.Squad.GetCommand()).FoundShips(); // If the ship is scouting, note that it's found ships and can end the command
                         }
                     }
                 }
@@ -62,7 +64,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 {
                     if (!Ship.Level.State.VisionCache[Ship.Side - 1].Contains(_shipEnter))
                     {
-                        Ship.MotherSquad.GetCommand().Tsv += (int)Math.Min(Math.Max(_shipEnter.Tsv * ConfigData.TsvMultiplierForVision, ConfigData.MinimumTsvValueForSeeingAShip), ConfigData.MaximumTsvValueForSeeingAShip);
+                        // Clamp the value of seeing the ship between 1 & 20 TSV and add it to the Scout's command regardless of what the command is
+                        Ship.MotherSquad.GetCommand().Tsv += (int)Mathf.Clamp(_shipEnter.Tsv * ConfigData.TsvMultiplierForVision, ConfigData.MinimumTsvValueForSeeingAShip, ConfigData.MaximumTsvValueForSeeingAShip);
                         Ship.Level.State.HivemindShips[Ship.Side - 1][Ship.Id].Add(_shipEnter);
 
                         if (Ship.MotherSquad.GetCommand().CommandType == ConfigData.CommandTypes.Scouting)

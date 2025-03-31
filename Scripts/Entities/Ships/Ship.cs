@@ -168,8 +168,6 @@ namespace Assets.Scripts.Entities.Ships
 
 
 
-
-        // [tsv-calculation] [note]
         /// <summary>
         /// Whether or not the ship has target coordinates. If it does, it hasn't reached the destination
         /// </summary>
@@ -564,7 +562,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
             _size = ConfigData.ShipSizes[ShipType] / ConfigData.PixelsPerUnit;
 
-            OriginalTsv = Utilities.CalculateMaxTsv(this.ShipType); // Must be calculated after health, firepower, and speed are set
+            OriginalTsv = Utilities.GetMaxTsv(this.ShipType); // Must be calculated after health, firepower, and speed are set
             SetCurrentSpeed(Speed);
 
             if (IsUserControlled)
@@ -611,7 +609,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         /// <param name="fleetShip"></param>
         /// <param name="squad"></param>
         /// <param name="offsetFromCenter"></param>
-        public virtual void Setup(Level level, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter) // [tsv-calculation]
+        public virtual void Setup(Level level, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter) 
         {
             //Debug.Log($"Setting up ship IsCarrierShip: {IsCarrierShip}");
             Squad = squad;
@@ -1586,6 +1584,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         private int _oldTsv, _tsvChange;
         /// <summary>
         /// Notes the change in health and TSV for the ship and Squad command and updates the health bar for any kind of non-attacking damage the ship takes. See LogAttackingDamage() for attacking damage
+        /// [TSV]
         /// </summary>
         public void LogDamage(int damage)  // [damage-method] [note]
         {
@@ -1614,6 +1613,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         private static ShipDamageStatus _shipDamageStatus;
         /// <summary>
         /// Logs damage to a ship from being attacked by another ship. See LogDamage() for non-attacking damage
+        /// [TSV]
         /// </summary>
         public static void LogAttackingDamage(int power, Ship attacker, FleetShip attackerFleetShip, SavedSquad attackerSavedSquad, Ship target) // [damage-method] [note]
         {
@@ -1704,8 +1704,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
             if (attacker != null && attacker.Squad.HasCommand)
             {
-                attacker.Squad.GetCommand().Tsv += tsvLoss * (_isFriendlyFire ? 1 : -1); // add the already negative TSV to the shooter if it's friendly fire
-                                                                                     // multiply by -1 to add the positive number if it's not friendly fire
+                attacker.Squad.GetCommand().Tsv += tsvLoss * (_isFriendlyFire ? -1 : 1); // multiply by -1 and add the TSV to the shooter if it's friendly fire
+                                                                                     // add the positive number if it's not friendly fire
             }
 
 
@@ -1717,15 +1717,15 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
                 if (targetSquad.HasCommand)
                 {
-                    targetSquad.GetCommand().Tsv += tsvLoss; // add the negative TSV to the target command because it took damage
+                    targetSquad.GetCommand().Tsv += -tsvLoss; // add the negative TSV to the target command because it took damage
                 }
 
                 if (target.Stage.IsTrainingNueralNetwork)
                 {
                     _initialTsv = target.Level.State.InitialTsv;
-                    //Debug.Log($"Initial TSV: {initialTsv[0]}, {initialTsv[1]}");
+                    Debug.Log($"Initial TSV: {_initialTsv[0]}, {_initialTsv[1]}");
                     _percentageTsvDestroyed = (float)Math.Round(((double)tsvLoss / _initialTsv[target.Side - 1]), 3);
-                    //Debug.Log($"{shooter.Name} destroyed {percentageTsvDestroyed}  {tsvChange} / {initialTsv[target.Side - 1]} of the total initial tsv of the enemy");
+                    Debug.Log($"{attacker.Name} destroyed {_percentageTsvDestroyed}  {tsvLoss} / {_initialTsv[target.Side - 1]} of the total initial tsv of the enemy");
                     target.Brain.AddReward(-_percentageTsvDestroyed);
 
                     if (attacker != null)

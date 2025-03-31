@@ -4,6 +4,7 @@ using System.Linq;
 using Assets.Scripts.Entities.Ships.Weapons;
 using UnityEngine;
 using Assets.Scripts.Entities.Projectiles;
+using Unity.Mathematics;
 
 namespace Assets.Scripts.Entities.Ships
 {
@@ -111,31 +112,27 @@ namespace Assets.Scripts.Entities.Ships
 
         }
 
-        private int _targetOldTSV, _targetTSVChange;
+        private int _targetOldTSV, _targetTSVLoss;
         private void LogDetonationDamage(int power, Ship attacker, Ship target) // [damage-method] [note]
         {
             _targetOldTSV = target.Tsv;
-            target.Health -= power;
+            target.Health -= math.min(target.Health, power);
             target.Tsv = Utilities.CalculateTsv(target);
 
-            if (target.Health < 0)
-            {
-                target.Health = 0;
-            }
 
-            _targetTSVChange = target.Tsv - _targetOldTSV; // this is a negative number since being hit by a projectile should induce a loss of TSV
+            _targetTSVLoss = target.Tsv - _targetOldTSV; // this is a negative number since being hit by a projectile should induce a loss of TSV
             //Debug.Log($"Yellow Jacket #{Id} Detonation: {targetTSVChange} tsv inflicted on {target.Name}");
-            LogHitStats(attacker, attacker.FleetShip, attacker.Squad.SavedSquad, target, target.Squad, -_targetTSVChange);
+            LogHitStats(attacker, attacker.FleetShip, attacker.Squad.SavedSquad, target, target.Squad, -_targetTSVLoss);
 
             // each hit, add the negative TSV to the target's command and subtract the negative TSV from the shooter's command
 
             if (attacker.Squad.HasCommand)
             {
-                attacker.Squad.GetCommand().Tsv += -_targetTSVChange; // add the TSV to the shooter
+                attacker.Squad.GetCommand().Tsv += -_targetTSVLoss; // add the TSV to the shooter
             }
             if (target.Squad.HasCommand)
             {
-                target.Squad.GetCommand().Tsv += _targetTSVChange; // subtract the TSV from the target
+                target.Squad.GetCommand().Tsv += _targetTSVLoss; // subtract the TSV from the target
             }
             target.UpdateHealthBar();
 

@@ -13,8 +13,8 @@ namespace Assets.Scripts.Server
 
         public ServerStoredCommand(long tsv, long outcomeId)
         {
-            this.Tsv = tsv;
-            this.OutcomeId = outcomeId;
+            Tsv = tsv;
+            OutcomeId = outcomeId;
         }
     }
 }

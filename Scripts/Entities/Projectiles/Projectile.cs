@@ -139,7 +139,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
         public virtual void ContactObstacle(Obstacle obstacle)
         {
-            if (obstacle != null)
+            if (!obstacle.IsDead)
             {
                 if (obstacle.ObstacleType != ConfigData.ObstacleTypes.MapBorder)
                 {

@@ -208,10 +208,6 @@ namespace Assets.Scripts.Data
                 //Debug.Log($"Squad ship offset after orienting around center: {ship.Offset}");
             });
         }
-        //public int GetTsv()
-        //{
-        //    return GetAliveSquadShips().Sum((s) => s.GetFleetShip().GetTsv());
-        //}
         /// <summary>
         /// The capacity of the squad as it stands now, potentially less than full capacity if the squad isn't filled
         /// </summary>
@@ -228,10 +224,6 @@ namespace Assets.Scripts.Data
         {
             return GetSquadShips().Sum((s) => s.GetFleetShip().GetCapacity());
         }
-        //public int GetMaxTsv()
-        //{
-        //    return GetSquadShips().Sum((s) => s.GetFleetShip().GetMaxTsv());
-        //}
         public bool Equals(SavedSquad squad)
         {
             return squad.Id == Id;

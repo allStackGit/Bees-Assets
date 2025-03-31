@@ -15,7 +15,6 @@ public class FullRetreat : Command
         if (warpgate != null)
         {
             TargetWarpGate = warpgate;
-            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
 
             
             // The ToList() is necessary to prevent errors from warp killing while looping through the list of ships
@@ -33,6 +32,7 @@ public class FullRetreat : Command
             });
             if (TargetWarpGate.ShipsWarpingHere.Count > 0)
             {
+                base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
                 TargetWarpGate.ShipAnimation.SetActive(true);
                 WaitToWarp();
                 if (!IsDead)
@@ -119,8 +119,9 @@ public class FullRetreat : Command
     {
         if (!IsDead)
         {
-            // Commented this out because it seemed to give too high of a reward for Full Retreat. Now, it will always give 0 or less, which means it should be preferable to losing
-            // but not much better than that
+            // Commented this out because it seemed to give too high of a reward for Full Retreat. Now, it will always give 0 (unless the ships engage in combat),
+            // which means it should be preferable to losing but not much better than that
+
             //if (ship.ShipType != ConfigData.ShipTypes.Striker && ship.ShipType != ConfigData.ShipTypes.Drone)
             //{
             //    Tsv += (int)(ship.Tsv * .05f);

@@ -7634,7 +7634,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: TimeoutTime
-      value: 0
+      value: 2400
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: VisonSprite
@@ -7690,7 +7690,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: OverrideTimeScale
-      value: 1
+      value: 4
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: UseMouseScrolling

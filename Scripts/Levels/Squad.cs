@@ -31,7 +31,8 @@ namespace Assets.Scripts.Levels
         private Command _command;
         public List<StoredCommand> PastCommands = new List<StoredCommand>();
         /// <summary>
-        /// The matchup strategy belongs to the squad and not the command because it is used to determine the command by making the matchup
+        /// The matchup strategy belongs to the squad and not the command because it is used to determine the command by making the matchup. 
+        /// It should also be attached to the command so that it can be stored to the server
         /// </summary>
         public MatchupStrategy MatchupStrategy = new MatchupStrategy(); 
         public HashSet<ConfigData.CommandTypes> BannedStrats = new HashSet<ConfigData.CommandTypes>();
@@ -61,6 +62,9 @@ namespace Assets.Scripts.Levels
         /// </summary>
         public bool IsHiveMindControlled;
         public bool IsCarrierSquad;
+        /// <summary>
+        /// A squad has a command as soon as the command is setup and before it's ever executed
+        /// </summary>
         public bool HasCommand;
         public float CurrentSpeed;
         public int CreationId;
@@ -135,7 +139,7 @@ namespace Assets.Scripts.Levels
             Destination = Vector2.zero;
             IsDead = false;
             CurrentSpeed = 0;
-            MatchupStrategy.Kill();
+            //MatchupStrategy.Kill();
             enabled = true;
 
         }
@@ -575,7 +579,7 @@ namespace Assets.Scripts.Levels
         //    }
         //}
         /// <summary>
-        /// Gets all ships in the level that are on the opposing side
+        /// Gets all ships in the level that are on the opposing side and visible to the hive mind
         /// </summary>
         /// <returns></returns>
         public List<Ship> GetEnemyShips()
@@ -587,6 +591,11 @@ namespace Assets.Scripts.Levels
             return Level.State.GetShips(Side);
         }
         private List<Ship> _enemies;
+        /// <summary>
+        /// Returns all visible ships in the enemy squad plus all enemy ships that have those previous ship in their range plus all enemy ships that have our squad within range
+        /// </summary>
+        /// <param name="target"></param>
+        /// <returns></returns>
         public List<Ship> GetPotentialEnemies(Squad target)
         {
 
@@ -656,6 +665,9 @@ namespace Assets.Scripts.Levels
         {
             _command = null;
         }
+        /// <summary>
+        /// Puts this squad on the list of squads waiting for new hive mind commands
+        /// </summary>
         public void AddToCommandList()
         {          
             Level.State.AddToSquadsAwaitingHiveMindCommands(this);
@@ -731,7 +743,9 @@ namespace Assets.Scripts.Levels
                 _matchupEnemies = GetPotentialEnemies(enemy);
                 if (_matchupEnemies.Count == 0)
                 {
-                    Debug.LogError($"{this} has a matchup against {enemy} but there are no enemy ships");
+                    Debug.LogWarning($"{this} has a matchup against {enemy} but there are no enemy ships visible to the hive mind so we are putting it back on the command queue: {Utilities.ListToString(Level.State.GetShipsVisibleToHiveMind(Side).ToList())}");
+                    AddToCommandList();
+                    return;
                 }
                 _matchupAllies = GetPotentialAllies(enemy);
 

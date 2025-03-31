@@ -9,9 +9,22 @@ namespace Assets.Scripts.Data
         public int CurrentHumanCampaignLevel = -1; // a level of -1 indicates that the level data hasn't been loaded yet
         public int CurrentBeeCampaignLevel = -1; 
         public int SavedSquadId = -1; //[alert] [reminder]  this starts at 1 because there are two starting squads 0, and 1. The next Id should be 2.
+        /// <summary>
+        /// How much TSV the user has mined, less whatever the user has spent
+        /// </summary>
         public int MinedTSV = 0;
+        /// <summary>
+        /// How much TSV the AI has mined, less whatever the AI has spent
+        /// </summary>
         public int HivemindMinedTSV = 0;
-        public int HumanWins, BeeWins, HumanFreePlayWins, BeeFreePlayWins;
+        /// <summary>
+        /// The wins in campaign mode
+        /// </summary>
+        public int HumanWins, BeeWins; 
+        /// <summary>
+        /// The wins in Free Play mode
+        /// </summary>
+        public int HumanFreePlayWins, BeeFreePlayWins;
 
         public UserProgressData(bool shouldFileExist): base()
         {

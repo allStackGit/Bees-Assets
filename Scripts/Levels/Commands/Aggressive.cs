@@ -36,8 +36,6 @@ namespace Assets.Scripts.Levels.Commands
                         Level.AddTimer(TimeoutTimer);
                     }
                 }
-
-
             }
             
         }

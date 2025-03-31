@@ -43,6 +43,11 @@ namespace Assets.Scripts.Entities.Projectiles
             Angle = 0;
         }
         private int _halfHealth;
+
+        /// <summary>
+        /// If the target hasn't been hit before, reduces the damage of the laser beam by half the health of the target ship and continues on if it still has power
+        /// </summary>
+        /// <param name="target"></param>
         public override void ContactTarget(Ship target)
         {
             if (!_shipsHit.Contains(target))
