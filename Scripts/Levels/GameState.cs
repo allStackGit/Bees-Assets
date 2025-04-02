@@ -511,7 +511,7 @@ namespace Assets.Scripts.Levels
                     {
                         Debug.LogError($"Stored command didn't have a matchup strategy");
                     }
-                    Debug.Log($"Stored past command {command}");
+                    //Debug.Log($"Stored past command {command}");
 
                 });
 

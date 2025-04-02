@@ -330,10 +330,10 @@ namespace Assets.Scripts.Entities
                 //Stage.Pool.ReturnCollisionAsteroidToPool(this);
                 gameObject.SetActive(false);
             }
-            else
-            {
-                Debug.LogWarning($"Tried to kill already dead asteroid {Name}");
-            }
+            //else
+            //{
+            //    Debug.LogWarning($"Tried to kill already dead asteroid {Name}");
+            //}
         }
 
         /// <summary>

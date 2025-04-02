@@ -45,6 +45,12 @@ namespace Assets.Scripts.Levels
 
         public Pathfinder(Level level)
         {
+            Setup(level);
+
+        }
+
+        public void Setup(Level level)
+        {
             Level = level;
             Width = (int)Math.Ceiling((double)Level.MapWidth / Scale);
             Height = (int)Math.Ceiling((double)Level.MapHeight / Scale);
@@ -53,7 +59,6 @@ namespace Assets.Scripts.Levels
 
             //Level.StartCoroutine(InitializeMap());
             InitializeMap();
-
         }
         // Utility methods
         public Vector2Int ConvertToMapCoordinates(Vector2 coords)
@@ -359,7 +364,21 @@ namespace Assets.Scripts.Levels
             float start = Time.realtimeSinceStartup;
             //Debug.Log($"Loading pathfinder map at {Scale}x");
             // initialize everything as open space
-            _grid = new Grid(Width, Height, this);
+
+            if (_grid == null)
+            {
+                if (!Level.Stage.PathfinderGrids.ContainsKey((Width, Height)))
+                {
+                    _grid = new Grid(Width, Height, this);
+                    Level.Stage.PathfinderGrids.Add((Width, Height), _grid);
+                }
+                else
+                {
+                    _grid = Level.Stage.PathfinderGrids.GetValueOrDefault((Width, Height));
+                }
+            }
+
+
 
             GameObject[] obstacles = GameObject.FindGameObjectsWithTag("Obstacle");
             //Debug.Log($"There are {obstacles.Length} obstacles to map: {Utilities.ListToString(obstacles.ToList())}");

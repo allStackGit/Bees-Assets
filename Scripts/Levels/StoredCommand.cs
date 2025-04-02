@@ -44,7 +44,7 @@ namespace Assets.Scripts.Levels
             MatchupStrategy = command.MatchupStrategy;
             ShootingStrategy = command.ShootingStrategy;
 
-            Debug.Log($"Made new {this}");
+            //Debug.Log($"Made new {this}");
         }
 
         public override string ToString()

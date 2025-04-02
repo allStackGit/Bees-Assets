@@ -11,6 +11,7 @@ using Assets.Scripts.Levels.Commands;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
 using System;
+using UnityEditor.VersionControl;
 
 namespace Assets.Scripts.Server
 {
@@ -125,7 +126,7 @@ namespace Assets.Scripts.Server
                 Debug.Log("Connection re-opened!");
                 OpenLevels.ForEach((level) =>
                 {
-                    ConfigData.Socket.SendRequest(new ReconnectLevelRequest(new SetupLevel(ConfigData.GetUserProgressData().GetCurrentLevel(), ConfigData.GetUserId(), ConfigData.Version),
+                    ConfigData.Socket.SendRequest(new ReconnectLevelRequest(new SetupLevel(ConfigData.GetUserProgressData().GetCurrentLevel(), ConfigData.GetUserId(), ConfigData.Version, level.ServerGameId),
                     ConfigData.StandardMaxTimeOnQueue,level));
                     Debug.Log($"Trying to reconnect {level.Name} to the server");
                 });
@@ -141,10 +142,10 @@ namespace Assets.Scripts.Server
         }
         private void Close(string reason = null)
         {
-            Debug.Log("Connection closed!");
+            Debug.LogWarning("Connection closed!");
             if (reason != null)
             {
-                Debug.Log($"Network Error:{reason}");
+                Debug.LogWarning($"Network Error:{reason}");
                 //StandingRequests.ToList().ForEach((sr) =>
                 //{
                 //    sr.Status = -1;
@@ -205,10 +206,10 @@ namespace Assets.Scripts.Server
                         HandleBasicResponse(_message_response);
                         return;
                     case ConfigData.RequestTypes.SetupLevel:
-                        HandleSetupLevelResponse(_message_response);
+                        HandleSetupLevelResponse(_f_message);
                         return;
                     case ConfigData.RequestTypes.ReconnectLevel:
-                        HandleReconnectLevelResponse(_message_response);
+                        HandleReconnectLevelResponse(_f_message);
                         return;
                     case ConfigData.RequestTypes.StoreUserData:
                         HandleBasicResponse(_message_response);
@@ -300,53 +301,53 @@ namespace Assets.Scripts.Server
         }
         public void SendRequest(MatchupStrategyRequest serverRequest)
         {
-            StandingRequests.Add(serverRequest);
+            LogRequest(serverRequest);
             //Debug.Log($"Sending matchup request #{serverRequest.Hash} for Squad {serverRequest.Squad}");
             //serverRequest.Squad.Status = $"Waiting for matchup request #{serverRequest.Hash} since update #{serverRequest.Squad.Level.Stage.__Updates}";
             Send(serverRequest.Request);
         }
         public void SendRequest(CommandRequest serverRequest)
         {
-            StandingRequests.Add(serverRequest);
+            LogRequest(serverRequest);
             //serverRequest.Squad.Status = $"Waiting for strategy request #{serverRequest.Hash} since update #{serverRequest.Squad.Level.Stage.__Updates}";
             //Debug.Log($"Sending strategy request #{serverRequest.Hash} for Squad {serverRequest.Squad}");
             Send(serverRequest.Request);
         }
         public void SendRequest(StoreCommandsRequest serverRequest)
         {
-            StandingRequests.Add(serverRequest);
+            LogRequest(serverRequest);
             Send(serverRequest.Request);
         }
         public void SendRequest(SetupLevelRequest serverRequest)
         {
-            StandingRequests.Add(serverRequest);
+            LogRequest(serverRequest);
             Send(serverRequest.Request);
         }
         public void SendRequest(ReconnectLevelRequest serverRequest)
         {
-            StandingRequests.Add(serverRequest);
+            LogRequest(serverRequest);
             Send(serverRequest.Request);
         }
         public void SendRequest(StoreUserDataRequest serverRequest)
         {
-            StandingRequests.Add(serverRequest);
+            LogRequest(serverRequest);
             Send(serverRequest.Request);
         }
         public void SendRequest(DataFileRequest serverRequest)
         {
-            StandingRequests.Add(serverRequest);
+            LogRequest(serverRequest);
             Send(serverRequest.Request);
         }
         public void SendRequest(SettingsRequest serverRequest)
         {
             //Debug.Log($"Sending request #{serverRequest.Hash}");
-            StandingRequests.Add(serverRequest);
+            
+            LogRequest(serverRequest);
             Send(serverRequest.Request);
         }
         public void SendRequest(ServerRequest serverRequest)
         {
-            StandingRequests.Add(serverRequest);
-            //ConfigData.__PastServerRequests.Add(serverRequest);
+            LogRequest(serverRequest);
             switch (serverRequest.Type)
             {
                 case ConfigData.RequestTypes.GetMatchupStrategy:
@@ -380,6 +381,16 @@ namespace Assets.Scripts.Server
                     return;
             }
 
+        }
+        /// <summary>
+        /// Adds the server request to Standing Requests and optionally adds it to __PastServerRequests
+        /// </summary>
+        /// <param name="request"></param>
+        public void LogRequest(ServerRequest request)
+        {
+            StandingRequests.Add(request);
+
+            ConfigData.__PastServerRequests.Add(request);
         }
         // ===========================
         // Class-Level Static Variables
@@ -602,10 +613,10 @@ namespace Assets.Scripts.Server
 
                     _handleMatchupResponse_squad.MakeMatchupAndGetCommand(_handleMatchupResponse_targetSquad);
                 }
-                else
-                {
-                    Debug.LogWarning($"Matchup strategy #{_handleMatchupResponse_matchupResponse.OutcomeId} was received for squad #{_handleMatchupResponse_matchupResponse.SquadHash}, but the squad no longer exists.");
-                }
+                //else
+                //{
+                //    Debug.LogWarning($"Matchup strategy #{_handleMatchupResponse_matchupResponse.OutcomeId} was received for squad #{_handleMatchupResponse_matchupResponse.SquadHash}, but the squad no longer exists.");
+                //}
             }
             else
             {
@@ -866,7 +877,8 @@ namespace Assets.Scripts.Server
         }
         // HandleSetupLevelResponse variables
         private SetupLevelRequest handleSetupLevelResponseStandingRequest;
-        private Level handleSetupLevelResponseLevel;
+        private SetupLevelResponse _setupLevelResponse;
+        private Level _setupLevel;
         private float handleSetupLevelResponseTimeOnQueue;
 
         // HandleReconnectLevelResponse variables
@@ -878,19 +890,21 @@ namespace Assets.Scripts.Server
         private ServerRequest handleBasicResponseStandingRequest;
         private float handleBasicResponseTimeOnQueue;
 
-        private void HandleSetupLevelResponse(ServerResponse response)
+        private void HandleSetupLevelResponse(string message)
         {
             // Get standing request
-            handleSetupLevelResponseStandingRequest = (SetupLevelRequest)GetStandingRequest(response.Hash);
+            _setupLevelResponse = JsonUtility.FromJson<SetupLevelResponse>(message);
+            handleSetupLevelResponseStandingRequest = (SetupLevelRequest)GetStandingRequest(_setupLevelResponse.Hash);
 
             if (handleSetupLevelResponseStandingRequest != null)
             {
                 // Remove from standing requests and process level
                 StandingRequests.Remove(handleSetupLevelResponseStandingRequest);
-                handleSetupLevelResponseLevel = handleSetupLevelResponseStandingRequest.Level;
-                handleSetupLevelResponseLevel.IsLevelSetupOnServer = true;
-                handleSetupLevelResponseLevel.IsLevelConnectedToServer = true;
-                handleSetupLevelResponseLevel.HandledRequests.Add(response.Hash);
+                _setupLevel = handleSetupLevelResponseStandingRequest.Level;
+                _setupLevel.IsLevelSetupOnServer = true;
+                _setupLevel.IsLevelConnectedToServer = true;
+                _setupLevel.ServerGameId = _setupLevelResponse.GameId;
+                _setupLevel.HandledRequests.Add(_setupLevelResponse.Hash);
 
                 // Calculate time on queue and update latency
                 handleSetupLevelResponseTimeOnQueue = Time.unscaledTime - handleSetupLevelResponseStandingRequest.StartTime;
@@ -898,18 +912,19 @@ namespace Assets.Scripts.Server
                 ConfigData.__TotalLatency += handleSetupLevelResponseTimeOnQueue;
 
                 // Add to open levels
-                OpenLevels.Add(handleSetupLevelResponseLevel);
+                OpenLevels.Add(_setupLevel);
             }
             else
             {
-                Debug.Log($"Couldn't find a matching request for {response.Hash}");
+                Debug.LogWarning($"Couldn't find a matching request for {_setupLevelResponse.Hash}");
             }
         }
 
-        private void HandleReconnectLevelResponse(ServerResponse response)
+        private void HandleReconnectLevelResponse(string message)
         {
             // Get standing request
-            handleReconnectLevelResponseStandingRequest = (SetupLevelRequest)GetStandingRequest(response.Hash);
+            _setupLevelResponse = JsonUtility.FromJson<SetupLevelResponse>(message);
+            handleSetupLevelResponseStandingRequest = (ReconnectLevelRequest)GetStandingRequest(_setupLevelResponse.Hash);
 
             if (handleReconnectLevelResponseStandingRequest != null)
             {
@@ -917,7 +932,8 @@ namespace Assets.Scripts.Server
                 StandingRequests.Remove(handleReconnectLevelResponseStandingRequest);
                 handleReconnectLevelResponseLevel = handleReconnectLevelResponseStandingRequest.Level;
                 handleReconnectLevelResponseLevel.IsLevelConnectedToServer = true;
-                handleReconnectLevelResponseLevel.HandledRequests.Add(response.Hash);
+                _setupLevel.ServerGameId = _setupLevelResponse.GameId;
+                handleReconnectLevelResponseLevel.HandledRequests.Add(_setupLevelResponse.Hash);
 
                 // Calculate time on queue and update latency
                 handleReconnectLevelResponseTimeOnQueue = Time.unscaledTime - handleReconnectLevelResponseStandingRequest.StartTime;
@@ -930,7 +946,7 @@ namespace Assets.Scripts.Server
             }
             else
             {
-                Debug.Log($"Couldn't find a matching request for {response.Hash}");
+                Debug.LogWarning($"Couldn't find a matching request for {_setupLevelResponse.Hash}");
             }
         }
 

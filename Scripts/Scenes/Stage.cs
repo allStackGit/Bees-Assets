@@ -310,6 +310,7 @@ public class Stage : Scene
     /// All the unique colored remains sprites that have been loaded from disk, keyed by the hash code of a tuple of their ship type and color
     /// </summary>
     public Dictionary<int, Sprite[]> LoadedRemainsSprites = new Dictionary<int, Sprite[]>();
+    public Dictionary<(int, int), Pathfinder.Grid> PathfinderGrids = new Dictionary<(int, int), Pathfinder.Grid>();
 
 
     public int __HivemindCommands, __LevelTimeouts, __TotalShips, __LevelCompletes;

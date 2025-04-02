@@ -72,6 +72,10 @@ namespace Assets.Scripts.Levels
         /// </summary>
         public ObstacleMap ObstacleMap;
         public List<ScaledTimer> Timers = new List<ScaledTimer>();
+        /// <summary>
+        /// The Id of the Game connection on the server
+        /// </summary>
+        public long ServerGameId;
 
 
         public List<string> __BeeHivemindShips, __HumanHivemindShips, __PastCommands, __PathfindingThreads, __CustomLevels, __Timers;
@@ -243,9 +247,11 @@ namespace Assets.Scripts.Levels
                 Debug.Log($"The map does not have mining");
             }
 
-            if ((CurrentLevelOptions.EnemyReinforcementsOption == -1 && Utilities.CoinToss()) || CurrentLevelOptions.EnemyReinforcementsOption == 1)
+            // This currently has an override (the " && false" at the end) to prevent reinforcements
+            if ((CurrentLevelOptions.EnemyReinforcementsOption == -1 && Utilities.CoinToss()) || CurrentLevelOptions.EnemyReinforcementsOption == 1 && false)
             {
                 ActivateLoadingShipsMidLevel = true;
+
                 Debug.Log($"The map has ships loading midlevel");
                 if (CurrentLevelOptions.EnemyReinforcements.Count == 0)
                 {
