@@ -52,7 +52,7 @@ namespace Assets.Scripts.Entities.Ships
 
                 //Ship.Level.HasReset = true;
                 //Ship.Level.ResetLevel(true);
-                Ship.Body.velocity = Vector2.zero;
+                Ship.Body.linearVelocity = Vector2.zero;
                 Ship.transform.eulerAngles = Vector3.zero;
             }
 

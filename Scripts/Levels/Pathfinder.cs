@@ -602,7 +602,7 @@ namespace Assets.Scripts.Levels
                     //float obstaclePoints = Time.realtimeSinceStartup;
                     try
                     {
-                        ObstaclePoints[threadIndex][asteroid.MapPointsIndex] = GetObstaclePoints(asteroid, asteroid.Body.velocity.x, asteroid.Body.velocity.y);
+                        ObstaclePoints[threadIndex][asteroid.MapPointsIndex] = GetObstaclePoints(asteroid, asteroid.Body.linearVelocity.x, asteroid.Body.linearVelocity.y);
                     }catch (Exception e)
                     {
                         Debug.Log($"Nearby Asteroids: {Utilities.ListToString(collisionAsteroids)}");

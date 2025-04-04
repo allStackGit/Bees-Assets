@@ -28,7 +28,7 @@ namespace Assets.Scripts.Entities.Projectiles
         }
         private void IncreaseSpeed()
         {
-            Body.velocity *= 1.5f;
+            Body.linearVelocity *= 1.5f;
         }
         public override void Kill()
         {

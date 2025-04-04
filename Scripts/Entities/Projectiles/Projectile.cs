@@ -222,7 +222,7 @@ namespace Assets.Scripts.Entities.Projectiles
         {
             Transform.eulerAngles = Vector3.forward * Rotation;
 
-            Body.velocity = new Vector2((float)(-Speed * Mathf.Sin(Angle)), (float)(-Speed * Mathf.Cos(Angle)));
+            Body.linearVelocity = new Vector2((float)(-Speed * Mathf.Sin(Angle)), (float)(-Speed * Mathf.Cos(Angle)));
             //Debug.Log($"Setting {Name} to an initial velocity of {Body.velocity}");
         }
 

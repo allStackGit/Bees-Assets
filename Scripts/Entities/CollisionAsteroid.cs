@@ -99,7 +99,7 @@ namespace Assets.Scripts.Entities
         public void SetMoving()
         {
             Vector2 randomPoint = Utilities.RandomCoordinate(Level, Level.GetPosition(), new Vector2(Level.HalfMapWidth, Level.HalfMapHeight), Vector2.zero);
-            Body.velocity = Speed * -Utilities.DirectionBetweenPoints(GetPosition(), randomPoint);
+            Body.linearVelocity = Speed * -Utilities.DirectionBetweenPoints(GetPosition(), randomPoint);
             Body.angularVelocity = Speed * Utilities.RandomFloat(ConfigData.MinimumAsteroidAngularSpeedMultiplier);
         }
         protected ScaledTimer _delayKillTimer = new ScaledTimer();

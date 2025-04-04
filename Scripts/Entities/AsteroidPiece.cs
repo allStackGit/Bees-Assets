@@ -32,7 +32,7 @@ namespace Assets.Scripts.Entities
 
             //Debug.Log($"Setup Asteroid {Name} with Speed: {Speed}, starting at {transform.localPosition}");
             Vector2 randomPoint = Utilities.RandomCoordinate(Level, Level.GetPosition(), new Vector2(Level.HalfMapWidth, Level.HalfMapHeight), Vector2.zero);
-            Body.velocity = Speed * -Utilities.DirectionBetweenPoints(GetPosition(), randomPoint);
+            Body.linearVelocity = Speed * -Utilities.DirectionBetweenPoints(GetPosition(), randomPoint);
             Body.angularVelocity = parent.Body.angularVelocity;
 
             _deathTimer.Reuse(.5f, DeathTimer, true);

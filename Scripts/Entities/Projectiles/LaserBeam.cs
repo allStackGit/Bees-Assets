@@ -154,7 +154,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
                     Transform.localEulerAngles = _forward * _worldAngle;
                     Transform.localPosition = _offsetRotatedCannonPosition;
-                    Body.velocity = Shooter.Body.velocity;
+                    Body.linearVelocity = Shooter.Body.linearVelocity;
                     return;
 
                     //+ GetChangeInShooterPosition();

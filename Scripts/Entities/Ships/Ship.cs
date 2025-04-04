@@ -234,7 +234,7 @@ namespace Assets.Scripts.Entities.Ships
             __TargetCoordinates = TargetCoordinates;
             if (IsMobile)
             {
-                __Velocity = Body.velocity;
+                __Velocity = Body.linearVelocity;
             }
             __Firepower = Firepower;
             __Tsv = Tsv;
@@ -1143,7 +1143,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             }
             if (Direction == 360)
             {
-                Body.velocity = Vector2.zero;
+                Body.linearVelocity = Vector2.zero;
                 IsMoving = false;
                 return;
             }
@@ -1164,7 +1164,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             //Vector2 pos = GetPosition();
             //transform.localPosition = new Vector2(Mathf.Clamp(pos.x, Level.MinX, Level.MaxX), Mathf.Clamp(pos.y, Level.MinY, Level.MaxY));
 
-            Body.velocity = _tempVelocity;
+            Body.linearVelocity = _tempVelocity;
             IsMoving = true;
         }
         public virtual void SetRocketFlares()
@@ -1273,7 +1273,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 _maxSpeed = CurrentSpeed;
                 //Debug.Log($"Setting _maxSpeed to {_maxSpeed} for {Name}");
                 _tempAngle = (Rotation - 180) * Mathf.Deg2Rad;
-                Body.velocity = new Vector2((_maxSpeed * Mathf.Sin(_tempAngle)), -(_maxSpeed * Mathf.Cos(_tempAngle)));
+                Body.linearVelocity = new Vector2((_maxSpeed * Mathf.Sin(_tempAngle)), -(_maxSpeed * Mathf.Cos(_tempAngle)));
             }
             //_tempAngle = (Rotation - 180) * Mathf.Deg2Rad;
             //Body.velocity = new Vector2((_maxSpeed * Mathf.Sin(_tempAngle)), -(_maxSpeed * Mathf.Cos(_tempAngle)));
@@ -1425,7 +1425,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 //Debug.Log(__LastStopReason);
                 SetTargetCoordinates(Vector2.zero);
                 FinalDestination = Vector2.zero;
-                Body.velocity = Vector2.zero;
+                Body.linearVelocity = Vector2.zero;
                 IsMoving = false;
                 ClearPreviousDesintation();
                 if (HasRocketFlares)
@@ -1917,7 +1917,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             //}
             //gameObject.SetActive(false);
 
-            Body.velocity = Vector2.zero;
+            Body.linearVelocity = Vector2.zero;
             base.Deactivate();
             //CancelInvoke();
             StopAllCoroutines();
