@@ -609,10 +609,12 @@ namespace Assets.Scripts.Levels
                     if (potentialEnemy.IsAnySquadShipWithinRange(target)) // if any ship in the target squad is within the range of another of its allies (the potential enemy)
                     {
                         _enemies.Add(potentialEnemy);
+                        Debug.LogWarning($"We added a potential enemy of type {potentialEnemy.ShipType} against target {target}");
                     }
                     else if (potentialEnemy.Squad.IsAnySquadShipWithinRangeOfAnyOfOurSquadShips(this)) // if the squad is within the range of the potential enemy
                     {
                         _enemies.Add(potentialEnemy);
+                        Debug.LogWarning($"We added a potential enemy of type {potentialEnemy.ShipType} against target {target}");
                     }
                 }
             }
@@ -677,9 +679,9 @@ namespace Assets.Scripts.Levels
         public void MakeMatchupStrat()
         {
             // Can't get any invisible ship types and start by blocking the visible ship types too
-            _banned = ConfigData.Configuration.AllShipTypes.ToHashSet();
+            _banned = ConfigData.Configuration.AllShipTypes;
 
-            if (ConfigData.Configuration.UserSide == ConfigData.Configuration.BeeSide)
+            if (Side == ConfigData.Configuration.BeeSide)
             {
                 // if you're the bees you can only get available human ship types
                 _enemyShips = Level.State.GetHumanShipTypes();
@@ -693,6 +695,7 @@ namespace Assets.Scripts.Levels
             }
 
             _bannedTypes = _banned.Select((ship) => $"Type {(Utilities.ConvertShipTypeToCharacter[ship])}").ToArray();
+            //Debug.Log($"Making matchup strategy for {Name} and the following ships are banned: {Utilities.ListToString(_banned.ToList())}");
 
             ConfigData.Socket.SendRequest(new MatchupStrategyRequest(new GetMatchupStrategy(AddToMatchup(GetShips()), OpponentId, _bannedTypes),
                 this, Level, ConfigData.StandardMaxTimeOnQueue));

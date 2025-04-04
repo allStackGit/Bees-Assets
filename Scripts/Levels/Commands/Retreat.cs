@@ -43,7 +43,7 @@ namespace Assets.Scripts.Levels.Commands
                 }
                 else
                 {
-                    _delayedSetFinalizeTimer.Reuse(3, DelaySetFinalize);
+                    _delayedSetFinalizeTimer.Reuse(5, DelaySetFinalize);
                     Level.AddTimer(_delayedSetFinalizeTimer);
                     //Invoke(nameof(DelaySetFinalize), 3f);
                 }

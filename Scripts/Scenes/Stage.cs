@@ -313,7 +313,7 @@ public class Stage : Scene
     public Dictionary<(int, int), Pathfinder.Grid> PathfinderGrids = new Dictionary<(int, int), Pathfinder.Grid>();
 
 
-    public int __HivemindCommands, __LevelTimeouts, __TotalShips, __LevelCompletes;
+    public int __HivemindCommands, __LevelTimeouts, __TotalShips, __LevelCompletes, __Grids;
     // DEBUG VARIABLES
     public static int __TotalRequests;
     public static double __TotalLatency, __AverageLatency, __TotalLength, __AverageLength;
@@ -327,7 +327,7 @@ public class Stage : Scene
         __TotalLength = ConfigData.__TotalLength;
         __AverageLength = ConfigData.__AverageLength;
         __TotalShips = Levels.Sum((l) => l.State.Ships.Count);
-
+        __Grids = PathfinderGrids.Count;
         
     }
 

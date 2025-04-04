@@ -248,7 +248,7 @@ namespace Assets.Scripts.Levels
             }
 
             // This currently has an override (the " && false" at the end) to prevent reinforcements
-            if ((CurrentLevelOptions.EnemyReinforcementsOption == -1 && Utilities.CoinToss()) || CurrentLevelOptions.EnemyReinforcementsOption == 1 && false)
+            if (((CurrentLevelOptions.EnemyReinforcementsOption == -1 && Utilities.CoinToss()) || CurrentLevelOptions.EnemyReinforcementsOption == 1) && false)
             {
                 ActivateLoadingShipsMidLevel = true;
 
@@ -998,7 +998,14 @@ namespace Assets.Scripts.Levels
                 //InvokeRepeating(nameof(SetLocationHistory), .5f, .5f);
                 
                 SpawnObstacles();
-                Pathfinder = new Pathfinder(this);
+                if (Pathfinder != null)
+                {
+                    Pathfinder.Setup();
+                }
+                else
+                {
+                    Pathfinder = new Pathfinder(this);
+                }
 
             }
         }

@@ -2,16 +2,11 @@
 using Newtonsoft.Json;
 using System.Collections.Generic;
 using System.Linq;
-using Assets.Scripts.Scenes;
 using Assets.Scripts.Data;
 using Assets.Scripts.Levels;
 using Assets.Scripts.Levels.Commands;
-
-
-using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
 using System;
-using UnityEditor.VersionControl;
 
 namespace Assets.Scripts.Server
 {
@@ -613,10 +608,10 @@ namespace Assets.Scripts.Server
 
                     _handleMatchupResponse_squad.MakeMatchupAndGetCommand(_handleMatchupResponse_targetSquad);
                 }
-                //else
-                //{
-                //    Debug.LogWarning($"Matchup strategy #{_handleMatchupResponse_matchupResponse.OutcomeId} was received for squad #{_handleMatchupResponse_matchupResponse.SquadHash}, but the squad no longer exists.");
-                //}
+                else
+                {
+                    //Debug.LogWarning($"Matchup strategy #{_handleMatchupResponse_matchupResponse.OutcomeId} was received for squad #{_handleMatchupResponse_matchupResponse.SquadHash}, but the squad no longer exists.");
+                }
             }
             else
             {
@@ -924,7 +919,7 @@ namespace Assets.Scripts.Server
         {
             // Get standing request
             _setupLevelResponse = JsonUtility.FromJson<SetupLevelResponse>(message);
-            handleSetupLevelResponseStandingRequest = (ReconnectLevelRequest)GetStandingRequest(_setupLevelResponse.Hash);
+            handleReconnectLevelResponseStandingRequest = (ReconnectLevelRequest)GetStandingRequest(_setupLevelResponse.Hash);
 
             if (handleReconnectLevelResponseStandingRequest != null)
             {

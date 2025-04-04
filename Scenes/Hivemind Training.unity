@@ -7862,7 +7862,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: GeneratedSquadCountMinimum
-      value: 0
+      value: 12
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: GeneratedSquadCountOverride
@@ -7970,7 +7970,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: OverrideHumanShipTypes.Array.data[0]
-      value: 5
+      value: 6
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: OverrideHumanShipTypes.Array.data[1]

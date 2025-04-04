@@ -23,12 +23,6 @@ namespace Assets.Scripts.Levels
 
         public const int DIAGONAL_COST = 14;
         public const int HORIZONTAL_COST = 10;
-        public List<MapNode> UncheckedNodes;
-        public HashSet<MapNode> UncheckedNodesSet;
-        public HashSet<MapNode> CheckedNodes = new HashSet<MapNode>();
-        public List<MapNode> ResettableNodes;
-        public HashSet<Path> PathCache = new HashSet<Path>();
-        public HashSet<Vector2Int> FreeAreas = new HashSet<Vector2Int>();
         public const float TimeLimit = 5f;
         public int DebugLoops = 0;
         public int MaxLoopsPerFrame = 1000;
@@ -45,13 +39,13 @@ namespace Assets.Scripts.Levels
 
         public Pathfinder(Level level)
         {
-            Setup(level);
+            Level = level;
+            Setup();
 
         }
 
-        public void Setup(Level level)
+        public void Setup()
         {
-            Level = level;
             Width = (int)Math.Ceiling((double)Level.MapWidth / Scale);
             Height = (int)Math.Ceiling((double)Level.MapHeight / Scale);
             HalfWidth = (int)Math.Ceiling((double)Level.HalfMapWidth / Scale);
@@ -365,17 +359,14 @@ namespace Assets.Scripts.Levels
             //Debug.Log($"Loading pathfinder map at {Scale}x");
             // initialize everything as open space
 
-            if (_grid == null)
+            if (!Level.Stage.PathfinderGrids.ContainsKey((Width, Height)))
             {
-                if (!Level.Stage.PathfinderGrids.ContainsKey((Width, Height)))
-                {
-                    _grid = new Grid(Width, Height, this);
-                    Level.Stage.PathfinderGrids.Add((Width, Height), _grid);
-                }
-                else
-                {
-                    _grid = Level.Stage.PathfinderGrids.GetValueOrDefault((Width, Height));
-                }
+                _grid = new Grid(Width, Height, this);
+                Level.Stage.PathfinderGrids.Add((Width, Height), _grid);
+            }
+            else
+            {
+                _grid = Level.Stage.PathfinderGrids.GetValueOrDefault((Width, Height));
             }
 
 

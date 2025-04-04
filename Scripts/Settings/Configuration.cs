@@ -197,7 +197,8 @@ namespace Assets.Scripts.Settings
 
             VisibleShipTypes = new HashSet<ConfigData.ShipTypes>(VisibleHumanShipTypes.Union(VisibleBeeShipTypes));
             InvisibleShipTypes = new HashSet<ConfigData.ShipTypes>(InvisibleHumanShipTypes.Union(VisibleBeeShipTypes));
-            AllShipTypes = new HashSet<ConfigData.ShipTypes>(InvisibleBeeShipTypes.Union(VisibleShipTypes).Union(InvisibleShipTypes));
+            AllShipTypes = new HashSet<ConfigData.ShipTypes>(InvisibleBeeShipTypes.Union(VisibleShipTypes).Union(InvisibleShipTypes).Union(VisibleBeeShipTypes).
+                Union(new HashSet<ConfigData.ShipTypes>() { ConfigData.ShipTypes.Beacon, ConfigData.ShipTypes.Drone, ConfigData.ShipTypes.Striker }));
 
             ConfigData.BeeShipTypes = VisibleBeeShipTypes;
             ConfigData.HumanShipTypes = VisibleHumanShipTypes;
