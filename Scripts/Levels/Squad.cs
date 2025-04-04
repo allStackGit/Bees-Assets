@@ -606,12 +606,7 @@ namespace Assets.Scripts.Levels
             {
                 if (!potentialEnemy.Squad == target && _enemies.Count <= 64)
                 {
-                    if (potentialEnemy.IsAnySquadShipWithinRange(target)) // if any ship in the target squad is within the range of another of its allies (the potential enemy)
-                    {
-                        _enemies.Add(potentialEnemy);
-                        Debug.LogWarning($"We added a potential enemy of type {potentialEnemy.ShipType} against target {target}");
-                    }
-                    else if (potentialEnemy.Squad.IsAnySquadShipWithinRangeOfAnyOfOurSquadShips(this)) // if the squad is within the range of the potential enemy
+                    if (potentialEnemy.IsAnySquadShipWithinRange(this)) // if the squad is within the range of the potential enemy
                     {
                         _enemies.Add(potentialEnemy);
                         Debug.LogWarning($"We added a potential enemy of type {potentialEnemy.ShipType} against target {target}");
@@ -1173,9 +1168,14 @@ namespace Assets.Scripts.Levels
             }
             return false;
         }
-        public bool IsAnySquadShipWithinRangeOfAnyOfOurSquadShips(Squad squad)
+        /// <summary>
+        /// Loops through every ship in our squad and checks if any ship in the enemy squad is within range
+        /// </summary>
+        /// <param name="squad"></param>
+        /// <returns></returns>
+        public bool IsAnySquadShipWithinRangeOfAnyOfOurSquadShips(Squad enemy)
         {
-            return GetShips().Any((ship) => ship.IsAnySquadShipWithinRange(squad));
+            return GetShips().Any((ship) => ship.IsAnySquadShipWithinRange(enemy));
         }
         public bool IsAnySquadShipWithinRangeOfAllOfOurSquadShips(Squad squad)
         {

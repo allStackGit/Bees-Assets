@@ -2206,9 +2206,14 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
         private int _index;
         private List<Ship> _tempShips;
-        public bool IsAnySquadShipWithinRange(Squad squad)
+        /// <summary>
+        /// Loops through every ship in the enemy squad and checks if it's within range of this ship
+        /// </summary>
+        /// <param name="squad"></param>
+        /// <returns></returns>
+        public bool IsAnySquadShipWithinRange(Squad enemy)
         {
-            _tempShips = squad.GetShips();
+            _tempShips = enemy.GetShips();
             for (_index = 0; _index < _tempShips.Count; _index++)
             {
                 if (IsShipWithinRange(_tempShips[_index]))
