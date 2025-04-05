@@ -97,7 +97,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 {
                     _beam.SpriteRenderer.color = Ship.Squad.Color;
                 }
-                else
+                else if (!Stage.IsTraining)
                 {
                     _beam.SpriteRenderer.color = Color.white;
                 }

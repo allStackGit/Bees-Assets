@@ -33,10 +33,14 @@ namespace Assets.Scripts.Entities.Ships
             //{
             //    Debug.LogError($"Queen Property [MinionCount] (MinionCount) cannot be greater than [_maxMinionsPerSquad] ({_maxMinionsPerSquad})");
             //}
-            QueenExplosionAnimation = ShipExplosion.GetComponentInChildren<QueenExplosionAnimation>();
-            QueenExplosionAnimation.Queen = this;
-            QueenExplosionAnimation.Remains = ShipRemains;
-            HasRemainsShip = false;
+            if (!Stage.IsTraining)
+            {
+                QueenExplosionAnimation = ShipExplosion.GetComponentInChildren<QueenExplosionAnimation>();
+                QueenExplosionAnimation.Queen = this;
+                QueenExplosionAnimation.Remains = ShipRemains;
+                HasRemainsShip = false;
+            }
+
             RotationSpeed = Speed * ConfigData.Configuration.RotationMultiplier / 4;
         }
         public override void Setup(Level level, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
