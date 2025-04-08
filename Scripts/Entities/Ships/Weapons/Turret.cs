@@ -77,7 +77,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             base.Setup();
             if (Ship.IsUserControlled)
             {
-                TargetingMarker.transform.SetParent(Level.Map.transform);
+                TargetingMarker.transform.SetParent(Level.Map.Transform);
                 TargetingMarker.name = $"{Name}'s Targeting Marker";
             }
             if (RateOfFire > 0)
@@ -426,12 +426,12 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public override Vector2 GetPosition()
         {
             //Debug.Log($"Turret piece has position of {Piece.transform.position}, local position of {Piece.transform.localPosition}, and " +
-                //$"inverseTransform position of {Ship.Level.Map.transform.InverseTransformPoint(Piece.transform.position)}. Local+Ship: {Ship.GetPosition()+(Vector2)Piece.transform.localPosition}");
+                //$"inverseTransform position of {Ship.Level.Map.Transform.InverseTransformPoint(Piece.transform.position)}. Local+Ship: {Ship.GetPosition()+(Vector2)Piece.transform.localPosition}");
             
-            return Ship.Level.Map.transform.InverseTransformPoint(PieceTransform.position);
+            return Ship.Level.Map.Transform.InverseTransformPoint(PieceTransform.position);
             //try
             //{
-            //    return Ship.Level.Map.transform.InverseTransformPoint(Piece.transform.position);
+            //    return Ship.Level.Map.Transform.InverseTransformPoint(Piece.transform.position);
             //}
             //catch (Exception e)
             //{

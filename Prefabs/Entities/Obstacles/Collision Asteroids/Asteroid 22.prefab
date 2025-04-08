@@ -56,6 +56,14 @@ PrefabInstance:
       propertyPath: HasCrackedSprite
       value: 1
       objectReference: {fileID: 0}
+    - target: {fileID: 2520248311329120408, guid: c56c01c11c9ad6a4aa3c7694969bdc5b, type: 3}
+      propertyPath: ExplosionAnimation
+      value: 
+      objectReference: {fileID: 5579092777274668033, guid: 00265052860af3d42b5daab02dd91637, type: 3}
+    - target: {fileID: 2520248311329120408, guid: c56c01c11c9ad6a4aa3c7694969bdc5b, type: 3}
+      propertyPath: HasCollisionAnimation
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 3873131917324500913, guid: c56c01c11c9ad6a4aa3c7694969bdc5b, type: 3}
       propertyPath: m_IsTrigger
       value: 1

@@ -673,7 +673,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             {
                 if (IsMobile)
                 {
-                    MovementMarker.transform.SetParent(Level.Map.transform);
+                    MovementMarker.transform.SetParent(Level.Map.Transform);
                     MovementMarker.name = $"{Name}'s Movement Marker";
 
                     if (Squad.HasCustomColor)
@@ -2407,7 +2407,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         {
             if (!Stage.IsTraining)
             {
-                ShipExplosion.transform.parent = Level.Map.transform;
+                ShipExplosion.transform.parent = Level.Map.Transform;
                 ShipExplosion.transform.localPosition = GetPosition();
                 ShipExplosion.transform.eulerAngles = Vector3.forward * Rotation;
                 ShipExplosion.SetActive(true);

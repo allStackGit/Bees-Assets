@@ -602,7 +602,7 @@ namespace Assets.Scripts.Levels
                     Debug.LogError($"Tried to instanstiate a ship type ({type}) that doesn't exist");
                     break;
             }
-            ship.transform.SetParent(Level.Map.transform);
+            ship.transform.SetParent(Level.Map.Transform);
             return ship;
         }
     }

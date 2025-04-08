@@ -30,7 +30,7 @@ namespace Assets.Scripts.Entities.Ships
         public void Setup()
         {
             name = $"Remains - {Ship.Name}"; // [debug] not necessary for anything else
-            Transform.parent = Ship.Level.Map.transform;
+            Transform.parent = Ship.Level.Map.Transform;
 
             if (HasAnimationController && Ship.Squad.HasCustomColor)
             {

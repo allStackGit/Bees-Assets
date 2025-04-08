@@ -37,7 +37,7 @@ namespace Assets.Scripts.Entities.Ships
         private ScaledTimer _shrinkVisionTimer = new ScaledTimer();
         public void Kill(float initialDelay)
         {
-            Transform.SetParent(Ship.Level.Map.transform);
+            Transform.SetParent(Ship.Level.Map.Transform);
             _shrinkVisionTimer.Reuse(.1f, ShrinkVision, true);
             _shrinkVisionStartTimer.Reuse(initialDelay, () =>
             {

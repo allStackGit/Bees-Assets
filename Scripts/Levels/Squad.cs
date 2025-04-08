@@ -201,7 +201,7 @@ namespace Assets.Scripts.Levels
                 //Debug.Log($"Squad: {Name}, Side: {Side}, HiveMindControlled: {IsHiveMindControlled}, Has Brain: {HasBrain}");
             }
 
-            transform.parent = Level.Map.transform;
+            transform.parent = Level.Map.Transform;
 
             if (IsUserControlled)
             {
@@ -234,7 +234,7 @@ namespace Assets.Scripts.Levels
                     SquadBox = Instantiate(Stage.Prefabs.SquadBoxPrefab, Vector2.zero, Quaternion.identity);
                     HasSquadBox = true;
                 }
-                SquadBox.transform.parent = Level.Map.transform;
+                SquadBox.transform.parent = Level.Map.Transform;
                 SquadBox.SetActive(false);
                 SquadBox.name = $"{Name} - Squadbox"; // [note] [testing] Only used for testing
             }

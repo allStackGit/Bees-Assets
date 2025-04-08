@@ -1,0 +1,713 @@
+fileFormatVersion: 2
+guid: 104d1057f8fe9014085d66364fbb133d
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: -644308810190776403
+    second: 1743890451042_0
+  - first:
+      213: 7211357837017794231
+    second: 1743890451042_1
+  - first:
+      213: -7627580242528900157
+    second: 1743890451042_2
+  - first:
+      213: 4132866783048112481
+    second: 1743890451042_3
+  - first:
+      213: 7470435459115865377
+    second: 1743890451042_4
+  - first:
+      213: -6644586706827726888
+    second: 1743890451042_5
+  - first:
+      213: -6373421775362484934
+    second: 1743890451042_6
+  - first:
+      213: -6404349739024596952
+    second: 1743890451042_7
+  - first:
+      213: 8837188750877806283
+    second: 1743890451042_8
+  - first:
+      213: -3850449394338764932
+    second: 1743890451042_9
+  - first:
+      213: 2414348483088662176
+    second: 1743890451042_10
+  - first:
+      213: -4084606384612822287
+    second: 1743890451042_11
+  - first:
+      213: 8996594593914783024
+    second: 1743890451042_12
+  - first:
+      213: 1526270125792159238
+    second: 1743890451042_13
+  - first:
+      213: 3413664387217213643
+    second: 1743890451042_14
+  - first:
+      213: -277092965602636414
+    second: 1743890451042_15
+  - first:
+      213: 7549170493574714364
+    second: 1743890451042_16
+  - first:
+      213: 6609243564480581133
+    second: 1743890451042_17
+  - first:
+      213: 5688566091059872212
+    second: 1743890451042_18
+  - first:
+      213: -2638530093854646071
+    second: 1743890451042_19
+  - first:
+      213: 6143236937764412341
+    second: 1743890451042_20
+  - first:
+      213: -3201120561051444940
+    second: 1743890451042_21
+  - first:
+      213: 6999431804993329313
+    second: 1743890451042_22
+  - first:
+      213: -8330506072313761942
+    second: 1743890451042_23
+  - first:
+      213: 6223141627636628601
+    second: 1743890451042_24
+  - first:
+      213: 7815838665884017336
+    second: 1743890451042_25
+  - first:
+      213: -3174969546785053507
+    second: 1743890451042_26
+  - first:
+      213: -40519264010221106
+    second: 1743890451042_27
+  - first:
+      213: -4481636640021775200
+    second: 1743890451042_28
+  - first:
+      213: -9202750300275771541
+    second: 1743890451042_29
+  - first:
+      213: 1221159003943747462
+    second: 1743890451042_30
+  - first:
+      213: -471362608811063087
+    second: 1743890451042_31
+  - first:
+      213: 3297735198570932459
+    second: 1743890451042_32
+  - first:
+      213: -5578415228507230629
+    second: 1743890451042_33
+  - first:
+      213: 4996028960993583242
+    second: 1743890451042_34
+  - first:
+      213: 1264174384091344777
+    second: 1743890451042_35
+  - first:
+      213: 2755090749540229613
+    second: 1743890451042_36
+  - first:
+      213: 9065046985649534554
+    second: 1743890451042_37
+  - first:
+      213: 4393858664737059828
+    second: 1743890451042_38
+  - first:
+      213: 3036142058294315407
+    second: 1743890451042_39
+  - first:
+      213: 3714818154611982819
+    second: 1743890451042_40
+  - first:
+      213: 4971875648830589687
+    second: 1743890451042_41
+  - first:
+      213: -8352236756289411209
+    second: 1743890451042_42
+  - first:
+      213: 1439494554666802764
+    second: 1743890451042_43
+  - first:
+      213: -5522301273241806936
+    second: 1743890451042_44
+  - first:
+      213: 3048517144939147003
+    second: 1743890451042_45
+  - first:
+      213: 4006385147640852420
+    second: 1743890451042_46
+  - first:
+      213: -4854193405411639948
+    second: 1743890451042_47
+  - first:
+      213: -4131630728103229875
+    second: 1743890451042_48
+  - first:
+      213: -446030909938843101
+    second: 1743890451042_49
+  - first:
+      213: -7767003006940101019
+    second: 1743890451042_50
+  - first:
+      213: 4078564547031856710
+    second: 1743890451042_51
+  - first:
+      213: 1187366791077673016
+    second: 1743890451042_52
+  - first:
+      213: 6617126689116631221
+    second: 1743890451042_53
+  - first:
+      213: 763047303743411692
+    second: 1743890451042_54
+  - first:
+      213: -4281861349474816882
+    second: 1743890451042_55
+  - first:
+      213: -2934827607391168028
+    second: 1743890451042_56
+  - first:
+      213: 2084458713978461557
+    second: 1743890451042_57
+  - first:
+      213: -3414025564418037506
+    second: 1743890451042_58
+  - first:
+      213: -9045716011576111138
+    second: 1743890451042_59
+  - first:
+      213: 5885346704271983525
+    second: 1743890451042_60
+  - first:
+      213: -8154373649982418750
+    second: 1743890451042_61
+  - first:
+      213: -2803130614650989234
+    second: 1743890451042_62
+  - first:
+      213: 1716463310830416131
+    second: 1743890451042_63
+  - first:
+      213: -3680829938125830526
+    second: 1743890451042_64
+  - first:
+      213: -7592935119118879911
+    second: 1743890451042_65
+  - first:
+      213: -8722250168714736789
+    second: 1743890451042_66
+  - first:
+      213: -3512669914284224230
+    second: 1743890451042_67
+  - first:
+      213: 6923231919195295831
+    second: 1743890451042_68
+  - first:
+      213: -7806539099340999544
+    second: 1743890451042_69
+  - first:
+      213: -9026599993549724640
+    second: 1743890451042_70
+  - first:
+      213: 4289946733945085461
+    second: 1743890451042_71
+  - first:
+      213: 6580052803637257756
+    second: 1743890451042_72
+  - first:
+      213: 7040870981545001980
+    second: 1743890451042_73
+  - first:
+      213: 5328958030349416069
+    second: 1743890451042_74
+  - first:
+      213: 1030000315845314243
+    second: 1743890451042_75
+  - first:
+      213: -2695376212204950266
+    second: 1743890451042_76
+  - first:
+      213: 1666310760941225560
+    second: 1743890451042_77
+  - first:
+      213: -2335079340590613738
+    second: 1743890451042_78
+  - first:
+      213: -1877569413921137884
+    second: 1743890451042_79
+  - first:
+      213: -7161721137591703932
+    second: 1743890451042_80
+  - first:
+      213: 8674587236978052788
+    second: 1743890451042_81
+  - first:
+      213: 4100323681763085188
+    second: 1743890451042_82
+  - first:
+      213: 8077240867266116370
+    second: 1743890451042_83
+  - first:
+      213: -7289715819148890760
+    second: 1743890451042_84
+  - first:
+      213: 1147227900257162674
+    second: 1743890451042_85
+  - first:
+      213: 4476967624680502652
+    second: 1743890451042_86
+  - first:
+      213: -6888621616721034497
+    second: 1743890451042_87
+  - first:
+      213: 6643865521438691844
+    second: 1743890451042_88
+  - first:
+      213: -7310986346450728313
+    second: 1743890451042_89
+  - first:
+      213: 8989225823767399479
+    second: 1743890451042_90
+  - first:
+      213: 5960105258426738694
+    second: 1743890451042_91
+  - first:
+      213: 607801002821986153
+    second: 1743890451042_92
+  - first:
+      213: -5316389346595224202
+    second: 1743890451042_93
+  - first:
+      213: 4317636269035937429
+    second: 1743890451042_94
+  - first:
+      213: -5924336155472629775
+    second: 1743890451042_95
+  - first:
+      213: -2962249478950504315
+    second: 1743890451042_96
+  - first:
+      213: 8560902832635727397
+    second: 1743890451042_97
+  - first:
+      213: 5396388487432617717
+    second: 1743890451042_98
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 8
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 1024
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: Huge Asteroid Explosion 1_0
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 750
+        width: 250
+        height: 250
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: d68526eb20d8c974b90dba416595f77c
+      internalID: 856983506
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Huge Asteroid Explosion 1_1
+      rect:
+        serializedVersion: 2
+        x: 250
+        y: 750
+        width: 250
+        height: 250
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: f16b7e0fc52c973478da24a4996a5e84
+      internalID: -1487617107
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Huge Asteroid Explosion 1_2
+      rect:
+        serializedVersion: 2
+        x: 500
+        y: 750
+        width: 250
+        height: 250
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 0bd2db6f1369e2f4897fcde00310e862
+      internalID: 1511083617
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Huge Asteroid Explosion 1_3
+      rect:
+        serializedVersion: 2
+        x: 750
+        y: 750
+        width: 250
+        height: 250
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: dc80ae0840ca8314da3a7ccb2add6de8
+      internalID: 1754992502
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Huge Asteroid Explosion 1_4
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 500
+        width: 250
+        height: 250
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: cc619e8a5c09a634492951ad96bfe5d6
+      internalID: -880957836
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Huge Asteroid Explosion 1_5
+      rect:
+        serializedVersion: 2
+        x: 250
+        y: 500
+        width: 250
+        height: 250
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 03173fb6fe56abf49b5789638e48aa87
+      internalID: 1668646602
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Huge Asteroid Explosion 1_6
+      rect:
+        serializedVersion: 2
+        x: 500
+        y: 500
+        width: 250
+        height: 250
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: a1bb6fe165fe87a42929e7065f2e7003
+      internalID: 1530097563
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Huge Asteroid Explosion 1_7
+      rect:
+        serializedVersion: 2
+        x: 750
+        y: 500
+        width: 250
+        height: 250
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 4d08e458d9874754d91858a1cfa0c674
+      internalID: -1593761724
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Huge Asteroid Explosion 1_8
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 250
+        width: 250
+        height: 250
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 2a51ba6bc08b09a4d953c71380e906bd
+      internalID: 2043252303
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Huge Asteroid Explosion 1_9
+      rect:
+        serializedVersion: 2
+        x: 250
+        y: 250
+        width: 250
+        height: 250
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 389deebcc12f3a84db14f7d5df573db4
+      internalID: -1286961881
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Huge Asteroid Explosion 1_10
+      rect:
+        serializedVersion: 2
+        x: 500
+        y: 250
+        width: 250
+        height: 250
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 15dc0f5e5eefe874fad37e048d1dfa1e
+      internalID: -1895477485
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Huge Asteroid Explosion 1_11
+      rect:
+        serializedVersion: 2
+        x: 750
+        y: 250
+        width: 250
+        height: 250
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: ece651740fcad4242b14c7b81e3c9eb3
+      internalID: -277204307
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Huge Asteroid Explosion 1_12
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 0
+        width: 250
+        height: 250
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: d5358c1fb1cc0054a9a062600ec76e67
+      internalID: -492856768
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 6ea2e8ae17c13e0448acea537b2c2e7b
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
+    nameFileIdTable:
+      Huge Asteroid Explosion 1_0: 856983506
+      Huge Asteroid Explosion 1_1: -1487617107
+      Huge Asteroid Explosion 1_10: -1895477485
+      Huge Asteroid Explosion 1_11: -277204307
+      Huge Asteroid Explosion 1_12: -492856768
+      Huge Asteroid Explosion 1_2: 1511083617
+      Huge Asteroid Explosion 1_3: 1754992502
+      Huge Asteroid Explosion 1_4: -880957836
+      Huge Asteroid Explosion 1_5: 1668646602
+      Huge Asteroid Explosion 1_6: 1530097563
+      Huge Asteroid Explosion 1_7: -1593761724
+      Huge Asteroid Explosion 1_8: 2043252303
+      Huge Asteroid Explosion 1_9: -1286961881
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

@@ -151,7 +151,6 @@ namespace Assets.Scripts.Levels.Commands
                     Tsv += _tsvDifference;
 
                     _ship.UpdateHealthBar();
-                    _ship.IsCeaseFire = true;
                 }
                 else
                 {
@@ -170,7 +169,6 @@ namespace Assets.Scripts.Levels.Commands
             for (_index = 0; _index < ShipsHealing.Count; _index++)
             {
                 _ship = ShipsHealing[_index];
-                _ship.IsCeaseFire = false;
                 _shipsAndBeehives[_ship.Id].ShipsHealingHere.Remove(_ship);
             }
             for (_index = 0; _index < ShipsWaitingToHeal.Count; _index++)

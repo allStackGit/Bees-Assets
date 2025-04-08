@@ -1117,6 +1117,10 @@ namespace Assets.Scripts.Levels
                     {
                         ((MiningAsteroid)_save_obstacles[_save_i]).Kill(true);
                     }
+                    else if (_save_obstacles[_save_i].ObstacleType == ConfigData.ObstacleTypes.AsteroidPiece)
+                    {
+                        ((AsteroidPiece)_save_obstacles[_save_i]).Kill();
+                    }
                     else
                     {
                         Debug.LogError($"{_save_obstacles[_save_i].Name} does not have valid obstacle type: {_save_obstacles[_save_i].ObstacleType}");

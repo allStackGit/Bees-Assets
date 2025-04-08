@@ -7645,7 +7645,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: TimeoutTime
-      value: 2400
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: VisonSprite
@@ -7657,7 +7657,7 @@ PrefabInstance:
       objectReference: {fileID: 2108627698}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: UnlockCamera
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: ActivateAudio
@@ -7701,11 +7701,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: OverrideTimeScale
-      value: 4
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: UseMouseScrolling
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: IsTrainingHiveMind
@@ -7745,7 +7745,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: DoesUserHaveController
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: MiniMapCameraContainer
@@ -7877,7 +7877,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: GeneratedSquadCountOverride
-      value: 16
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: 'OverrideStrats.Array.data[0]'
@@ -16178,8 +16178,42 @@ MonoBehaviour:
   - {fileID: 2899863341814993073, guid: d0ac82fd3cc850c4bb430360b3efb597, type: 3}
   - {fileID: 2899863341814993073, guid: 44a41557357e0bf46b67f03efeee9492, type: 3}
   - {fileID: 2899863341814993073, guid: a2cbb974f155b164cb4df7c96f9fd59b, type: 3}
-  BreakawayAsteroids: []
-  AsteroidPieces: []
+  - {fileID: 2899863341814993073, guid: 959f7ee1663879f41890a2eaec95febf, type: 3}
+  - {fileID: 2899863341814993073, guid: d896cfe2eebad054283bad59f97d708b, type: 3}
+  - {fileID: 2899863341814993073, guid: 452e8de590401684f8d6be04d2482610, type: 3}
+  BreakawayAsteroids:
+  - {fileID: 226534545502904114, guid: c56c01c11c9ad6a4aa3c7694969bdc5b, type: 3}
+  - {fileID: 439529657869320101, guid: fd259f1b80ec2cb4ab265509be0d9310, type: 3}
+  - {fileID: 4975317520758011166, guid: d4c09c3b30a0df240804e7d2ae0ce4f1, type: 3}
+  - {fileID: 2899863341814993073, guid: 795ef7f673ee4ad41bd8f30c805518eb, type: 3}
+  - {fileID: 2899863341814993073, guid: 5ba5ea3048392e449830477d46f83e9e, type: 3}
+  - {fileID: 226534545502904114, guid: af099394451a42e4aaf76305d2f2edd2, type: 3}
+  - {fileID: 226534545502904114, guid: 62cfe7f8e6b98f743bf30a2fc30ccd57, type: 3}
+  - {fileID: 226534545502904114, guid: c547cdd7e5d321744aa47a8fe890691f, type: 3}
+  - {fileID: 226534545502904114, guid: dc1cb0ca67bdac6408a1a899f52b5b00, type: 3}
+  - {fileID: 226534545502904114, guid: 7d7978a7f82873d4991a528034d573d5, type: 3}
+  - {fileID: 226534545502904114, guid: 570030df691a39d4db43bdeadfef55ca, type: 3}
+  - {fileID: 226534545502904114, guid: 982fb12ed47b8754a9764290ad2a57dc, type: 3}
+  - {fileID: 226534545502904114, guid: 412c4c8f7387e4942a3226c94090d5eb, type: 3}
+  AsteroidPieces:
+  - {fileID: 5834262850426636170, guid: 025574b67355cff4c9fbfceba9e179ec, type: 3}
+  - {fileID: 6873589942702282384, guid: 6d16a5fa6f61ad345ad5ddbdd704609b, type: 3}
+  - {fileID: 6873589942702282384, guid: 552f762c269bac443b9dc8665e8e21a0, type: 3}
+  - {fileID: 6873589942702282384, guid: bbd2ec5d7a46d974c81414367772df95, type: 3}
+  - {fileID: 6873589942702282384, guid: 522db00e68bdb6c4490d539866f5bc3c, type: 3}
+  - {fileID: 6873589942702282384, guid: 0e9fca610ea7be348acbcf86f85815e5, type: 3}
+  - {fileID: 6873589942702282384, guid: 0e97ea826fb909647b279c15736529ab, type: 3}
+  - {fileID: 6873589942702282384, guid: 8cd81137168e59c4db78ae831f0556ce, type: 3}
+  - {fileID: 6873589942702282384, guid: 2a7a0540cb3e0c6498002195db3081e3, type: 3}
+  - {fileID: 6873589942702282384, guid: 9e7bf4a7e0521d64887cbe55302de23c, type: 3}
+  - {fileID: 6873589942702282384, guid: aab7be39899e792408fcc54f2802cbc5, type: 3}
+  - {fileID: 6873589942702282384, guid: 2694291dc018cd84a8d8e0465d2e2ded, type: 3}
+  - {fileID: 6873589942702282384, guid: a8ddfc12abea4e5498cf5c0630299852, type: 3}
+  - {fileID: 6873589942702282384, guid: 4d9f2642a6802514893cb6e3071f49a3, type: 3}
+  - {fileID: 6873589942702282384, guid: 04c1507032d332b41851718d89dfb408, type: 3}
+  - {fileID: 6873589942702282384, guid: 04c6c44a44284dc478922bcae3f76a17, type: 3}
+  - {fileID: 6873589942702282384, guid: 4be46b948305b774fb02777e1f53dfe0, type: 3}
+  - {fileID: 6873589942702282384, guid: 07bfb092b7297384297482bd5770d65b, type: 3}
   Maps:
   - {fileID: 7112091651330518199, guid: 43e607b6c99ec5943beee4efcf0751f8, type: 3}
   - {fileID: 7112091651330518199, guid: 16be25bda951f0748a84a8e0caf95b91, type: 3}
@@ -16243,6 +16277,8 @@ MonoBehaviour:
   __ForestObstacleListObjectPoolSize: 0
   __TheWallObstacleListObjectPoolSize: 0
   __CollisionAsteroidPoolSize: 0
+  __CollisionAsteroidShardPoolSize: 0
+  __AsteroidPiecePoolSize: 0
   __MiningAsteroidPoolSize: 0
   __SquadPoolSize: 0
   __CarrierSquadPoolSize: 0
@@ -16889,7 +16925,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 2944892714679254333, guid: e154edb1d8fb554428cdc7380556de19, type: 3}
       propertyPath: orthographic size
-      value: 5500
+      value: 550
       objectReference: {fileID: 0}
     - target: {fileID: 2944892714679254333, guid: e154edb1d8fb554428cdc7380556de19, type: 3}
       propertyPath: m_CullingMask.m_Bits

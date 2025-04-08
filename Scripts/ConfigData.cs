@@ -647,7 +647,6 @@ namespace Assets.Scripts
         public const int MinimumAsteroidSpeed = 2;
         public const int MinimumAsteroidAngularSpeedMultiplier = 5;
         public const int CollisionAsteroidHealthIncrement = 250;
-        public const int CollisionAsteroidKillDelay = 1;
         public const int MaximumTsvValueForSeeingAShip = 20; // [Tsv]
         public const int MinimumTsvValueForSeeingAShip = 1; // [Tsv]
         public const int StandardReinforcementsDelay = 60;

@@ -136,7 +136,7 @@ namespace Assets.Scripts.Entities.Projectiles
                     //Debug.Log($"Beamcannon local position: {Weapon.GetLocalPosition()}");
                     _rotatedLocalPosition = _localRotation * _localCannonPoint;
                     //Vector2 rotatedCannonPosition = (Vector2)Shooter.transform.TransformPoint(rotatedLocalPosition);
-                    //Vector2 rotatedMapPosition = (Vector2)Level.Map.transform.TransformPoint(rotatedLocalPosition);
+                    //Vector2 rotatedMapPosition = (Vector2)Level.Map.Transform.TransformPoint(rotatedLocalPosition);
                     _offsetRotatedCannonPosition = (Vector2)Shooter.transform.TransformPoint(_rotatedLocalPosition) - Level.GetPosition();
                     Angle = _worldAngle * -Mathf.Deg2Rad;
 

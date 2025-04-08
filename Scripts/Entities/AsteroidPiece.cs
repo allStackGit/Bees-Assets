@@ -14,7 +14,7 @@ namespace Assets.Scripts.Entities
         public override void Create(Stage stage)
         {
             base.Create(stage);
-            Speed = (Utilities.RandomInt(Level.Stage.AsteroidMaxSpeed) + ConfigData.MinimumAsteroidSpeed) + 5;
+            Speed = (Utilities.RandomInt(Stage.AsteroidMaxSpeed) + ConfigData.MinimumAsteroidSpeed) + 5;
 
         }
         public override void ClearData()
@@ -25,8 +25,7 @@ namespace Assets.Scripts.Entities
         public void Setup(Level level, CollisionAsteroid parent)
         {
             base.Setup(level);
-
-
+            transform.parent = Level.Map.Transform;
             transform.localPosition = parent.GetPosition();
             transform.localEulerAngles = new Vector3(0, 0, Utilities.RandomInt(360));
 
@@ -37,11 +36,12 @@ namespace Assets.Scripts.Entities
 
             _deathTimer.Reuse(.5f, DeathTimer, true);
             Level.AddTimer(_deathTimer);
+            Level.State.AddObstacle(this);
             //InvokeRepeating(nameof(DeathTimer), 1f, .5f);
         }
         public void DeathTimer()
         {
-            if (HalfSeconds == 10)
+            if (HalfSeconds == 8)
             {
                 Kill();
             }
@@ -59,7 +59,8 @@ namespace Assets.Scripts.Entities
                 IsDead = true;
                 Level.State.RemoveObstacle(this);
                 Level.CancelTimer(_deathTimer);
-                Debug.LogError($"No pool for asteroid pieces");
+                Level.State.AsteroidPiecesToRelease.Add(this);
+                gameObject.SetActive(false);
             }
         }
     }

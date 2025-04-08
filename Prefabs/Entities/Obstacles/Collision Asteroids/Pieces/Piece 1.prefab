@@ -51,6 +51,9 @@ SpriteRenderer:
   m_ReflectionProbeUsage: 1
   m_RayTracingMode: 0
   m_RayTraceProcedural: 0
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
+  m_SmallMeshCulling: 1
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
@@ -103,20 +106,20 @@ MonoBehaviour:
   Id: 0
   MapPointsIndex: 0
   Name: Asteroid Piece
-  IsDead: 0
+  IsDead: 1
   Level: {fileID: 0}
   Stage: {fileID: 0}
   ObstacleType: 4
   Collider: {fileID: 0}
   ProximityCollider: {fileID: 0}
   ClearanceMappingCollider: {fileID: 0}
+  SpriteRenderer: {fileID: 8414330620359745627}
   Body: {fileID: 2677304029482758414}
   Speed: 0
   HalfSeconds: 0
-  SpriteRenderer: {fileID: 8414330620359745627}
 --- !u!50 &2677304029482758414
 Rigidbody2D:
-  serializedVersion: 4
+  serializedVersion: 5
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
@@ -127,8 +130,8 @@ Rigidbody2D:
   m_UseFullKinematicContacts: 0
   m_UseAutoMass: 0
   m_Mass: 1
-  m_LinearDrag: 0
-  m_AngularDrag: 0.05
+  m_LinearDamping: 0
+  m_AngularDamping: 0.05
   m_GravityScale: 1
   m_Material: {fileID: 0}
   m_IncludeLayers:

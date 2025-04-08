@@ -20,6 +20,7 @@ namespace Assets.Scripts.Entities
         public HashSet<CollisionAsteroid> AsteroidsHit = new HashSet<CollisionAsteroid>();
         public CollisionAsteroid LastHitAsteroid;
         public GameObject ExplosionAnimation;
+        public AsteroidExplosionAnimation AsteroidExplosionAnimation;
         public bool HasCollisionAnimation, HasCrackedSprite;
         public bool HasDroppedDestructionAnimation, IsImmune, HasTouchedMapBorder, HasEnteredMap;
         public Sprite OriginalSprite, CrackedSprite;
@@ -35,6 +36,15 @@ namespace Assets.Scripts.Entities
             Health = ConfigData.CollisionAsteroidHealthIncrement * SizeClass;
             base.Create(stage);
             Speed = Utilities.RandomInt(Stage.AsteroidMaxSpeed) + ConfigData.MinimumAsteroidSpeed;
+            if (!Stage.IsTraining && HasCollisionAnimation)
+            {
+                AsteroidExplosionAnimation = Instantiate(ExplosionAnimation, Vector2.zero, Quaternion.identity).GetComponent<AsteroidExplosionAnimation>();
+                AsteroidExplosionAnimation.gameObject.SetActive(false);
+            }
+            else
+            {
+                HasCollisionAnimation = false;
+            }
             //OriginalName = gameObject.name;
 
         }
@@ -43,7 +53,7 @@ namespace Assets.Scripts.Entities
         public override void Setup(Level level)
         {
             base.Setup(level);
-            transform.parent = Level.Map.transform;
+            transform.parent = Level.Map.Transform;
             Level.State.AddObstacle(this);
             MapPointsIndex = Level.Pathfinder.AddObstacle(this);
 
@@ -130,7 +140,7 @@ namespace Assets.Scripts.Entities
 
                 if (Health == 0)
                 {
-                    GotKilledInCollision();
+                    GotKilledInShipCollision();
                     //Invoke(nameof(DelayKill), ConfigData.CollisionAsteroidKillDelay);
                 }
                 else if (CheckForCrackedSprite())
@@ -220,12 +230,44 @@ namespace Assets.Scripts.Entities
                 //Debug.Log($"{ship.Name} is near {Name}");
             }
         }
+        ScaledTimer _collisionAnimation = new ScaledTimer();
+        /// <summary>
+        /// When the asteroid got killed in a collision with another asteroid. This calls the asteroid explosion animation, and spawns the asteroid pieces.
+        /// A little bit later but before the animation finishes, the asteroids are killed
+        /// </summary>
         public void GotKilledInCollision()
         {
-            SpriteRenderer.sprite = CrackedSprite;
+            SwitchToCrackedSprite();
             //IsDelayKilled = true;
-            _delayKillTimer.Reuse(ConfigData.CollisionAsteroidKillDelay, DelayKill);
+
+
+            if (LastHitAsteroid != null && !LastHitAsteroid.HasDroppedDestructionAnimation && SizeClass >= LastHitAsteroid.SizeClass)
+            {
+                HasDroppedDestructionAnimation = true;
+
+                _collisionAnimation.Reuse(.25f, ShowCollisionAnimation);
+                Level.AddTimer(_collisionAnimation);
+                //ShowCollisionAnimation();
+            }
+            _delayKillTimer.Reuse(.35f, DelayKill);
             Level.AddTimer(_delayKillTimer);
+
+        }
+
+        /// <summary>
+        /// Just like got killed in collision except it always spawns the explosion because it didn't hit another asteroid
+        /// </summary>
+        public void GotKilledInShipCollision()
+        {
+            SwitchToCrackedSprite();
+
+            HasDroppedDestructionAnimation = true;
+            _collisionAnimation.Reuse(.25f, ShowCollisionAnimation);
+            Level.AddTimer(_collisionAnimation);
+
+            _delayKillTimer.Reuse(.35f, DelayKill);
+            Level.AddTimer(_delayKillTimer);
+
         }
 
         protected void OnTriggerEnter2D(Collider2D collider)
@@ -296,18 +338,24 @@ namespace Assets.Scripts.Entities
         /// </summary>
         private void ShowCollisionAnimation()
         {
-            if (!Level.Stage.IsTraining && HasCollisionAnimation)
+            if (HasCollisionAnimation)
             {
-                GameObject explosion = Instantiate(ExplosionAnimation, Vector2.zero, Quaternion.identity);
-                explosion.transform.parent = Level.Map.transform;
-                explosion.transform.localPosition = GetPosition();
-                AsteroidExplosionAnimation asteroidExplosionAnimation = explosion.GetComponent<AsteroidExplosionAnimation>();
-                asteroidExplosionAnimation.Asteroid = this;
-                HasDroppedDestructionAnimation = true;
-            }
-            else
-            {
-                Kill(false);
+                //GameObject explosion = Instantiate(ExplosionAnimation, Vector2.zero, Quaternion.identity);
+                //explosion.transform.parent = Level.Map.Transform;
+                //explosion.transform.localPosition = GetPosition();
+                //AsteroidExplosionAnimation asteroidExplosionAnimation = explosion.GetComponent<AsteroidExplosionAnimation>();
+                //asteroidExplosionAnimation.Asteroid = this;
+                //HasDroppedDestructionAnimation = true;
+                Vector2 position = GetPosition();
+                if (LastHitAsteroid != null)
+                {
+                    position -= (position - LastHitAsteroid.GetPosition()) / 2;
+                }
+                AsteroidExplosionAnimation.transform.SetParent(Level.Map.Transform);
+                AsteroidExplosionAnimation.transform.localPosition = position;
+                AsteroidExplosionAnimation.Asteroid = this;
+                AsteroidExplosionAnimation.gameObject.SetActive(true);
+
             }
 
         }
@@ -317,12 +365,17 @@ namespace Assets.Scripts.Entities
             if (!IsDead)
             {
                 IsDead = true;
-                if (!endKill && !HasDroppedDestructionAnimation)
+                if (!endKill)
                 {
-                    NearbyShips.ToList().ForEach((ship) =>
+                    if (!HasDroppedDestructionAnimation)
                     {
-                        ship.LeftNearbyAsteroid(this);
-                    });
+                        NearbyShips.ToList().ForEach((ship) =>
+                        {
+                            ship.LeftNearbyAsteroid(this);
+                        });
+                    }
+                    SpawnBreakAwayAsteroids();
+
                 }
                 Level.State.RemoveObstacle(this);
                 //Debug.Log($"Killing and returning {Name} to the pool");
@@ -341,29 +394,25 @@ namespace Assets.Scripts.Entities
         /// </summary>
         public void SpawnBreakAwayAsteroids()
         {
-            //int asteroidCount = SizeClass < 6 ? 0 : (SizeClass > 6 ? 3 : 2);
-            //int pieceCount = (int) (SizeClass * 1.5f);
+            int asteroidCount = SizeClass < 6 ? 0 : (SizeClass > 6 ? 3 : 2);
+            int pieceCount = (int)(SizeClass * 1.5f);
 
-            ////Debug.Log($"{Name} died and spawned {asteroidCount} asteroids and {pieceCount} pieces");
+            //Debug.Log($"{Name} died and spawned {asteroidCount} asteroids and {pieceCount} pieces");
 
-            //for (int i = 0; i < asteroidCount; i++)
-            //{
-            //    CollisionAsteroid asteroid = Level.AddAsteroid(Instantiate(Level.Stage.Prefabs.BreakawayAsteroids[Utilities.RandomInt(Level.Stage.Prefabs.BreakawayAsteroids.Count)]).GetComponent<CollisionAsteroid>());
-            //    asteroid.transform.localPosition = GetPosition();
-            //    asteroid.Body.angularVelocity = Body.angularVelocity;
-            //    asteroid.HasEnteredMap = true;
+            for (int i = 0; i < asteroidCount; i++)
+            {
+                CollisionAsteroid asteroid = Stage.Pool.GetCollisionAsteroidShardFromPool();
+                asteroid.Setup(Level);
+                asteroid.transform.localPosition = GetPosition();
+                asteroid.Body.angularVelocity = Body.angularVelocity;
+                asteroid.HasEnteredMap = true;
 
-            //}
+            }
 
-            //for (int i = 0; i < pieceCount; i++)
-            //{
-            //    GameObject instance = Instantiate(Level.Stage.Prefabs.AsteroidPieces[Utilities.RandomInt(Level.Stage.Prefabs.AsteroidPieces.Count)]);
-            //    instance.transform.parent = Level.Map.transform;
-            //    AsteroidPiece asteroid = instance.GetComponent<AsteroidPiece>();
-            //    Level.State.AddObstacle(asteroid);
-            //    asteroid.Setup(Level, this);
-
-            //}
+            for (int i = 0; i < pieceCount; i++)
+            {
+                Stage.Pool.GetAsteroidPieceFromPool().Setup(Level, this);
+            }
         }
         //private void FixedUpdate()
         //{

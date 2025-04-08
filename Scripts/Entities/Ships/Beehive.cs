@@ -65,7 +65,7 @@ namespace Assets.Scripts.Entities.Ships
         {
             if (!Stage.IsTraining)
             {
-                ShrinkingAnimation.transform.SetParent(Level.Map.transform);
+                ShrinkingAnimation.transform.SetParent(Level.Map.Transform);
                 ShrinkingAnimation.transform.localPosition = GetPosition();
                 ShrinkingAnimation.SetActive(true);
             }
@@ -73,7 +73,7 @@ namespace Assets.Scripts.Entities.Ships
 
         public void FinalExplosion()
         {
-            ShipExplosion.transform.parent = Level.Map.transform;
+            ShipExplosion.transform.parent = Level.Map.Transform;
             ShipExplosion.transform.localPosition = GetPosition();
             ShipExplosion.SetActive(true);
 

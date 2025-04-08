@@ -75,7 +75,7 @@ namespace Assets.Scripts.Entities.Projectiles
             Name = $"{Shooter.Name}: {Type} - #{Id}";
             gameObject.name = Name;
             StartingPosition = startingPosition;
-            Transform.parent = Level.Map.transform;
+            Transform.parent = Level.Map.Transform;
             Transform.localPosition = StartingPosition;
             IsDead = false;
             Level.State.AddProjectile(this);
@@ -129,7 +129,7 @@ namespace Assets.Scripts.Entities.Projectiles
         {
             if (HasExplosion)
             {
-                Explosion.transform.parent = Level.Map.transform;
+                Explosion.transform.parent = Level.Map.Transform;
                 Explosion.transform.localPosition = GetPosition();
                 Explosion.transform.eulerAngles = Transform.eulerAngles - _reverse;
                 Explosion.SetActive(true);

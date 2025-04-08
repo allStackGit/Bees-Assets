@@ -92,14 +92,15 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 if (_projectileExit.Weapon.Equals(Weapon) && !Weapon.Ship.IsDead && _projectileExit.Type != ConfigData.ProjectileTypes.RocketExplosion)
                 {
                     //Debug.Log($"{Weapon.Ship.Name}'s projectile left it's range!");
-                    if (_projectileExit.Type == ConfigData.ProjectileTypes.Rocket)
-                    {
-                        _projectileExit.KillSequence();
-                    }
-                    else
-                    {
-                        _projectileExit.Kill();
-                    }
+                    //if (_projectileExit.Type == ConfigData.ProjectileTypes.Rocket)
+                    //{
+                    //    _projectileExit.KillSequence();
+                    //}
+                    //else
+                    //{
+                    //    _projectileExit.Kill();
+                    //}
+                    _projectileExit.Kill();
                 }
             }
         }

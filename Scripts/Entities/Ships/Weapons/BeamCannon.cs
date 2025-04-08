@@ -79,7 +79,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
 
 
-                //Vector2 mapTransformPoint = Ship.Level.Map.transform.InverseTransformPoint(Piece.transform.position);
+                //Vector2 mapTransformPoint = Ship.Level.Map.Transform.InverseTransformPoint(Piece.transform.position);
                 //Vector2 shipOffset = Ship.GetPosition() + (Vector2) transform.position;
 
                 //Debug.Log($"Potential spawn point for laser beam, mapTransformPoint: {mapTransformPoint}, shipOffset: {shipOffset}");
@@ -87,7 +87,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 //Projectile beam = Level.AddProjectile(ConfigData.ProjectileTypes.Beam, this, GetPosition(), angle);
 
                 _beam = (LaserBeam) Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.Beam);
-                _beam.Transform.parent = Level.Map.transform;
+                _beam.Transform.parent = Level.Map.Transform;
 
                 //Debug.Log($"Position before setup for {projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
                 _beam.Setup(Level, this, Ship, TargetShip, GetPosition(), AngleToPoint(TargetPoint), Range, Power);

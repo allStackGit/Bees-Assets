@@ -1,0 +1,872 @@
+fileFormatVersion: 2
+guid: 25ee36ff4bc73894eb9f44194e5deb51
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: -169391149098639282
+    second: 1743888645187_0
+  - first:
+      213: 2977916478168475122
+    second: 1743888645187_1
+  - first:
+      213: -4301625310284877484
+    second: 1743888645187_2
+  - first:
+      213: -8420869823875655165
+    second: 1743888645187_3
+  - first:
+      213: -6680934212922125266
+    second: 1743888645187_4
+  - first:
+      213: 4431903462687800644
+    second: 1743888645187_5
+  - first:
+      213: -8142204216625819900
+    second: 1743888645187_6
+  - first:
+      213: 5518950984715959048
+    second: 1743888645187_7
+  - first:
+      213: -4718191441612043870
+    second: 1743888645187_8
+  - first:
+      213: -5114875837471678602
+    second: 1743888645187_9
+  - first:
+      213: -6241488114191856334
+    second: 1743888645187_10
+  - first:
+      213: -66037801907627330
+    second: 1743888645187_11
+  - first:
+      213: 6516827144765653222
+    second: 1743888645187_12
+  - first:
+      213: -2289641197689994282
+    second: 1743888645187_13
+  - first:
+      213: 1349454070450278172
+    second: 1743888645187_14
+  - first:
+      213: -5048800478415682019
+    second: 1743888645187_15
+  - first:
+      213: 1323850076635484278
+    second: 1743888645187_16
+  - first:
+      213: 4975923897437093365
+    second: 1743888645187_17
+  - first:
+      213: 8940502964163914096
+    second: 1743888645187_18
+  - first:
+      213: -8268154251850914298
+    second: 1743888645187_19
+  - first:
+      213: 6040254368650090959
+    second: 1743888645187_20
+  - first:
+      213: -1204354962727523653
+    second: 1743888645187_21
+  - first:
+      213: -1868504154747410780
+    second: 1743888645187_22
+  - first:
+      213: 6718767271212830470
+    second: 1743888645187_23
+  - first:
+      213: -3152576595732906717
+    second: 1743888645187_24
+  - first:
+      213: 5472018556620180984
+    second: 1743888645187_25
+  - first:
+      213: -7857467735908871201
+    second: 1743888645187_26
+  - first:
+      213: 5803981838217207243
+    second: 1743888645187_27
+  - first:
+      213: 4127856762416468988
+    second: 1743888645187_28
+  - first:
+      213: -2189065070537947491
+    second: 1743888645187_29
+  - first:
+      213: -576037124819017197
+    second: 1743888645187_30
+  - first:
+      213: 2917934857406868441
+    second: 1743888645187_31
+  - first:
+      213: 6454872492214198637
+    second: 1743888645187_32
+  - first:
+      213: 2140084937165916002
+    second: 1743888645187_33
+  - first:
+      213: -8234660795129219586
+    second: 1743888645187_34
+  - first:
+      213: 6872740770644469552
+    second: 1743888645187_35
+  - first:
+      213: -8865677352471861170
+    second: 1743888645187_36
+  - first:
+      213: -6652189946081374849
+    second: 1743888645187_37
+  - first:
+      213: 1728802286397111122
+    second: 1743888645187_38
+  - first:
+      213: -3485790059945832933
+    second: 1743888645187_39
+  - first:
+      213: -2354212154112103659
+    second: 1743888645187_40
+  - first:
+      213: 1554589043515037550
+    second: 1743888645187_41
+  - first:
+      213: -4526755423607538191
+    second: 1743888645187_42
+  - first:
+      213: 8543345654402162881
+    second: 1743888645187_43
+  - first:
+      213: -6936615449933576834
+    second: 1743888645187_44
+  - first:
+      213: -7547170237005832573
+    second: 1743888645187_45
+  - first:
+      213: -2578599417716271662
+    second: 1743888645187_46
+  - first:
+      213: 968540669142893944
+    second: 1743888645187_47
+  - first:
+      213: 1817255962875031792
+    second: 1743888645187_48
+  - first:
+      213: -5019273074483580640
+    second: 1743888645187_49
+  - first:
+      213: 7414199572343775163
+    second: 1743888645187_50
+  - first:
+      213: -7401740811483324824
+    second: 1743888645187_51
+  - first:
+      213: 3334452297379535048
+    second: 1743888645187_52
+  - first:
+      213: -337730369508141137
+    second: 1743888645187_53
+  - first:
+      213: 6534356481870850389
+    second: 1743888645187_54
+  - first:
+      213: 6290019671346188926
+    second: 1743888645187_55
+  - first:
+      213: 1613745412950973148
+    second: 1743888645187_56
+  - first:
+      213: -7486126711440973376
+    second: 1743888645187_57
+  - first:
+      213: -476774515552126354
+    second: 1743888645187_58
+  - first:
+      213: -3131839862112339440
+    second: 1743888645187_59
+  - first:
+      213: -8084298126303223844
+    second: 1743888645187_60
+  - first:
+      213: 8799421266529039266
+    second: 1743888645187_61
+  - first:
+      213: -3844965989527401151
+    second: 1743888645187_62
+  - first:
+      213: 5362110174213401641
+    second: 1743888645187_63
+  - first:
+      213: -2476698005441271627
+    second: 1743888645187_64
+  - first:
+      213: -7854113386781036849
+    second: 1743888645187_65
+  - first:
+      213: -3360280968285338261
+    second: 1743888645187_66
+  - first:
+      213: -5254448818870891152
+    second: 1743888645187_67
+  - first:
+      213: 5536797058577968346
+    second: 1743888645187_68
+  - first:
+      213: 6816941694111927784
+    second: 1743888645187_69
+  - first:
+      213: -137243943360917694
+    second: 1743888645187_70
+  - first:
+      213: 1536142611644463267
+    second: 1743888645187_71
+  - first:
+      213: 3102724521846334288
+    second: 1743888645187_72
+  - first:
+      213: 5106956934856041695
+    second: 1743888645187_73
+  - first:
+      213: -9009311583699603702
+    second: 1743888645187_74
+  - first:
+      213: -7823231516949354620
+    second: 1743888645187_75
+  - first:
+      213: 2805823306763232660
+    second: 1743888645187_76
+  - first:
+      213: -3280001359162411635
+    second: 1743888645187_77
+  - first:
+      213: 398847783525045157
+    second: 1743888645187_78
+  - first:
+      213: 3214624948076173398
+    second: 1743888645187_79
+  - first:
+      213: 2064311530773100665
+    second: 1743888645187_80
+  - first:
+      213: 5485949510779366872
+    second: 1743888645187_81
+  - first:
+      213: 4171525243033256639
+    second: 1743888645187_82
+  - first:
+      213: 9213255126520669610
+    second: 1743888645187_83
+  - first:
+      213: -4922112835030699107
+    second: 1743888645187_84
+  - first:
+      213: -2112317251068461440
+    second: 1743888645187_85
+  - first:
+      213: 7337172705643542160
+    second: 1743888645187_86
+  - first:
+      213: -4637174669351592667
+    second: 1743888645187_87
+  - first:
+      213: 6832601124485490039
+    second: 1743888645187_88
+  - first:
+      213: -7710161950669985452
+    second: 1743888645187_89
+  - first:
+      213: -7745222432324089193
+    second: 1743888645187_90
+  - first:
+      213: 5379941631757258373
+    second: 1743888645187_91
+  - first:
+      213: -2460000462146070268
+    second: 1743888645187_92
+  - first:
+      213: 577403176761538299
+    second: 1743888645187_93
+  - first:
+      213: 6595363681878668751
+    second: 1743888645187_94
+  - first:
+      213: 8383552886723418615
+    second: 1743888645187_95
+  - first:
+      213: 4856653742205105634
+    second: 1743888645187_96
+  - first:
+      213: -5312539858465671772
+    second: 1743888645187_97
+  - first:
+      213: -6809175932013115131
+    second: 1743888645187_98
+  - first:
+      213: 7127899634757923302
+    second: 1743888645187_99
+  - first:
+      213: -3056439079256981508
+    second: 1743888645187_100
+  - first:
+      213: -1654677212496963337
+    second: 1743888645187_101
+  - first:
+      213: -2916868762794138157
+    second: 1743888645187_102
+  - first:
+      213: 3686260195896502209
+    second: 1743888645187_103
+  - first:
+      213: -1609805580472468994
+    second: 1743888645187_104
+  - first:
+      213: 5306379823045811086
+    second: 1743888645187_105
+  - first:
+      213: -6965202641731162638
+    second: 1743888645187_106
+  - first:
+      213: -1431149569118164328
+    second: 1743888645187_107
+  - first:
+      213: 4788394149359862471
+    second: 1743888645187_108
+  - first:
+      213: -1437699860744441758
+    second: 1743888645187_109
+  - first:
+      213: -8076919120315409977
+    second: 1743888645187_110
+  - first:
+      213: -5941083896780296861
+    second: 1743888645187_111
+  - first:
+      213: 2075456259779886143
+    second: 1743888645187_112
+  - first:
+      213: 1782502306761195448
+    second: 1743888645187_113
+  - first:
+      213: 1665320521820546577
+    second: 1743888645187_114
+  - first:
+      213: 5636465287025624999
+    second: 1743888645187_115
+  - first:
+      213: 5235749475359454616
+    second: 1743888645187_116
+  - first:
+      213: -3113933085361249618
+    second: 1743888645187_117
+  - first:
+      213: 5407555471769157013
+    second: 1743888645187_118
+  - first:
+      213: -355425466345549809
+    second: 1743888645187_119
+  - first:
+      213: 5849277992565608965
+    second: 1743888645187_120
+  - first:
+      213: -8643407767659303319
+    second: 1743888645187_121
+  - first:
+      213: 656568365284178125
+    second: 1743888645187_122
+  - first:
+      213: -2505044103216436458
+    second: 1743888645187_123
+  - first:
+      213: 7341182375170983063
+    second: 1743888645187_124
+  - first:
+      213: -4509917232309581332
+    second: 1743888645187_125
+  - first:
+      213: 8184856393003383558
+    second: 1743888645187_126
+  - first:
+      213: -1581187994725748454
+    second: 1743888645187_127
+  - first:
+      213: 4124522974999582036
+    second: 1743888645187_128
+  - first:
+      213: -5881129922803640246
+    second: 1743888645187_129
+  - first:
+      213: 4634965716139747934
+    second: 1743888645187_130
+  - first:
+      213: 7011726618784175973
+    second: 1743888645187_131
+  - first:
+      213: -1939960240557805342
+    second: 1743888645187_132
+  - first:
+      213: 1212960639808069834
+    second: 1743888645187_133
+  - first:
+      213: 2905201762033962231
+    second: 1743888645187_134
+  - first:
+      213: -2502922939571004365
+    second: 1743888645187_135
+  - first:
+      213: 4220120325144360321
+    second: 1743888645187_136
+  - first:
+      213: -8204054449495044111
+    second: 1743888645187_137
+  - first:
+      213: 9052222679051750863
+    second: 1743888645187_138
+  - first:
+      213: 141871246043668267
+    second: 1743888645187_139
+  - first:
+      213: 1121587059241786621
+    second: 1743888645187_140
+  - first:
+      213: 4010767934369838325
+    second: 1743888645187_141
+  - first:
+      213: 860443083375093871
+    second: 1743888645187_142
+  - first:
+      213: -3512310997992433401
+    second: 1743888645187_143
+  - first:
+      213: 8020633038186274016
+    second: 1743888645187_144
+  - first:
+      213: -4408940570581790709
+    second: 1743888645187_145
+  - first:
+      213: 102135587702807309
+    second: 1743888645187_146
+  - first:
+      213: 86641681963916394
+    second: 1743888645187_147
+  - first:
+      213: 5277396441268927888
+    second: 1743888645187_148
+  - first:
+      213: 3932134506230222800
+    second: 1743888645187_149
+  - first:
+      213: -7156281726388491914
+    second: 1743888645187_150
+  - first:
+      213: -8799005709164351953
+    second: 1743888645187_151
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 8
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 512
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: Small Asteroid Explosion 1_0
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 384
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: a710f67672547304fa3f44cc06ea4ba0
+      internalID: -2141970874
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Small Asteroid Explosion 1_1
+      rect:
+        serializedVersion: 2
+        x: 128
+        y: 384
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: a4619c8c52be3eb4ab47541e052f4778
+      internalID: -790653091
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Small Asteroid Explosion 1_2
+      rect:
+        serializedVersion: 2
+        x: 256
+        y: 384
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 76c864da83a35414ca5ebe7c1802ec97
+      internalID: -2013638642
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Small Asteroid Explosion 1_3
+      rect:
+        serializedVersion: 2
+        x: 384
+        y: 384
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 96b77e92257ef5a40bb021ce82fd6577
+      internalID: -1376047289
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Small Asteroid Explosion 1_4
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 256
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 4c052aaf77319ca439425553700ad1f6
+      internalID: 906034723
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Small Asteroid Explosion 1_5
+      rect:
+        serializedVersion: 2
+        x: 128
+        y: 256
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: a4576283ac4c935499b50d5cad1526fb
+      internalID: -16846745
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Small Asteroid Explosion 1_6
+      rect:
+        serializedVersion: 2
+        x: 256
+        y: 256
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: afa5bc0e4aa98494d84550606fccfd47
+      internalID: 293121025
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Small Asteroid Explosion 1_7
+      rect:
+        serializedVersion: 2
+        x: 384
+        y: 256
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 423d1da522bf75b4fab2b60d2c2f457b
+      internalID: -489564193
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Small Asteroid Explosion 1_8
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 128
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: f235475c519e8d9428006cc7956e06a8
+      internalID: -1868168299
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Small Asteroid Explosion 1_9
+      rect:
+        serializedVersion: 2
+        x: 128
+        y: 128
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 1738d355e8363764582f8d057322f976
+      internalID: -1843159587
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Small Asteroid Explosion 1_10
+      rect:
+        serializedVersion: 2
+        x: 256
+        y: 128
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 8426a3c19abf345449d0ec3ca3a49438
+      internalID: -169206017
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Small Asteroid Explosion 1_11
+      rect:
+        serializedVersion: 2
+        x: 384
+        y: 128
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: d888a29c354e6ed40be671d111511560
+      internalID: -1915419893
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Small Asteroid Explosion 1_12
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 0
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: bc3ef97e453d9c24fb9904498ed28ea8
+      internalID: 936636296
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 5767e459d57d0ca46a3769d9f79c6006
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
+    nameFileIdTable:
+      Small Asteroid Explosion 1_0: -2141970874
+      Small Asteroid Explosion 1_1: -790653091
+      Small Asteroid Explosion 1_10: -169206017
+      Small Asteroid Explosion 1_11: -1915419893
+      Small Asteroid Explosion 1_12: 936636296
+      Small Asteroid Explosion 1_2: -2013638642
+      Small Asteroid Explosion 1_3: -1376047289
+      Small Asteroid Explosion 1_4: 906034723
+      Small Asteroid Explosion 1_5: -16846745
+      Small Asteroid Explosion 1_6: 293121025
+      Small Asteroid Explosion 1_7: -489564193
+      Small Asteroid Explosion 1_8: -1868168299
+      Small Asteroid Explosion 1_9: -1843159587
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

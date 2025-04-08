@@ -14,6 +14,7 @@ namespace Assets.Scripts.UI_Components
         public string Name;
         public int Index;
         public ImageSpinner RingSparkle;
+        public Transform Transform;
         /// <summary>
         /// The Id of this map relative to the stage. Guarenteed unique for this stage.
         /// </summary>
@@ -35,6 +36,7 @@ namespace Assets.Scripts.UI_Components
                     SpriteRenderer.enabled = false;
                 }
             }
+            Transform = transform;
         }
 
         public void Setup(Level level)

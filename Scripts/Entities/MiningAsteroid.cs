@@ -13,7 +13,7 @@ namespace Assets.Scripts.Entities
         public override void Setup(Level level)
         {
             base.Setup(level);
-            transform.parent = Level.Map.transform;
+            transform.parent = Level.Map.Transform;
             transform.localPosition = Utilities.RandomCoordinate(Level, Vector2.zero, Level.MiningAsteroidSpawnDistance, Vector2.zero);
             Level.State.AddObstacle(this);
             Level.State.MiningAsteroids.Add(this);

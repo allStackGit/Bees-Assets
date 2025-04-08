@@ -69,6 +69,14 @@ public class Pool : MonoBehaviour
     public ObjectPool<ObstacleMap> TheWallObstacleListObjectPool;
 
     public ObjectPool<CollisionAsteroid> CollisionAsteroidPool;
+    /// <summary>
+    /// Shards are collision asteroids that have broken off from larger collision asteroids
+    /// </summary>
+    public ObjectPool<CollisionAsteroid> CollisionAsteroidShardPool;
+    /// <summary>
+    /// Asteroid pieces have broken off from asteroids but don't actually interact with anything else, they just fade out
+    /// </summary>
+    public ObjectPool<AsteroidPiece> AsteroidPiecePool;
     public ObjectPool<MiningAsteroid> MiningAsteroidPool;
 
     public ObjectPool<Squad> SquadPool;
@@ -99,7 +107,7 @@ public class Pool : MonoBehaviour
         __BeeMediumProjectilePoolSize, __BumblebeeShotProjectilePoolSize, __FlagshipShotProjectilePoolSize, __RocketProjectilePoolSize, __HumanSmallProjectilePoolSize, __HumanMediumProjectilePoolSize,
         __BeamProjectilePoolSize, __SplitShotProjectilePoolSize, __QueenSmallProjectilePoolSize, __QueenLargeProjectilePoolSize, __StrikerBombProjectilePoolSize, __RocketExplosionProjectilePoolSize,
         __FireBargeExplosionProjectilePoolSize, __EmptyObstacleListObjectPoolSize, __MazeObstacleListObjectPoolSize, __ThreePathsObstacleListObjectPoolSize, __ForestObstacleListObjectPoolSize,
-        __TheWallObstacleListObjectPoolSize, __CollisionAsteroidPoolSize, __MiningAsteroidPoolSize, __SquadPoolSize, __CarrierSquadPoolSize, __AggressiveCommandPoolSize, __BombingRunCommandPoolSize,
+        __TheWallObstacleListObjectPoolSize, __CollisionAsteroidPoolSize, __CollisionAsteroidShardPoolSize, __AsteroidPiecePoolSize, __MiningAsteroidPoolSize, __SquadPoolSize, __CarrierSquadPoolSize, __AggressiveCommandPoolSize, __BombingRunCommandPoolSize,
         __ChargeCommandPoolSize, __CircleSquadCommandPoolSize, __ClosestFriendlyCommandPoolSize, __FullRetreatCommandPoolSize, __GuardCommandPoolSize, __InAndOutCommandPoolSize,
         __MiningCommandPoolSize, __MoveToRandomCommandPoolSize, __PatrolCommandPoolSize, __RetreatCommandPoolSize, __ScoutingCommandPoolSize, __SwipeSquadCommandPoolSize, __HoldCommandPoolSize,
         __HealCommandPoolSize;
@@ -150,6 +158,8 @@ public class Pool : MonoBehaviour
         __ForestObstacleListObjectPoolSize = ForestObstacleListObjectPool.CountAll;
         __TheWallObstacleListObjectPoolSize = TheWallObstacleListObjectPool.CountAll;
         __CollisionAsteroidPoolSize = CollisionAsteroidPool.CountAll;
+        __CollisionAsteroidShardPoolSize = CollisionAsteroidShardPool.CountAll;
+        __AsteroidPiecePoolSize = AsteroidPiecePool.CountAll;
         __MiningAsteroidPoolSize = MiningAsteroidPool.CountAll;
         __SquadPoolSize = SquadPool.CountAll;
         __CarrierSquadPoolSize = CarrierSquadPool.CountAll;
@@ -225,6 +235,8 @@ public class Pool : MonoBehaviour
         TheWallObstacleListObjectPool = new ObjectPool<ObstacleMap>(CreatePooledTheWallObstacleList, null, null, null, true);
 
         CollisionAsteroidPool = new ObjectPool<CollisionAsteroid>(CreatePooledCollisionAsteroid, null, null, null, true);
+        CollisionAsteroidShardPool = new ObjectPool<CollisionAsteroid>(CreatePooledCollisionAsteroidShard, null, null, null, true);
+        AsteroidPiecePool = new ObjectPool<AsteroidPiece>(CreatePooledAsteroidPiece, null, null, null, true);
         MiningAsteroidPool = new ObjectPool<MiningAsteroid>(CreatePooledMiningAsteroid, null, null, null, true);
 
         SquadPool = new ObjectPool<Squad>(CreatePooledSquad, OnTakeSquadFromPool, OnReturnSquadToPool, null, true);
@@ -377,11 +389,24 @@ public class Pool : MonoBehaviour
         return _spawn_squad;
     }
     CollisionAsteroid _spawn_collisionAsteroid;
+    AsteroidPiece asteroidPiece;
     public CollisionAsteroid CreatePooledCollisionAsteroid()
     {
         _spawn_collisionAsteroid = Instantiate(Stage.Prefabs.CollisionAsteroidPrefabs[Utilities.RandomInt(Stage.Prefabs.CollisionAsteroidPrefabs.Count)]).GetComponent<CollisionAsteroid>();
         _spawn_collisionAsteroid.Create(Stage);
         return _spawn_collisionAsteroid;
+    }
+    public CollisionAsteroid CreatePooledCollisionAsteroidShard()
+    {
+        _spawn_collisionAsteroid = Instantiate(Stage.Prefabs.BreakawayAsteroids[Utilities.RandomInt(Stage.Prefabs.BreakawayAsteroids.Count)]).GetComponent<CollisionAsteroid>();
+        _spawn_collisionAsteroid.Create(Stage);
+        return _spawn_collisionAsteroid;
+    }
+    public AsteroidPiece CreatePooledAsteroidPiece()
+    {
+        asteroidPiece = Instantiate(Stage.Prefabs.AsteroidPieces[Utilities.RandomInt(Stage.Prefabs.AsteroidPieces.Count)]).GetComponent<AsteroidPiece>();
+        asteroidPiece.Create(Stage);
+        return asteroidPiece;
     }
     MiningAsteroid _spawn_miningAsteroid;
     public MiningAsteroid CreatePooledMiningAsteroid()
@@ -861,9 +886,29 @@ public class Pool : MonoBehaviour
         //asteroid.gameObject.SetActive(false);
         CollisionAsteroidPool.Release(asteroid);
     }
+    public void ReturnCollisionAsteroidShardToPool(CollisionAsteroid asteroid)
+    {
+        //Debug.Log($"Returning collision asteroid {asteroid.Name} to pool");
+        //asteroid.gameObject.SetActive(false);
+        CollisionAsteroidShardPool.Release(asteroid);
+    }
+    public void ReturnAsteroidPieceToPool(AsteroidPiece piece)
+    {
+        //Debug.Log($"Returning collision asteroid {asteroid.Name} to pool");
+        //asteroid.gameObject.SetActive(false);
+        AsteroidPiecePool.Release(piece);
+    }
     public CollisionAsteroid GetCollisionAsteroidFromPool()
     {
         return CollisionAsteroidPool.Get();
+    }
+    public CollisionAsteroid GetCollisionAsteroidShardFromPool()
+    {
+        return CollisionAsteroidShardPool.Get();
+    }
+    public AsteroidPiece GetAsteroidPieceFromPool()
+    {
+        return AsteroidPiecePool.Get();
     }
     public void ReturnObstacleMapToPool(ObstacleMap obstacleMap, int index)
     {

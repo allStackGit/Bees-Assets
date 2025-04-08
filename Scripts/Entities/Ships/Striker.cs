@@ -198,7 +198,7 @@ namespace Assets.Scripts.Entities.Ships
             {
                 SetBombsReadyStatus(false);
                 _bomb = (StrikerBomb)Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.StrikerBomb);
-                _bomb.transform.parent = Level.Map.transform;
+                _bomb.transform.parent = Level.Map.Transform;
                 _bomb.Setup(Level, Bomb, this, ContactedShip, ContactedShip.GetRandomPointOnShip(GetPosition()), 0, 0, Bomb.Power, ContactedShip);
             }
             else

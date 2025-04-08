@@ -32,6 +32,7 @@ namespace Assets.Scripts.Levels
         public List<Command> CommandsToRelease = new List<Command>();
         public List<Squad> SelectedSquads = new List<Squad>();
         public List<Obstacle> Obstacles = new List<Obstacle>();
+        public List<AsteroidPiece> AsteroidPiecesToRelease = new List<AsteroidPiece>();
         public List<CollisionAsteroid> AsteroidsToRelease = new List<CollisionAsteroid>();
         public List<MiningAsteroid> MiningAsteroidsToRelease = new List<MiningAsteroid>();
 
@@ -102,6 +103,7 @@ namespace Assets.Scripts.Levels
             SquadsToRelease.Clear();
             CommandsToRelease.Clear();
             AsteroidsToRelease.Clear();
+            AsteroidPiecesToRelease.Clear();
             MiningAsteroidsToRelease.Clear();
             Projectiles.Clear();
 
@@ -218,6 +220,10 @@ namespace Assets.Scripts.Levels
             AsteroidsToRelease.ForEach(asteroid =>
             {
                 Stage.Pool.ReturnCollisionAsteroidToPool(asteroid);
+            });
+            AsteroidPiecesToRelease.ForEach(piece =>
+            {
+                Stage.Pool.ReturnAsteroidPieceToPool(piece);
             });
 
             MiningAsteroidsToRelease.ForEach((miningAsteroid) =>
