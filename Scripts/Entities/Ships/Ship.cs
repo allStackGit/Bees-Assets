@@ -758,7 +758,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 PathfindingThreadComplete = false;
             }
             Move();
-            if (Stage.IsDebugging || ShowDebug) // [alert] [debug] remove this for release
+            if (Stage.DebugLogger.IsDebugging || ShowDebug) // [alert] [debug] remove this for release
             {
                 UpdateDebugProperties();
             }
@@ -1109,18 +1109,12 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
                     MoveToTargetCoordinates();
                     //MoveAttachedSprites();
-                    if (!Squad.HasMovedBox)
-                    {
-                        Squad.MoveSquadBox();
-                    }
+                    Squad.MoveSquadBox();
                 }
                 else if (HasTargetDirection)
                 {
                     MoveInDirection();
-                    if (!Squad.HasMovedBox)
-                    {
-                        Squad.MoveSquadBox();
-                    }
+                    Squad.MoveSquadBox();
                 }
             }
         }
@@ -1835,6 +1829,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                             _weapons[_tempIndex].ShipsWithinRange.Remove(this.Id);
                         }
                     }
+                    Squad.MoveSquadBox();
                 }
 
                 //Debug.Log($"Squad {Squad.Name} ship count before {Name} has been removed (for dying): {Squad.GetShips().Count}");

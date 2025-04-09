@@ -385,9 +385,17 @@ namespace Assets.Scripts.Levels
 
                 GameObject obstacleObject = obstacles[i];
                 Obstacle obstacle = obstacleObject.GetComponent<Obstacle>();
-                //Debug.Log($"Found {obstacleObject.name}: {obstacle}");
 
-                obstacle.Setup(Level);
+                try
+                {
+                    obstacle.Setup(Level);
+
+                }
+                catch (Exception e)
+                {
+                    Debug.Log($"Found {obstacleObject.name}: {obstacle?.Name}");
+                    throw e;
+                }
                 obstacle.MapPointsIndex = AddObstacle(obstacle);
                 ObstaclePoints[0][obstacle.MapPointsIndex] = GetObstaclePoints(obstacle, 0, 0);
 

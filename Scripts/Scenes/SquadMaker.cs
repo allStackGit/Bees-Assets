@@ -971,7 +971,7 @@ namespace Assets.Scripts.Scenes
         // [alert] this should be rewritten to be more performant
         public void UpdateShipCounter(FleetShip fleetShip)
         {
-            GameObject inventoryContainer = GameObject.FindObjectsOfType<GameObject>(true).ToList().Find((gameObject) => gameObject.name == $"{Utilities.ConvertShipTypeToName[fleetShip.Type]} Inventory Ship");
+            GameObject inventoryContainer = FindObjectsByType<GameObject>(FindObjectsSortMode.None).ToList().Find((gameObject) => gameObject.name == $"{Utilities.ConvertShipTypeToName[fleetShip.Type]} Inventory Ship");
             //Debug.Log($"{inventoryContainer}, {$"{Utilities.ConvertShipTypeToName[fleetShip.Type]} Inventory Ship"}");
             if (inventoryContainer != null)
             {

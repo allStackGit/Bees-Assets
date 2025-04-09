@@ -499,7 +499,7 @@ namespace Assets.Scripts.Levels
         {
             if (!Stage.IsTrainingNueralNetwork)
             {
-                Stage.__LevelCompletes++;
+                Stage.DebugLogger.__LevelCompletes++;
                 State.LevelEnded = true;
                 Pause();
                 //Debug.Log("LEVEL OVER!");
@@ -518,8 +518,8 @@ namespace Assets.Scripts.Levels
                 ConfigData.__AverageLatency = ConfigData.__TotalLatency / ConfigData.__TotalRequests;
 
                 Debug.Log($"{$"fps: {_levelOver_fps}".PadRight(10).Substring(0, 10)}  {$"fups: {_levelOver_fups}".PadRight(10).Substring(0, 10)}     " +
-                      $"{$"latency: {(int)(ConfigData.__AverageLatency * 1000)}ms".PadRight(18)} {$"CPS: {Stage.__HivemindCommands / Time.unscaledTime}".PadRight(9).Substring(0, 9)}   " +
-                      $"LTO: {Stage.__LevelTimeouts} LC: {Stage.__LevelCompletes} AveLT: {(int)ConfigData.__AverageLength}s || Hashes: {ConfigData.UsedHashes.Count}"
+                      $"{$"latency: {(int)(ConfigData.__AverageLatency * 1000)}ms".PadRight(18)} {$"CPS: {Stage.DebugLogger.__HivemindCommands / Time.unscaledTime}".PadRight(9).Substring(0, 9)}   " +
+                      $"LTO: {Stage.DebugLogger.__LevelTimeouts} LC: {Stage.DebugLogger.__LevelCompletes} AveLT: {(int)ConfigData.__AverageLength}s || Hashes: {ConfigData.UsedHashes.Count}"
                 );
 
                 if (State.IsSideKilled(ConfigData.Configuration.BeeSide) && !State.IsSideKilled(ConfigData.Configuration.HumanSide))
@@ -881,7 +881,7 @@ namespace Assets.Scripts.Levels
                 });
                 AddTimer(_initialCommandDelayTimer);
             }
-            if (Stage.IsDebugging)
+            if (Stage.DebugLogger.IsDebugging)
             {
                 _updateDebugTimer.Reuse(1, UpdateDebugVariables, true);
                 AddTimer(_updateDebugTimer);
@@ -1015,7 +1015,7 @@ namespace Assets.Scripts.Levels
         private void TimeOut()
         {
             Debug.Log("Level timed out!");
-            Stage.__LevelTimeouts++;
+            Stage.DebugLogger.__HivemindCommands++;
             IsRestarting = true;
             SaveAndEnd();
         }

@@ -30,9 +30,9 @@ namespace Assets.Scripts.Entities.Ships
         /// </summary>
         public GameObject BargeChargeAnimation;
         /// <summary>
-        /// The animation that runs while the barge is charging up to charge... but currently staying put
+        /// The animation that runs while the barge is loading up to charge... but currently staying put
         /// </summary>
-        public GameObject BargeChargingAnimation;
+        public GameObject BargeLoadingChargeAnimation;
         /// <summary>
         /// The "after image" of the barge as it's charging
         /// </summary>
@@ -70,7 +70,7 @@ namespace Assets.Scripts.Entities.Ships
                 });
                 ChargeRocketFlares.Clear();
                 Destroy(BargeChargeAnimation);
-                Destroy(BargeChargingAnimation);
+                Destroy(BargeLoadingChargeAnimation);
                 Destroy(BargeChargeImageAnimation);
 
             }
@@ -99,7 +99,7 @@ namespace Assets.Scripts.Entities.Ships
                     flare.SetActive(false);
                 });
                 BargeChargeAnimation.SetActive(false);
-                BargeChargingAnimation.SetActive(false);
+                BargeLoadingChargeAnimation.SetActive(false);
                 BargeChargeImageAnimation.SetActive(false);
             }
 
@@ -198,10 +198,10 @@ namespace Assets.Scripts.Entities.Ships
 
             if (!Stage.IsTraining)
             {
-                BargeChargingAnimation.SetActive(true);
+                BargeLoadingChargeAnimation.SetActive(true);
             }
             
-            //Debug.Log($"{Name} is about to charge");
+            Debug.Log($"{Name} is about to charge");
 
             yield return new WaitForSeconds(2);
 
@@ -209,7 +209,7 @@ namespace Assets.Scripts.Entities.Ships
             {
                 if (!Stage.IsTraining)
                 {
-                    BargeChargingAnimation.SetActive(false);
+                    BargeLoadingChargeAnimation.SetActive(false);
                     BargeChargeAnimation.SetActive(true);
                     BargeChargeImageAnimation.SetActive(true);
                     BargeChargeImageAnimator.StartCharge();
@@ -236,6 +236,10 @@ namespace Assets.Scripts.Entities.Ships
             {
                 StartCoroutine(StopCharge());
             }
+            else
+            {
+                Debug.Log($"Could not stop charge for {this} because it's dead");
+            }
 
         }
 
@@ -256,7 +260,7 @@ namespace Assets.Scripts.Entities.Ships
                 if (!Stage.IsTraining)
                 {
                     BargeChargeAnimation.SetActive(false);
-                    BargeChargeImageAnimation?.SetActive(false);
+                    BargeChargeImageAnimation.SetActive(false);
 
                     ChargeRocketFlares.ForEach((flare) =>
                     {
@@ -304,6 +308,42 @@ namespace Assets.Scripts.Entities.Ships
                     WaitingForNewCharge = false;
                     StartCoroutine(ChargeForward());
                 }
+            }
+
+        }
+
+        float _timeSinceLastStartedCharging;
+        private void FixedUpdate()
+        {
+            base.FixedUpdate();
+            if (IsCharging)
+            {
+
+                if (BargeLoadingChargeAnimation.activeSelf)
+                {
+                    Debug.LogError($"{this} is doing the loading animation when it shouldn't be");
+                }
+
+                if (_timeSinceLastStartedCharging == 0)
+                {
+                    _timeSinceLastStartedCharging += Time.deltaTime;
+                }
+                else
+                {
+                    if (_timeSinceLastStartedCharging > 1)
+                    {
+                        Debug.LogError($"{this} is charging for {_timeSinceLastStartedCharging} and that's longer than it should be");
+                    }
+                }
+            }
+            else
+            {
+                _timeSinceLastStartedCharging = 0;
+                if (BargeChargeAnimation.activeSelf || BargeChargeImageAnimation.activeSelf)
+                {
+                    Debug.LogError($"{this} is doing an animation when it shouldn't be");
+                }
+
             }
 
         }

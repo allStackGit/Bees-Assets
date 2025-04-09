@@ -1,17 +1,13 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using Assets.Scripts;
 using Assets.Scripts.Data;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Levels.Commands;
-using Assets.Scripts.Scenes;
 using Assets.Scripts.Server;
 using Assets.Scripts.UI_Components;
-using JetBrains.Annotations;
 using UnityEngine;
 
 namespace Assets.Scripts.Levels
@@ -41,6 +37,9 @@ namespace Assets.Scripts.Levels
         public Color Color;
         public Color SquadBoxColor;
         public SavedSquad SavedSquad;
+        /// <summary>
+        /// The Colored, semi-transparent box that shows up behind a squad when it's selected
+        /// </summary>
         public GameObject SquadBox;
         public SquadTab SquadTab;
         public bool HasMovedBox, IsMatchingSpeed, IsImmobile, CeaseFire, HasAddedShips, IsShowingRanges, IsGrowingSquad, HasCustomColor, HasSquadTab, HasSquadBox;
@@ -1293,7 +1292,7 @@ namespace Assets.Scripts.Levels
         {
             //Debug.Log($"Squad #{squadNumber} is moving and the squad box will have width {GetWidth()}, height {GetHeight()}, and center point {GetCenterPoint()}");
             //Debug.Log($"Right most point {GetRightMostPoint()}, Left most point {GetLeftMostPoint()}, Top most point {GetTopMostPoint()}, Bottom most point {GetBottomMostPoint()}");
-            if (IsSelected && !Stage.IsTraining)
+            if (IsSelected && !Stage.IsTraining && !HasMovedBox)
             {
                 SquadBox.SetActive(true);
                 SquadBox.transform.localPosition = GetCenterPoint();

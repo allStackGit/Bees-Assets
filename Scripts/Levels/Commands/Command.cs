@@ -110,7 +110,7 @@ namespace Assets.Scripts.Levels.Commands
             Level = squad.Level;
             //Debug.Log((int)CommandType);
             //Debug.Log(Stage.__CommandCounts.Length);
-            Stage.__CommandCounts[(int)CommandType]++;
+            Stage.DebugLogger.__CommandCounts[(int)CommandType]++;
             Side = squad.Side;
             SetSquad(squad);
             EnemySquad = enemy;
@@ -158,7 +158,7 @@ namespace Assets.Scripts.Levels.Commands
                 GetSquad().SetShootingStrategy(ShootingStrategy.ShootingStrategyType);
                 GetSquad().ClearTargets(); // Clear all old targets before starting the new command
 
-                if (Stage.IsDebugging)
+                if (Stage.DebugLogger.IsDebugging)
                 {
                     GetSquad().PastCommands.Add(new StoredCommand(this));
                 }
@@ -471,7 +471,7 @@ namespace Assets.Scripts.Levels.Commands
                     _finalize_storedCommand.Tsv = Tsv;
                     _finalize_storedCommand.IsFinalized = true;
 
-                    if (Stage.IsDebugging)
+                    if (Stage.DebugLogger.IsDebugging)
                     {
                         _finalize_squadCommand = GetSquad().PastCommands.FirstOrDefault(c => c.OutcomeId == OutcomeId);
                         if (_finalize_squadCommand != null)

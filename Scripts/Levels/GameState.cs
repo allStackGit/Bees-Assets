@@ -197,7 +197,7 @@ namespace Assets.Scripts.Levels
             OutcomeIdToPastCommandIndex.Add(command.OutcomeId, PastCommands.Count - 1);
             //Debug.Log($"Added Command {command} to past commands at index #{(PastCommands.Count - 1)}");
             AICommands++;
-            Stage.__HivemindCommands++;
+            Stage.DebugLogger.__HivemindCommands++;
         }
 
         public void Release()

@@ -30,10 +30,6 @@ public class Stage : Scene
     /// </summary>
     public bool DoesUserHaveController;
     /// <summary>
-    /// Whether or not the game is being debugged and should log a lot of debugging data
-    /// </summary>
-    public bool IsDebugging;
-    /// <summary>
     /// Whether or not the game will be rendered and visual objects should be used
     /// </summary>
     public bool IsRendering;
@@ -310,26 +306,17 @@ public class Stage : Scene
     /// All the unique colored remains sprites that have been loaded from disk, keyed by the hash code of a tuple of their ship type and color
     /// </summary>
     public Dictionary<int, Sprite[]> LoadedRemainsSprites = new Dictionary<int, Sprite[]>();
+    /// <summary>
+    /// Cached grids for the path finder, keyed by the 2D size of the grid
+    /// </summary>
     public Dictionary<(int, int), Pathfinder.Grid> PathfinderGrids = new Dictionary<(int, int), Pathfinder.Grid>();
+    /// <summary>
+    /// Handles logging debug variables for the stage
+    /// </summary>
+    public DebugLogger DebugLogger;
 
 
-    public int __HivemindCommands, __LevelTimeouts, __TotalShips, __LevelCompletes, __Grids;
-    // DEBUG VARIABLES
-    public static int __TotalRequests;
-    public static double __TotalLatency, __AverageLatency, __TotalLength, __AverageLength;
-
-    public int[] __CommandCounts;
-    public void DebugLogger()
-    {
-        __TotalRequests = ConfigData.__TotalRequests;
-        __TotalLatency = ConfigData.__TotalLatency;
-        __AverageLatency = ConfigData.__AverageLatency;
-        __TotalLength = ConfigData.__TotalLength;
-        __AverageLength = ConfigData.__AverageLength;
-        __TotalShips = Levels.Sum((l) => l.State.Ships.Count);
-        __Grids = PathfinderGrids.Count;
-        
-    }
+   
 
 
 
@@ -341,7 +328,7 @@ public class Stage : Scene
         //Debug.Log($"Start level stage");
         Name = "Level";
         base.Start();
-        __CommandCounts = new int[20];
+        DebugLogger.__CommandCounts = new int[20];
     }
     int _spawn_i;
     Level _spawn_level;
@@ -602,15 +589,11 @@ public class Stage : Scene
             InputManager.Update();
         }
 
-        if (IsDebugging && FixedUpdates > 1000)
+        if (DebugLogger.IsDebugging && FixedUpdates > 1000)
         {
-            DebugLogger();
-            Pool.DebugLogger();
+            DebugLogger.LogData();
         }
-        if (WatchServerRequests)
-        {
-            UpdateTestVariables();
-        }
+        
     }
     void FixedUpdate()
     {
