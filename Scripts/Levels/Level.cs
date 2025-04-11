@@ -1015,7 +1015,7 @@ namespace Assets.Scripts.Levels
         private void TimeOut()
         {
             Debug.Log("Level timed out!");
-            Stage.DebugLogger.__HivemindCommands++;
+            //Stage.DebugLogger.__HivemindCommands++;
             IsRestarting = true;
             SaveAndEnd();
         }

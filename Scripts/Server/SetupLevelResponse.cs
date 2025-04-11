@@ -11,7 +11,7 @@ namespace Assets.Scripts.Server
         /// </summary>
         public long GameId;
 
-        public SetupLevelResponse(string type, int status, int hash, long gameId) : base(type, status, hash)
+        public SetupLevelResponse(string type, int status, int hash, float serverLatency, long gameId) : base(type, status, hash, serverLatency)
         {
             this.GameId = gameId;
         }

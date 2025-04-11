@@ -803,11 +803,17 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   Stage: {fileID: 1136405786}
   IsDebugging: 0
+  IsNetworkLogging: 0
   __HivemindCommands: 0
   __LevelTimeouts: 0
   __TotalShips: 0
   __LevelCompletes: 0
   __Grids: 0
+  __PastServerRequests: []
+  __SocketLevels: []
+  __StandingRequests: []
+  __AverageRequestTime: 0
+  __UsedHashes: 
   __CommandCounts: 
   __BargePoolSize: 0
   __BeaconPoolSize: 0
@@ -7767,7 +7773,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: TimeoutTime
-      value: 0
+      value: 900
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: VisonSprite

@@ -286,6 +286,37 @@ namespace Assets.Scripts.Entities.Ships
 
         }
 
+        /// <summary>
+        /// Resets charge variables if the charge command has been interrupted 
+        /// </summary>
+        public void ResetCharge()
+        {
+            IsCharging = false;
+            HasStartedCharging = false;
+            CannotChangeMovementOrders = false;
+            HasCompletedRun = true;
+            SetCurrentSpeed(Speed);
+            ShipsHit.Clear();
+
+
+
+            if (!Stage.IsTraining)
+            {
+                BargeLoadingChargeAnimation.SetActive(false);
+                BargeChargeAnimation.SetActive(false);
+                BargeChargeImageAnimation.SetActive(false);
+
+                ChargeRocketFlares.ForEach((flare) =>
+                {
+                    flare.SetActive(false);
+                });
+            }
+
+
+            StopMoving($"Charge command ended");
+            Charge.Power = OriginalPower;
+        }
+
         public void FinishCoolDown()
         {
             if (!IsDead)

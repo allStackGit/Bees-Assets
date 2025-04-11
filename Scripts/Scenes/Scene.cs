@@ -29,13 +29,6 @@ namespace Assets.Scripts.Scenes
         public int TargetFrameRate;
         public ConfigData.SceneTypes Type;
 
-
-        public List<string> __PastServerRequests, __SocketLevels, __StandingRequests;
-        /// <summary>
-        /// The average time a request takes to complete in ms
-        /// </summary>
-        public float __AverageRequestTime;
-        public List<long> __UsedHashes;
         public int __Updates = 0;
 
 
@@ -109,20 +102,6 @@ namespace Assets.Scripts.Scenes
 
             //ConfigData.Ships.ReplaceDeadSquadShips();
             IsFinalized = true;
-        }
-        protected void UpdateTestVariables()
-        {
-            if (ConfigData.__PastServerRequests.Count > 0)
-            {
-                __UsedHashes = ConfigData.UsedHashes.ToList();
-                __PastServerRequests = ConfigData.__PastServerRequests.Select((r) => $"Request #{r.Hash} ({r.Type}) on queue for {r.TimeOnQueue * 1000}ms").ToList();
-                __AverageRequestTime = (ConfigData.__PastServerRequests.Sum((r) => r.TimeOnQueue) / ConfigData.__PastServerRequests.Count) * 1000;
-                __SocketLevels = ConfigData.Socket.OpenLevels.Select(s => s.Name).ToList();
-                __StandingRequests = ConfigData.Socket.StandingRequests.Select((r) => $"Request #{r.Hash} ({r.Type}) on queue since {r.StartTime}").ToList();
-                //__Updates = Time.frameCount;
-            }
-
-
         }
         /// <summary>
         /// Tries to reconnect to the server, called on a timer if there's a disconnection

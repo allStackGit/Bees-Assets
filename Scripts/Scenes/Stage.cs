@@ -589,11 +589,8 @@ public class Stage : Scene
             InputManager.Update();
         }
 
-        if (DebugLogger.IsDebugging && FixedUpdates > 1000)
-        {
-            DebugLogger.LogData();
-        }
-        
+        DebugLogger.LogData();
+
     }
     void FixedUpdate()
     {

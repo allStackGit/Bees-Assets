@@ -848,6 +848,10 @@ namespace Assets.Scripts.Levels
                 BannedStrats.Add(ConfigData.CommandTypes.Heal);
                 _bannedStrats.Add(ConfigData.CommandTypes.Heal);
             }
+            else if (Level.State.GetBeeShips().Where((s) => s.IsBeehive && ((Beehive)s).ShipsHealingHere.Count < 4).Count() == 0) // If there are beehives but they are all full, temporarily ban the heal strategy
+            {
+                _bannedStrats.Add(ConfigData.CommandTypes.Heal);
+            }
 
             //if (HasOnlyYellowJackets)
             //{

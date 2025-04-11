@@ -22,6 +22,7 @@ namespace Assets.Scripts.Entities
             base.ClearData();
             HalfSeconds = 0;
         }
+        Vector2 _randomPoint;
         public void Setup(Level level, CollisionAsteroid parent)
         {
             base.Setup(level);
@@ -30,8 +31,8 @@ namespace Assets.Scripts.Entities
             transform.localEulerAngles = new Vector3(0, 0, Utilities.RandomInt(360));
 
             //Debug.Log($"Setup Asteroid {Name} with Speed: {Speed}, starting at {transform.localPosition}");
-            Vector2 randomPoint = Utilities.RandomCoordinate(Level, Level.GetPosition(), new Vector2(Level.HalfMapWidth, Level.HalfMapHeight), Vector2.zero);
-            Body.linearVelocity = Speed * -Utilities.DirectionBetweenPoints(GetPosition(), randomPoint);
+            _randomPoint = Utilities.RandomCoordinate(Level, Level.GetPosition(), new Vector2(Level.HalfMapWidth, Level.HalfMapHeight), Vector2.zero);
+            Body.linearVelocity = Speed * -Utilities.DirectionBetweenPoints(GetPosition(), _randomPoint);
             Body.angularVelocity = parent.Body.angularVelocity;
 
             _deathTimer.Reuse(.5f, DeathTimer, true);
@@ -47,7 +48,7 @@ namespace Assets.Scripts.Entities
             }
             else
             {
-                SpriteRenderer.color = new Color(SpriteRenderer.color.r, SpriteRenderer.color.g, SpriteRenderer.color.b, SpriteRenderer.color.a - .1f);
+                SpriteRenderer.color = ConfigData.FadingAsteroidPiecesColors[HalfSeconds];
                 HalfSeconds++;
             }
         }

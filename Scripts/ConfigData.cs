@@ -33,7 +33,7 @@ namespace Assets.Scripts
         public const int TestPort = 7143;
         public const int ProductionPort = 7144;
         public const int RLPort = 7242;
-        public static int StandardMaxTimeOnQueue = 10;
+        public const int StandardMaxTimeOnQueue = 10;
 
         public const int ObstaclesLayerMask = 1 << 19; // the layer masks need to all be 1 and then bitwise shifted to the left by the layer number
         public const int ObstacleProximityRangesLayerMask = 1 << 20;
@@ -777,7 +777,19 @@ namespace Assets.Scripts
             (ShipOffset * new Vector2(-1, -3)), (ShipOffset * new Vector2(-.5f, -3)),  (ShipOffset * new Vector2(.5f, -3)), (ShipOffset * new Vector2(1, -3)),
         };
 
-        public static Vector2 OriginalSavedSquadLabelSize = new Vector2(240, 64); 
+        public static Vector2 OriginalSavedSquadLabelSize = new Vector2(240, 64);
+        public static Color[] FadingAsteroidPiecesColors = new Color[]
+        {
+            new Color(1, 1, 1, .9f),
+            new Color(1, 1, 1, .8f),
+            new Color(1, 1, 1, .7f),
+            new Color(1, 1, 1, .6f),
+            new Color(1, 1, 1, .5f),
+            new Color(1, 1, 1, .4f),
+            new Color(1, 1, 1, .3f),
+            new Color(1, 1, 1, .2f),
+            new Color(1, 1, 1, .1f),
+        };
 
         public static Dictionary<string, Color> Colors = new Dictionary<string, Color>() 
         {

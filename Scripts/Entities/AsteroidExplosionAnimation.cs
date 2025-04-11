@@ -9,7 +9,7 @@ namespace Assets.Scripts.Entities
         public CollisionAsteroid Asteroid;
         public void KillAsteroid()
         {
-            //Debug.Log($"{Asteroid.SizeClass} Collision asteroid explosion animation called");
+            Debug.Log($"{Asteroid.Name} Collision asteroid explosion animation called");
             gameObject.SetActive(false);
         }
     }

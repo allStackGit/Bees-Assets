@@ -8,14 +8,17 @@ namespace Assets.Scripts.Server
         public string Type;
         public int Status;
         public long Hash;
+        public float ServerLatency;
        
-        public ServerResponse(string type, int status, long hash)
+        public ServerResponse(string type, int status, long hash, float serverLatency)
         {
             Type = type;
             RequestType = Utilities.ConvertNameToRequestType[Type];
             Status = status;
             Hash = hash;
+            ServerLatency = serverLatency;
             Debug.Log($"{this}, {type}");
+
         }
 
         private ServerResponse _response;

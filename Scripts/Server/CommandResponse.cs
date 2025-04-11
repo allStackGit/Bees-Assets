@@ -10,8 +10,8 @@ namespace Assets.Scripts.Server
         public long MatchupId, OutcomeId, ShootingStrategyMatchupId, ShootingStrategyOutcomeId;
         public bool IsCached;
        
-        public CommandResponse(string type, int status, int hash, string name, string shootingStrategyName, string matchupString, string shootingStrategyMatchupString, int strategyId, int shootingStrategyId,
-            long matchupId, long shootingStrategyMatchupId, long outcomeId, long shootingStrategyOutcomeId, bool isCached) : base(type, status, hash)
+        public CommandResponse(string type, int status, int hash, float serverLatency, string name, string shootingStrategyName, string matchupString, string shootingStrategyMatchupString, int strategyId, int shootingStrategyId,
+            long matchupId, long shootingStrategyMatchupId, long outcomeId, long shootingStrategyOutcomeId, bool isCached) : base(type, status, hash, serverLatency)
         {
             Name = name;
             ShootingStrategyName = shootingStrategyName;

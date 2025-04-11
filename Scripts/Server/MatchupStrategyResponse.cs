@@ -9,8 +9,8 @@ namespace Assets.Scripts.Server
         public int StrategyId;
         public long SquadHash, MatchupId, OutcomeId, HistoricalTsv, HistoricalUses, Rng, WeightedTsv;
        
-        public MatchupStrategyResponse(string type, int status, int hash, string name, string matchupString, int strategyId, long squadHash, 
-            long matchupId, long outcomeId, long historicalTsv, long historicalUses, long rng, long weightedTsv) : base(type, status, hash)
+        public MatchupStrategyResponse(string type, int status, int hash, float serverLatency, string name, string matchupString, int strategyId, long squadHash, 
+            long matchupId, long outcomeId, long historicalTsv, long historicalUses, long rng, long weightedTsv) : base(type, status, hash, serverLatency)
         {
             this.Name = name;
             this.MatchupString = matchupString;

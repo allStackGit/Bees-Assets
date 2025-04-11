@@ -184,7 +184,7 @@ namespace Assets.Scripts.Server
             if (!HandledRequests.Contains(_message_response.Hash))
             {
                 HandledRequests.Add(_message_response.Hash);
-                //Debug.Log($"Received response for request #{_message_response.Hash}");
+                Debug.Log($"Received response for request #{_message_response.Hash}");
                 switch (_message_response.RequestType)
                 {
                     case ConfigData.RequestTypes.GetMatchupStrategy:
@@ -222,11 +222,15 @@ namespace Assets.Scripts.Server
             }
             else
             {
-                //Debug.LogWarning($"Got a response for #{_message_response.Hash} Status: {_message_response.Status} which has already been handled");
+                Debug.LogWarning($"Got a response for #{_message_response.Hash} Status: {_message_response.Status} which has already been handled");
                 _message_request = GetStandingRequest(_message_response.Hash);
                 if (_message_request != null)
                 {
                     StandingRequests.Remove(_message_request);
+                }
+                else
+                {
+                    Debug.LogWarning($"There was no standing request to remove for #{_message_response.Hash}");
                 }
             }
            
@@ -249,8 +253,15 @@ namespace Assets.Scripts.Server
             }
         }
         private byte[] _update_message;
+        private float _timeOfCurrentUpdate;
+        private float _timeOfLastUpdate;
         public void Update() 
         {
+            _timeOfCurrentUpdate = Time.unscaledTime;
+            if (_timeOfCurrentUpdate - _timeOfLastUpdate > 1)
+            {
+                Debug.LogWarning($"{_timeOfCurrentUpdate - _timeOfLastUpdate}s have passed since the previous socket update");
+            }
             //Debug.Log("Updating socket");
             if (!_useWebSocketSharp)
             {
@@ -263,15 +274,21 @@ namespace Assets.Scripts.Server
                 {
                     Message(_update_message);
                 }
+                else
+                {
+                    Debug.LogWarning($"Pulled null message off of Socket MessageQueue");
+                }
             }
             CheckStandingRequests();
+
+            _timeOfLastUpdate = _timeOfCurrentUpdate;
         }
         private List<ServerRequest> _standingRequests;
         private ServerRequest _sr;
         private int _index;
         private int _resends;
         /// <summary>
-        /// Loops through all requests, updates their time on the queue and resends requests that have been on the queue for more than 5 seconds
+        /// Loops through all requests, updates their time on the queue and resends requests that have been on the queue for more than 10 seconds
         /// </summary>
         public void CheckForResends()
         {
@@ -283,7 +300,7 @@ namespace Assets.Scripts.Server
                 if ((Time.unscaledTime - _sr.StartTime) > ConfigData.StandardMaxTimeOnQueue)
                 {
                     StandingRequests.Remove(_sr);
-                    //Debug.LogWarning($"Resending #{_sr.Hash} because it's been waiting for more than {ConfigData.StandardMaxTimeOnQueue}s");
+                    Debug.LogWarning($"Resending #{_sr.Hash}:{_sr.Type} because it's been waiting for more than {ConfigData.StandardMaxTimeOnQueue}s");
                     SendRequest(_sr);
                     _resends++;
                 }
@@ -396,7 +413,6 @@ namespace Assets.Scripts.Server
         private ServerRequest _checkStandingRequests_currentRequest; // Holds the current request being processed
         private DataFileRequest _checkStandingRequests_dataFileRequest; // Holds a DataFileRequest instance
         private SettingsRequest _checkStandingRequests_settingsRequest; // Holds a SettingsRequest instance
-        private int _checkStandingRequests_loopIndex; // Tracks the loop iteration index
 
         /// <summary>
         /// Checks standing requests and processes them accordingly.
@@ -407,11 +423,9 @@ namespace Assets.Scripts.Server
             _checkStandingRequests_serverRequests = StandingRequests.ToList();
 
             // Iterate through the requests using the class-level loop index
-            for (_checkStandingRequests_loopIndex = 0;
-                 _checkStandingRequests_loopIndex < _checkStandingRequests_serverRequests.Count;
-                 _checkStandingRequests_loopIndex++)
+            for (_index = 0; _index < _checkStandingRequests_serverRequests.Count; _index++)
             {
-                _checkStandingRequests_currentRequest = _checkStandingRequests_serverRequests[_checkStandingRequests_loopIndex];
+                _checkStandingRequests_currentRequest = _checkStandingRequests_serverRequests[_index];
 
                 // Handle specific request types
                 if (_checkStandingRequests_currentRequest.Type == ConfigData.RequestTypes.GetUserData)

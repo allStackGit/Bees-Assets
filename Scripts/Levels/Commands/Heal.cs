@@ -24,6 +24,8 @@ namespace Assets.Scripts.Levels.Commands
         private Dictionary<long, Beehive> _shipsAndBeehives = new Dictionary<long, Beehive>();
         public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, List<Beehive> beehives)
         {
+            //Debug.Log($"Executing the Heal command #{commandOutcomeId} for {GetSquad().Name}. There are {Stage.Pool.HealCommandPool.CountAll} heal commands in the pool " +
+            //    $"and {Stage.DebugLogger.__HivemindCommands} hivemind commands since startup");
             if (beehives.Count > 0)
             {
                 TargetBeehives = beehives;
@@ -56,7 +58,7 @@ namespace Assets.Scripts.Levels.Commands
 
                     if (IsHiveMindCommand)
                     {
-                        TimeoutTimer.Reuse(300, Timeout);
+                        TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
                         Level.AddTimer(TimeoutTimer);
                     }
                 }
@@ -66,6 +68,7 @@ namespace Assets.Scripts.Levels.Commands
             }
             else
             {
+                //Debug.Log($"Finalizing the Heal command #{commandOutcomeId} for {GetSquad().Name} because there are no beehives.");
                 SetFinalize("The beehives don't exist anymore, or there were no beehives around");
             }
 

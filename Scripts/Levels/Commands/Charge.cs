@@ -230,5 +230,16 @@ namespace Assets.Scripts.Levels.Commands
                 }
             }
         }
+
+        public override void SetFinalize(string cause)
+        {
+            _timer_barges = GetSquad().GetShips().Select((ship) => (Barge)ship).ToList();
+            _timer_barges.ForEach((barge) =>
+            {
+                barge.ResetCharge();
+            });
+
+            base.SetFinalize(cause);
+        }
     }
 }

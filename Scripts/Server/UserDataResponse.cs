@@ -9,7 +9,7 @@ namespace Assets.Scripts.Server
         public string Filename;
         public string Contents;
 
-        public UserDataResponse(string type, int status, int userId, long hash, string filename, string contents) : base(type, status, hash)
+        public UserDataResponse(string type, int status, int userId, long hash, float serverLatency, string filename, string contents) : base(type, status, hash, serverLatency)
         {
             this.UserId = userId;
             this.Filename = filename;   

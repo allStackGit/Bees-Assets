@@ -1,4 +1,5 @@
 using Assets.Scripts;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
@@ -9,11 +10,18 @@ public class DebugLogger : MonoBehaviour
     /// Whether or not the game is being debugged and should log a lot of debugging data
     /// </summary>
     public bool IsDebugging;
+    public bool IsNetworkLogging;
     // Stage variables
     public int __HivemindCommands, __LevelTimeouts, __TotalShips, __LevelCompletes, __Grids;
-    // DEBUG VARIABLES
+    // Network variables
     public static int __TotalRequests;
     public static double __TotalLatency, __AverageLatency, __TotalLength, __AverageLength;
+    public List<string> __PastServerRequests, __SocketLevels, __StandingRequests;
+    /// <summary>
+    /// The average time a request takes to complete in ms
+    /// </summary>
+    public float __AverageRequestTime;
+    public List<long> __UsedHashes;
 
     public int[] __CommandCounts;
 
@@ -31,9 +39,13 @@ public class DebugLogger : MonoBehaviour
         __HealCommandPoolSize;
     public void LogData()
     {
-        PoolStats();
-        StageLogging();
-        if (Stage.WatchServerRequests)
+        if (IsDebugging)
+        {
+            PoolStats();
+            StageLogging();
+        }
+
+        if (Stage.WatchServerRequests || IsNetworkLogging)
         {
             NetworkLogging();
         }
@@ -45,6 +57,16 @@ public class DebugLogger : MonoBehaviour
         __AverageLatency = ConfigData.__AverageLatency;
         __TotalLength = ConfigData.__TotalLength;
         __AverageLength = ConfigData.__AverageLength;
+
+        if (ConfigData.__PastServerRequests.Count > 0)
+        {
+            __UsedHashes = ConfigData.UsedHashes.ToList();
+            __PastServerRequests = ConfigData.__PastServerRequests.Select((r) => $"Request #{r.Hash} ({r.Type}) on queue for {r.TimeOnQueue * 1000}ms").ToList();
+            __AverageRequestTime = (ConfigData.__PastServerRequests.Sum((r) => r.TimeOnQueue) / ConfigData.__PastServerRequests.Count) * 1000;
+            __SocketLevels = ConfigData.Socket.OpenLevels.Select(s => s.Name).ToList();
+            __StandingRequests = ConfigData.Socket.StandingRequests.Select((r) => $"Request #{r.Hash} ({r.Type}) on queue since {r.StartTime}").ToList();
+            //__Updates = Time.frameCount;
+        }
     }
     public void StageLogging()
     {

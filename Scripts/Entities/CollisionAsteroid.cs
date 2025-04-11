@@ -59,13 +59,13 @@ namespace Assets.Scripts.Entities
 
 
             // starting right (+) or left (-)
-            Vector2 randomPosition = new Vector2(Utilities.RandomSign() * (Level.HalfMapWidth + ConfigData.MinimumAsteroidSpawnDistance), (Utilities.RandomSign() * (Utilities.RandomInt(Level.HalfMapHeight))));
+            _randomPoint = new Vector2(Utilities.RandomSign() * (Level.HalfMapWidth + ConfigData.MinimumAsteroidSpawnDistance), (Utilities.RandomSign() * (Utilities.RandomInt(Level.HalfMapHeight))));
             
             if (Utilities.CoinToss()) // start top / bottom instead
             {
-                randomPosition = new Vector2((Utilities.RandomSign() * (Utilities.RandomInt(Level.HalfMapWidth))), Utilities.RandomSign() * (Level.HalfMapHeight + ConfigData.MinimumAsteroidSpawnDistance));
+                _randomPoint = new Vector2((Utilities.RandomSign() * (Utilities.RandomInt(Level.HalfMapWidth))), Utilities.RandomSign() * (Level.HalfMapHeight + ConfigData.MinimumAsteroidSpawnDistance));
             }
-            transform.localPosition = randomPosition;
+            transform.localPosition = _randomPoint;
             transform.localEulerAngles = new Vector3(0, 0, Utilities.RandomInt(360));
 
             //Debug.Log($"Setup Asteroid {Name} with Speed: {Speed}, starting at {transform.localPosition}");
@@ -106,10 +106,11 @@ namespace Assets.Scripts.Entities
                 });
             }
         }
+        Vector2 _randomPoint;
         public void SetMoving()
         {
-            Vector2 randomPoint = Utilities.RandomCoordinate(Level, Level.GetPosition(), new Vector2(Level.HalfMapWidth, Level.HalfMapHeight), Vector2.zero);
-            Body.linearVelocity = Speed * -Utilities.DirectionBetweenPoints(GetPosition(), randomPoint);
+            _randomPoint = Utilities.RandomCoordinate(Level, Level.GetPosition(), new Vector2(Level.HalfMapWidth, Level.HalfMapHeight), Vector2.zero);
+            Body.linearVelocity = Speed * -Utilities.DirectionBetweenPoints(GetPosition(), _randomPoint);
             Body.angularVelocity = Speed * Utilities.RandomFloat(ConfigData.MinimumAsteroidAngularSpeedMultiplier);
         }
         protected ScaledTimer _delayKillTimer = new ScaledTimer();
@@ -241,7 +242,7 @@ namespace Assets.Scripts.Entities
             //IsDelayKilled = true;
 
 
-            if (LastHitAsteroid != null && !LastHitAsteroid.HasDroppedDestructionAnimation && SizeClass >= LastHitAsteroid.SizeClass)
+            if (LastHitAsteroid != null && !LastHitAsteroid.HasDroppedDestructionAnimation && (SizeClass >= LastHitAsteroid.SizeClass || LastHitAsteroid.Health > 0))
             {
                 HasDroppedDestructionAnimation = true;
 
@@ -249,6 +250,15 @@ namespace Assets.Scripts.Entities
                 Level.AddTimer(_collisionAnimation);
                 //ShowCollisionAnimation();
             }
+            //else
+            //{
+            //    Debug.Log($"{Name} did not drop a collision explosion when it died");
+            //    Debug.Log(LastHitAsteroid);
+            //    Debug.Log(LastHitAsteroid?.HasDroppedDestructionAnimation);
+            //    Debug.Log(SizeClass);
+            //    Debug.Log(LastHitAsteroid?.SizeClass);
+            //    Debug.Log(LastHitAsteroid?.Health);
+            //}
             _delayKillTimer.Reuse(.35f, DelayKill);
             Level.AddTimer(_delayKillTimer);
 
@@ -262,10 +272,10 @@ namespace Assets.Scripts.Entities
             SwitchToCrackedSprite();
 
             HasDroppedDestructionAnimation = true;
-            _collisionAnimation.Reuse(.25f, ShowCollisionAnimation);
+            _collisionAnimation.Reuse(.15f, ShowCollisionAnimation);
             Level.AddTimer(_collisionAnimation);
 
-            _delayKillTimer.Reuse(.35f, DelayKill);
+            _delayKillTimer.Reuse(.25f, DelayKill);
             Level.AddTimer(_delayKillTimer);
 
         }
@@ -274,14 +284,14 @@ namespace Assets.Scripts.Entities
         {
             //Debug.Log($"{Name} collided");
             _overlaps++;
-            GameObject collidingThing = collider.gameObject;
-            if (collidingThing.CompareTag("Ship"))
+            _collidingThing = collider.gameObject;
+            if (_collidingThing.CompareTag("Ship"))
             {
-                ShipCollision(collidingThing.GetComponent<Ship>());
+                ShipCollision(_collidingThing.GetComponent<Ship>());
             }
-            else if (collidingThing.CompareTag("Obstacle"))
+            else if (_collidingThing.CompareTag("Obstacle"))
             {
-                ObstacleCollision(collidingThing.GetComponent<Obstacle>());
+                ObstacleCollision(_collidingThing.GetComponent<Obstacle>());
                 
             }
         }
@@ -294,36 +304,38 @@ namespace Assets.Scripts.Entities
             SpriteRenderer.sprite = CrackedSprite;
         }
 
-
+        GameObject _collidingThing;
+        Ship _collidingShip;
+        Obstacle _collidingObstacle;
         private void OnTriggerExit2D(Collider2D collider)
         {
             _overlaps--;
             //Debug.Log($"{Asteroid.Name} proximity collided");
-            GameObject collidingThing = collider.gameObject;
+            _collidingThing = collider.gameObject;
             //Debug.Log($"Projectile #{Id} collided with {collidingThing.name} at {Level.Updates} updates");
-            if (collidingThing.CompareTag("Ship"))
+            if (_collidingThing.CompareTag("Ship"))
             {
-                Ship ship = collidingThing.GetComponent<Ship>();
-                if (TouchingShips.Contains(ship))
+                _collidingShip = _collidingThing.GetComponent<Ship>();
+                if (TouchingShips.Contains(_collidingShip))
                 {
                     //Debug.Log($"{ship.Name} is no longer touching {Name}");
-                    TouchingShips.Remove(ship);
+                    TouchingShips.Remove(_collidingShip);
                 }
-                else if (NearbyShips.Contains(ship))
+                else if (NearbyShips.Contains(_collidingShip))
                 {
-                    NearbyShips.Remove(ship);
-                    ship.LeftNearbyAsteroid(this);
+                    NearbyShips.Remove(_collidingShip);
+                    _collidingShip.LeftNearbyAsteroid(this);
                     //Debug.Log($"{ship.Name} left {Name}");
                 }
 
 
             }
-            else if (collidingThing.CompareTag("Obstacle"))
+            else if (_collidingThing.CompareTag("Obstacle"))
             {
-                Obstacle obstacle = collidingThing.GetComponent<Obstacle>();
-                if (NearbyObstacles.Contains(obstacle))
+                _collidingObstacle = _collidingThing.GetComponent<Obstacle>();
+                if (NearbyObstacles.Contains(_collidingObstacle))
                 {
-                    NearbyObstacles.Remove(obstacle);
+                    NearbyObstacles.Remove(_collidingObstacle);
                 }
             }
         }
@@ -333,6 +345,7 @@ namespace Assets.Scripts.Entities
             Kill(false);
         }
 
+        Vector2 _asteroidPosition;
         /// <summary>
         /// Displays the asteroid destruction animation if it has one and kills the asteroid
         /// </summary>
@@ -346,15 +359,16 @@ namespace Assets.Scripts.Entities
                 //AsteroidExplosionAnimation asteroidExplosionAnimation = explosion.GetComponent<AsteroidExplosionAnimation>();
                 //asteroidExplosionAnimation.Asteroid = this;
                 //HasDroppedDestructionAnimation = true;
-                Vector2 position = GetPosition();
+                _asteroidPosition = GetPosition();
                 if (LastHitAsteroid != null)
                 {
-                    position -= (position - LastHitAsteroid.GetPosition()) / 2;
+                    _asteroidPosition -= (_asteroidPosition - LastHitAsteroid.GetPosition()) / 2;
                 }
                 AsteroidExplosionAnimation.transform.SetParent(Level.Map.Transform);
-                AsteroidExplosionAnimation.transform.localPosition = position;
+                AsteroidExplosionAnimation.transform.localPosition = _asteroidPosition;
                 AsteroidExplosionAnimation.Asteroid = this;
                 AsteroidExplosionAnimation.gameObject.SetActive(true);
+                AsteroidExplosionAnimation.name = $"{Name} collision explosion animation";
 
             }
 
@@ -389,27 +403,28 @@ namespace Assets.Scripts.Entities
             //}
         }
 
-        /// <summary>
-        ///  Needs to be modified to account for pooling
-        /// </summary>
+        CollisionAsteroid _asteroidShard;
+        int _asteroidCount;
+        int _pieceCount;
+        int _loopIndex;
         public void SpawnBreakAwayAsteroids()
         {
-            int asteroidCount = SizeClass < 6 ? 0 : (SizeClass > 6 ? 3 : 2);
-            int pieceCount = (int)(SizeClass * 1.5f);
+            _asteroidCount = SizeClass < 6 ? 0 : (SizeClass > 6 ? 3 : 2);
+            _pieceCount = (int)(SizeClass * 1.5f);
 
             //Debug.Log($"{Name} died and spawned {asteroidCount} asteroids and {pieceCount} pieces");
 
-            for (int i = 0; i < asteroidCount; i++)
+            for (_loopIndex = 0; _loopIndex < _asteroidCount; _loopIndex++)
             {
-                CollisionAsteroid asteroid = Stage.Pool.GetCollisionAsteroidShardFromPool();
-                asteroid.Setup(Level);
-                asteroid.transform.localPosition = GetPosition();
-                asteroid.Body.angularVelocity = Body.angularVelocity;
-                asteroid.HasEnteredMap = true;
+                _asteroidShard = Stage.Pool.GetCollisionAsteroidShardFromPool();
+                _asteroidShard.Setup(Level);
+                _asteroidShard.transform.localPosition = GetPosition();
+                _asteroidShard.Body.angularVelocity = Body.angularVelocity;
+                _asteroidShard.HasEnteredMap = true;
 
             }
 
-            for (int i = 0; i < pieceCount; i++)
+            for (_loopIndex = 0; _loopIndex < _pieceCount; _loopIndex++)
             {
                 Stage.Pool.GetAsteroidPieceFromPool().Setup(Level, this);
             }
