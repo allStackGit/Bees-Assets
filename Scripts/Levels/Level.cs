@@ -81,7 +81,7 @@ namespace Assets.Scripts.Levels
         public List<string> __BeeHivemindShips, __HumanHivemindShips, __PastCommands, __PathfindingThreads, __CustomLevels, __Timers;
 
 
-        private void UpdateDebugVariables()
+        public void UpdateDebugVariables()
         {
             __BeeHivemindShips = State.GetShipsVisibleToHiveMind(ConfigData.Configuration.BeeSide).Select(s => s.ToString()).ToList();
             __HumanHivemindShips = State.GetShipsVisibleToHiveMind(ConfigData.Configuration.HumanSide).Select(s => s.ToString()).ToList();
@@ -163,11 +163,6 @@ namespace Assets.Scripts.Levels
             State = gameObject.AddComponent<GameState>();
             State.Setup(this);
 
-            if (Stage.IsTraining)
-            {
-                AddTimer(_timeoutTimer);
-                //Invoke(nameof(TimeOut), Stage.TimeoutTime);
-            }
             SetupLevel();
         }
         private void RandomizeOptions()
@@ -427,9 +422,18 @@ namespace Assets.Scripts.Levels
             }
         }
         private int _updateIndex;
+        private int _removeIndex;
         public void CancelTimer(ScaledTimer scaledTimer)
         {
-           
+            //_removeIndex = Timers.IndexOf(scaledTimer);
+            //if (_removeIndex < 0)
+            //{
+            //    Debug.LogWarning($"Could not find {scaledTimer} in Timers and couldn't remove it");
+            //}
+            //else
+            //{
+            //    Timers.RemoveAt(_removeIndex);
+            //}
             Timers.Remove(scaledTimer);
             scaledTimer.IsCanceled = true;
             //Debug.Log($"Canceled {scaledTimer}");
@@ -464,6 +468,18 @@ namespace Assets.Scripts.Levels
             }
             else
             {
+                if (!_hasSetTimeoutTimer)
+                {
+                    _hasSetTimeoutTimer = true;
+                    if (Stage.TimeoutTime > 0)
+                    {
+                        //CancelTimer(_timeoutTimer);
+                        _timeoutTimer.Reuse(Stage.TimeoutTime, LevelTimeOut);
+                        AddTimer(_timeoutTimer);
+                        Debug.Log($"Added timeout timer:{_timeoutTimer}");
+                        //Debug.Log(Utilities.ListToString(Timers));
+                    }
+                }
                 if (HasObstacles)
                 {
                     //Debug.Log($"Calling path finder update again");
@@ -697,6 +713,7 @@ namespace Assets.Scripts.Levels
             //WinningSide = 0;
         }
         private List<LevelOptions> _setup_possibleLevels;
+        private bool _hasSetTimeoutTimer;
         /// <summary>
         /// Called by both ResetLevel(), FinalizeSceneWithUserData(), and SaveAndEnd(). Prepares the LevelStage for a new level
         /// </summary>
@@ -799,7 +816,7 @@ namespace Assets.Scripts.Levels
             {
                 Stage.Audio.SetupMusic();
             }
-
+            
             //float end = (Time.realtimeSinceStartup - StartTime) * 1000; // seconds to milliseconds
             //Debug.Log($"It took {Math.Round(end, 2)} ms to set up the level and {Math.Round(Time.realtimeSinceStartup, 2)}s total time.");
         }
@@ -841,6 +858,7 @@ namespace Assets.Scripts.Levels
             //    Debug.LogError($"Found alive projectiles at end of level");
             //} 
             Timers.Clear();
+            _hasSetTimeoutTimer = false;
             ConfigData.CurrentShips.ReplaceDeadSquadShips();
             State.ResetState();
             State.GameOver = false;
@@ -863,12 +881,10 @@ namespace Assets.Scripts.Levels
         }
         private ScaledTimer _hivemindTimer = new ScaledTimer();
         private ScaledTimer _checkTriggersTimer = new ScaledTimer();
-        private ScaledTimer _updateDebugTimer = new ScaledTimer();
         private ScaledTimer _initialCommandDelayTimer = new ScaledTimer();
         public void SetupHivemind()
         {
             CancelTimer(_hivemindTimer);
-            CancelTimer(_updateDebugTimer);
             //CancelInvoke(nameof(GetHiveMindCommands));
             if (Stage.ActivateHiveMind)
             {
@@ -881,12 +897,7 @@ namespace Assets.Scripts.Levels
                 });
                 AddTimer(_initialCommandDelayTimer);
             }
-            if (Stage.DebugLogger.IsDebugging)
-            {
-                _updateDebugTimer.Reuse(1, UpdateDebugVariables, true);
-                AddTimer(_updateDebugTimer);
-                //InvokeRepeating(nameof(UpdateDebugVariables), 1, 1);
-            }
+            
             CancelTimer(_checkTriggersTimer);
             //CancelInvoke(nameof(CheckTriggers));
             if (ActivateLoadingShipsMidLevel)
@@ -981,14 +992,7 @@ namespace Assets.Scripts.Levels
                 });
 
             }
-            else
-            {
-                //CancelInvoke(nameof(TimeOut));
-                CancelTimer(_timeoutTimer);
-                _timeoutTimer.Reuse(Stage.TimeoutTime, TimeOut);
-                AddTimer(_timeoutTimer);
-                //Invoke(nameof(TimeOut), Stage.TimeoutTime);
-            }
+
 
 
             if (HasObstacles)
@@ -1012,7 +1016,7 @@ namespace Assets.Scripts.Levels
         /// <summary>
         /// Resets the level for Hivemind training
         /// </summary>
-        private void TimeOut()
+        private void LevelTimeOut()
         {
             Debug.Log("Level timed out!");
             //Stage.DebugLogger.__HivemindCommands++;

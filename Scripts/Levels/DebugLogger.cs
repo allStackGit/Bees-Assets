@@ -43,6 +43,7 @@ public class DebugLogger : MonoBehaviour
         {
             PoolStats();
             StageLogging();
+            LevelLogging();
         }
 
         if (Stage.WatchServerRequests || IsNetworkLogging)
@@ -67,6 +68,13 @@ public class DebugLogger : MonoBehaviour
             __StandingRequests = ConfigData.Socket.StandingRequests.Select((r) => $"Request #{r.Hash} ({r.Type}) on queue since {r.StartTime}").ToList();
             //__Updates = Time.frameCount;
         }
+    }
+    public void LevelLogging()
+    {
+        Stage.Levels.ForEach(level =>
+        {
+            level.UpdateDebugVariables();
+        });
     }
     public void StageLogging()
     {

@@ -257,11 +257,11 @@ namespace Assets.Scripts.Server
         private float _timeOfLastUpdate;
         public void Update() 
         {
-            _timeOfCurrentUpdate = Time.unscaledTime;
-            if (_timeOfCurrentUpdate - _timeOfLastUpdate > 1)
-            {
-                Debug.LogWarning($"{_timeOfCurrentUpdate - _timeOfLastUpdate}s have passed since the previous socket update");
-            }
+            //_timeOfCurrentUpdate = Time.unscaledTime;
+            //if (_timeOfCurrentUpdate - _timeOfLastUpdate > 1)
+            //{
+            //    Debug.LogWarning($"{_timeOfCurrentUpdate - _timeOfLastUpdate}s have passed since the previous socket update");
+            //}
             //Debug.Log("Updating socket");
             if (!_useWebSocketSharp)
             {
@@ -281,7 +281,7 @@ namespace Assets.Scripts.Server
             }
             CheckStandingRequests();
 
-            _timeOfLastUpdate = _timeOfCurrentUpdate;
+            //_timeOfLastUpdate = _timeOfCurrentUpdate;
         }
         private List<ServerRequest> _standingRequests;
         private ServerRequest _sr;

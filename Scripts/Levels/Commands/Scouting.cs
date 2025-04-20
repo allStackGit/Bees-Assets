@@ -102,6 +102,7 @@ namespace Assets.Scripts.Levels.Commands
         public void FoundShips()
         {
             _foundShips = true;
+            Level.CancelTimer(TimeoutTimer);
             _endCommandTimer.Reuse(5, EndCommand);
             Level.AddTimer(_endCommandTimer);
             //Invoke(nameof(EndCommand), 5);
