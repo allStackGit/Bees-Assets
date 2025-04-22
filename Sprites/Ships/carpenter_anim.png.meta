@@ -1,10 +1,40 @@
 fileFormatVersion: 2
-guid: 5db9059f49409824795cd80bbf0fd991
+guid: 998c27fe88a77b34daf2fdf6c1a0967d
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: -1697215108959001702
-    second: carpenter_0
+      213: 5083080626925326625
+    second: carpenter_anim_0
+  - first:
+      213: 8328748920460349169
+    second: carpenter_anim_1
+  - first:
+      213: 7304837596217947142
+    second: carpenter_anim_2
+  - first:
+      213: 5529275563141123864
+    second: carpenter_anim_3
+  - first:
+      213: 5545113201323784684
+    second: carpenter_anim_4
+  - first:
+      213: -4670148573819651314
+    second: carpenter_anim_5
+  - first:
+      213: -284288271052149869
+    second: carpenter_anim_6
+  - first:
+      213: 3525823498284716911
+    second: carpenter_anim_7
+  - first:
+      213: 8086361534789658906
+    second: carpenter_anim_8
+  - first:
+      213: 7885806582663805083
+    second: carpenter_anim_9
+  - first:
+      213: -7089366230399186820
+    second: carpenter_anim_10
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -51,7 +81,7 @@ TextureImporter:
   spriteMeshType: 1
   alignment: 0
   spritePivot: {x: 0.5, y: 0.5}
-  spritePixelsToUnits: 40
+  spritePixelsToUnits: 8
   spriteBorder: {x: 0, y: 0, z: 0, w: 0}
   spriteGenerateFallbackPhysicsShape: 1
   alphaUsage: 1
@@ -70,12 +100,12 @@ TextureImporter:
   swizzle: 50462976
   cookieLightType: 0
   platformSettings:
-  - serializedVersion: 3
+  - serializedVersion: 4
     buildTarget: DefaultTexturePlatform
-    maxTextureSize: 8192
+    maxTextureSize: 2048
     resizeAlgorithm: 0
     textureFormat: -1
-    textureCompression: 0
+    textureCompression: 1
     compressionQuality: 50
     crunchedCompression: 0
     allowsAlphaSplitting: 0
@@ -83,7 +113,7 @@ TextureImporter:
     ignorePlatformSupport: 0
     androidETC2FallbackOverride: 0
     forceMaximumCompressionQuality_BC6H_BC7: 0
-  - serializedVersion: 3
+  - serializedVersion: 4
     buildTarget: Standalone
     maxTextureSize: 2048
     resizeAlgorithm: 0
@@ -100,1204 +130,1261 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: carpenterbee_0
-      rect:
-        serializedVersion: 2
-        x: 0
-        y: 3200
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: fc5a7d9fa1682594681d1e82c5dc7f3f
-      internalID: 41769915
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_1
-      rect:
-        serializedVersion: 2
-        x: 640
-        y: 3200
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: b37bb0d05906d124da24ba867de5d8d3
-      internalID: -1725058476
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_2
-      rect:
-        serializedVersion: 2
-        x: 1280
-        y: 3200
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 68772f880ac9cc348b9da51a673b4d47
-      internalID: -993655008
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_3
-      rect:
-        serializedVersion: 2
-        x: 1920
-        y: 3200
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 5c2a7823d114a284db4aec3a8aab4adf
-      internalID: 298447413
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_4
-      rect:
-        serializedVersion: 2
-        x: 2560
-        y: 3200
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: c5cdbb231ded87640b943c5a1b54644c
-      internalID: -105854108
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_5
-      rect:
-        serializedVersion: 2
-        x: 3200
-        y: 3200
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 95b4e3d8b36bcd5489620993f5758f9d
-      internalID: 1633374457
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_6
-      rect:
-        serializedVersion: 2
-        x: 3840
-        y: 3200
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: fad26a41c61ed7540a663fe9ef67356e
-      internalID: -564345607
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_7
-      rect:
-        serializedVersion: 2
-        x: 4480
-        y: 3200
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 50ce48483ae116041a60f601be8480a4
-      internalID: -1549769740
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_8
-      rect:
-        serializedVersion: 2
-        x: 5120
-        y: 3200
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 6efaf0cbf64a3b24e9e2d05a707cf331
-      internalID: 683799600
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_9
-      rect:
-        serializedVersion: 2
-        x: 0
-        y: 2560
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 91eba94f3ee013b4995a7790f63fe7d8
-      internalID: 5949156
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_10
-      rect:
-        serializedVersion: 2
-        x: 640
-        y: 2560
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 60a2b7916f3bfcc428cde130d57e8bce
-      internalID: 997498959
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_11
-      rect:
-        serializedVersion: 2
-        x: 1280
-        y: 2560
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 91a6db02334b9b5419be25ab6fd77972
-      internalID: 298717525
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_12
-      rect:
-        serializedVersion: 2
-        x: 1920
-        y: 2560
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 5a29cd00fe080a94ca85124cec74ffde
-      internalID: 1193932188
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_13
-      rect:
-        serializedVersion: 2
-        x: 2560
-        y: 2560
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: b36ffd467a91dd64daed34521e286d11
-      internalID: -1380413136
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_14
-      rect:
-        serializedVersion: 2
-        x: 3200
-        y: 2560
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 85307b9d177d9de4b8261c8324bdcf57
-      internalID: 1688569124
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_15
-      rect:
-        serializedVersion: 2
-        x: 3840
-        y: 2560
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 91b0e560cc2d28b41a6e8224d1b3875f
-      internalID: 1968792409
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_16
-      rect:
-        serializedVersion: 2
-        x: 4480
-        y: 2560
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: f34e3dacc2deeaa49be20b2f8443774b
-      internalID: -617384598
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_17
-      rect:
-        serializedVersion: 2
-        x: 5120
-        y: 2560
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 18920149f63bfbf41a20ad395c83d3f1
-      internalID: -1258764070
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_18
-      rect:
-        serializedVersion: 2
-        x: 0
-        y: 1920
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: f6587b2af26d69748b431296123fbe11
-      internalID: 869854197
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_19
-      rect:
-        serializedVersion: 2
-        x: 640
-        y: 1920
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: fee8fd26c4711314e828cfa1c6e30411
-      internalID: 1748958885
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_20
-      rect:
-        serializedVersion: 2
-        x: 1280
-        y: 1920
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: a75c74084b4cd2b4f9150b29fe3cd3b3
-      internalID: 1497026162
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_21
-      rect:
-        serializedVersion: 2
-        x: 1920
-        y: 1920
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 24a88787701dbc84ab3190851e146604
-      internalID: 1500887238
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_22
-      rect:
-        serializedVersion: 2
-        x: 2560
-        y: 1920
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 7b02f3e82dcdbad4891ac013e7a0ac40
-      internalID: 1533205063
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_23
-      rect:
-        serializedVersion: 2
-        x: 3200
-        y: 1920
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 42bee7f2d6bc6164d86c764ac3217d09
-      internalID: -128607116
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_24
-      rect:
-        serializedVersion: 2
-        x: 3840
-        y: 1920
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 3c284ce7a597a0e4fb33cae4110dd477
-      internalID: -1049111809
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_25
-      rect:
-        serializedVersion: 2
-        x: 4480
-        y: 1920
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: a3ad26fc5abb0724997404a67eaaab8a
-      internalID: 628877101
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_26
-      rect:
-        serializedVersion: 2
-        x: 5120
-        y: 1920
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 9d3a9e22d8538754c8db47c8da618f3d
-      internalID: -502057415
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_27
+      name: carpenter_anim_0
       rect:
         serializedVersion: 2
         x: 0
         y: 1280
-        width: 640
-        height: 640
+        width: 128
+        height: 128
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
-      tessellationDetail: 0
+      tessellationDetail: -1
       bones: []
-      spriteID: 24d49b3ed5478f745bd5ca72f0af24cd
-      internalID: 2111181977
+      spriteID: 121dd8c16eaba8640800000000000000
+      internalID: 5083080626925326625
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: carpenterbee_28
+      name: carpenter_anim_1
       rect:
         serializedVersion: 2
-        x: 640
+        x: 128
         y: 1280
-        width: 640
-        height: 640
+        width: 128
+        height: 128
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
-      tessellationDetail: 0
+      tessellationDetail: -1
       bones: []
-      spriteID: bb55a4f3d5ec2bf4bbb5d58ce079f691
-      internalID: 1263395587
+      spriteID: 1fe057bf309a59370800000000000000
+      internalID: 8328748920460349169
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: carpenterbee_29
+      name: carpenter_anim_2
       rect:
         serializedVersion: 2
-        x: 1280
+        x: 256
         y: 1280
-        width: 640
-        height: 640
+        width: 128
+        height: 128
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
-      tessellationDetail: 0
+      tessellationDetail: -1
       bones: []
-      spriteID: eb7da873df5269a47bc115e914f9b01a
-      internalID: -1879387447
+      spriteID: 6043d70571fff5560800000000000000
+      internalID: 7304837596217947142
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: carpenterbee_30
+      name: carpenter_anim_3
       rect:
         serializedVersion: 2
-        x: 1920
+        x: 384
         y: 1280
-        width: 640
-        height: 640
+        width: 128
+        height: 128
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
-      tessellationDetail: 0
+      tessellationDetail: -1
       bones: []
-      spriteID: 17cc8669f0b3f434a8a915de47b77380
-      internalID: 2009202804
+      spriteID: 81f464e44deebbc40800000000000000
+      internalID: 5529275563141123864
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: carpenterbee_31
+      name: carpenter_anim_4
       rect:
         serializedVersion: 2
-        x: 2560
+        x: 512
         y: 1280
-        width: 640
-        height: 640
+        width: 128
+        height: 128
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
-      tessellationDetail: 0
+      tessellationDetail: -1
       bones: []
-      spriteID: ed0ff5ff420361d4ead5acce977bada0
-      internalID: 418593597
+      spriteID: ce9bb3cc31334fc40800000000000000
+      internalID: 5545113201323784684
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: carpenterbee_32
+      name: carpenter_anim_5
       rect:
         serializedVersion: 2
-        x: 3200
-        y: 1280
-        width: 640
-        height: 640
+        x: 0
+        y: 1152
+        width: 128
+        height: 128
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
-      tessellationDetail: 0
+      tessellationDetail: -1
       bones: []
-      spriteID: 8dd33e0e18c06904b89c9a567eaa5241
-      internalID: -1239292751
+      spriteID: e0bbe299d9c403fb0800000000000000
+      internalID: -4670148573819651314
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: carpenterbee_33
+      name: carpenter_anim_6
       rect:
         serializedVersion: 2
-        x: 3840
-        y: 1280
-        width: 640
-        height: 640
+        x: 128
+        y: 1152
+        width: 128
+        height: 128
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
-      tessellationDetail: 0
+      tessellationDetail: -1
       bones: []
-      spriteID: ea2b697ed73b3e2489c1c04875ae83fb
-      internalID: 1463026332
+      spriteID: 39b602ed2510e0cf0800000000000000
+      internalID: -284288271052149869
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: carpenterbee_34
+      name: carpenter_anim_7
       rect:
         serializedVersion: 2
-        x: 4480
-        y: 1280
-        width: 640
-        height: 640
+        x: 256
+        y: 1152
+        width: 128
+        height: 128
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
-      tessellationDetail: 0
+      tessellationDetail: -1
       bones: []
-      spriteID: 37bc697b52bff544184979725fdeecc9
-      internalID: 1005428666
+      spriteID: f635cf38acd3ee030800000000000000
+      internalID: 3525823498284716911
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: carpenterbee_35
+      name: carpenter_anim_8
       rect:
         serializedVersion: 2
-        x: 5120
-        y: 1280
-        width: 640
-        height: 640
+        x: 384
+        y: 1152
+        width: 128
+        height: 128
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
-      tessellationDetail: 0
+      tessellationDetail: -1
       bones: []
-      spriteID: 90e71d4d0ac6db541b798a31d157d1c7
-      internalID: 1901221117
+      spriteID: a192586f8f6883070800000000000000
+      internalID: 8086361534789658906
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: carpenterbee_36
+      name: carpenter_anim_9
+      rect:
+        serializedVersion: 2
+        x: 512
+        y: 1152
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: b98fc1f5e43007d60800000000000000
+      internalID: 7885806582663805083
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_10
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 1024
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: c78086a79f28d9d90800000000000000
+      internalID: -7089366230399186820
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_11
+      rect:
+        serializedVersion: 2
+        x: 128
+        y: 1024
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 73e8d17f34f7b104d9c02b241368b45e
+      internalID: 1548763584
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_12
+      rect:
+        serializedVersion: 2
+        x: 256
+        y: 1024
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: aa87bcd600d2d464793c076ef9d78435
+      internalID: 653977558
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_13
+      rect:
+        serializedVersion: 2
+        x: 384
+        y: 1024
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 548ebffba65746f46a006dd32766f113
+      internalID: -780734905
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_14
+      rect:
+        serializedVersion: 2
+        x: 512
+        y: 1024
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 232206de4e908f34188b93a961bcfd7e
+      internalID: 1801638077
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_15
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 896
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 3a5c855e9331ece41bf38c9744e4b5af
+      internalID: -1866372945
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_16
+      rect:
+        serializedVersion: 2
+        x: 128
+        y: 896
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 45805f5512269d2478e8143954356033
+      internalID: 247197611
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_17
+      rect:
+        serializedVersion: 2
+        x: 256
+        y: 896
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 58ecf5bf02aa5704eb7b99e79c768ead
+      internalID: -871284226
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_18
+      rect:
+        serializedVersion: 2
+        x: 384
+        y: 896
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: abff517eddaed034e95898f017e41e95
+      internalID: 32492328
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_19
+      rect:
+        serializedVersion: 2
+        x: 512
+        y: 896
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: b9f2b25fda9c9864a93329db3de01f92
+      internalID: -585500093
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_20
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 768
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 823f80c61fe9b1242b2a699a5203b540
+      internalID: -464211698
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_21
+      rect:
+        serializedVersion: 2
+        x: 128
+        y: 768
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: c478f96070abbfc468b2e5da2a6bcac2
+      internalID: 1083152999
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_22
+      rect:
+        serializedVersion: 2
+        x: 256
+        y: 768
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 2116bc14c085a43478fa5ea1a17373a2
+      internalID: 2143512975
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_23
+      rect:
+        serializedVersion: 2
+        x: 384
+        y: 768
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: bb6d606cff5f4d34bb243204b81ce768
+      internalID: -1301929868
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_24
+      rect:
+        serializedVersion: 2
+        x: 512
+        y: 768
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: c7137817c8668654eaaf70b9227cf846
+      internalID: -1697516620
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_25
       rect:
         serializedVersion: 2
         x: 0
         y: 640
-        width: 640
-        height: 640
+        width: 128
+        height: 128
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 9ac56ffd169248d40bcd19b9ce8dde96
-      internalID: -72933208
+      spriteID: ba2a0354e74d80c43bec0b13a2cee207
+      internalID: 1807391100
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: carpenterbee_37
+      name: carpenter_anim_26
       rect:
         serializedVersion: 2
-        x: 640
+        x: 128
         y: 640
-        width: 640
-        height: 640
+        width: 128
+        height: 128
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 431b48d7b2259f04c8c0c8f136585057
-      internalID: 195773408
+      spriteID: 9099a0cc791692f4aba63948ac11ea28
+      internalID: 1200113290
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: carpenterbee_38
+      name: carpenter_anim_27
       rect:
         serializedVersion: 2
-        x: 1280
+        x: 256
         y: 640
-        width: 640
-        height: 640
+        width: 128
+        height: 128
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: cf498178545934343bb4ac4ea72affbe
-      internalID: -1478111884
+      spriteID: e468245eb2c545f49b814c6b5f80f258
+      internalID: -1200555787
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: carpenterbee_39
+      name: carpenter_anim_28
       rect:
         serializedVersion: 2
-        x: 1920
+        x: 384
         y: 640
-        width: 640
-        height: 640
+        width: 128
+        height: 128
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: d546f0768d92c7348ae0bee0bfcd6efa
-      internalID: 1552721658
+      spriteID: 24d9e22d6211b3a4690ae49613ea87de
+      internalID: 472210979
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: carpenterbee_40
+      name: carpenter_anim_29
       rect:
         serializedVersion: 2
-        x: 2560
+        x: 512
         y: 640
-        width: 640
-        height: 640
+        width: 128
+        height: 128
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 2d4e4bc93fbc16c4b9853bd1da0e04f6
-      internalID: -1214656085
+      spriteID: adffdc71defa2a74c8b33b86edc14966
+      internalID: 394294701
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: carpenterbee_41
+      name: carpenter_anim_30
       rect:
         serializedVersion: 2
-        x: 3200
-        y: 640
-        width: 640
-        height: 640
+        x: 0
+        y: 512
+        width: 128
+        height: 128
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: cb11bab09eae63049936662bd926291f
-      internalID: 436448581
+      spriteID: 0d61dcafe5c63f94991dd4f8789c05f9
+      internalID: 848248100
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: carpenterbee_42
+      name: carpenter_anim_31
       rect:
         serializedVersion: 2
-        x: 3840
-        y: 640
-        width: 640
-        height: 640
+        x: 128
+        y: 512
+        width: 128
+        height: 128
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 21c6598cf65989a41b2bc0b8900f5d00
-      internalID: -198838727
+      spriteID: bf4cbccf62416244983dc1366c38396b
+      internalID: 193315354
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: carpenterbee_43
+      name: carpenter_anim_32
       rect:
         serializedVersion: 2
-        x: 4480
-        y: 640
-        width: 640
-        height: 640
+        x: 256
+        y: 512
+        width: 128
+        height: 128
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 2f9750ec53919564e85103ac90f36c62
-      internalID: 2058432208
+      spriteID: 8195148d06687434faecf84d29a4ffcc
+      internalID: 518260217
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: carpenterbee_44
+      name: carpenter_anim_33
       rect:
         serializedVersion: 2
-        x: 5120
-        y: 640
-        width: 640
-        height: 640
+        x: 384
+        y: 512
+        width: 128
+        height: 128
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 6a849a2b49c26bf41b20afdfb4d00cf8
-      internalID: -262201364
+      spriteID: 50ccc1ff3e1c8ea4ebc17f5d05de9a37
+      internalID: 1856322916
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: carpenterbee_45
+      name: carpenter_anim_34
+      rect:
+        serializedVersion: 2
+        x: 512
+        y: 512
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 7f5a3ce5b5f8e9e49b5f1fc670334875
+      internalID: 166714130
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_35
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 384
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 3298a1315c2575548951a74e905bf805
+      internalID: 881456915
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_36
+      rect:
+        serializedVersion: 2
+        x: 128
+        y: 384
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 246a3fca3e18bbd4292ca59191c91088
+      internalID: 618798482
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_37
+      rect:
+        serializedVersion: 2
+        x: 256
+        y: 384
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 944b656e906747c4599a354c6575ba8a
+      internalID: -984645357
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_38
+      rect:
+        serializedVersion: 2
+        x: 384
+        y: 384
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 36c43346686d4a24f91158d494955137
+      internalID: -1287521885
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_39
+      rect:
+        serializedVersion: 2
+        x: 512
+        y: 384
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 25ccf0c3ad236b84ba075fcf5974b055
+      internalID: -200633654
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_40
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 256
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 787c2b82e8fd6c4459d4cb6f027530a8
+      internalID: -1301955372
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_41
+      rect:
+        serializedVersion: 2
+        x: 128
+        y: 256
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: e89d656015a180948a0708507c5edee0
+      internalID: -237726032
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_42
+      rect:
+        serializedVersion: 2
+        x: 256
+        y: 256
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: a0d83ffb933382149b241e89a38c1695
+      internalID: 1914863284
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_43
+      rect:
+        serializedVersion: 2
+        x: 384
+        y: 256
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 230c1fd858ef29140971b7ad7f66d6ff
+      internalID: -1367340352
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_44
+      rect:
+        serializedVersion: 2
+        x: 512
+        y: 256
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: bdacf8bab572f404888fafc492ec78d1
+      internalID: -204815515
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_45
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 128
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 2a81794841d51484b81b256da51bd1c3
+      internalID: 1470981091
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_46
+      rect:
+        serializedVersion: 2
+        x: 128
+        y: 128
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: d1a63ad9ae7f12945861ddc12bd50796
+      internalID: -2112198920
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_47
+      rect:
+        serializedVersion: 2
+        x: 256
+        y: 128
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: fc2e84fdbf72696469cbfd0521e28c25
+      internalID: 357403556
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_48
+      rect:
+        serializedVersion: 2
+        x: 384
+        y: 128
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: a4003b4f2570b6441b2400851acac27a
+      internalID: 1184623180
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_49
+      rect:
+        serializedVersion: 2
+        x: 512
+        y: 128
+        width: 128
+        height: 128
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: fab9970cce5107d4d9c48645615b67d2
+      internalID: -361589552
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carpenter_anim_50
       rect:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 640
-        height: 640
+        width: 128
+        height: 128
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: e8f44a3eb3249e645ac4f94363ae4466
-      internalID: -1923265494
+      spriteID: ba6f45464bbd29f4ea4671657d367f21
+      internalID: -1667404182
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: carpenterbee_46
+      name: carpenter_anim_51
       rect:
         serializedVersion: 2
-        x: 640
+        x: 128
         y: 0
-        width: 640
-        height: 640
+        width: 128
+        height: 128
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 3a8b58e13ad204b42b879ca9c4743e9a
-      internalID: -330916318
+      spriteID: dcbf352bd637be84f9f0e09c4c77efff
+      internalID: 23475563
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: carpenterbee_47
+      name: carpenter_anim_52
       rect:
         serializedVersion: 2
-        x: 1280
+        x: 256
         y: 0
-        width: 640
-        height: 640
+        width: 128
+        height: 128
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 57fa62a9aa0337a43964a42fc280eab0
-      internalID: -574028880
+      spriteID: 730b7c9a9d90af042a399ef818320362
+      internalID: 1626332329
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: carpenterbee_48
+      name: carpenter_anim_53
       rect:
         serializedVersion: 2
-        x: 1920
+        x: 384
         y: 0
-        width: 640
-        height: 640
+        width: 128
+        height: 128
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 6efcd9a83bd80e94e9e703c74e688113
-      internalID: 188270943
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_49
-      rect:
-        serializedVersion: 2
-        x: 2560
-        y: 0
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 3f16b530a5a92ce439e8894a7d98fd03
-      internalID: -1766143707
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_50
-      rect:
-        serializedVersion: 2
-        x: 3200
-        y: 0
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 86f4ac6812a175842b1194227c303a0a
-      internalID: -826071172
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_51
-      rect:
-        serializedVersion: 2
-        x: 3840
-        y: 0
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 811bff87b83b2a840abc9be18f1846a4
-      internalID: 1919335347
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_52
-      rect:
-        serializedVersion: 2
-        x: 4480
-        y: 0
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 64055582af9ee92428564b1a532fcf93
-      internalID: 576764187
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: carpenterbee_53
-      rect:
-        serializedVersion: 2
-        x: 5120
-        y: 0
-        width: 640
-        height: 640
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 1dd1684f325d3494db68b90ca3cd6720
-      internalID: 1652038245
+      spriteID: 1c0a4c999069d2040b5aee0b5fd9cc53
+      internalID: 1262163713
       vertices: []
       indices: 
       edges: []
       weights: []
     outline: []
+    customData: 
     physicsShape: []
     bones: []
-    spriteID: 5e97eb03825dee720800000000000000
+    spriteID: c149ecd8b2b064a4eb48932084477991
     internalID: 0
     vertices: []
     indices: 
     edges: []
     weights: []
     secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
     nameFileIdTable:
-      carpenterbee_0: 41769915
-      carpenterbee_1: -1725058476
-      carpenterbee_10: 997498959
-      carpenterbee_11: 298717525
-      carpenterbee_12: 1193932188
-      carpenterbee_13: -1380413136
-      carpenterbee_14: 1688569124
-      carpenterbee_15: 1968792409
-      carpenterbee_16: -617384598
-      carpenterbee_17: -1258764070
-      carpenterbee_18: 869854197
-      carpenterbee_19: 1748958885
-      carpenterbee_2: -993655008
-      carpenterbee_20: 1497026162
-      carpenterbee_21: 1500887238
-      carpenterbee_22: 1533205063
-      carpenterbee_23: -128607116
-      carpenterbee_24: -1049111809
-      carpenterbee_25: 628877101
-      carpenterbee_26: -502057415
-      carpenterbee_27: 2111181977
-      carpenterbee_28: 1263395587
-      carpenterbee_29: -1879387447
-      carpenterbee_3: 298447413
-      carpenterbee_30: 2009202804
-      carpenterbee_31: 418593597
-      carpenterbee_32: -1239292751
-      carpenterbee_33: 1463026332
-      carpenterbee_34: 1005428666
-      carpenterbee_35: 1901221117
-      carpenterbee_36: -72933208
-      carpenterbee_37: 195773408
-      carpenterbee_38: -1478111884
-      carpenterbee_39: 1552721658
-      carpenterbee_4: -105854108
-      carpenterbee_40: -1214656085
-      carpenterbee_41: 436448581
-      carpenterbee_42: -198838727
-      carpenterbee_43: 2058432208
-      carpenterbee_44: -262201364
-      carpenterbee_45: -1923265494
-      carpenterbee_46: -330916318
-      carpenterbee_47: -574028880
-      carpenterbee_48: 188270943
-      carpenterbee_49: -1766143707
-      carpenterbee_5: 1633374457
-      carpenterbee_50: -826071172
-      carpenterbee_51: 1919335347
-      carpenterbee_52: 576764187
-      carpenterbee_53: 1652038245
-      carpenterbee_6: -564345607
-      carpenterbee_7: -1549769740
-      carpenterbee_8: 683799600
-      carpenterbee_9: 5949156
+      carpenter_anim_0: 5083080626925326625
+      carpenter_anim_1: 8328748920460349169
+      carpenter_anim_10: -7089366230399186820
+      carpenter_anim_11: 1548763584
+      carpenter_anim_12: 653977558
+      carpenter_anim_13: -780734905
+      carpenter_anim_14: 1801638077
+      carpenter_anim_15: -1866372945
+      carpenter_anim_16: 247197611
+      carpenter_anim_17: -871284226
+      carpenter_anim_18: 32492328
+      carpenter_anim_19: -585500093
+      carpenter_anim_2: 7304837596217947142
+      carpenter_anim_20: -464211698
+      carpenter_anim_21: 1083152999
+      carpenter_anim_22: 2143512975
+      carpenter_anim_23: -1301929868
+      carpenter_anim_24: -1697516620
+      carpenter_anim_25: 1807391100
+      carpenter_anim_26: 1200113290
+      carpenter_anim_27: -1200555787
+      carpenter_anim_28: 472210979
+      carpenter_anim_29: 394294701
+      carpenter_anim_3: 5529275563141123864
+      carpenter_anim_30: 848248100
+      carpenter_anim_31: 193315354
+      carpenter_anim_32: 518260217
+      carpenter_anim_33: 1856322916
+      carpenter_anim_34: 166714130
+      carpenter_anim_35: 881456915
+      carpenter_anim_36: 618798482
+      carpenter_anim_37: -984645357
+      carpenter_anim_38: -1287521885
+      carpenter_anim_39: -200633654
+      carpenter_anim_4: 5545113201323784684
+      carpenter_anim_40: -1301955372
+      carpenter_anim_41: -237726032
+      carpenter_anim_42: 1914863284
+      carpenter_anim_43: -1367340352
+      carpenter_anim_44: -204815515
+      carpenter_anim_45: 1470981091
+      carpenter_anim_46: -2112198920
+      carpenter_anim_47: 357403556
+      carpenter_anim_48: 1184623180
+      carpenter_anim_49: -361589552
+      carpenter_anim_5: -4670148573819651314
+      carpenter_anim_50: -1667404182
+      carpenter_anim_51: 23475563
+      carpenter_anim_52: 1626332329
+      carpenter_anim_53: 1262163713
+      carpenter_anim_6: -284288271052149869
+      carpenter_anim_7: 3525823498284716911
+      carpenter_anim_8: 8086361534789658906
+      carpenter_anim_9: 7885806582663805083
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 
