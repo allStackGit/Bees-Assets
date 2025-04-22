@@ -1,10 +1,10 @@
 fileFormatVersion: 2
-guid: 79bf7cf2263764248829446a8a8854b1
+guid: 8aff94a02cb2bdd4ba2cda3d48897a88
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: -8007518808366505585
-    second: pluto_0
+      213: -899992045133505843
+    second: Asteroid 10_0
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -100,13 +100,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: pluto_0
+      name: Asteroid 10_0
       rect:
         serializedVersion: 2
-        x: 0
-        y: 0
-        width: 5000
-        height: 5000
+        x: 46
+        y: 27
+        width: 190
+        height: 211
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -115,8 +115,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: f812e07c1149fd090800000000000000
-      internalID: -8007518808366505585
+      spriteID: dcad329d0069283f0800000000000000
+      internalID: -899992045133505843
       vertices: []
       indices: 
       edges: []
@@ -134,8 +134,7 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable:
-      pluto_0: -8007518808366505585
+    nameFileIdTable: {}
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 
