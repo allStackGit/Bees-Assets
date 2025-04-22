@@ -1019,7 +1019,7 @@ namespace Assets.Scripts.Levels
         private void LevelTimeOut()
         {
             Debug.Log("Level timed out!");
-            //Stage.DebugLogger.__HivemindCommands++;
+            Stage.DebugLogger.__LevelTimeouts++;
             IsRestarting = true;
             SaveAndEnd();
         }

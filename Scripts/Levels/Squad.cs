@@ -740,7 +740,7 @@ namespace Assets.Scripts.Levels
                 _matchupEnemies = GetPotentialEnemies(enemy);
                 if (_matchupEnemies.Count == 0)
                 {
-                    Debug.LogWarning($"{this} has a matchup against {enemy} but there are no enemy ships visible to the hive mind so we are putting it back on the command queue: {Utilities.ListToString(Level.State.GetShipsVisibleToHiveMind(Side).ToList())}");
+                    //Debug.LogWarning($"{this} has a matchup against {enemy} but there are no enemy ships visible to the hive mind so we are putting it back on the command queue: {Utilities.ListToString(Level.State.GetShipsVisibleToHiveMind(Side).ToList())}");
                     AddToCommandList();
                     return;
                 }
