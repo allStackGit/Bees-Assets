@@ -52,6 +52,9 @@ SpriteRenderer:
   m_ReflectionProbeUsage: 1
   m_RayTracingMode: 0
   m_RayTraceProcedural: 0
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
+  m_SmallMeshCulling: 1
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
@@ -76,7 +79,7 @@ SpriteRenderer:
   m_SortingLayerID: 0
   m_SortingLayer: 0
   m_SortingOrder: 0
-  m_Sprite: {fileID: 21300000, guid: 4eeaaa72bc50dd649b8f763025904042, type: 3}
+  m_Sprite: {fileID: 21300000, guid: 090ba562da59fa342a836e900828496f, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
@@ -100,6 +103,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   FogOfWar: {fileID: 1365853013625425597}
+  Decorations: []
   SpriteRenderer: {fileID: 1498712098278513617}
   MaxZoom: 144
   MinZoom: 25
@@ -107,6 +111,10 @@ MonoBehaviour:
   UserStartingPosition: {x: 0, y: -215}
   AIStartingPosition: {x: 0, y: 215}
   Name: Pluto
+  Index: 0
+  RingSparkle: {fileID: 0}
+  Transform: {fileID: 0}
+  ItemId: 0
 --- !u!1 &8706284739746428144
 GameObject:
   m_ObjectHideFlags: 0
