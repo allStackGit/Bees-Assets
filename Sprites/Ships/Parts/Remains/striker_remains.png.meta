@@ -34,7 +34,7 @@ TextureImporter:
   maxTextureSize: 2048
   textureSettings:
     serializedVersion: 2
-    filterMode: 1
+    filterMode: 0
     aniso: 1
     mipBias: 0
     wrapU: 1
@@ -48,7 +48,7 @@ TextureImporter:
   spriteMeshType: 1
   alignment: 0
   spritePivot: {x: 0.5, y: 0.5}
-  spritePixelsToUnits: 40
+  spritePixelsToUnits: 8
   spriteBorder: {x: 0, y: 0, z: 0, w: 0}
   spriteGenerateFallbackPhysicsShape: 1
   alphaUsage: 1
@@ -67,12 +67,12 @@ TextureImporter:
   swizzle: 50462976
   cookieLightType: 0
   platformSettings:
-  - serializedVersion: 3
+  - serializedVersion: 4
     buildTarget: DefaultTexturePlatform
-    maxTextureSize: 2048
+    maxTextureSize: 512
     resizeAlgorithm: 0
     textureFormat: -1
-    textureCompression: 1
+    textureCompression: 0
     compressionQuality: 50
     crunchedCompression: 0
     allowsAlphaSplitting: 0
@@ -80,7 +80,7 @@ TextureImporter:
     ignorePlatformSupport: 0
     androidETC2FallbackOverride: 0
     forceMaximumCompressionQuality_BC6H_BC7: 0
-  - serializedVersion: 3
+  - serializedVersion: 4
     buildTarget: Standalone
     maxTextureSize: 2048
     resizeAlgorithm: 0
@@ -101,12 +101,13 @@ TextureImporter:
       rect:
         serializedVersion: 2
         x: 0
-        y: 1170
-        width: 390
-        height: 390
+        y: 234
+        width: 78
+        height: 78
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
@@ -121,13 +122,14 @@ TextureImporter:
       name: striker_remains_1
       rect:
         serializedVersion: 2
-        x: 390
-        y: 1170
-        width: 390
-        height: 390
+        x: 78
+        y: 234
+        width: 78
+        height: 78
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
@@ -142,13 +144,14 @@ TextureImporter:
       name: striker_remains_2
       rect:
         serializedVersion: 2
-        x: 780
-        y: 1170
-        width: 390
-        height: 390
+        x: 156
+        y: 234
+        width: 78
+        height: 78
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
@@ -163,13 +166,14 @@ TextureImporter:
       name: striker_remains_3
       rect:
         serializedVersion: 2
-        x: 1170
-        y: 1170
-        width: 390
-        height: 390
+        x: 234
+        y: 234
+        width: 78
+        height: 78
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
@@ -184,13 +188,14 @@ TextureImporter:
       name: striker_remains_4
       rect:
         serializedVersion: 2
-        x: 1560
-        y: 1170
-        width: 390
-        height: 390
+        x: 312
+        y: 234
+        width: 78
+        height: 78
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
@@ -206,12 +211,13 @@ TextureImporter:
       rect:
         serializedVersion: 2
         x: 0
-        y: 780
-        width: 390
-        height: 390
+        y: 156
+        width: 78
+        height: 78
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
@@ -226,13 +232,14 @@ TextureImporter:
       name: striker_remains_6
       rect:
         serializedVersion: 2
-        x: 390
-        y: 780
-        width: 390
-        height: 390
+        x: 78
+        y: 156
+        width: 78
+        height: 78
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
@@ -247,13 +254,14 @@ TextureImporter:
       name: striker_remains_7
       rect:
         serializedVersion: 2
-        x: 780
-        y: 780
-        width: 390
-        height: 390
+        x: 156
+        y: 156
+        width: 78
+        height: 78
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
@@ -268,13 +276,14 @@ TextureImporter:
       name: striker_remains_8
       rect:
         serializedVersion: 2
-        x: 1170
-        y: 780
-        width: 390
-        height: 390
+        x: 234
+        y: 156
+        width: 78
+        height: 78
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
@@ -289,13 +298,14 @@ TextureImporter:
       name: striker_remains_9
       rect:
         serializedVersion: 2
-        x: 1560
-        y: 780
-        width: 390
-        height: 390
+        x: 312
+        y: 156
+        width: 78
+        height: 78
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
@@ -311,12 +321,13 @@ TextureImporter:
       rect:
         serializedVersion: 2
         x: 0
-        y: 390
-        width: 390
-        height: 390
+        y: 78
+        width: 78
+        height: 78
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
@@ -331,13 +342,14 @@ TextureImporter:
       name: striker_remains_11
       rect:
         serializedVersion: 2
-        x: 390
-        y: 390
-        width: 390
-        height: 390
+        x: 78
+        y: 78
+        width: 78
+        height: 78
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
@@ -352,13 +364,14 @@ TextureImporter:
       name: striker_remains_12
       rect:
         serializedVersion: 2
-        x: 780
-        y: 390
-        width: 390
-        height: 390
+        x: 156
+        y: 78
+        width: 78
+        height: 78
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
@@ -373,13 +386,14 @@ TextureImporter:
       name: striker_remains_13
       rect:
         serializedVersion: 2
-        x: 1170
-        y: 390
-        width: 390
-        height: 390
+        x: 234
+        y: 78
+        width: 78
+        height: 78
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
@@ -394,13 +408,14 @@ TextureImporter:
       name: striker_remains_14
       rect:
         serializedVersion: 2
-        x: 1560
-        y: 390
-        width: 390
-        height: 390
+        x: 312
+        y: 78
+        width: 78
+        height: 78
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
@@ -417,11 +432,12 @@ TextureImporter:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 390
-        height: 390
+        width: 78
+        height: 78
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
@@ -436,13 +452,14 @@ TextureImporter:
       name: striker_remains_16
       rect:
         serializedVersion: 2
-        x: 390
+        x: 78
         y: 0
-        width: 390
-        height: 390
+        width: 78
+        height: 78
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
@@ -457,13 +474,14 @@ TextureImporter:
       name: striker_remains_17
       rect:
         serializedVersion: 2
-        x: 780
+        x: 156
         y: 0
-        width: 390
-        height: 390
+        width: 78
+        height: 78
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
@@ -478,13 +496,14 @@ TextureImporter:
       name: striker_remains_18
       rect:
         serializedVersion: 2
-        x: 1170
+        x: 234
         y: 0
-        width: 390
-        height: 390
+        width: 78
+        height: 78
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
@@ -499,13 +518,14 @@ TextureImporter:
       name: striker_remains_19
       rect:
         serializedVersion: 2
-        x: 1560
+        x: 312
         y: 0
-        width: 390
-        height: 390
+        width: 78
+        height: 78
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
       outline: []
       physicsShape: []
       tessellationDetail: 0
@@ -517,6 +537,7 @@ TextureImporter:
       edges: []
       weights: []
     outline: []
+    customData: 
     physicsShape: []
     bones: []
     spriteID: 5e97eb03825dee720800000000000000
@@ -526,6 +547,8 @@ TextureImporter:
     edges: []
     weights: []
     secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
     nameFileIdTable:
       striker_remains_0: -1365477261
       striker_remains_1: -1289427902

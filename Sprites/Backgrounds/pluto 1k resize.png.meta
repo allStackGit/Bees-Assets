@@ -1,7 +1,10 @@
 fileFormatVersion: 2
-guid: 7a84976b5be42594ca7a932ae81b88ae
+guid: fdd0db5282fcda94c814f72aed817ade
 TextureImporter:
-  internalIDToNameTable: []
+  internalIDToNameTable:
+  - first:
+      213: 3244391434797455312
+    second: pluto 1k resize_0
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -21,7 +24,7 @@ TextureImporter:
     heightScale: 0.25
     normalMapFilter: 0
     flipGreenChannel: 0
-  isReadable: 1
+  isReadable: 0
   streamingMipmaps: 0
   streamingMipmapsPriority: 0
   vTOnly: 0
@@ -43,7 +46,7 @@ TextureImporter:
   nPOTScale: 0
   lightmap: 0
   compressionQuality: 50
-  spriteMode: 2
+  spriteMode: 1
   spriteExtrude: 1
   spriteMeshType: 1
   alignment: 0
@@ -69,7 +72,7 @@ TextureImporter:
   platformSettings:
   - serializedVersion: 4
     buildTarget: DefaultTexturePlatform
-    maxTextureSize: 2048
+    maxTextureSize: 1024
     resizeAlgorithm: 0
     textureFormat: -1
     textureCompression: 0
@@ -97,111 +100,23 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: warpgate_loop_0
+      name: pluto 1k resize_0
       rect:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 224
-        height: 128
+        width: 1000
+        height: 1000
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []
       physicsShape: []
-      tessellationDetail: 0
+      tessellationDetail: -1
       bones: []
-      spriteID: 4f364ae2904ee694a9a91582a5842eb0
-      internalID: 508279725
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: warpgate_loop_1
-      rect:
-        serializedVersion: 2
-        x: 224
-        y: 0
-        width: 224
-        height: 128
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 6f6e0fa2847392645ada74f54db6aff0
-      internalID: 1998288907
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: warpgate_loop_2
-      rect:
-        serializedVersion: 2
-        x: 448
-        y: 0
-        width: 224
-        height: 128
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: f90c81bc602288e4d998b8827f6fffc8
-      internalID: 1337566699
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: warpgate_loop_3
-      rect:
-        serializedVersion: 2
-        x: 672
-        y: 0
-        width: 224
-        height: 128
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: fe9b48d15d2275a4bb1240bf5170a5ad
-      internalID: 1725218324
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: warpgate_loop_4
-      rect:
-        serializedVersion: 2
-        x: 896
-        y: 0
-        width: 224
-        height: 128
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 15dd2632f6cd19247aa72eea28270afa
-      internalID: -1592933365
+      spriteID: 0d71c6702d4660d20800000000000000
+      internalID: 3244391434797455312
       vertices: []
       indices: 
       edges: []
@@ -220,11 +135,7 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      warpgate_loop_0: 508279725
-      warpgate_loop_1: 1998288907
-      warpgate_loop_2: 1337566699
-      warpgate_loop_3: 1725218324
-      warpgate_loop_4: -1592933365
+      pluto 1k resize_0: 3244391434797455312
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 
