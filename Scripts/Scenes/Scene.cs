@@ -110,14 +110,14 @@ namespace Assets.Scripts.Scenes
         {
             Debug.Log($"Trying to automatically reconnect to the server with {Name}");
             ConfigData.RetryConnection();
-        }
+        } 
         // Update is called once per frame
         protected void Update()
         {
             __Updates++;
             SocketTimer.Update();
             ResendTimer.Update();
-
+              
 
             if (ConfigData.Socket.HasClosed && IsSocketManager)
             {

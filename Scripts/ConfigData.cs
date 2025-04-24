@@ -373,20 +373,20 @@ namespace Assets.Scripts
         };
 
         public static readonly Dictionary<ShipTypes, Vector2Int> ShipRemainsSizes = new Dictionary<ShipTypes, Vector2Int>() {
-            { ShipTypes.Barge,         new Vector2Int(1270, 1270)},
+            { ShipTypes.Barge,         new Vector2Int(254, 254)},
             { ShipTypes.Beacon,        new Vector2Int(0, 0)},
-            { ShipTypes.Carrier,       new Vector2Int(990, 990)},
-            { ShipTypes.Cruiser,       new Vector2Int(790, 790)},
-            { ShipTypes.Dreadnought,   new Vector2Int(670, 670)},
-            { ShipTypes.Drone,         new Vector2Int(430, 430)},
-            { ShipTypes.Factory,       new Vector2Int(1190, 1190)},
+            { ShipTypes.Carrier,       new Vector2Int(198, 198)},
+            { ShipTypes.Cruiser,       new Vector2Int(158, 158)},
+            { ShipTypes.Dreadnought,   new Vector2Int(134, 134)},
+            { ShipTypes.Drone,         new Vector2Int(86, 86)},
+            { ShipTypes.Factory,       new Vector2Int(238, 238)},
             { ShipTypes.FireBarge,     new Vector2Int(0, 0)},
-            { ShipTypes.Flagship,      new Vector2Int(1050, 1190)},
-            { ShipTypes.Frigate,       new Vector2Int(500, 500)},
-            { ShipTypes.Gunship,       new Vector2Int(500, 500)},
-            { ShipTypes.Scout,         new Vector2Int(400, 400)},
-            { ShipTypes.Striker,       new Vector2Int(390, 390)},
-            { ShipTypes.WarpGate,      new Vector2Int(1910, 1190)},
+            { ShipTypes.Flagship,      new Vector2Int(210, 238)},
+            { ShipTypes.Frigate,       new Vector2Int(100, 100)},
+            { ShipTypes.Gunship,       new Vector2Int(100, 100)},
+            { ShipTypes.Scout,         new Vector2Int(80, 80)},
+            { ShipTypes.Striker,       new Vector2Int(78, 78)},
+            { ShipTypes.WarpGate,      new Vector2Int(382, 238)},
 
             { ShipTypes.Beehive,       new Vector2Int(0, 0)},
             { ShipTypes.Bumblebee,     new Vector2Int(0, 0)},
@@ -687,6 +687,7 @@ namespace Assets.Scripts
         public static int ScreenWidth = Screen.width;
         public static int ScreenHeight = Screen.height;
         public const int PixelsPerUnit = 40;
+        public const int FifthSizePixelsPerUnit = 8;
         /// <summary>
         /// How much padding to put on the edges of the map and stop units from moving there.
         /// </summary>

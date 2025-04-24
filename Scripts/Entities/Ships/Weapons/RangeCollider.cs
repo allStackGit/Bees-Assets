@@ -64,7 +64,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         }
         private Ship _shipExit;
         private Projectile _projectileExit;
-        private GameObject _colliderExit;
+        private GameObject _colliderExit; 
         protected virtual void OnTriggerExit2D(Collider2D collider) // This is triggered by ships dying too 
         {
             _colliderExit = collider.gameObject;

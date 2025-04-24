@@ -1231,8 +1231,8 @@ namespace Assets.Scripts.Scenes
             ConfigData.CurrentShips.SaveSquadData();
             ConfigData.CurrentShips.SaveFleetData();
             SquadSavingStatus.Show();
-            StartCoroutine(Utilities.CacheSquadCustomSprites((SavedSquad)_currentSquad.Clone(), _shipPartSprites, "ship", ConfigData.ShipSizes, SquadSavingStatus));
-            StartCoroutine(Utilities.CacheSquadCustomSprites((SavedSquad)_currentSquad.Clone(), _shipRemainsSprites, "remains", ConfigData.ShipRemainsSizes));
+            StartCoroutine(Utilities.CacheSquadCustomSprites((SavedSquad)_currentSquad.Clone(), _shipPartSprites, "ship", ConfigData.ShipSizes, ConfigData.PixelsPerUnit, SquadSavingStatus));
+            StartCoroutine(Utilities.CacheSquadCustomSprites((SavedSquad)_currentSquad.Clone(), _shipRemainsSprites, "remains", ConfigData.ShipRemainsSizes, ConfigData.FifthSizePixelsPerUnit));
             ClearUnsavedSquad();
 
 
@@ -1253,8 +1253,8 @@ namespace Assets.Scripts.Scenes
                 oldSavedSquad.GetSquadShips().Any((s) => _currentSquad.GetShip(s.GetFleetShip().Id) == null))
             {
                 SquadSavingStatus.Show();
-                StartCoroutine(Utilities.CacheSquadCustomSprites((SavedSquad)_currentSquad.Clone(), _shipPartSprites, "ship", ConfigData.ShipSizes, SquadSavingStatus));
-                StartCoroutine(Utilities.CacheSquadCustomSprites((SavedSquad)_currentSquad.Clone(), _shipRemainsSprites, "remains", ConfigData.ShipRemainsSizes));
+                StartCoroutine(Utilities.CacheSquadCustomSprites((SavedSquad)_currentSquad.Clone(), _shipPartSprites, "ship", ConfigData.ShipSizes, ConfigData.PixelsPerUnit, SquadSavingStatus));
+                StartCoroutine(Utilities.CacheSquadCustomSprites((SavedSquad)_currentSquad.Clone(), _shipRemainsSprites, "remains", ConfigData.ShipRemainsSizes, ConfigData.FifthSizePixelsPerUnit));
             }
             ClearUnsavedSquad();
         }

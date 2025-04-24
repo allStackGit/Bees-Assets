@@ -852,7 +852,7 @@ namespace Assets.Scripts
             return indexes_SetChangablePixelsForImage.ToArray();
         }
 
-        public static IEnumerator CacheSquadCustomSprites(SavedSquad squad, Dictionary<ConfigData.ShipTypes, List<Sprite>> shipPartSprites, string type, Dictionary<ConfigData.ShipTypes, Vector2Int> sizes, Dialogue dialogue = null)
+        public static IEnumerator CacheSquadCustomSprites(SavedSquad squad, Dictionary<ConfigData.ShipTypes, List<Sprite>> shipPartSprites, string type, Dictionary<ConfigData.ShipTypes, Vector2Int> sizes, int ppu = ConfigData.PixelsPerUnit, Dialogue dialogue = null)
         {
             // Start the timer to measure how long the sprite processing takes
             float cacheSquadStartTime = Time.realtimeSinceStartup;
@@ -888,6 +888,7 @@ namespace Assets.Scripts
                             // Check if the ship type requires special handling (e.g., Factory or WarpGate)
                             if (((cacheSquadShip.ShipType == ConfigData.ShipTypes.Factory || cacheSquadShip.ShipType == ConfigData.ShipTypes.WarpGate) && cacheSquadIndex > 0) || type == "remains")
                             {
+                                ppu = ConfigData.FifthSizePixelsPerUnit; // this is an animated sprite that's being recolored so we're using the lower PPU
                                 int[] cacheSquadChangeablePixels = GetChangablePixelsForImage(cacheSquadColors, cacheSquadSprite);
                                 yield return ConfigData.WaitForEndOfFrame;
 
@@ -917,7 +918,7 @@ namespace Assets.Scripts
                                 {
                                     for (int x = 0; x < cacheSquadSpriteColumns; x++) // Use class-level static `cacheSquadX`
                                     {
-                                        Sprite cacheSquadRecoloredSprite = Sprite.Create(cacheSquadChangedTexture, new Rect(cacheSquadSpriteSize.x * x, (cacheSquadSourceTexture.height - cacheSquadSpriteSize.y * y) - cacheSquadSpriteSize.y, cacheSquadSpriteSize.x, cacheSquadSpriteSize.y), ConfigData.HalfSize, ConfigData.PixelsPerUnit);
+                                        Sprite cacheSquadRecoloredSprite = Sprite.Create(cacheSquadChangedTexture, new Rect(cacheSquadSpriteSize.x * x, (cacheSquadSourceTexture.height - cacheSquadSpriteSize.y * y) - cacheSquadSpriteSize.y, cacheSquadSpriteSize.x, cacheSquadSpriteSize.y), ConfigData.HalfSize, ppu);
                                         yield return ConfigData.WaitForEndOfFrame;
 
                                         try
@@ -1050,7 +1051,7 @@ namespace Assets.Scripts
         private static int _setImagePixelIndex; // Method: SetImageColor
         private static Vector2 _setImageHalf = Vector2.one / 2;
 
-        public static Sprite SetImageColor(Color color, Sprite sprite, int[] changeablePixels)
+        public static Sprite SetImageColor(Color color, Sprite sprite, int[] changeablePixels, int ppu = ConfigData.PixelsPerUnit)
         {
             _setImageSourceTexture = sprite.texture;
             _setImagePixels = _setImageSourceTexture.GetPixels();
@@ -1065,7 +1066,7 @@ namespace Assets.Scripts
             _setImageChangedTexture.Apply(true);
 
             // Debug.Log($"width: {dimensions.x}, height: {dimensions.y}");
-            _setImageRecoloredSprite = Sprite.Create(_setImageChangedTexture, new Rect(0, 0, _setImageSourceTexture.width, _setImageSourceTexture.height), _setImageHalf, ConfigData.PixelsPerUnit);
+            _setImageRecoloredSprite = Sprite.Create(_setImageChangedTexture, new Rect(0, 0, _setImageSourceTexture.width, _setImageSourceTexture.height), _setImageHalf, ppu);
             return _setImageRecoloredSprite;
         }
 
