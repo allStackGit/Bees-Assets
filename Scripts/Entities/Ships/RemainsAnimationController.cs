@@ -57,7 +57,7 @@ namespace Assets.Scripts.Entities.Ships
                 _index = SpriteIndex % RecoloredSprites.Length;
                 
                 //Debug.Log($"Recolored index: {_index}");
-                Debug.Log($"Trying to swap {SpriteRenderer?.sprite?.name} with {RecoloredSprites[_index]?.name}");
+                //Debug.Log($"Trying to swap {SpriteRenderer?.sprite?.name} with {RecoloredSprites[_index]?.name}");
                 SpriteRenderer.sprite = RecoloredSprites[_index];
                 CurrentSprite = SpriteRenderer.sprite;
                 SpriteIndex++;
