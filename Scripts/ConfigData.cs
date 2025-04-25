@@ -346,30 +346,31 @@ namespace Assets.Scripts
         public const int Unfathomable = 32;
 
         public static readonly Dictionary<ShipTypes, Vector2Int> ShipSizes = new Dictionary<ShipTypes, Vector2Int>() {
-            { ShipTypes.Barge,          new Vector2Int(760, 360)},
-            { ShipTypes.Beacon,         new Vector2Int(90, 80)},
-            { ShipTypes.Carrier,        new Vector2Int(480, 560)},
-            { ShipTypes.Cruiser,        new Vector2Int(320, 360)},
-            { ShipTypes.Dreadnought,    new Vector2Int(320, 420)},
-            { ShipTypes.Drone,          new Vector2Int(160, 160)},
-            { ShipTypes.Factory,        new Vector2Int(640, 640)},
-            { ShipTypes.FireBarge,      new Vector2Int(760, 360)},
-            { ShipTypes.Flagship,       new Vector2Int(640, 760)},
-            { ShipTypes.Frigate,        new Vector2Int(240, 240)},
-            { ShipTypes.Gunship,        new Vector2Int(240, 240)},
-            { ShipTypes.Scout,          new Vector2Int(200, 160)},
-            { ShipTypes.Striker,        new Vector2Int(160, 160)},
-            { ShipTypes.WarpGate,       new Vector2Int(1120, 640)},
+            { ShipTypes.Barge,          new Vector2Int(152, 72)},
+            { ShipTypes.Beacon,         new Vector2Int(18, 16)},
+            { ShipTypes.Carrier,        new Vector2Int(96, 112)},
+            { ShipTypes.Cruiser,        new Vector2Int(64, 72)},
+            { ShipTypes.Dreadnought,    new Vector2Int(64, 84)},
+            { ShipTypes.Drone,          new Vector2Int(32, 32)},
+            { ShipTypes.Factory,        new Vector2Int(128, 128)},
+            { ShipTypes.FireBarge,      new Vector2Int(152, 72)},
+            { ShipTypes.Flagship,       new Vector2Int(128, 152)},
+            { ShipTypes.Frigate,        new Vector2Int(48, 48)},
+            { ShipTypes.Gunship,        new Vector2Int(48, 48)},
+            { ShipTypes.Scout,          new Vector2Int(40, 32)},
+            { ShipTypes.Striker,        new Vector2Int(32, 32)},
+            { ShipTypes.WarpGate,       new Vector2Int(224, 128)},
 
-            { ShipTypes.Beehive,        new Vector2Int(1360, 1360)},
-            { ShipTypes.Bumblebee,      new Vector2Int(680, 480)},
-            { ShipTypes.CarpenterBee,   new Vector2Int(640, 640)},
-            { ShipTypes.Honeybee,       new Vector2Int(160, 160)},
-            { ShipTypes.Hornet,         new Vector2Int(160, 160)},
-            { ShipTypes.Leafcutter,     new Vector2Int(320, 320)},
-            { ShipTypes.Queen,          new Vector2Int(6400, 5120)},
-            { ShipTypes.Wasp,           new Vector2Int(240, 240)},
-            { ShipTypes.YellowJacket,   new Vector2Int(160, 160)},
+            { ShipTypes.Beehive,        new Vector2Int(272, 272)},
+            { ShipTypes.Bumblebee,      new Vector2Int(136, 96)},
+            { ShipTypes.CarpenterBee,   new Vector2Int(128, 128)},
+            { ShipTypes.Honeybee,       new Vector2Int(32, 32)},
+            { ShipTypes.Hornet,         new Vector2Int(32, 32)},
+            { ShipTypes.Leafcutter,     new Vector2Int(64, 64)},
+            { ShipTypes.Queen,          new Vector2Int(1280, 1024)},
+            { ShipTypes.Wasp,           new Vector2Int(48, 48)},
+            { ShipTypes.YellowJacket,   new Vector2Int(32, 32)},
+
         };
 
         public static readonly Dictionary<ShipTypes, Vector2Int> ShipRemainsSizes = new Dictionary<ShipTypes, Vector2Int>() {
@@ -686,8 +687,7 @@ namespace Assets.Scripts
 
         public static int ScreenWidth = Screen.width;
         public static int ScreenHeight = Screen.height;
-        public const int PixelsPerUnit = 40;
-        public const int FifthSizePixelsPerUnit = 8;
+        public const int PixelsPerUnit = 8;
         /// <summary>
         /// How much padding to put on the edges of the map and stop units from moving there.
         /// </summary>

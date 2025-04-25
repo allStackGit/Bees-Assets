@@ -34,7 +34,7 @@ namespace Assets.Scripts.Entities.Ships
                 {
                     for (_loopIndex = 0; _loopIndex < RecoloredSprites.Length; _loopIndex++)
                     {
-                        RecoloredSprites[_loopIndex] = Ship.FleetShip.LoadCachedSprite(_loopIndex, "remains", ConfigData.ShipRemainsSizes[Ship.ShipType], Ship.Squad.SavedSquad.Color, ConfigData.FifthSizePixelsPerUnit);
+                        RecoloredSprites[_loopIndex] = Ship.FleetShip.LoadCachedSprite(_loopIndex, "remains", ConfigData.ShipRemainsSizes[Ship.ShipType], Ship.Squad.SavedSquad.Color);
                     }
 
                     Ship.Stage.LoadedRemainsSprites[key] = RecoloredSprites;

@@ -45,7 +45,7 @@ namespace Assets.Scripts.Data
             GetStats();
         }
         
-        public Sprite LoadCachedSprite(int index, string type, Vector2Int size, Color squadColor, int ppu = ConfigData.PixelsPerUnit)
+        public Sprite LoadCachedSprite(int index, string type, Vector2Int size, Color squadColor)
         {
             try
             {
@@ -54,7 +54,7 @@ namespace Assets.Scripts.Data
                 Texture2D texture = new Texture2D(size.x, size.y);
                 texture.LoadImage(bytes);
                 //Debug.Log($"Loaded cached sprites from {path} for Fleetship {Name}");
-                return Sprite.Create(texture, new Rect(0, 0, size.x, size.y), ConfigData.HalfSize, ppu);
+                return Sprite.Create(texture, new Rect(0, 0, size.x, size.y), ConfigData.HalfSize, ConfigData.PixelsPerUnit);
             }
             catch (Exception e)
             {
