@@ -134,7 +134,8 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      ship_Drone_C652C6_0_0: -4786769285392870399
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

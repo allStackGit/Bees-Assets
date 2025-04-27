@@ -69,7 +69,7 @@ TextureImporter:
   platformSettings:
   - serializedVersion: 4
     buildTarget: DefaultTexturePlatform
-    maxTextureSize: 32
+    maxTextureSize: 128
     resizeAlgorithm: 0
     textureFormat: -1
     textureCompression: 0
@@ -115,8 +115,8 @@ TextureImporter:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -125,7 +125,7 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 05bdf34426350064f8fdfb4f695c3218
+      spriteID: 256f1bad5fd4e2d4b9dc561b9abb02e3
       internalID: 1712718743
       vertices: []
       indices: 
@@ -135,10 +135,10 @@ TextureImporter:
       name: Human Small Laser Shot Explosion_1
       rect:
         serializedVersion: 2
-        x: 40
+        x: 8
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -147,7 +147,7 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 4aaf54e10171d60499e57427058cb14f
+      spriteID: 7e85adffb2a2c1148a5c77598d787005
       internalID: 762096089
       vertices: []
       indices: 
@@ -157,10 +157,10 @@ TextureImporter:
       name: Human Small Laser Shot Explosion_2
       rect:
         serializedVersion: 2
-        x: 80
+        x: 16
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -169,7 +169,7 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 3b2cb461c352ffb4a97a4896ed4cb9c8
+      spriteID: 89de490b65bae1e4399bac1fdca563a9
       internalID: 554422383
       vertices: []
       indices: 
@@ -179,10 +179,10 @@ TextureImporter:
       name: Human Small Laser Shot Explosion_3
       rect:
         serializedVersion: 2
-        x: 120
+        x: 24
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -191,7 +191,7 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: fc5bbdbef971af141ae63ac80c73dad5
+      spriteID: a2d87c14a590b5f47a67c315c4496782
       internalID: -1961560919
       vertices: []
       indices: 
@@ -201,10 +201,10 @@ TextureImporter:
       name: Human Small Laser Shot Explosion_4
       rect:
         serializedVersion: 2
-        x: 160
+        x: 32
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -213,7 +213,7 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: b13701782a9d3a741bdf83bb97ae9e9b
+      spriteID: 3fc45977052a7e0439ea50def9b0ce55
       internalID: 586598961
       vertices: []
       indices: 
@@ -223,10 +223,10 @@ TextureImporter:
       name: Human Small Laser Shot Explosion_5
       rect:
         serializedVersion: 2
-        x: 200
+        x: 40
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -235,7 +235,7 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 535a86f82afe8df4389b0fc4e5a019c5
+      spriteID: 30b149c6f7c3e2941a90421accbb263d
       internalID: 552205242
       vertices: []
       indices: 
@@ -245,10 +245,10 @@ TextureImporter:
       name: Human Small Laser Shot Explosion_6
       rect:
         serializedVersion: 2
-        x: 240
+        x: 48
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -257,7 +257,7 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 5e9b04530a62c7b468fe93e89b2d6f28
+      spriteID: 60fd2cf689deee1409af37adf76ec5f7
       internalID: -1767930314
       vertices: []
       indices: 
@@ -267,10 +267,10 @@ TextureImporter:
       name: Human Small Laser Shot Explosion_7
       rect:
         serializedVersion: 2
-        x: 280
+        x: 56
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -279,7 +279,7 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 536d27e803a06f24a8fade20a6213d51
+      spriteID: 1f23e340d18003345864fc4c4437afb0
       internalID: -536763215
       vertices: []
       indices: 
@@ -289,10 +289,10 @@ TextureImporter:
       name: Human Small Laser Shot Explosion_8
       rect:
         serializedVersion: 2
-        x: 320
+        x: 64
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -301,7 +301,7 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 7bbc552ef4ea88843b024efd16baee97
+      spriteID: dc1ce377109267b4a9156b25bc4a5e39
       internalID: -425180742
       vertices: []
       indices: 
@@ -311,10 +311,10 @@ TextureImporter:
       name: Human Small Laser Shot Explosion_9
       rect:
         serializedVersion: 2
-        x: 360
+        x: 72
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -323,7 +323,7 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: dd7710dfb12b2d142af0d819b7875e8f
+      spriteID: ad34090e90188694fb52bce57702beaf
       internalID: 300645571
       vertices: []
       indices: 
@@ -333,10 +333,10 @@ TextureImporter:
       name: Human Small Laser Shot Explosion_10
       rect:
         serializedVersion: 2
-        x: 400
+        x: 80
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -345,7 +345,7 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 0abaa93b987019240b1b6cc50ec001f0
+      spriteID: 2b16c363dfab6434b9a037618767c12a
       internalID: -733108735
       vertices: []
       indices: 
@@ -355,10 +355,10 @@ TextureImporter:
       name: Human Small Laser Shot Explosion_11
       rect:
         serializedVersion: 2
-        x: 440
+        x: 88
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -367,7 +367,7 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 2f2ed17f4de92f34bad6f10b5dd0415f
+      spriteID: 21898c65fafe8eb4b88dd54e4588634f
       internalID: -1949142884
       vertices: []
       indices: 
@@ -377,10 +377,10 @@ TextureImporter:
       name: Human Small Laser Shot Explosion_12
       rect:
         serializedVersion: 2
-        x: 480
+        x: 96
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -389,7 +389,7 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 55b3f2bc11e48af4a90495e570a33510
+      spriteID: 1c45cc671481aa442a111debd2a51ec8
       internalID: 368686741
       vertices: []
       indices: 
@@ -399,10 +399,10 @@ TextureImporter:
       name: Human Small Laser Shot Explosion_13
       rect:
         serializedVersion: 2
-        x: 520
+        x: 104
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -411,7 +411,7 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 5df0213bfb1c3fb429eac6fb3b915fbe
+      spriteID: c015c4c4a6daec74796d60e6d8390a1e
       internalID: -315766265
       vertices: []
       indices: 

@@ -128,8 +128,8 @@ TextureImporter:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 200
-        height: 200
+        width: 40
+        height: 40
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -148,10 +148,10 @@ TextureImporter:
       name: Frigate Rocket Explosion_1
       rect:
         serializedVersion: 2
-        x: 200
+        x: 40
         y: 0
-        width: 200
-        height: 200
+        width: 40
+        height: 40
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -170,10 +170,10 @@ TextureImporter:
       name: Frigate Rocket Explosion_2
       rect:
         serializedVersion: 2
-        x: 400
+        x: 80
         y: 0
-        width: 200
-        height: 200
+        width: 40
+        height: 40
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -192,10 +192,10 @@ TextureImporter:
       name: Frigate Rocket Explosion_3
       rect:
         serializedVersion: 2
-        x: 600
+        x: 120
         y: 0
-        width: 200
-        height: 200
+        width: 40
+        height: 40
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -214,10 +214,10 @@ TextureImporter:
       name: Frigate Rocket Explosion_4
       rect:
         serializedVersion: 2
-        x: 800
+        x: 160
         y: 0
-        width: 200
-        height: 200
+        width: 40
+        height: 40
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -236,10 +236,10 @@ TextureImporter:
       name: Frigate Rocket Explosion_5
       rect:
         serializedVersion: 2
-        x: 1000
+        x: 200
         y: 0
-        width: 200
-        height: 200
+        width: 40
+        height: 40
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -258,10 +258,10 @@ TextureImporter:
       name: Frigate Rocket Explosion_6
       rect:
         serializedVersion: 2
-        x: 1200
+        x: 240
         y: 0
-        width: 200
-        height: 200
+        width: 40
+        height: 40
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -280,10 +280,10 @@ TextureImporter:
       name: Frigate Rocket Explosion_7
       rect:
         serializedVersion: 2
-        x: 1400
+        x: 280
         y: 0
-        width: 200
-        height: 200
+        width: 40
+        height: 40
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -302,10 +302,10 @@ TextureImporter:
       name: Frigate Rocket Explosion_8
       rect:
         serializedVersion: 2
-        x: 1600
+        x: 320
         y: 0
-        width: 200
-        height: 200
+        width: 40
+        height: 40
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -324,10 +324,10 @@ TextureImporter:
       name: Frigate Rocket Explosion_9
       rect:
         serializedVersion: 2
-        x: 1800
+        x: 360
         y: 0
-        width: 200
-        height: 200
+        width: 40
+        height: 40
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}

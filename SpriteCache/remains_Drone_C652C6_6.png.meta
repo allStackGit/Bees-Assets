@@ -309,7 +309,15 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      remains_Drone_C652C6_6_0: 6119021495570686740
+      remains_Drone_C652C6_6_1: 3414382665781797720
+      remains_Drone_C652C6_6_2: -426173493289679946
+      remains_Drone_C652C6_6_3: -1731062803271980308
+      remains_Drone_C652C6_6_4: 6745140164183627587
+      remains_Drone_C652C6_6_5: 6549397159384895681
+      remains_Drone_C652C6_6_6: -5157379210145049150
+      remains_Drone_C652C6_6_7: -7626772508830576858
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

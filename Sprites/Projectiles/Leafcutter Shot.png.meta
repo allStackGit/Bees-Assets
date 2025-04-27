@@ -123,13 +123,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_0
+      name: Leafcutter Shot_0
       rect:
         serializedVersion: 2
         x: 0
-        y: 240
-        width: 80
-        height: 80
+        y: 48
+        width: 16
+        height: 16
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -138,20 +138,108 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 5469b512ea16de646b6da0f39ee21177
-      internalID: 678394296
+      spriteID: 566bd639218e5c748be92ddf6adced22
+      internalID: -930539451
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_1
+      name: Leafcutter Shot_1
+      rect:
+        serializedVersion: 2
+        x: 16
+        y: 48
+        width: 16
+        height: 16
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: a9c112075ceb8a5429130542c635a71c
+      internalID: 129791241
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Leafcutter Shot_2
+      rect:
+        serializedVersion: 2
+        x: 32
+        y: 48
+        width: 16
+        height: 16
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 71ade3c8f5fda8d4e837b7f0ea9e21e5
+      internalID: 656516172
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Leafcutter Shot_3
+      rect:
+        serializedVersion: 2
+        x: 48
+        y: 48
+        width: 16
+        height: 16
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 068ceed60f0a0b44d943a52b0120353d
+      internalID: 1326015865
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Leafcutter Shot_4
+      rect:
+        serializedVersion: 2
+        x: 64
+        y: 48
+        width: 16
+        height: 16
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 295b9c244301174489c1d9edcf917d84
+      internalID: -632095686
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Leafcutter Shot_5
       rect:
         serializedVersion: 2
         x: 80
-        y: 240
-        width: 80
-        height: 80
+        y: 48
+        width: 16
+        height: 16
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -160,20 +248,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 3204f0ca59bcf67428d94e7cf73b2dff
-      internalID: -567077257
+      spriteID: 4fc221c84a91921458c270adb5e12daa
+      internalID: 1362072922
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_2
+      name: Leafcutter Shot_6
       rect:
         serializedVersion: 2
-        x: 160
-        y: 240
-        width: 80
-        height: 80
+        x: 96
+        y: 48
+        width: 16
+        height: 16
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -182,20 +270,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 5c0351a57ed29da498d36f80fb8b185b
-      internalID: -2049972924
+      spriteID: e0cdcf30df984c44188386ce0005def0
+      internalID: -1705000074
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_3
+      name: Leafcutter Shot_7
       rect:
         serializedVersion: 2
-        x: 240
-        y: 240
-        width: 80
-        height: 80
+        x: 112
+        y: 48
+        width: 16
+        height: 16
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -204,108 +292,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 707f8bbb49b5b6c4586a7ce3d0e16b51
-      internalID: -1265370813
+      spriteID: c734f7ac003a0ca47a1217c9027d2edb
+      internalID: 490041759
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_4
-      rect:
-        serializedVersion: 2
-        x: 320
-        y: 240
-        width: 80
-        height: 80
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 23b14ebab1b8e5549bc9f526da693cc2
-      internalID: 1287200953
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_5
-      rect:
-        serializedVersion: 2
-        x: 400
-        y: 240
-        width: 80
-        height: 80
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 2bf137d936e43a2489245e7640581886
-      internalID: 1738288493
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_6
-      rect:
-        serializedVersion: 2
-        x: 480
-        y: 240
-        width: 80
-        height: 80
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 365af801efa61664db22b7d93e1eb67f
-      internalID: -228205605
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_7
-      rect:
-        serializedVersion: 2
-        x: 560
-        y: 240
-        width: 80
-        height: 80
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 05d4373455662124ebc17d887dd205bc
-      internalID: -1255312412
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_8
+      name: Leafcutter Shot_8
       rect:
         serializedVersion: 2
         x: 0
-        y: 160
-        width: 80
-        height: 80
+        y: 32
+        width: 16
+        height: 16
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -314,20 +314,108 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 5d55aaadfd6d89d44a0ddfa3d2165485
-      internalID: 2004357703
+      spriteID: cbc1f86dc60d35b4389f0b651852990e
+      internalID: 423718534
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_9
+      name: Leafcutter Shot_9
+      rect:
+        serializedVersion: 2
+        x: 16
+        y: 32
+        width: 16
+        height: 16
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 137f3ccd1b9dd8c47a3e5fd9d86818ac
+      internalID: 2125323058
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Leafcutter Shot_10
+      rect:
+        serializedVersion: 2
+        x: 32
+        y: 32
+        width: 16
+        height: 16
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 9d7d39af5bbc7e841ba0d7e3400130f8
+      internalID: -1354478775
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Leafcutter Shot_11
+      rect:
+        serializedVersion: 2
+        x: 48
+        y: 32
+        width: 16
+        height: 16
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 4056305143905044ebbe598e21a34437
+      internalID: -95320652
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Leafcutter Shot_12
+      rect:
+        serializedVersion: 2
+        x: 64
+        y: 32
+        width: 16
+        height: 16
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 5e51684f9ba820a4ebaf867b1e65518e
+      internalID: -1669370193
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Leafcutter Shot_13
       rect:
         serializedVersion: 2
         x: 80
-        y: 160
-        width: 80
-        height: 80
+        y: 32
+        width: 16
+        height: 16
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -336,20 +424,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 8a293a37e5f20674c9f18e2c22ee06c4
-      internalID: 1630252920
+      spriteID: 84a45537956220f429db437e973dfc87
+      internalID: 92344986
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_10
+      name: Leafcutter Shot_14
       rect:
         serializedVersion: 2
-        x: 160
-        y: 160
-        width: 80
-        height: 80
+        x: 96
+        y: 32
+        width: 16
+        height: 16
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -358,20 +446,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 5679bf6e2a9b5754b8e13bdc603a8254
-      internalID: -1480029382
+      spriteID: 480b8050884cf524d8b2b4a0113cb887
+      internalID: -518894308
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_11
+      name: Leafcutter Shot_15
       rect:
         serializedVersion: 2
-        x: 240
-        y: 160
-        width: 80
-        height: 80
+        x: 112
+        y: 32
+        width: 16
+        height: 16
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -380,108 +468,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: a2eb002792f874d4d8af7b4bd360f568
-      internalID: -1161980249
+      spriteID: 684f86251656c7f47a0b6ee27088f66f
+      internalID: -138059533
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_12
-      rect:
-        serializedVersion: 2
-        x: 320
-        y: 160
-        width: 80
-        height: 80
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 0349fa176ac4c58478b122bbbafaa5ac
-      internalID: 1155325870
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_13
-      rect:
-        serializedVersion: 2
-        x: 400
-        y: 160
-        width: 80
-        height: 80
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 28292356cf4b3e44b8eed246c4f3d973
-      internalID: -1092905555
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_14
-      rect:
-        serializedVersion: 2
-        x: 480
-        y: 160
-        width: 80
-        height: 80
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 8aef4faeb1ce2c1479aadf6df245e513
-      internalID: 1639032783
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_15
-      rect:
-        serializedVersion: 2
-        x: 560
-        y: 160
-        width: 80
-        height: 80
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: aa998001908618849b44b56a7df43937
-      internalID: 1779786313
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_16
+      name: Leafcutter Shot_16
       rect:
         serializedVersion: 2
         x: 0
-        y: 80
-        width: 80
-        height: 80
+        y: 16
+        width: 16
+        height: 16
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -490,20 +490,108 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 57291fd7e19eaba45a0f3356d1343016
-      internalID: 1163567827
+      spriteID: 1a387457ef77f794bbeef3ef892b2450
+      internalID: -510861052
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_17
+      name: Leafcutter Shot_17
+      rect:
+        serializedVersion: 2
+        x: 16
+        y: 16
+        width: 16
+        height: 16
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 36a9b12eb6dbd4448a379eb08aa49a6c
+      internalID: -1468460820
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Leafcutter Shot_18
+      rect:
+        serializedVersion: 2
+        x: 32
+        y: 16
+        width: 16
+        height: 16
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: e31ff1152b9af1a41832b1b900ac819c
+      internalID: -1819089983
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Leafcutter Shot_19
+      rect:
+        serializedVersion: 2
+        x: 48
+        y: 16
+        width: 16
+        height: 16
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: fd5008ea3904a9f47b7d009e0ca5a47f
+      internalID: 2014995403
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Leafcutter Shot_20
+      rect:
+        serializedVersion: 2
+        x: 64
+        y: 16
+        width: 16
+        height: 16
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 0655acc3e2fff404b81a4d5f7c44ca10
+      internalID: -1692189538
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Leafcutter Shot_21
       rect:
         serializedVersion: 2
         x: 80
-        y: 80
-        width: 80
-        height: 80
+        y: 16
+        width: 16
+        height: 16
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -512,20 +600,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 4f35a980eca8ef245b19a377147b68f0
-      internalID: -1378092566
+      spriteID: a6a18cb212357a8498503b2425b4bca5
+      internalID: -165979964
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_18
+      name: Leafcutter Shot_22
       rect:
         serializedVersion: 2
-        x: 160
-        y: 80
-        width: 80
-        height: 80
+        x: 96
+        y: 16
+        width: 16
+        height: 16
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -534,20 +622,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: a7dd6142eb833ea428b5da7953ec657f
-      internalID: -988891341
+      spriteID: 7fb8d9411d24dab4dbbafc6220ded182
+      internalID: 1177402721
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_19
+      name: Leafcutter Shot_23
       rect:
         serializedVersion: 2
-        x: 240
-        y: 80
-        width: 80
-        height: 80
+        x: 112
+        y: 16
+        width: 16
+        height: 16
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -556,108 +644,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: a9f60da6f4b2efc469b541447296f8c4
-      internalID: -1426689660
+      spriteID: 6f2628a37cef0534b88fd677b695788e
+      internalID: -1775976195
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_20
-      rect:
-        serializedVersion: 2
-        x: 320
-        y: 80
-        width: 80
-        height: 80
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 8823361617b01404eb344387e61f3203
-      internalID: -830007983
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_21
-      rect:
-        serializedVersion: 2
-        x: 400
-        y: 80
-        width: 80
-        height: 80
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 4dc4cb151a27bb14ba4cfa0eea76dddd
-      internalID: 1475826220
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_22
-      rect:
-        serializedVersion: 2
-        x: 480
-        y: 80
-        width: 80
-        height: 80
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: f86ecf1dcf8fee5468d711ecc4a440c3
-      internalID: -156132995
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_23
-      rect:
-        serializedVersion: 2
-        x: 560
-        y: 80
-        width: 80
-        height: 80
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: b0ae9ed5d45edfc4bae7ea6e6c138d68
-      internalID: 1828132475
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_24
+      name: Leafcutter Shot_24
       rect:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 80
-        height: 80
+        width: 16
+        height: 16
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -666,20 +666,108 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 4a7be865d6ba5694180ccebdff83fba5
-      internalID: 1452929899
+      spriteID: 9657635f71472604f959daa4958c3aff
+      internalID: -863240872
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_25
+      name: Leafcutter Shot_25
+      rect:
+        serializedVersion: 2
+        x: 16
+        y: 0
+        width: 16
+        height: 16
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 200ca0a2e817bdf45ae93295ed864c27
+      internalID: -567404301
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Leafcutter Shot_26
+      rect:
+        serializedVersion: 2
+        x: 32
+        y: 0
+        width: 16
+        height: 16
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: c76e8eb8d9263c14bbab89a6a64d0f6d
+      internalID: -906410236
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Leafcutter Shot_27
+      rect:
+        serializedVersion: 2
+        x: 48
+        y: 0
+        width: 16
+        height: 16
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 0f33d578e6057ab4da16f71bde938d38
+      internalID: 1276607234
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Leafcutter Shot_28
+      rect:
+        serializedVersion: 2
+        x: 64
+        y: 0
+        width: 16
+        height: 16
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 3b0ca135912fd3b4582abd8048c10341
+      internalID: 631904787
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Leafcutter Shot_29
       rect:
         serializedVersion: 2
         x: 80
         y: 0
-        width: 80
-        height: 80
+        width: 16
+        height: 16
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -688,20 +776,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 5492265544b5f264092c8d365152c218
-      internalID: 1867689416
+      spriteID: d52d5e5c9b8c5e04e9306f165ce9cbdf
+      internalID: -1223869629
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_26
+      name: Leafcutter Shot_30
       rect:
         serializedVersion: 2
-        x: 160
+        x: 96
         y: 0
-        width: 80
-        height: 80
+        width: 16
+        height: 16
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -710,20 +798,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 6873a784a13370b4a946f04b4b9e730c
-      internalID: 1401724786
+      spriteID: 2c53352bf690ff840bb9ea51ae62bb01
+      internalID: -1040336281
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_27
+      name: Leafcutter Shot_31
       rect:
         serializedVersion: 2
-        x: 240
+        x: 112
         y: 0
-        width: 80
-        height: 80
+        width: 16
+        height: 16
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -732,96 +820,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: 095c3ea551ad2f648ae42e8ba6ceb187
-      internalID: 555094399
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_28
-      rect:
-        serializedVersion: 2
-        x: 320
-        y: 0
-        width: 80
-        height: 80
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 14c195ea56e28e74787c8dc0198f31bd
-      internalID: -37480238
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_29
-      rect:
-        serializedVersion: 2
-        x: 400
-        y: 0
-        width: 80
-        height: 80
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: e24187aa50e98154a8589815bcfd386f
-      internalID: 844463442
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_30
-      rect:
-        serializedVersion: 2
-        x: 480
-        y: 0
-        width: 80
-        height: 80
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: ea05664b04211334c9e0309fd66a1c96
-      internalID: -363871625
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Leaf_cutter_real_shot_grown_31
-      rect:
-        serializedVersion: 2
-        x: 560
-        y: 0
-        width: 80
-        height: 80
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: 0
-      bones: []
-      spriteID: 25c94682bd719e14fb4ce07cfc302004
-      internalID: 460048341
+      spriteID: 1e99197a08e9e20439bcbea1376fc4d8
+      internalID: -25170015
       vertices: []
       indices: 
       edges: []
@@ -840,38 +840,38 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      Leaf_cutter_real_shot_grown_0: 678394296
-      Leaf_cutter_real_shot_grown_1: -567077257
-      Leaf_cutter_real_shot_grown_10: -1480029382
-      Leaf_cutter_real_shot_grown_11: -1161980249
-      Leaf_cutter_real_shot_grown_12: 1155325870
-      Leaf_cutter_real_shot_grown_13: -1092905555
-      Leaf_cutter_real_shot_grown_14: 1639032783
-      Leaf_cutter_real_shot_grown_15: 1779786313
-      Leaf_cutter_real_shot_grown_16: 1163567827
-      Leaf_cutter_real_shot_grown_17: -1378092566
-      Leaf_cutter_real_shot_grown_18: -988891341
-      Leaf_cutter_real_shot_grown_19: -1426689660
-      Leaf_cutter_real_shot_grown_2: -2049972924
-      Leaf_cutter_real_shot_grown_20: -830007983
-      Leaf_cutter_real_shot_grown_21: 1475826220
-      Leaf_cutter_real_shot_grown_22: -156132995
-      Leaf_cutter_real_shot_grown_23: 1828132475
-      Leaf_cutter_real_shot_grown_24: 1452929899
-      Leaf_cutter_real_shot_grown_25: 1867689416
-      Leaf_cutter_real_shot_grown_26: 1401724786
-      Leaf_cutter_real_shot_grown_27: 555094399
-      Leaf_cutter_real_shot_grown_28: -37480238
-      Leaf_cutter_real_shot_grown_29: 844463442
-      Leaf_cutter_real_shot_grown_3: -1265370813
-      Leaf_cutter_real_shot_grown_30: -363871625
-      Leaf_cutter_real_shot_grown_31: 460048341
-      Leaf_cutter_real_shot_grown_4: 1287200953
-      Leaf_cutter_real_shot_grown_5: 1738288493
-      Leaf_cutter_real_shot_grown_6: -228205605
-      Leaf_cutter_real_shot_grown_7: -1255312412
-      Leaf_cutter_real_shot_grown_8: 2004357703
-      Leaf_cutter_real_shot_grown_9: 1630252920
+      Leafcutter Shot_0: -930539451
+      Leafcutter Shot_1: 129791241
+      Leafcutter Shot_10: -1354478775
+      Leafcutter Shot_11: -95320652
+      Leafcutter Shot_12: -1669370193
+      Leafcutter Shot_13: 92344986
+      Leafcutter Shot_14: -518894308
+      Leafcutter Shot_15: -138059533
+      Leafcutter Shot_16: -510861052
+      Leafcutter Shot_17: -1468460820
+      Leafcutter Shot_18: -1819089983
+      Leafcutter Shot_19: 2014995403
+      Leafcutter Shot_2: 656516172
+      Leafcutter Shot_20: -1692189538
+      Leafcutter Shot_21: -165979964
+      Leafcutter Shot_22: 1177402721
+      Leafcutter Shot_23: -1775976195
+      Leafcutter Shot_24: -863240872
+      Leafcutter Shot_25: -567404301
+      Leafcutter Shot_26: -906410236
+      Leafcutter Shot_27: 1276607234
+      Leafcutter Shot_28: 631904787
+      Leafcutter Shot_29: -1223869629
+      Leafcutter Shot_3: 1326015865
+      Leafcutter Shot_30: -1040336281
+      Leafcutter Shot_31: -25170015
+      Leafcutter Shot_4: -632095686
+      Leafcutter Shot_5: 1362072922
+      Leafcutter Shot_6: -1705000074
+      Leafcutter Shot_7: 490041759
+      Leafcutter Shot_8: 423718534
+      Leafcutter Shot_9: 2125323058
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

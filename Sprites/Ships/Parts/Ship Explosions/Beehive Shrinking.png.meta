@@ -101,9 +101,9 @@ TextureImporter:
       rect:
         serializedVersion: 2
         x: 0
-        y: 4080
-        width: 1360
-        height: 1360
+        y: 816
+        width: 272
+        height: 272
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -122,10 +122,10 @@ TextureImporter:
       name: Beehive Shrinking_1
       rect:
         serializedVersion: 2
-        x: 1360
-        y: 4080
-        width: 1360
-        height: 1360
+        x: 272
+        y: 816
+        width: 272
+        height: 272
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -144,10 +144,10 @@ TextureImporter:
       name: Beehive Shrinking_2
       rect:
         serializedVersion: 2
-        x: 2720
-        y: 4080
-        width: 1360
-        height: 1360
+        x: 544
+        y: 816
+        width: 272
+        height: 272
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -166,10 +166,10 @@ TextureImporter:
       name: Beehive Shrinking_3
       rect:
         serializedVersion: 2
-        x: 4080
-        y: 4080
-        width: 1360
-        height: 1360
+        x: 816
+        y: 816
+        width: 272
+        height: 272
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -189,9 +189,9 @@ TextureImporter:
       rect:
         serializedVersion: 2
         x: 0
-        y: 2720
-        width: 1360
-        height: 1360
+        y: 544
+        width: 272
+        height: 272
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -210,10 +210,10 @@ TextureImporter:
       name: Beehive Shrinking_5
       rect:
         serializedVersion: 2
-        x: 1360
-        y: 2720
-        width: 1360
-        height: 1360
+        x: 272
+        y: 544
+        width: 272
+        height: 272
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -232,10 +232,10 @@ TextureImporter:
       name: Beehive Shrinking_6
       rect:
         serializedVersion: 2
-        x: 2720
-        y: 2720
-        width: 1360
-        height: 1360
+        x: 544
+        y: 544
+        width: 272
+        height: 272
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -254,10 +254,10 @@ TextureImporter:
       name: Beehive Shrinking_7
       rect:
         serializedVersion: 2
-        x: 4080
-        y: 2720
-        width: 1360
-        height: 1360
+        x: 816
+        y: 544
+        width: 272
+        height: 272
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -277,9 +277,9 @@ TextureImporter:
       rect:
         serializedVersion: 2
         x: 0
-        y: 1360
-        width: 1360
-        height: 1360
+        y: 272
+        width: 272
+        height: 272
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -298,10 +298,10 @@ TextureImporter:
       name: Beehive Shrinking_9
       rect:
         serializedVersion: 2
-        x: 1360
-        y: 1360
-        width: 1360
-        height: 1360
+        x: 272
+        y: 272
+        width: 272
+        height: 272
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -320,10 +320,10 @@ TextureImporter:
       name: Beehive Shrinking_10
       rect:
         serializedVersion: 2
-        x: 2720
-        y: 1360
-        width: 1360
-        height: 1360
+        x: 544
+        y: 272
+        width: 272
+        height: 272
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -342,10 +342,10 @@ TextureImporter:
       name: Beehive Shrinking_11
       rect:
         serializedVersion: 2
-        x: 4080
-        y: 1360
-        width: 1360
-        height: 1360
+        x: 816
+        y: 272
+        width: 272
+        height: 272
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -366,8 +366,8 @@ TextureImporter:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 1360
-        height: 1360
+        width: 272
+        height: 272
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -386,10 +386,10 @@ TextureImporter:
       name: Beehive Shrinking_13
       rect:
         serializedVersion: 2
-        x: 1360
+        x: 272
         y: 0
-        width: 1360
-        height: 1360
+        width: 272
+        height: 272
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -408,10 +408,10 @@ TextureImporter:
       name: Beehive Shrinking_14
       rect:
         serializedVersion: 2
-        x: 2720
+        x: 544
         y: 0
-        width: 1360
-        height: 1360
+        width: 272
+        height: 272
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}

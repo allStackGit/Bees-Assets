@@ -584,7 +584,26 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      remains_WarpGate_FF3200_2_0: -2433159234114066875
+      remains_WarpGate_FF3200_2_1: -2180104420283836201
+      remains_WarpGate_FF3200_2_10: -2174241637555877498
+      remains_WarpGate_FF3200_2_11: -4197708010334001606
+      remains_WarpGate_FF3200_2_12: -8699150696756414892
+      remains_WarpGate_FF3200_2_13: -2490239158934862444
+      remains_WarpGate_FF3200_2_14: -6937778608649004933
+      remains_WarpGate_FF3200_2_15: -1548624018131818085
+      remains_WarpGate_FF3200_2_16: -2200047642753013244
+      remains_WarpGate_FF3200_2_17: 5838237640560609002
+      remains_WarpGate_FF3200_2_18: -1697770925420624146
+      remains_WarpGate_FF3200_2_2: -8358521073218004505
+      remains_WarpGate_FF3200_2_3: -5159810191124335152
+      remains_WarpGate_FF3200_2_4: -6048789848713366740
+      remains_WarpGate_FF3200_2_5: -546980218864533202
+      remains_WarpGate_FF3200_2_6: 5568063643721907698
+      remains_WarpGate_FF3200_2_7: 792840725360046281
+      remains_WarpGate_FF3200_2_8: 7698312797350905526
+      remains_WarpGate_FF3200_2_9: -7197711342335362660
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

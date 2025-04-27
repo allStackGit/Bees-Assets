@@ -134,7 +134,8 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      ship_Dreadnought_CE6E94_0_0: -3971338276466043499
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

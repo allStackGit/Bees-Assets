@@ -58,6 +58,9 @@ SpriteRenderer:
   m_ReflectionProbeUsage: 1
   m_RayTracingMode: 0
   m_RayTraceProcedural: 0
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
+  m_SmallMeshCulling: 1
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
@@ -182,9 +185,11 @@ MonoBehaviour:
   IsFollowingPath: 0
   CannotChangeMovementOrders: 0
   Weapons: []
+  ColoredPrefabs: []
+  OriginalColoredPrefabs: []
+  OriginalSprites: []
   WeaponPrefabs:
   - {fileID: 3407154034279406528}
-  ColoredPrefabs: []
   LeftRocketFlares: []
   CenterRocketFlares: []
   RightRocketFlares: []
@@ -207,6 +212,7 @@ MonoBehaviour:
   HasTurrets: 0
   IsCarrierShip: 0
   IsMoving: 0
+  IsCeaseFire: 0
   PathfindingThreadComplete: 0
   IsPathfinding: 0
   PathfindingThread: 0
@@ -263,7 +269,7 @@ MonoBehaviour:
   _retries: 0
 --- !u!50 &9209194230390332424
 Rigidbody2D:
-  serializedVersion: 4
+  serializedVersion: 5
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
@@ -274,8 +280,8 @@ Rigidbody2D:
   m_UseFullKinematicContacts: 0
   m_UseAutoMass: 0
   m_Mass: 1
-  m_LinearDrag: 0
-  m_AngularDrag: 0
+  m_LinearDamping: 0
+  m_AngularDamping: 0
   m_GravityScale: 0
   m_Material: {fileID: 0}
   m_IncludeLayers:
@@ -296,6 +302,7 @@ PolygonCollider2D:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2518675752222090675}
   m_Enabled: 1
+  serializedVersion: 3
   m_Density: 1
   m_Material: {fileID: 0}
   m_IncludeLayers:
@@ -319,7 +326,8 @@ PolygonCollider2D:
     m_Bits: 4294967295
   m_IsTrigger: 1
   m_UsedByEffector: 0
-  m_UsedByComposite: 0
+  m_CompositeOperation: 0
+  m_CompositeOrder: 0
   m_Offset: {x: 0, y: 0}
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -350,12 +358,20 @@ PrefabInstance:
       value: Shot Builder
       objectReference: {fileID: 0}
     - target: {fileID: 5377580298621350823, guid: fd24374cf1e120f458a28c9f7ed0443b, type: 3}
+      propertyPath: m_Sprite
+      value: 
+      objectReference: {fileID: -930539451, guid: 60e387e05c37b1f47b642b23eb5288e8, type: 3}
+    - target: {fileID: 5377580298621350823, guid: fd24374cf1e120f458a28c9f7ed0443b, type: 3}
       propertyPath: m_SortingLayer
       value: 17
       objectReference: {fileID: 0}
     - target: {fileID: 5377580298621350823, guid: fd24374cf1e120f458a28c9f7ed0443b, type: 3}
       propertyPath: m_SortingLayerID
       value: 1773773555
+      objectReference: {fileID: 0}
+    - target: {fileID: 5377580298621350823, guid: fd24374cf1e120f458a28c9f7ed0443b, type: 3}
+      propertyPath: m_WasSpriteAssigned
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 5911386235816236003, guid: fd24374cf1e120f458a28c9f7ed0443b, type: 3}
       propertyPath: m_RootOrder

@@ -134,7 +134,8 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      ship_Striker_C652C6_0_0: -193865549351857956
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

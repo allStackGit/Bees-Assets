@@ -115,8 +115,8 @@ TextureImporter:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -135,10 +135,10 @@ TextureImporter:
       name: Bee Small Laser Shot Explosion_1
       rect:
         serializedVersion: 2
-        x: 40
+        x: 8
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -157,10 +157,10 @@ TextureImporter:
       name: Bee Small Laser Shot Explosion_2
       rect:
         serializedVersion: 2
-        x: 80
+        x: 16
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -179,10 +179,10 @@ TextureImporter:
       name: Bee Small Laser Shot Explosion_3
       rect:
         serializedVersion: 2
-        x: 120
+        x: 24
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -201,10 +201,10 @@ TextureImporter:
       name: Bee Small Laser Shot Explosion_4
       rect:
         serializedVersion: 2
-        x: 160
+        x: 32
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -223,10 +223,10 @@ TextureImporter:
       name: Bee Small Laser Shot Explosion_5
       rect:
         serializedVersion: 2
-        x: 200
+        x: 40
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -245,10 +245,10 @@ TextureImporter:
       name: Bee Small Laser Shot Explosion_6
       rect:
         serializedVersion: 2
-        x: 240
+        x: 48
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -267,10 +267,10 @@ TextureImporter:
       name: Bee Small Laser Shot Explosion_7
       rect:
         serializedVersion: 2
-        x: 280
+        x: 56
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -289,10 +289,10 @@ TextureImporter:
       name: Bee Small Laser Shot Explosion_8
       rect:
         serializedVersion: 2
-        x: 320
+        x: 64
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -311,10 +311,10 @@ TextureImporter:
       name: Bee Small Laser Shot Explosion_9
       rect:
         serializedVersion: 2
-        x: 360
+        x: 72
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -333,10 +333,10 @@ TextureImporter:
       name: Bee Small Laser Shot Explosion_10
       rect:
         serializedVersion: 2
-        x: 400
+        x: 80
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -355,10 +355,10 @@ TextureImporter:
       name: Bee Small Laser Shot Explosion_11
       rect:
         serializedVersion: 2
-        x: 440
+        x: 88
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -377,10 +377,10 @@ TextureImporter:
       name: Bee Small Laser Shot Explosion_12
       rect:
         serializedVersion: 2
-        x: 480
+        x: 96
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -399,10 +399,10 @@ TextureImporter:
       name: Bee Small Laser Shot Explosion_13
       rect:
         serializedVersion: 2
-        x: 520
+        x: 104
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}

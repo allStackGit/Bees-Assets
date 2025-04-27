@@ -384,7 +384,18 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      remains_Dreadnought_CE6E94_1_0: 7237838841819941669
+      remains_Dreadnought_CE6E94_1_1: 8124823597698389213
+      remains_Dreadnought_CE6E94_1_10: 3149419492947260192
+      remains_Dreadnought_CE6E94_1_2: -2100954758296938395
+      remains_Dreadnought_CE6E94_1_3: -1119320485873403224
+      remains_Dreadnought_CE6E94_1_4: -9077829100041608958
+      remains_Dreadnought_CE6E94_1_5: 2781487896566588884
+      remains_Dreadnought_CE6E94_1_6: -8744664741870726177
+      remains_Dreadnought_CE6E94_1_7: -551335668063185606
+      remains_Dreadnought_CE6E94_1_8: -8028039474823068438
+      remains_Dreadnought_CE6E94_1_9: 5392361386477238781
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

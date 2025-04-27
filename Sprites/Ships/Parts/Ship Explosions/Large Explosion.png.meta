@@ -102,8 +102,8 @@ TextureImporter:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 480
-        height: 480
+        width: 96
+        height: 96
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -122,10 +122,10 @@ TextureImporter:
       name: Large Explosion_1
       rect:
         serializedVersion: 2
-        x: 480
+        x: 96
         y: 0
-        width: 480
-        height: 480
+        width: 96
+        height: 96
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -144,10 +144,10 @@ TextureImporter:
       name: Large Explosion_2
       rect:
         serializedVersion: 2
-        x: 960
+        x: 192
         y: 0
-        width: 480
-        height: 480
+        width: 96
+        height: 96
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -166,10 +166,10 @@ TextureImporter:
       name: Large Explosion_3
       rect:
         serializedVersion: 2
-        x: 1440
+        x: 288
         y: 0
-        width: 480
-        height: 480
+        width: 96
+        height: 96
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -188,10 +188,10 @@ TextureImporter:
       name: Large Explosion_4
       rect:
         serializedVersion: 2
-        x: 1920
+        x: 384
         y: 0
-        width: 480
-        height: 480
+        width: 96
+        height: 96
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -210,10 +210,10 @@ TextureImporter:
       name: Large Explosion_5
       rect:
         serializedVersion: 2
-        x: 2400
+        x: 480
         y: 0
-        width: 480
-        height: 480
+        width: 96
+        height: 96
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -232,10 +232,10 @@ TextureImporter:
       name: Large Explosion_6
       rect:
         serializedVersion: 2
-        x: 2880
+        x: 576
         y: 0
-        width: 480
-        height: 480
+        width: 96
+        height: 96
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -254,10 +254,10 @@ TextureImporter:
       name: Large Explosion_7
       rect:
         serializedVersion: 2
-        x: 3360
+        x: 672
         y: 0
-        width: 480
-        height: 480
+        width: 96
+        height: 96
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -276,10 +276,10 @@ TextureImporter:
       name: Large Explosion_8
       rect:
         serializedVersion: 2
-        x: 3840
+        x: 768
         y: 0
-        width: 480
-        height: 480
+        width: 96
+        height: 96
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -298,10 +298,10 @@ TextureImporter:
       name: Large Explosion_9
       rect:
         serializedVersion: 2
-        x: 4320
+        x: 864
         y: 0
-        width: 480
-        height: 480
+        width: 96
+        height: 96
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -320,10 +320,10 @@ TextureImporter:
       name: Large Explosion_10
       rect:
         serializedVersion: 2
-        x: 4800
+        x: 960
         y: 0
-        width: 480
-        height: 480
+        width: 96
+        height: 96
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -334,6 +334,28 @@ TextureImporter:
       bones: []
       spriteID: 2ee39924a9e9fb94d87aeabc70a4d346
       internalID: 1785576334
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Large Explosion_11
+      rect:
+        serializedVersion: 2
+        x: 1056
+        y: 0
+        width: 96
+        height: 96
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 65a93cad34deb694c8bea15737e8f5ad
+      internalID: -584931326
       vertices: []
       indices: 
       edges: []
@@ -355,6 +377,7 @@ TextureImporter:
       Large Explosion_0: -1308508345
       Large Explosion_1: 379348023
       Large Explosion_10: 1785576334
+      Large Explosion_11: -584931326
       Large Explosion_2: 1671939075
       Large Explosion_3: 686315189
       Large Explosion_4: -1702956902

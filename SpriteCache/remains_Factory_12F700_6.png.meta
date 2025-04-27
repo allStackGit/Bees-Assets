@@ -434,7 +434,20 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      remains_Factory_12F700_6_0: -6578074307091766136
+      remains_Factory_12F700_6_1: -4549237844096955173
+      remains_Factory_12F700_6_10: -2359748130224613806
+      remains_Factory_12F700_6_11: 67521763403035318
+      remains_Factory_12F700_6_12: 3583472932483876235
+      remains_Factory_12F700_6_2: 6622299174970429381
+      remains_Factory_12F700_6_3: 4722505932070159562
+      remains_Factory_12F700_6_4: 1289545997787434379
+      remains_Factory_12F700_6_5: 7096363380429541041
+      remains_Factory_12F700_6_6: -4589046346062046321
+      remains_Factory_12F700_6_7: 6892466953518457309
+      remains_Factory_12F700_6_8: -4890937581412221868
+      remains_Factory_12F700_6_9: 7917787697161299333
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

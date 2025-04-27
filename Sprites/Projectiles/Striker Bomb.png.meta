@@ -123,13 +123,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: bomb_0
+      name: Striker Bomb_0
       rect:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -138,20 +138,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: bb28b9a796cf20b4f971abe58f58df99
-      internalID: -695304075
+      spriteID: 8b91d89c4820b34499c4eed49d6f04b3
+      internalID: 1285868392
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: bomb_1
+      name: Striker Bomb_1
       rect:
         serializedVersion: 2
-        x: 40
+        x: 8
         y: 0
-        width: 40
-        height: 40
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -160,8 +160,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: 0
       bones: []
-      spriteID: c9136f369648cf14a8979bb44c5e1159
-      internalID: 1301645835
+      spriteID: 72c10f98de3b995458cc3f7fa50ba978
+      internalID: -2105112443
       vertices: []
       indices: 
       edges: []
@@ -180,8 +180,8 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      bomb_0: -695304075
-      bomb_1: 1301645835
+      Striker Bomb_0: 1285868392
+      Striker Bomb_1: -2105112443
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

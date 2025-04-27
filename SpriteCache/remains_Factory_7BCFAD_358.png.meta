@@ -134,7 +134,8 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      remains_Factory_7BCFAD_358_0: -6587513852220228841
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

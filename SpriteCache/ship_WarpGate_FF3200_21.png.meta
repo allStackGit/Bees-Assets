@@ -134,7 +134,8 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      ship_WarpGate_FF3200_21_0: -4496569032017927103
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

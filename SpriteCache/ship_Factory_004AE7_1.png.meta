@@ -734,7 +734,32 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      ship_Factory_004AE7_1_0: 5523410861754032728
+      ship_Factory_004AE7_1_1: 6281690109303945467
+      ship_Factory_004AE7_1_10: -4977531805149249009
+      ship_Factory_004AE7_1_11: -6167270417507715814
+      ship_Factory_004AE7_1_12: 8133199152803134425
+      ship_Factory_004AE7_1_13: -7704650989688531728
+      ship_Factory_004AE7_1_14: -3727112663522322933
+      ship_Factory_004AE7_1_15: -9053328729826954576
+      ship_Factory_004AE7_1_16: -3914143969447020214
+      ship_Factory_004AE7_1_17: 7321771495223011205
+      ship_Factory_004AE7_1_18: 563774077493251077
+      ship_Factory_004AE7_1_19: -7246958036338273686
+      ship_Factory_004AE7_1_2: -8926738581811756629
+      ship_Factory_004AE7_1_20: -5241736867414554929
+      ship_Factory_004AE7_1_21: -4670096721840019031
+      ship_Factory_004AE7_1_22: -95381884802043692
+      ship_Factory_004AE7_1_23: 1157244606550234785
+      ship_Factory_004AE7_1_24: 5677562814055833179
+      ship_Factory_004AE7_1_3: -8111594958224911229
+      ship_Factory_004AE7_1_4: 8166750785586711871
+      ship_Factory_004AE7_1_5: 2197718814706634290
+      ship_Factory_004AE7_1_6: 7023753368428369228
+      ship_Factory_004AE7_1_7: 7292120568914726714
+      ship_Factory_004AE7_1_8: 2498302030603496024
+      ship_Factory_004AE7_1_9: -2564440475659428453
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

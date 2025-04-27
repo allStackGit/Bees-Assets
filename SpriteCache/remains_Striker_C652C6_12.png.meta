@@ -259,7 +259,13 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      remains_Striker_C652C6_12_0: -8938850991282134396
+      remains_Striker_C652C6_12_1: 7985555448353066586
+      remains_Striker_C652C6_12_2: -2900344628109676678
+      remains_Striker_C652C6_12_3: -5591637776290493367
+      remains_Striker_C652C6_12_4: 4733607053257282669
+      remains_Striker_C652C6_12_5: -7992346176411704924
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

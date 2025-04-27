@@ -134,7 +134,8 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      ship_FireBarge_B9C000_0_0: -8186140902103806117
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 
