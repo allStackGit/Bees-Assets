@@ -20,6 +20,9 @@ namespace Assets.Scripts.Entities
         public HashSet<CollisionAsteroid> AsteroidsHit = new HashSet<CollisionAsteroid>();
         public CollisionAsteroid LastHitAsteroid;
         public GameObject ExplosionAnimation;
+        /// <summary>
+        /// The spawned asteroid explosion animation
+        /// </summary>
         public AsteroidExplosionAnimation AsteroidExplosionAnimation;
         public bool HasCollisionAnimation, HasCrackedSprite;
         public bool HasDroppedDestructionAnimation, IsImmune, HasTouchedMapBorder, HasEnteredMap;
@@ -196,6 +199,7 @@ namespace Assets.Scripts.Entities
 
                     if (LastHitAsteroid.Health == 0)
                     {
+                        LastHitAsteroid.LastHitAsteroid = this;
                         LastHitAsteroid.GotKilledInCollision();
                         //LastHitAsteroid.Invoke(nameof(DelayKill), ConfigData.CollisionAsteroidKillDelay);
                     }

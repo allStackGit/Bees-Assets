@@ -450,12 +450,17 @@ namespace Assets.Scripts
                 new Color(0.1176f, 0.3725f, 0.2470f, 1)
             } },
             { ShipTypes.Drone, new Color[] {new Color(.729f, .729f, .729f, 1) } },
-            { ShipTypes.Factory, new Color[] { 
-                new Color(0.161f, 0.510f, 0.337f, 1), 
+            //{ ShipTypes.Factory, new Color[] { 
+            //    new Color(0.161f, 0.510f, 0.337f, 1), 
+            //    new Color(0.196f, 0.6f, 0.4f, 1),
+            //    new Color(0.1176f, 0.3725f, 0.2470f, 1),
+            //    new Color(0.1098f, 0.3568f, 0.2352f, 1),
+            //    new Color(0.0509f, 0.1607f, 0.1058f, 1),
+            //} },
+            { ShipTypes.Factory, new Color[] {
                 new Color(0.196f, 0.6f, 0.4f, 1),
-                new Color(0.1176f, 0.3725f, 0.2470f, 1),
-                new Color(0.1098f, 0.3568f, 0.2352f, 1),
-                new Color(0.0509f, 0.1607f, 0.1058f, 1),
+                new Color(0.161f, 0.510f, 0.337f, 1),
+                new Color(0.1176f, 0.3725f, 0.2470f, 1)
             } },
             { ShipTypes.FireBarge, new Color[] { new Color(0.196f, 0.6f, 0.4f, 1), new Color(0.161f, 0.510f, 0.337f, 1), new Color(0.235f, 0.753f, 0.498f, 1) } },
             { ShipTypes.Flagship, new Color[] { 

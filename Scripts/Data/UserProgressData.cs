@@ -78,7 +78,15 @@ namespace Assets.Scripts.Data
         }
         public void AdvanceToNextLevel()
         {
-            SetCurrentLevel(CurrentHumanCampaignLevel + 1);
+            if (ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide)
+            {
+                SetCurrentLevel(CurrentHumanCampaignLevel + 1);
+            }
+            else
+            {
+                SetCurrentLevel(CurrentBeeCampaignLevel + 1);
+            }
+            
         }
         public int GetNextSavedSquadId()
         {

@@ -856,8 +856,6 @@ namespace Assets.Scripts
         {
             // Start the timer to measure how long the sprite processing takes
             float cacheSquadStartTime = Time.realtimeSinceStartup;
-            int animationSizeReductionFactor = 1; // how much smaller the size is than listed in the dictionary of sizes. For instance, factories and warp gates have an animation
-            // size that is 1/5 of the listed size
 
             if (squad.HasCustomColor)
             {
@@ -883,7 +881,7 @@ namespace Assets.Scripts
 
                         // Get the list of sprites for the ship type
                         List<Sprite> cacheSquadSprites = shipPartSprites[cacheSquadShip.ShipType];
-                        for (int j = 0; j < cacheSquadSprites.Count; j++) // Use class-level static `cacheSquadJ`
+                        for (int j = 0; j < cacheSquadSprites.Count; j++)
                         {
                             Sprite cacheSquadSprite = cacheSquadSprites[j];
 
@@ -899,7 +897,7 @@ namespace Assets.Scripts
                                 Color[]  cacheSquadPixels = cacheSquadSourceTexture.GetPixels();
                                 yield return ConfigData.WaitForEndOfFrame;
 
-                                for (int p = 0; p < cacheSquadChangeablePixels.Length; p++) // Use class-level static `cacheSquadP`
+                                for (int p = 0; p < cacheSquadChangeablePixels.Length; p++) 
                                 {
                                     squad.Color.a = cacheSquadPixels[cacheSquadChangeablePixels[p]].a; // match the alpha value
                                     cacheSquadPixels[cacheSquadChangeablePixels[p]] = squad.Color;
@@ -911,7 +909,7 @@ namespace Assets.Scripts
                                 cacheSquadChangedTexture.SetPixels(cacheSquadPixels);
 
                                 // Get the sprite's size and calculate rows/columns
-                                Vector2Int cacheSquadSpriteSize = sizes[cacheSquadShip.ShipType] / animationSizeReductionFactor;
+                                Vector2Int cacheSquadSpriteSize = sizes[cacheSquadShip.ShipType];
                                 int cacheSquadSpriteRows = cacheSquadSourceTexture.height / cacheSquadSpriteSize.y;
                                 int cacheSquadSpriteColumns = cacheSquadSourceTexture.width / cacheSquadSpriteSize.x;
 
@@ -939,9 +937,9 @@ namespace Assets.Scripts
                             else
                             {
                                 // Handle regular ship sprite coloring
-                                Vector2Int cacheSquadSpriteSize = new Vector2Int(cacheSquadSprite.texture.width, cacheSquadSprite.texture.height);
+                                Vector2Int cacheSquadSpriteSize = sizes[cacheSquadShip.ShipType];
 
-                                int[]  cacheSquadChangeablePixels = GetChangablePixelsForImage(cacheSquadColors, cacheSquadSprite);
+                                int[] cacheSquadChangeablePixels = GetChangablePixelsForImage(cacheSquadColors, cacheSquadSprite);
                                 yield return ConfigData.WaitForEndOfFrame;
                                 Sprite cacheSquadRecoloredSprite = SetImageColor(squad.Color, cacheSquadSprite, cacheSquadChangeablePixels);
                                 yield return ConfigData.WaitForEndOfFrame;
