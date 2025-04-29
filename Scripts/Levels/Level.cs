@@ -349,7 +349,11 @@ namespace Assets.Scripts.Levels
             //_asteroidSpawnTimer.Reuse(Stage.AsteroidMinimumSpawnRate + Utilities.RandomInt(Stage.CurrentAsteroidMaxSpawnRate - Stage.CurrentAsteroidMinimumSpawnRate), SpawnAsteroid);
             //GameObject instance = Instantiate(Stage.Prefabs.CollisionAsteroidPrefabs[Utilities.RandomInt(Stage.Prefabs.CollisionAsteroidPrefabs.Count)]);
             //AddTimer(_asteroidSpawnTimer);
-            Stage.Pool.GetCollisionAsteroidFromPool().Setup(this);
+            
+            
+            //Stage.Pool.GetCollisionAsteroidFromPool().Setup(this); // [debug]
+
+
             //Invoke(nameof(SpawnAsteroid), Stage.AsteroidMinimumSpawnRate + Utilities.RandomInt(Stage.CurrentAsteroidMaxSpawnRate - Stage.CurrentAsteroidMinimumSpawnRate));
 
         }
@@ -451,6 +455,16 @@ namespace Assets.Scripts.Levels
             //{
             //    RLSocket.Update();
             //}
+
+            if (Time.frameCount % 600 == 0) // Every 600 frames (~10 seconds)
+            {
+                Debug.Log($"[Memory Check] Textures: {Resources.FindObjectsOfTypeAll<Texture2D>().Length}");
+                Debug.Log($"[Memory Check] Sprites: {Resources.FindObjectsOfTypeAll<Sprite>().Length}");
+                Debug.Log($"[Memory Check] GameObjects: {Resources.FindObjectsOfTypeAll<GameObject>().Length}");
+                Debug.Log($"[Memory Check] Animators: {Resources.FindObjectsOfTypeAll<Animator>().Length}");
+
+            }
+
             if (State.GameOver && !State.LevelEnded /*&& !State.CanShipsKeepMining()*/) // Turn this back on when the hivemind is better trained at mining
             {
                 LevelOver();

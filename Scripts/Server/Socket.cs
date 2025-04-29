@@ -79,7 +79,36 @@ namespace Assets.Scripts.Server
 
                 _webSocketSharpSocket.OnMessage += (sender, e) =>
                 {
-                    MessageQueue.Enqueue(e.RawData);
+                    if (e == null)
+                    {
+                        Debug.LogWarning("Received null message from server");
+                        return;
+                    }
+                    else if (e.RawData == null)
+                    {
+                        Debug.LogWarning("Received null raw data from server:");
+                        Debug.LogWarning(e);
+                        Debug.LogWarning(e.IsPing);
+                        Debug.LogWarning(e.IsBinary);
+                        Debug.LogWarning(e.IsText);
+                        Debug.LogWarning(e.Data);
+                        return;
+                    }
+                    else if (e.RawData.Length == 0)
+                    {
+                        Debug.LogWarning("Received empty message from server:");
+                        Debug.LogWarning(e);
+                        Debug.LogWarning(e);
+                        Debug.LogWarning(e.IsPing);
+                        Debug.LogWarning(e.IsBinary);
+                        Debug.LogWarning(e.IsText);
+                        Debug.LogWarning(e.Data);
+                        return;
+                    }
+                    else
+                    {
+                        MessageQueue.Enqueue(e.RawData);
+                    }
                 };
 
                 _webSocketSharpSocket.Connect();
@@ -269,15 +298,7 @@ namespace Assets.Scripts.Server
             }
             while (MessageQueue.Count > 0)
             {
-                _update_message = MessageQueue.Dequeue();
-                if (_update_message != null)
-                {
-                    Message(_update_message);
-                }
-                else
-                {
-                    Debug.LogWarning($"Pulled null message off of Socket MessageQueue");
-                }
+                Message(MessageQueue.Dequeue());
             }
             CheckStandingRequests();
 

@@ -180,7 +180,7 @@ namespace Assets.Scripts
 
         private void EndIntro()
         {
-            //Debug.Log($"The intro has ended");
+            Debug.Log($"The intro has ended");
             IntroEnded = true;
         }
         private void PlayLoop(float delay, AudioSource loop)
