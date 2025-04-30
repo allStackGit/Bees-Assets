@@ -202,7 +202,7 @@ namespace Assets.Scripts.Levels
             }
             else // either the user chose no obstacles or random chose no obstacles
             {
-                
+
                 if (((CurrentLevelOptions.AsteroidOption == -1 && Utilities.CoinToss()) || CurrentLevelOptions.AsteroidOption > 0) && !Stage.IsTraining) // User chose random and random chose asteroids OR User chose asteroids
                 {
                     HasObstacles = true;
@@ -219,6 +219,7 @@ namespace Assets.Scripts.Levels
                     Debug.Log($"The map does not have asteroids or obstacles");
                 }
             }
+
 
             if (Stage.DoesUserHaveController && ((CurrentLevelOptions.FogOfWar == -1 && Utilities.CoinToss()) || CurrentLevelOptions.FogOfWar == 1))
             {
@@ -351,7 +352,7 @@ namespace Assets.Scripts.Levels
             //AddTimer(_asteroidSpawnTimer);
             
             
-            //Stage.Pool.GetCollisionAsteroidFromPool().Setup(this); // [debug]
+            Stage.Pool.GetCollisionAsteroidFromPool().Setup(this);
 
 
             //Invoke(nameof(SpawnAsteroid), Stage.AsteroidMinimumSpawnRate + Utilities.RandomInt(Stage.CurrentAsteroidMaxSpawnRate - Stage.CurrentAsteroidMinimumSpawnRate));
@@ -426,7 +427,7 @@ namespace Assets.Scripts.Levels
             }
         }
         private int _updateIndex;
-        private int _removeIndex;
+        //private int _removeIndex;
         public void CancelTimer(ScaledTimer scaledTimer)
         {
             //_removeIndex = Timers.IndexOf(scaledTimer);
@@ -456,15 +457,6 @@ namespace Assets.Scripts.Levels
             //    RLSocket.Update();
             //}
 
-            if (Time.frameCount % 600 == 0) // Every 600 frames (~10 seconds)
-            {
-                Debug.Log($"[Memory Check] Textures: {Resources.FindObjectsOfTypeAll<Texture2D>().Length}");
-                Debug.Log($"[Memory Check] Sprites: {Resources.FindObjectsOfTypeAll<Sprite>().Length}");
-                Debug.Log($"[Memory Check] GameObjects: {Resources.FindObjectsOfTypeAll<GameObject>().Length}");
-                Debug.Log($"[Memory Check] Animators: {Resources.FindObjectsOfTypeAll<Animator>().Length}");
-
-            }
-
             if (State.GameOver && !State.LevelEnded /*&& !State.CanShipsKeepMining()*/) // Turn this back on when the hivemind is better trained at mining
             {
                 LevelOver();
@@ -490,7 +482,7 @@ namespace Assets.Scripts.Levels
                         //CancelTimer(_timeoutTimer);
                         _timeoutTimer.Reuse(Stage.TimeoutTime, LevelTimeOut);
                         AddTimer(_timeoutTimer);
-                        Debug.Log($"Added timeout timer:{_timeoutTimer}");
+                        //Debug.Log($"Added timeout timer:{_timeoutTimer}");
                         //Debug.Log(Utilities.ListToString(Timers));
                     }
                 }

@@ -411,6 +411,8 @@ MonoBehaviour:
   ChaseButton: {fileID: 5327796794453322824}
   HoldButton: {fileID: 3129511201556335575}
   DetonateButton: {fileID: 7202631513421092692}
+  ChargeButton: {fileID: 0}
+  DropBeaconButton: {fileID: 0}
   TypeSelector: {fileID: 6972302390186626829}
   ActionTitle: {fileID: 3955689702258820380}
   ActionExplanation: {fileID: 1905241953672553277}
@@ -4801,6 +4803,10 @@ PrefabInstance:
     - target: {fileID: 804775439751118201, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
       propertyPath: m_fontSizeBase
       value: 16
+      objectReference: {fileID: 0}
+    - target: {fileID: 804775440463748484, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
+      propertyPath: m_ScrollSensitivity
+      value: 100
       objectReference: {fileID: 0}
     - target: {fileID: 804775440909196060, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
       propertyPath: m_Name

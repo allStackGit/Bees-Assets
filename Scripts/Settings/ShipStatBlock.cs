@@ -53,6 +53,10 @@ namespace Assets.Scripts.Settings
             string str = Utilities.ListToString(Ranges);
             return str.Length > 0 ? str : "N/A";
         }
+        public string PrintVision()
+        {
+            return Sight > 0 ? Sight.ToString() : Ranges.Max().ToString();
+        }
         public string PrintPower()
         {
             string str = Utilities.ListToString(Powers);

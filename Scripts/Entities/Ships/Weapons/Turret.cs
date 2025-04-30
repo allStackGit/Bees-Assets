@@ -368,7 +368,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             //Debug.Log($"{Name} trying to fire");
             if (IsFiringManually || IsFiringAtAsteroid)
             {
-                if (IsAimedAtTarget)
+                if (IsAimedAtTarget && !Ship.IsCeaseFire)
                 {
                     FireAtPoint();
                 }

@@ -82,7 +82,6 @@ namespace Assets.Scripts.Server
                     if (e == null)
                     {
                         Debug.LogWarning("Received null message from server");
-                        return;
                     }
                     else if (e.RawData == null)
                     {
@@ -92,7 +91,6 @@ namespace Assets.Scripts.Server
                         Debug.LogWarning(e.IsBinary);
                         Debug.LogWarning(e.IsText);
                         Debug.LogWarning(e.Data);
-                        return;
                     }
                     else if (e.RawData.Length == 0)
                     {
@@ -103,11 +101,10 @@ namespace Assets.Scripts.Server
                         Debug.LogWarning(e.IsBinary);
                         Debug.LogWarning(e.IsText);
                         Debug.LogWarning(e.Data);
-                        return;
                     }
                     else
                     {
-                        MessageQueue.Enqueue(e.RawData);
+                        MessageQueue.Enqueue(e.RawData.ToArray());
                     }
                 };
 
@@ -157,7 +154,7 @@ namespace Assets.Scripts.Server
             }
             else
             {
-                Debug.Log("Connection open!");
+                Debug.Log($"Connection with {(_useWebSocketSharp ? "WebSocketSharp" : "NativeWebSocket")} open!");
             }
         }
         private void Error(string e)
@@ -213,7 +210,7 @@ namespace Assets.Scripts.Server
             if (!HandledRequests.Contains(_message_response.Hash))
             {
                 HandledRequests.Add(_message_response.Hash);
-                Debug.Log($"Received response for request #{_message_response.Hash}");
+                //Debug.Log($"Received response for request #{_message_response.Hash}");
                 switch (_message_response.RequestType)
                 {
                     case ConfigData.RequestTypes.GetMatchupStrategy:
@@ -282,8 +279,8 @@ namespace Assets.Scripts.Server
             }
         }
         private byte[] _update_message;
-        private float _timeOfCurrentUpdate;
-        private float _timeOfLastUpdate;
+        //private float _timeOfCurrentUpdate;
+        //private float _timeOfLastUpdate;
         public void Update() 
         {
             //_timeOfCurrentUpdate = Time.unscaledTime;
@@ -298,7 +295,15 @@ namespace Assets.Scripts.Server
             }
             while (MessageQueue.Count > 0)
             {
-                Message(MessageQueue.Dequeue());
+                _update_message = MessageQueue.Dequeue();
+                if (_update_message != null)
+                {
+                    Message(_update_message);
+                }
+                else
+                {
+                    Debug.LogWarning("Received null message from server");
+                }
             }
             CheckStandingRequests();
 

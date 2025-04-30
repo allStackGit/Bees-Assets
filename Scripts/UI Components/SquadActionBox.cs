@@ -618,7 +618,7 @@ namespace Assets.Scripts.UIComponents
                             break;
                         case "Detonate":
                             Detonate();
-                            break;
+                            return;
 
                         case "Charge":
                             Charge();

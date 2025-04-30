@@ -69,6 +69,7 @@ public class Codex : MonoBehaviour
                 description.text = shipInfo.CodexDescription;
                 stats.text =
                     $"Health: {shipInfo.Health.ToString("N0")}\n" +
+                    $"Vision: {shipInfo.PrintVision()}\n" +
                     $"Range: {shipInfo.PrintRange()}\n" +
                     $"Power: {shipInfo.PrintPower()}\n" +
                     $"Rate of Fire: {shipInfo.PrintRateOfFire()}\n" +

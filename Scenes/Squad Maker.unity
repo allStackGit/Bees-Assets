@@ -4208,6 +4208,10 @@ PrefabInstance:
       propertyPath: m_SizeDelta.y
       value: 400
       objectReference: {fileID: 0}
+    - target: {fileID: 804775440463748484, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
+      propertyPath: m_ScrollSensitivity
+      value: 100
+      objectReference: {fileID: 0}
     - target: {fileID: 804775440711634057, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
       propertyPath: m_SizeDelta.y
       value: 100
@@ -4543,6 +4547,10 @@ PrefabInstance:
       propertyPath: m_SizeDelta.y
       value: 400
       objectReference: {fileID: 0}
+    - target: {fileID: 804775440463748484, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
+      propertyPath: m_ScrollSensitivity
+      value: 100
+      objectReference: {fileID: 0}
     - target: {fileID: 804775440711634057, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
       propertyPath: m_SizeDelta.y
       value: 100
@@ -4848,8 +4856,12 @@ PrefabInstance:
         16422'
       objectReference: {fileID: 0}
     - target: {fileID: 5749248882632121076, guid: 247934df76f0d8a4f8a1af315276df20, type: 3}
+      propertyPath: m_fontSize
+      value: 22
+      objectReference: {fileID: 0}
+    - target: {fileID: 5749248882632121076, guid: 247934df76f0d8a4f8a1af315276df20, type: 3}
       propertyPath: m_fontSizeBase
-      value: 14
+      value: 22
       objectReference: {fileID: 0}
     - target: {fileID: 5749248882632121076, guid: 247934df76f0d8a4f8a1af315276df20, type: 3}
       propertyPath: m_TextStyleHashCode
@@ -4897,7 +4909,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5749248882632121077, guid: 247934df76f0d8a4f8a1af315276df20, type: 3}
       propertyPath: m_SizeDelta.x
-      value: 480
+      value: 460
       objectReference: {fileID: 0}
     - target: {fileID: 5749248882632121077, guid: 247934df76f0d8a4f8a1af315276df20, type: 3}
       propertyPath: m_SizeDelta.y
@@ -7556,6 +7568,10 @@ PrefabInstance:
       propertyPath: m_SizeDelta.y
       value: 400
       objectReference: {fileID: 0}
+    - target: {fileID: 804775440463748484, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
+      propertyPath: m_ScrollSensitivity
+      value: 100
+      objectReference: {fileID: 0}
     - target: {fileID: 804775440711634057, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
       propertyPath: m_SizeDelta.y
       value: 100
@@ -8421,6 +8437,10 @@ PrefabInstance:
     - target: {fileID: 804775440463748483, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
       propertyPath: m_SizeDelta.y
       value: 400
+      objectReference: {fileID: 0}
+    - target: {fileID: 804775440463748484, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
+      propertyPath: m_ScrollSensitivity
+      value: 100
       objectReference: {fileID: 0}
     - target: {fileID: 804775440711634057, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
       propertyPath: m_SizeDelta.y
@@ -9555,6 +9575,10 @@ PrefabInstance:
       propertyPath: m_SizeDelta.y
       value: 400
       objectReference: {fileID: 0}
+    - target: {fileID: 804775440463748484, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
+      propertyPath: m_ScrollSensitivity
+      value: 100
+      objectReference: {fileID: 0}
     - target: {fileID: 804775440711634057, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
       propertyPath: m_SizeDelta.y
       value: 100
@@ -10156,7 +10180,7 @@ MonoBehaviour:
   m_Elasticity: 0.1
   m_Inertia: 1
   m_DecelerationRate: 0.135
-  m_ScrollSensitivity: 1
+  m_ScrollSensitivity: 100
   m_Viewport: {fileID: 388908040}
   m_HorizontalScrollbar: {fileID: 0}
   m_VerticalScrollbar: {fileID: 1932570642}
@@ -11474,6 +11498,10 @@ PrefabInstance:
     - target: {fileID: 804775440463748483, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
       propertyPath: m_SizeDelta.y
       value: 400
+      objectReference: {fileID: 0}
+    - target: {fileID: 804775440463748484, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
+      propertyPath: m_ScrollSensitivity
+      value: 100
       objectReference: {fileID: 0}
     - target: {fileID: 804775440711634057, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
       propertyPath: m_SizeDelta.y
@@ -14256,7 +14284,7 @@ MonoBehaviour:
   m_Elasticity: 0.1
   m_Inertia: 1
   m_DecelerationRate: 0.135
-  m_ScrollSensitivity: 1
+  m_ScrollSensitivity: 100
   m_Viewport: {fileID: 270351891}
   m_HorizontalScrollbar: {fileID: 0}
   m_VerticalScrollbar: {fileID: 1060443284}
@@ -15984,6 +16012,10 @@ PrefabInstance:
     - target: {fileID: 804775440463748483, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
       propertyPath: m_SizeDelta.y
       value: 400
+      objectReference: {fileID: 0}
+    - target: {fileID: 804775440463748484, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
+      propertyPath: m_ScrollSensitivity
+      value: 100
       objectReference: {fileID: 0}
     - target: {fileID: 804775440711634057, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
       propertyPath: m_SizeDelta.y
@@ -19592,6 +19624,7 @@ MonoBehaviour:
   LevelTitle: {fileID: 1811492012}
   LevelDetails: {fileID: 1974951109}
   IsRandomizedOpposingSide: 0
+  CurrentFormation: Line
 --- !u!1 &1539631625 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 9023671316290259264, guid: ba8e735e9f2a5b542916479f7ec91750, type: 3}
@@ -23237,6 +23270,10 @@ PrefabInstance:
       propertyPath: m_SizeDelta.y
       value: 400
       objectReference: {fileID: 0}
+    - target: {fileID: 804775440463748484, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
+      propertyPath: m_ScrollSensitivity
+      value: 100
+      objectReference: {fileID: 0}
     - target: {fileID: 804775440711634057, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
       propertyPath: m_SizeDelta.y
       value: 100
@@ -24354,6 +24391,10 @@ PrefabInstance:
     - target: {fileID: 804775440463748483, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
       propertyPath: m_SizeDelta.y
       value: 400
+      objectReference: {fileID: 0}
+    - target: {fileID: 804775440463748484, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
+      propertyPath: m_ScrollSensitivity
+      value: 100
       objectReference: {fileID: 0}
     - target: {fileID: 804775440711634057, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
       propertyPath: m_SizeDelta.y

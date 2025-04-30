@@ -83,6 +83,8 @@ namespace Assets.Scripts.Scenes
         public TMP_Dropdown LevelDropdown;
         public TMP_Text LevelTitle, LevelDetails;
         public bool IsRandomizedOpposingSide;
+        public string CurrentFormation = "Line";
+
 
 
 
@@ -1357,6 +1359,7 @@ namespace Assets.Scripts.Scenes
             if (HasCurrentSquad && dropper.GetDragIcons().Count > 0)
             {
                 _currentSquad.GetSquadShips().Clear();
+                CurrentFormation = formation;
                 switch (formation)
                 {
                     case "Line":
@@ -1427,6 +1430,7 @@ namespace Assets.Scripts.Scenes
                 titleText.text = $"{ship} Details";
                 detaislText.text = $"{shipInfo.Description}\n\n" +
                     $"Health: {shipInfo.Health.ToString("N0")}\n" +
+                    $"Vision: {shipInfo.PrintVision()}\n" +
                     $"Range: {shipInfo.PrintRange()}\n" +
                     $"Power: {shipInfo.PrintPower()}\n" +
                     $"Rate of Fire: {shipInfo.PrintRateOfFire()}\n" +

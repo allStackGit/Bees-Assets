@@ -343,7 +343,7 @@ MonoBehaviour:
   RLHealth: 0
   RLShipType: 0
   _retries: 0
-  WarpPoint: {x: 0, y: 1}
+  WarpPoint: {x: 0, y: 4}
   WarpCollider: {fileID: 3638994493780948175}
 --- !u!50 &9209194230390332424
 Rigidbody2D:

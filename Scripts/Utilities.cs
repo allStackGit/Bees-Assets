@@ -938,6 +938,10 @@ namespace Assets.Scripts
                             {
                                 // Handle regular ship sprite coloring
                                 Vector2Int cacheSquadSpriteSize = sizes[cacheSquadShip.ShipType];
+                                if (j > 0)
+                                {
+                                    cacheSquadSpriteSize = new Vector2Int(cacheSquadSprite.texture.width, cacheSquadSprite.texture.height);
+                                }
 
                                 int[] cacheSquadChangeablePixels = GetChangablePixelsForImage(cacheSquadColors, cacheSquadSprite);
                                 yield return ConfigData.WaitForEndOfFrame;

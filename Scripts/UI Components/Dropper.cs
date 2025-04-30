@@ -138,7 +138,7 @@ namespace Assets.Scripts.UIComponents
 
                 IsValidDropLocation = true;
                 _scene.FleetDragEnd();
-                _scene.SetFormation("Line");
+                _scene.SetFormation(_scene.CurrentFormation);
             }
         }
         public void StartDragExistingIcon(FleetShip fleetShip)
@@ -358,7 +358,7 @@ namespace Assets.Scripts.UIComponents
             }
             else if (dragIcons.Count < 11)
             {
-                int lineLength = Math.Clamp((dragIcons.Count - 2) / 2, 3, ConfigData.Configuration.MaxSquadWidth);
+                int lineLength = Math.Clamp((dragIcons.Count) / 2, 3, ConfigData.Configuration.MaxSquadWidth);
                 List<DragIcon> validDragIcons = dragIcons;
                 List<DragIcon> dropped = new List<DragIcon>();
 
