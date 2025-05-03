@@ -9,7 +9,6 @@ using Assets.Scripts.UIComponents;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Unity.MLAgents;
 using UnityEngine;
 
 namespace Assets.Scripts.Levels
@@ -30,8 +29,8 @@ namespace Assets.Scripts.Levels
         public UI_Components.Map Map;
         public LevelConstructor LevelConstructor;
         public Pathfinder Pathfinder;
-        public SimpleMultiAgentGroup AgentGroup;
-        public SimpleMultiAgentGroup HumanAgentGroup;
+        //public SimpleMultiAgentGroup AgentGroup;
+        //public SimpleMultiAgentGroup HumanAgentGroup;
         public float MinX, MinY, MaxX, MaxY;
         public Vector2[] StartingPositions = new Vector2[2];
 
@@ -78,7 +77,7 @@ namespace Assets.Scripts.Levels
         public long ServerGameId;
 
 
-        public List<string> __BeeHivemindShips, __HumanHivemindShips, __PastCommands, __PathfindingThreads, __CustomLevels, __Timers;
+        public List<string> __BeeHivemindShips, __HumanHivemindShips, __PastCommands, __PathfindingThreads, __CustomLevels, __Timers, __TimerIds;
 
 
         public void UpdateDebugVariables()
@@ -93,6 +92,7 @@ namespace Assets.Scripts.Levels
                 __PathfindingThreads = Pathfinder.IsThreadActive.Select((s, i) => $"#{i} - {(s ? Pathfinder.Ships[i].Name : s)}").ToList();
             }
             __Timers = Timers.Select((t) => t.ToString()).ToList();
+            __TimerIds = _currentTimerIDs.Select((t) => t.ToString()).ToList(); 
 
             //string path = $"{ConfigData.GetBasePath()}/debug/minimap_{Utilities.Hash()}.png";
             //Texture2D dest = new Texture2D(MiniMapTexture.width, MiniMapTexture.height, TextureFormat.RGB24, false);
@@ -145,17 +145,17 @@ namespace Assets.Scripts.Levels
 
             if (Stage.ActivateBrains)
             {
-                AgentGroup = new SimpleMultiAgentGroup();
-                HumanAgentGroup = new SimpleMultiAgentGroup();
+                //AgentGroup = new SimpleMultiAgentGroup();
+                //HumanAgentGroup = new SimpleMultiAgentGroup();
 
-                if (Stage.IsTrainingNueralNetwork)
-                {
-                    Academy.Instance.OnEnvironmentReset += () =>
-                    {
-                        //Debug.Log($"Reset environment, {Academy.Instance.StepCount}");
-                    };
+                //if (Stage.IsTrainingNueralNetwork)
+                //{
+                //    Academy.Instance.OnEnvironmentReset += () =>
+                //    {
+                //        //Debug.Log($"Reset environment, {Academy.Instance.StepCount}");
+                //    };
 
-                }
+                //}
             }
 
 
@@ -427,6 +427,7 @@ namespace Assets.Scripts.Levels
             }
         }
         private int _updateIndex;
+        private HashSet<long> _currentTimerIDs = new HashSet<long>();
         //private int _removeIndex;
         public void CancelTimer(ScaledTimer scaledTimer)
         {
@@ -440,13 +441,23 @@ namespace Assets.Scripts.Levels
             //    Timers.RemoveAt(_removeIndex);
             //}
             Timers.Remove(scaledTimer);
+            _currentTimerIDs.Remove(scaledTimer.Id);
             scaledTimer.IsCanceled = true;
             //Debug.Log($"Canceled {scaledTimer}");
         }
         public void AddTimer(ScaledTimer scaledTimer)
         {
             //Debug.Log($"Adding {scaledTimer}");
+            if (_currentTimerIDs.Contains(scaledTimer.Id)) // [debug]
+            {
+                Debug.LogWarning($"Tried to add {scaledTimer} but it already exists in Timers. Adding anyways");
+            }
+            //else
+            //{
+            //    Debug.Log($"Adding fresh {scaledTimer} to timers");
+            //}
             Timers.Add(scaledTimer);
+            _currentTimerIDs.Add(scaledTimer.Id);
         }
         private ScaledTimer[] _loopTimers;
         void Update()
@@ -631,7 +642,7 @@ namespace Assets.Scripts.Levels
         public void ResetLevel(bool isStepTimeout)
         {
 
-            Academy.Instance.StatsRecorder.Add("Episode Time", Seconds);
+            //Academy.Instance.StatsRecorder.Add("Episode Time", Seconds);
 
             //Debug.Log($"Reset level ({Seconds}), Unclamped Bee reward: {BeeCumaltiveReward}, Unclamped Human reward: {HumanCumulativeReward}");
             _reset_ships = State.GetShips().ToArray();
@@ -678,8 +689,8 @@ namespace Assets.Scripts.Levels
                     //WinningSide = ConfigData.Configuration.BeeSide;
                     //Debug.Log($"Bees won! They had {remainingBeeTsv} / {state.InitialTsv[ConfigData.Configuration.BeeSide - 1]} remaining TSV or {remainingBeeTSVPercentage} x of the original.");
 
-                    AgentGroup.SetGroupReward(_reset_remainingBeeTSVPercentage);
-                    HumanAgentGroup.SetGroupReward(-_reset_remainingBeeTSVPercentage);
+                    //AgentGroup.SetGroupReward(_reset_remainingBeeTSVPercentage);
+                    //HumanAgentGroup.SetGroupReward(-_reset_remainingBeeTSVPercentage);
                     //BeeCumaltiveReward += 1f;
                     //HumanCumulativeReward = -1f;
                     //Debug.Log($"Bees won! Lost {LostBeeShips} bees, reward: {BeeCumaltiveReward}, {HumanCumulativeReward}");
@@ -689,8 +700,8 @@ namespace Assets.Scripts.Levels
                 {
                     //Debug.Log($"Humans won! They had {remainingHumanTsv} / {state.InitialTsv[ConfigData.Configuration.HumanSide - 1]} remaining TSV or {remainingHumanTSVPercentage} x of the original.");
 
-                    AgentGroup.SetGroupReward(-_reset_remainingHumanTSVPercentage);
-                    HumanAgentGroup.SetGroupReward(_reset_remainingHumanTSVPercentage);
+                    //AgentGroup.SetGroupReward(-_reset_remainingHumanTSVPercentage);
+                    //HumanAgentGroup.SetGroupReward(_reset_remainingHumanTSVPercentage);
                     //BeeCumaltiveReward = -1f;
                     //HumanCumulativeReward += 1f;
                     //Debug.Log($"Humans won! Lost {LostBeeShips} bees, reward: {BeeCumaltiveReward}, {HumanCumulativeReward}");
@@ -699,12 +710,12 @@ namespace Assets.Scripts.Levels
                 else
                 {
                     Debug.Log($"Both sides died! no on won!");
-                    AgentGroup.SetGroupReward(0);
-                    HumanAgentGroup.SetGroupReward(0);
+                    //AgentGroup.SetGroupReward(0);
+                    //HumanAgentGroup.SetGroupReward(0);
 
                 }
-                AgentGroup.EndGroupEpisode();
-                HumanAgentGroup.EndGroupEpisode();
+                //AgentGroup.EndGroupEpisode();
+                //HumanAgentGroup.EndGroupEpisode();
             }
             Array.Clear(_reset_spottedShips, 0, 2);
             State.SpottedShips = _reset_spottedShips;

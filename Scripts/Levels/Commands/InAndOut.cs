@@ -29,21 +29,17 @@ namespace Assets.Scripts.Levels.Commands
                     Utilities.RandomCoordinate(Level, _position, Vector2.one * 45, Vector2.zero) :
                     Utilities.RandomCoordinate(Level, _enemyPosition, Vector2.one * (EnemySquad.MaxRange + 45), Vector2.one * (EnemySquad.MaxRange + 10));
 
-                Timer();
-                if (!IsDead) // The previous run of Timer() could have killed the command
-                {
-                    CommandTimer.Reuse(CommandFrequency, Timer, true);
-                    Level.AddTimer(CommandTimer);
+                CommandTimer.Reuse(CommandFrequency, Timer, true, true);
+                Level.AddTimer(CommandTimer);
 
-                    //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
-                    if (IsHiveMindCommand)
-                    {
-                        TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
-                        Level.AddTimer(TimeoutTimer);
-                        //Invoke(nameof(Timeout), ConfigData.StandardMaxCommandTime);
-                    }
+                //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
+                if (IsHiveMindCommand)
+                {
+                    TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
+                    Level.AddTimer(TimeoutTimer);
+                    //Invoke(nameof(Timeout), ConfigData.StandardMaxCommandTime);
                 }
-                
+
             }
 
         }

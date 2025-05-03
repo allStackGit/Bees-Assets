@@ -14,7 +14,6 @@ using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Levels.Commands;
 using Assets.Scripts.Server;
-using Unity.MLAgents;
 using UnityEngine.UIElements;
 using System.Reflection.Emit;
 using Unity.Mathematics;
@@ -425,10 +424,6 @@ namespace Assets.Scripts.Entities.Ships
                 RightRocketFlares.Clear();
                 HasRocketFlares = false;
                 HasRemainsShip = false;
-            }
-            if (!HasBrain)
-            {
-                Destroy(Brain.gameObject);
             }
             if (!Stage.IsRendering)
             {
@@ -1720,12 +1715,12 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                     Debug.Log($"Initial TSV: {_initialTsv[0]}, {_initialTsv[1]}");
                     _percentageTsvDestroyed = (float)Math.Round(((double)tsvLoss / _initialTsv[target.Side - 1]), 3);
                     Debug.Log($"{attacker.Name} destroyed {_percentageTsvDestroyed}  {tsvLoss} / {_initialTsv[target.Side - 1]} of the total initial tsv of the enemy");
-                    target.Brain.AddReward(-_percentageTsvDestroyed);
+                    //target.Brain.AddReward(-_percentageTsvDestroyed);
 
-                    if (attacker != null)
-                    {
-                        attacker.Brain.AddReward(_percentageTsvDestroyed);
-                    }
+                    //if (attacker != null)
+                    //{
+                    //    attacker.Brain.AddReward(_percentageTsvDestroyed);
+                    //}
                 }
 
             }

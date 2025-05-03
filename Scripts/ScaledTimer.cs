@@ -30,6 +30,10 @@ namespace Assets.Scripts
         /// </summary>
         public bool IsCanceled;
         /// <summary>
+        /// Whether the timer should start immediately, or wait for the initial delay
+        /// </summary>
+        public bool StartImmediate;
+        /// <summary>
         /// The unique Id of the ScaledTimer
         /// </summary>
         public long Id;
@@ -38,12 +42,13 @@ namespace Assets.Scripts
         /// </summary>
         /// <param name="length"></param>
         /// <param name="action"></param>
-        public ScaledTimer(float length, Action action, bool isRecurring = false)
+        public ScaledTimer(float length, Action action, bool isRecurring = false, bool startImmediate = false)
         {
             Length = length;
             Action = action;
             IsRecurring = isRecurring;
             Id = Utilities.Hash();
+            StartImmediate = startImmediate;
         }
         public ScaledTimer() {
             Id = Utilities.Hash();
@@ -54,13 +59,14 @@ namespace Assets.Scripts
         /// <param name="length"></param>
         /// <param name="action"></param>
         /// <param name="isRecurring"></param>
-        public void Reuse(float length, Action action, bool isRecurring = false)
+        public void Reuse(float length, Action action, bool isRecurring = false, bool startImmediate = false)
         {
             Length = length;
             Action = action;
             IsRecurring = isRecurring;
             Elapsed = 0;
             IsCanceled = false;
+            StartImmediate = startImmediate;
         }
 
         /// <summary>
@@ -70,11 +76,12 @@ namespace Assets.Scripts
         public bool Update()
         {
             Elapsed += Time.deltaTime;
-            if (Elapsed > Length && !IsCanceled)
+            if ((Elapsed > Length || StartImmediate) && !IsCanceled)
             {
                 //Debug.Log($"Running {this}");
                 Action();
                 Elapsed -= Length;
+                StartImmediate = false;
                 return true;
             }
             return false;

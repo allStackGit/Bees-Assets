@@ -1896,6 +1896,7 @@ namespace Assets.Scripts.Scenes
         public void ChangeEnemyShipTypes(int option)
         {
             _chosenEnemyShipTypes = option - 1;
+            //Debug.Log($"Option: {_chosenEnemyShipTypes}"); 
         }
 
     }

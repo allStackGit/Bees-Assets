@@ -344,38 +344,42 @@ namespace Assets.Scripts.Entities.Ships
         }
 
         float _timeSinceLastStartedCharging;
-        private void FixedUpdate()
+        private void FixedUpdate() // [testing]
         {
             base.FixedUpdate();
-            if (IsCharging)
+            if (!Stage.IsTraining)
             {
-
-                if (BargeLoadingChargeAnimation.activeSelf)
+                if (IsCharging)
                 {
-                    Debug.LogError($"{this} is doing the loading animation when it shouldn't be");
-                }
 
-                if (_timeSinceLastStartedCharging == 0)
-                {
-                    _timeSinceLastStartedCharging += Time.deltaTime;
+                    if (BargeLoadingChargeAnimation.activeSelf)
+                    {
+                        Debug.LogError($"{this} is doing the loading animation when it shouldn't be");
+                    }
+
+                    if (_timeSinceLastStartedCharging == 0)
+                    {
+                        _timeSinceLastStartedCharging += Time.deltaTime;
+                    }
+                    else
+                    {
+                        if (_timeSinceLastStartedCharging > 1)
+                        {
+                            Debug.LogError($"{this} is charging for {_timeSinceLastStartedCharging} and that's longer than it should be");
+                        }
+                    }
                 }
                 else
                 {
-                    if (_timeSinceLastStartedCharging > 1)
+                    _timeSinceLastStartedCharging = 0;
+                    if (BargeChargeAnimation.activeSelf || BargeChargeImageAnimation.activeSelf)
                     {
-                        Debug.LogError($"{this} is charging for {_timeSinceLastStartedCharging} and that's longer than it should be");
+                        Debug.LogError($"{this} is doing an animation when it shouldn't be");
                     }
-                }
-            }
-            else
-            {
-                _timeSinceLastStartedCharging = 0;
-                if (BargeChargeAnimation.activeSelf || BargeChargeImageAnimation.activeSelf)
-                {
-                    Debug.LogError($"{this} is doing an animation when it shouldn't be");
-                }
 
+                }
             }
+            
 
         }
     }

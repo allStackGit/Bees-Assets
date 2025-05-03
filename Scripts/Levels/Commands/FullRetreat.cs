@@ -67,6 +67,7 @@ public class FullRetreat : Command
         base.ClearData();
         TargetWarpGate = null;
         ShipsWaitingToWarp.Clear();
+        _isWaitingToWarp = false;
     }
 
     Vector2 _f_targetPosition;
@@ -96,10 +97,12 @@ public class FullRetreat : Command
 
     private List<Ship> _tempShips;
     private ScaledTimer _waitToWarpTimer = new ScaledTimer();
+    private bool _isWaitingToWarp = false;
     public void WaitToWarp()
     {
         if (TargetWarpGate.ShipAnimationController.IsReadyToWarp && TargetWarpGate.ShipsWarpingHere.Count > 0)
         {
+            _isWaitingToWarp = false;
             _tempShips = ShipsWaitingToWarp.ToList();
             _tempShips.ForEach((ship) =>
             {
@@ -107,9 +110,10 @@ public class FullRetreat : Command
             });
             ShipsWaitingToWarp.Clear();
         }
-        else
+        else if (!_isWaitingToWarp)
         {
-            _waitToWarpTimer.Reuse(2, WaitToWarp);
+            _isWaitingToWarp = true;
+            _waitToWarpTimer.Reuse(2, WaitToWarp, true);
             Level.AddTimer(_waitToWarpTimer);
             //Invoke(nameof(WaitToWarp), 2);
         }

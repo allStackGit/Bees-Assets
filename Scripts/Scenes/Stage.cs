@@ -8,7 +8,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using Unity.MLAgents;
 using UnityEngine;
 using UnityEngine.Pool;
 using Assets.Scripts.UIComponents;
@@ -574,6 +573,7 @@ public class Stage : Scene
             }
             else
             {
+                //Debug.Log($"Option: {PrimaryLevel.CurrentLevelOptions.EnemyShipTypeOption}");
                 HumanShipTypes = new List<ConfigData.ShipTypes>() { HumanShipTypes[PrimaryLevel.CurrentLevelOptions.EnemyShipTypeOption - 1] };
                 Debug.Log($"The user has selected enemy ship type: {HumanShipTypes[0]}");
             }

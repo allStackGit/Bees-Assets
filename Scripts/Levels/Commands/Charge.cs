@@ -139,6 +139,10 @@ namespace Assets.Scripts.Levels.Commands
                 SetFinalize("No more enemy ships to target");
             }
         }
+        /// <summary>
+        /// Sends the ship to the target enemy ship. The ship will move to the target enemy ship's position.
+        /// </summary>
+        /// <param name="ship"></param>
         private void SendShipToTarget(Ship ship)
         {
             ship.MoveToPoint(ship.SetAndGetTargetEnemy().GetPosition()); // Move to the primary target ship
@@ -158,7 +162,7 @@ namespace Assets.Scripts.Levels.Commands
         private bool HasTargetsWithinChargingRange(Barge barge)
         {
             return barge.Charge.HasTargetShip && Utilities.IsRotatedTowards(barge, barge.GetDegreesTowardsPoint(barge.Charge.TargetShip.GetPosition())) &&
-            !Utilities.HasObstaclesInTheWay(barge.GetPosition(), barge.Charge.TargetShip.GetPosition());
+            !Utilities.HasObstaclesInTheWay(barge.GetPosition(), barge.Charge.TargetShip.GetPosition()) && barge.ShipsWithinRange.Contains(barge.Charge.TargetShip);
 
             //return ship.HasWeaponsTargetShips && ship.WeaponsTargetShips.Any((targetShip) => targetShip != null &&  ship.ShipsWithinRange.Contains(targetShip) 
             //&& Utilities.IsRotatedTowards(ship.gameObject, ship.GetDegreesTowardsPoint(targetShip.GetPosition()))) && !ship.ShipsWithinRange.Any((targetship) => 
@@ -193,6 +197,7 @@ namespace Assets.Scripts.Levels.Commands
                             {
                                 if (!ChargingShips.Contains(barge))
                                 {
+                                    Debug.Log($"Barge is charging after {barge.Charge.TargetShip} which is within range");
                                     ChargingShips.Add(barge);
                                     IsCharging = true;
                                     StartCoroutine(barge.ChargeForward(barge.Charge.TargetShip));

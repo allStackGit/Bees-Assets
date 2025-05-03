@@ -27,15 +27,11 @@ namespace Assets.Scripts.Levels.Commands
             SetAndMove(_randomPoint);
             CommandFrequency = 5;
 
-            Timer();
-            if (!IsDead) // The previous run of Timer() could have killed the command
-            {
-                CommandTimer.Reuse(CommandFrequency, Timer, true);
-                Level.AddTimer(CommandTimer);
+            CommandTimer.Reuse(CommandFrequency, Timer, true, true);
+            Level.AddTimer(CommandTimer);
 
-                TimeoutTimer.Reuse(ConfigData.Configuration.AISquadPatrolTime, EndCommand);
-                Level.AddTimer(TimeoutTimer);
-            }
+            TimeoutTimer.Reuse(ConfigData.Configuration.AISquadPatrolTime, EndCommand);
+            Level.AddTimer(TimeoutTimer);
 
 
             if (GetSquad().Side == ConfigData.Configuration.HumanSide)
@@ -101,11 +97,13 @@ namespace Assets.Scripts.Levels.Commands
         private ScaledTimer _endCommandTimer = new ScaledTimer();
         public void FoundShips()
         {
-            _foundShips = true;
-            Level.CancelTimer(TimeoutTimer);
-            _endCommandTimer.Reuse(5, EndCommand);
-            Level.AddTimer(_endCommandTimer);
-            //Invoke(nameof(EndCommand), 5);
+            if (!_foundShips)
+            {
+                _foundShips = true;
+                Level.CancelTimer(TimeoutTimer);
+                _endCommandTimer.Reuse(5, EndCommand);
+                Level.AddTimer(_endCommandTimer);
+            }
         }
 
         private void EndCommand()

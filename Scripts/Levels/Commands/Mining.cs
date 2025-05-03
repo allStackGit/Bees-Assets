@@ -45,20 +45,16 @@ namespace Assets.Scripts.Levels.Commands
                         FoundAsteroid(ship);
                     }
                 });
-                MoveToAsteroid();
-                if (!IsDead) // The previous run of MoveToAsteroid() could have killed the command
+                CommandTimer.Reuse(CommandFrequency, Timer, true, true);
+                Level.AddTimer(CommandTimer);
+                //InvokeRepeating(nameof(MoveToAsteroid), 0, CommandFrequency);
+                if (IsHiveMindCommand)
                 {
-                    CommandTimer.Reuse(CommandFrequency, MoveToAsteroid, true);
-                    Level.AddTimer(CommandTimer);
-                    //InvokeRepeating(nameof(MoveToAsteroid), 0, CommandFrequency);
-                    if (IsHiveMindCommand)
-                    {
-                        TimeoutTimer.Reuse(300, Timeout);
-                        Level.AddTimer(TimeoutTimer);
-                        //Invoke(nameof(EndCommand), 300); // 5 minutes
-                    }
+                    TimeoutTimer.Reuse(300, Timeout);
+                    Level.AddTimer(TimeoutTimer);
+                    //Invoke(nameof(EndCommand), 300); // 5 minutes
                 }
-                
+
             }
             else
             {
@@ -70,12 +66,13 @@ namespace Assets.Scripts.Levels.Commands
         {
             base.ClearData();
             TargetAstroid = null;
+            _hasFoundAsteroid = false;
             MiningShips.Clear();
             ShipsCurrentlyMining.Clear();
         }
 
         private Vector2 _position;
-        public void MoveToAsteroid()
+        public void Timer()
         {
             if (!GetSquad().IsDead && !TargetAstroid.IsDead)
             {
@@ -91,25 +88,31 @@ namespace Assets.Scripts.Levels.Commands
         }
         private ScaledTimer _miningTimer = new ScaledTimer();
         private ScaledTimer _stopMovingTowardsAsteroidTimer = new ScaledTimer();
+        private bool _hasFoundAsteroid = false;
         public void FoundAsteroid(Ship ship)
         {
-            ShipsCurrentlyMining.Add(ship.Id);
-            if (ship.HasShipAnimation)
+            if (!_hasFoundAsteroid)
             {
-                ship.ShipAnimation.SetActive(true);
+                _hasFoundAsteroid = true;
+                ShipsCurrentlyMining.Add(ship.Id);
+                if (ship.HasShipAnimation)
+                {
+                    ship.ShipAnimation.SetActive(true);
+                }
+                if (ShipsCurrentlyMining.Count == 1)
+                {
+                    _miningTimer.Reuse(3, Mine, true);
+                    Level.AddTimer(_miningTimer);
+                    //InvokeRepeating(nameof(Mine), 0, 3);
+                }
+                if (MiningShips.All((s) => Level.State.GetShipById(s) != null || ShipsCurrentlyMining.Contains(s)))
+                {
+                    _stopMovingTowardsAsteroidTimer.Reuse(5, StopMovingTowardsAsteroid);
+                    Level.AddTimer(_stopMovingTowardsAsteroidTimer);
+                    //Invoke(nameof(StopMovingTowardsAsteroid), 5);
+                }
             }
-            if (ShipsCurrentlyMining.Count == 1)
-            {
-                _miningTimer.Reuse(3, Mine, true);
-                Level.AddTimer(_miningTimer);
-                //InvokeRepeating(nameof(Mine), 0, 3);
-            }
-            if (MiningShips.All((s) => Level.State.GetShipById(s) != null || ShipsCurrentlyMining.Contains(s)))
-            {
-                _stopMovingTowardsAsteroidTimer.Reuse(5, StopMovingTowardsAsteroid);
-                Level.AddTimer(_stopMovingTowardsAsteroidTimer);
-                //Invoke(nameof(StopMovingTowardsAsteroid), 5);
-            }
+
         }
 
         public void StopMovingTowardsAsteroid()

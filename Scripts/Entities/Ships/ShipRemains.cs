@@ -67,6 +67,7 @@ namespace Assets.Scripts.Entities.Ships
 
         public void Kill()
         {
+            Ship.Level.CancelTimer(_killTimer);
             gameObject.SetActive(false);
         }
     }

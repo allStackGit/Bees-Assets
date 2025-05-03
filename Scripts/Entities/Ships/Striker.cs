@@ -191,24 +191,26 @@ namespace Assets.Scripts.Entities.Ships
         private ScaledTimer _damageTimer = new ScaledTimer();
         private void DropBomb()
         {
-            //Debug.Log($"Striker #{Id} is dropping bombs");
-            HasDroppedBomb = true;
-
-            if (!Level.Stage.IsTraining)
+            if (!HasDroppedBomb)
             {
-                SetBombsReadyStatus(false);
-                _bomb = (StrikerBomb)Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.StrikerBomb);
-                _bomb.transform.parent = Level.Map.Transform;
-                _bomb.Setup(Level, Bomb, this, ContactedShip, ContactedShip.GetRandomPointOnShip(GetPosition()), 0, 0, Bomb.Power, ContactedShip);
-            }
-            else
-            {
-                _damageTimer.Reuse(2, LogBombDamage);
-                Level.AddTimer(_damageTimer);
-            }
+                //Debug.Log($"Striker #{Id} is dropping bombs");
+                HasDroppedBomb = true;
 
-            CompleteRun();
+                if (!Level.Stage.IsTraining)
+                {
+                    SetBombsReadyStatus(false);
+                    _bomb = (StrikerBomb)Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.StrikerBomb);
+                    _bomb.transform.parent = Level.Map.Transform;
+                    _bomb.Setup(Level, Bomb, this, ContactedShip, ContactedShip.GetRandomPointOnShip(GetPosition()), 0, 0, Bomb.Power, ContactedShip);
+                }
+                else
+                {
+                    _damageTimer.Reuse(2, LogBombDamage);
+                    Level.AddTimer(_damageTimer);
+                }
 
+                CompleteRun();
+            }
         }
         public void LogBombDamage()
         {

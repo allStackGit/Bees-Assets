@@ -24,17 +24,13 @@ namespace Assets.Scripts.Levels.Commands
             {
                 IsAttacking = true;
                 PrepareDamageToSendEntries();
-                Timer();
-                if (!IsDead)
-                {
-                    CommandTimer.Reuse(CommandFrequency, Timer, true);
-                    Level.AddTimer(CommandTimer);
+                CommandTimer.Reuse(CommandFrequency, Timer, true, true);
+                Level.AddTimer(CommandTimer);
 
-                    if (IsHiveMindCommand)
-                    {
-                        TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
-                        Level.AddTimer(TimeoutTimer);
-                    }
+                if (IsHiveMindCommand)
+                {
+                    TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
+                    Level.AddTimer(TimeoutTimer);
                 }
             }
             

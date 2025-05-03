@@ -49,12 +49,14 @@ namespace Assets.Scripts.Entities.Ships
         }
         public void ActuallyShoot() // [projectile-method] [note] this actually sends the projectile once the animation is finished
         {
-            if (IsReadyForFiring && (HasTargetShip || IsFiringManually) && IsAimedAtTarget)
-            {
-                //Debug.Log($"{Name} animation finished, sending projectile, deactivating animation");
-                base.SendProjectile();
-                LaserBuilderAnimation.SetActive(false);
-            }
+            //if (IsReadyForFiring && (HasTargetShip || IsFiringManually || HasTargetAsteroid) && IsAimedAtTarget)
+            //{
+            //    //Debug.Log($"{Name} animation finished, sending projectile, deactivating animation");
+            //    base.SendProjectile();
+            //    LaserBuilderAnimation.SetActive(false);
+            //}
+            base.SendProjectile();
+            LaserBuilderAnimation.SetActive(false);
 
         }
         protected override void SetTargetShip(Ship ship)
@@ -95,7 +97,7 @@ namespace Assets.Scripts.Entities.Ships
             }
             MoveTargetingMarker();
 
-            if (IsFiringManually && IsAimedAtTarget)
+            if ((IsFiringManually && IsAimedAtTarget) || (IsFiringAtAsteroid && IsAimedAtTarget))
             {
                 LaserBuilderAnimation.SetActive(true);
             }

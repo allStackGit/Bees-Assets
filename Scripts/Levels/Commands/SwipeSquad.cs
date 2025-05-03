@@ -20,20 +20,16 @@ namespace Assets.Scripts.Levels.Commands
 
             IsAttacking = true;
             PrepareDamageToSendEntries();
-            Timer();
-            if (!IsDead) // The previous run of Timer() could have killed the command
+            CommandTimer.Reuse(CommandFrequency, Timer, true, true);
+            Level.AddTimer(CommandTimer);
+            //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
+            if (IsHiveMindCommand)
             {
-                CommandTimer.Reuse(CommandFrequency, Timer, true);
-                Level.AddTimer(CommandTimer);
-                //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
-                if (IsHiveMindCommand)
-                {
-                    TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
-                    Level.AddTimer(TimeoutTimer);
-                    //Invoke(nameof(Timeout), ConfigData.StandardMaxCommandTime);
-                }
+                TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
+                Level.AddTimer(TimeoutTimer);
+                //Invoke(nameof(Timeout), ConfigData.StandardMaxCommandTime);
             }
-           
+
         }
         public override void ClearData()
         {

@@ -32,12 +32,8 @@ namespace Assets.Scripts.Levels.Commands
                     _retreatPoint = new Vector2((Mathf.Sin(_angle) * (_idealDistance - _distance) + _position.x), (Mathf.Cos(_angle) * (_idealDistance - _distance) + _position.y));
                     SetAndMove(_retreatPoint);
 
-                    Timer();
-                    if (!IsDead) // The previous run of Timer() could have killed the command
-                    {
-                        CommandTimer.Reuse(CommandFrequency, Timer, true);
-                        Level.AddTimer(CommandTimer);
-                    }
+                    CommandTimer.Reuse(CommandFrequency, Timer, true, true);
+                    Level.AddTimer(CommandTimer);
 
                     //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
                 }

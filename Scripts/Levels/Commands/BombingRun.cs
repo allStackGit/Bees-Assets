@@ -86,19 +86,15 @@ namespace Assets.Scripts.Levels.Commands
                 }
             }
 
-            Timer();
-            if (!IsDead)
+            CommandFrequency = 2;
+            CommandTimer.Reuse(CommandFrequency, Timer, true, true);
+            Level.AddTimer(CommandTimer);
+            //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
+            if (IsHiveMindCommand)
             {
-                CommandFrequency = 2;
-                CommandTimer.Reuse(CommandFrequency, Timer, true);
-                Level.AddTimer(CommandTimer);
-                //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
-                if (IsHiveMindCommand)
-                {
-                    TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
-                    Level.AddTimer(TimeoutTimer);
-                    //Invoke(nameof(Timeout), ConfigData.StandardMaxCommandTime);
-                }
+                TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
+                Level.AddTimer(TimeoutTimer);
+                //Invoke(nameof(Timeout), ConfigData.StandardMaxCommandTime);
             }
 
         }

@@ -39,17 +39,13 @@ namespace Assets.Scripts.Levels.Commands
             AddDestination(bottomRight);
             AddDestination(_bottomLeft);
 
-            Timer();
-            if (!IsDead) // The previous run of Timer() could have killed the command
-            {
-                CommandTimer.Reuse(CommandFrequency, Timer, true);
-                Level.AddTimer(CommandTimer);
+            CommandTimer.Reuse(CommandFrequency, Timer, true, true);
+            Level.AddTimer(CommandTimer);
 
-                if (IsHiveMindCommand)
-                {
-                    TimeoutTimer.Reuse(ConfigData.Configuration.AISquadPatrolTime, Timeout);
-                    Level.AddTimer(TimeoutTimer);
-                }
+            if (IsHiveMindCommand)
+            {
+                TimeoutTimer.Reuse(ConfigData.Configuration.AISquadPatrolTime, Timeout);
+                Level.AddTimer(TimeoutTimer);
             }
             //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
 

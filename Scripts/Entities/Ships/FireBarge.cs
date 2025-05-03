@@ -32,6 +32,7 @@ namespace Assets.Scripts.Entities.Ships
             if (!IsDead)
             {
                 StopMoving();
+                CannotChangeMovementOrders = true;
                 IsDead = true;
                 //Debug.Log("FireBarge exploding");
                 if (!endKill)
@@ -97,7 +98,7 @@ namespace Assets.Scripts.Entities.Ships
                 {
                     if (HasRocketFlares)
                     {
-
+                        Debug.Log($"Deactivating Rocket Flares on ${Name}");
                         RightRocketFlares.ForEach((flare) =>
                         {
                             flare.SetActive(false);

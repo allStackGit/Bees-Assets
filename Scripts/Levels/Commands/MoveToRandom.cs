@@ -15,15 +15,11 @@ namespace Assets.Scripts.Levels.Commands
 
             PrepareDamageToSendEntries(1);
             SetAndMove(Utilities.RandomCoordinate(Level, GetSquad().GetPosition(), Vector2.one * ConfigData.Configuration.AIRandomMovementMaxDistance, Vector2.one * 10));
-            Timer();
-            if (!IsDead) // The previous run of Timer() could have killed the command
-            {
-                CommandTimer.Reuse(CommandFrequency, Timer, true);
-                Level.AddTimer(CommandTimer);
+            CommandTimer.Reuse(CommandFrequency, Timer, true, true);
+            Level.AddTimer(CommandTimer);
 
-                TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
-                Level.AddTimer(TimeoutTimer);
-            }
+            TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
+            Level.AddTimer(TimeoutTimer);
 
             //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
 
