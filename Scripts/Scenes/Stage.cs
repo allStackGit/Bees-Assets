@@ -306,6 +306,10 @@ public class Stage : Scene
     /// </summary>
     public Dictionary<int, Sprite[]> LoadedRemainsSprites = new Dictionary<int, Sprite[]>();
     /// <summary>
+    /// All the unique colored ship animation sprites that have been loaded from disk, keyed by the hash code of a tuple of their ship type and color
+    /// </summary>
+    public Dictionary<int, Sprite[]> LoadedShipAnimationSprites = new Dictionary<int, Sprite[]>();
+    /// <summary>
     /// Cached grids for the path finder, keyed by the 2D size of the grid
     /// </summary>
     public Dictionary<(int, int), Pathfinder.Grid> PathfinderGrids = new Dictionary<(int, int), Pathfinder.Grid>();
@@ -478,8 +482,15 @@ public class Stage : Scene
             ConfigData.SwapSides();
             Menus.ActionBox.Setup(PrimaryLevel, EventSystem, ConfigData.Configuration.UserSide);
         }
-
-        MiniMapCamera.gameObject.SetActive(true);
+        SetupMiniMapCamera();
+    }
+    public void SetupMiniMapCamera()
+    {
+        Menus.HoveringOverMiniMapButton = false;
+        if (!Menus.IsMiniMapOpen)
+        {
+            Menus.ToggleMiniMapDisplay();
+        }
         MiniMapCamera.orthographicSize = PrimaryLevel.Map.MiniMapCameraSize;
     }
     /// <summary>

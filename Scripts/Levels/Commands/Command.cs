@@ -177,7 +177,10 @@ namespace Assets.Scripts.Levels.Commands
             }
 
         }
-
+        /// <summary>
+        /// Sets the destination for the squad to move to. This clears all previous destinations and sets the new one.
+        /// </summary>
+        /// <param name="destination"></param>
         public void SetDestination(Vector2 destination)
         {
             ClearDestinations();
@@ -187,6 +190,10 @@ namespace Assets.Scripts.Levels.Commands
         {
             return _destinations;
         }
+        /// <summary>
+        /// Adds a destination to the list of destinations for the squad to move to. This does not clear previous destinations.
+        /// </summary>
+        /// <param name="destination"></param>
         public void AddDestination(Vector2 destination)
         {
             //float x = Mathf.Clamp(destination.x, Level.MinX, Level.MaxX);
@@ -208,11 +215,18 @@ namespace Assets.Scripts.Levels.Commands
         {
             return GetDestinations().FirstOrDefault();
         }
+        /// <summary>
+        /// Sets the destination and moves the squad to it.
+        /// </summary>
+        /// <param name="destination"></param>
         public void SetAndMove(Vector2 destination)
         {
             SetDestination(destination);
             GetSquad().Move(GetDestination());
         }
+        /// <summary>
+        /// Moves the squad towards the enemy squad's current position.
+        /// </summary>
         public void MoveTowardsEnemies()
         {
             GetSquad().GetShips().ForEach((ship) =>

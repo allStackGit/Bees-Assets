@@ -80,10 +80,12 @@ namespace Assets.Scripts.UIComponents
         }
         public void HoverOverMiniMapButton()
         {
+            //Debug.Log("Hovering over mini map button");
             HoveringOverMiniMapButton = true;
         }
         public void ExitMiniMapButton()
         {
+            //Debug.Log("Exiting mini map button");
             HoveringOverMiniMapButton = false;
         }
         public void ToggleMiniMapDisplay()

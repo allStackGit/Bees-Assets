@@ -26,7 +26,7 @@ Transform:
   m_GameObject: {fileID: 426793110816597161}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: 2.5, z: 0}
+  m_LocalPosition: {x: 0, y: 3, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 0}
   m_ConstrainProportionsScale: 1
   m_Children: []
@@ -67,7 +67,7 @@ CircleCollider2D:
   m_CompositeOperation: 0
   m_CompositeOrder: 0
   m_Offset: {x: 0, y: 0}
-  m_Radius: 4
+  m_Radius: 6
 --- !u!1 &2518675752222090675
 GameObject:
   m_ObjectHideFlags: 0
@@ -342,7 +342,7 @@ MonoBehaviour:
   RLHealth: 0
   RLShipType: 0
   _retries: 0
-  WarpPoint: {x: 0, y: 4}
+  WarpPoint: {x: 0, y: 6}
   WarpCollider: {fileID: 3638994493780948175}
 --- !u!50 &9209194230390332424
 Rigidbody2D:

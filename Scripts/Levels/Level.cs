@@ -522,7 +522,7 @@ namespace Assets.Scripts.Levels
 
 
         }
-        private float _levelOver_fps, _levelOver_fups;
+        private double _timeDouble, _levelOver_fps, _levelOver_fups;
         private ScaledTimer _saveAndEndHalfSecond = new ScaledTimer();
         private ScaledTimer _saveAndEndFiveSecond = new ScaledTimer();
         /// <summary>
@@ -545,8 +545,9 @@ namespace Assets.Scripts.Levels
                     }
                 });
 
-                _levelOver_fps = Time.frameCount / Time.unscaledTime;
-                _levelOver_fups = Stage.FixedUpdates / Time.unscaledTime;
+                _timeDouble = Time.unscaledTimeAsDouble;
+                _levelOver_fps = Time.frameCount / (_timeDouble > 0 ? _timeDouble : 0.0000000000000000001);
+                _levelOver_fups = Stage.FixedUpdates / (_timeDouble > 0 ? _timeDouble : 0.0000000000000000001);
                 ConfigData.__TotalLength += Time.realtimeSinceStartup - Stage.StartTime;
                 ConfigData.__AverageLatency = ConfigData.__TotalLatency / ConfigData.__TotalRequests;
 
@@ -833,6 +834,8 @@ namespace Assets.Scripts.Levels
             {
                 Stage.Audio.SetupMusic();
             }
+
+            Stage.SetupMiniMapCamera();
             
             //float end = (Time.realtimeSinceStartup - StartTime) * 1000; // seconds to milliseconds
             //Debug.Log($"It took {Math.Round(end, 2)} ms to set up the level and {Math.Round(Time.realtimeSinceStartup, 2)}s total time.");

@@ -236,10 +236,10 @@ namespace Assets.Scripts.Entities.Ships
             {
                 StartCoroutine(StopCharge());
             }
-            else
-            {
-                Debug.Log($"Could not stop charge for {this} because it's dead");
-            }
+            //else
+            //{
+            //    Debug.Log($"Could not stop charge for {this} because it's dead");
+            //}
 
         }
 

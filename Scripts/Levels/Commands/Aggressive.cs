@@ -7,7 +7,14 @@ namespace Assets.Scripts.Levels.Commands
 {
     public class Aggressive : Command
     {
+        /// <summary>
+        /// Are the ships comfortably within range of all of the enemy squad ships?
+        /// </summary>
         public bool IsComfortablyWithinRange;
+        /// <summary>
+        /// Has the squad taken up a "standing" position comfortably within range?
+        /// </summary>
+        public bool HasTakenPosition;
         public int ConsecutiveTimesWithinRange = 0;
         /// <summary>
         ///  Sends the squad towards the enemy and follows them, attacking until one squad is dead
@@ -40,6 +47,7 @@ namespace Assets.Scripts.Levels.Commands
             base.ClearData();
             IsComfortablyWithinRange = false;
             ConsecutiveTimesWithinRange = 0;
+            HasTakenPosition = false;
         }
         private void Timer()
         {
@@ -58,7 +66,9 @@ namespace Assets.Scripts.Levels.Commands
                             {
                                 ConsecutiveTimesWithinRange = 0;
                                 IsComfortablyWithinRange = true;
+                                //Debug.Log($"We are comfortably within range");
                             }
+                            //Debug.Log($"All ships are within range of the some ships in the enemy squad, we can stop moving towards them? {ConsecutiveTimesWithinRange}");
                         }
                         else
                         {
@@ -71,7 +81,7 @@ namespace Assets.Scripts.Levels.Commands
                         // Once we get close to the target we speed up the timer so we get more up to date information
                         if (!IsCloseToTarget && GetSquad().DistanceToPoint(EnemySquad.GetPosition()) < GetSquad().MaxRange * 2)
                         {
-                            //Debug.Log($"{Squad.Name} is close to {Enemy.Name}");
+                            //Debug.Log($"{GetSquad().Name} is close to {EnemySquad.Name}");
                             Level.CancelTimer(CommandTimer);
                             //CancelInvoke(nameof(Timer));
                             CommandFrequency = .25f;
@@ -84,9 +94,15 @@ namespace Assets.Scripts.Levels.Commands
                     else if (GetSquad().MaxRange >= 45 && GetSquad().AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
                     {
                         //Debug.Log($"All ships are comfortably within range, we don't need to move.");
+                        if (!HasTakenPosition)
+                        {
+                            SetAndMove(GetSquad().GetPosition());
+                            HasTakenPosition = true;
+                        }
                     }
                     else
                     {
+                        HasTakenPosition = false;
                         IsComfortablyWithinRange = false;
                     }
                 }

@@ -515,13 +515,6 @@ namespace Assets.Scripts.Levels
 
                         Level.State.GameOver = true;
                     }
-                    else
-                    {
-                        if (Level.State.GetSelectedSquads().Count == 0)
-                        {
-                            Level.State.SelectSquad(Level.State.GetSquadsBySide(Side).First());
-                        }
-                    }
                 }
 
                 if (HasCommand)

@@ -905,6 +905,7 @@ namespace Assets.Scripts
 
                                 // Create a new texture for the changed sprite
                                 Texture2D cacheSquadChangedTexture = new Texture2D(cacheSquadSourceTexture.width, cacheSquadSourceTexture.height);
+                                cacheSquadChangedTexture.filterMode = FilterMode.Point;
                                 yield return ConfigData.WaitForEndOfFrame;
                                 cacheSquadChangedTexture.SetPixels(cacheSquadPixels);
 
@@ -1065,6 +1066,7 @@ namespace Assets.Scripts
                 _setImagePixels[changeablePixels[_setImagePixelIndex]] = color;
             }
             _setImageChangedTexture = new Texture2D(_setImageSourceTexture.width, _setImageSourceTexture.height);
+            _setImageChangedTexture.filterMode = FilterMode.Point;
 
             _setImageChangedTexture.SetPixels(_setImagePixels);
             _setImageChangedTexture.Apply(true);

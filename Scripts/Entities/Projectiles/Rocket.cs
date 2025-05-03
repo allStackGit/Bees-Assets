@@ -24,6 +24,12 @@ namespace Assets.Scripts.Entities.Projectiles
             base.Setup(level, weapon, shooter, target, startingPosition, angle, range, power);
             _speedIncreaseTimer.Reuse(.1f, IncreaseSpeed, true);
             Level.AddTimer(_speedIncreaseTimer);
+            if (Stage.IsRendering)
+            {
+                Animator.Play("Missile Release", 0, 0f);
+            }
+
+
             //InvokeRepeating(nameof(IncreaseSpeed), .1f, .1f);
         }
         private void IncreaseSpeed()

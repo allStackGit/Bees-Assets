@@ -542,14 +542,14 @@ namespace Assets.Scripts
             { ShipTypes.WarpGate, 13f },
 
             { ShipTypes.Beehive, 4f },
-            { ShipTypes.Bumblebee, .35f },
+            { ShipTypes.Bumblebee, 1.35f },
             { ShipTypes.CarpenterBee, 1.55f },
             { ShipTypes.Honeybee, .35f },
             { ShipTypes.Hornet, .35f },
             { ShipTypes.Leafcutter, .35f },
             { ShipTypes.Queen, .35f },
             { ShipTypes.Wasp, .55f },
-            { ShipTypes.YellowJacket, .35f },
+            { ShipTypes.YellowJacket, .55f },
         };
 
         public static readonly HashSet<CommandTypes> TypesOfCommands = new HashSet<CommandTypes> { CommandTypes.Aggressive, CommandTypes.BombingRun, CommandTypes.Charge,
