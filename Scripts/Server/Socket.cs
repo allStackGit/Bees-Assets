@@ -7,6 +7,7 @@ using Assets.Scripts.Levels;
 using Assets.Scripts.Levels.Commands;
 using Assets.Scripts.Entities.Ships;
 using System;
+using System.Collections.Concurrent;
 
 namespace Assets.Scripts.Server
 {
@@ -36,7 +37,7 @@ namespace Assets.Scripts.Server
         /// <summary>
         /// A queue of all messages received from the server
         /// </summary>
-        public Queue<byte[]> MessageQueue = new Queue<byte[]>();
+        public ConcurrentQueue<byte[]> MessageQueue = new ConcurrentQueue<byte[]>();
         public List<Level> OpenLevels = new List<Level>();
 
 
@@ -159,7 +160,7 @@ namespace Assets.Scripts.Server
         }
         private void Error(string e)
         {
-            Debug.Log("Socket Error! " + e);
+            Debug.LogWarning("Socket Error! " + e);
         }
         private void Close(string reason = null)
         {
@@ -289,20 +290,36 @@ namespace Assets.Scripts.Server
             //    Debug.LogWarning($"{_timeOfCurrentUpdate - _timeOfLastUpdate}s have passed since the previous socket update");
             //}
             //Debug.Log("Updating socket");
-            if (!_useWebSocketSharp)
+
+
+            // Using WebSocketSharp so we don't need this
+            //if (!_useWebSocketSharp)
+            //{
+            //    _nativeWebSocket.DispatchMessageQueue();
+            //}
+
+
+            /*
+             
+            while (MessageQueue.TryDequeue(out _update_message))
             {
-                _nativeWebSocket.DispatchMessageQueue();
+                Message(_update_message);
             }
-            while (MessageQueue.Count > 0)
+             */
+            while (MessageQueue.Count > 0) // should be able to replace this once we know that there aren't any errors [debug]
             {
-                _update_message = MessageQueue.Dequeue();
+                MessageQueue.TryDequeue(out _update_message);
                 if (_update_message != null)
                 {
                     Message(_update_message);
                 }
+                else if (_update_message.Length == 0)
+                {
+                    Debug.LogWarning($"Received empty message from server. There are {MessageQueue.Count} messages on the queue");
+                }
                 else
                 {
-                    Debug.LogWarning("Received null message from server");
+                    Debug.LogWarning($"Received null message from server. There are {MessageQueue.Count} messages on the queue");
                 }
             }
             CheckStandingRequests();

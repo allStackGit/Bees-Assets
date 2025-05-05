@@ -166,6 +166,7 @@ namespace Assets.Scripts.Levels.Commands
         public override void SetFinalize(string cause)
         {
             Level.CancelTimer(_miningTimer);
+            Level.CancelTimer(_stopMovingTowardsAsteroidTimer);
             CleanupAsteroid();
             //Debug.Log($"Finalizing mining command for {Squad}");
             GetSquad().GetShips().ForEach((ship) =>
