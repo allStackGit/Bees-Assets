@@ -205,6 +205,14 @@ namespace Assets.Scripts.Entities.Ships
                 }
                 else
                 {
+                    if (Level._currentTimerIDs.Contains(_damageTimer.Id)) // [debug]
+                    {
+                        Debug.LogError($"Tried to add {_damageTimer} but it already exists in Timers.");
+                    }
+                    else
+                    {
+                        Debug.Log($"Adding {_damageTimer} to Timers.");
+                    }
                     _damageTimer.Reuse(2, LogBombDamage);
                     Level.AddTimer(_damageTimer);
                 }
@@ -261,6 +269,7 @@ namespace Assets.Scripts.Entities.Ships
 
         public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false)
         {
+            Debug.Log($"Striker {Name} killed, canceling {_damageTimer}");
             Level.CancelTimer(_damageTimer);
             Level.CancelTimer(_checkCarrierReloadTimer);
             base.Kill(killer, killerFleetShip, killerSavedSquad, endKill);

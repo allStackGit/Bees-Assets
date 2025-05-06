@@ -58,6 +58,7 @@ namespace Assets.Scripts.Levels.Commands
             }
             else
             {
+                GetSquad().BannedStrats.Add(ConfigData.CommandTypes.Mining);
                 SetFinalize("The asteroid doesn't exist anymore, or there were no asteroids around");
             }
 
@@ -66,7 +67,7 @@ namespace Assets.Scripts.Levels.Commands
         {
             base.ClearData();
             TargetAstroid = null;
-            _hasFoundAsteroid = false;
+            HasFoundAsteroid = false;
             MiningShips.Clear();
             ShipsCurrentlyMining.Clear();
         }
@@ -88,16 +89,16 @@ namespace Assets.Scripts.Levels.Commands
         }
         private ScaledTimer _miningTimer = new ScaledTimer();
         private ScaledTimer _stopMovingTowardsAsteroidTimer = new ScaledTimer();
-        private bool _hasFoundAsteroid = false;
+        public bool HasFoundAsteroid = false;
         public void FoundAsteroid(Ship ship)
         {
-            if (!_hasFoundAsteroid)
+            if (!HasFoundAsteroid)
             {
-                _hasFoundAsteroid = true;
+                HasFoundAsteroid = true;
                 ShipsCurrentlyMining.Add(ship.Id);
                 if (ship.HasShipAnimation)
                 {
-                    ship.ShipAnimation.SetActive(true);
+                    ship.ShipAnimationController.Activate();
                 }
                 if (ShipsCurrentlyMining.Count == 1)
                 {
@@ -174,7 +175,7 @@ namespace Assets.Scripts.Levels.Commands
                 if (ship.HasShipAnimation)
                 {
                     //Debug.Log($"Turning off mining animation for {ship.Name}");
-                    ship.ShipAnimation.SetActive(false);
+                    ship.ShipAnimationController.Deactivate();
                 }
             });
             base.SetFinalize(cause);

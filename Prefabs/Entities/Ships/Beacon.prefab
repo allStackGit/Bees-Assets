@@ -385,12 +385,17 @@ PrefabInstance:
     - target: {fileID: 7941494824958056873, guid: af7caa52462ab6244a840c36b91e9893, type: 3}
       propertyPath: Collider
       value: 
-      objectReference: {fileID: 0}
+      objectReference: {fileID: 1919713453428214442}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: af7caa52462ab6244a840c36b91e9893, type: 3}
+--- !u!58 &1919713453428214442 stripped
+CircleCollider2D:
+  m_CorrespondingSourceObject: {fileID: 1364490151576449659, guid: af7caa52462ab6244a840c36b91e9893, type: 3}
+  m_PrefabInstance: {fileID: 597735918943287505}
+  m_PrefabAsset: {fileID: 0}
 --- !u!4 &5944538779689448074 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 6500008320206064219, guid: af7caa52462ab6244a840c36b91e9893, type: 3}

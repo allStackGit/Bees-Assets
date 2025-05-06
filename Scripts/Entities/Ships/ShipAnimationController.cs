@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Assets.Scripts.Levels.Commands;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
@@ -46,6 +47,18 @@ namespace Assets.Scripts.Entities.Ships
                 //Debug.Log($"Loaded cached sprites for Ship {Ship.Name}");
 
 
+            }
+        }
+        void Update()
+        {
+            if (Ship.IsWarpGate && ((WarpGate)Ship).ShipsWarpingHere.Count == 0)
+            {
+                Debug.LogWarning($"Warp gate {Ship.Name} has no ships warping here, but the animation is not disabled");
+            }
+            else if (Ship.ShipType == ConfigData.ShipTypes.Factory && !(Ship.Squad.HasCommand && Ship.Squad.GetCommand().CommandType == ConfigData.CommandTypes.Mining &&
+                ((Mining)Ship.Squad.GetCommand()).HasFoundAsteroid))
+            {
+                Debug.LogWarning($"Factory {Ship.Name} has no ships mining, but the animation is not disabled");
             }
         }
 

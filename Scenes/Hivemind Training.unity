@@ -17014,7 +17014,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 2944892714679254333, guid: e154edb1d8fb554428cdc7380556de19, type: 3}
       propertyPath: orthographic size
-      value: 550
+      value: 3000
       objectReference: {fileID: 0}
     - target: {fileID: 2944892714679254333, guid: e154edb1d8fb554428cdc7380556de19, type: 3}
       propertyPath: m_CullingMask.m_Bits

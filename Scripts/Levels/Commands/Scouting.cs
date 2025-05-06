@@ -30,7 +30,7 @@ namespace Assets.Scripts.Levels.Commands
             CommandTimer.Reuse(CommandFrequency, Timer, true, true);
             Level.AddTimer(CommandTimer);
 
-            TimeoutTimer.Reuse(ConfigData.Configuration.AISquadPatrolTime, EndCommand);
+            TimeoutTimer.Reuse(300, EndCommand);
             Level.AddTimer(TimeoutTimer);
 
 
@@ -48,6 +48,7 @@ namespace Assets.Scripts.Levels.Commands
                 if (Scouts.Count > 0)
                 {
                     _dropBeaconsTimer.Reuse(ConfigData.MinimumDelayPerBeacon, DropScoutBeacons, true);
+                    Level.AddTimer(_dropBeaconsTimer);
                     //InvokeRepeating(nameof(DropScoutBeacons), ConfigData.MinimumDelayPerBeacon, ConfigData.MinimumDelayPerBeacon);
                 }
             }
@@ -77,7 +78,7 @@ namespace Assets.Scripts.Levels.Commands
         {
             Scouts.ForEach((scout) =>
             {
-                if (!scout.IsDead && ScoutIds.Contains(scout.Id)) // Checking the scout ids ensures that this scout didn't die and then become a new ship with a new Id
+                if (!scout.IsDead) 
                 {
                     scout.DropBeacon();
                 }
@@ -95,7 +96,10 @@ namespace Assets.Scripts.Levels.Commands
         }
 
         private ScaledTimer _endCommandTimer = new ScaledTimer();
-        public void FoundShips()
+        /// <summary>
+        /// Triggered when the squad finds a ship that is unknown to the hivemind 
+        /// </summary>
+        public void FoundNewShips()
         {
             if (!_foundShips)
             {

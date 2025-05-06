@@ -33,7 +33,7 @@ public class FullRetreat : Command
             if (TargetWarpGate.ShipsWarpingHere.Count > 0)
             {
                 base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
-                TargetWarpGate.ShipAnimation.SetActive(true);
+                TargetWarpGate.ShipAnimationController.Activate();
                 WaitToWarp();
                 if (!IsDead)
                 {
@@ -160,7 +160,7 @@ public class FullRetreat : Command
 
             if (TargetWarpGate.ShipsWarpingHere.Count == 0)
             {
-                TargetWarpGate.ShipAnimation.SetActive(false);
+                TargetWarpGate.ShipAnimationController.Deactivate();
                 TargetWarpGate.ShipAnimationController.UseSecondaryLoop = false;
                 TargetWarpGate.ShipAnimationController.IsReadyToWarp = false;
                 TargetWarpGate.ShipAnimationController.SpriteIndex = 0;

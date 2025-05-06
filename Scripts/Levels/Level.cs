@@ -427,7 +427,7 @@ namespace Assets.Scripts.Levels
             }
         }
         private int _updateIndex;
-        private HashSet<long> _currentTimerIDs = new HashSet<long>();
+        public HashSet<long> _currentTimerIDs = new HashSet<long>(); // [debug]
         //private int _removeIndex;
         public void CancelTimer(ScaledTimer scaledTimer)
         {

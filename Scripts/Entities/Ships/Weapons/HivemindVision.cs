@@ -50,7 +50,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                         Ship.Level.State.HivemindShips[Ship.Side - 1][Ship.Id].Add(_shipEnter); // Add the newly seen ship to the hivemind
                         if (Ship.Squad.GetCommand().CommandType == ConfigData.CommandTypes.Scouting)
                         {
-                            ((Scouting)Ship.Squad.GetCommand()).FoundShips(); // If the ship is scouting, note that it's found ships and can end the command
+                            ((Scouting)Ship.Squad.GetCommand()).FoundNewShips(); // If the ship is scouting, note that it's found ships and can end the command
                         }
                     }
                 }
@@ -59,7 +59,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
             else if (Ship.ShipType == ConfigData.ShipTypes.Beacon && Ship.MotherSquad.HasCommand){
                 _shipEnter = collider.GetComponent<Ship>();
-                //Debug.Log($"{Ship.Name} from {Ship.Level.gameObject.name} just saw {ship.Name} and added them to hivemind vision");
+                Debug.Log($"{Ship.Name} from {Ship.Level.gameObject.name} just saw {_shipEnter.Name} and added them to hivemind vision");
                 if (Ship.IsHiveMindControlled)
                 {
                     if (!Ship.Level.State.VisionCache[Ship.Side - 1].Contains(_shipEnter))
@@ -70,7 +70,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
                         if (Ship.MotherSquad.GetCommand().CommandType == ConfigData.CommandTypes.Scouting)
                         {
-                            ((Scouting)Ship.MotherSquad.GetCommand()).FoundShips();
+                            ((Scouting)Ship.MotherSquad.GetCommand()).FoundNewShips();
                         }
                     }
                 }
