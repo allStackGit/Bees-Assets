@@ -44,6 +44,7 @@ namespace Assets.Scripts.Server
 
         public Socket(int port, string hostname, bool useWebSocketSharp)
         {
+            ConfigData.Stopwatch = System.Diagnostics.Stopwatch.StartNew(); // [debug]
             _hostname = hostname;
             _port = port;
             _useWebSocketSharp = useWebSocketSharp;
@@ -191,15 +192,17 @@ namespace Assets.Scripts.Server
             {
                 StandingRequests.Remove(sr);
                 Debug.LogWarning($"Resending #{sr.Hash}");
-                SendRequest(sr);
+                SendRequest(sr, true);
             });
         }
 
         private string _f_message;
         private ServerResponse _message_response;
         private ServerRequest _message_request;
+        private long _c2c, _now;
         private void Message(byte[] bytes)
         {
+            ConfigData.__TotalRequests++;
             //Debug.Log($"Got message from server");
             // getting the message as a string
             _f_message = System.Text.Encoding.UTF8.GetString(bytes);
@@ -207,7 +210,38 @@ namespace Assets.Scripts.Server
             _message_response = JsonUtility.FromJson<ServerResponse>(_f_message);
             _message_response.RequestType = Utilities.ConvertNameToRequestType[_message_response.Type];
             //Debug.Log(response);
-            
+
+            // [debug]
+            _message_request = GetStandingRequest(_message_response.Hash);
+            if (_message_request != null)
+            {
+                _now = ConfigData.Stopwatch.ElapsedMilliseconds;
+                _c2c = (_now - _message_request.SendTime);
+                ConfigData.__TotalC2C += _c2c;
+                ConfigData.__TotalWireTime += _c2c - _message_response.ProcessingTime;
+                ConfigData.__TotalProcessingTime += _message_response.ProcessingTime;
+
+                if (_c2c < 0)
+                {
+                    Debug.LogWarning($"C2C time is negative! {_c2c}ms");
+                }
+                if (_message_response.ProcessingTime < 0)
+                {
+                    Debug.LogWarning($"Processing time is negative! {_message_response.ProcessingTime}ms");
+                }
+                if (_message_response.ProcessingTime > _c2c)
+                {
+                    Debug.LogWarning($"Processing time is greater than C2C time! {_message_response.ProcessingTime}ms > {_c2c}ms, now: {_now}, SendTime: {_message_request.SendTime}");
+                }
+
+                //Debug.Log($"Received message #{_message_response.Hash} from server. \n" +
+                //    $"It took {(_message_response.ServerReceiveTime - sr.SendTime)}ms to go from the client to the server. \n" +
+                //    $"It took {(_message_response.ServerSendTime - _message_response.ServerReceiveTime)}ms to be received, processed, and sent back. \n" +
+                //    $"It took {(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - _message_response.ServerSendTime)}ms to go from the server back to the client. \n" +
+                //    $"It took {(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - sr.SendTime)}ms to go from the client back to the client, round trip.");
+            }
+
+
             if (!HandledRequests.Contains(_message_response.Hash))
             {
                 HandledRequests.Add(_message_response.Hash);
@@ -269,7 +303,6 @@ namespace Assets.Scripts.Server
             //Debug.Log($"Content: {content}");
             _send_json = JsonConvert.SerializeObject(content);
             //Debug.Log($"Message to server: {_send_json}");
-            ConfigData.__TotalRequests++;
             if (_useWebSocketSharp)
             {
                 _webSocketSharpSocket.Send(_send_json);
@@ -284,7 +317,7 @@ namespace Assets.Scripts.Server
         //private float _timeOfLastUpdate;
         public void Update() 
         {
-            //_timeOfCurrentUpdate = Time.unscaledTime;
+            //_timeOfCurrentUpdate = ConfigData.Stopwatch.ElapsedMilliseconds ;
             //if (_timeOfCurrentUpdate - _timeOfLastUpdate > 1)
             //{
             //    Debug.LogWarning($"{_timeOfCurrentUpdate - _timeOfLastUpdate}s have passed since the previous socket update");
@@ -340,17 +373,19 @@ namespace Assets.Scripts.Server
             for (_index = 0; _index < _standingRequests.Count; _index++)
             {
                 _sr = _standingRequests[_index];
-                if ((Time.unscaledTime - _sr.StartTime) > ConfigData.StandardMaxTimeOnQueue)
+                if ((ConfigData.Stopwatch.ElapsedMilliseconds - _sr.StartTime) > ConfigData.StandardMaxTimeOnQueue)
                 {
                     StandingRequests.Remove(_sr);
                     Debug.LogWarning($"Resending #{_sr.Hash}:{_sr.Type} because it's been waiting for more than {ConfigData.StandardMaxTimeOnQueue}s");
-                    SendRequest(_sr);
+                    _sr.StartTime = ConfigData.Stopwatch.ElapsedMilliseconds;
+                    SendRequest(_sr, true);
                     _resends++;
                 }
             }
             if (_resends > 0)
             {
                 Debug.LogWarning($"Resending {_resends} requests because they've been waiting for more than {ConfigData.StandardMaxTimeOnQueue}s");
+                ConfigData.__TotalResends += _resends;
             }
 
         }
@@ -400,9 +435,9 @@ namespace Assets.Scripts.Server
             LogRequest(serverRequest);
             Send(serverRequest.Request);
         }
-        public void SendRequest(ServerRequest serverRequest)
+        public void SendRequest(ServerRequest serverRequest, bool isResendRequest)
         {
-            LogRequest(serverRequest);
+            LogRequest(serverRequest, isResendRequest);
             switch (serverRequest.Type)
             {
                 case ConfigData.RequestTypes.GetMatchupStrategy:
@@ -441,11 +476,15 @@ namespace Assets.Scripts.Server
         /// Adds the server request to Standing Requests and optionally adds it to __PastServerRequests
         /// </summary>
         /// <param name="request"></param>
-        public void LogRequest(ServerRequest request)
+        public void LogRequest(ServerRequest request, bool isResendRequest = false)
         {
             StandingRequests.Add(request);
-
             ConfigData.__PastServerRequests.Add(request);
+
+            if (!isResendRequest)
+            {
+                request.SendTime = ConfigData.Stopwatch.ElapsedMilliseconds; // [debug]
+            }
         }
         // ===========================
         // Class-Level Static Variables
@@ -530,8 +569,8 @@ namespace Assets.Scripts.Server
 
             if (_standingRequest != null)
             {
-                _standingRequest.TimeOnQueue = Time.unscaledTime - _standingRequest.StartTime;
-                ConfigData.__TotalLatency += _standingRequest.TimeOnQueue;
+                _standingRequest.TimeOnQueue = ConfigData.Stopwatch.ElapsedMilliseconds - _standingRequest.StartTime;
+                ConfigData.__TotalTimeOnQueue += _standingRequest.TimeOnQueue;
 
                 if (!string.IsNullOrEmpty(_userDataResponse.Filename) && !string.IsNullOrEmpty(_userDataResponse.Contents))
                 {
@@ -612,8 +651,8 @@ namespace Assets.Scripts.Server
                 {
                     _settingsResponse_standingRequest.Status = 1;
                     _settingsResponse_standingRequest.Response = _settingsResponse_userData;
-                    _settingsResponse_standingRequest.TimeOnQueue = Time.unscaledTime - _settingsResponse_standingRequest.StartTime;
-                    ConfigData.__TotalLatency += _settingsResponse_standingRequest.TimeOnQueue;
+                    _settingsResponse_standingRequest.TimeOnQueue = ConfigData.Stopwatch.ElapsedMilliseconds - _settingsResponse_standingRequest.StartTime;
+                    ConfigData.__TotalTimeOnQueue += _settingsResponse_standingRequest.TimeOnQueue;
                     // Debug.Log($"Set the response {_settingsResponse_userData.Filename}, {_settingsResponse_userData.Contents}");
                 }
                 else
@@ -645,8 +684,8 @@ namespace Assets.Scripts.Server
             if (_handleMatchupResponse_standingRequest != null)
             {
                 StandingRequests.Remove(_handleMatchupResponse_standingRequest);
-                _handleMatchupResponse_standingRequest.TimeOnQueue = Time.unscaledTime - _handleMatchupResponse_standingRequest.StartTime;
-                ConfigData.__TotalLatency += _handleMatchupResponse_standingRequest.TimeOnQueue;
+                _handleMatchupResponse_standingRequest.TimeOnQueue = ConfigData.Stopwatch.ElapsedMilliseconds - _handleMatchupResponse_standingRequest.StartTime;
+                ConfigData.__TotalTimeOnQueue += _handleMatchupResponse_standingRequest.TimeOnQueue;
 
                 _handleMatchupResponse_squad = _handleMatchupResponse_standingRequest.Squad;
 
@@ -697,8 +736,8 @@ namespace Assets.Scripts.Server
             if (_strategicStandingRequest != null)
             {
                 StandingRequests.Remove(_strategicStandingRequest);  
-                _strategicStandingRequest.TimeOnQueue = Time.unscaledTime - _strategicStandingRequest.StartTime;
-                ConfigData.__TotalLatency += _strategicStandingRequest.TimeOnQueue;
+                _strategicStandingRequest.TimeOnQueue = ConfigData.Stopwatch.ElapsedMilliseconds - _strategicStandingRequest.StartTime;
+                ConfigData.__TotalTimeOnQueue += _strategicStandingRequest.TimeOnQueue;
                 _tempSquad = _strategicStandingRequest.Squad;
                 _handleStrategicCommandResponse_level = _strategicStandingRequest.Level;
                 _handleStrategicCommandResponse_level.HandledRequests.Add(_strategicStandingRequest.Hash);
@@ -931,16 +970,16 @@ namespace Assets.Scripts.Server
         private SetupLevelRequest handleSetupLevelResponseStandingRequest;
         private SetupLevelResponse _setupLevelResponse;
         private Level _setupLevel;
-        private float handleSetupLevelResponseTimeOnQueue;
+        private long handleSetupLevelResponseTimeOnQueue;
 
         // HandleReconnectLevelResponse variables
         private SetupLevelRequest handleReconnectLevelResponseStandingRequest;
         private Level handleReconnectLevelResponseLevel;
-        private float handleReconnectLevelResponseTimeOnQueue;
+        private long handleReconnectLevelResponseTimeOnQueue;
 
         // HandleBasicResponse variables
         private ServerRequest handleBasicResponseStandingRequest;
-        private float handleBasicResponseTimeOnQueue;
+        private long handleBasicResponseTimeOnQueue;
 
         private void HandleSetupLevelResponse(string message)
         {
@@ -959,9 +998,9 @@ namespace Assets.Scripts.Server
                 _setupLevel.HandledRequests.Add(_setupLevelResponse.Hash);
 
                 // Calculate time on queue and update latency
-                handleSetupLevelResponseTimeOnQueue = Time.unscaledTime - handleSetupLevelResponseStandingRequest.StartTime;
+                handleSetupLevelResponseTimeOnQueue = ConfigData.Stopwatch.ElapsedMilliseconds - handleSetupLevelResponseStandingRequest.StartTime;
                 handleSetupLevelResponseStandingRequest.TimeOnQueue = handleSetupLevelResponseTimeOnQueue;
-                ConfigData.__TotalLatency += handleSetupLevelResponseTimeOnQueue;
+                ConfigData.__TotalTimeOnQueue += handleSetupLevelResponseTimeOnQueue;
 
                 // Add to open levels
                 OpenLevels.Add(_setupLevel);
@@ -988,9 +1027,9 @@ namespace Assets.Scripts.Server
                 handleReconnectLevelResponseLevel.HandledRequests.Add(_setupLevelResponse.Hash);
 
                 // Calculate time on queue and update latency
-                handleReconnectLevelResponseTimeOnQueue = Time.unscaledTime - handleReconnectLevelResponseStandingRequest.StartTime;
+                handleReconnectLevelResponseTimeOnQueue = ConfigData.Stopwatch.ElapsedMilliseconds - handleReconnectLevelResponseStandingRequest.StartTime;
                 handleReconnectLevelResponseStandingRequest.TimeOnQueue = handleReconnectLevelResponseTimeOnQueue;
-                ConfigData.__TotalLatency += handleReconnectLevelResponseTimeOnQueue;
+                ConfigData.__TotalTimeOnQueue += handleReconnectLevelResponseTimeOnQueue;
 
                 // Log reconnection and mark stranded requests for resending
                 Debug.Log($"Reconnected {handleReconnectLevelResponseLevel.Name} to the server");
@@ -1011,9 +1050,9 @@ namespace Assets.Scripts.Server
             {
                 // Remove from standing requests and calculate time on queue
                 StandingRequests.Remove(handleBasicResponseStandingRequest);
-                handleBasicResponseTimeOnQueue = Time.unscaledTime - handleBasicResponseStandingRequest.StartTime;
+                handleBasicResponseTimeOnQueue = ConfigData.Stopwatch.ElapsedMilliseconds - handleBasicResponseStandingRequest.StartTime;
                 handleBasicResponseStandingRequest.TimeOnQueue = handleBasicResponseTimeOnQueue;
-                ConfigData.__TotalLatency += handleBasicResponseTimeOnQueue;
+                ConfigData.__TotalTimeOnQueue += handleBasicResponseTimeOnQueue;
             }
             else
             {

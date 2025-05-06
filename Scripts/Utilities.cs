@@ -12,7 +12,9 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Xml.Linq;
 using Unity.Mathematics;
 
@@ -594,8 +596,9 @@ namespace Assets.Scripts
             //long hash = UniqueHash();
             //Debug.Log($"Hash: {hash}");
             //return hash;
-            return RandomLong(10000000);
+            //return RandomLong(10000000);
             //return UniqueHash();
+            return Unique53Hash();
             //return RandomInt(); 
         }
 
@@ -613,6 +616,37 @@ namespace Assets.Scripts
             }
             ConfigData.UsedHashes.Add(_uniqueHash_tempHash);
             return _uniqueHash_tempHash;
+        }
+
+        // 21-bit random client ID [0 … 2^21-1]
+        private static readonly long _clientId = GenerateClientId();
+
+        // 32-bit counter, wraps only after ~4 billion requests
+        private static long _counter = 0;
+
+        private static long GenerateClientId()
+        {
+            // Fill 4 bytes and mask to 21 bits
+            Span<byte> buf = stackalloc byte[4];
+            RandomNumberGenerator.Fill(buf);
+            int raw = BitConverter.ToInt32(buf);
+            return (uint)raw & ((1 << 21) - 1);
+        }
+
+        private static uint _ctr;
+        private static long _id;
+        /// <summary>
+        /// Gets the next unique 53-bit ID.
+        /// Safe for JS Number (<=2^53), unique across clients.
+        /// </summary>
+        public static long Unique53Hash()
+        {
+            // Atomically increment the 32-bit counter
+            _ctr = (uint)Interlocked.Increment(ref _counter);
+
+            // Combine into a 53-bit value
+            _id = (_clientId << 32) | _ctr;
+            return _id;
         }
         // ===========================================================
         // Class-level fields for Shuffle method
@@ -650,7 +684,7 @@ namespace Assets.Scripts
             return _rnd.Next(max);
         }
         /// <summary>
-        /// Generates a long by multiplying to random numbers no larger than max
+        /// Generates a long by multiplying two random numbers no larger than max
         /// </summary>
         /// <param name="max"></param>
         /// <returns></returns>

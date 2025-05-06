@@ -669,6 +669,10 @@ namespace Assets.Scripts
         public static List<Scene> Scenes = new List<Scene>();
         public static Scene SocketManager;
         public static HashSet<long> UsedHashes = new HashSet<long>();
+        /// <summary>
+        /// A game wide unique number
+        /// </summary>
+        public static long UniqueCounter = 0;
         public static WaitForEndOfFrame WaitForEndOfFrame = new WaitForEndOfFrame();
         public static int MaxThreads;
         public static string WaitingMessage = "{\"status\": \"waiting\"}";
@@ -836,14 +840,17 @@ namespace Assets.Scripts
         public static bool IsPlayingCampaign = false;
         public static bool AreAllSettingsLoaded => (ShipInfo != null && ShipInfo.IsLoaded) && (Configuration != null && Configuration.IsLoaded)
             && (StartingSettings != null && StartingSettings.IsLoaded);
-        public static bool IsAllUserDataLoaded => IsUserProgressDataLoaded && IsFleetDataLoaded[0] && IsFleetDataLoaded[1] && IsSavedSquadsDataLoaded[0] && IsSavedSquadsDataLoaded[1] && IsUserSettingsDataLoaded && IsLevelsDataLoaded[0] && IsLevelsDataLoaded[1];  
+        public static bool IsAllUserDataLoaded => IsUserProgressDataLoaded && IsFleetDataLoaded[0] && IsFleetDataLoaded[1] && IsSavedSquadsDataLoaded[0] && IsSavedSquadsDataLoaded[1] && IsUserSettingsDataLoaded && IsLevelsDataLoaded[0] && IsLevelsDataLoaded[1];
+        public static System.Diagnostics.Stopwatch Stopwatch;
 
 
 
         // DEBUG VARIABLES
         public static HashSet<ServerRequest> __PastServerRequests = new HashSet<ServerRequest>();
-        public static int __TotalRequests;
-        public static double __TotalLatency, __AverageLatency, __TotalLength, __AverageLength;
+        public static int __TotalResends, __TotalRequests;
+        public static double __AverageTimeOnQueue, __TotalLength, __AverageLength, __TotalC2C, __AverageC2C,
+            __TotalWireTime, __AverageWireTime, __TotalProcessingTime, __AverageProcessingTime;
+        public static long __TotalTimeOnQueue;
 
 
         // private variables

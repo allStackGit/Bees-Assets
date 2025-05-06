@@ -167,7 +167,7 @@ namespace Assets.Scripts.Levels
         }
         private void RandomizeOptions()
         {
-            Debug.Log($"Randomizing options...");
+            //Debug.Log($"Randomizing options...");
             //Debug.Log($"Level selection option: {ConfigData.SelectedLevelMapIndex}");
 
             if (CurrentLevelOptions.MapIndex == -1)
@@ -182,7 +182,7 @@ namespace Assets.Scripts.Levels
             if (((CurrentLevelOptions.ObstacleMapIndex == -1 && Utilities.CoinToss()) || CurrentLevelOptions.ObstacleMapIndex > 0) && !Stage.IsTraining) // User chose random and random chose obstacles OR user chose obstacles
             {
                 HasObstacles = true;
-                Debug.Log($"The map has obstacles");
+                //Debug.Log($"The map has obstacles");
                 if (CurrentLevelOptions.ObstacleMapIndex == -1)
                 {
                     CurrentLevelOptions.ObstacleMapIndex = Utilities.RandomInt(Stage.ObstacleListCount - 1) + 1;
@@ -192,12 +192,12 @@ namespace Assets.Scripts.Levels
                 if ((CurrentLevelOptions.AsteroidOption == -1 && Utilities.RandomInt(4) == 0) || CurrentLevelOptions.AsteroidOption > 0) // User chose random and random chose asteroids OR User chose asteroids
                 {
                     ActivateCollisionAsteroids = true;
-                    Debug.Log($"The map has obstacles and asteroids as well");
+                    //Debug.Log($"The map has obstacles and asteroids as well");
                 }
                 else // user chose no asteroids or random chose no asteroids
                 {
                     ActivateCollisionAsteroids = false;
-                    Debug.Log($"The map has obstacles and not asteroids");
+                    //Debug.Log($"The map has obstacles and not asteroids");
                 }
             }
             else // either the user chose no obstacles or random chose no obstacles
@@ -209,14 +209,14 @@ namespace Assets.Scripts.Levels
                     ObstacleMap = Stage.Pool.GetObstacleMapFromPool(0);
                     CurrentLevelOptions.ObstacleMapIndex = 0;
                     ActivateCollisionAsteroids = true;
-                    Debug.Log($"The map has asteroids but not obstacles");
+                    //Debug.Log($"The map has asteroids but not obstacles");
                 }
                 else
                 {
                     CurrentLevelOptions.ObstacleMapIndex = 0;
                     ActivateCollisionAsteroids = false;
                     HasObstacles = false;
-                    Debug.Log($"The map does not have asteroids or obstacles");
+                    //Debug.Log($"The map does not have asteroids or obstacles");
                 }
             }
 
@@ -224,23 +224,23 @@ namespace Assets.Scripts.Levels
             if (Stage.DoesUserHaveController && ((CurrentLevelOptions.FogOfWar == -1 && Utilities.CoinToss()) || CurrentLevelOptions.FogOfWar == 1))
             {
                 ActivateFogOfWar = true;
-                Debug.Log($"The map has fog of war");
+                //Debug.Log($"The map has fog of war");
             }
             else
             {
                 ActivateFogOfWar = false;
-                Debug.Log($"The map does not have fog of war");
+                //Debug.Log($"The map does not have fog of war");
             }
 
             if ((CurrentLevelOptions.Mining == -1  && !HasObstacles && Utilities.CoinToss()) || CurrentLevelOptions.Mining == 1)
             {
                 ActivateMining = true;
-                Debug.Log($"The map has mining");
+                //Debug.Log($"The map has mining");
             }
             else
             {
                 ActivateMining = false;
-                Debug.Log($"The map does not have mining");
+                //Debug.Log($"The map does not have mining");
             }
 
             // This currently has an override (the " && false" at the end) to prevent reinforcements
@@ -248,7 +248,7 @@ namespace Assets.Scripts.Levels
             {
                 ActivateLoadingShipsMidLevel = true;
 
-                Debug.Log($"The map has ships loading midlevel");
+                //Debug.Log($"The map has ships loading midlevel");
                 if (CurrentLevelOptions.EnemyReinforcements.Count == 0)
                 {
                     CurrentLevelOptions.EnemyReinforcements = CurrentLevelOptions.EnemySquads.ToList();
@@ -257,7 +257,7 @@ namespace Assets.Scripts.Levels
             else
             {
                 ActivateLoadingShipsMidLevel = false;
-                Debug.Log($"The map does not have ships loading midlevel");
+                //Debug.Log($"The map does not have ships loading midlevel");
             }
 
         }
@@ -545,15 +545,23 @@ namespace Assets.Scripts.Levels
                     }
                 });
 
-                _timeDouble = Time.unscaledTimeAsDouble;
+                _timeDouble = ConfigData.Stopwatch.Elapsed.TotalSeconds;
                 _levelOver_fps = Time.frameCount / (_timeDouble > 0 ? _timeDouble : 0.0000000000000000001);
                 _levelOver_fups = Stage.FixedUpdates / (_timeDouble > 0 ? _timeDouble : 0.0000000000000000001);
                 ConfigData.__TotalLength += Time.realtimeSinceStartup - Stage.StartTime;
-                ConfigData.__AverageLatency = ConfigData.__TotalLatency / ConfigData.__TotalRequests;
+                ConfigData.__AverageTimeOnQueue = ConfigData.__TotalTimeOnQueue / ConfigData.__TotalRequests;
+                ConfigData.__AverageC2C = ConfigData.__TotalC2C / ConfigData.__TotalRequests;
+                ConfigData.__AverageWireTime = ConfigData.__TotalWireTime / ConfigData.__TotalRequests;
+                ConfigData.__AverageProcessingTime = ConfigData.__TotalProcessingTime / ConfigData.__TotalRequests;
 
                 Debug.Log($"{$"fps: {_levelOver_fps}".PadRight(10).Substring(0, 10)}  {$"fups: {_levelOver_fups}".PadRight(10).Substring(0, 10)}     " +
-                      $"{$"latency: {(int)(ConfigData.__AverageLatency * 1000)}ms".PadRight(18)} {$"CPS: {Stage.DebugLogger.__HivemindCommands / Time.unscaledTime}".PadRight(9).Substring(0, 9)}   " +
+                      $"{$"CPS: {Stage.DebugLogger.__HivemindCommands / ConfigData.Stopwatch.Elapsed.TotalSeconds}".PadRight(9).Substring(0, 9)}   " +
                       $"LTO: {Stage.DebugLogger.__LevelTimeouts} LC: {Stage.DebugLogger.__LevelCompletes} AveLT: {(int)ConfigData.__AverageLength}s || Hashes: {ConfigData.UsedHashes.Count}"
+                );
+
+                Debug.Log($"{$"C2C: {ConfigData.__AverageC2C}".PadRight(10).Substring(0, 10)}ms  {$"WT: {ConfigData.__AverageWireTime}".PadRight(10).Substring(0, 10)}ms     " +
+                      $"{$"ToQ: {(int)(ConfigData.__AverageTimeOnQueue)}ms".PadRight(18)} {$"APT: {ConfigData.__AverageProcessingTime}".PadRight(9).Substring(0, 9)}ms " +
+                      $"Resend%: {Math.Round((double)ConfigData.__TotalResends / ConfigData.__TotalRequests, 4) * 100}%"
                 );
 
                 if (State.IsSideKilled(ConfigData.Configuration.BeeSide) && !State.IsSideKilled(ConfigData.Configuration.HumanSide))

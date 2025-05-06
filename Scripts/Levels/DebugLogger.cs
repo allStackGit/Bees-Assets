@@ -20,7 +20,7 @@ public class DebugLogger : MonoBehaviour
     /// <summary>
     /// The average time a request takes to complete in ms
     /// </summary>
-    public float __AverageRequestTime;
+    public double __AverageRequestTime;
     public List<long> __UsedHashes;
 
     public int[] __CommandCounts;
@@ -54,16 +54,16 @@ public class DebugLogger : MonoBehaviour
     public void NetworkLogging()
     {
         __TotalRequests = ConfigData.__TotalRequests;
-        __TotalLatency = ConfigData.__TotalLatency;
-        __AverageLatency = ConfigData.__AverageLatency;
+        __TotalLatency = ConfigData.__TotalTimeOnQueue;
+        __AverageLatency = ConfigData.__AverageTimeOnQueue;
         __TotalLength = ConfigData.__TotalLength;
         __AverageLength = ConfigData.__AverageLength;
 
         if (ConfigData.__PastServerRequests.Count > 0)
         {
             __UsedHashes = ConfigData.UsedHashes.ToList();
-            __PastServerRequests = ConfigData.__PastServerRequests.Select((r) => $"Request #{r.Hash} ({r.Type}) on queue for {r.TimeOnQueue * 1000}ms").ToList();
-            __AverageRequestTime = (ConfigData.__PastServerRequests.Sum((r) => r.TimeOnQueue) / ConfigData.__PastServerRequests.Count) * 1000;
+            __PastServerRequests = ConfigData.__PastServerRequests.Select((r) => $"Request #{r.Hash} ({r.Type}) on queue for {r.TimeOnQueue}ms").ToList();
+            __AverageRequestTime = (ConfigData.__PastServerRequests.Sum((r) => r.TimeOnQueue) / ConfigData.__PastServerRequests.Count);
             __SocketLevels = ConfigData.Socket.OpenLevels.Select(s => s.Name).ToList();
             __StandingRequests = ConfigData.Socket.StandingRequests.Select((r) => $"Request #{r.Hash} ({r.Type}) on queue since {r.StartTime}").ToList();
             //__Updates = Time.frameCount;

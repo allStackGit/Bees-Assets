@@ -5,15 +5,19 @@ using UnityEngine;
 
 namespace Assets.Scripts.Server
 {
+    /// <summary>
+    /// Base class for all server requests. This is used to track the status of requests and their responses.
+    /// </summary>
     public abstract class ServerRequest
     {
         public ConfigData.RequestTypes Type;
         public int Status = 0;
-        public float StartTime = Time.unscaledTime;
+        public long StartTime = ConfigData.Stopwatch.ElapsedMilliseconds;
         /// <summary>
         /// The amount of time this request has existed uncompleted in seconds
         /// </summary>
-        public float TimeOnQueue = 0; // s
+        public long TimeOnQueue = 0; // s
+        public long SendTime; // [debug]
         public int MaxTimeOnQueue; // s
         public int Resends = 0;
         public long Hash = Utilities.Hash();
