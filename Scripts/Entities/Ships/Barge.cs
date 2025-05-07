@@ -179,7 +179,7 @@ namespace Assets.Scripts.Entities.Ships
                 LogAttackingDamage(damage, this, FleetShip, Squad.SavedSquad, ship);
                 LogAttackingDamage((int)(damage * .75f), ship, ship.FleetShip, ship.Squad.SavedSquad, this); // Barge takes 75% of the damage it inflicts
                 //Charge.Power -= damage;
-                //Debug.Log($"{Name} hit {ship.Name} and did {damage} damage");
+                Debug.Log($"{Name} hit {ship.Name} and did {damage} damage");
 
                 if ((ship.Health > 0 || Level.State.GameOver) && gameObject.activeSelf) // if ran out of power or we killed the last ship stop the charge immediately
                 {

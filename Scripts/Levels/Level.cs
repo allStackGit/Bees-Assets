@@ -549,7 +549,7 @@ namespace Assets.Scripts.Levels
                 _levelOver_fps = Time.frameCount / (_timeDouble > 0 ? _timeDouble : 0.0000000000000000001);
                 _levelOver_fups = Stage.FixedUpdates / (_timeDouble > 0 ? _timeDouble : 0.0000000000000000001);
                 ConfigData.__TotalLength += Time.realtimeSinceStartup - Stage.StartTime;
-                ConfigData.__AverageTimeOnQueue = ConfigData.__TotalTimeOnQueue / ConfigData.__TotalRequests;
+                //ConfigData.__AverageTimeOnQueue = ConfigData.__TotalTimeOnQueue / ConfigData.__TotalRequests;
                 ConfigData.__AverageC2C = ConfigData.__TotalC2C / ConfigData.__TotalRequests;
                 ConfigData.__AverageWireTime = ConfigData.__TotalWireTime / ConfigData.__TotalRequests;
                 ConfigData.__AverageProcessingTime = ConfigData.__TotalProcessingTime / ConfigData.__TotalRequests;
@@ -560,7 +560,7 @@ namespace Assets.Scripts.Levels
                 );
 
                 Debug.Log($"{$"C2C: {ConfigData.__AverageC2C}".PadRight(10).Substring(0, 10)}ms  {$"WT: {ConfigData.__AverageWireTime}".PadRight(10).Substring(0, 10)}ms     " +
-                      $"{$"ToQ: {(int)(ConfigData.__AverageTimeOnQueue)}ms".PadRight(18)} {$"APT: {ConfigData.__AverageProcessingTime}".PadRight(9).Substring(0, 9)}ms " +
+                      $"{$"APT: {ConfigData.__AverageProcessingTime}".PadRight(9).Substring(0, 9)}ms " +
                       $"Resend%: {Math.Round((double)ConfigData.__TotalResends / ConfigData.__TotalRequests, 4) * 100}%"
                 );
 

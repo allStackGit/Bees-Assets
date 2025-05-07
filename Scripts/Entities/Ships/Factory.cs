@@ -1,4 +1,5 @@
-﻿using Assets.Scripts.Levels;
+﻿using Assets.Scripts.Data;
+using Assets.Scripts.Levels;
 using System.Linq;
 
 using UnityEngine;
@@ -8,6 +9,11 @@ namespace Assets.Scripts.Entities.Ships
     public class Factory : Ship
     {
         public GameObject MiningAnimation;
+        public override void Setup(Level level, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
+        {
+            base.Setup(level, fleetShip, squad, offsetFromCenter);
+            ShipAnimationController.Deactivate();
+        }
         public override void Create(Stage stage)
         {
             base.Create(stage);

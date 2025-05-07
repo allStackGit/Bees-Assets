@@ -100,15 +100,28 @@ namespace Assets.Scripts.Entities.Ships
         }
         public void Activate()
         {
-            SpriteRenderer.enabled = true;
-            Animator.enabled = true;
-            enabled = true;
+            if (Ship.Stage.IsRendering || Ship.ShipType == ConfigData.ShipTypes.WarpGate)
+            {
+                SpriteRenderer.enabled = true;
+                Animator.enabled = true;
+                enabled = true;
+
+                if (Ship.ShipType == ConfigData.ShipTypes.WarpGate)
+                {
+                    Animator.Play("Warp Gate Opening", 0, 0f);
+                }
+            }
+
         }
         public void Deactivate()
         {
-            SpriteRenderer.enabled = false;
-            Animator.enabled = false;
-            enabled = false;
+            if (Ship.Stage.IsRendering || Ship.ShipType == ConfigData.ShipTypes.WarpGate)
+            {
+                SpriteRenderer.enabled = false;
+                Animator.enabled = false;
+                enabled = false;
+            }
+
         }
 
         /// <summary>
@@ -118,6 +131,7 @@ namespace Assets.Scripts.Entities.Ships
         /// <param name="skipSprites"></param>
         public void ChangeSpriteLoop()
         {
+            Debug.Log($"{Ship.Name} Changing sprite loop, ready to warp");
             UseSecondaryLoop = true;
             IsReadyToWarp = true; // this is called by the warp gate animation which makes the animation necessary for non-visual reasons
         }

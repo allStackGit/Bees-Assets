@@ -98,7 +98,14 @@ namespace Assets.Scripts.Levels.Commands
                 ShipsCurrentlyMining.Add(ship.Id);
                 if (ship.HasShipAnimation)
                 {
-                    ship.ShipAnimationController.Activate();
+                    if (ship.ShipType == ConfigData.ShipTypes.Factory)
+                    {
+                        ship.ShipAnimationController.Activate();
+                    }
+                    else
+                    {
+                        ship.ShipAnimation.SetActive(true);
+                    }
                 }
                 if (ShipsCurrentlyMining.Count == 1)
                 {
@@ -174,8 +181,14 @@ namespace Assets.Scripts.Levels.Commands
             {
                 if (ship.HasShipAnimation)
                 {
-                    //Debug.Log($"Turning off mining animation for {ship.Name}");
-                    ship.ShipAnimationController.Deactivate();
+                    if (ship.ShipType == ConfigData.ShipTypes.Factory)
+                    {
+                        ship.ShipAnimationController.Deactivate();
+                    }
+                    else
+                    {
+                        ship.ShipAnimation.SetActive(false);
+                    }
                 }
             });
             base.SetFinalize(cause);

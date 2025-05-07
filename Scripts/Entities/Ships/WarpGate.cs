@@ -10,7 +10,6 @@ namespace Assets.Scripts.Entities.Ships
 {
     public class WarpGate : Ship
     {
-        public Vector2 WarpPoint;
         public HashSet<long> ShipsWarpingHere = new HashSet<long>();
         public Collider2D WarpCollider;
         public override void ClearData()
@@ -22,6 +21,11 @@ namespace Assets.Scripts.Entities.Ships
         private GameObject _collidingThing;
         private Ship _collidingShip;
         private FullRetreat _command;
+        public override void Setup(Level level, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
+        {
+            base.Setup(level, fleetShip, squad, offsetFromCenter);
+            ShipAnimationController.Deactivate();
+        }
         protected override void OnTriggerEnter2D(Collider2D collider)
         {
             _collidingThing = collider.gameObject;

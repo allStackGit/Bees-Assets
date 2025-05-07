@@ -195,10 +195,10 @@ namespace Assets.Scripts.Entities.Ships
             {
                 //Debug.Log($"Striker #{Id} is dropping bombs");
                 HasDroppedBomb = true;
+                SetBombsReadyStatus(false);
 
                 if (!Level.Stage.IsTraining)
                 {
-                    SetBombsReadyStatus(false);
                     _bomb = (StrikerBomb)Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.StrikerBomb);
                     _bomb.transform.parent = Level.Map.Transform;
                     _bomb.Setup(Level, Bomb, this, ContactedShip, ContactedShip.GetRandomPointOnShip(GetPosition()), 0, 0, Bomb.Power, ContactedShip);

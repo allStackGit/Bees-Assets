@@ -29,7 +29,7 @@ public class DebugLogger : MonoBehaviour
     // Pool Variables
     public int __BargePoolSize, __BeaconPoolSize, __BeehivePoolSize, __BumblebeePoolSize, __CarpenterBeePoolSize, __CarrierPoolSize, __CruiserPoolSize, __DreadnoughtPoolSize,
         __DronePoolSize, __FactoryPoolSize, __FireBargePoolSize, __FlagshipPoolSize, __FrigatePoolSize, __GunshipPoolSize, __HoneybeePoolSize, __HornetPoolSize, __LeafcutterPoolSize,
-        __QueenPoolSize, __ScoutPoolSize, __StrikerPoolSize, __WarpGatePoolSize, __WaspPoolSize, __YellowJacketPoolSize, __PlutoMapPoolSize, __UranusMapPoolSize, __BeeSmallProjectilePoolSize,
+        __QueenPoolSize, __ScoutPoolSize, __StrikerPoolSize, __WarpGatePoolSize, __WaspPoolSize, __YellowJacketPoolSize, __PlutoMapPoolSize, __NeptuneMapPoolSize, __UranusMapPoolSize, __BeeSmallProjectilePoolSize,
         __BeeMediumProjectilePoolSize, __BumblebeeShotProjectilePoolSize, __FlagshipShotProjectilePoolSize, __RocketProjectilePoolSize, __HumanSmallProjectilePoolSize, __HumanMediumProjectilePoolSize,
         __BeamProjectilePoolSize, __SplitShotProjectilePoolSize, __QueenSmallProjectilePoolSize, __QueenLargeProjectilePoolSize, __StrikerBombProjectilePoolSize, __RocketExplosionProjectilePoolSize,
         __FireBargeExplosionProjectilePoolSize, __EmptyObstacleListObjectPoolSize, __MazeObstacleListObjectPoolSize, __ThreePathsObstacleListObjectPoolSize, __ForestObstacleListObjectPoolSize,
@@ -54,7 +54,7 @@ public class DebugLogger : MonoBehaviour
     public void NetworkLogging()
     {
         __TotalRequests = ConfigData.__TotalRequests;
-        __TotalLatency = ConfigData.__TotalTimeOnQueue;
+        //__TotalLatency = ConfigData.__TotalTimeOnQueue;
         __AverageLatency = ConfigData.__AverageTimeOnQueue;
         __TotalLength = ConfigData.__TotalLength;
         __AverageLength = ConfigData.__AverageLength;
@@ -107,6 +107,7 @@ public class DebugLogger : MonoBehaviour
         __WaspPoolSize = Stage.Pool.WarpGatePool.CountAll;
         __YellowJacketPoolSize = Stage.Pool.YellowJacketPool.CountAll;
         __PlutoMapPoolSize = Stage.Pool.PlutoMapPool.CountAll;
+        __NeptuneMapPoolSize = Stage.Pool.NeptuneMapPool.CountAll;
         __UranusMapPoolSize = Stage.Pool.UranusMapPool.CountAll;
         __BeeSmallProjectilePoolSize = Stage.Pool.BeeSmallProjectilePool.CountAll;
         __BeeMediumProjectilePoolSize = Stage.Pool.BeeMediumProjectilePool.CountAll;

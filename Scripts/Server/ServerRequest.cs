@@ -14,9 +14,9 @@ namespace Assets.Scripts.Server
         public int Status = 0;
         public long StartTime = ConfigData.Stopwatch.ElapsedMilliseconds;
         /// <summary>
-        /// The amount of time this request has existed uncompleted in seconds
+        /// The amount of time this request has existed uncompleted in seconds. This is innacurate when used for average request time since it only counts completed requests.
         /// </summary>
-        public long TimeOnQueue = 0; // s
+        public long TimeOnQueue = 0; // s [debug] 
         public long SendTime; // [debug]
         public int MaxTimeOnQueue; // s
         public int Resends = 0;

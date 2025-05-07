@@ -839,6 +839,7 @@ MonoBehaviour:
   __WaspPoolSize: 0
   __YellowJacketPoolSize: 0
   __PlutoMapPoolSize: 0
+  __NeptuneMapPoolSize: 0
   __UranusMapPoolSize: 0
   __BeeSmallProjectilePoolSize: 0
   __BeeMediumProjectilePoolSize: 0
@@ -8113,11 +8114,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: 'OverrideHumanShipTypes.Array.data[0]'
-      value: 11
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: 'OverrideHumanShipTypes.Array.data[1]'
-      value: 7
+      value: 20
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: 'OverrideHumanShipTypes.Array.data[2]'
@@ -17014,7 +17015,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 2944892714679254333, guid: e154edb1d8fb554428cdc7380556de19, type: 3}
       propertyPath: orthographic size
-      value: 3000
+      value: 550
       objectReference: {fileID: 0}
     - target: {fileID: 2944892714679254333, guid: e154edb1d8fb554428cdc7380556de19, type: 3}
       propertyPath: m_CullingMask.m_Bits

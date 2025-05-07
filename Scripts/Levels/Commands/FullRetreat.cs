@@ -20,7 +20,7 @@ public class FullRetreat : Command
             // The ToList() is necessary to prevent errors from warp killing while looping through the list of ships
             GetSquad().GetShips().ToList().ForEach((ship) =>
             {
-                if (ship.ShipType != ConfigData.ShipTypes.WarpGate)
+                if (ship.ShipType != ConfigData.ShipTypes.WarpGate && ship.IsMobile)
                 {
                     TargetWarpGate.ShipsWarpingHere.Add(ship.Id);
                     if (ship.Collider.IsTouching(TargetWarpGate.WarpCollider))
@@ -77,10 +77,10 @@ public class FullRetreat : Command
         {
             if (!TargetWarpGate.IsDead)
             {
-                _f_targetPosition = TargetWarpGate.GetPosition() + TargetWarpGate.WarpPoint;
+                _f_targetPosition = TargetWarpGate.GetPosition() + Utilities.RandomInt(6) * Vector2.one;
                 GetSquad().GetShips().ForEach((ship) =>
                 {
-                    if (ship.ShipType != ConfigData.ShipTypes.WarpGate)
+                    if (ship.ShipType != ConfigData.ShipTypes.WarpGate && ship.IsMobile)
                     {
                         ship.MoveToPoint(_f_targetPosition);
                     }

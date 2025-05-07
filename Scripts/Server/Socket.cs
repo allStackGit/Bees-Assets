@@ -570,7 +570,7 @@ namespace Assets.Scripts.Server
             if (_standingRequest != null)
             {
                 _standingRequest.TimeOnQueue = ConfigData.Stopwatch.ElapsedMilliseconds - _standingRequest.StartTime;
-                ConfigData.__TotalTimeOnQueue += _standingRequest.TimeOnQueue;
+                //ConfigData.__TotalTimeOnQueue += _standingRequest.TimeOnQueue;
 
                 if (!string.IsNullOrEmpty(_userDataResponse.Filename) && !string.IsNullOrEmpty(_userDataResponse.Contents))
                 {
@@ -652,7 +652,7 @@ namespace Assets.Scripts.Server
                     _settingsResponse_standingRequest.Status = 1;
                     _settingsResponse_standingRequest.Response = _settingsResponse_userData;
                     _settingsResponse_standingRequest.TimeOnQueue = ConfigData.Stopwatch.ElapsedMilliseconds - _settingsResponse_standingRequest.StartTime;
-                    ConfigData.__TotalTimeOnQueue += _settingsResponse_standingRequest.TimeOnQueue;
+                    //ConfigData.__TotalTimeOnQueue += _settingsResponse_standingRequest.TimeOnQueue;
                     // Debug.Log($"Set the response {_settingsResponse_userData.Filename}, {_settingsResponse_userData.Contents}");
                 }
                 else
@@ -685,7 +685,7 @@ namespace Assets.Scripts.Server
             {
                 StandingRequests.Remove(_handleMatchupResponse_standingRequest);
                 _handleMatchupResponse_standingRequest.TimeOnQueue = ConfigData.Stopwatch.ElapsedMilliseconds - _handleMatchupResponse_standingRequest.StartTime;
-                ConfigData.__TotalTimeOnQueue += _handleMatchupResponse_standingRequest.TimeOnQueue;
+                //ConfigData.__TotalTimeOnQueue += _handleMatchupResponse_standingRequest.TimeOnQueue;
 
                 _handleMatchupResponse_squad = _handleMatchupResponse_standingRequest.Squad;
 
@@ -737,7 +737,7 @@ namespace Assets.Scripts.Server
             {
                 StandingRequests.Remove(_strategicStandingRequest);  
                 _strategicStandingRequest.TimeOnQueue = ConfigData.Stopwatch.ElapsedMilliseconds - _strategicStandingRequest.StartTime;
-                ConfigData.__TotalTimeOnQueue += _strategicStandingRequest.TimeOnQueue;
+                //ConfigData.__TotalTimeOnQueue += _strategicStandingRequest.TimeOnQueue;
                 _tempSquad = _strategicStandingRequest.Squad;
                 _handleStrategicCommandResponse_level = _strategicStandingRequest.Level;
                 _handleStrategicCommandResponse_level.HandledRequests.Add(_strategicStandingRequest.Hash);
@@ -1000,7 +1000,7 @@ namespace Assets.Scripts.Server
                 // Calculate time on queue and update latency
                 handleSetupLevelResponseTimeOnQueue = ConfigData.Stopwatch.ElapsedMilliseconds - handleSetupLevelResponseStandingRequest.StartTime;
                 handleSetupLevelResponseStandingRequest.TimeOnQueue = handleSetupLevelResponseTimeOnQueue;
-                ConfigData.__TotalTimeOnQueue += handleSetupLevelResponseTimeOnQueue;
+                //ConfigData.__TotalTimeOnQueue += handleSetupLevelResponseTimeOnQueue;
 
                 // Add to open levels
                 OpenLevels.Add(_setupLevel);
@@ -1029,7 +1029,7 @@ namespace Assets.Scripts.Server
                 // Calculate time on queue and update latency
                 handleReconnectLevelResponseTimeOnQueue = ConfigData.Stopwatch.ElapsedMilliseconds - handleReconnectLevelResponseStandingRequest.StartTime;
                 handleReconnectLevelResponseStandingRequest.TimeOnQueue = handleReconnectLevelResponseTimeOnQueue;
-                ConfigData.__TotalTimeOnQueue += handleReconnectLevelResponseTimeOnQueue;
+                //ConfigData.__TotalTimeOnQueue += handleReconnectLevelResponseTimeOnQueue;
 
                 // Log reconnection and mark stranded requests for resending
                 Debug.Log($"Reconnected {handleReconnectLevelResponseLevel.Name} to the server");
@@ -1052,7 +1052,7 @@ namespace Assets.Scripts.Server
                 StandingRequests.Remove(handleBasicResponseStandingRequest);
                 handleBasicResponseTimeOnQueue = ConfigData.Stopwatch.ElapsedMilliseconds - handleBasicResponseStandingRequest.StartTime;
                 handleBasicResponseStandingRequest.TimeOnQueue = handleBasicResponseTimeOnQueue;
-                ConfigData.__TotalTimeOnQueue += handleBasicResponseTimeOnQueue;
+                //ConfigData.__TotalTimeOnQueue += handleBasicResponseTimeOnQueue;
             }
             else
             {
