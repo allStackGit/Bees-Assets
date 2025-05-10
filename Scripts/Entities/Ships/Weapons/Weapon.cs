@@ -11,7 +11,11 @@ namespace Assets.Scripts.Entities.Ships.Weapons
     public class Weapon : MonoBehaviour
     {
 
-        public Ship Ship, TargetShip;
+        public Ship Ship;
+        /// <summary>
+        /// The ship that this weapon is currently targeting/aiming at. 
+        /// </summary>
+        public Ship TargetShip;
         public int Range, Power; 
         public float RateOfFire, ProjectileValue, RotationRate, SpecialFirepower, Firepower;
         public GameObject Piece, RangeCircle;

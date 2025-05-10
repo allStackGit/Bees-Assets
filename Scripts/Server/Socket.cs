@@ -202,6 +202,12 @@ namespace Assets.Scripts.Server
         private long _c2c, _now;
         private void Message(byte[] bytes)
         {
+            // [debug]
+            if (bytes == null || bytes.Length == 0)
+            {
+                Debug.LogError("Received empty message from server");
+                return;
+            }
             ConfigData.__TotalRequests++;
             //Debug.Log($"Got message from server");
             // getting the message as a string
@@ -339,22 +345,29 @@ namespace Assets.Scripts.Server
                 Message(_update_message);
             }
              */
-            while (MessageQueue.Count > 0) // should be able to replace this once we know that there aren't any errors [debug]
+            //while (MessageQueue.Count > 0) // should be able to replace this once we know that there aren't any errors [debug]
+            //{
+            //    ;
+            //    if (_update_message != null)
+            //    {
+            //        Message(_update_message);
+            //    }
+            //    else if (_update_message.Length == 0)
+            //    {
+            //        Debug.LogWarning($"Received empty message from server. There are {MessageQueue.Count} messages on the queue");
+            //    }
+            //    else
+            //    {
+            //        Debug.LogWarning($"Received null message from server. There are {MessageQueue.Count} messages on the queue");
+            //    }
+            //}
+            
+
+            while (MessageQueue.TryDequeue(out _update_message))
             {
-                MessageQueue.TryDequeue(out _update_message);
-                if (_update_message != null)
-                {
-                    Message(_update_message);
-                }
-                else if (_update_message.Length == 0)
-                {
-                    Debug.LogWarning($"Received empty message from server. There are {MessageQueue.Count} messages on the queue");
-                }
-                else
-                {
-                    Debug.LogWarning($"Received null message from server. There are {MessageQueue.Count} messages on the queue");
-                }
+                Message(_update_message);
             }
+
             CheckStandingRequests();
 
             //_timeOfLastUpdate = _timeOfCurrentUpdate;
@@ -373,11 +386,10 @@ namespace Assets.Scripts.Server
             for (_index = 0; _index < _standingRequests.Count; _index++)
             {
                 _sr = _standingRequests[_index];
-                if ((ConfigData.Stopwatch.ElapsedMilliseconds - _sr.StartTime) > ConfigData.StandardMaxTimeOnQueue)
+                if (((ConfigData.Stopwatch.ElapsedMilliseconds - _sr.StartTime) / 1000) > ConfigData.StandardMaxTimeOnQueue)
                 {
                     StandingRequests.Remove(_sr);
                     Debug.LogWarning($"Resending #{_sr.Hash}:{_sr.Type} because it's been waiting for more than {ConfigData.StandardMaxTimeOnQueue}s");
-                    _sr.StartTime = ConfigData.Stopwatch.ElapsedMilliseconds;
                     SendRequest(_sr, true);
                     _resends++;
                 }
@@ -480,8 +492,17 @@ namespace Assets.Scripts.Server
         {
             StandingRequests.Add(request);
             ConfigData.__PastServerRequests.Add(request);
+            if (isResendRequest)
+            {
+                request.StartTime = ConfigData.Stopwatch.ElapsedMilliseconds;
+                request.Resends++;
+                if (request.Resends > 10)
+                {
+                    Debug.LogWarning($"Request #{request.Hash} has been resent more than 10 times. This is probably a bug or a really long server delay.");
+                }
 
-            if (!isResendRequest)
+            }
+            else
             {
                 request.SendTime = ConfigData.Stopwatch.ElapsedMilliseconds; // [debug]
             }

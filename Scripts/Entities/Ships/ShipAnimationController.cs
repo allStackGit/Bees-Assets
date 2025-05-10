@@ -100,7 +100,7 @@ namespace Assets.Scripts.Entities.Ships
         }
         public void Activate()
         {
-            if (Ship.Stage.IsRendering || Ship.ShipType == ConfigData.ShipTypes.WarpGate)
+            if (!Ship.Stage.IsTraining || Ship.ShipType == ConfigData.ShipTypes.WarpGate)
             {
                 SpriteRenderer.enabled = true;
                 Animator.enabled = true;
@@ -115,7 +115,7 @@ namespace Assets.Scripts.Entities.Ships
         }
         public void Deactivate()
         {
-            if (Ship.Stage.IsRendering || Ship.ShipType == ConfigData.ShipTypes.WarpGate)
+            if (!Ship.Stage.IsTraining || Ship.ShipType == ConfigData.ShipTypes.WarpGate)
             {
                 SpriteRenderer.enabled = false;
                 Animator.enabled = false;

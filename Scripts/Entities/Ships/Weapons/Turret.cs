@@ -37,6 +37,9 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// The turret's power / rate of fire. Used only for debugging purposes
         /// </summary>
         public float DamagePerSecond;
+        /// <summary>
+        /// The point on the map that the target is at, either the target ship or the target asteroid, or if firing manually, the point on the map that the mouse is at
+        /// </summary>
         public Vector2 TargetPoint;
         public GameObject TargetingMarker;
         public CollisionAsteroid TargetAsteroid;
@@ -273,7 +276,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             Ship.FleetShip.ShotsFired++;
 
         }
-        private Vector2 _targetPoint, _frontOfShip, _colliderPoint;
+        private Vector2 _targetPoint, _frontOfShip, _colliderPoint, _globalTargetPosition, _globalTurretPosition;
         /// <summary>
         /// Gets the target point on a ship that should be fired at
         /// </summary>
@@ -285,19 +288,34 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             if (ShouldFireAtFrontOfShip)
             {
                 _frontOfShip = _targetPoint + new Vector2(0, ship.GetHalfHeight() - ConfigData.OffsetFromFrontOfShip.GetValueOrDefault(ship.ShipType));
-                //Debug.Log($"{ship} is positioned at {ship.GetPosition()} and target point is {frontOfShip}");
                 _targetPoint = Utilities.RotatePointAroundPoint(_targetPoint, _frontOfShip, ship.Rotation * Mathf.Deg2Rad);
+    //            Debug.Log($"{Ship.Name} is firing at {ship.Name}, positioned at {ship.GetPosition()} and unrotated front of ship is {_frontOfShip} and the rotated target" +
+    //$" point is {_targetPoint}");
+
 
             }
-            if (!RangeCollider.Collider.OverlapPoint(_targetPoint + Level.GetPosition()))
+            _globalTargetPosition = _targetPoint + Level.GetPosition();
+            if (!RangeCollider.Collider.OverlapPoint(_globalTargetPosition))
             {
-                _colliderPoint = ship.Collider.ClosestPoint(GetPosition());
-                if (_colliderPoint != GetPosition())
-                {
-                    _targetPoint = _colliderPoint;
-                }
-                //Debug.Log($"{Ship.Name} is firing at {ship.Name} but the target point is not within range. The new target point is: {targetPoint}");
+                Debug.Log($"{Ship.Name} is firing at {ship.Name} but the target is not within range: {_targetPoint}");
 
+                _globalTurretPosition = GetPosition() + Level.GetPosition();
+                _colliderPoint = ship.Collider.ClosestPoint(_globalTurretPosition);
+                if (_colliderPoint != _globalTurretPosition)
+                {
+                    _targetPoint = _colliderPoint - Level.GetPosition();
+                }
+                else
+                {
+                    Debug.Log($"Could not find a point on the collider that wasn't our own point. Are we inside the collider? Should we just fire at the center of the ship?");
+                    _targetPoint = ship.GetPosition();
+                }
+                Debug.Log($"{Ship.Name} is firing at {ship.Name} but the target point is not within range. The new target point is: {_targetPoint}");
+
+            }
+            if (Level.DistanceOutOfBounds(_targetPoint) > 16)
+            {
+                Debug.LogError($"{Ship.Name} is firing at {ship.Name} but the target point is out of bounds: {_targetPoint}");
             }
             return _targetPoint;
         }

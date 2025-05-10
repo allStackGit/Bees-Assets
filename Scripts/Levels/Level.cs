@@ -1359,5 +1359,13 @@ namespace Assets.Scripts.Levels
         {
             return Utilities.ForceBounds(x, y, MaxX, MaxY, MinX, MinY);
         }
+        public bool IsPointInBounds(Vector2 point)
+        {
+            return ForceBounds(point) == point;
+        }
+        public float DistanceOutOfBounds(Vector2 point)
+        {
+            return Vector2.Distance(point, ForceBounds(point));
+        }
     }
 }
