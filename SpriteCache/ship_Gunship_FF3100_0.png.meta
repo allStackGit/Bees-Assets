@@ -134,7 +134,8 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      ship_Gunship_FF3100_0_0: 1726322885363637896
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

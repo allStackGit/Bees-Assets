@@ -259,7 +259,13 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      remains_Gunship_FF3100_7_0: 482653483794976029
+      remains_Gunship_FF3100_7_1: 1079175951896528973
+      remains_Gunship_FF3100_7_2: 1313594715011415960
+      remains_Gunship_FF3100_7_3: 6629749230210980973
+      remains_Gunship_FF3100_7_4: -5435860048991781773
+      remains_Gunship_FF3100_7_5: -369800563479976621
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

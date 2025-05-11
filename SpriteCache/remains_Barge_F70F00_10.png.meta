@@ -334,7 +334,16 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      remains_Barge_F70F00_10_0: -155061066521885312
+      remains_Barge_F70F00_10_1: 934392622647223013
+      remains_Barge_F70F00_10_2: 3073138016997001558
+      remains_Barge_F70F00_10_3: -5381705293316491250
+      remains_Barge_F70F00_10_4: -9011544510745058747
+      remains_Barge_F70F00_10_5: -8608698275356161274
+      remains_Barge_F70F00_10_6: 8052977235064072386
+      remains_Barge_F70F00_10_7: -4074995519735483325
+      remains_Barge_F70F00_10_8: 8857931380349002691
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

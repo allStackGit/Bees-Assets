@@ -284,7 +284,14 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      remains_Frigate_CE2B1A_8_0: -8205262465094856758
+      remains_Frigate_CE2B1A_8_1: -1988488745625294992
+      remains_Frigate_CE2B1A_8_2: 8406224847388314455
+      remains_Frigate_CE2B1A_8_3: -3319570239615693870
+      remains_Frigate_CE2B1A_8_4: 6531503370899309265
+      remains_Frigate_CE2B1A_8_5: 2688419743264962854
+      remains_Frigate_CE2B1A_8_6: 6958001596840106013
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

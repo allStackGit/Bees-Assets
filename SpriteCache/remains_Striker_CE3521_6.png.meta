@@ -259,7 +259,13 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      remains_Striker_CE3521_6_0: -5755411666225205527
+      remains_Striker_CE3521_6_1: 6809706464171030608
+      remains_Striker_CE3521_6_2: -2596001691243472599
+      remains_Striker_CE3521_6_3: 4323656731802912334
+      remains_Striker_CE3521_6_4: 1208342506781648611
+      remains_Striker_CE3521_6_5: -3633161482121023745
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

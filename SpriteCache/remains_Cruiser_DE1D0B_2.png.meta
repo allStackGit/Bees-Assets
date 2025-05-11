@@ -334,7 +334,16 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      remains_Cruiser_DE1D0B_2_0: -5300061311165705136
+      remains_Cruiser_DE1D0B_2_1: 7590516726486273243
+      remains_Cruiser_DE1D0B_2_2: -254756742058928022
+      remains_Cruiser_DE1D0B_2_3: 5151172878727140666
+      remains_Cruiser_DE1D0B_2_4: 8362071922184387418
+      remains_Cruiser_DE1D0B_2_5: -6340414080358153244
+      remains_Cruiser_DE1D0B_2_6: 7965516107878519236
+      remains_Cruiser_DE1D0B_2_7: -2995347988068596559
+      remains_Cruiser_DE1D0B_2_8: 3416991939701002650
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

@@ -234,7 +234,12 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      remains_Scout_CE251C_7_0: 1382613484536549573
+      remains_Scout_CE251C_7_1: -2245696479155341549
+      remains_Scout_CE251C_7_2: 3836853850342151811
+      remains_Scout_CE251C_7_3: 5987258207912212916
+      remains_Scout_CE251C_7_4: -3888356137463098907
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

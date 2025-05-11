@@ -134,7 +134,8 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      ship_FireBarge_FEFFFF_0_0: -2830814207715080082
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

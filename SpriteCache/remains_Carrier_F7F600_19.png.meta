@@ -284,7 +284,14 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      remains_Carrier_F7F600_19_0: 7446458694067080826
+      remains_Carrier_F7F600_19_1: 2085371740433324379
+      remains_Carrier_F7F600_19_2: 8081772803312532951
+      remains_Carrier_F7F600_19_3: -7034673220145160564
+      remains_Carrier_F7F600_19_4: 2936090725005014745
+      remains_Carrier_F7F600_19_5: -6511965719932108452
+      remains_Carrier_F7F600_19_6: 6359226478729297991
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

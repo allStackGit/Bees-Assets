@@ -584,7 +584,26 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      remains_WarpGate_CB6A68_9_0: 5425802863135252786
+      remains_WarpGate_CB6A68_9_1: 1831930997720945178
+      remains_WarpGate_CB6A68_9_10: -1745343393863044036
+      remains_WarpGate_CB6A68_9_11: 776457652861267313
+      remains_WarpGate_CB6A68_9_12: 6304090989280195111
+      remains_WarpGate_CB6A68_9_13: -6838514637000390850
+      remains_WarpGate_CB6A68_9_14: 2624063158000137559
+      remains_WarpGate_CB6A68_9_15: 8934186263456445615
+      remains_WarpGate_CB6A68_9_16: -2791629270578651410
+      remains_WarpGate_CB6A68_9_17: -3036910801049189350
+      remains_WarpGate_CB6A68_9_18: -3109590202827421053
+      remains_WarpGate_CB6A68_9_2: -8974241392205809775
+      remains_WarpGate_CB6A68_9_3: -5656372708085791318
+      remains_WarpGate_CB6A68_9_4: 1252220162612940981
+      remains_WarpGate_CB6A68_9_5: -3166325857659624951
+      remains_WarpGate_CB6A68_9_6: 6813020609393426701
+      remains_WarpGate_CB6A68_9_7: 5577984175136927339
+      remains_WarpGate_CB6A68_9_8: 7753485855192103555
+      remains_WarpGate_CB6A68_9_9: 2410456074610497478
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

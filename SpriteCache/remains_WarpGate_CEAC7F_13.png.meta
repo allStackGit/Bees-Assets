@@ -584,7 +584,26 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      remains_WarpGate_CEAC7F_13_0: 1402917772219996823
+      remains_WarpGate_CEAC7F_13_1: -480061917782124162
+      remains_WarpGate_CEAC7F_13_10: 2212460418250767106
+      remains_WarpGate_CEAC7F_13_11: 3439515784962687778
+      remains_WarpGate_CEAC7F_13_12: 2648818833671052076
+      remains_WarpGate_CEAC7F_13_13: 861585059643096838
+      remains_WarpGate_CEAC7F_13_14: 1682936597446887663
+      remains_WarpGate_CEAC7F_13_15: 5980942368795590141
+      remains_WarpGate_CEAC7F_13_16: 300200328164624075
+      remains_WarpGate_CEAC7F_13_17: 2413612978965447226
+      remains_WarpGate_CEAC7F_13_18: 753114085924800617
+      remains_WarpGate_CEAC7F_13_2: 3460591624648340109
+      remains_WarpGate_CEAC7F_13_3: 192929432871086803
+      remains_WarpGate_CEAC7F_13_4: -3607048013710114273
+      remains_WarpGate_CEAC7F_13_5: 829773353953027237
+      remains_WarpGate_CEAC7F_13_6: -6172638859782065585
+      remains_WarpGate_CEAC7F_13_7: -6518208396278179829
+      remains_WarpGate_CEAC7F_13_8: -3081452523511207040
+      remains_WarpGate_CEAC7F_13_9: -28499297847482472
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

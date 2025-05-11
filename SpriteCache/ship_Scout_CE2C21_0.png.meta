@@ -134,7 +134,8 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      ship_Scout_CE2C21_0_0: 7853968763124007566
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

@@ -259,7 +259,13 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      remains_Gunship_CE2D18_3_0: -4714345920884759993
+      remains_Gunship_CE2D18_3_1: 1120959330505226389
+      remains_Gunship_CE2D18_3_2: 6544149399260137824
+      remains_Gunship_CE2D18_3_3: 1478521979201185249
+      remains_Gunship_CE2D18_3_4: 3782305508182764544
+      remains_Gunship_CE2D18_3_5: 7005418077247199959
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

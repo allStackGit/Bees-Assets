@@ -584,7 +584,26 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      remains_WarpGate_F71E00_18_0: 6166651836980167791
+      remains_WarpGate_F71E00_18_1: -8123902134034233839
+      remains_WarpGate_F71E00_18_10: 7100390175833999320
+      remains_WarpGate_F71E00_18_11: 7636162108706175974
+      remains_WarpGate_F71E00_18_12: -6953185085092890184
+      remains_WarpGate_F71E00_18_13: -2261985534836563886
+      remains_WarpGate_F71E00_18_14: 1184986605153403062
+      remains_WarpGate_F71E00_18_15: -6385616615826324840
+      remains_WarpGate_F71E00_18_16: -7219745488763125512
+      remains_WarpGate_F71E00_18_17: 8360603105195750659
+      remains_WarpGate_F71E00_18_18: -4938029424474859420
+      remains_WarpGate_F71E00_18_2: -6829652540153898583
+      remains_WarpGate_F71E00_18_3: -5662893766163507993
+      remains_WarpGate_F71E00_18_4: 2504043125543169763
+      remains_WarpGate_F71E00_18_5: -1397648600252008867
+      remains_WarpGate_F71E00_18_6: -2002021898532785037
+      remains_WarpGate_F71E00_18_7: -4121831844536676857
+      remains_WarpGate_F71E00_18_8: -113048397088393981
+      remains_WarpGate_F71E00_18_9: 9025092966227275157
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

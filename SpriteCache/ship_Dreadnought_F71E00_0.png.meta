@@ -134,7 +134,8 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      ship_Dreadnought_F71E00_0_0: 2433155670422785304
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

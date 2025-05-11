@@ -259,7 +259,13 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      remains_Striker_F7F600_11_0: -7816918405896841645
+      remains_Striker_F7F600_11_1: 5915093071645043021
+      remains_Striker_F7F600_11_2: 3431596591079085726
+      remains_Striker_F7F600_11_3: -5538268138782878243
+      remains_Striker_F7F600_11_4: -6103609608603199835
+      remains_Striker_F7F600_11_5: -6869889322234360573
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

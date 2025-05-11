@@ -284,7 +284,14 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      remains_Carrier_0800B2_13_0: -7321958331440349487
+      remains_Carrier_0800B2_13_1: 5876541246397557692
+      remains_Carrier_0800B2_13_2: 1076843368796149918
+      remains_Carrier_0800B2_13_3: -4090471231608431170
+      remains_Carrier_0800B2_13_4: 6144227626026860139
+      remains_Carrier_0800B2_13_5: -6537955093032670382
+      remains_Carrier_0800B2_13_6: -3015334790045783595
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

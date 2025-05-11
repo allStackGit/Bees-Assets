@@ -334,7 +334,16 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      remains_Flagship_CE3221_10_0: 996130061590693762
+      remains_Flagship_CE3221_10_1: -9168644320630928899
+      remains_Flagship_CE3221_10_2: 7761477601195683793
+      remains_Flagship_CE3221_10_3: -3066782097684791895
+      remains_Flagship_CE3221_10_4: -2502674701427497878
+      remains_Flagship_CE3221_10_5: -257959475269709914
+      remains_Flagship_CE3221_10_6: 9194326675944615745
+      remains_Flagship_CE3221_10_7: 4483618183648107943
+      remains_Flagship_CE3221_10_8: -6828665515591411469
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

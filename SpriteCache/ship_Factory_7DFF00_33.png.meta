@@ -134,7 +134,8 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      ship_Factory_7DFF00_33_0: -3005746054744013890
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 
