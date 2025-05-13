@@ -315,7 +315,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
             if (!RangeCollider.Collider.OverlapPoint(_globalTargetPosition) && Level.DistanceOutOfBounds(_targetPoint) > 16)
             {
-                Debug.LogError($"{Name} is firing at {ship.Name} but the target point is out of bounds: {_targetPoint}");
+                Debug.LogWarning($"{Name} is firing at {ship.Name} but the target point is out of bounds: {_targetPoint}");
             }
             return _targetPoint;
         }
