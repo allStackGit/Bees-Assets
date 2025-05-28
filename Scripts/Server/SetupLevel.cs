@@ -15,11 +15,10 @@ namespace Assets.Scripts.Server
         public string Type;
         public long Hash;
 
-        public SetupLevel(int levelId, int userId, float version, long gameId = 0)
+        public SetupLevel(int levelId, int userId, long gameId = 0)
         {
             this.LevelId = levelId;    
             this.UserId = userId;
-            this.Version = version;
             this.GameId = gameId;
         }
     }

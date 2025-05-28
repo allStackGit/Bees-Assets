@@ -297,7 +297,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             _globalTargetPosition = _targetPoint + Level.GetPosition();
             if (!RangeCollider.Collider.OverlapPoint(_globalTargetPosition))
             {
-                Debug.Log($"{Name} is firing at {ship.Name} but the target is not within range: {_targetPoint}");
+                //Debug.Log($"{Name} is firing at {ship.Name} but the target is not within range: {_targetPoint}");
 
                 _globalTurretPosition = GetPosition() + Level.GetPosition();
                 _colliderPoint = ship.Collider.ClosestPoint(_globalTurretPosition);
@@ -307,16 +307,16 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 }
                 else
                 {
-                    Debug.Log($"{Name} is firing at {ship.Name} but we could not find a point on the collider that wasn't our own point. Are we inside the collider? Should we just fire at the center of the ship?");
+                    //Debug.Log($"{Name} is firing at {ship.Name} but we could not find a point on the collider that wasn't our own point. Are we inside the collider? Should we just fire at the center of the ship?");
                     _targetPoint = ship.GetPosition();
                 }
-                Debug.Log($"{Name} is firing at {ship.Name} but the target point is not within range. The new target point is: {_targetPoint}");
+                //Debug.Log($"{Name} is firing at {ship.Name} but the target point is not within range. The new target point is: {_targetPoint}");
 
             }
-            if (!RangeCollider.Collider.OverlapPoint(_globalTargetPosition) && Level.DistanceOutOfBounds(_targetPoint) > 16)
-            {
-                Debug.LogWarning($"{Name} is firing at {ship.Name} but the target point is out of bounds: {_targetPoint}");
-            }
+            //if (!RangeCollider.Collider.OverlapPoint(_globalTargetPosition) && Level.DistanceOutOfBounds(_targetPoint) > 16)
+            //{
+            //    Debug.LogWarning($"{Name} is firing at {ship.Name} but the target point is out of bounds: {_targetPoint}");
+            //}
             return _targetPoint;
         }
         /// <summary>Immediately fires at the next available target</summary>
