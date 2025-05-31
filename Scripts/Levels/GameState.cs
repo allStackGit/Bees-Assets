@@ -461,10 +461,18 @@ namespace Assets.Scripts.Levels
         public void AddToSquadsAwaitingHiveMindCommands(Squad squad)
         {
             //Debug.Log($"Adding {squad} to hive mind command queue");
+            //if (squad.GetShips().Any((s) => s.ShipType == ConfigData.ShipTypes.Beacon))
+            //{
+            //    Debug.LogError($"{squad} has beacons and is trying to be added to the hive mind queue");
+            //}
             SquadsAwaitingCommands.Enqueue(squad);
         }
         public Queue<Squad> GetSquadsAwaitingHiveMindCommands()
         {
+            //if (SquadsAwaitingCommands.Any((s) => s.GetShips().Any((s) => s.ShipType == ConfigData.ShipTypes.Beacon)))
+            //{
+            //    Debug.LogError($"SquadsAwaitingCommands has beacon squads");
+            //}
             return SquadsAwaitingCommands;
         }
         private List<Squad> _targetedSquads;

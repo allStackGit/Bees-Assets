@@ -153,9 +153,10 @@ namespace Assets.Scripts.Levels
         }
         private ScaledTimer _checkChaseTimer = new ScaledTimer();
         public void Setup(Level level, SavedSquad savedSquad, ConfigData.ShootingStrategyTypes shootingStrategy, bool ceaseFire, bool isMatchingSpeed, bool shouldChase,
-            long id, int side, int squadNumber, string name, Color color)
+            bool isImobile, long id, int side, int squadNumber, string name, Color color)
         {
             ClearData();
+            IsImmobile = isImobile;
             Level = level;
             SavedSquad = savedSquad;
             Id = id;
@@ -659,6 +660,10 @@ namespace Assets.Scripts.Levels
         /// </summary>
         public void AddToCommandList()
         {          
+            //if (GetShips().Any((s) => s.ShipType == ConfigData.ShipTypes.Beacon))
+            //{
+            //    Debug.LogError($"{this} has beacons and is being added to the command list");
+            //}
             Level.State.AddToSquadsAwaitingHiveMindCommands(this);
         }
         private HashSet<ConfigData.ShipTypes> _banned, _enemyShips;
@@ -684,6 +689,10 @@ namespace Assets.Scripts.Levels
             _bannedTypes = _banned.Select((ship) => $"Type {(Utilities.ConvertShipTypeToCharacter[ship])}").ToArray();
             //Debug.Log($"Making matchup strategy for {Name} and the following ships are banned: {Utilities.ListToString(_banned.ToList())}");
 
+            //if (GetShips().Any((s) => s.ShipType == ConfigData.ShipTypes.Beacon))
+            //{
+            //    Debug.LogError($"{this} has beacons and is trying to make a matchup strategy");
+            //}
             ConfigData.Socket.SendRequest(new MatchupStrategyRequest(new GetMatchupStrategy(AddToMatchup(GetShips()), OpponentId, _bannedTypes),
                 this, Level, ConfigData.StandardMaxTimeOnQueue));
         }

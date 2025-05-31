@@ -149,6 +149,10 @@ namespace Assets.Scripts.Levels.Commands
         }
         public virtual void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
         {
+            //if (GetSquad().GetShips().Any((s) => s.ShipType == ConfigData.ShipTypes.Beacon))
+            //{
+            //    Debug.Log($"{this} has a squad with beacons and it just started");
+            //}
             if (noEnemy || HasEnemy)
             {
                 OutcomeId = commandOutcomeId;
@@ -459,6 +463,10 @@ namespace Assets.Scripts.Levels.Commands
 
                 if (GetSquad().IsHiveMindControlled && Stage.ActivateHiveMind)
                 {
+                    //if (GetSquad().GetShips().Any((s) => s.ShipType == ConfigData.ShipTypes.Beacon))
+                    //{
+                    //    Debug.Log($"{this} has a squad with beacons and it just finalized");
+                    //}
                     GetSquad().AddToCommandList();
                 }
                 // If this is a hivemind command with an outcomeId then find the past command in the state, update the TSV, and finalize it

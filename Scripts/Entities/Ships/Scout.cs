@@ -50,7 +50,6 @@ namespace Assets.Scripts.Entities.Ships
         {
             // Create Squad
             Squad squad = Stage.Pool.GetSquadFromPool();
-            squad.IsImmobile = true;
             squad.Setup(
                 Level,
                 Squad.SavedSquad,
@@ -58,10 +57,11 @@ namespace Assets.Scripts.Entities.Ships
                 Squad.CeaseFire,
                 Squad.IsMatchingSpeed,
                 Squad.ShouldChase(),
+                true,
                 Utilities.GetNegativeSavedSquadId(),
                 Squad.Side,
                 Level.State.OriginalSquadCounts[Side - 1] + 1,
-                $"{Squad.Name} - {MinionType} Spawn #{BeaconsDropped}",
+                $"{Name} - {MinionType} Spawn #{BeaconsDropped}",
                 Squad.Color
             );
             Level.State.AddSquad(squad);

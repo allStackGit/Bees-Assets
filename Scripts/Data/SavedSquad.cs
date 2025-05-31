@@ -270,6 +270,7 @@ namespace Assets.Scripts.Data
                 CeaseFire,
                 IsMatchingSpeed,
                 IsSetToChase,
+                false,
                 Id,
                 Side,
                 0,

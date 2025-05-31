@@ -83,6 +83,7 @@ namespace Assets.Scripts.Entities.Ships
                 Squad.CeaseFire,
                 Squad.IsMatchingSpeed,
                 Squad.ShouldChase(),
+                false,
                 Utilities.GetNegativeSavedSquadId(),
                 Squad.Side,
                 Level.State.OriginalSquadCounts[Side - 1] + 1,

@@ -1331,6 +1331,8 @@ namespace Assets.Scripts.Levels
                 while (_hive_squads.Count > 0)
                 {
                     _hive_squad = _hive_squads.Dequeue();
+                    //Debug.Log($"Dequeueing {_hive_squad} from hive mind command queue");
+
                     if (!_hive_squad.IsDead)
                     {
                         //Debug.Log("Giving command");
