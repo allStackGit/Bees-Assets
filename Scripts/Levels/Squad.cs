@@ -610,14 +610,16 @@ namespace Assets.Scripts.Levels
             return _enemies;
         }
         private List<Ship> _allies;
+        private int _limit;
         public List<Ship> GetPotentialAllies(Squad target)
         {
-            _tempShips = GetShips().Take(64).ToList(); // the ToList() is very important to prevent this list from modifying the main squad list
+            //_tempShips = GetShipsForMatchup(); // don't need this anymore since we get the ships in this squad beforehand
             _allies = GetFriendlyShips();
+            _limit = 64 - GetShips().Count;
 
-            foreach(Ship potentialAlly in _allies)
+            foreach (Ship potentialAlly in _allies)
             {
-                if (this != potentialAlly.Squad && _tempShips.Count <= 64)
+                if (this != potentialAlly.Squad && _tempShips.Count <= _limit)
                 {
                     if (potentialAlly.IsAnySquadShipWithinRange(target)) // if any ship in the target squad is within the range of another of its allies
                     {
@@ -668,6 +670,10 @@ namespace Assets.Scripts.Levels
         }
         private HashSet<ConfigData.ShipTypes> _banned, _enemyShips;
         private string[] _bannedTypes;
+        public List<Ship> GetShipsForMatchup()
+        {
+            return GetShips().Take(64).ToList(); // the ToList() is very important to prevent this list from modifying the main squad list
+        }
         public void MakeMatchupStrat()
         {
             // Can't get any invisible ship types and start by blocking the visible ship types too
@@ -675,13 +681,14 @@ namespace Assets.Scripts.Levels
 
             if (Side == ConfigData.Configuration.BeeSide)
             {
-                // if you're the bees you can only get available human ship types
+                // if you're the bees you can only get available human ship types that are on this level because all bee ships are banned as matchup strategies as well
+                // as all human ship types that are not on this level
                 _enemyShips = Level.State.GetHumanShipTypes();
                 _banned = _banned.Where((type) => !_enemyShips.Contains(type)).ToHashSet();
             }
             else
             {
-                // if you're the humans you can only get available bee ship types
+                // if you're the humans you can only get available bee ship types because all human ships are banned as matchup strategies
                 _enemyShips = Level.State.GetBeeShipTypes();
                 _banned = _banned.Where((type) => !_enemyShips.Contains(type)).ToHashSet();
             }
@@ -693,7 +700,7 @@ namespace Assets.Scripts.Levels
             //{
             //    Debug.LogError($"{this} has beacons and is trying to make a matchup strategy");
             //}
-            ConfigData.Socket.SendRequest(new MatchupStrategyRequest(new GetMatchupStrategy(AddToMatchup(GetShips()), OpponentId, _bannedTypes),
+            ConfigData.Socket.SendRequest(new MatchupStrategyRequest(new GetMatchupStrategy(AddToMatchup(GetShipsForMatchup()), OpponentId, _bannedTypes),
                 this, Level, ConfigData.StandardMaxTimeOnQueue));
         }
         private static char[] _letters;
@@ -737,6 +744,9 @@ namespace Assets.Scripts.Levels
             }
             _bannedStrats = BannedStrats.ToHashSet(); // the ToHashSet is important to prevent modification of the original set
 
+            _sb = _sb.Clear();
+            _sb.Append(AddToMatchup(GetShipsForMatchup()));
+
             if (enemy != null)
             {
                 _matchupEnemies = GetPotentialEnemies(enemy);
@@ -747,26 +757,6 @@ namespace Assets.Scripts.Levels
                     return;
                 }
                 _matchupAllies = GetPotentialAllies(enemy);
-
-                //Debug.Log($"Strategy matchup: {AddToMatchup(_matchupAllies)}|{AddToMatchup(_matchupEnemies)}");
-                /*
-                Determines whether or not the squad is at the "walls"
-                 */
-
-                _atTheWalls = 0;
-                _tempPosition = GetPosition();
-                if (_tempPosition.x < (Level.MinX + _distance) || _tempPosition.x > (Level.MaxX - _distance)) // check if it's at the sides
-                {
-                    _atTheWalls = 1;
-                    if (_tempPosition.y < (Level.MinY + _distance) || _tempPosition.y > (Level.MaxY - _distance))
-                    {
-                        _atTheWalls = 2;
-                    }
-                }
-                else if (_tempPosition.y < (Level.MinY + _distance) || _tempPosition.y > (Level.MaxY - _distance))
-                {
-                    _atTheWalls = 1;
-                }
 
                 /*
                 This is the calculation for the enemy's current average percentage of health for each ship and then the same for the allies, and then compares the allies to the enemies
@@ -803,7 +793,6 @@ namespace Assets.Scripts.Levels
                 {
                     _comparativeHealth = 4;
                 }
-                _sb = _sb.Clear();
                 _sb.Append(AddToMatchup(_matchupAllies));
                 _sb.Append("|");
                 _sb.Append(AddToMatchup(_matchupEnemies));
@@ -811,10 +800,8 @@ namespace Assets.Scripts.Levels
                 _sb.Append((enemy.IsAnySquadShipWithinRangeOfAnyOfOurSquadShips(this) ? 1 : 0));
                 _sb.Append("|");
                 _sb.Append(_comparativeHealth);
-                _sb.Append("|");
-                _sb.Append(_atTheWalls);
 
-                _matchup = _sb.ToString();
+
             }
             else
             {
@@ -826,8 +813,31 @@ namespace Assets.Scripts.Levels
                 _bannedStrats.Add(ConfigData.CommandTypes.InAndOut);
                 _bannedStrats.Add(ConfigData.CommandTypes.FullRetreat);
                 _bannedStrats.Add(ConfigData.CommandTypes.Hold);
-                _matchup = "";
+
+                _sb.Append("||0|0"); // fills in the matchup string for seeing no enemies and having no allies
+
             }
+
+            // Determines whether or not the squad is at the "walls"
+            _atTheWalls = 0;
+            _tempPosition = GetPosition();
+            if (_tempPosition.x < (Level.MinX + _distance) || _tempPosition.x > (Level.MaxX - _distance)) // check if it's at the sides
+            {
+                _atTheWalls = 1;
+                if (_tempPosition.y < (Level.MinY + _distance) || _tempPosition.y > (Level.MaxY - _distance))
+                {
+                    _atTheWalls = 2;
+                }
+            }
+            else if (_tempPosition.y < (Level.MinY + _distance) || _tempPosition.y > (Level.MaxY - _distance))
+            {
+                _atTheWalls = 1;
+            }
+
+            _sb.Append("|");
+            _sb.Append(_atTheWalls);
+            _matchup = _sb.ToString();
+
 
             _closestFriendlySquadCount = Level.State.GetSquadsBySide(Side).Where((squad) => squad?.GetCommand()?.CommandType == ConfigData.CommandTypes.ClosestFriendly).Count();
             _friendlySquadCount = Level.State.GetSquadsBySide(Side).Count;
