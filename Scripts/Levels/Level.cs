@@ -318,10 +318,10 @@ namespace Assets.Scripts.Levels
                 //State.AddObstacle(obstacle.GetComponent<Obstacle>());
             });
 
-            if (ActivateCollisionAsteroids)
+            if (ActivateCollisionAsteroids || true) // [debug] 
             {
                 Stage.HasAsteroids = true;
-                if (CurrentLevelOptions.AsteroidOption == 2)
+                if (CurrentLevelOptions.AsteroidOption == 2 || true) // [debug]
                 {
                     Stage.CurrentAsteroidMaxSpawnRate /= 2;
                     Stage.CurrentAsteroidMinimumSpawnRate /= 2;
@@ -1021,7 +1021,7 @@ namespace Assets.Scripts.Levels
 
 
 
-            if (HasObstacles)
+            if (HasObstacles || true)  // [debug]
             {
                 //CancelInvoke(nameof(SpawnAsteroid));
                 //CancelInvoke(nameof(SetLocationHistory));

@@ -653,11 +653,11 @@ namespace Assets.Scripts
         public const int MinimumAsteroidSpeed = 2;
         public const int MinimumAsteroidAngularSpeedMultiplier = 5;
         public const int CollisionAsteroidHealthIncrement = 250;
-        public const int MaximumTsvValueForSeeingAShip = 20; // [Tsv]
-        public const int MinimumTsvValueForSeeingAShip = 1; // [Tsv]
+        public const int MaximumTsvValueForSeeingAShip = 40; // [Tsv]
+        public const int MinimumTsvValueForSeeingAShip = 3; // [Tsv]
         public const int StandardReinforcementsDelay = 60;
         public const int StandardMaxCommandTime = 120;
-        public const float TsvMultiplierForVision = .05f; // [Tsv]
+        public const float TsvMultiplierForVision = .1f; // [Tsv]
         public const float VisionShrinkingMultiplier = .8f;
         public static Vector2 HalfSize = new Vector2(.5f, .5f);
         /// <summary>

@@ -239,8 +239,8 @@ namespace Assets.Scripts.Entities.Ships
             __Tsv = Tsv;
             __DamagePerSecond = DamagePerSecond;
             __CommandTsv = Squad.HasCommand ? Squad.GetCommand().Tsv : 0;
-            __PastCommands = Squad.PastCommands.Select((c) => $"Command #{c.OutcomeId} - {c.CommandType} against {c.Enemy} ended with {c.Tsv}" +
-            $" TSV due to \"{c.FinalizationCause}\" and took {c.Age} ticks").ToList();
+            __PastCommands = Squad.PastCommands.Select((c) => c.IsFinalized ? $"#{c.OutcomeId} - {c.CommandType} ({c.Tsv}) against {c.Enemy} ended" +
+            $" due to \"{c.FinalizationCause}\" and took {c.Age} ticks" : $"#{c.OutcomeId} - {c.CommandType} (Unfinalized)").ToList();
 
             __HasReachedDestination = HasReachedDestination;
             __SquadHasReachedDestination = Squad.HasReachedDestination;
@@ -1577,28 +1577,33 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         /// </summary>
         public void LogDamage(int damage)  // [damage-method] [note]
         {
-            _oldTsv = Tsv;
-            Health -= math.min(damage, Health);
-            Tsv = Utilities.CalculateTsv(this);
+            if (Health > 0)
+            {
+                _oldTsv = Tsv;
+                Health -= math.min(damage, Health);
+                Tsv = Utilities.CalculateTsv(this);
 
-            _tsvChange = Tsv - _oldTsv;
-            FleetShip.DamageReceived += -_tsvChange;
-            Squad.SavedSquad.Stats.DamageReceived += -_tsvChange;
+                _tsvChange = Tsv - _oldTsv;
+                FleetShip.DamageReceived += -_tsvChange;
+                Squad.SavedSquad.Stats.DamageReceived += -_tsvChange;
 
-            if (Squad.HasCommand)
-            {
-                Squad.GetCommand().Tsv += _tsvChange; // subtract the TSV from the target
+                if (Squad.HasCommand)
+                {
+                    Squad.GetCommand().Tsv += _tsvChange; // subtract the TSV from the target
+                }
+                if (Health == 0)
+                {
+                    Kill(null, null, null);
+                }
+                else
+                {
+                    UpdateHealthBar();
+                }
             }
-            if (Health == 0)
-            {
-                Kill(null, null, null);
-            }
-            else
-            {
-                UpdateHealthBar();
-            }
+
         }
         private static int _targetOldTSV, _targetTSVChange;
+        private static int _targetOldHealth; // [debug]
         private static ShipDamageStatus _shipDamageStatus;
         /// <summary>
         /// Logs damage to a ship from being attacked by another ship. See LogDamage() for non-attacking damage
@@ -1606,46 +1611,52 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         /// </summary>
         public static void LogAttackingDamage(int power, Ship attacker, FleetShip attackerFleetShip, SavedSquad attackerSavedSquad, Ship target) // [damage-method] [note]
         {
-            if (target.Level.Stage.MakeShotsHarmless)
+            if (target.Health > 0)
             {
-                power = 0;
-            }
-
-            _targetOldTSV = target.Tsv;
-
-            target.Health -= math.min(power, target.Health);
-            target.Tsv = Utilities.CalculateTsv(target);
-
-            _targetTSVChange = target.Tsv - _targetOldTSV; // this is a negative number since being hit by a projectile should induce a loss of TSV
-            LogHitStats(attacker, attackerFleetShip, attackerSavedSquad, target, target.Squad, -_targetTSVChange);
-
-
-            if (target.Health == 0)
-            {
-                target.Kill(attacker, attackerFleetShip, attackerSavedSquad);
-
-                if (attacker != null)
+                if (target.Level.Stage.MakeShotsHarmless)
                 {
-                    attacker.Level.State.ShipDamageStatuses[attacker.Side-1].Remove(attacker.Level.State.GetShipDamageStatus(attacker.Side, target));
+                    power = 0;
                 }
 
-            }
-            else
-            {
-                if (target.Level.Stage.IsTrainingNueralNetwork)
-                {
-                    target.RLHealth = target.Health / target.MaxHealth;
-                }
-                target.UpdateHealthBar();
-                if (attacker != null)
-                {
-                    _shipDamageStatus = target.Level.State.GetShipDamageStatus(attacker.Side, target);
-                    _shipDamageStatus.Health = target.Health;
-                }
-                
-            }
+                _targetOldTSV = target.Tsv;
+                _targetOldHealth = target.Health;  // [debug]
+                target.Health -= math.min(power, target.Health);
+                target.Tsv = Utilities.CalculateTsv(target);
 
-            
+                if (_targetOldHealth <= target.Health) // [debug]
+                {
+                    Debug.LogError($"Target {target.Name} old health {_targetOldHealth} is less than or equal to new health {target.Health} after taking {power} damage from attacker {attacker.Name}");
+                }
+
+                _targetTSVChange = target.Tsv - _targetOldTSV; // this is a negative number since being hit by a projectile should induce a loss of TSV
+                LogHitStats(attacker, attackerFleetShip, attackerSavedSquad, target, target.Squad, -_targetTSVChange);
+
+
+                if (target.Health == 0)
+                {
+                    target.Kill(attacker, attackerFleetShip, attackerSavedSquad);
+
+                    if (attacker != null)
+                    {
+                        attacker.Level.State.ShipDamageStatuses[attacker.Side - 1].Remove(attacker.Level.State.GetShipDamageStatus(attacker.Side, target));
+                    }
+
+                }
+                else
+                {
+                    if (target.Level.Stage.IsTrainingNueralNetwork)
+                    {
+                        target.RLHealth = target.Health / target.MaxHealth;
+                    }
+                    target.UpdateHealthBar();
+                    if (attacker != null)
+                    {
+                        _shipDamageStatus = target.Level.State.GetShipDamageStatus(attacker.Side, target);
+                        _shipDamageStatus.Health = target.Health;
+                    }
+
+                }
+            }
         }
         private static bool _isFriendlyFire;
         private static int[] _initialTsv;
@@ -1862,12 +1873,12 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 }
 
                 // If there are any projectiles in flight, let them know the ship is dead
-                if (ProjectilesInFlight.Count> 0)
+                if (ProjectilesInFlight.Count > 0)
                 {
                     ProjectilesInFlight.ToList().ForEach((projectile) =>
                     {
                         projectile.ShipIsDead = true;
-                        //Debug.Log($"Letting projectile ({projectile.Name}) know that its ship ({Name}) is dead.");
+                        Debug.Log($"Letting projectile ({projectile.Name}) know that its ship ({Name}) is dead.");
                     });
 
                 }

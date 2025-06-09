@@ -51,7 +51,7 @@ namespace Assets.Scripts.Entities.Ships
                 Destroy(ChargingBar.gameObject);
             }
             Charge = Weapons.First();            //IsBomber = true;
-
+            OriginalPower = Charge.Power;
             //Destroy(Charge.Piece);
         }
 
@@ -191,8 +191,6 @@ namespace Assets.Scripts.Entities.Ships
 
         public IEnumerator ChargeForward(Ship target = null)
         {
-            OriginalPower = Charge.Power;
-
             StopMoving("Pausing to build up steam before charging");
             CannotChangeMovementOrders = true;
 

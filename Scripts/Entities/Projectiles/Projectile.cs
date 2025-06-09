@@ -184,8 +184,12 @@ namespace Assets.Scripts.Entities.Projectiles
             }
             if (ShipIsDead && DistanceToPoint(StartingPosition) > Range)
             {
-                //Debug.Log($"Projectile ({Name}) killed because it went past its range ({Range}), and it's shooter ({FleetShip.Name}) is dead");
+                Debug.Log($"Projectile ({Name}) killed because it went past its range ({Range}), and it's shooter ({FleetShip.Name}) is dead");
                 Kill();
+            }
+            else if (FleetShip.Type == ConfigData.ShipTypes.Leafcutter && DistanceToPoint(StartingPosition) > Range + 10) // [debug]
+            {
+                Debug.LogError($"Projectile ({Name}) went past its range+10 ({Range})");
             }
             //else if (Level.State.GameOver)
             //{

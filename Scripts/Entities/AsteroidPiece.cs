@@ -5,6 +5,9 @@ using UnityEngine;
 
 namespace Assets.Scripts.Entities
 {
+    /// <summary>
+    /// An asteroid piece that breaks off from a larger asteroid upon destruction and doesn't interact with anything
+    /// </summary>
     public class AsteroidPiece : Obstacle
     {
         public Rigidbody2D Body;

@@ -232,7 +232,15 @@ namespace Assets.Scripts.Entities
             else if (obstacle.ObstacleType == ConfigData.ObstacleTypes.CollisionAsteroid)
             {
                 NearbyObstacles.Add(obstacle);
-                //Debug.Log($"{ship.Name} is near {Name}");
+                Debug.Log($"{obstacle.Name} is near {Name}");
+            }
+            else if (IsImmune) // [debug]
+            {
+                Debug.Log($"{Name} is immune and ignored the collision with {obstacle.Name}");
+            }
+            else if (!HasEnteredMap) // [debug]
+            {
+                Debug.Log($"{Name} has not entered the map and ignored the collision with {obstacle.Name}");
             }
         }
         ScaledTimer _collisionAnimation = new ScaledTimer();
@@ -286,7 +294,7 @@ namespace Assets.Scripts.Entities
 
         protected void OnTriggerEnter2D(Collider2D collider)
         {
-            //Debug.Log($"{Name} collided");
+            Debug.Log($"{Name} collided with {collider.name}");
             _overlaps++;
             _collidingThing = collider.gameObject;
             if (_collidingThing.CompareTag("Ship"))
@@ -425,6 +433,8 @@ namespace Assets.Scripts.Entities
                 _asteroidShard.transform.localPosition = GetPosition();
                 _asteroidShard.Body.angularVelocity = Body.angularVelocity;
                 _asteroidShard.HasEnteredMap = true;
+
+                _asteroidShard.Name = $"{_asteroidShard.Name}  - Shard";
 
             }
 

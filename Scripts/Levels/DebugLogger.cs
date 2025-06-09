@@ -9,7 +9,7 @@ public class DebugLogger : MonoBehaviour
     /// <summary>
     /// Whether or not the game is being debugged and should log a lot of debugging data
     /// </summary>
-    public bool IsDebugging;
+    public bool IsDebugging, IsPoolLogging;
     public bool IsNetworkLogging;
     // Stage variables
     public int __HivemindCommands, __LevelTimeouts, __TotalShips, __LevelCompletes, __Grids;
@@ -41,9 +41,13 @@ public class DebugLogger : MonoBehaviour
     {
         if (IsDebugging)
         {
-            PoolStats();
             StageLogging();
             LevelLogging();
+        }
+
+        if (IsPoolLogging)
+        {
+            PoolStats();
         }
 
         if (Stage.WatchServerRequests || IsNetworkLogging)

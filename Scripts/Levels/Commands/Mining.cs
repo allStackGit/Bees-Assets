@@ -50,9 +50,8 @@ namespace Assets.Scripts.Levels.Commands
                 //InvokeRepeating(nameof(MoveToAsteroid), 0, CommandFrequency);
                 if (IsHiveMindCommand)
                 {
-                    TimeoutTimer.Reuse(300, Timeout);
+                    TimeoutTimer.Reuse(600, Timeout); // 10 minutes
                     Level.AddTimer(TimeoutTimer);
-                    //Invoke(nameof(EndCommand), 300); // 5 minutes
                 }
 
             }

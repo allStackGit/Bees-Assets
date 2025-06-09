@@ -76,7 +76,14 @@ namespace Assets.Scripts.Entities.Projectiles
                 _projectile = Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.BeeSmall);
                 _projectile.Setup(Level, Weapon, Shooter, Target, GetPosition(), _localAngle * Mathf.Deg2Rad, Weapon.Range, (int)(Weapon.Power / 1.5f));
                 _projectile.ShipsToIgnore.Add(target);
-                Shooter.ProjectilesInFlight.Add(_projectile);
+                if (!Shooter.IsDead)
+                {
+                    Shooter.ProjectilesInFlight.Add(_projectile);
+                }
+                else
+                {
+                    _projectile.ShipIsDead = true;
+                }
 
 
                 //GameObject shot =  Instantiate(SplitLaserPrefab, startingPosition, Quaternion.identity);

@@ -614,6 +614,7 @@ namespace Assets.Scripts.Levels
         public List<Ship> GetPotentialAllies(Squad target)
         {
             //_tempShips = GetShipsForMatchup(); // don't need this anymore since we get the ships in this squad beforehand
+            _tempShips.Clear();
             _allies = GetFriendlyShips();
             _limit = 64 - GetShips().Count;
 
@@ -746,6 +747,7 @@ namespace Assets.Scripts.Levels
 
             _sb = _sb.Clear();
             _sb.Append(AddToMatchup(GetShipsForMatchup()));
+            //Debug.Log($"Just added {AddToMatchup(GetShipsForMatchup())} to matchup: {_sb.ToString()}");
 
             if (enemy != null)
             {
@@ -794,14 +796,19 @@ namespace Assets.Scripts.Levels
                     _comparativeHealth = 4;
                 }
                 _sb.Append(AddToMatchup(_matchupAllies));
+                //Debug.Log($"Just added {AddToMatchup(_matchupAllies)} to matchup: {_sb.ToString()}");
                 _sb.Append("|");
                 _sb.Append(AddToMatchup(_matchupEnemies));
+                //Debug.Log($"Just added {AddToMatchup(_matchupEnemies)} to matchup: {_sb.ToString()}");
                 _sb.Append("|");
                 _sb.Append((enemy.IsAnySquadShipWithinRangeOfAnyOfOurSquadShips(this) ? 1 : 0));
                 _sb.Append("|");
                 _sb.Append(_comparativeHealth);
 
-
+                //if (_matchupAllies.Any((s) => s.Side != Side) || _matchupEnemies.Any((s) => s.Side != enemy.Side)) // if there are any ships that are not on the same side as the squad or enemy squad
+                //{
+                //    Debug.LogError($"Squad {Name} has a ship that is not on the same side as the squad or enemy squad! {Utilities.ListToString(_matchupAllies)} vs {Utilities.ListToString(_matchupEnemies)}");
+                //}
             }
             else
             {
@@ -818,24 +825,26 @@ namespace Assets.Scripts.Levels
 
             }
 
-            // Determines whether or not the squad is at the "walls"
-            _atTheWalls = 0;
-            _tempPosition = GetPosition();
-            if (_tempPosition.x < (Level.MinX + _distance) || _tempPosition.x > (Level.MaxX - _distance)) // check if it's at the sides
-            {
-                _atTheWalls = 1;
-                if (_tempPosition.y < (Level.MinY + _distance) || _tempPosition.y > (Level.MaxY - _distance))
-                {
-                    _atTheWalls = 2;
-                }
-            }
-            else if (_tempPosition.y < (Level.MinY + _distance) || _tempPosition.y > (Level.MaxY - _distance))
-            {
-                _atTheWalls = 1;
-            }
+            // Determines whether or not the squad is at the "walls" -- Deciding to skip this
+            //_atTheWalls = 0;
+            //_tempPosition = GetPosition();
+            //if (_tempPosition.x < (Level.MinX + _distance) || _tempPosition.x > (Level.MaxX - _distance)) // check if it's at the sides
+            //{
+            //    _atTheWalls = 1;
+            //    if (_tempPosition.y < (Level.MinY + _distance) || _tempPosition.y > (Level.MaxY - _distance))
+            //    {
+            //        _atTheWalls = 2;
+            //    }
+            //}
+            //else if (_tempPosition.y < (Level.MinY + _distance) || _tempPosition.y > (Level.MaxY - _distance))
+            //{
+            //    _atTheWalls = 1;
+            //}
 
-            _sb.Append("|");
-            _sb.Append(_atTheWalls);
+            //_sb.Append("|");
+            //_sb.Append(_atTheWalls);
+
+
             _matchup = _sb.ToString();
 
 
@@ -845,7 +854,7 @@ namespace Assets.Scripts.Levels
             {
                 _bannedStrats.Add(ConfigData.CommandTypes.ClosestFriendly);
             }
-            if (!BannedStrats.Contains(ConfigData.CommandTypes.Mining) && (!Level.ActivateMining || !HasMiningShips))
+            if (!BannedStrats.Contains(ConfigData.CommandTypes.Mining) && (!Level.ActivateMining || !HasMiningShips || GetNearestMiningAsteroid() == null))
             {
                 BannedStrats.Add(ConfigData.CommandTypes.Mining);
                 _bannedStrats.Add(ConfigData.CommandTypes.Mining);
