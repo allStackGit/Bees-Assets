@@ -726,8 +726,9 @@ namespace Assets.Scripts.Levels
         private string _matchup;
         private StringBuilder _sb = new StringBuilder();
         private HashSet<ConfigData.CommandTypes> _bannedStrats;
-        private int _atTheWalls, _comparativeHealth, _friendlySquadCount, _closestFriendlySquadCount;
-        private int _distance = 15;
+        private int _comparativeHealth, _friendlySquadCount, _closestFriendlySquadCount;
+        //private int _atTheWalls;
+        //private int _distance = 15;
         private List<Ship> _matchupAllies;
         private List<Ship> _matchupEnemies;
 

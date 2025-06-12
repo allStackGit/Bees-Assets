@@ -506,7 +506,7 @@ namespace Assets.Scripts.Levels.Commands
                         }
                         else
                         {
-                            Debug.LogError($"Could not find squad command for OutcomeId {OutcomeId} in Squad {GetSquad().Name}");
+                            Debug.LogError($"Could not find squad command for OutcomeId #{OutcomeId} in Squad {GetSquad().Name}");
                         }
                     }
                 }

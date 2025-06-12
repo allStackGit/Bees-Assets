@@ -29,7 +29,7 @@ namespace Assets.Scripts.Entities
         public Sprite OriginalSprite, CrackedSprite;
 
         //public string OriginalName; // [debug]
-        //public bool IsDelayKilled; // [debug]
+        public bool IsDelayKilled;
 
         private int _overlaps;
         private bool _isColliding => _overlaps > 0;
@@ -91,7 +91,7 @@ namespace Assets.Scripts.Entities
             HasTouchedMapBorder = false;
             HasDroppedDestructionAnimation = false;
             HasEnteredMap = false;
-            //IsDelayKilled = false;
+            IsDelayKilled = false;
             SpriteRenderer.sprite = OriginalSprite;
         }
 
@@ -119,7 +119,7 @@ namespace Assets.Scripts.Entities
         protected ScaledTimer _delayKillTimer = new ScaledTimer();
         public void ShipCollision(Ship ship)
         {
-            if (NearbyShips.Contains(ship))
+            if (NearbyShips.Contains(ship) && Health > 0)
             {
                 //Debug.Log($"It looks like {ship.Name} was already nearby and hit {Name}");
                 TouchingShips.Add(ship);
@@ -162,7 +162,7 @@ namespace Assets.Scripts.Entities
 
         public void ObstacleCollision(Obstacle obstacle)
         {
-            if (NearbyObstacles.Contains(obstacle) && !IsImmune && HasEnteredMap)
+            if (NearbyObstacles.Contains(obstacle) && !IsImmune && HasEnteredMap && !IsDead)
             {
                 //Debug.Log($"It looks like {ship.Name} was already nearby and hit {Name}");
                 //ship.Kill(null);
@@ -242,6 +242,10 @@ namespace Assets.Scripts.Entities
             {
                 Debug.Log($"{Name} has not entered the map and ignored the collision with {obstacle.Name}");
             }
+            else if (IsDead)
+            {
+                Debug.Log($"{Name} is dead and ignored the collision with {obstacle.Name}");
+            }
         }
         ScaledTimer _collisionAnimation = new ScaledTimer();
         /// <summary>
@@ -251,7 +255,6 @@ namespace Assets.Scripts.Entities
         public void GotKilledInCollision()
         {
             SwitchToCrackedSprite();
-            //IsDelayKilled = true;
 
 
             if (LastHitAsteroid != null && !LastHitAsteroid.HasDroppedDestructionAnimation && (SizeClass >= LastHitAsteroid.SizeClass || LastHitAsteroid.Health > 0))
@@ -271,8 +274,14 @@ namespace Assets.Scripts.Entities
             //    Debug.Log(LastHitAsteroid?.SizeClass);
             //    Debug.Log(LastHitAsteroid?.Health);
             //}
-            _delayKillTimer.Reuse(.35f, DelayKill);
-            Level.AddTimer(_delayKillTimer);
+            if (!IsDelayKilled)
+            {
+                IsDelayKilled = true;
+                _delayKillTimer.Reuse(.35f, DelayKill);
+                Level.AddTimer(_delayKillTimer);
+
+            }
+
 
         }
 
@@ -287,8 +296,13 @@ namespace Assets.Scripts.Entities
             _collisionAnimation.Reuse(.15f, ShowCollisionAnimation);
             Level.AddTimer(_collisionAnimation);
 
-            _delayKillTimer.Reuse(.25f, DelayKill);
-            Level.AddTimer(_delayKillTimer);
+            if (!IsDelayKilled)
+            {
+                IsDelayKilled = true;
+                _delayKillTimer.Reuse(.35f, DelayKill);
+                Level.AddTimer(_delayKillTimer);
+
+            }
 
         }
 
@@ -407,6 +421,9 @@ namespace Assets.Scripts.Entities
                 //Debug.Log($"Killing and returning {Name} to the pool");
                 Level.State.AsteroidsToRelease.Add(this);
                 //Stage.Pool.ReturnCollisionAsteroidToPool(this);
+                Level.CancelTimer(_removeImmunityTimer);
+                Level.CancelTimer(_delayKillTimer);
+                Level.CancelTimer(_collisionAnimation);
                 gameObject.SetActive(false);
             }
             //else

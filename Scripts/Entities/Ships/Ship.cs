@@ -956,6 +956,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
         }
         private ScaledTimer _asteroidDoubleCheckTimer = new ScaledTimer();
+        private bool _isDoubleCheckingForAsteroids = false;
         /// <summary>
         /// This is triggered by the asteroid when the ship gets within its proximity collider
         /// </summary>
@@ -980,8 +981,13 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                     MoveToPoint(FinalDestination, true);
                 }
 
-                _asteroidDoubleCheckTimer.Reuse(1, NearbyAsteroidDoubleCheck, true);
-                Level.AddTimer(_asteroidDoubleCheckTimer);
+                if (!_isDoubleCheckingForAsteroids)
+                {
+                    _isDoubleCheckingForAsteroids = true;
+                    _asteroidDoubleCheckTimer.Reuse(1, NearbyAsteroidDoubleCheck, true);
+                    Level.AddTimer(_asteroidDoubleCheckTimer);
+                }
+
                 //InvokeRepeating(nameof(NearbyAsteroidDoubleCheck), 1f, 1f);
             }
 
@@ -999,6 +1005,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             else
             {
                 Level.CancelTimer(_asteroidDoubleCheckTimer);
+                _isDoubleCheckingForAsteroids = false;
                 //CancelInvoke(nameof(NearbyAsteroidDoubleCheck));
             }
         }
@@ -1008,6 +1015,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         }
 
         public int _retries = 0;
+        private bool _tryingToFindPathAgain;
         private void MergePathfindingPaths()
         {
             //if (PrintDebugImage)
@@ -1040,9 +1048,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             else
             {
                 //Debug.Log($"{Name} couldn't find a path to {PathfindingDestination} and so it will try again in 2 seconds");
-                if (_retries < 5)
+                if (_retries < 5 && !_tryingToFindPathAgain)
                 {
                     EndDestination("Could not find a path to destination");
+                    _tryingToFindPathAgain = true;
                     _tryToFindPathAgainTimer.Reuse(2, TryToFindPathAgain);
                     Level.AddTimer(_tryToFindPathAgainTimer);
                     //Invoke(nameof(TryToFindPathAgain), 2);
@@ -1056,6 +1065,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         public void TryToFindPathAgain()
         {
             MoveToPoint(PathfindingDestination);
+            _tryingToFindPathAgain = false;
         }
         /// <summary>
         /// Periodically called while following a pathfinding path. Checks to see if there are any obstacles in the way and if not, cuts off the destination queue and takes a direct path
@@ -2020,15 +2030,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             {
                 MiniMapIcon.SetActive(true);
             }
-        }
-        /// <summary>
-        /// Actually destroys the ship in the game
-        /// </summary>
-        protected void DelayedKill()
-        {
-            //Debug.Log($"{Name} delay killed");
-            //Debug.Log($"{Name} has been killed and will be returned");
-            Deactivate();
         }
         private int _maxLoops;
         /// <summary>

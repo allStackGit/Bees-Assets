@@ -191,53 +191,57 @@ namespace Assets.Scripts.Entities.Ships
 
         public IEnumerator ChargeForward(Ship target = null)
         {
-            StopMoving("Pausing to build up steam before charging");
-            CannotChangeMovementOrders = true;
-
-            if (!Stage.IsTraining)
+            if (!IsCharging)
             {
-                BargeLoadingChargeAnimation.SetActive(true);
-            }
-            
-            Debug.Log($"{Name} is about to charge");
+                StopMoving("Pausing to build up steam before charging");
+                CannotChangeMovementOrders = true;
 
-            yield return new WaitForSeconds(2);
-
-            if (!IsDead)
-            {
                 if (!Stage.IsTraining)
                 {
-                    BargeLoadingChargeAnimation.SetActive(false);
-                    BargeChargeAnimation.SetActive(true);
-                    BargeChargeImageAnimation.SetActive(true);
-                    BargeChargeImageAnimator.StartCharge();
+                    BargeLoadingChargeAnimation.SetActive(true);
                 }
-                IsCharging = true;
-                HasStartedCharging = true;
-                CannotChangeMovementOrders = false;
-                SetCurrentSpeed(80, 80);
-                if (target != null && !target.IsDead)
-                {
-                    MoveToDirectionOfPoint(target.GetPosition());
-                }
-                else
-                {
-                    MoveInDirection(Rotation);
 
+                Debug.Log($"{Name} is about to charge");
+
+                yield return new WaitForSeconds(2);
+
+                if (!IsDead)
+                {
+                    if (!Stage.IsTraining)
+                    {
+                        BargeLoadingChargeAnimation.SetActive(false);
+                        BargeChargeAnimation.SetActive(true);
+                        BargeChargeImageAnimation.SetActive(true);
+                        BargeChargeImageAnimator.StartCharge();
+                    }
+                    IsCharging = true;
+                    HasStartedCharging = true;
+                    CannotChangeMovementOrders = false;
+                    SetCurrentSpeed(80, 80);
+                    if (target != null && !target.IsDead)
+                    {
+                        MoveToDirectionOfPoint(target.GetPosition());
+                    }
+                    else
+                    {
+                        MoveInDirection(Rotation);
+
+                    }
+                    CannotChangeMovementOrders = true;
                 }
-                CannotChangeMovementOrders = true;
+
+
+                yield return new WaitForSeconds(1);
+                if (!IsDead)
+                {
+                    StartCoroutine(StopCharge());
+                }
+                //else
+                //{
+                //    Debug.Log($"Could not stop charge for {this} because it's dead");
+                //}
             }
 
-
-            yield return new WaitForSeconds(1);
-            if (!IsDead)
-            {
-                StartCoroutine(StopCharge());
-            }
-            //else
-            //{
-            //    Debug.Log($"Could not stop charge for {this} because it's dead");
-            //}
 
         }
 
@@ -258,7 +262,7 @@ namespace Assets.Scripts.Entities.Ships
                 if (!Stage.IsTraining)
                 {
                     BargeChargeAnimation.SetActive(false);
-                    BargeChargeImageAnimation.SetActive(false);
+                    BargeChargeImageAnimator.Kill();
 
                     ChargeRocketFlares.ForEach((flare) =>
                     {
@@ -302,7 +306,7 @@ namespace Assets.Scripts.Entities.Ships
             {
                 BargeLoadingChargeAnimation.SetActive(false);
                 BargeChargeAnimation.SetActive(false);
-                BargeChargeImageAnimation.SetActive(false);
+                BargeChargeImageAnimator.Kill();
 
                 ChargeRocketFlares.ForEach((flare) =>
                 {

@@ -318,10 +318,10 @@ namespace Assets.Scripts.Levels
                 //State.AddObstacle(obstacle.GetComponent<Obstacle>());
             });
 
-            if (ActivateCollisionAsteroids || true) // [debug] 
+            if (ActivateCollisionAsteroids) 
             {
                 Stage.HasAsteroids = true;
-                if (CurrentLevelOptions.AsteroidOption == 2 || true) // [debug]
+                if (CurrentLevelOptions.AsteroidOption == 2) 
                 {
                     Stage.CurrentAsteroidMaxSpawnRate /= 2;
                     Stage.CurrentAsteroidMinimumSpawnRate /= 2;
@@ -603,7 +603,11 @@ namespace Assets.Scripts.Levels
 
                 UnPause();
             }
-            
+
+            if (ActivateCollisionAsteroids)
+            {
+                CancelTimer(_asteroidSpawnTimer);
+            }
 
             if (Stage.IsTrainingNueralNetwork)
             {
@@ -1021,7 +1025,7 @@ namespace Assets.Scripts.Levels
 
 
 
-            if (HasObstacles || true)  // [debug]
+            if (HasObstacles) 
             {
                 //CancelInvoke(nameof(SpawnAsteroid));
                 //CancelInvoke(nameof(SetLocationHistory));

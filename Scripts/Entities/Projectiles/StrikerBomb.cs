@@ -53,5 +53,9 @@ namespace Assets.Scripts.Entities.Projectiles
                 Ship.LogAttackingDamage(Power, Shooter, FleetShip, SavedSquad, ContactedShip);
             }
         }
+        protected override void FixedUpdate()
+        {
+
+        }
     }
 }

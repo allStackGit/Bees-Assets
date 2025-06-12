@@ -49,10 +49,10 @@ namespace Assets.Scripts.Entities.Projectiles
         public void Split(Ship target) // [projectile-method] [note]
         {
             //Debug.Log($"Splitting into {SplitCount} more shots");
-
+            bool isAtMaxDistance = DistanceToPoint(StartingPosition) >= Range - 5;
             for (_shotNumber = 0; _shotNumber < SplitCount; _shotNumber++)
             {
-                _localAngle = Angle * Mathf.Rad2Deg; 
+                _localAngle = Angle * Mathf.Rad2Deg;
                 if (_shotNumber == 0)
                 {
                     _localAngle += 30;
@@ -74,6 +74,10 @@ namespace Assets.Scripts.Entities.Projectiles
 
 
                 _projectile = Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.BeeSmall);
+                if (isAtMaxDistance)
+                {
+                    _projectile.Speed = 0; // stop the splitter projectile if it is at max distance
+                }
                 _projectile.Setup(Level, Weapon, Shooter, Target, GetPosition(), _localAngle * Mathf.Deg2Rad, Weapon.Range, (int)(Weapon.Power / 1.5f));
                 _projectile.ShipsToIgnore.Add(target);
                 if (!Shooter.IsDead)
@@ -86,6 +90,8 @@ namespace Assets.Scripts.Entities.Projectiles
                 }
 
 
+
+
                 //GameObject shot =  Instantiate(SplitLaserPrefab, startingPosition, Quaternion.identity);
                 //shot.transform.parent = Level.Map.Transform;
                 //LaserShot projectile = (LaserShot)shot.GetComponent(typeof(LaserShot));
@@ -94,6 +100,7 @@ namespace Assets.Scripts.Entities.Projectiles
                 //Shooter.ProjectilesInFlight.Add(projectile);
 
             }
+
 
         }
     }

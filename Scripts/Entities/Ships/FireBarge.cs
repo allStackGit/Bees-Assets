@@ -13,7 +13,6 @@ namespace Assets.Scripts.Entities.Ships
     {
         RocketExplosion Explosion;
         public Weapon Bomb;
-        private ScaledTimer _delayedKillTimer = new ScaledTimer();
         public override void Create(Stage stage)
         {
             base.Create(stage);
@@ -132,6 +131,17 @@ namespace Assets.Scripts.Entities.Ships
             }
            
 
+        }
+
+        private ScaledTimer _delayedKillTimer = new ScaledTimer();
+        /// <summary>
+        /// Actually destroys the ship in the game
+        /// </summary>
+        protected void DelayedKill()
+        {
+            //Debug.Log($"{Name} delay killed");
+            //Debug.Log($"{Name} has been killed and will be returned");
+            Deactivate();
         }
     }
 

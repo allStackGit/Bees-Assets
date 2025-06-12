@@ -187,14 +187,14 @@ namespace Assets.Scripts.Entities.Projectiles
                 Debug.Log($"Projectile ({Name}) killed because it went past its range ({Range}), and it's shooter ({FleetShip.Name}) is dead");
                 Kill();
             }
-            else if (FleetShip.Type == ConfigData.ShipTypes.Leafcutter && DistanceToPoint(StartingPosition) > Range + 10) // [debug]
+            else if (FleetShip.Type != ConfigData.ShipTypes.Queen && DistanceToPoint(StartingPosition) > Range + 20) // [debug]
             {
-                Debug.LogError($"Projectile ({Name}) went past its range+10 ({Range})");
+                Debug.LogWarning($"Projectile ({Name}) went past its range+20 ({Range})");
             }
             //else if (Level.State.GameOver)
             //{
             //    Debug.Log($"Level ended, killing projectile {Name}");
-            //    Kill();
+            //    Kill();d
             //}
 
         }

@@ -17,7 +17,7 @@ namespace Assets.Scripts.Entities
         public override void Create(Stage stage)
         {
             base.Create(stage);
-            Speed = (Utilities.RandomInt(Stage.AsteroidMaxSpeed) + ConfigData.MinimumAsteroidSpeed) + 5;
+            Speed = Utilities.RandomInt(Stage.AsteroidMaxSpeed) + ConfigData.MinimumAsteroidSpeed;
 
         }
         public override void ClearData()
