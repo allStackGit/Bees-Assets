@@ -1051,7 +1051,13 @@ namespace Assets.Scripts.Levels
             Debug.Log("Level timed out!");
             Stage.DebugLogger.__LevelTimeouts++;
             IsRestarting = true;
-            SaveAndEnd();
+
+            if (ActivateCollisionAsteroids)
+            {
+                CancelTimer(_asteroidSpawnTimer);
+            }
+
+            SaveAndEnd(); // test syncd with the server to save the level and end it
         }
         private int _save_i;
         private SavedSquad _save_savedSquad;

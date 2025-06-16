@@ -162,12 +162,12 @@ namespace Assets.Scripts.Entities
 
         public void ObstacleCollision(Obstacle obstacle)
         {
-            if (NearbyObstacles.Contains(obstacle) && !IsImmune && HasEnteredMap && !IsDead)
+            if (NearbyObstacles.Contains(obstacle) && !IsImmune && HasEnteredMap && Health > 0)
             {
                 //Debug.Log($"It looks like {ship.Name} was already nearby and hit {Name}");
                 //ship.Kill(null);
                 LastHitAsteroid = (CollisionAsteroid)obstacle;
-                if (!LastHitAsteroid.IsImmune && LastHitAsteroid.HasTouchedMapBorder)
+                if (!LastHitAsteroid.IsImmune && LastHitAsteroid.HasTouchedMapBorder && LastHitAsteroid.Health > 0)
                 {
                     //Debug.Log($"It looks like {LastHitAsteroid.Name} hit {Name}");
                     AsteroidsHit.Add(LastHitAsteroid);
@@ -234,18 +234,18 @@ namespace Assets.Scripts.Entities
                 NearbyObstacles.Add(obstacle);
                 Debug.Log($"{obstacle.Name} is near {Name}");
             }
-            else if (IsImmune) // [debug]
-            {
-                Debug.Log($"{Name} is immune and ignored the collision with {obstacle.Name}");
-            }
-            else if (!HasEnteredMap) // [debug]
-            {
-                Debug.Log($"{Name} has not entered the map and ignored the collision with {obstacle.Name}");
-            }
-            else if (IsDead)
-            {
-                Debug.Log($"{Name} is dead and ignored the collision with {obstacle.Name}");
-            }
+            //else if (IsImmune) // [debug]
+            //{
+            //    Debug.Log($"{Name} is immune and ignored the collision with {obstacle.Name}");
+            //}
+            //else if (!HasEnteredMap) // [debug]
+            //{
+            //    Debug.Log($"{Name} has not entered the map and ignored the collision with {obstacle.Name}");
+            //}
+            //else if (IsDead)
+            //{
+            //    Debug.Log($"{Name} is dead and ignored the collision with {obstacle.Name}");
+            //}
         }
         ScaledTimer _collisionAnimation = new ScaledTimer();
         /// <summary>
