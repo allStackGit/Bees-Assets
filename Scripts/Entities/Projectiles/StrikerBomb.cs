@@ -46,6 +46,11 @@ namespace Assets.Scripts.Entities.Projectiles
                 Kill();
             }
         }
+        public override void Kill()
+        {
+            Level.CancelTimer(_killSequenceTimer);
+            base.Kill();
+        }
         public void Damage()
         {
             if (!ContactedShip.IsDead)

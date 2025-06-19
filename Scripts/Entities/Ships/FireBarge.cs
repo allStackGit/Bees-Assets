@@ -13,6 +13,7 @@ namespace Assets.Scripts.Entities.Ships
     {
         RocketExplosion Explosion;
         public Weapon Bomb;
+        public bool IsDelayKilled;
         public override void Create(Stage stage)
         {
             base.Create(stage);
@@ -28,7 +29,7 @@ namespace Assets.Scripts.Entities.Ships
         }
         public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false) // [kill-method] [damage-method] [note] [stats-method]
         {
-            if (!IsDead)
+            if (!IsDead && !IsDelayKilled)
             {
                 StopMoving();
                 CannotChangeMovementOrders = true;
@@ -115,6 +116,7 @@ namespace Assets.Scripts.Entities.Ships
                     {
                         _delayedKillTimer.Reuse(5f, DelayedKill);
                         Level.AddTimer(_delayedKillTimer);
+                        IsDelayKilled = true;
                     }
                     else // if it is the endkill then the explosion doesn't go off, deactivate immediately 
                     {
@@ -141,6 +143,7 @@ namespace Assets.Scripts.Entities.Ships
         {
             //Debug.Log($"{Name} delay killed");
             //Debug.Log($"{Name} has been killed and will be returned");
+            IsDelayKilled = false;
             Deactivate();
         }
     }

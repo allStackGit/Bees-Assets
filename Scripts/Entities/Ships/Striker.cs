@@ -46,7 +46,6 @@ namespace Assets.Scripts.Entities.Ships
             else
             {
                 _indicatorSprite = LoadedIndicator.GetComponent<SpriteRenderer>();
-                SetBombsReadyStatus(true);
             }
             Bomb = (Bomb)Weapons.First();
             IsBomber = true;
@@ -56,6 +55,10 @@ namespace Assets.Scripts.Entities.Ships
         public override void Setup(Level level, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
         {
             base.Setup(level, fleetShip, squad, offsetFromCenter);
+            if (!Stage.IsTraining)
+            {
+                SetBombsReadyStatus(true);
+            }
             _checkCarrierReloadTimer.Reuse(1, CheckCarrierReload, true);
             Level.AddTimer(_checkCarrierReloadTimer);
             //InvokeRepeating(nameof(CheckCarrierReload), 1, 1);
@@ -153,7 +156,6 @@ namespace Assets.Scripts.Entities.Ships
             if (!Carrier.IsDead && DistanceTo(Carrier) < 15 && !IsBombReady)
             {
                 SetBombsReadyStatus(true);
-                SetIndicatorColor();
             }
         }
         /// <summary>

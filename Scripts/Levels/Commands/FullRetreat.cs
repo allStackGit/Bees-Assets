@@ -103,6 +103,7 @@ public class FullRetreat : Command
         if (TargetWarpGate.ShipAnimationController.IsReadyToWarp && TargetWarpGate.ShipsWarpingHere.Count > 0)
         {
             _isWaitingToWarp = false;
+            Level.CancelTimer(_waitToWarpTimer);
             _tempShips = ShipsWaitingToWarp.ToList();
             _tempShips.ForEach((ship) =>
             {

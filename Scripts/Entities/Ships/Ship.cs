@@ -613,14 +613,14 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             FleetShip = fleetShip;
             OffsetFromCenter = offsetFromCenter;
             Health = OriginalHealth;
-            Name = $"{FleetShip.Name} #{Id}";
+            Name = $"{FleetShip.Type} #{Id}";
             gameObject.name = Name;
             ClearData();
 
             if (IsHiveMindControlled)
             {
                 Level.State.HivemindShips[Side - 1].Add(Id, new HashSet<Ship>());
-                //Debug.Log($"Added {Name} to hivemind ships");
+                Debug.Log($"Added {Name} to hivemind ships");
             }
 
 
