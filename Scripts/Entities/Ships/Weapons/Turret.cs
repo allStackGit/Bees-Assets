@@ -49,7 +49,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// <summary>
         /// Whether or not the ship should fire at the asteroid: If it's not cease fire and it has a target asteroid, and it does not have a target ship
         /// </summary>
-        public bool ShouldFireAtAsteroid => !Ship.IsCeaseFire && HasTargetAsteroid && TargetShip == null && !TargetAsteroid.IsDead;
+        public bool ShouldFireAtAsteroid => !Ship.IsCeaseFire && HasTargetAsteroid && TargetShip == null && !TargetAsteroid.IsDead && TargetAsteroid.HasEnteredMap;
 
         //public override bool ShouldFire => TargetShip != null && !CeaseFire && IsShipValidTarget(TargetShip);
 

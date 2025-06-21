@@ -94,6 +94,9 @@ namespace Assets.Scripts.Levels
         public bool HasOnlyBombers => GetShips().All((s) => s.ShipType == ConfigData.ShipTypes.Striker || s.ShipType == ConfigData.ShipTypes.YellowJacket || 
         s.ShipType == ConfigData.ShipTypes.FireBarge);
         public bool HasOnlyBarges => GetShips().All((s) => s.ShipType == ConfigData.ShipTypes.Barge);
+        /// <summary>
+        /// Whether or not the squad's ships are all warp gates.
+        /// </summary>
         public bool HasOnlyWarpGates => GetShips().All((s) => s.IsWarpGate);
         public bool HasOnlyBeehives => GetShips().All((s) => s.IsBeehive);
 

@@ -44,7 +44,7 @@ namespace Assets.Scripts.Entities.Ships
             base.Create(stage);
             if (IsUserControlled)
             {
-                ChargingBar.Create(this, 10); 
+                ChargingBar.Create(this, 10);
             }
             else
             {
@@ -60,7 +60,7 @@ namespace Assets.Scripts.Entities.Ships
             base.Setup(level, fleetShip, squad, offsetFromCenter);
             if (IsUserControlled)
             {
-                ChargingBar.Setup(); 
+                ChargingBar.Setup();
             }
             if (Stage.IsTraining)
             {
@@ -346,7 +346,7 @@ namespace Assets.Scripts.Entities.Ships
         }
 
         float _timeSinceLastStartedCharging;
-        private void FixedUpdate() // [testing]
+        private void FixedUpdate() // [testing] [debug]
         {
             base.FixedUpdate();
             if (!Stage.IsTraining)
@@ -381,8 +381,13 @@ namespace Assets.Scripts.Entities.Ships
 
                 }
             }
-            
 
+
+        }
+        public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false) // [kill-method] 
+        {
+            ResetCharge();
+            base.Kill(killer, killerFleetShip, killerSavedSquad, endKill);
         }
     }
 }

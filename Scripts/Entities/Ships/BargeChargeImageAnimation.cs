@@ -18,6 +18,10 @@ public class BargeChargeImageAnimation : MonoBehaviour
         Barge.Level.AddTimer(_timer);
     }
 
+    public void CancelTimer()
+    {
+        Barge.Level.CancelTimer(_timer);
+    }
     public void ShiftDown()
     {
         Transform.localPosition += ShiftAmount;
@@ -26,6 +30,6 @@ public class BargeChargeImageAnimation : MonoBehaviour
     {
         gameObject.SetActive(false);
         Transform.localPosition = OriginalPosition;
-        Barge.Level.CancelTimer(_timer);
+        CancelTimer();
     }
 }

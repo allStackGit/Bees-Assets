@@ -29,7 +29,7 @@ namespace Assets.Scripts.Settings
         public float TimeScale;
         public float AISquadPatrolTime; // how many seconds a patrol should last for the AI
         public int AIPatrolMaxSize;
-        public int AIRandomMovementMaxDistance;
+        public int AIRandomMovementMaxDistance = 256;
         public float AISquadGuardTime; // how many seconds a guard command should last for the AI
         public float AISquadFollowingTime; // how many seconds a squad should follow the closest friendly squad
         public int CarrierCarryDroneMax;
@@ -103,7 +103,7 @@ namespace Assets.Scripts.Settings
             TimeScale = (int)so.TimeScale;
             AISquadPatrolTime = (int)so.AISquadPatrolTime;
             AIPatrolMaxSize = (int)so.AIPatrolMaxSize;
-            AIRandomMovementMaxDistance = (int)so.AIRandomMovementMaxDistance;
+            //AIRandomMovementMaxDistance = (int)so.AIRandomMovementMaxDistance;
             AISquadGuardTime = (int)so.AISquadGuardTime;
             AISquadFollowingTime = (int)so.AISquadFollowingTime;
             CarrierCarryDroneMax = (int)so.CarrierCarryDroneMax;

@@ -55,10 +55,7 @@ namespace Assets.Scripts.Entities.Ships
         public override void Setup(Level level, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
         {
             base.Setup(level, fleetShip, squad, offsetFromCenter);
-            if (!Stage.IsTraining)
-            {
-                SetBombsReadyStatus(true);
-            }
+            SetIndicatorColor();
             _checkCarrierReloadTimer.Reuse(1, CheckCarrierReload, true);
             Level.AddTimer(_checkCarrierReloadTimer);
             //InvokeRepeating(nameof(CheckCarrierReload), 1, 1);
@@ -170,6 +167,9 @@ namespace Assets.Scripts.Entities.Ships
                 SetIndicatorColor();
             }
         }
+        /// <summary>
+        /// Sets the color of the indicator based on whether the bomb is ready or not, and activates or deactivates the carried bomb GameObject accordingly.
+        /// </summary>
         public void SetIndicatorColor()
         { 
             if (!Stage.IsTraining)

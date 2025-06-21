@@ -21,6 +21,11 @@ namespace Assets.Scripts.Entities.Ships
             IsBomber = true;
             Destroy(Bomb.Piece);
         }
+        public override void ClearData()
+        {
+            base.ClearData();
+            IsDelayKilled = false;
+        }
         public void Detonate()
         {
             //Debug.Log("Detonating Fire Barge");
@@ -143,7 +148,6 @@ namespace Assets.Scripts.Entities.Ships
         {
             //Debug.Log($"{Name} delay killed");
             //Debug.Log($"{Name} has been killed and will be returned");
-            IsDelayKilled = false;
             Deactivate();
         }
     }

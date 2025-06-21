@@ -49,7 +49,7 @@ namespace Assets.Scripts.Entities.Projectiles
         public void Split(Ship target) // [projectile-method] [note]
         {
             //Debug.Log($"Splitting into {SplitCount} more shots");
-            if (DistanceToPoint(StartingPosition) >= (Range - 5))
+            if (DistanceToPoint(StartingPosition) <= (Range - 5))
             {
                 for (_shotNumber = 0; _shotNumber < SplitCount; _shotNumber++)
                 {
@@ -71,7 +71,7 @@ namespace Assets.Scripts.Entities.Projectiles
                         _localAngle -= 45;
                     }
                     //Debug.Log($"Split shot #{shotNumber} is at localAngle: {localAngle}, coming from eulerAngle: {transform.localEulerAngles.z}, and now at world" +
-                    //    $"angle: {worldAngle} (rad) : {radians}");
+                    //    $"angle: {worldAngle} (rad) : {radians}");a
 
 
                     _projectile = Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.BeeSmall);

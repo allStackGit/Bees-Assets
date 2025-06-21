@@ -41,6 +41,10 @@ namespace Assets.Scripts.Levels.Commands
                 }
 
             }
+            else
+            {
+                SetFinalize("The enemy squad is gone or dead");
+            }
 
         }
         public override void ClearData()
