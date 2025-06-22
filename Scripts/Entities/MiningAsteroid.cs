@@ -41,7 +41,7 @@ namespace Assets.Scripts.Entities
                 {
                     _command = ((Mining)_miningShip.Squad.GetCommand());
 
-                    if (!_command.ShipsCurrentlyMining.Contains(_miningShip.Id) && _command.TargetAstroid == this)
+                    if (!_command.ShipsCurrentlyMining.Contains(_miningShip) && _command.TargetAstroid == this)
                     {
                         //Debug.Log($"{_miningShip.Name} is mining {Name}");
                         if (!SquadsMining.Contains(_miningShip.Squad))

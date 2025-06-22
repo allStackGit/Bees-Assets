@@ -620,7 +620,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             if (IsHiveMindControlled)
             {
                 Level.State.HivemindShips[Side - 1].Add(Id, new HashSet<Ship>());
-                Debug.Log($"Added {Name} to hivemind ships");
+                //Debug.Log($"Added {Name} to hivemind ships");
             }
 
 
@@ -1888,7 +1888,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                     ProjectilesInFlight.ToList().ForEach((projectile) =>
                     {
                         projectile.ShipIsDead = true;
-                        Debug.Log($"Letting projectile ({projectile.Name}) know that its ship ({Name}) is dead.");
+                        //Debug.Log($"Letting projectile ({projectile.Name}) know that its ship ({Name}) is dead.");
                     });
 
                 }

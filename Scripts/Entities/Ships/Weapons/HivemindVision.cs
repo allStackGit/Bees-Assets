@@ -64,7 +64,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 {
                     if (!Ship.Level.State.VisionCache[Ship.Side - 1].Contains(_shipEnter))
                     {
-                        Debug.Log($"{Ship.Name} from {Ship.Level.gameObject.name} just saw {_shipEnter.Name} and added them to hivemind vision");
+                        //Debug.Log($"{Ship.Name} from {Ship.Level.gameObject.name} just saw {_shipEnter.Name} and added them to hivemind vision");
                         // Clamp the value of seeing the ship between 1 & 20 TSV and add it to the Scout's command regardless of what the command is
                         Ship.MotherSquad.GetCommand().Tsv += (int)Mathf.Clamp(_shipEnter.Tsv * ConfigData.TsvMultiplierForVision, ConfigData.MinimumTsvValueForSeeingAShip, ConfigData.MaximumTsvValueForSeeingAShip);
                         Ship.Level.State.HivemindShips[Ship.Side - 1][Ship.Id].Add(_shipEnter);

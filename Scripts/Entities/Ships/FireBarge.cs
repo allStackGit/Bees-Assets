@@ -14,6 +14,7 @@ namespace Assets.Scripts.Entities.Ships
         RocketExplosion Explosion;
         public Weapon Bomb;
         public bool IsDelayKilled;
+        private ScaledTimer _delayedKillTimer = new ScaledTimer();
         public override void Create(Stage stage)
         {
             base.Create(stage);
@@ -25,6 +26,7 @@ namespace Assets.Scripts.Entities.Ships
         {
             base.ClearData();
             IsDelayKilled = false;
+            Debug.Log($"{Name} cleared data and is no longer delay killed");
         }
         public void Detonate()
         {
@@ -119,9 +121,10 @@ namespace Assets.Scripts.Entities.Ships
 
                     if (!endKill) // if the level isn't training and this fire barge got killed, delay the deactivation until after the explosion is done
                     {
+                        Debug.Log($"{Name} has been killed and will be delayed killed");
+                        IsDelayKilled = true;
                         _delayedKillTimer.Reuse(5f, DelayedKill);
                         Level.AddTimer(_delayedKillTimer);
-                        IsDelayKilled = true;
                     }
                     else // if it is the endkill then the explosion doesn't go off, deactivate immediately 
                     {
@@ -140,13 +143,12 @@ namespace Assets.Scripts.Entities.Ships
 
         }
 
-        private ScaledTimer _delayedKillTimer = new ScaledTimer();
         /// <summary>
         /// Actually destroys the ship in the game
         /// </summary>
         protected void DelayedKill()
         {
-            //Debug.Log($"{Name} delay killed");
+            Debug.Log($"{Name} delay killed and is now deactivated");
             //Debug.Log($"{Name} has been killed and will be returned");
             Deactivate();
         }

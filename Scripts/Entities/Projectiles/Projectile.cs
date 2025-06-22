@@ -278,6 +278,9 @@ namespace Assets.Scripts.Entities.Projectiles
             {
                 SpriteRenderer.enabled = true;
                 Animator.enabled = true;
+                Animator.Rebind();
+                Animator.Update(0f); // force the animator to update to the first frame
+                //Debug.Log($"Enabling animator for {Name}");
             }
             else if (HasNecessaryAnimation)
             {

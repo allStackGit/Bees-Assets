@@ -345,45 +345,45 @@ namespace Assets.Scripts.Entities.Ships
 
         }
 
-        float _timeSinceLastStartedCharging;
-        private void FixedUpdate() // [testing] [debug]
-        {
-            base.FixedUpdate();
-            if (!Stage.IsTraining)
-            {
-                if (IsCharging)
-                {
+        //float _timeSinceLastStartedCharging;
+        //private void FixedUpdate() // [testing] [debug]
+        //{
+        //    base.FixedUpdate();
+        //    if (!Stage.IsTraining)
+        //    {
+        //        if (IsCharging)
+        //        {
 
-                    if (BargeLoadingChargeAnimation.activeSelf)
-                    {
-                        Debug.LogError($"{this} is doing the loading animation when it shouldn't be");
-                    }
+        //            if (BargeLoadingChargeAnimation.activeSelf)
+        //            {
+        //                Debug.LogError($"{this} is doing the loading animation when it shouldn't be");
+        //            }
 
-                    if (_timeSinceLastStartedCharging == 0)
-                    {
-                        _timeSinceLastStartedCharging += Time.deltaTime;
-                    }
-                    else
-                    {
-                        if (_timeSinceLastStartedCharging > 1)
-                        {
-                            Debug.LogError($"{this} is charging for {_timeSinceLastStartedCharging} and that's longer than it should be");
-                        }
-                    }
-                }
-                else
-                {
-                    _timeSinceLastStartedCharging = 0;
-                    if (BargeChargeAnimation.activeSelf || BargeChargeImageAnimation.activeSelf)
-                    {
-                        Debug.LogError($"{this} is doing an animation when it shouldn't be");
-                    }
+        //            if (_timeSinceLastStartedCharging == 0)
+        //            {
+        //                _timeSinceLastStartedCharging += Time.deltaTime;
+        //            }
+        //            else
+        //            {
+        //                if (_timeSinceLastStartedCharging > 1)
+        //                {
+        //                    Debug.LogError($"{this} is charging for {_timeSinceLastStartedCharging} and that's longer than it should be");
+        //                }
+        //            }
+        //        }
+        //        else
+        //        {
+        //            _timeSinceLastStartedCharging = 0;
+        //            if (BargeChargeAnimation.activeSelf || BargeChargeImageAnimation.activeSelf)
+        //            {
+        //                Debug.LogError($"{this} is doing an animation when it shouldn't be");
+        //            }
 
-                }
-            }
+        //        }
+        //    }
 
 
-        }
+        //}
         public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false) // [kill-method] 
         {
             ResetCharge();

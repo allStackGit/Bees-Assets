@@ -104,6 +104,8 @@ namespace Assets.Scripts.Entities.Ships
             {
                 SpriteRenderer.enabled = true;
                 Animator.enabled = true;
+                Animator.Rebind();
+                Animator.Update(0f); // reset the animation to the first frame
                 enabled = true;
 
                 if (Ship.ShipType == ConfigData.ShipTypes.WarpGate)

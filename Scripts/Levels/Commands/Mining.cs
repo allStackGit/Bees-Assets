@@ -17,17 +17,17 @@ namespace Assets.Scripts.Levels.Commands
         /// <summary>
         /// Ships in the squad that can mine asteroids
         /// </summary>
-        public List<long> MiningShips = new List<long>();
+        public List<Ship> MiningShips = new List<Ship>();
         /// <summary>
         /// Ships in squad that are currently mining asteroids
         /// </summary>
-        public List<long> ShipsCurrentlyMining = new List<long>();
+        public List<Ship> ShipsCurrentlyMining = new List<Ship>();
 
         public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, MiningAsteroid asteroid)
         {
             if (asteroid != null) // Needs to be null check in case there were no asteroids
             {
-                MiningShips = GetSquad().GetShips().Where((ship) => ship.IsMiningShip).Select((s) => s.Id).ToList();
+                MiningShips = GetSquad().GetShips().Where((ship) => ship.IsMiningShip).ToList();
                 TargetAstroid = asteroid;
                 base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
                 PrepareDamageToSendEntries(1);
@@ -94,7 +94,7 @@ namespace Assets.Scripts.Levels.Commands
             if (!HasFoundAsteroid)
             {
                 HasFoundAsteroid = true;
-                ShipsCurrentlyMining.Add(ship.Id);
+                ShipsCurrentlyMining.Add(ship);
                 if (ship.HasShipAnimation)
                 {
                     if (ship.ShipType == ConfigData.ShipTypes.Factory)
@@ -112,7 +112,7 @@ namespace Assets.Scripts.Levels.Commands
                     Level.AddTimer(_miningTimer);
                     //InvokeRepeating(nameof(Mine), 0, 3);
                 }
-                if (MiningShips.All((s) => Level.State.GetShipById(s) != null || ShipsCurrentlyMining.Contains(s)))
+                if (MiningShips.All((s) => s.IsDead || ShipsCurrentlyMining.Contains(s)))
                 {
                     _stopMovingTowardsAsteroidTimer.Reuse(5, StopMovingTowardsAsteroid);
                     Level.AddTimer(_stopMovingTowardsAsteroidTimer);
@@ -132,7 +132,7 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (!TargetAstroid.IsDead)
             {
-                ShipsCurrentlyMining = ShipsCurrentlyMining.Where((s) => Level.State.GetShipById(s) != null).ToList();
+                ShipsCurrentlyMining = ShipsCurrentlyMining.Where((s) => !s.IsDead).ToList();
                 if (ShipsCurrentlyMining.Count > 0)
                 {
                     //Debug.Log($"There are {ShipsMining.Count} ships mining for {Squad.Name}");
@@ -144,10 +144,14 @@ namespace Assets.Scripts.Levels.Commands
                     //Debug.Log($"{GetSquad().Name} mined {_amountMined} from {TargetAstroid.Name}. It has {TargetAstroid.Health} health left");
 
                     _amountPerShip = _amountMined / ShipsCurrentlyMining.Count; // this isn't exactly the same as MiningRate because the shsip might have mined the last of the asteroid
-                    ShipsCurrentlyMining.Select((s) => Level.State.GetShipById(s)).ToList().ForEach((ship) =>
+                    ShipsCurrentlyMining.ForEach((ship) =>
                     {
-                        ship.FleetShip.MineralsMinedThisLevel += _amountPerShip;
-                        ship.Tsv += _amountPerShip;
+                        if (!ship.IsDead)
+                        {
+                            ship.FleetShip.MineralsMinedThisLevel += _amountPerShip;
+                            ship.Tsv += _amountPerShip;
+                        }
+
                     });
 
                     if (TargetAstroid.Health == 0)

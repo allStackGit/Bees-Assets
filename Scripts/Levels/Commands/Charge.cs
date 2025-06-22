@@ -186,7 +186,7 @@ namespace Assets.Scripts.Levels.Commands
                 if (!EnemySquad.IsDead)
                 {
                     //Debug.Log("Bombing timer");
-                    GetSquad().Status = $"In the middle of charging run against {EnemySquad.Name}";
+                    GetSquad().Status = $"In the middle of charging run against {EnemySquad.Name}"; // [debug]
 
                     _timer_barges = GetSquad().GetShips().Select((ship) => (Barge)ship).ToList();
                     _timer_barges.ForEach((barge) =>
