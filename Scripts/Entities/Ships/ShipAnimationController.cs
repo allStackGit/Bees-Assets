@@ -49,18 +49,18 @@ namespace Assets.Scripts.Entities.Ships
 
             }
         }
-        void Update()
-        {
-            if (Ship.IsWarpGate && ((WarpGate)Ship).ShipsWarpingHere.Count == 0)
-            {
-                Debug.LogWarning($"Warp gate {Ship.Name} has no ships warping here, but the animation is not disabled");
-            }
-            else if (Ship.ShipType == ConfigData.ShipTypes.Factory && !(Ship.Squad.HasCommand && Ship.Squad.GetCommand().CommandType == ConfigData.CommandTypes.Mining &&
-                ((Mining)Ship.Squad.GetCommand()).HasFoundAsteroid))
-            {
-                Debug.LogWarning($"Factory {Ship.Name} has no ships mining, but the animation is not disabled");
-            }
-        }
+        //void Update()
+        //{
+        //    if (Ship.IsWarpGate && ((WarpGate)Ship).ShipsWarpingHere.Count == 0)
+        //    {
+        //        Debug.LogWarning($"Warp gate {Ship.Name} has no ships warping here, but the animation is not disabled");
+        //    }
+        //    else if (Ship.ShipType == ConfigData.ShipTypes.Factory && !(Ship.Squad.HasCommand && Ship.Squad.GetCommand().CommandType == ConfigData.CommandTypes.Mining &&
+        //        ((Mining)Ship.Squad.GetCommand()).HasFoundAsteroid))
+        //    {
+        //        Debug.LogWarning($"Factory {Ship.Name} has no ships mining, but the animation is not disabled");
+        //    }
+        //}
 
         void LateUpdate()
         {

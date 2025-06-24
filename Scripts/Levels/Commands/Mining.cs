@@ -93,7 +93,6 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (!HasFoundAsteroid)
             {
-                HasFoundAsteroid = true;
                 ShipsCurrentlyMining.Add(ship);
                 if (ship.HasShipAnimation)
                 {
@@ -114,6 +113,7 @@ namespace Assets.Scripts.Levels.Commands
                 }
                 if (MiningShips.All((s) => s.IsDead || ShipsCurrentlyMining.Contains(s)))
                 {
+                    HasFoundAsteroid = true;
                     _stopMovingTowardsAsteroidTimer.Reuse(5, StopMovingTowardsAsteroid);
                     Level.AddTimer(_stopMovingTowardsAsteroidTimer);
                     //Invoke(nameof(StopMovingTowardsAsteroid), 5);

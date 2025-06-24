@@ -502,25 +502,29 @@ namespace Assets.Scripts.Levels
                     //Debug.Log($"Calling path finder update again");
                     Pathfinder.Update();
                 }
-                if (Timers.Count > 0)
-                {
-                    _loopTimers = Timers.ToArray();
-
-                    for (_updateIndex = 0; _updateIndex < _loopTimers.Length; _updateIndex++)
-                    {
-                        if (_loopTimers[_updateIndex].Update() && !_loopTimers[_updateIndex].IsRecurring && !_loopTimers[_updateIndex].IsCanceled)
-                        {
-                            CancelTimer(_loopTimers[_updateIndex]);
-                        }
-                    }
-
-
-                }
+                UpdateTimers();
 
             }
 
 
 
+        }
+        public void UpdateTimers()
+        {
+            if (Timers.Count > 0)
+            {
+                _loopTimers = Timers.ToArray();
+
+                for (_updateIndex = 0; _updateIndex < _loopTimers.Length; _updateIndex++)
+                {
+                    if (_loopTimers[_updateIndex].Update() && !_loopTimers[_updateIndex].IsRecurring && !_loopTimers[_updateIndex].IsCanceled)
+                    {
+                        CancelTimer(_loopTimers[_updateIndex]);
+                    }
+                }
+
+
+            }
         }
         private double _timeDouble, _levelOver_fps, _levelOver_fups;
         private ScaledTimer _saveAndEndHalfSecond = new ScaledTimer();

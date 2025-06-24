@@ -18,6 +18,10 @@ namespace Assets.Scripts.Entities
         public HashSet<Ship> TouchingShips = new HashSet<Ship>();
         public HashSet<Obstacle> NearbyObstacles = new HashSet<Obstacle>();
         public HashSet<CollisionAsteroid> AsteroidsHit = new HashSet<CollisionAsteroid>();
+        /// <summary>
+        /// If this asteroid is a shard then it has a shard family of all the other shards that were spawned from the same asteroid and can't collide with each other
+        /// </summary>
+        public HashSet<CollisionAsteroid> ShardFamily = new HashSet<CollisionAsteroid>();
         public CollisionAsteroid LastHitAsteroid;
         public GameObject ExplosionAnimation;
         /// <summary>
@@ -25,7 +29,7 @@ namespace Assets.Scripts.Entities
         /// </summary>
         public AsteroidExplosionAnimation AsteroidExplosionAnimation;
         public bool HasCollisionAnimation, HasCrackedSprite;
-        public bool HasDroppedDestructionAnimation, IsImmune, HasTouchedMapBorder, HasEnteredMap;
+        public bool HasDroppedDestructionAnimation, HasTouchedMapBorder, HasEnteredMap;
         public Sprite OriginalSprite, CrackedSprite;
 
         //public string OriginalName; // [debug]
@@ -51,7 +55,6 @@ namespace Assets.Scripts.Entities
             //OriginalName = gameObject.name;
 
         }
-        private ScaledTimer _removeImmunityTimer = new ScaledTimer();
         // Use this for initialization
         public override void Setup(Level level)
         {
@@ -75,9 +78,6 @@ namespace Assets.Scripts.Entities
             SetMoving();
 
 
-            IsImmune = true;
-            _removeImmunityTimer.Reuse(4, RemoveImmunity);
-            Level.AddTimer(_removeImmunityTimer);
             //Invoke(nameof(RemoveImmunity), 4);
         }
         public override void ClearData()
@@ -95,20 +95,6 @@ namespace Assets.Scripts.Entities
             SpriteRenderer.sprite = OriginalSprite;
         }
 
-        public void RemoveImmunity()
-        {
-            IsImmune = false;
-            if (_isColliding)
-            {
-                NearbyObstacles.ToList().ForEach((obstacle) =>
-                {
-                    if (Collider.IsTouching(obstacle.Collider))
-                    {
-                        ObstacleCollision(obstacle);
-                    }
-                });
-            }
-        }
         Vector2 _randomPoint;
         public void SetMoving()
         {
@@ -162,12 +148,12 @@ namespace Assets.Scripts.Entities
 
         public void ObstacleCollision(Obstacle obstacle)
         {
-            if (NearbyObstacles.Contains(obstacle) && !IsImmune && HasEnteredMap && Health > 0)
+            if (NearbyObstacles.Contains(obstacle) && HasEnteredMap && Health > 0)
             {
                 //Debug.Log($"It looks like {ship.Name} was already nearby and hit {Name}");
                 //ship.Kill(null);
                 LastHitAsteroid = (CollisionAsteroid)obstacle;
-                if (!LastHitAsteroid.IsImmune && LastHitAsteroid.HasTouchedMapBorder && LastHitAsteroid.Health > 0)
+                if (LastHitAsteroid.HasTouchedMapBorder && LastHitAsteroid.Health > 0 && !ShardFamily.Contains(LastHitAsteroid))
                 {
                     //Debug.Log($"It looks like {LastHitAsteroid.Name} hit {Name}");
                     AsteroidsHit.Add(LastHitAsteroid);
@@ -421,7 +407,6 @@ namespace Assets.Scripts.Entities
                 //Debug.Log($"Killing and returning {Name} to the pool");
                 Level.State.AsteroidsToRelease.Add(this);
                 //Stage.Pool.ReturnCollisionAsteroidToPool(this);
-                Level.CancelTimer(_removeImmunityTimer);
                 Level.CancelTimer(_delayKillTimer);
                 Level.CancelTimer(_collisionAnimation);
                 gameObject.SetActive(false);
@@ -433,6 +418,7 @@ namespace Assets.Scripts.Entities
         }
 
         CollisionAsteroid _asteroidShard;
+        List<CollisionAsteroid> _shardFamily = new List<CollisionAsteroid>();
         int _asteroidCount;
         int _pieceCount;
         int _loopIndex;
@@ -452,8 +438,14 @@ namespace Assets.Scripts.Entities
                 _asteroidShard.HasEnteredMap = true;
 
                 _asteroidShard.Name = $"{_asteroidShard.Name}  - Shard";
-
+                _shardFamily.Add(_asteroidShard);
             }
+
+            _shardFamily.ForEach((shard) =>
+            {
+                shard.ShardFamily = new HashSet<CollisionAsteroid>(_shardFamily);
+                shard.ShardFamily.Remove(shard);
+            });
 
             for (_loopIndex = 0; _loopIndex < _pieceCount; _loopIndex++)
             {

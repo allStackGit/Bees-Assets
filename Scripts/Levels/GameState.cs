@@ -57,7 +57,7 @@ namespace Assets.Scripts.Levels
         public HashSet<RocketExplosion> FireBargeExplosions = new HashSet<RocketExplosion>();
         public HashSet<MiningAsteroid> MiningAsteroids = new HashSet<MiningAsteroid>();
         public HashSet<Ship> MiningShips = new HashSet<Ship>();
-        public bool HasWarpGates, IsFireBargeExploding, HasSelectedSquads, HasBeehives;
+        public bool HasWarpGates, HasSelectedSquads, HasBeehives;
         public List<ShipDamageStatus>[] ShipDamageStatuses = new List<ShipDamageStatus>[] {new List<ShipDamageStatus>(), new List<ShipDamageStatus>() };
         public Dictionary<long, int> OutcomeIdToPastCommandIndex = new Dictionary<long, int>();
         //public bool[] HasMiningShips = new bool[2];

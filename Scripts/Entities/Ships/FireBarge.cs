@@ -13,7 +13,6 @@ namespace Assets.Scripts.Entities.Ships
     {
         RocketExplosion Explosion;
         public Weapon Bomb;
-        public bool IsDelayKilled;
         private ScaledTimer _delayedKillTimer = new ScaledTimer();
         public override void Create(Stage stage)
         {
@@ -25,8 +24,7 @@ namespace Assets.Scripts.Entities.Ships
         public override void ClearData()
         {
             base.ClearData();
-            IsDelayKilled = false;
-            Debug.Log($"{Name} cleared data and is no longer delay killed");
+            //Debug.Log($"{Name} cleared data");
         }
         public void Detonate()
         {
@@ -36,8 +34,9 @@ namespace Assets.Scripts.Entities.Ships
         }
         public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false) // [kill-method] [damage-method] [note] [stats-method]
         {
-            if (!IsDead && !IsDelayKilled)
+            if (!IsDead)
             {
+                //Debug.Log($"{Name} is being killed. endkill? {endKill}");
                 StopMoving();
                 CannotChangeMovementOrders = true;
                 IsDead = true;
@@ -105,7 +104,7 @@ namespace Assets.Scripts.Entities.Ships
                 {
                     if (HasRocketFlares)
                     {
-                        Debug.Log($"Deactivating Rocket Flares on ${Name}");
+                        //Debug.Log($"Deactivating Rocket Flares on {Name}");
                         RightRocketFlares.ForEach((flare) =>
                         {
                             flare.SetActive(false);
@@ -121,8 +120,7 @@ namespace Assets.Scripts.Entities.Ships
 
                     if (!endKill) // if the level isn't training and this fire barge got killed, delay the deactivation until after the explosion is done
                     {
-                        Debug.Log($"{Name} has been killed and will be delayed killed");
-                        IsDelayKilled = true;
+                        //Debug.Log($"{Name} has been killed and will be delayed killed");
                         _delayedKillTimer.Reuse(5f, DelayedKill);
                         Level.AddTimer(_delayedKillTimer);
                     }
@@ -148,7 +146,7 @@ namespace Assets.Scripts.Entities.Ships
         /// </summary>
         protected void DelayedKill()
         {
-            Debug.Log($"{Name} delay killed and is now deactivated");
+            //Debug.Log($"{Name} delay killed and is now deactivated");
             //Debug.Log($"{Name} has been killed and will be returned");
             Deactivate();
         }
