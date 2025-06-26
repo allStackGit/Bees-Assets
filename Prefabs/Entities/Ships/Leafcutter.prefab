@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: -8242536290088999055}
   - component: {fileID: 9209194230390332424}
   - component: {fileID: 5853491864599017305}
+  - component: {fileID: 792081028021077388}
   m_Layer: 11
   m_Name: Leafcutter
   m_TagString: Ship
@@ -153,6 +154,7 @@ MonoBehaviour:
   HiveMindVision: {fileID: 1569645338977565631}
   FogOfWarVision: {fileID: 3101313558051103149}
   ProximityCollider: {fileID: 0}
+  SortingGroup: {fileID: 792081028021077388}
   IsDead: 1
   IsUserControlled: 0
   IsMobile: 0
@@ -344,6 +346,18 @@ PolygonCollider2D:
       - {x: 0.6492328, y: 3.4195044}
       - {x: -0.6913122, y: 3.4338815}
   m_UseDelaunayMesh: 0
+--- !u!210 &792081028021077388
+SortingGroup:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2518675752222090675}
+  m_Enabled: 1
+  m_SortingLayerID: 1773773555
+  m_SortingLayer: 17
+  m_SortingOrder: 0
+  m_SortAtRoot: 0
 --- !u!1001 &519236313458585783
 PrefabInstance:
   m_ObjectHideFlags: 0

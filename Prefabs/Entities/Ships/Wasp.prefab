@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: -1396717652594146665}
   - component: {fileID: 6118678482698915459}
   - component: {fileID: 4914405149445453846}
+  - component: {fileID: 561860991070906504}
   m_Layer: 11
   m_Name: Wasp
   m_TagString: Ship
@@ -153,6 +154,7 @@ MonoBehaviour:
   HiveMindVision: {fileID: 746072463048961460}
   FogOfWarVision: {fileID: 327394254652456120}
   ProximityCollider: {fileID: 0}
+  SortingGroup: {fileID: 561860991070906504}
   IsDead: 1
   IsUserControlled: 0
   IsMobile: 0
@@ -349,6 +351,18 @@ PolygonCollider2D:
       - {x: 0.011103481, y: -3.1284966}
       - {x: 1.3038396, y: -1.5454162}
   m_UseDelaunayMesh: 0
+--- !u!210 &561860991070906504
+SortingGroup:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 707182470515144504}
+  m_Enabled: 1
+  m_SortingLayerID: -955795283
+  m_SortingLayer: 19
+  m_SortingOrder: 0
+  m_SortAtRoot: 0
 --- !u!1001 &1824402615829043268
 PrefabInstance:
   m_ObjectHideFlags: 0

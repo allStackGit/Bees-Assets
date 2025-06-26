@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: -2891053913955529769}
   - component: {fileID: 9209194230390332424}
   - component: {fileID: 2185777145346564116}
+  - component: {fileID: 795261470221532291}
   m_Layer: 12
   m_Name: Fire Barge
   m_TagString: Ship
@@ -158,6 +159,7 @@ MonoBehaviour:
   HiveMindVision: {fileID: 4632028441222660973}
   FogOfWarVision: {fileID: 755599280550722657}
   ProximityCollider: {fileID: 8381118466353028842}
+  SortingGroup: {fileID: 795261470221532291}
   IsDead: 1
   IsUserControlled: 0
   IsMobile: 0
@@ -349,6 +351,18 @@ BoxCollider2D:
   m_AutoTiling: 0
   m_Size: {x: 16, y: 7}
   m_EdgeRadius: 0
+--- !u!210 &795261470221532291
+SortingGroup:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2518675752222090675}
+  m_Enabled: 1
+  m_SortingLayerID: 845175763
+  m_SortingLayer: 12
+  m_SortingOrder: 0
+  m_SortAtRoot: 0
 --- !u!1001 &537928408941479015
 PrefabInstance:
   m_ObjectHideFlags: 0

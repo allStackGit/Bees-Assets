@@ -12,7 +12,10 @@ namespace Assets.Scripts.Entities.Ships
         public override void Setup(Level level, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
         {
             base.Setup(level, fleetShip, squad, offsetFromCenter);
-            ShipAnimationController.Deactivate();
+            if (!Stage.IsTraining)
+            {
+                ShipAnimationController.Deactivate();
+            }
         }
         public override void Create(Stage stage)
         {

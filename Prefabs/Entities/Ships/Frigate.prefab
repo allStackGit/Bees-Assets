@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: 533285453510273433}
   - component: {fileID: 9209194230390332424}
   - component: {fileID: 7230689647511621874}
+  - component: {fileID: 7514169687196825170}
   m_Layer: 12
   m_Name: Frigate
   m_TagString: Ship
@@ -157,6 +158,7 @@ MonoBehaviour:
   HiveMindVision: {fileID: 2938868259214460491}
   FogOfWarVision: {fileID: 8284954362193332364}
   ProximityCollider: {fileID: 0}
+  SortingGroup: {fileID: 7514169687196825170}
   IsDead: 1
   IsUserControlled: 0
   IsMobile: 0
@@ -357,6 +359,18 @@ PolygonCollider2D:
       - {x: -2.6799414, y: 0.11435215}
       - {x: -2.6477406, y: -2.5451818}
   m_UseDelaunayMesh: 0
+--- !u!210 &7514169687196825170
+SortingGroup:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2518675752222090675}
+  m_Enabled: 1
+  m_SortingLayerID: 97634267
+  m_SortingLayer: 18
+  m_SortingOrder: 0
+  m_SortAtRoot: 0
 --- !u!1001 &17526065788775915
 PrefabInstance:
   m_ObjectHideFlags: 0

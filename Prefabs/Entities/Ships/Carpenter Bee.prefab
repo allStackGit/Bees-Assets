@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: 4996746086761740042}
   - component: {fileID: 9209194230390332424}
   - component: {fileID: 647613743014813944}
+  - component: {fileID: 2146279246213418945}
   m_Layer: 11
   m_Name: Carpenter Bee
   m_TagString: Ship
@@ -153,6 +154,7 @@ MonoBehaviour:
   HiveMindVision: {fileID: 8178651956161553345}
   FogOfWarVision: {fileID: 3830604220343449621}
   ProximityCollider: {fileID: 0}
+  SortingGroup: {fileID: 2146279246213418945}
   IsDead: 1
   IsUserControlled: 0
   IsMobile: 0
@@ -349,6 +351,18 @@ PolygonCollider2D:
       - {x: 6.232878, y: -5.3307424}
       - {x: 3.4821007, y: -2.9270093}
   m_UseDelaunayMesh: 0
+--- !u!210 &2146279246213418945
+SortingGroup:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2518675752222090675}
+  m_Enabled: 1
+  m_SortingLayerID: 2059436743
+  m_SortingLayer: 11
+  m_SortingOrder: 0
+  m_SortAtRoot: 0
 --- !u!1001 &457351365885084563
 PrefabInstance:
   m_ObjectHideFlags: 0

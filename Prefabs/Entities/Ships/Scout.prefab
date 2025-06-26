@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: 6503601965289942572}
   - component: {fileID: 273038934896497789}
   - component: {fileID: 5542042087589235750}
+  - component: {fileID: 589863639774473905}
   m_Layer: 12
   m_Name: Scout
   m_TagString: Ship
@@ -154,6 +155,7 @@ MonoBehaviour:
   HiveMindVision: {fileID: 9184940670005006652}
   FogOfWarVision: {fileID: 5978121558367910669}
   ProximityCollider: {fileID: 0}
+  SortingGroup: {fileID: 589863639774473905}
   IsDead: 1
   IsUserControlled: 0
   IsMobile: 0
@@ -336,6 +338,18 @@ CircleCollider2D:
   m_CompositeOrder: 0
   m_Offset: {x: 0, y: 0}
   m_Radius: 1.75
+--- !u!210 &589863639774473905
+SortingGroup:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6841957851019292102}
+  m_Enabled: 1
+  m_SortingLayerID: -1635513113
+  m_SortingLayer: 23
+  m_SortingOrder: 0
+  m_SortAtRoot: 0
 --- !u!1001 &1243747314205821077
 PrefabInstance:
   m_ObjectHideFlags: 0

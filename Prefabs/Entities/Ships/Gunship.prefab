@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: 6969673988516882713}
   - component: {fileID: 2156792526638712585}
   - component: {fileID: 1059979342247218996}
+  - component: {fileID: 8011976659463517279}
   m_Layer: 12
   m_Name: Gunship
   m_TagString: Ship
@@ -154,6 +155,7 @@ MonoBehaviour:
   HiveMindVision: {fileID: 188419691949855264}
   FogOfWarVision: {fileID: 2131028309475408710}
   ProximityCollider: {fileID: 0}
+  SortingGroup: {fileID: 8011976659463517279}
   IsDead: 1
   IsUserControlled: 0
   IsMobile: 0
@@ -346,6 +348,18 @@ PolygonCollider2D:
       - {x: 2.7876117, y: -2.4286904}
       - {x: 0.27364227, y: 2.5895834}
   m_UseDelaunayMesh: 0
+--- !u!210 &8011976659463517279
+SortingGroup:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4672471954231197362}
+  m_Enabled: 1
+  m_SortingLayerID: -1672541693
+  m_SortingLayer: 20
+  m_SortingOrder: 0
+  m_SortAtRoot: 0
 --- !u!1001 &4636055958840275367
 PrefabInstance:
   m_ObjectHideFlags: 0

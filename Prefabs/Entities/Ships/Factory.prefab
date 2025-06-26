@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: 6639458257436875518}
   - component: {fileID: 9209194230390332424}
   - component: {fileID: 7223834970426240026}
+  - component: {fileID: 4819727369674759519}
   m_Layer: 12
   m_Name: Factory
   m_TagString: Ship
@@ -156,6 +157,7 @@ MonoBehaviour:
   HiveMindVision: {fileID: 4240275595467896158}
   FogOfWarVision: {fileID: 8726869303187082699}
   ProximityCollider: {fileID: 0}
+  SortingGroup: {fileID: 4819727369674759519}
   IsDead: 1
   IsUserControlled: 0
   IsMobile: 0
@@ -355,6 +357,18 @@ PolygonCollider2D:
       - {x: 0.10286655, y: 5.8409405}
       - {x: 1.0016466, y: 7.951881}
   m_UseDelaunayMesh: 0
+--- !u!210 &4819727369674759519
+SortingGroup:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2518675752222090675}
+  m_Enabled: 1
+  m_SortingLayerID: -1489320777
+  m_SortingLayer: 10
+  m_SortingOrder: 0
+  m_SortAtRoot: 0
 --- !u!1001 &1893501491353008406
 PrefabInstance:
   m_ObjectHideFlags: 0

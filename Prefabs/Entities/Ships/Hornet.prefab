@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: 7216971811449879459}
   - component: {fileID: 4115822477820707354}
   - component: {fileID: -3050644928751882725}
+  - component: {fileID: 3675391366272522194}
   m_Layer: 11
   m_Name: Hornet
   m_TagString: Ship
@@ -98,6 +99,7 @@ MonoBehaviour:
   HiveMindVision: {fileID: 2530134248073012348}
   FogOfWarVision: {fileID: 5902325744157839067}
   ProximityCollider: {fileID: 0}
+  SortingGroup: {fileID: 3675391366272522194}
   IsDead: 1
   IsUserControlled: 0
   IsMobile: 0
@@ -346,6 +348,18 @@ PolygonCollider2D:
       - {x: -1.8274672, y: -0.70112735}
       - {x: 0.01957959, y: -1.7835684}
   m_UseDelaunayMesh: 0
+--- !u!210 &3675391366272522194
+SortingGroup:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7216971811449879457}
+  m_Enabled: 1
+  m_SortingLayerID: -150918885
+  m_SortingLayer: 22
+  m_SortingOrder: 0
+  m_SortAtRoot: 0
 --- !u!1001 &2135244556360312984
 PrefabInstance:
   m_ObjectHideFlags: 0

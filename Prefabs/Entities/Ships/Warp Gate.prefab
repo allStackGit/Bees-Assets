@@ -81,6 +81,7 @@ GameObject:
   - component: {fileID: 5834194475373852831}
   - component: {fileID: 9209194230390332424}
   - component: {fileID: 8299952821591979811}
+  - component: {fileID: 739046194075406739}
   m_Layer: 12
   m_Name: Warp Gate
   m_TagString: Ship
@@ -226,6 +227,7 @@ MonoBehaviour:
   HiveMindVision: {fileID: 3187911397008965585}
   FogOfWarVision: {fileID: 517949681845354376}
   ProximityCollider: {fileID: 0}
+  SortingGroup: {fileID: 739046194075406739}
   IsDead: 1
   IsUserControlled: 0
   IsMobile: 0
@@ -342,7 +344,6 @@ MonoBehaviour:
   RLHealth: 0
   RLShipType: 0
   _retries: 0
-  WarpPoint: {x: 0, y: 6}
   WarpCollider: {fileID: 3638994493780948175}
 --- !u!50 &9209194230390332424
 Rigidbody2D:
@@ -432,6 +433,18 @@ PolygonCollider2D:
       - {x: -9.578023, y: -7.236003}
       - {x: -9.4330225, y: -5.4283524}
   m_UseDelaunayMesh: 0
+--- !u!210 &739046194075406739
+SortingGroup:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2518675752222090675}
+  m_Enabled: 1
+  m_SortingLayerID: -714660829
+  m_SortingLayer: 8
+  m_SortingOrder: 0
+  m_SortAtRoot: 0
 --- !u!1001 &92590332390393994
 PrefabInstance:
   m_ObjectHideFlags: 0

@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: 5711694713310828708}
   - component: {fileID: 5366410214926510080}
   - component: {fileID: 1694647275188970929}
+  - component: {fileID: 9036198133615164936}
   m_Layer: 12
   m_Name: Beacon
   m_TagString: Ship
@@ -153,6 +154,7 @@ MonoBehaviour:
   HiveMindVision: {fileID: 7385427098843832696}
   FogOfWarVision: {fileID: 8456973741934975438}
   ProximityCollider: {fileID: 7282395741543986695}
+  SortingGroup: {fileID: 9036198133615164936}
   IsDead: 1
   IsUserControlled: 0
   IsMobile: 0
@@ -330,6 +332,18 @@ Rigidbody2D:
   m_SleepingMode: 1
   m_CollisionDetection: 0
   m_Constraints: 0
+--- !u!210 &9036198133615164936
+SortingGroup:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 641683768750393639}
+  m_Enabled: 1
+  m_SortingLayerID: -1646897113
+  m_SortingLayer: 4
+  m_SortingOrder: 0
+  m_SortAtRoot: 0
 --- !u!1001 &597735918943287505
 PrefabInstance:
   m_ObjectHideFlags: 0

@@ -771,7 +771,7 @@ namespace Assets.Scripts.Levels
             else if (ConfigData.LevelOptions == null)
             {
                 CurrentLevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}");
-                Debug.Log($"Generated random level options with obstacle map index: {CurrentLevelOptions.ObstacleMapIndex}");
+                //Debug.Log($"Generated random level options with obstacle map index: {CurrentLevelOptions.ObstacleMapIndex}");
             }
             else
             {

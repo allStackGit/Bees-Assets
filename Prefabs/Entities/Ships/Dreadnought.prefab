@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: -1398888009526563704}
   - component: {fileID: -6981222202424921526}
   - component: {fileID: 3900632696964081159}
+  - component: {fileID: 8797951364495228748}
   m_Layer: 12
   m_Name: Dreadnought
   m_TagString: Ship
@@ -157,6 +158,7 @@ MonoBehaviour:
   HiveMindVision: {fileID: 7932026909937350217}
   FogOfWarVision: {fileID: 1497134337022772604}
   ProximityCollider: {fileID: 0}
+  SortingGroup: {fileID: 8797951364495228748}
   IsDead: 1
   IsUserControlled: 0
   IsMobile: 0
@@ -353,6 +355,18 @@ PolygonCollider2D:
       - {x: -3.5403385, y: -2.276005}
       - {x: -1.4205637, y: -4.4933147}
   m_UseDelaunayMesh: 0
+--- !u!210 &8797951364495228748
+SortingGroup:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4765992002712767473}
+  m_Enabled: 1
+  m_SortingLayerID: -905707147
+  m_SortingLayer: 16
+  m_SortingOrder: 0
+  m_SortAtRoot: 0
 --- !u!1001 &9538285929885664
 PrefabInstance:
   m_ObjectHideFlags: 0

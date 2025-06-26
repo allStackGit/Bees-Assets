@@ -22,6 +22,7 @@ using NUnit;
 using System.Threading;
 using UnityEngine.Pool;
 using static UnityEngine.GraphicsBuffer;
+using UnityEngine.Rendering;
 
 namespace Assets.Scripts.Entities.Ships
 {
@@ -48,6 +49,7 @@ namespace Assets.Scripts.Entities.Ships
         public HiveMindVision HiveMindVision;
         public FogOfWarVision FogOfWarVision;
         public ProximityCollider ProximityCollider;
+        public SortingGroup SortingGroup;
         /// <summary>
         /// If a ship has not been spawned into the game yet or it has been killed and returned to the pool then it is dead
         /// </summary>
@@ -406,6 +408,7 @@ namespace Assets.Scripts.Entities.Ships
             }
             else
             {
+                Destroy(SortingGroup);
                 Destroy(MiniMapIcon);
                 LeftRocketFlares.ForEach((flare) =>
                 {
@@ -1927,7 +1930,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             //    MovementMarker.SetActive(false);
             //}
             //gameObject.SetActive(false);
-
             Body.linearVelocity = Vector2.zero;
             base.Deactivate();
             //CancelInvoke();
@@ -1955,6 +1957,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
             if (!Stage.IsTraining)
             {
+                SortingGroup.enabled = false;
                 MiniMapIcon.SetActive(false);
 
                 if (HasRocketFlares)
@@ -1997,7 +2000,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         {
             //gameObject.SetActive(true);
 
-
             base.Activate();
 
             if (IsUserControlled)
@@ -2028,6 +2030,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             }
             if (!Stage.IsTraining)
             {
+                SortingGroup.enabled = true;
                 MiniMapIcon.SetActive(true);
             }
         }

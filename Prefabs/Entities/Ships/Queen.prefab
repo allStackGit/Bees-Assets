@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: -3388757644224156299}
   - component: {fileID: 2066278837942174322}
   - component: {fileID: 2932568822215041311}
+  - component: {fileID: 7324217919625819504}
   m_Layer: 11
   m_Name: Queen
   m_TagString: Ship
@@ -157,6 +158,7 @@ MonoBehaviour:
   HiveMindVision: {fileID: 6679717819506896489}
   FogOfWarVision: {fileID: 4742533286261574215}
   ProximityCollider: {fileID: 0}
+  SortingGroup: {fileID: 7324217919625819504}
   IsDead: 1
   IsUserControlled: 0
   IsMobile: 0
@@ -415,6 +417,18 @@ PolygonCollider2D:
       - {x: 4.1232595, y: 62.43674}
       - {x: -3.2912526, y: 62.400036}
   m_UseDelaunayMesh: 0
+--- !u!210 &7324217919625819504
+SortingGroup:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4725796339288062921}
+  m_Enabled: 1
+  m_SortingLayerID: -1593432243
+  m_SortingLayer: 6
+  m_SortingOrder: 0
+  m_SortAtRoot: 0
 --- !u!1001 &646681050668450828
 PrefabInstance:
   m_ObjectHideFlags: 0

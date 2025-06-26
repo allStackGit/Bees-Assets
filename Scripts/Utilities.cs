@@ -876,7 +876,7 @@ namespace Assets.Scripts
                     colorWithoutAlpha = new Vector3(colors[c].r, colors[c].g, colors[c].b);
                     pixelWithoutAlpha = new Vector3(pixels_SetChangablePixelsForImage[_i].r, pixels_SetChangablePixelsForImage[_i].g, pixels_SetChangablePixelsForImage[_i].b);
                     _distance = Vector3.Distance(pixelWithoutAlpha, colorWithoutAlpha);
-                    if (_distance < threshhold)
+                    if (_distance < threshhold && pixels_SetChangablePixelsForImage[_i].a > 0)
                     {
                         indexes_SetChangablePixelsForImage.Add(_i);
                     }
@@ -1012,6 +1012,34 @@ namespace Assets.Scripts
             }
         }
 
+        // Private class-level variables for SetImageColor method
+        private static Texture2D _setImageSourceTexture; // Method: SetImageColor
+        private static Color[] _setImagePixels; // Method: SetImageColor
+        private static Texture2D _setImageChangedTexture; // Method: SetImageColor
+        private static Sprite _setImageRecoloredSprite; // Method: SetImageColor
+        private static int _setImagePixelIndex; // Method: SetImageColor
+        private static Vector2 _setImageHalf = Vector2.one / 2;
+
+        public static Sprite SetImageColor(Color color, Sprite sprite, int[] changeablePixels)
+        {
+            _setImageSourceTexture = sprite.texture;
+            _setImagePixels = _setImageSourceTexture.GetPixels();
+
+            for (_setImagePixelIndex = 0; _setImagePixelIndex < changeablePixels.Length; _setImagePixelIndex++) // Use private static `_setImagePixelIndex`
+            {
+                _setImagePixels[changeablePixels[_setImagePixelIndex]] = color;
+            }
+            _setImageChangedTexture = new Texture2D(_setImageSourceTexture.width, _setImageSourceTexture.height);
+            _setImageChangedTexture.filterMode = FilterMode.Point;
+
+            _setImageChangedTexture.SetPixels(_setImagePixels);
+            _setImageChangedTexture.Apply(true);
+
+            // Debug.Log($"width: {dimensions.x}, height: {dimensions.y}");
+            _setImageRecoloredSprite = Sprite.Create(_setImageChangedTexture, new Rect(0, 0, _setImageSourceTexture.width, _setImageSourceTexture.height), _setImageHalf, ConfigData.PixelsPerUnit);
+            return _setImageRecoloredSprite;
+        }
+
         // Class-level static variables for LoadSquadsFromJson method
         private static List<SavedSquad> savedSquads = new List<SavedSquad>(); // Method: LoadSquadsFromJson
         private static Color color; // Method: LoadSquadsFromJson
@@ -1079,35 +1107,6 @@ namespace Assets.Scripts
                 }
             }
             return _getAllKeysPressed;
-        }
-
-
-        // Private class-level variables for SetImageColor method
-        private static Texture2D _setImageSourceTexture; // Method: SetImageColor
-        private static Color[] _setImagePixels; // Method: SetImageColor
-        private static Texture2D _setImageChangedTexture; // Method: SetImageColor
-        private static Sprite _setImageRecoloredSprite; // Method: SetImageColor
-        private static int _setImagePixelIndex; // Method: SetImageColor
-        private static Vector2 _setImageHalf = Vector2.one / 2;
-
-        public static Sprite SetImageColor(Color color, Sprite sprite, int[] changeablePixels)
-        {
-            _setImageSourceTexture = sprite.texture;
-            _setImagePixels = _setImageSourceTexture.GetPixels();
-
-            for (_setImagePixelIndex = 0; _setImagePixelIndex < changeablePixels.Length; _setImagePixelIndex++) // Use private static `_setImagePixelIndex`
-            {
-                _setImagePixels[changeablePixels[_setImagePixelIndex]] = color;
-            }
-            _setImageChangedTexture = new Texture2D(_setImageSourceTexture.width, _setImageSourceTexture.height);
-            _setImageChangedTexture.filterMode = FilterMode.Point;
-
-            _setImageChangedTexture.SetPixels(_setImagePixels);
-            _setImageChangedTexture.Apply(true);
-
-            // Debug.Log($"width: {dimensions.x}, height: {dimensions.y}");
-            _setImageRecoloredSprite = Sprite.Create(_setImageChangedTexture, new Rect(0, 0, _setImageSourceTexture.width, _setImageSourceTexture.height), _setImageHalf, ConfigData.PixelsPerUnit);
-            return _setImageRecoloredSprite;
         }
 
 

@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: -8530047549913418819}
   - component: {fileID: 9209194230390332424}
   - component: {fileID: 2839659447535748788}
+  - component: {fileID: 4645276601286914040}
   m_Layer: 13
   m_Name: Yellow Jacket
   m_TagString: Ship
@@ -154,6 +155,7 @@ MonoBehaviour:
   HiveMindVision: {fileID: 6135942603194571513}
   FogOfWarVision: {fileID: 3644912776218083115}
   ProximityCollider: {fileID: 3782433823608085997}
+  SortingGroup: {fileID: 4645276601286914040}
   IsDead: 1
   IsUserControlled: 0
   IsMobile: 0
@@ -334,6 +336,18 @@ CircleCollider2D:
   m_CompositeOrder: 0
   m_Offset: {x: 0, y: -0.5}
   m_Radius: 1.8
+--- !u!210 &4645276601286914040
+SortingGroup:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2518675752222090675}
+  m_Enabled: 1
+  m_SortingLayerID: -513767661
+  m_SortingLayer: 21
+  m_SortingOrder: 0
+  m_SortAtRoot: 0
 --- !u!1001 &1118753870141812324
 PrefabInstance:
   m_ObjectHideFlags: 0

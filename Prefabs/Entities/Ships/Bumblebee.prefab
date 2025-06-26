@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: 7746690712069420208}
   - component: {fileID: -2071178775999696513}
   - component: {fileID: 2223322355541266078}
+  - component: {fileID: 2079737895936125794}
   m_Layer: 11
   m_Name: Bumblebee
   m_TagString: Ship
@@ -153,6 +154,7 @@ MonoBehaviour:
   HiveMindVision: {fileID: 9199740011890776131}
   FogOfWarVision: {fileID: 708055781036308492}
   ProximityCollider: {fileID: 0}
+  SortingGroup: {fileID: 2079737895936125794}
   IsDead: 1
   IsUserControlled: 0
   IsMobile: 0
@@ -349,6 +351,18 @@ PolygonCollider2D:
       - {x: -5.587892, y: 2.8698645}
       - {x: -7.684632, y: -3.5669038}
   m_UseDelaunayMesh: 0
+--- !u!210 &2079737895936125794
+SortingGroup:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3494651897252040616}
+  m_Enabled: 1
+  m_SortingLayerID: -1262946043
+  m_SortingLayer: 14
+  m_SortingOrder: 0
+  m_SortAtRoot: 0
 --- !u!1001 &609310825290430481
 PrefabInstance:
   m_ObjectHideFlags: 0

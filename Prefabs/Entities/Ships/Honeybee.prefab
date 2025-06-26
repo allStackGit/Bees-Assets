@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: 6300979676642345473}
   - component: {fileID: 6277810116308881389}
   - component: {fileID: 640674580306557361}
+  - component: {fileID: 8398890737819646944}
   m_Layer: 11
   m_Name: Honeybee
   m_TagString: Ship
@@ -152,6 +153,7 @@ MonoBehaviour:
   HiveMindVision: {fileID: 8852224809293987089}
   FogOfWarVision: {fileID: 7812917468027314294}
   ProximityCollider: {fileID: 0}
+  SortingGroup: {fileID: 8398890737819646944}
   IsDead: 1
   IsUserControlled: 0
   IsMobile: 0
@@ -327,6 +329,18 @@ CircleCollider2D:
   m_CompositeOrder: 0
   m_Offset: {x: 0, y: 0}
   m_Radius: 1.5
+--- !u!210 &8398890737819646944
+SortingGroup:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 731483193027966550}
+  m_Enabled: 1
+  m_SortingLayerID: 1247325629
+  m_SortingLayer: 24
+  m_SortingOrder: 0
+  m_SortAtRoot: 0
 --- !u!1001 &937265131447967043
 PrefabInstance:
   m_ObjectHideFlags: 0

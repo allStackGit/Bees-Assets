@@ -18,8 +18,12 @@ namespace Assets.Scripts.Entities.Ships
             {
                 Range = Ship.MaxRange * 2;
             }
-            Transform.SetParent(Ship.transform);
+            Transform.SetParent(Ship.transform.parent);
             Transform.localScale = new Vector3(Range, Range, 0);
+        }
+        public void LateUpdate()
+        {
+            Transform.position = Ship.GetPosition();
         }
         public void Activate()
         {
