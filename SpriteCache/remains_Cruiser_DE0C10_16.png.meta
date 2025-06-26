@@ -1,0 +1,377 @@
+fileFormatVersion: 2
+guid: 8b44285833a85f14cbcc3044d61acc76
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: -8057620603321051930
+    second: remains_Cruiser_DE0C10_16_0
+  - first:
+      213: 4853696881042085352
+    second: remains_Cruiser_DE0C10_16_1
+  - first:
+      213: 3275157678911427951
+    second: remains_Cruiser_DE0C10_16_2
+  - first:
+      213: 4004373027419599406
+    second: remains_Cruiser_DE0C10_16_3
+  - first:
+      213: -8510099830999344700
+    second: remains_Cruiser_DE0C10_16_4
+  - first:
+      213: 1917277437473855616
+    second: remains_Cruiser_DE0C10_16_5
+  - first:
+      213: 8475246340623774009
+    second: remains_Cruiser_DE0C10_16_6
+  - first:
+      213: -7733880593057601752
+    second: remains_Cruiser_DE0C10_16_7
+  - first:
+      213: -5047597370316010397
+    second: remains_Cruiser_DE0C10_16_8
+  - first:
+      213: -7625382587525829748
+    second: remains_Cruiser_DE0C10_16_9
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 100
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: remains_Cruiser_DE0C10_16_0
+      rect:
+        serializedVersion: 2
+        x: 22
+        y: 102
+        width: 11
+        height: 23
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 6e41e2c90c49d2090800000000000000
+      internalID: -8057620603321051930
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Cruiser_DE0C10_16_1
+      rect:
+        serializedVersion: 2
+        x: 24
+        y: 123
+        width: 20
+        height: 19
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 8e55fe9e89bcb5340800000000000000
+      internalID: 4853696881042085352
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Cruiser_DE0C10_16_2
+      rect:
+        serializedVersion: 2
+        x: 55
+        y: 100
+        width: 24
+        height: 28
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: f6598e27e82b37d20800000000000000
+      internalID: 3275157678911427951
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Cruiser_DE0C10_16_3
+      rect:
+        serializedVersion: 2
+        x: 96
+        y: 119
+        width: 23
+        height: 28
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e2230876d04629730800000000000000
+      internalID: 4004373027419599406
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Cruiser_DE0C10_16_4
+      rect:
+        serializedVersion: 2
+        x: 7
+        y: 17
+        width: 29
+        height: 50
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 4c91c2aca4d06e980800000000000000
+      internalID: -8510099830999344700
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Cruiser_DE0C10_16_5
+      rect:
+        serializedVersion: 2
+        x: 62
+        y: 46
+        width: 35
+        height: 34
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 0881084dba98b9a10800000000000000
+      internalID: 1917277437473855616
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Cruiser_DE0C10_16_6
+      rect:
+        serializedVersion: 2
+        x: 126
+        y: 63
+        width: 22
+        height: 45
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 9313fcc94af1e9570800000000000000
+      internalID: 8475246340623774009
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Cruiser_DE0C10_16_7
+      rect:
+        serializedVersion: 2
+        x: 62
+        y: 21
+        width: 28
+        height: 19
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 827a383939cbba490800000000000000
+      internalID: -7733880593057601752
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Cruiser_DE0C10_16_8
+      rect:
+        serializedVersion: 2
+        x: 112
+        y: 34
+        width: 10
+        height: 20
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 36c4e1d5fe453f9b0800000000000000
+      internalID: -5047597370316010397
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Cruiser_DE0C10_16_9
+      rect:
+        serializedVersion: 2
+        x: 124
+        y: 17
+        width: 18
+        height: 20
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: c8be21a00f23d2690800000000000000
+      internalID: -7625382587525829748
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
+    nameFileIdTable:
+      remains_Cruiser_DE0C10_16_0: -8057620603321051930
+      remains_Cruiser_DE0C10_16_1: 4853696881042085352
+      remains_Cruiser_DE0C10_16_2: 3275157678911427951
+      remains_Cruiser_DE0C10_16_3: 4004373027419599406
+      remains_Cruiser_DE0C10_16_4: -8510099830999344700
+      remains_Cruiser_DE0C10_16_5: 1917277437473855616
+      remains_Cruiser_DE0C10_16_6: 8475246340623774009
+      remains_Cruiser_DE0C10_16_7: -7733880593057601752
+      remains_Cruiser_DE0C10_16_8: -5047597370316010397
+      remains_Cruiser_DE0C10_16_9: -7625382587525829748
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
