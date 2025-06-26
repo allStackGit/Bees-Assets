@@ -35,9 +35,6 @@ namespace Assets.Scripts.Entities
         //public string OriginalName; // [debug]
         public bool IsDelayKilled;
 
-        private int _overlaps;
-        private bool _isColliding => _overlaps > 0;
-
         public override void Create(Stage stage)
         {
             Health = ConfigData.CollisionAsteroidHealthIncrement * SizeClass;
@@ -87,6 +84,7 @@ namespace Assets.Scripts.Entities
             TouchingShips.Clear();
             NearbyObstacles.Clear();
             AsteroidsHit.Clear();
+            ShardFamily.Clear();
             LastHitAsteroid = null;
             HasTouchedMapBorder = false;
             HasDroppedDestructionAnimation = false;
@@ -218,7 +216,7 @@ namespace Assets.Scripts.Entities
             else if (obstacle.ObstacleType == ConfigData.ObstacleTypes.CollisionAsteroid)
             {
                 NearbyObstacles.Add(obstacle);
-                Debug.Log($"{obstacle.Name} is near {Name}");
+                Debug.Log($"{Name} is near {obstacle.Name}");
             }
             //else if (IsImmune) // [debug]
             //{
@@ -294,8 +292,7 @@ namespace Assets.Scripts.Entities
 
         protected void OnTriggerEnter2D(Collider2D collider)
         {
-            Debug.Log($"{Name} collided with {collider.name}");
-            _overlaps++;
+            Debug.Log($"{Name} collided with {collider.name} belonging to {collider.transform.parent.name}");
             _collidingThing = collider.gameObject;
             if (_collidingThing.CompareTag("Ship"))
             {
@@ -321,7 +318,6 @@ namespace Assets.Scripts.Entities
         Obstacle _collidingObstacle;
         private void OnTriggerExit2D(Collider2D collider)
         {
-            _overlaps--;
             //Debug.Log($"{Asteroid.Name} proximity collided");
             _collidingThing = collider.gameObject;
             //Debug.Log($"Projectile #{Id} collided with {collidingThing.name} at {Level.Updates} updates");
@@ -424,6 +420,7 @@ namespace Assets.Scripts.Entities
         int _loopIndex;
         public void SpawnBreakAwayAsteroids()
         {
+            _shardFamily.Clear();
             _asteroidCount = SizeClass < 6 ? 0 : (SizeClass > 6 ? 3 : 2);
             _pieceCount = (int)(SizeClass * 1.5f);
 
@@ -436,14 +433,15 @@ namespace Assets.Scripts.Entities
                 _asteroidShard.transform.localPosition = GetPosition();
                 _asteroidShard.Body.angularVelocity = Body.angularVelocity;
                 _asteroidShard.HasEnteredMap = true;
+                _asteroidShard.HasTouchedMapBorder = true;
 
-                _asteroidShard.Name = $"{_asteroidShard.Name}  - Shard";
+                _asteroidShard.Name = $"{_asteroidShard.Name}  - Shard"; // [debug]
                 _shardFamily.Add(_asteroidShard);
             }
 
             _shardFamily.ForEach((shard) =>
             {
-                shard.ShardFamily = new HashSet<CollisionAsteroid>(_shardFamily);
+                shard.ShardFamily = new HashSet<CollisionAsteroid>(_shardFamily); 
                 shard.ShardFamily.Remove(shard);
             });
 

@@ -326,6 +326,12 @@ namespace Assets.Scripts.Levels
                     Stage.CurrentAsteroidMaxSpawnRate /= 2;
                     Stage.CurrentAsteroidMinimumSpawnRate /= 2;
                 }
+
+                // [debug]
+                //Stage.CurrentAsteroidMaxSpawnRate /= 2;
+                //Stage.CurrentAsteroidMinimumSpawnRate /= 2;
+                //_asteroidSpawnTimer.Reuse(Utilities.RandomInt(Stage.CurrentAsteroidMaxSpawnRate - Stage.CurrentAsteroidMinimumSpawnRate), SpawnAsteroid, true);
+
                 _asteroidSpawnTimer.Reuse(Stage.AsteroidMinimumSpawnRate + Utilities.RandomInt(Stage.CurrentAsteroidMaxSpawnRate - Stage.CurrentAsteroidMinimumSpawnRate), SpawnAsteroid, true);
                 AddTimer(_asteroidSpawnTimer);
                 //Invoke(nameof(SpawnAsteroid), Stage.AsteroidMinimumSpawnRate + Utilities.RandomInt(Stage.CurrentAsteroidMaxSpawnRate - Stage.CurrentAsteroidMinimumSpawnRate));

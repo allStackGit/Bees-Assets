@@ -6,6 +6,7 @@ using Assets.Scripts.Levels;
 using Assets.Scripts.Levels.Commands;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.Pool;
 
@@ -99,10 +100,14 @@ public class Pool : MonoBehaviour
     public ObjectPool<Hold> HoldCommandPool;
     public ObjectPool<Heal> HealCommandPool;
 
+    // [debug]
+    //public List<GameObject> BigCollisionAsteroids;
 
     public void Setup(Stage stage)
     {
         Stage = stage;
+
+        //BigCollisionAsteroids = Stage.Prefabs.CollisionAsteroidPrefabs.Where((a) => a.GetComponent<CollisionAsteroid>().SizeClass >= 6).ToList();
 
         BargePool = new ObjectPool<Barge>(CreatePooledBarge, OnTakeShipFromPool, OnReturnShipToPool, null, true);
         BeaconPool = new ObjectPool<Beacon>(CreatePooledBeacon, OnTakeShipFromPool, OnReturnShipToPool, null, true);
@@ -315,6 +320,9 @@ public class Pool : MonoBehaviour
     AsteroidPiece asteroidPiece;
     public CollisionAsteroid CreatePooledCollisionAsteroid()
     {
+        // [debug]
+        //_spawn_collisionAsteroid = Instantiate(BigCollisionAsteroids[Utilities.RandomInt(BigCollisionAsteroids.Count)]).GetComponent<CollisionAsteroid>();
+
         _spawn_collisionAsteroid = Instantiate(Stage.Prefabs.CollisionAsteroidPrefabs[Utilities.RandomInt(Stage.Prefabs.CollisionAsteroidPrefabs.Count)]).GetComponent<CollisionAsteroid>();
         _spawn_collisionAsteroid.Create(Stage);
         return _spawn_collisionAsteroid;
