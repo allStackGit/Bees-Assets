@@ -875,27 +875,38 @@ public class Pool : MonoBehaviour
     }
     public ObstacleMap GetObstacleMapFromPool(int index)
     {
+        ObstacleMap obstacleMap = null;
         switch (index)
         {
             case 0:
-                return EmptyObstacleListObjectPool.Get();
+                obstacleMap = EmptyObstacleListObjectPool.Get();
+                break;
 
             case 1:
-                return MazeObstacleListObjectPool.Get();
+                obstacleMap = MazeObstacleListObjectPool.Get();
+                break;
 
             case 2:
-                return ThreePathsObstacleListObjectPool.Get();
+                obstacleMap = ThreePathsObstacleListObjectPool.Get();
+                break;
 
             case 3:
-                return ForestObstacleListObjectPool.Get();
+                obstacleMap = ForestObstacleListObjectPool.Get();
+                break;
 
             case 4:
-                return TheWallObstacleListObjectPool.Get();
+                obstacleMap = TheWallObstacleListObjectPool.Get();
+                break;
+
             default:
                 Debug.LogError($"The chosen obstacle map index does not match an obstacle map");
                 break;
         }
-        return null;
+        obstacleMap.Obstacles.ForEach(obstacle =>
+        {
+            obstacle.gameObject.SetActive(true);
+        });
+        return obstacleMap;
     }
 
     public void ReturnShipToPool(Ship ship)

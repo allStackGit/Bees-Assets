@@ -54,11 +54,13 @@ namespace Assets.Scripts.Settings
         public string ChoosingUnsavedSquadAlertTitle;
         public string ChoosingDeadSquadAlertTitle;
         public string SquadSavingStatusAlertTitle;
+        public string CannotDuplicateSquadAlertTitle;
         public string OverCapacityAlert;
         public string NoChosenSquadsAlert;
         public string ChoosingUnsavedSquadAlert;
         public string ChoosingDeadSquadAlert;
         public string SquadSavingStatusAlert;
+        public string CannotDuplicateSquadAlert;
 
 
         // [alert] Should probably be based off of user progress at some point
@@ -128,11 +130,13 @@ namespace Assets.Scripts.Settings
             ChoosingUnsavedSquadAlertTitle = (string)so.ChoosingUnsavedSquadAlertTitle;
             ChoosingDeadSquadAlertTitle = (string)so.ChoosingDeadSquadAlertTitle;
             SquadSavingStatusAlertTitle = (string)so.SquadSavingStatusAlertTitle;
+            CannotDuplicateSquadAlertTitle = "Cannot Duplicate Squad";
             OverCapacityAlert = (string)so.OverCapacityAlert;
             NoChosenSquadsAlert = (string)so.NoChosenSquadsAlert;
             ChoosingUnsavedSquadAlert = (string)so.ChoosingUnsavedSquadAlert;
             ChoosingDeadSquadAlert = (string)so.ChoosingDeadSquadAlert;
             SquadSavingStatusAlert = (string)so.SquadSavingStatusAlert;
+            CannotDuplicateSquadAlert = "There are not enough ships in the fleet to duplicate this squad";
 
 
             if (MaxSquadWidth == -1)

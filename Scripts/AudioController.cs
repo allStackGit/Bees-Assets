@@ -180,7 +180,7 @@ namespace Assets.Scripts
 
         private void EndIntro()
         {
-            Debug.Log($"The intro has ended");
+            //Debug.Log($"The intro has ended");
             IntroEnded = true;
         }
         private void PlayLoop(float delay, AudioSource loop)
@@ -248,7 +248,7 @@ namespace Assets.Scripts
                     timeLeft = IntroLength - source.time;
                 });
 
-                Debug.Log($"Setting the loops to play after being paused. They were delayed by {IntroLength}s initially but they are now delayed by {timeLeft}s.");
+                //Debug.Log($"Setting the loops to play after being paused. They were delayed by {IntroLength}s initially but they are now delayed by {timeLeft}s.");
                 // play loops
                 Loops.ForEach((source) =>
                 {

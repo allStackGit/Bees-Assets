@@ -58,6 +58,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     TargetPoint = GetTargetPoint(TargetShip);
                     IsAimedAtTarget = Utilities.IsRotatedTowards(this, GetDegreesTowardsPoint(TargetPoint));
                 }
+                else
+                {
+                    IsAimedAtTarget = false;
+                }
 
             }
 

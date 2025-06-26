@@ -179,6 +179,7 @@ namespace Assets.Scripts.Levels
             Map = Stage.Pool.GetPooledMap(CurrentLevelOptions.MapIndex);
             //Debug.Log($"Playing on the {MapData.Name} ({Map.Name}) at index #{CurrentLevelOptions.MapIndex} map");
 
+            //Debug.Log($"Obstacle Map Index: {CurrentLevelOptions.ObstacleMapIndex}");
             if (((CurrentLevelOptions.ObstacleMapIndex == -1 && Utilities.CoinToss()) || CurrentLevelOptions.ObstacleMapIndex > 0) && !Stage.IsTraining) // User chose random and random chose obstacles OR user chose obstacles
             {
                 HasObstacles = true;
@@ -192,12 +193,12 @@ namespace Assets.Scripts.Levels
                 if ((CurrentLevelOptions.AsteroidOption == -1 && Utilities.RandomInt(4) == 0) || CurrentLevelOptions.AsteroidOption > 0) // User chose random and random chose asteroids OR User chose asteroids
                 {
                     ActivateCollisionAsteroids = true;
-                    //Debug.Log($"The map has obstacles and asteroids as well");
+                    //Debug.Log($"The map has obstacles ({CurrentLevelOptions.ObstacleMapIndex}) and asteroids as well");
                 }
                 else // user chose no asteroids or random chose no asteroids
                 {
                     ActivateCollisionAsteroids = false;
-                    //Debug.Log($"The map has obstacles and not asteroids");
+                    //Debug.Log($"The map has obstacles ({CurrentLevelOptions.ObstacleMapIndex}) and not asteroids");
                 }
             }
             else // either the user chose no obstacles or random chose no obstacles
@@ -770,6 +771,7 @@ namespace Assets.Scripts.Levels
             else if (ConfigData.LevelOptions == null)
             {
                 CurrentLevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}");
+                Debug.Log($"Generated random level options with obstacle map index: {CurrentLevelOptions.ObstacleMapIndex}");
             }
             else
             {

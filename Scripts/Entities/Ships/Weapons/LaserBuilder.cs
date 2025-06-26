@@ -9,7 +9,10 @@ namespace Assets.Scripts.Entities.Ships
 {
     public class LaserBuilder : Turret
     {
-        public bool IsReadyForFiring;
+        /// <summary>
+        /// The turret is ready to fire when the animation is finished.
+        /// </summary>
+        //public bool IsReadyForFiring;
         public SpriteRenderer Pupil;
         public LaserBuilderControl LaserBuilderControl;
         public GameObject LaserBuilderAnimation;
@@ -29,7 +32,7 @@ namespace Assets.Scripts.Entities.Ships
         public override void ClearData()
         {
             base.ClearData();
-            IsReadyForFiring = false;
+            //IsReadyForFiring = false;
         }
         public override void Activate()
         {
@@ -43,7 +46,7 @@ namespace Assets.Scripts.Entities.Ships
         }
         protected override void SendProjectile() // [projectile-method] [note] this doesn't actually send the projectile because we need to wait for the animation to finish
         {
-            IsReadyForFiring = true;
+            //IsReadyForFiring = true;
             //Debug.Log($"{Name} send projectile called");
 
         }

@@ -61,7 +61,7 @@ namespace Assets.Scripts.Scenes
             OpposingForceLabel, OpposingForcePresetDropdown, ChosenEnemyShipTypeLabel, ChosenEnemyShipTypesDropdown, LevelTitleContainer, LevelDetailsContainer, ChooseLevelLabel;
 
         public Dialogue DeleteSquadConfirmation, ClearSquadConfirmation, LoadSquadConfirmation, ChooseSquadConfirmation, UnchooseSquadConfirmation, OverCapacityAlert, NoChosenSquadsAlert,
-            ChoosingUnsavedSquadAlert, ChoosingDeadSquadAlert, GoBackConfirmation, SquadSavingStatus;
+            ChoosingUnsavedSquadAlert, ChoosingDeadSquadAlert, GoBackConfirmation, SquadSavingStatus, CannotDuplicateSquad;
 
         public Sprite
             BargeSprite, BeaconSprite, CarrierSprite, CruiserSprite, DreadnoughtSprite, DroneSprite, FactorySprite, FireBargeSprite, FlagshipSprite, FrigateSprite,
@@ -229,6 +229,9 @@ namespace Assets.Scripts.Scenes
 
             SquadSavingStatus = new Dialogue(DialoguePrefab, ConfigData.Configuration.SquadSavingStatusAlertTitle, ConfigData.Configuration.SquadSavingStatusAlert,
                new List<string>(), new List<UnityAction>());
+
+            CannotDuplicateSquad = new Alert(DialoguePrefab, ConfigData.Configuration.CannotDuplicateSquadAlertTitle, ConfigData.Configuration.CannotDuplicateSquadAlert,
+              ConfigData.Configuration.OK);
 
             // setup for Bees and Humans
             if (Side == ConfigData.Configuration.BeeSide)
@@ -1213,10 +1216,20 @@ namespace Assets.Scripts.Scenes
                     //    Debug.Log($"Could not add fleetShip to duplicated squad {_currentSquad.Name}");
                     //}
                 });
-                _currentSquad.Stats = new SquadStatBlock(Utilities.GenerateCommanderName(), 0, 0, 0, 0, 0, 0);
-                _currentSquad.StartingPosition = originalSquad.StartingPosition;
-                SaveNewSquad();
-                _currentSquad = null;
+
+
+                if (_currentSquad.GetSquadShips().Count == originalSquadShips.Count)
+                {
+                    _currentSquad.Stats = new SquadStatBlock(Utilities.GenerateCommanderName(), 0, 0, 0, 0, 0, 0);
+                    _currentSquad.StartingPosition = originalSquad.StartingPosition;
+                    SaveNewSquad();
+                    _currentSquad = null;
+                }
+                else
+                {
+                    CannotDuplicateSquad.Show();
+                }
+
             }
         }
         public void SaveNewSquad()

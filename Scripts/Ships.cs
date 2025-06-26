@@ -329,7 +329,7 @@ namespace Assets.Scripts
         }
         public void SaveFleetData()
         {
-            Debug.Log($"Saving the fleet data");
+            //Debug.Log($"Saving the fleet data");
             _fleetData.Save();
         }
 

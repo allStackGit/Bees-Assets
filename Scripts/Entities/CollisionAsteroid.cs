@@ -216,7 +216,7 @@ namespace Assets.Scripts.Entities
             else if (obstacle.ObstacleType == ConfigData.ObstacleTypes.CollisionAsteroid)
             {
                 NearbyObstacles.Add(obstacle);
-                Debug.Log($"{Name} is near {obstacle.Name}");
+                //Debug.Log($"{Name} is near {obstacle.Name}");
             }
             //else if (IsImmune) // [debug]
             //{
@@ -292,7 +292,7 @@ namespace Assets.Scripts.Entities
 
         protected void OnTriggerEnter2D(Collider2D collider)
         {
-            Debug.Log($"{Name} collided with {collider.name} belonging to {collider.transform.parent.name}");
+            //Debug.Log($"{Name} collided with {collider.name} belonging to {collider.transform.parent.name}");
             _collidingThing = collider.gameObject;
             if (_collidingThing.CompareTag("Ship"))
             {
