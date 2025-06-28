@@ -63,7 +63,7 @@ public class Codex : MonoBehaviour
             else
             {
                 TMP_Text description = ship.Value.transform.GetChild(2).GetComponent<TMP_Text>();
-                TMP_Text stats = ship.Value.transform.GetChild(1).GetComponent<TMP_Text>();
+                TMP_Text stats = ship.Value.transform.GetChild(1).GetChild(0).GetComponent<TMP_Text>();
                 ShipStatBlock shipInfo = ConfigData.GetShipInfo(ship.Key);
 
                 description.text = shipInfo.CodexDescription;
