@@ -706,7 +706,7 @@ namespace Assets.Scripts
         /// <summary>
         /// The minimum offset between ships in the squad maker in UI world units.
         /// </summary>
-        public static Vector2 ShipOffset = new Vector2(20, 20);
+        public static Vector2 ShipOffset = new Vector2(15, 15);
         /// <summary>
         /// The distance from the axis before trying to snap the ship into place
         /// </summary>
@@ -714,7 +714,7 @@ namespace Assets.Scripts
         /// <summary>
         /// The distance in from the center of the box when placing drag icons in the squad maker
         /// </summary>
-        public static int OffsetFromCenterOfSquadMakerDropBox = 230;
+        public static int OffsetFromCenterOfSquadMakerDropBox = 130;
 
         public static Vector2 BaseDragIconSize = new Vector2(.2f, .2f);
 

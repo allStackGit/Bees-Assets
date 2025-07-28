@@ -81,7 +81,7 @@ namespace Assets.Scripts.UIComponents
             UnityEngine.UI.Image image = dragIcon.GetComponent<UnityEngine.UI.Image>();
             dragIcon.transform.SetParent(dragIconPrefab.transform.parent, false);
             image.SetNativeSize();
-            dragIcon.transform.localScale = new Vector3(.20f, .20f, 0) / ConfigData.GetShipSizeFactor(fleetShip.Type);
+            dragIcon.transform.localScale = new Vector3(.10f, .10f, 0) / ConfigData.GetShipSizeFactor(fleetShip.Type);
 
 
             DragIcon newDragIcon = new DragIcon(_scene, dragIcon, fleetShip, name, _dragIconCount++);
@@ -95,7 +95,7 @@ namespace Assets.Scripts.UIComponents
                 _isAutoPlacing = isAutoPlacing;
                 _isDragging = true;
                 IsValidDropLocation = false;
-                Vector2 size = _currentDragIcon.GetIcon().GetComponent<RectTransform>().sizeDelta;
+                //Vector2 size = _currentDragIcon.GetIcon().GetComponent<RectTransform>().sizeDelta;
                 //Debug.Log($"sizeDelta for current drag icon: {size}");
 
 
@@ -108,7 +108,7 @@ namespace Assets.Scripts.UIComponents
                 _scene.DragStatusBox.GetComponent<UnityEngine.UI.Image>().color = ConfigData.GetUIColor("bad");
                 _scene.DragStatusBox.transform.position = _currentDragIcon.Position;
                 _scene.DragStatusBox.GetComponent<RectTransform>().sizeDelta = ConfigData.ShipOffset;
-                _scene.DragStatusBox.transform.localScale = new Vector2(10, 10);
+                _scene.DragStatusBox.transform.localScale = new Vector2(4, 4);
 
                 //_scene.DragStatusBox.GetComponent<RectTransform>().sizeDelta = size;
                 //_scene.DragStatusBox.transform.localScale = new Vector3(.30f, .30f, 0) / ConfigData.GetShipSizeFactor(_currentDragIcon.GetFleetShip().Type);
@@ -280,7 +280,7 @@ namespace Assets.Scripts.UIComponents
 
                 Vector2 change = Utilities.WorldUnitsToScreenPixels(ConfigData.ShipOffset, _scene.Camera) * 1.05f;
 
-                //Debug.Log($"Ship offset world units for auto placing: {ConfigData.ShipOffset}, screen pixels {change}");
+                Debug.Log($"Ship offset world units for auto placing: {ConfigData.ShipOffset}, screen pixels {change}");
 
                 //Debug.Log($"change: {change}");
 
@@ -521,7 +521,7 @@ namespace Assets.Scripts.UIComponents
 
             if (HasHitDropBox(position))             // check if it's in the squad composition box
             {
-                //Debug.Log("Has hit drop box");
+                Debug.Log("Has hit drop box");
                 if (HasCurrentSquad && CurrentSquad.HasShips)
                 {
                     //Vector2 screenPoint = _scene.Camera.WorldToScreenPoint(ConfigData.ShipOffset);
@@ -546,7 +546,7 @@ namespace Assets.Scripts.UIComponents
                     }
                     else
                     {
-                        //Debug.Log($"Too close to other ships");
+                        Debug.Log($"Too close to other ships");
                         return false; // got to the squad box but too close to other ships
                     }
                 }
@@ -557,7 +557,7 @@ namespace Assets.Scripts.UIComponents
             }
             else
             {
-                //Debug.Log("Didn't hit the squad drop box -----------------------------");
+                Debug.Log("Didn't hit the squad drop box -----------------------------");
                 return false; // didn't drag over the squad maker box
             }
         }
@@ -568,15 +568,15 @@ namespace Assets.Scripts.UIComponents
             position = new Vector2(position.x, position.y);
             eventData.position = position;
             _scene.DropZone.transform.position = (Vector2)_scene.DropZone.transform.position;
-            //Debug.Log($"Raycasting from {position}, trying to hit {_scene.DropZone.name} at {_scene.DropZone.transform.position}, autoplacing: {_isAutoPlacing}");
+            Debug.Log($"Raycasting from {position}, trying to hit {_scene.DropZone.name} at {_scene.DropZone.transform.position}, autoplacing: {_isAutoPlacing}");
 
 
             List<RaycastResult> results = new List<RaycastResult>();
             EventSystem.current.RaycastAll(eventData, results);
-
+            RaycastResult thirdHit = results.GetRange(2, 1).FirstOrDefault();
             if (results.Count >= 3)
             {
-                RaycastResult thirdHit = results.GetRange(2, 1).FirstOrDefault();
+                thirdHit = results.GetRange(2, 1).FirstOrDefault();
                 //RaycastResult firstHit = results.GetRange(0, 1).FirstOrDefault();
                 RaycastResult fourthHit = results.GetRange(0, 1).FirstOrDefault();
                 bool hasFourHits = false;
@@ -589,7 +589,7 @@ namespace Assets.Scripts.UIComponents
 
                 foreach (RaycastResult hit in results)
                 {
-                    //Debug.Log($"This raycast hit {hit.gameObject.name}, Hit #3 is {thirdHit.gameObject.name}"); 
+                    Debug.Log($"This raycast hit {hit.gameObject.name}, Hit #3 is {thirdHit.gameObject.name}"); 
                     if (hit.gameObject == _scene.DropZone && 
                         (
                             (
@@ -605,7 +605,7 @@ namespace Assets.Scripts.UIComponents
                 }
             }
 
-            //Debug.Log($"Third hit {thirdHit} ---------------------------------------");
+            Debug.Log($"Third hit {thirdHit} ---------------------------------------");
             return false;
         }
         private bool NotTooCloseToSquadShips(Vector2 position, Vector2 tooClose, SquadShip ship)
