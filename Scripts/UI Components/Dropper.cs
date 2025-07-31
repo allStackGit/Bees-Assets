@@ -81,7 +81,7 @@ namespace Assets.Scripts.UIComponents
             UnityEngine.UI.Image image = dragIcon.GetComponent<UnityEngine.UI.Image>();
             dragIcon.transform.SetParent(dragIconPrefab.transform.parent, false);
             image.SetNativeSize();
-            dragIcon.transform.localScale = new Vector3(.10f, .10f, 0) / ConfigData.GetShipSizeFactor(fleetShip.Type);
+            dragIcon.transform.localScale = ConfigData.BaseDragIconSize / ConfigData.GetShipSizeFactor(fleetShip.Type);
 
 
             DragIcon newDragIcon = new DragIcon(_scene, dragIcon, fleetShip, name, _dragIconCount++);
@@ -288,7 +288,7 @@ namespace Assets.Scripts.UIComponents
                 float yIncrement = change.y;
 
 
-                Vector2 position = new Vector2(_scene.DropBox.transform.position.x, _scene.DropBox.transform.position.y + ConfigData.OffsetFromCenterOfSquadMakerDropBox);
+                Vector2 position = new Vector2(_scene.DropBox.transform.position.x+30, _scene.DropBox.transform.position.y + ConfigData.OffsetFromCenterOfSquadMakerDropBox);
                 float movement;
                 float movementDown = level * yIncrement;
                 int steps = ships;

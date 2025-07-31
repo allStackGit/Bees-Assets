@@ -716,7 +716,7 @@ namespace Assets.Scripts
         /// </summary>
         public static int OffsetFromCenterOfSquadMakerDropBox = 130;
 
-        public static Vector2 BaseDragIconSize = new Vector2(.2f, .2f);
+        public static Vector2 BaseDragIconSize = new Vector2(.075f, .075f);
 
         /// <summary>
         /// Supports up to 16 ships, four rows of four columns
