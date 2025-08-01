@@ -192,9 +192,9 @@ namespace Assets.Scripts.Scenes
             //    StartButton.SetActive(true);
             //}
 
-            _squadListOriginalScrollHeight = 1135 + 800;
-            _squadListOptionsScrollHeight = _squadListOriginalScrollHeight - 800;
-            _squadListLevelScrollHeight = _squadListOriginalScrollHeight - 1180;
+            _squadListOriginalScrollHeight = 415 + 238;
+            _squadListOptionsScrollHeight = _squadListOriginalScrollHeight - 238;
+            _squadListLevelScrollHeight = _squadListOriginalScrollHeight - 425;
 
             // Make Dialogues
             DeleteSquadConfirmation = new Dialogue(DialoguePrefab, ConfigData.Configuration.AreYouSure, ConfigData.Configuration.DeleteSquadConfirmation,
@@ -372,7 +372,7 @@ namespace Assets.Scripts.Scenes
             StrikerFleetLabel.transform.parent.gameObject.SetActive(false);
             DroneFleetLabel.transform.parent.gameObject.SetActive(false);
             BeaconFleetLabel.transform.parent.gameObject.SetActive(false);
-            SquadColorLabel.SetActive(false);
+            //SquadColorLabel.SetActive(false);
             SquadColorPickerButton.SetActive(false);
 
             TMP_Dropdown dropdown = ChosenEnemyShipTypesDropdown.GetComponent<TMP_Dropdown>();

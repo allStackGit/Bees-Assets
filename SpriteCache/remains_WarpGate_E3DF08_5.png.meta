@@ -1,0 +1,611 @@
+fileFormatVersion: 2
+guid: abce95442b83b6747829b683be062776
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: 8936754636291869774
+    second: remains_WarpGate_E3DF08_5_0
+  - first:
+      213: 1347623211830464513
+    second: remains_WarpGate_E3DF08_5_1
+  - first:
+      213: -2871803775831838531
+    second: remains_WarpGate_E3DF08_5_2
+  - first:
+      213: -6935785276658748090
+    second: remains_WarpGate_E3DF08_5_3
+  - first:
+      213: -3988376711131958368
+    second: remains_WarpGate_E3DF08_5_4
+  - first:
+      213: -5549921746976341602
+    second: remains_WarpGate_E3DF08_5_5
+  - first:
+      213: -5062624330613139947
+    second: remains_WarpGate_E3DF08_5_6
+  - first:
+      213: 6393372606146375642
+    second: remains_WarpGate_E3DF08_5_7
+  - first:
+      213: -6953541372036172929
+    second: remains_WarpGate_E3DF08_5_8
+  - first:
+      213: -6780688532569130375
+    second: remains_WarpGate_E3DF08_5_9
+  - first:
+      213: 7962430400298419581
+    second: remains_WarpGate_E3DF08_5_10
+  - first:
+      213: -2723272017585917976
+    second: remains_WarpGate_E3DF08_5_11
+  - first:
+      213: 55549056922134846
+    second: remains_WarpGate_E3DF08_5_12
+  - first:
+      213: -7069785860704746774
+    second: remains_WarpGate_E3DF08_5_13
+  - first:
+      213: -6361941470615664051
+    second: remains_WarpGate_E3DF08_5_14
+  - first:
+      213: 826328673219017661
+    second: remains_WarpGate_E3DF08_5_15
+  - first:
+      213: -7369260245998125559
+    second: remains_WarpGate_E3DF08_5_16
+  - first:
+      213: 3407988704812248395
+    second: remains_WarpGate_E3DF08_5_17
+  - first:
+      213: -5345210367853227639
+    second: remains_WarpGate_E3DF08_5_18
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 100
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: remains_WarpGate_E3DF08_5_0
+      rect:
+        serializedVersion: 2
+        x: 60
+        y: 196
+        width: 24
+        height: 13
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e4c80052efab50c70800000000000000
+      internalID: 8936754636291869774
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_WarpGate_E3DF08_5_1
+      rect:
+        serializedVersion: 2
+        x: 285
+        y: 186
+        width: 26
+        height: 21
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 100d930db28b3b210800000000000000
+      internalID: 1347623211830464513
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_WarpGate_E3DF08_5_2
+      rect:
+        serializedVersion: 2
+        x: 69
+        y: 98
+        width: 58
+        height: 84
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: db0faec6ead4528d0800000000000000
+      internalID: -2871803775831838531
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_WarpGate_E3DF08_5_3
+      rect:
+        serializedVersion: 2
+        x: 126
+        y: 174
+        width: 8
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 645fe5ac9042fbf90800000000000000
+      internalID: -6935785276658748090
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_WarpGate_E3DF08_5_4
+      rect:
+        serializedVersion: 2
+        x: 243
+        y: 175
+        width: 9
+        height: 6
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 0a3f986338076a8c0800000000000000
+      internalID: -3988376711131958368
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_WarpGate_E3DF08_5_5
+      rect:
+        serializedVersion: 2
+        x: 266
+        y: 103
+        width: 30
+        height: 83
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e91824c6397baf2b0800000000000000
+      internalID: -5549921746976341602
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_WarpGate_E3DF08_5_6
+      rect:
+        serializedVersion: 2
+        x: 322
+        y: 153
+        width: 15
+        height: 40
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 516dd868ef1fdb9b0800000000000000
+      internalID: -5062624330613139947
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_WarpGate_E3DF08_5_7
+      rect:
+        serializedVersion: 2
+        x: 30
+        y: 87
+        width: 17
+        height: 85
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: adf61120382d9b850800000000000000
+      internalID: 6393372606146375642
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_WarpGate_E3DF08_5_8
+      rect:
+        serializedVersion: 2
+        x: 121
+        y: 112
+        width: 8
+        height: 6
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: f733dcca6fe008f90800000000000000
+      internalID: -6953541372036172929
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_WarpGate_E3DF08_5_9
+      rect:
+        serializedVersion: 2
+        x: 137
+        y: 94
+        width: 104
+        height: 25
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 97af6ab84b726e1a0800000000000000
+      internalID: -6780688532569130375
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_WarpGate_E3DF08_5_10
+      rect:
+        serializedVersion: 2
+        x: 238
+        y: 116
+        width: 17
+        height: 8
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: d750f86234c308e60800000000000000
+      internalID: 7962430400298419581
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_WarpGate_E3DF08_5_11
+      rect:
+        serializedVersion: 2
+        x: 315
+        y: 90
+        width: 18
+        height: 37
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 8efa70d478ef43ad0800000000000000
+      internalID: -2723272017585917976
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_WarpGate_E3DF08_5_12
+      rect:
+        serializedVersion: 2
+        x: 119
+        y: 56
+        width: 142
+        height: 38
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e39a37da29955c000800000000000000
+      internalID: 55549056922134846
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_WarpGate_E3DF08_5_13
+      rect:
+        serializedVersion: 2
+        x: 282
+        y: 79
+        width: 23
+        height: 15
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: ae24d9e873313ed90800000000000000
+      internalID: -7069785860704746774
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_WarpGate_E3DF08_5_14
+      rect:
+        serializedVersion: 2
+        x: 56
+        y: 26
+        width: 46
+        height: 47
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: d4a802280f7d5b7a0800000000000000
+      internalID: -6361941470615664051
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_WarpGate_E3DF08_5_15
+      rect:
+        serializedVersion: 2
+        x: 133
+        y: 39
+        width: 18
+        height: 14
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: dbb70fadc85b77b00800000000000000
+      internalID: 826328673219017661
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_WarpGate_E3DF08_5_16
+      rect:
+        serializedVersion: 2
+        x: 230
+        y: 35
+        width: 17
+        height: 13
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 90ebfdba9d02bb990800000000000000
+      internalID: -7369260245998125559
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_WarpGate_E3DF08_5_17
+      rect:
+        serializedVersion: 2
+        x: 274
+        y: 17
+        width: 38
+        height: 27
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: b4da0e4bbab9b4f20800000000000000
+      internalID: 3407988704812248395
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_WarpGate_E3DF08_5_18
+      rect:
+        serializedVersion: 2
+        x: 312
+        y: 42
+        width: 42
+        height: 34
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 9819f569d7ff1d5b0800000000000000
+      internalID: -5345210367853227639
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
+    nameFileIdTable:
+      remains_WarpGate_E3DF08_5_0: 8936754636291869774
+      remains_WarpGate_E3DF08_5_1: 1347623211830464513
+      remains_WarpGate_E3DF08_5_10: 7962430400298419581
+      remains_WarpGate_E3DF08_5_11: -2723272017585917976
+      remains_WarpGate_E3DF08_5_12: 55549056922134846
+      remains_WarpGate_E3DF08_5_13: -7069785860704746774
+      remains_WarpGate_E3DF08_5_14: -6361941470615664051
+      remains_WarpGate_E3DF08_5_15: 826328673219017661
+      remains_WarpGate_E3DF08_5_16: -7369260245998125559
+      remains_WarpGate_E3DF08_5_17: 3407988704812248395
+      remains_WarpGate_E3DF08_5_18: -5345210367853227639
+      remains_WarpGate_E3DF08_5_2: -2871803775831838531
+      remains_WarpGate_E3DF08_5_3: -6935785276658748090
+      remains_WarpGate_E3DF08_5_4: -3988376711131958368
+      remains_WarpGate_E3DF08_5_5: -5549921746976341602
+      remains_WarpGate_E3DF08_5_6: -5062624330613139947
+      remains_WarpGate_E3DF08_5_7: 6393372606146375642
+      remains_WarpGate_E3DF08_5_8: -6953541372036172929
+      remains_WarpGate_E3DF08_5_9: -6780688532569130375
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
