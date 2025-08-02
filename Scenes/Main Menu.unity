@@ -3870,6 +3870,10 @@ PrefabInstance:
       propertyPath: m_IsActive
       value: 1
       objectReference: {fileID: 0}
+    - target: {fileID: 2504267111644852034, guid: 2a2b86bc2ea44d94b82bb5393041c13d, type: 3}
+      propertyPath: m_UiScaleMode
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 2504267111644852044, guid: 2a2b86bc2ea44d94b82bb5393041c13d, type: 3}
       propertyPath: m_Pivot.x
       value: 0

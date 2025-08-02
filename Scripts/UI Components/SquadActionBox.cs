@@ -24,7 +24,7 @@ namespace Assets.Scripts.UIComponents
         private EventSystem _eventSystem;
         private SquadMaker _squadMaker = null;
         private Level Level = null;
-        private string _blankShipType = "———————";
+        private string _blankShipType = "——————";
         private bool _autoSetDropdownValue = false;
         private int Side;
 
