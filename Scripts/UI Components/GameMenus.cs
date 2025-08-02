@@ -41,7 +41,7 @@ namespace Assets.Scripts.UIComponents
             {
                 ActionBox = SquadActionBoxUI.GetComponent<SquadActionBox>();
                 Codex.SetupCodex();
-                Settings.SetupSettings(Stage);
+                //Settings.SetupSettings(Stage);
                 
                 if (ConfigData.IsPlayingCampaign)
                 {
