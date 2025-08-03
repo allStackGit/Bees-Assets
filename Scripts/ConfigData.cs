@@ -145,7 +145,23 @@ namespace Assets.Scripts
             DualCannon,
             Eye,
             QueenEye,
-            SplitShot
+            SplitShot,
+        }
+        public enum WeaponSoundTypes
+        {
+            SmallLaser, // Drone, Hornet, Gunship, Queen Turret, Flagship Turret,
+            BigLaser, //  Wasp, Leafcutter,
+            FlagshipChargingLaser, // Flagship
+            FlagshipLaser, // Flagship
+            QueenLaser, // Queen Crown
+            BeamCannon, // Cruiser
+            BowtieLaser, // Bumblebee
+            LightCannon, // Dreadnought
+            RocketLaunch, // Frigate
+            Bomb, // Striker
+            FireBargeBomb, // Fire Barge
+            None,
+
         }
         public enum RequestTypes
         {

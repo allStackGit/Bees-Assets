@@ -6,7 +6,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
     public class QueenEye : Eye
     {
         SpriteRenderer InnerEye;
-        public override void Create(Ship ship, ConfigData.WeaponTypes type, int range, int power, float rateOfFire, float projectileValue, GameObject piece, ConfigData.ProjectileTypes projectileType, bool fireAtFrontOfShip, float rotationRate)
+        public override void Create(Ship ship, ConfigData.WeaponTypes type, ConfigData.WeaponSoundTypes weaponSound, int range, int power, float rateOfFire, float projectileValue, GameObject piece, ConfigData.ProjectileTypes projectileType, bool fireAtFrontOfShip, float rotationRate)
         {
             WeaponsData weaponsData = piece.GetComponent<WeaponsData>();
             InnerEye = weaponsData.SecondSpriteRenderer;
@@ -14,7 +14,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 Destroy(InnerEye);
             }
-            base.Create(ship, type, range, power, rateOfFire, projectileValue, piece, projectileType, fireAtFrontOfShip, rotationRate);
+            base.Create(ship, type, weaponSound, range, power, rateOfFire, projectileValue, piece, projectileType, fireAtFrontOfShip, rotationRate);
         }
         public override void Activate()
         {

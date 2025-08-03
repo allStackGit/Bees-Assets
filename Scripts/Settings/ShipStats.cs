@@ -31,11 +31,12 @@ namespace Assets.Scripts.Settings
                 List<float> rateOfFire = Utilities.JArrayToList<float>(ship.RateOfFire);
                 List<float> rotationRates = Utilities.JArrayToList<float>(ship.RotationRates);
                 List<ConfigData.WeaponTypes> weaponTypes = Utilities.JArrayToWeaponTypes(ship.WeaponTypes);
+                List<ConfigData.WeaponSoundTypes> weaponSoundTypes = Utilities.JArrayToWeaponSoundTypes(ship.WeaponSoundTypes);
                 List<ConfigData.ProjectileTypes> projectileTypes = Utilities.JArrayToProjectileTypes(ship.ProjectileTypes);
 
                 ShipStatsList.Add(Utilities.ConvertShipNameToShipType[(string) ship.ShipType], new ShipStatBlock(Utilities.ConvertShipNameToShipType[(string) ship.ShipType], (string)ship.Description, (string)ship.CodexDescription, (int)ship.Health,
                     range, power, (int)ship.Sight, (int)ship.Tsv, ProjectileValue,
-                    rateOfFire, rotationRates, (float)ship.Speed, weaponTypes, projectileTypes));
+                    rateOfFire, rotationRates, (float)ship.Speed, weaponTypes, weaponSoundTypes, projectileTypes));
                  
             });
         }

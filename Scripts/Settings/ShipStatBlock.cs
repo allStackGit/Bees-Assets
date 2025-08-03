@@ -22,10 +22,12 @@ namespace Assets.Scripts.Settings
         public List<int> Ranges, Powers;
         public List<float> RatesOfFire, ProjectileValues, RotationRates;
         public List<ConfigData.WeaponTypes> WeaponTypes;
+        public List<ConfigData.WeaponSoundTypes> WeaponSoundTypes;
         public List<ConfigData.ProjectileTypes> ProjectileTypes;
 
         public ShipStatBlock(ConfigData.ShipTypes type, string description, string codexDescription, int health, List<int> ranges, List<int> powers, int sight, int tsv, 
-            List<float> projectileValues, List<float> ratesOfFire, List<float> rotationRates, float speed, List<ConfigData.WeaponTypes> weaponTypes, List<ConfigData.ProjectileTypes> projectileTypes)
+            List<float> projectileValues, List<float> ratesOfFire, List<float> rotationRates, float speed, List<ConfigData.WeaponTypes> weaponTypes, 
+            List<ConfigData.WeaponSoundTypes> weaponSoundTypes, List<ConfigData.ProjectileTypes> projectileTypes)
         {
             Type = type;
             Description = description;
@@ -40,6 +42,7 @@ namespace Assets.Scripts.Settings
             RatesOfFire = ratesOfFire;
             Speed = speed;
             WeaponTypes = weaponTypes;
+            WeaponSoundTypes = weaponSoundTypes;
             ProjectileTypes = projectileTypes;
 
             if (!(Ranges.Count == Powers.Count && Powers.Count == ProjectileValues.Count && ProjectileValues.Count == WeaponTypes.Count && 

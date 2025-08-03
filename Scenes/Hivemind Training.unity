@@ -7534,7 +7534,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: ActivateAudio
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: MiniMapCamera
@@ -7554,7 +7554,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: ActivateHiveMind
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: AsteroidMaxSpeed
@@ -7758,11 +7758,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: GeneratedSquadCountMinimum
-      value: 0
+      value: 12
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: GeneratedSquadCountOverride
-      value: 0
+      value: 16
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: 'OverrideStrats.Array.data[0]'
@@ -14032,7 +14032,15 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
-    m_RemovedGameObjects: []
+    m_RemovedGameObjects:
+    - {fileID: 3366005094055406045, guid: f2d78717771ac274ea7912399058897f, type: 3}
+    - {fileID: 3366005094693911450, guid: f2d78717771ac274ea7912399058897f, type: 3}
+    - {fileID: 3366005094891768006, guid: f2d78717771ac274ea7912399058897f, type: 3}
+    - {fileID: 3366005094267734137, guid: f2d78717771ac274ea7912399058897f, type: 3}
+    - {fileID: 3366005094656553192, guid: f2d78717771ac274ea7912399058897f, type: 3}
+    - {fileID: 3366005093730615886, guid: f2d78717771ac274ea7912399058897f, type: 3}
+    - {fileID: 3366005094552363325, guid: f2d78717771ac274ea7912399058897f, type: 3}
+    - {fileID: 3366005095164624872, guid: f2d78717771ac274ea7912399058897f, type: 3}
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: f2d78717771ac274ea7912399058897f, type: 3}

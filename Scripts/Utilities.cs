@@ -539,6 +539,22 @@ namespace Assets.Scripts
             { "Split Shot", ConfigData.WeaponTypes.SplitShot },
         };
 
+        public static Dictionary<string, ConfigData.WeaponSoundTypes> ConvertWeaponSoundNameToType = new Dictionary<string, ConfigData.WeaponSoundTypes>
+        {
+            { "None", ConfigData.WeaponSoundTypes.None },
+            { "Small Laser", ConfigData.WeaponSoundTypes.SmallLaser },
+            { "Big Laser", ConfigData.WeaponSoundTypes.BigLaser },
+            { "Flagship Charging Laser", ConfigData.WeaponSoundTypes.FlagshipChargingLaser },
+            { "Flagship Laser", ConfigData.WeaponSoundTypes.FlagshipLaser },
+            { "Queen Laser", ConfigData.WeaponSoundTypes.QueenLaser },
+            { "Beam Cannon", ConfigData.WeaponSoundTypes.BeamCannon },
+            { "Bowtie Laser", ConfigData.WeaponSoundTypes.BowtieLaser },
+            { "Light Cannon", ConfigData.WeaponSoundTypes.LightCannon },
+            { "Rocket Launch", ConfigData.WeaponSoundTypes.RocketLaunch },
+            { "Bomb", ConfigData.WeaponSoundTypes.Bomb },
+            { "Fire Barge Bomb", ConfigData.WeaponSoundTypes.FireBargeBomb },
+        };
+
         public static Dictionary<string, ConfigData.ProjectileTypes> ConvertProjectileNameToType = new Dictionary<string, ConfigData.ProjectileTypes>
         {
             { "None", ConfigData.ProjectileTypes.None },
@@ -1398,6 +1414,13 @@ namespace Assets.Scripts
         {
             _jArrayToWeaponTypesWeaponList = JArrayToList<string>(jArray);
             return _jArrayToWeaponTypesWeaponList.ConvertAll((_jArrayToWeaponTypesItem) => ConvertWeaponNameToType[_jArrayToWeaponTypesItem]);
+        }
+
+        private static List<string> _jArrayToWeaponSoundTypesWeaponList; // Method: JArrayToWeaponTypes
+        public static List<ConfigData.WeaponSoundTypes> JArrayToWeaponSoundTypes(dynamic jArray)
+        {
+            _jArrayToWeaponSoundTypesWeaponList = JArrayToList<string>(jArray);
+            return _jArrayToWeaponSoundTypesWeaponList.ConvertAll((_jArrayToWeaponTypesItem) => ConvertWeaponSoundNameToType[_jArrayToWeaponTypesItem]);
         }
 
 

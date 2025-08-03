@@ -13,7 +13,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public SpriteRenderer SecondCannonSpriteRenderer;
         //public GameObject RangeCircleLeft; // For the second cannon in the dual cannon, the first one being the right one
         //public CircleCollider2D RangeColliderLeft; // Likewise for the range collider
-        public override void Create(Ship ship, ConfigData.WeaponTypes type, int range, int power, float rateOfFire, float projectileValue, GameObject piece, ConfigData.ProjectileTypes projectileType, bool fireAtFrontOfShip, float rotationRate)
+        public override void Create(Ship ship, ConfigData.WeaponTypes type, ConfigData.WeaponSoundTypes weaponSound, int range, int power, float rateOfFire, float projectileValue, GameObject piece, ConfigData.ProjectileTypes projectileType, bool fireAtFrontOfShip, float rotationRate)
         {
             WeaponsData weaponsData = piece.GetComponent<WeaponsData>();
             SecondCannonSpriteRenderer = weaponsData.SecondSpriteRenderer;
@@ -21,7 +21,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 Destroy(SecondCannonSpriteRenderer);
             }
-            base.Create(ship, type, range, power, rateOfFire, projectileValue, piece, projectileType, fireAtFrontOfShip, rotationRate);
+            base.Create(ship, type, weaponSound, range, power, rateOfFire, projectileValue, piece, projectileType, fireAtFrontOfShip, rotationRate);
         }
         private float _angle, _cannonAngle;
         private Vector2 _position, _shipPosition, _leftCannonPosition, _rightCannonPosition, _rotatedLeftCannonPosition, _rotatedRightCannonPosition;
@@ -54,6 +54,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 Level.State.GetShipDamageStatus(Side, TargetShip).TotalDamageSentToShip += Power * 2;
             }
+            PlaySoundEffect();
 
         }
         public override void Activate()

@@ -14,10 +14,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         private bool _readyToChangeColor;
         public SpriteRenderer Pupil;
 
-        public override void Create(Ship ship, ConfigData.WeaponTypes type, int range, int power, float rateOfFire, float projectileValue, GameObject piece,
+        public override void Create(Ship ship, ConfigData.WeaponTypes type, ConfigData.WeaponSoundTypes weaponSound, int range, int power, float rateOfFire, float projectileValue, GameObject piece,
             ConfigData.ProjectileTypes projectileType, bool fireAtFrontOfShip, float rotationRate)
         {
-            base.Create(ship, type, range, power, rateOfFire, projectileValue, piece, projectileType, fireAtFrontOfShip, rotationRate);
+            base.Create(ship, type, weaponSound, range, power, rateOfFire, projectileValue, piece, projectileType, fireAtFrontOfShip, rotationRate);
             Pupil = Piece.gameObject.transform.GetChild(0).GetComponent<SpriteRenderer>();
             if (!Stage.IsRendering)
             {

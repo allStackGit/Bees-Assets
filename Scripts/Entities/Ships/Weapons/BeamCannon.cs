@@ -109,6 +109,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     LaserBeamTarget = TargetShip;
                 }
                 IsFiringLaserBeam = true;
+                PlaySoundEffect();
             }
 
 

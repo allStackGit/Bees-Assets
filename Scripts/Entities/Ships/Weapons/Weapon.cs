@@ -26,6 +26,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public ConfigData.ShootingStrategyTypes CachedShootingStrategy;
         public string Name;
         public ConfigData.WeaponTypes Type;
+        public ConfigData.WeaponSoundTypes WeaponSoundType; 
         public bool IsUsingCachedTargetingQueue, HasCachedChanged, HasSoundEffect;
         public AudioSource SoundEffect;
         /// <summary>
@@ -49,7 +50,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// </summary>
         public virtual bool ShouldFire => TargetShip != null && !TargetShip.IsDead && !Ship.IsCeaseFire;
 
-        public virtual void Create(Ship ship, ConfigData.WeaponTypes type, int range, int power, float specialFirePower, float rateOfFire, float projectileValue, GameObject piece,
+        public virtual void Create(Ship ship, ConfigData.WeaponTypes type, ConfigData.WeaponSoundTypes weaponSound, int range, int power, float specialFirePower, float rateOfFire, float projectileValue, GameObject piece,
             ConfigData.ProjectileTypes projectileType)
         {
             Ship = ship;
@@ -74,11 +75,12 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             Destroy(weaponsData);
             ProjectileType = projectileType;
             Type = type;
+            WeaponSoundType = weaponSound;
 
-            if (!Stage.IsTraining && Stage.Audio.WeaponSounds.ContainsKey(Type))
+            if (!Stage.IsTraining && Stage.Audio.WeaponSounds.ContainsKey(WeaponSoundType))
             {
                 HasSoundEffect = true;
-                SoundEffect = Instantiate(Stage.Audio.WeaponSounds[Type][Utilities.RandomInt(Stage.Audio.WeaponSounds[Type].Length)]);
+                SoundEffect = Instantiate(Stage.Audio.WeaponSounds[WeaponSoundType][Utilities.RandomInt(Stage.Audio.WeaponSounds[WeaponSoundType].Length)]);
                 SoundEffect.transform.parent = PieceTransform;
                 SoundEffect.transform.localPosition = Vector2.zero;
 
@@ -490,6 +492,13 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             if (HasSoundEffect)
             {
                 SoundEffect.Play();
+            }
+        }
+        public void StopSoundEffect()
+        {
+            if (HasSoundEffect)
+            {
+                SoundEffect.Stop();
             }
         }
 

@@ -48,12 +48,13 @@ namespace Assets.Scripts
         public AudioSource SmallCannonSound2;
         public AudioSource BigCannonSound;
         public AudioSource BigCannonSound2;
+        public AudioSource BeamCannonSound;
 
         public List<AudioSource> TinyShipExplosionSounds;
 
         //public Dictionary<string, AudioSource> BeesIntros = new Dictionary<string, AudioSource>();
         //public Dictionary<string, AudioSource> BeesLoops = new Dictionary<string, AudioSource>();
-        public Dictionary<ConfigData.WeaponTypes, AudioSource[]> WeaponSounds = new Dictionary<ConfigData.WeaponTypes, AudioSource[]>();
+        public Dictionary<ConfigData.WeaponSoundTypes, AudioSource[]> WeaponSounds = new Dictionary<ConfigData.WeaponSoundTypes, AudioSource[]>();
         public Dictionary<float, List<AudioSource>> ExplosionSounds = new Dictionary<float, List<AudioSource>>();
         public List<AudioSource> Loops = new List<AudioSource>();
         public List<AudioSource> Intros = new List<AudioSource>();
@@ -66,9 +67,10 @@ namespace Assets.Scripts
         {
             Level = level;
 
-            WeaponSounds.Add(ConfigData.WeaponTypes.LightCannon, new AudioSource[] { LightCannonSound, LightCannonSound2 });
-            WeaponSounds.Add(ConfigData.WeaponTypes.Turret, new AudioSource[] { SmallCannonSound, SmallCannonSound2 });
-            WeaponSounds.Add(ConfigData.WeaponTypes.FullShipTurret, new AudioSource[] { BigCannonSound, BigCannonSound2 });
+            WeaponSounds.Add(ConfigData.WeaponSoundTypes.LightCannon, new AudioSource[] { LightCannonSound, LightCannonSound2 });
+            WeaponSounds.Add(ConfigData.WeaponSoundTypes.SmallLaser, new AudioSource[] { SmallCannonSound, SmallCannonSound2 });
+            WeaponSounds.Add(ConfigData.WeaponSoundTypes.BigLaser, new AudioSource[] { BigCannonSound, BigCannonSound2 });
+            WeaponSounds.Add(ConfigData.WeaponSoundTypes.BeamCannon, new AudioSource[] { BeamCannonSound });
 
             ExplosionSounds.Add(ConfigData.Tiny, TinyShipExplosionSounds);
 

@@ -75,6 +75,7 @@ namespace Assets.Scripts.Entities.Projectiles
                 IsDead = true;
                 BeamCannon.IsFiringLaserBeam = false;
                 BeamCannon.LaserBeamTarget = null;
+                BeamCannon.StopSoundEffect();
                 RemoveDamageSentEntry();
                 if (!ShipIsDead)
                 {

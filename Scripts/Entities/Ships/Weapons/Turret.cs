@@ -53,10 +53,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         //public override bool ShouldFire => TargetShip != null && !CeaseFire && IsShipValidTarget(TargetShip);
 
-        public virtual void Create(Ship ship, ConfigData.WeaponTypes type, int range, int power, float rateOfFire, float projectileValue, GameObject piece, ConfigData.ProjectileTypes projectileType,
+        public virtual void Create(Ship ship, ConfigData.WeaponTypes type, ConfigData.WeaponSoundTypes weaponSound, int range, int power, float rateOfFire, float projectileValue, GameObject piece, ConfigData.ProjectileTypes projectileType,
             bool fireAtFrontOfShip, float rotationRate)
         {
-            base.Create(ship, type, range, power, 0, rateOfFire, projectileValue, piece, projectileType);
+            base.Create(ship, type, weaponSound, range, power, 0, rateOfFire, projectileValue, piece, projectileType);
             OriginalRotation = PieceTransform.eulerAngles.z;
             Rotation = OriginalRotation;
             ShouldFireAtFrontOfShip = fireAtFrontOfShip;

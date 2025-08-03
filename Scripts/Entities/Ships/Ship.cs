@@ -518,22 +518,22 @@ namespace Assets.Scripts.Entities.Ships
                         //    shipStats.Ranges[i] = 80;
                         //}
 
-                        ((Eye)weapon).Create(this, shipStats.WeaponTypes[i], shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
+                        ((Eye)weapon).Create(this, shipStats.WeaponTypes[i], shipStats.WeaponSoundTypes[i], shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
 shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], FireAtFrontOfShip, shipStats.RotationRates[i]);
                     }
                     else if (weapon is LaserBuilder)
                     {
-                        ((LaserBuilder)weapon).Create(this, shipStats.WeaponTypes[i], shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
+                        ((LaserBuilder)weapon).Create(this, shipStats.WeaponTypes[i], shipStats.WeaponSoundTypes[i], shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
 shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], FireAtFrontOfShip, shipStats.RotationRates[i]);
                     }
                     else if (weapon is FullShipTurret)
                     {
-                        ((FullShipTurret)weapon).Create(this, shipStats.WeaponTypes[i], shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
+                        ((FullShipTurret)weapon).Create(this, shipStats.WeaponTypes[i], shipStats.WeaponSoundTypes[i], shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
 shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], FireAtFrontOfShip, shipStats.RotationRates[i]);
                     }
                     else
                     {
-                        ((Turret)weapon).Create(this, shipStats.WeaponTypes[i], shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
+                        ((Turret)weapon).Create(this, shipStats.WeaponTypes[i], shipStats.WeaponSoundTypes[i], shipStats.Ranges[i], shipStats.Powers[i], shipStats.RatesOfFire[i],
 shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], FireAtFrontOfShip, shipStats.RotationRates[i]);
                     }
 
@@ -541,7 +541,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 else
                 {
                     //Debug.Log($"{weapon.GetType()} -- {typeof(Turret)}");
-                    weapon.Create(this, shipStats.WeaponTypes[i], shipStats.Ranges[i], shipStats.Powers[i], SpecialFirePower, shipStats.RatesOfFire[i],
+                    weapon.Create(this, shipStats.WeaponTypes[i], shipStats.WeaponSoundTypes[i], shipStats.Ranges[i], shipStats.Powers[i], SpecialFirePower, shipStats.RatesOfFire[i],
                     shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i]);
                 }
 
