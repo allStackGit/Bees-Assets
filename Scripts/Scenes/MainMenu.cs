@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using TMPro;
 using Assets.Scripts.Settings; 
 using System.Linq;
+using Assets.Scripts.UI_Components;
 
 namespace Assets.Scripts.Scenes
 {
@@ -102,12 +103,14 @@ namespace Assets.Scripts.Scenes
         public void ExitGame()
         {
             //ConfigData.SaveAll();
+            DeselectButton();
             Debug.Log("Exiting Game!");
             Application.Quit();
         }
 
         public void DeselectButton()
         {
+            UIAudioController.Instance.PlayButtonSound();
             EventSystem.GetComponent<UnityEngine.EventSystems.EventSystem>().SetSelectedGameObject(null);
         }
 

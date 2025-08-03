@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Assets.Scripts.Scenes;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using TMPro;
@@ -62,6 +63,7 @@ namespace Assets.Scripts.UI_Components
             buttonObject.transform.GetChild(0).gameObject.GetComponent<TMP_Text>().text = label;
             buttonObject.GetComponent<Button>().onClick.AddListener(delegate ()
             {
+                UIAudioController.Instance.PlayButtonSound();
                 action();
                 Hide();
             });

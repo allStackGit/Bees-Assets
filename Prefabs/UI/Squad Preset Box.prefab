@@ -416,6 +416,7 @@ MonoBehaviour:
   TypeSelector: {fileID: 6972302390186626829}
   ActionTitle: {fileID: 3955689702258820380}
   ActionExplanation: {fileID: 1905241953672553277}
+  UIAudioController: {fileID: 0}
 --- !u!1 &6979828201682286336
 GameObject:
   m_ObjectHideFlags: 0
@@ -3253,7 +3254,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 1318501751415289207, guid: 31e2b232088eb6749aeed7426fa5f98a, type: 3}
       propertyPath: m_overflowMode
-      value: 1
+      value: 3
       objectReference: {fileID: 0}
     - target: {fileID: 1318501751415289207, guid: 31e2b232088eb6749aeed7426fa5f98a, type: 3}
       propertyPath: checkPaddingRequired

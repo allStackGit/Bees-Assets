@@ -261,9 +261,10 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 0}
-        m_TargetAssemblyTypeName: UI.MainMenuButtons, Assembly-CSharp
-        m_MethodName: ShowLevelPanel
+      - m_Target: {fileID: 7038846513279787169, guid: 55e19aaf0a173414087c1f4f3f03e99f, type: 3}
+        m_TargetAssemblyTypeName: Assets.Scripts.UI_Components.UIAudioController,
+          Assembly-CSharp
+        m_MethodName: PlayButtonSound
         m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}

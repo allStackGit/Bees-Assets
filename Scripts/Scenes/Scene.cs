@@ -16,6 +16,7 @@ namespace Assets.Scripts.Scenes
     {
         public string Name = "Base Scene";
         public Camera Camera;
+        public UIAudioController UIAudioController;
         public GameObject DialoguePrefab;
         public EventSystem EventSystem;
         public bool IsFinalized, WatchServerRequests, IsSocketManager, IsMainScene;
@@ -37,13 +38,13 @@ namespace Assets.Scripts.Scenes
         {
             //Debug.Log($"Starting {Name} scene");
             ConfigData.Scenes.Add(this);
-            
+
             if (!ConfigData.HasSocketManager())
             {
                 IsSocketManager = true;
                 IsMainScene = true;
                 ConfigData.SocketManager = this;
-                NetworkDisconnection = new Dialogue(DialoguePrefab, "Server disconnected!", "The game needs to be connected to the server in order to function properly.",
+                NetworkDisconnection = new Dialogue( DialoguePrefab, "Server disconnected!", "The game needs to be connected to the server in order to function properly.",
                                                new List<string>() { "Retry", "Exit Game" }, new List<UnityAction>() { ConfigData.RetryConnection, Exit });
 
                 ConfigData.MaxThreads = SystemInfo.processorCount - 1;

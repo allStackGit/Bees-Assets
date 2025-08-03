@@ -130,6 +130,7 @@ public class FullRetreat : Command
                 Tsv -= ship.Tsv;
             }
             TargetWarpGate.ShipsWarpingHere.Remove(ship.Id);
+            TargetWarpGate.EnteringWarpGateSound.Play();
             ship.EndKill(); // if this is the last ship, this call could kill the command as well
             if (!IsDead && TargetWarpGate.ShipsWarpingHere.Count == 0)
             {

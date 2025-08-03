@@ -3,6 +3,7 @@ using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Scenes;
 using Assets.Scripts.Server;
 using Assets.Scripts.Settings;
+using Assets.Scripts.UI_Components;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -638,10 +639,10 @@ namespace Assets.Scripts
         public static readonly HashSet<ShipTypes> SpawnedOnlyShipTypes = new HashSet<ShipTypes> { ShipTypes.Drone, ShipTypes.Striker, ShipTypes.Beacon };
         public static readonly HashSet<ShipTypes> ArmedShipTypes = new HashSet<ShipTypes> { ShipTypes.Cruiser, ShipTypes.Dreadnought, ShipTypes.Flagship, ShipTypes.Frigate, ShipTypes.Gunship, ShipTypes.Bumblebee, ShipTypes.Hornet,
             ShipTypes.Leafcutter, ShipTypes.Queen, ShipTypes.Wasp };
-        public static readonly List<Map> Maps = new List<Map> { 
-            new Map(0, new Vector2(0, -230), new Vector2(0, 230), Locations.Pluto),
-            new Map(1, new Vector2(0, -430), new Vector2(0, 430), Locations.Neptune),
-            new Map(2, new Vector2(0, -430), new Vector2(0, 430), Locations.Uranus),
+        public static readonly List<Data.Map> Maps = new List<Data.Map> { 
+            new Data.Map(0, new Vector2(0, -230), new Vector2(0, 230), Locations.Pluto),
+            new Data.Map(1, new Vector2(0, -430), new Vector2(0, 430), Locations.Neptune),
+            new Data.Map(2, new Vector2(0, -430), new Vector2(0, 430), Locations.Uranus),
             
         };
         public static readonly List<Data.ObstacleMap> ObstacleMaps = new List<Data.ObstacleMap> { 
@@ -858,6 +859,7 @@ namespace Assets.Scripts
             && (StartingSettings != null && StartingSettings.IsLoaded);
         public static bool IsAllUserDataLoaded => IsUserProgressDataLoaded && IsFleetDataLoaded[0] && IsFleetDataLoaded[1] && IsSavedSquadsDataLoaded[0] && IsSavedSquadsDataLoaded[1] && IsUserSettingsDataLoaded && IsLevelsDataLoaded[0] && IsLevelsDataLoaded[1];
         public static System.Diagnostics.Stopwatch Stopwatch;
+        public static UIAudioController UIAudioController = null;
 
 
 

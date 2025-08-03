@@ -627,6 +627,7 @@ namespace Assets.Scripts.Scenes
         // Dialogues
         public void ConfirmDeleteSquad()
         {
+            UIAudioController.Instance.PlayButtonSound();
             if (_currentSquad != null)
             {
                 if (_currentSquad.HasBeenSavedToStorage)
@@ -641,6 +642,7 @@ namespace Assets.Scripts.Scenes
         }
         public void ConfirmClearSquad()
         {
+            UIAudioController.Instance.PlayButtonSound();
             if (_currentSquad != null && _currentSquad.HasChanged)
             {
                 ClearSquadConfirmation.Show();
@@ -689,6 +691,7 @@ namespace Assets.Scripts.Scenes
         }
         public void ConfirmLoadSquad()
         {
+            UIAudioController.Instance.PlayButtonSound();
             if (_currentSquad == null || !_currentSquad.HasChanged)
             {
                 LoadSquad();
@@ -700,6 +703,7 @@ namespace Assets.Scripts.Scenes
         }
         public void ConfirmChooseSquad()
         {
+            UIAudioController.Instance.PlayButtonSound();
             //int id = int.Parse(label.name.Substring(label.name.LastIndexOf("#") + 1));
             //SavedSquad squad = ConfigData.AllShips.GetSavedSquads().Where((s) => s.Id == id).First();
             //_squadToChoose = squad;
@@ -718,6 +722,7 @@ namespace Assets.Scripts.Scenes
         }
         public void ConfirmUnchooseSquad(GameObject label)
         {
+            UIAudioController.Instance.PlayButtonSound();
             int id = int.Parse(label.name.Substring(label.name.LastIndexOf("#") + 1));
             SavedSquad squad = ConfigData.CurrentShips.GetSavedSquads().Where((s) => s.Id == id).First();
             _squadToUnchoose = squad;
@@ -729,6 +734,7 @@ namespace Assets.Scripts.Scenes
         }
         public void ConfirmStartLevel()
         {
+            UIAudioController.Instance.PlayButtonSound();
             //Debug.Log("Starting level!");
             int capacity = ConfigData.StartingSettings.SupplyCapacity[Side - 1];
             if (SupplyUsedInChosenSquads() > capacity)
@@ -747,6 +753,7 @@ namespace Assets.Scripts.Scenes
         }
         public void ConfirmGoBack()
         {
+            UIAudioController.Instance.PlayButtonSound();
             if (_currentSquad == null || !_currentSquad.HasChanged)
             {
                 GoBack();
@@ -1127,6 +1134,7 @@ namespace Assets.Scripts.Scenes
         }
         public void SaveSquad()
         {
+            UIAudioController.Instance.PlayButtonSound();
             if (HasCurrentSquad)
             {
                 _currentSquad.OrientSquad();
@@ -1196,6 +1204,7 @@ namespace Assets.Scripts.Scenes
         }
         public void DuplicateCurrentSquad()
         {
+            UIAudioController.Instance.PlayButtonSound();
             if (HasCurrentSquad)
             {
                 SavedSquad originalSquad = _currentSquad;
@@ -1360,6 +1369,7 @@ namespace Assets.Scripts.Scenes
         }
         public void AutoPlaceShip(string ship)
         {
+            UIAudioController.Instance.PlayButtonSound();
             _dropper.AutoPlaceShip(Utilities.ConvertShipNameToShipType[ship]);
         }
         public Dropper GetDropper()
@@ -1368,6 +1378,7 @@ namespace Assets.Scripts.Scenes
         }
         public void SetFormation(string formation)
         {
+            UIAudioController.Instance.PlayButtonSound();
             Dropper dropper = GetDropper();
             if (HasCurrentSquad && dropper.GetDragIcons().Count > 0)
             {
@@ -1644,6 +1655,7 @@ namespace Assets.Scripts.Scenes
         }
         public void OpenColorPicker()
         {
+            UIAudioController.Instance.PlayButtonSound();
             //Debug.Log("Opening/Closing color picker");
             _colorPicker.Toggle();
         }

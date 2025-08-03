@@ -52,6 +52,8 @@ namespace Assets.Scripts
 
         public List<AudioSource> TinyShipExplosionSounds;
 
+        public AudioSource EnteringWarpGateSound;
+
         //public Dictionary<string, AudioSource> BeesIntros = new Dictionary<string, AudioSource>();
         //public Dictionary<string, AudioSource> BeesLoops = new Dictionary<string, AudioSource>();
         public Dictionary<ConfigData.WeaponSoundTypes, AudioSource[]> WeaponSounds = new Dictionary<ConfigData.WeaponSoundTypes, AudioSource[]>();

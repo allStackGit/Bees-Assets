@@ -137,6 +137,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void TryNewLevel()
         {
+            DeselectButton();
             CurrentLevel.UnPause();
             ConfigData.SquadMakerSide = ConfigData.Configuration.SquadMakerFirstSide;
             SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
@@ -159,12 +160,14 @@ namespace Assets.Scripts.UIComponents
         }
         public void SwitchSides()
         {
+            DeselectButton();
             CurrentLevel.UnPause();
             ConfigData.SwapSides();
             SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
         }
         public void ToggleFogOfWar()
         {
+            DeselectButton();
             CurrentLevel.Map.FogOfWar.SetActive(!CurrentLevel.Map.FogOfWar.activeSelf);
         }
         public void OpenLevelEndedDialogue()
@@ -204,6 +207,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void BacktoGame()
         {
+
             Debug.Log("Back to game");
             CloseDialogue();
         }
@@ -214,6 +218,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void ShowLevelSaveDialogue()
         {
+            DeselectButton();
             LevelNameInput.text = CurrentLevel.SaveLevelOptions.Name;
             SupplyCapacityInput.text = $"{CurrentLevel.State.InitialTsv[ConfigData.Configuration.UserSide - 1]}";
             SaveLevelDialogue.SetActive(true);
@@ -244,6 +249,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void DeselectButton()
         {
+            UIAudioController.Instance.PlayButtonSound();
             CurrentLevel.Stage.EventSystem.SetSelectedGameObject(null);
         }
         public void ShowShipStats(FleetShip ship)

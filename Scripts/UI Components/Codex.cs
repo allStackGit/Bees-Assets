@@ -1,5 +1,7 @@
 using Assets.Scripts;
+using Assets.Scripts.Scenes;
 using Assets.Scripts.Settings;
+using Assets.Scripts.UI_Components;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -15,10 +17,12 @@ public class Codex : MonoBehaviour
     public void ViewCodex()
     {
         //Debug.Log("Viewing codex");
+        UIAudioController.Instance.PlayButtonSound();
         gameObject.SetActive(true);
     }
     public void ExitCodex()
     {
+        UIAudioController.Instance.PlayButtonSound();
         gameObject.SetActive(false);
     }
     public void SetupCodex()

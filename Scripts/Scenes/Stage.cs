@@ -416,7 +416,7 @@ public class Stage : Scene
             // Setup  Game menu 
             Menus = UIManager.GetComponentInChildren<GameMenus>();
             Menus.Setup(this);
-            Menus.ActionBox.Setup(PrimaryLevel, EventSystem, ConfigData.Configuration.UserSide);
+            Menus.ActionBox.Setup(this, PrimaryLevel, EventSystem, ConfigData.Configuration.UserSide);
 
 
             // Setup Selection Box
@@ -480,7 +480,7 @@ public class Stage : Scene
         if ((OverrideUserSide == 1 || OverrideUserSide == 2) && OverrideUserSide != ConfigData.Configuration.UserSide)
         {
             ConfigData.SwapSides();
-            Menus.ActionBox.Setup(PrimaryLevel, EventSystem, ConfigData.Configuration.UserSide);
+            Menus.ActionBox.Setup(this, PrimaryLevel, EventSystem, ConfigData.Configuration.UserSide);
         }
         SetupMiniMapCamera();
     }

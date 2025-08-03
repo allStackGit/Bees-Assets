@@ -5,6 +5,7 @@ using Assets.Scripts.Data;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
+using Assets.Scripts.UI_Components;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -46,9 +47,9 @@ namespace Assets.Scripts.UIComponents
             SetDropdownOptions();
             
         }
-        public void Setup(Level level, EventSystem eventSystem, int side)
+        public void Setup(Scene scene, Level level, EventSystem eventSystem, int side)
         {
-            this.Level = level;
+            Level = level;
             _eventSystem = eventSystem;
             Side = side;
             SetDropdownOptions();
@@ -570,6 +571,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void SetAction(string action)
         {
+            UIAudioController.Instance.PlayButtonSound();
             if (HasSquad())
             {
                 //Debug.Log($"Setting the squads to {action}!");
@@ -789,6 +791,7 @@ namespace Assets.Scripts.UIComponents
         public void SetShootingStrategy(string strategy)
         {
             //Debug.Log("Set shooting strategy");
+            UIAudioController.Instance.PlayButtonSound();
             if (HasSquad())
             {
                 
@@ -829,6 +832,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void SetTypeStrategy(int strategy)
         {
+            UIAudioController.Instance.PlayButtonSound();
             if (!_autoSetDropdownValue)
             {
                 //Debug.Log($"Set type strategy {strategy}");

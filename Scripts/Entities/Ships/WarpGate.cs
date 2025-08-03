@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 
 using UnityEngine;
+using static Assets.Scripts.ConfigData;
 
 namespace Assets.Scripts.Entities.Ships
 {
@@ -12,6 +13,7 @@ namespace Assets.Scripts.Entities.Ships
     {
         public HashSet<long> ShipsWarpingHere = new HashSet<long>();
         public Collider2D WarpCollider;
+        public AudioSource EnteringWarpGateSound;
         public override void ClearData()
         {
             base.ClearData();
@@ -25,6 +27,12 @@ namespace Assets.Scripts.Entities.Ships
         {
             base.Setup(level, fleetShip, squad, offsetFromCenter);
             ShipAnimationController.Deactivate();
+            if (IsUserControlled && Stage.ActivateAudio)
+            {
+                EnteringWarpGateSound = Instantiate(Stage.Audio.EnteringWarpGateSound);
+                EnteringWarpGateSound.transform.parent = transform;
+                EnteringWarpGateSound.transform.localPosition = Vector2.zero;
+            }
         }
         protected override void OnTriggerEnter2D(Collider2D collider)
         {
