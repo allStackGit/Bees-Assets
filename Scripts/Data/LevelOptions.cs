@@ -185,19 +185,19 @@ namespace Assets.Scripts.Data
                 enemyList += $"\t- {Utilities.ConvertShipTypeToName[type]}: {EnemySquads.Sum((squad) => squad.GetSquadShips().Where((ship) => ship.ShipType == type).Count())}\n";
             });
 
-            enemyList += "\nReinforcements: \n";
+            //enemyList += "\nReinforcements: \n";
 
-            if (EnemyReinforcementsOption == 1)
-            {
-                shipTypes.ForEach((type) =>
-                {
-                    enemyList += $"\t- {Utilities.ConvertShipTypeToName[type]}: {EnemyReinforcements.Sum((squad) => squad.GetSquadShips().Where((ship) => ship.ShipType == type).Count())}\n";
-                });
-            }
-            else
-            {
-                enemyList += "None";
-            }
+            //if (EnemyReinforcementsOption == 1)
+            //{
+            //    shipTypes.ForEach((type) =>
+            //    {
+            //        enemyList += $"\t- {Utilities.ConvertShipTypeToName[type]}: {EnemyReinforcements.Sum((squad) => squad.GetSquadShips().Where((ship) => ship.ShipType == type).Count())}\n";
+            //    });
+            //}
+            //else
+            //{
+            //    enemyList += "None";
+            //}
 
             return enemyList;
         }

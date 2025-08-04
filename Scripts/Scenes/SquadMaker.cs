@@ -192,9 +192,9 @@ namespace Assets.Scripts.Scenes
             //    StartButton.SetActive(true);
             //}
 
-            _squadListOriginalScrollHeight = 415 + 238;
+            _squadListOriginalScrollHeight = 435 + 238;
             _squadListOptionsScrollHeight = _squadListOriginalScrollHeight - 238;
-            _squadListLevelScrollHeight = _squadListOriginalScrollHeight - 425;
+            _squadListLevelScrollHeight = _squadListOriginalScrollHeight - 395;
 
             // Make Dialogues
             DeleteSquadConfirmation = new Dialogue(DialoguePrefab, ConfigData.Configuration.AreYouSure, ConfigData.Configuration.DeleteSquadConfirmation,

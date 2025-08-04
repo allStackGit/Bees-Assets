@@ -15,6 +15,8 @@ namespace Assets.Scripts.Entities.Ships
         /// The Beehive has the shrinking and warping animation as it's "explosion" animation and the end of that animation triggers an actual explosion animation
         /// </summary>
         public GameObject ShrinkingAnimation;
+        public GameObject HealingCrossPrefab;
+        public List<HealingCross> HealingCrosses = new List<HealingCross>();
 
         private GameObject _collidingThing;
         private Ship _collidingShip;
@@ -51,6 +53,7 @@ namespace Assets.Scripts.Entities.Ships
         }
         public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false)
         {
+            HealingCrosses.ToList().ForEach((c) => c.BeehiveKill()); // the ToList() is needed to avoid modifying the collection while killing the crosses
             if (Level.State.GetBeeShips().Where((s) => s.IsBeehive).Count() == 1) // check if this is the last beehive
             {
                 Level.State.HasBeehives = false;
@@ -82,6 +85,17 @@ namespace Assets.Scripts.Entities.Ships
                 ShipExplosionSoundEffect.Play();
             }
 
+        }
+
+        public void SpawnHealingCross()
+        {
+            //Debug.Log($"Spawning healing cross for {Name} at {GetPosition()}");
+            GameObject healingCrossObj = Instantiate(HealingCrossPrefab, transform.position, Quaternion.identity);
+            healingCrossObj.transform.SetParent(Level.Map.Transform);
+            healingCrossObj.transform.localPosition = Utilities.RandomCoordinate(Level, GetPosition(), new Vector2(16, 16), Vector2.zero);
+            HealingCross healingCross = healingCrossObj.GetComponent<HealingCross>();
+            healingCross.Setup(this);
+            HealingCrosses.Add(healingCross);
         }
 
     }

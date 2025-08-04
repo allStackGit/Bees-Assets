@@ -22,6 +22,7 @@ namespace Assets.Scripts.Levels.Commands
         private Queue<Ship> _shipsThatNeedBeehive;
         private Ship _ship;
         private Dictionary<long, Beehive> _shipsAndBeehives = new Dictionary<long, Beehive>();
+        private int _healingTimerCount;
         public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, List<Beehive> beehives)
         {
             //Debug.Log($"Executing the Heal command #{commandOutcomeId} for {GetSquad().Name}. There are {Stage.Pool.HealCommandPool.CountAll} heal commands in the pool " +
@@ -77,6 +78,7 @@ namespace Assets.Scripts.Levels.Commands
             ShipsHealing.Clear();
             _shipsAndBeehives.Clear();
             _shipsThatLostBeehiveOrDied.Clear();
+            _healingTimerCount = 0;
             IsHealing = false;
         }
 
@@ -101,6 +103,7 @@ namespace Assets.Scripts.Levels.Commands
         private ScaledTimer _healingTimer = new ScaledTimer();
         public void StartHealingTimer()
         {
+            //Debug.Log($"Starting healing timer for {GetSquad().Name}");
             IsHealing = true;
             _healingTimer.Reuse(1, HealShips, true);
             Level.AddTimer(_healingTimer);
@@ -135,6 +138,14 @@ namespace Assets.Scripts.Levels.Commands
         int _tsvDifference;
         public void HealShips()
         {
+            if (Level.HasPlayer)
+            {
+                TargetBeehives.ForEach((b) =>
+                {
+                    b.SpawnHealingCross();
+                });
+            }
+            _healingTimerCount++;
             for (_index = 0; _index < ShipsHealing.Count; _index++)
             {
                 _ship = ShipsHealing[_index];

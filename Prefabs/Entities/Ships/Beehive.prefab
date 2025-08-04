@@ -270,6 +270,8 @@ MonoBehaviour:
   _retries: 0
   HealCollider: {fileID: 5004056910106965047}
   ShrinkingAnimation: {fileID: 8403046089957085241}
+  HealingCrossPrefab: {fileID: 647148227050377080, guid: 321d4208ad84fb94f9b01bdcc4be79ab, type: 3}
+  HealingCrosses: []
 --- !u!50 &9209194230390332424
 Rigidbody2D:
   serializedVersion: 5
