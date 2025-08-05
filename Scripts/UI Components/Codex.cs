@@ -55,7 +55,7 @@ public class Codex : MonoBehaviour
 
         foreach (KeyValuePair<ConfigData.ShipTypes, GameObject> ship in CodexShips)
         {
-            if (!ConfigData.Configuration.VisibleShipTypes.Contains(ship.Key) && !ConfigData.SpawnedOnlyShipTypes.Contains(ship.Key))
+            if (!ConfigData.UserProgressData.VisibleShipTypes.Contains(ship.Key) && !ConfigData.SpawnedOnlyShipTypes.Contains(ship.Key))
             {
                 ship.Value.SetActive(false);
                 if (ship.Key == ConfigData.ShipTypes.Carrier)

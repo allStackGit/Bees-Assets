@@ -288,6 +288,13 @@ namespace Assets.Scripts
             Uranus
         }
 
+        public enum GameModes
+        {
+            Campaign,
+            FreePlay,
+            Challenge,
+        }
+
         public enum MatchupStrategyTypes
         {
             Random,
@@ -857,15 +864,17 @@ namespace Assets.Scripts
         //Carrying variables - Changing variables that need to be carried between scenes
 
         /// <summary>
-        /// The current set of ships the player is playing with, either the campaign ships or free play ships
+        /// The current set of ships the player is playing with, either the campaign ships, challenge mode ships, or free play ships.
+        /// This covers the ships for both sides, the human side and the bee side.
         /// </summary>
         public static Ships CurrentShips = null;
         public static Ships FreePlayShips = null;
         public static Ships CampaignShips = null;
+        public static Ships ChallengeModeShips = null;
         //public static List<SavedSquad> SquadsChosenForLevel = new List<SavedSquad>();
         public static bool IsLoadingUserData = false;
         public static bool IsUserLoadingCustomSquads, IsUserLoadingCustomEnemySquads;
-        public static bool IsPlayingCampaign = false;
+        public static GameModes CurrentGameMode;
         public static bool AreAllSettingsLoaded => (ShipInfo != null && ShipInfo.IsLoaded) && (Configuration != null && Configuration.IsLoaded)
             && (StartingSettings != null && StartingSettings.IsLoaded);
         public static bool IsAllUserDataLoaded => IsUserProgressDataLoaded && IsFleetDataLoaded[0] && IsFleetDataLoaded[1] && IsSavedSquadsDataLoaded[0] && IsSavedSquadsDataLoaded[1] && IsUserSettingsDataLoaded && IsLevelsDataLoaded[0] && IsLevelsDataLoaded[1];
@@ -884,7 +893,7 @@ namespace Assets.Scripts
 
         // private variables
         private static int _userId = -1; // [alert] should be set to actual userId and linked to Steam or other account Id
-        private static UserProgressData _userProgressData = null;
+        public static UserProgressData UserProgressData = null;
         private static FleetData _fleetData = null;
         private static SavedSquadsData _savedSquadsData = null;
         private static UserSettingsData _userSettingsData = null;
@@ -1006,7 +1015,7 @@ namespace Assets.Scripts
             {
                 //Debug.Log("Checking Data files...");
                 //Debug.Log($"Waiting for User Progress Data");
-                GetUserProgressData().WaitForData();
+                UserProgressData.WaitForData();
                 //Debug.Log($"Waiting for Fleet Data");
                 GetFleetData().WaitForData();
                 GetCampaignFleetData().WaitForData();
@@ -1094,11 +1103,7 @@ namespace Assets.Scripts
         }
         public static void SetupUserProgressData(bool shouldFileExist)
         {
-            _userProgressData = new UserProgressData(shouldFileExist);
-        }
-        public static UserProgressData GetUserProgressData()
-        {
-            return _userProgressData;
+            UserProgressData = new UserProgressData(shouldFileExist);
         }
         public static void SetupUserSettingsData(bool shouldFileExist)
         {

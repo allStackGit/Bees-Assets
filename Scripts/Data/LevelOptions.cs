@@ -175,7 +175,7 @@ namespace Assets.Scripts.Data
         public string GetEnemyList()
         {
             string enemyList = "Enemies: \n";
-            List<ConfigData.ShipTypes> shipTypes = Side == ConfigData.Configuration.BeeSide ? ConfigData.Configuration.VisibleBeeShipTypes.ToList() : ConfigData.Configuration.VisibleHumanShipTypes.ToList();
+            List<ConfigData.ShipTypes> shipTypes = Side == ConfigData.Configuration.BeeSide ? ConfigData.UserProgressData.VisibleBeeShipTypes.ToList() : ConfigData.UserProgressData.VisibleHumanShipTypes.ToList();
             Dictionary<string, int> ships = new Dictionary<string, int>();
 
 

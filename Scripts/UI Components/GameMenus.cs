@@ -43,7 +43,7 @@ namespace Assets.Scripts.UIComponents
                 Codex.SetupCodex();
                 //Settings.SetupSettings(Stage);
                 
-                if (ConfigData.IsPlayingCampaign)
+                if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
                 {
                     ToggleFogOfWarButton.SetActive(false);
                     RestartLevelButton.SetActive(false);

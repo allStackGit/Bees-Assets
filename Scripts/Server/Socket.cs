@@ -149,7 +149,7 @@ namespace Assets.Scripts.Server
                 Debug.Log("Connection re-opened!");
                 OpenLevels.ForEach((level) =>
                 {
-                    ConfigData.Socket.SendRequest(new ReconnectLevelRequest(new SetupLevel(ConfigData.GetUserProgressData().GetCurrentLevel(), ConfigData.GetUserId(), level.ServerGameId),
+                    ConfigData.Socket.SendRequest(new ReconnectLevelRequest(new SetupLevel(ConfigData.UserProgressData.GetCurrentLevel(), ConfigData.GetUserId(), level.ServerGameId),
                     ConfigData.StandardMaxTimeOnQueue,level));
                     Debug.Log($"Trying to reconnect {level.Name} to the server");
                 });
@@ -634,7 +634,7 @@ namespace Assets.Scripts.Server
                     }
                     else if (_dataFilename == ConfigData.UserProgressFilename)
                     {
-                        _userProgressData = ConfigData.GetUserProgressData();
+                        _userProgressData = ConfigData.UserProgressData;
                         _userProgressData.GetDataFile().WriteData(_userProgressData.GetDefaultJson());
                     }
                     else if (_dataFilename == ConfigData.UserSettingsFilename)

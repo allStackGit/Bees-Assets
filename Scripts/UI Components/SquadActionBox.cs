@@ -128,9 +128,9 @@ namespace Assets.Scripts.UIComponents
 
             if (Side == ConfigData.Configuration.BeeSide)
             {
-                return ConfigData.Configuration.VisibleHumanShipTypes.ToList();
+                return ConfigData.UserProgressData.VisibleHumanShipTypes.ToList();
             }
-            return ConfigData.Configuration.VisibleBeeShipTypes.ToList();
+            return ConfigData.UserProgressData.VisibleBeeShipTypes.ToList();
         }
         private void SetDropdownValue()
         {

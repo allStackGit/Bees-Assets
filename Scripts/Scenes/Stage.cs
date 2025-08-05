@@ -432,13 +432,13 @@ public class Stage : Scene
                 Audio.Setup(PlayMusic, PrimaryLevel);
             }
 
-            if (ConfigData.IsPlayingCampaign)
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
             {
-                Menus.UpdateScore(ConfigData.GetUserProgressData().HumanWins, ConfigData.GetUserProgressData().BeeWins);
+                Menus.UpdateScore(ConfigData.UserProgressData.HumanCampaignWins, ConfigData.UserProgressData.BeeCampaignWins);
             }
             else
             {
-                Menus.UpdateScore(ConfigData.GetUserProgressData().HumanFreePlayWins, ConfigData.GetUserProgressData().BeeFreePlayWins);
+                Menus.UpdateScore(ConfigData.UserProgressData.HumanFreePlayWins, ConfigData.UserProgressData.BeeFreePlayWins);
             }
 
             //TargetingMouseTexture = TargetingMouse.sprite.texture;

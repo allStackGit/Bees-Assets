@@ -108,7 +108,7 @@ namespace Assets.Scripts.Levels
             Name = name;
             gameObject.name = $"Level - {Name}";
 
-            if (ConfigData.IsPlayingCampaign)
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
             {
                 Stage.ReplaceDeadShips = true;
                 Stage.RecordStats = true;
@@ -578,19 +578,19 @@ namespace Assets.Scripts.Levels
                 if (State.IsSideKilled(ConfigData.Configuration.BeeSide) && !State.IsSideKilled(ConfigData.Configuration.HumanSide))
                 {
                     WinningSide = ConfigData.Configuration.HumanSide;
-                    if (!ConfigData.IsPlayingCampaign)
+                    if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
                     {
-                        ConfigData.GetUserProgressData().HumanFreePlayWins++;
-                        ConfigData.GetUserProgressData().Save();
+                        ConfigData.UserProgressData.HumanFreePlayWins++;
+                        ConfigData.UserProgressData.Save();
                     }
                 }
                 else if (State.IsSideKilled(ConfigData.Configuration.HumanSide) && !State.IsSideKilled(ConfigData.Configuration.BeeSide))
                 {
                     WinningSide = ConfigData.Configuration.BeeSide;
-                    if (!ConfigData.IsPlayingCampaign)
+                    if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
                     {
-                        ConfigData.GetUserProgressData().BeeFreePlayWins++;
-                        ConfigData.GetUserProgressData().Save();
+                        ConfigData.UserProgressData.BeeFreePlayWins++;
+                        ConfigData.UserProgressData.Save();
                     }
                 }
                 else if (State.IsSideKilled(ConfigData.Configuration.HumanSide) && State.IsSideKilled(ConfigData.Configuration.BeeSide))
@@ -602,9 +602,9 @@ namespace Assets.Scripts.Levels
                     Debug.Log("Neither side is dead!");
                 }
 
-                if (!Stage.IsTraining && !ConfigData.IsPlayingCampaign)
+                if (!Stage.IsTraining && ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
                 {
-                    Stage.Menus.UpdateScore(ConfigData.GetUserProgressData().HumanFreePlayWins, ConfigData.GetUserProgressData().BeeFreePlayWins);
+                    Stage.Menus.UpdateScore(ConfigData.UserProgressData.HumanFreePlayWins, ConfigData.UserProgressData.BeeFreePlayWins);
                 }
 
                 if (WinningSide == ConfigData.Configuration.UserSide)
@@ -1133,7 +1133,7 @@ namespace Assets.Scripts.Levels
                 ConfigData.CurrentShips.SaveFleetData();
                 ConfigData.CurrentShips.SaveSquadData();
 
-                if (ConfigData.IsPlayingCampaign)
+                if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
                 {
                     SaveCampaignStats();
                 }
@@ -1235,7 +1235,7 @@ namespace Assets.Scripts.Levels
             }
 
         }
-        private UserProgressData _saveCampaign_progress = ConfigData.GetUserProgressData();
+        private UserProgressData _saveCampaign_progress = ConfigData.UserProgressData;
         private int _saveCampaign_i;
         private SavedSquad _saveCampaign_savedSquad;
         private FleetShip _saveCampaign_fleetShip;
@@ -1243,11 +1243,11 @@ namespace Assets.Scripts.Levels
         {
             if (WinningSide == ConfigData.Configuration.HumanSide)
             {
-                _saveCampaign_progress.HumanWins++;
+                _saveCampaign_progress.HumanCampaignWins++;
             }
             else
             {
-                _saveCampaign_progress.BeeWins++;
+                _saveCampaign_progress.BeeCampaignWins++;
             }
 
             if (WinningSide == ConfigData.Configuration.UserSide)
@@ -1278,14 +1278,14 @@ namespace Assets.Scripts.Levels
 
             if (!Stage.IsTraining)
             {
-                Stage.Menus.UpdateScore(_saveCampaign_progress.HumanWins, _saveCampaign_progress.BeeWins);
+                Stage.Menus.UpdateScore(_saveCampaign_progress.HumanCampaignWins, _saveCampaign_progress.BeeCampaignWins);
             }
         }
         private void LevelEndedDialogue()
         {
             Stage.Menus.OpenLevelEndedDialogue();
 
-            if (ConfigData.IsPlayingCampaign)
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
             {
                 if (WinningSide == ConfigData.Configuration.UserSide)
                 {

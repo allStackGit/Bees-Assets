@@ -63,20 +63,10 @@ namespace Assets.Scripts.Settings
         public string CannotDuplicateSquadAlert;
 
 
-        // [alert] Should probably be based off of user progress at some point
-
-        public HashSet<ConfigData.ShipTypes> VisibleBeeShipTypes;
-        public HashSet<ConfigData.ShipTypes> VisibleHumanShipTypes;
-        public HashSet<ConfigData.ShipTypes> InvisibleBeeShipTypes;
-        public HashSet<ConfigData.ShipTypes> InvisibleHumanShipTypes;
-        public HashSet<ConfigData.ShipTypes> VisibleShipTypes;
-        public HashSet<ConfigData.ShipTypes> InvisibleShipTypes;
-        public HashSet<ConfigData.ShipTypes> AllShipTypes;
         public int AISide; // [alert]  // depends on whether the user is playing as the humans or the bees
         public int UserSide;
         public int SquadMakerFirstSide;
         public int SquadMakerSecondSide;
-        public int TotalLevels; // [alert] should be set to actual number of levels
 
 
         public bool MirrorLocalStorageToServer => UseLocalStorage && MirrorStorage;
@@ -111,7 +101,7 @@ namespace Assets.Scripts.Settings
             CarrierCarryDroneMax = (int)so.CarrierCarryDroneMax;
             CarrierCarryStrikerMax = (int)so.CarrierCarryStrikerMax;
             CarrierSquadCount = (int)so.CarrierSquadCount;
-            TotalLevels = (int)so.TotalLevels;
+            //TotalLevels = (int)so.TotalLevels;
 
             Yes = (string)so.Yes;
             No = (string)so.No;
@@ -191,22 +181,7 @@ namespace Assets.Scripts.Settings
             }
 
             CensoredWords = new HashSet<string>(Utilities.JArrayToList<string>(so.CensoredWords));
-            VisibleBeeShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(so.VisibleBeeShipTypes));
-            VisibleHumanShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(so.VisibleHumanShipTypes));
-            InvisibleBeeShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(so.InvisibleBeeShipTypes));
-            InvisibleHumanShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(so.InvisibleHumanShipTypes));
             Tooltips = Utilities.JArrayToDictionary<string, string>(so.Tooltips);
-
-          
-
-            VisibleShipTypes = new HashSet<ConfigData.ShipTypes>(VisibleHumanShipTypes.Union(VisibleBeeShipTypes));
-            InvisibleShipTypes = new HashSet<ConfigData.ShipTypes>(InvisibleHumanShipTypes.Union(VisibleBeeShipTypes));
-            AllShipTypes = new HashSet<ConfigData.ShipTypes>(InvisibleBeeShipTypes.Union(VisibleShipTypes).Union(InvisibleShipTypes).Union(VisibleBeeShipTypes).
-                Union(new HashSet<ConfigData.ShipTypes>() { ConfigData.ShipTypes.Beacon, ConfigData.ShipTypes.Drone, ConfigData.ShipTypes.Striker }));
-
-            ConfigData.BeeShipTypes = VisibleBeeShipTypes;
-            ConfigData.HumanShipTypes = VisibleHumanShipTypes;
-
             ConfigData.ShipTurningRadius = (360.0f / RotationMultiplier) / (2 * Mathf.PI);
 
         }

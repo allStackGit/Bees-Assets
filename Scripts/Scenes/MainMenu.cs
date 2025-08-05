@@ -15,6 +15,7 @@ namespace Assets.Scripts.Scenes
     public class MainMenu : Scene
     {
         public GameObject MenuPanel, MenuPanelBacker;
+        public GameObject HumanChallengeModeButton, HumanTrainingRoomButton;
         public Codex CodexManager;
         new void Start()
         {
@@ -24,7 +25,7 @@ namespace Assets.Scripts.Scenes
         }
         public void ContinueGame()
         {
-            Debug.Log($"Continuing Game! User is on level #{ConfigData.GetUserProgressData().GetCurrentLevel()}");
+            Debug.Log($"Continuing Game! User is on level #{ConfigData.UserProgressData.GetCurrentLevel()}");
             //SceneManager.LoadSceneAsync("Level Intro"); 
             //SceneManager.LoadSceneAsync("Squad Maker");
             DeselectButton();
@@ -33,6 +34,14 @@ namespace Assets.Scripts.Scenes
         protected override void FinalizeSceneWithUserData()
         {
             base.FinalizeSceneWithUserData();
+            if (!ConfigData.UserProgressData.IsHumanChallengeUnlocked)
+            {
+                HumanChallengeModeButton.SetActive(false);
+            }
+            if (!ConfigData.UserProgressData.IsHumanFreePlayUnlocked)
+            {
+                HumanTrainingRoomButton.SetActive(false);
+            }
             CodexManager.SetupCodex();
         }
 
@@ -52,48 +61,44 @@ namespace Assets.Scripts.Scenes
         public void GoToTrainingRoom(string side)
         {
             DeselectButton();
-            ConfigData.IsPlayingCampaign = false;
+            ConfigData.CurrentGameMode = ConfigData.GameModes.FreePlay;
             ConfigData.CurrentShips = ConfigData.FreePlayShips;
             Debug.Log("Training Room!");
-            if ((side == "Humans" && ConfigData.Configuration.HumanSide == ConfigData.Configuration.SquadMakerFirstSide) || (side == "Bees" && ConfigData.Configuration.BeeSide == ConfigData.Configuration.SquadMakerFirstSide))
-            {
-                ConfigData.SquadMakerSide = ConfigData.Configuration.SquadMakerFirstSide;
-            }
-            else
-            {
-                ConfigData.SwapSides();
-            }
-
-            SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
+            SetupSquadMaker(side);
         }
 
         public void NewGame()
         {
             // [alert] should give the user an alert saying that this will reset their previous progress, if they've already started a game
             // [alert] should reset user progress data
-            ConfigData.GetUserProgressData().SetCurrentLevel(1);
+            ConfigData.UserProgressData.SetCurrentLevel(1);
             SceneManager.LoadSceneAsync("Level Intro", LoadSceneMode.Single);
             DeselectButton();
             Debug.Log("New Game!"); 
         }
        
-        public void PlayCampaign()
+        public void PlayCampaign(string side)
         {
             DeselectButton();
-            ConfigData.IsPlayingCampaign = true;
+            ConfigData.CurrentGameMode = ConfigData.GameModes.Campaign;
             ConfigData.CurrentShips = ConfigData.CampaignShips;
-            if (ConfigData.Configuration.UserSide != ConfigData.Configuration.HumanSide)
-            {
-                ConfigData.SwapSides();
-            }
-            SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
+            SetupSquadMaker(side);
         }
-        public void PlayBeesCampaign()
+        public void PlayChallengeMode(string side)
         {
             DeselectButton();
-            ConfigData.IsPlayingCampaign = true;
-            ConfigData.CurrentShips = ConfigData.CampaignShips;
-            if (ConfigData.Configuration.UserSide != ConfigData.Configuration.BeeSide)
+            ConfigData.CurrentGameMode = ConfigData.GameModes.Challenge;
+            ConfigData.CurrentShips = ConfigData.ChallengeModeShips;
+            SetupSquadMaker(side);
+        }
+
+        public void SetupSquadMaker(string side)
+        {
+            if ((side == "Humans" && ConfigData.Configuration.HumanSide == ConfigData.Configuration.SquadMakerFirstSide) || (side == "Bees" && ConfigData.Configuration.BeeSide == ConfigData.Configuration.SquadMakerFirstSide))
+            {
+                ConfigData.SquadMakerSide = ConfigData.Configuration.SquadMakerFirstSide;
+            }
+            else
             {
                 ConfigData.SwapSides();
             }

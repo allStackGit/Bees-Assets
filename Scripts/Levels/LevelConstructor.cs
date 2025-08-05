@@ -22,7 +22,7 @@ namespace Assets.Scripts.Levels
         public void RequestServerSetup()
         {
             Level.IsLevelSetupOnServer = false;
-            ConfigData.Socket.SendRequest(new SetupLevelRequest(new SetupLevel(ConfigData.GetUserProgressData().GetCurrentLevel(), ConfigData.GetUserId()),
+            ConfigData.Socket.SendRequest(new SetupLevelRequest(new SetupLevel(ConfigData.UserProgressData.GetCurrentLevel(), ConfigData.GetUserId()),
                 ConfigData.StandardMaxTimeOnQueue, Level));
         }
         public void SetCarrierShipFleetships(List<Squad> squads)

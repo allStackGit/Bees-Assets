@@ -258,7 +258,7 @@ namespace Assets.Scripts.Scenes
             _capacity = ConfigData.StartingSettings.SupplyCapacity[Side - 1];
             // Post setup
             //Debug.Log("Post setup");
-            if (ConfigData.IsPlayingCampaign)
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
             {
                 SetupForCampaign();
             }
@@ -283,14 +283,14 @@ namespace Assets.Scripts.Scenes
                 _levelOptionIndexesToLevels[i] = level;
                 i++;
             });
-            Debug.Log($"User is on level #{ConfigData.GetUserProgressData().GetCurrentLevel()}");
+            Debug.Log($"User is on level #{ConfigData.UserProgressData.GetCurrentLevel()}");
 
-            LoadLevel(ConfigData.GetUserProgressData().GetCurrentLevel());
+            LoadLevel(ConfigData.UserProgressData.GetCurrentLevel());
         }
         private void SetupLevelDropdown()
         {
             //Debug.Log($"Setting up level dropdown");
-            if (ConfigData.IsPlayingCampaign)
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
             {
                 LevelDropdown.gameObject.SetActive(false);
                 ChooseLevelLabel.SetActive(false);
@@ -1244,7 +1244,7 @@ namespace Assets.Scripts.Scenes
         public void SaveNewSquad()
         {
             //Debug.Log("New squad, does not exist yet");
-            _currentSquad.Id = ConfigData.GetUserProgressData().GetNextSavedSquadId();
+            _currentSquad.Id = ConfigData.UserProgressData.GetNextSavedSquadId();
             if (_currentSquad.Name == "")
             {
                 _currentSquad.Name = $"Squadron #{_currentSquad.Id}";
@@ -1715,8 +1715,8 @@ namespace Assets.Scripts.Scenes
             //Debug.Log("On to the level!");
 
             // reset options
-            ConfigData.BeeShipTypes = ConfigData.Configuration.VisibleBeeShipTypes;
-            ConfigData.HumanShipTypes = ConfigData.Configuration.VisibleHumanShipTypes;
+            ConfigData.BeeShipTypes = ConfigData.UserProgressData.VisibleBeeShipTypes;
+            ConfigData.HumanShipTypes = ConfigData.UserProgressData.VisibleHumanShipTypes;
             //ConfigData.SelectedObstacleMapIndex = -1;
             //ConfigData.SelectedAsteroidOption = -1;
             //ConfigData.SelectedLevelMapIndex = -1;
@@ -1784,22 +1784,22 @@ namespace Assets.Scripts.Scenes
                         {
                             if (ConfigData.Configuration.SquadMakerSecondSide == ConfigData.Configuration.BeeSide)
                             {
-                                ConfigData.BeeShipTypes = ConfigData.Configuration.VisibleBeeShipTypes.Intersect(ConfigData.BeeSwarmShips).ToHashSet();
+                                ConfigData.BeeShipTypes = ConfigData.UserProgressData.VisibleBeeShipTypes.Intersect(ConfigData.BeeSwarmShips).ToHashSet();
                             }
                             else
                             {
-                                ConfigData.HumanShipTypes = ConfigData.Configuration.VisibleHumanShipTypes.Intersect(ConfigData.HumanSwarmShips).ToHashSet();
+                                ConfigData.HumanShipTypes = ConfigData.UserProgressData.VisibleHumanShipTypes.Intersect(ConfigData.HumanSwarmShips).ToHashSet();
                             }
                         }
                         else if (_chosenOpposingForceOption == 5) // Powerful ships only
                         {
                             if (ConfigData.Configuration.SquadMakerSecondSide == ConfigData.Configuration.BeeSide)
                             {
-                                ConfigData.BeeShipTypes = ConfigData.Configuration.VisibleBeeShipTypes.Intersect(ConfigData.BeePowerfulShips).ToHashSet();
+                                ConfigData.BeeShipTypes = ConfigData.UserProgressData.VisibleBeeShipTypes.Intersect(ConfigData.BeePowerfulShips).ToHashSet();
                             }
                             else
                             {
-                                ConfigData.HumanShipTypes = ConfigData.Configuration.VisibleHumanShipTypes.Intersect(ConfigData.HumanPowerfulShips).ToHashSet();
+                                ConfigData.HumanShipTypes = ConfigData.UserProgressData.VisibleHumanShipTypes.Intersect(ConfigData.HumanPowerfulShips).ToHashSet();
                                 Debug.Log($"Choosing human powerful ships: {ConfigData.HumanShipTypes.ToList()}");
                             }
                         }

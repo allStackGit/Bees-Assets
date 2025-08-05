@@ -688,7 +688,7 @@ namespace Assets.Scripts.Levels
         public void MakeMatchupStrat()
         {
             // Can't get any invisible ship types and start by blocking the visible ship types too
-            _banned = ConfigData.Configuration.AllShipTypes;
+            _banned = ConfigData.UserProgressData.AllShipTypes;
 
             if (Side == ConfigData.Configuration.BeeSide)
             {
