@@ -1,0 +1,377 @@
+fileFormatVersion: 2
+guid: c182f39d1a68e1847847f02b274ee4c2
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: -7649554216818255407
+    second: remains_Cruiser_FEFFFE_10_0
+  - first:
+      213: -8203258107606531161
+    second: remains_Cruiser_FEFFFE_10_1
+  - first:
+      213: -5389109589754696369
+    second: remains_Cruiser_FEFFFE_10_2
+  - first:
+      213: 1569504961229908431
+    second: remains_Cruiser_FEFFFE_10_3
+  - first:
+      213: -1012615267921321146
+    second: remains_Cruiser_FEFFFE_10_4
+  - first:
+      213: 3431491591051658109
+    second: remains_Cruiser_FEFFFE_10_5
+  - first:
+      213: 6011245549919367181
+    second: remains_Cruiser_FEFFFE_10_6
+  - first:
+      213: -2400657920059887374
+    second: remains_Cruiser_FEFFFE_10_7
+  - first:
+      213: 1534947020639915123
+    second: remains_Cruiser_FEFFFE_10_8
+  - first:
+      213: 7540264626518296710
+    second: remains_Cruiser_FEFFFE_10_9
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 100
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: remains_Cruiser_FEFFFE_10_0
+      rect:
+        serializedVersion: 2
+        x: 24
+        y: 124
+        width: 17
+        height: 12
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 1d9d47808f257d590800000000000000
+      internalID: -7649554216818255407
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Cruiser_FEFFFE_10_1
+      rect:
+        serializedVersion: 2
+        x: 90
+        y: 113
+        width: 23
+        height: 28
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 7a3054fb63c282e80800000000000000
+      internalID: -8203258107606531161
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Cruiser_FEFFFE_10_2
+      rect:
+        serializedVersion: 2
+        x: 28
+        y: 96
+        width: 11
+        height: 23
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: f4d250f71690635b0800000000000000
+      internalID: -5389109589754696369
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Cruiser_FEFFFE_10_3
+      rect:
+        serializedVersion: 2
+        x: 45
+        y: 94
+        width: 34
+        height: 28
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: fc96257527008c510800000000000000
+      internalID: 1569504961229908431
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Cruiser_FEFFFE_10_4
+      rect:
+        serializedVersion: 2
+        x: 120
+        y: 63
+        width: 22
+        height: 45
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 643a96567c772f1f0800000000000000
+      internalID: -1012615267921321146
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Cruiser_FEFFFE_10_5
+      rect:
+        serializedVersion: 2
+        x: 13
+        y: 23
+        width: 29
+        height: 50
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: d73cf56db6b1f9f20800000000000000
+      internalID: 3431491591051658109
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Cruiser_FEFFFE_10_6
+      rect:
+        serializedVersion: 2
+        x: 62
+        y: 52
+        width: 35
+        height: 34
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: d00779c8afb3c6350800000000000000
+      internalID: 6011245549919367181
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Cruiser_FEFFFE_10_7
+      rect:
+        serializedVersion: 2
+        x: 106
+        y: 39
+        width: 10
+        height: 20
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 2f03a9747562faed0800000000000000
+      internalID: -2400657920059887374
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Cruiser_FEFFFE_10_8
+      rect:
+        serializedVersion: 2
+        x: 62
+        y: 27
+        width: 28
+        height: 19
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 37c494ace2a3d4510800000000000000
+      internalID: 1534947020639915123
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Cruiser_FEFFFE_10_9
+      rect:
+        serializedVersion: 2
+        x: 118
+        y: 22
+        width: 18
+        height: 20
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 68801105ab664a860800000000000000
+      internalID: 7540264626518296710
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
+    nameFileIdTable:
+      remains_Cruiser_FEFFFE_10_0: -7649554216818255407
+      remains_Cruiser_FEFFFE_10_1: -8203258107606531161
+      remains_Cruiser_FEFFFE_10_2: -5389109589754696369
+      remains_Cruiser_FEFFFE_10_3: 1569504961229908431
+      remains_Cruiser_FEFFFE_10_4: -1012615267921321146
+      remains_Cruiser_FEFFFE_10_5: 3431491591051658109
+      remains_Cruiser_FEFFFE_10_6: 6011245549919367181
+      remains_Cruiser_FEFFFE_10_7: -2400657920059887374
+      remains_Cruiser_FEFFFE_10_8: 1534947020639915123
+      remains_Cruiser_FEFFFE_10_9: 7540264626518296710
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

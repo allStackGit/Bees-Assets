@@ -266,6 +266,9 @@ namespace Assets.Scripts.Levels
         private Vector2 _adjustment;
         private Vector2 _queenMultiplier = new Vector2(2.75f, 2);
         private Vector2 _wideMultiplier = new Vector2(1.4f, 1);
+        private Vector2 _ultraWideMultiplier = new Vector2(2.5f, 1f);
+        private ConfigData.ShipTypes[] _wideShips = new ConfigData.ShipTypes[] { ConfigData.ShipTypes.Barge, ConfigData.ShipTypes.FireBarge, ConfigData.ShipTypes.Flagship, ConfigData.ShipTypes.CarpenterBee };
+        private ConfigData.ShipTypes[] _ultraWideShips = new ConfigData.ShipTypes[] { ConfigData.ShipTypes.Beehive, ConfigData.ShipTypes.WarpGate };
         /// <summary>
         /// When squads are setup, they are position centrally like a line formation, first in the center, second on the right, third on the left, fourth on the right, and so on
         /// The squad is set to the center point and all the ships are positioned based off their original offset
@@ -297,9 +300,13 @@ namespace Assets.Scripts.Levels
                 {
                     _adjustment *= 1.2f;
                 }
-                else if (ship.ShipType == ConfigData.ShipTypes.Barge || ship.ShipType == ConfigData.ShipTypes.FireBarge || ship.ShipType == ConfigData.ShipTypes.WarpGate)
+                else if (_wideShips.Contains(ship.ShipType))
                 {
                     _adjustment *= _wideMultiplier;
+                }
+                else if (_ultraWideShips.Contains(ship.ShipType))
+                {
+                    _adjustment *= _ultraWideMultiplier;
                 }
 
                 //Debug.Log($"Sizefactor for {ship.Name}: {sizeFactor}");

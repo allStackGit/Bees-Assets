@@ -71,7 +71,7 @@ namespace Assets.Scripts.Entities.Ships
 
                     if (HasUserFogOfWarVision)
                     {
-                        FogOfWarVision.Kill(3);
+                        FogOfWarVision.Kill(3, false);
                     }
 
                     if (WeaponsThatHaveUsWithinRange.Count > 0)

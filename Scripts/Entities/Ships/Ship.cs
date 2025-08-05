@@ -1837,7 +1837,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
                     if (HasUserFogOfWarVision)
                     {
-                        FogOfWarVision.Kill(0);
+                        FogOfWarVision.Kill(0, false);
                     }
 
                     if (WeaponsThatHaveUsWithinRange.Count > 0)

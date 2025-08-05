@@ -312,6 +312,7 @@ namespace Assets.Scripts.UIComponents
 
                     dragIcon.Reposition(movedPosition, null);
                     dropped.Add(dragIcon);
+
                 }
                 else
                 {

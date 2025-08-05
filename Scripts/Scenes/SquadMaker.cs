@@ -736,7 +736,7 @@ namespace Assets.Scripts.Scenes
         {
             UIAudioController.Instance.PlayButtonSound();
             //Debug.Log("Starting level!");
-            int capacity = ConfigData.StartingSettings.SupplyCapacity[Side - 1];
+            int capacity = _capacity;
             if (SupplyUsedInChosenSquads() > capacity)
             {
                 OverCapacityAlert.Show();
@@ -1464,7 +1464,14 @@ namespace Assets.Scripts.Scenes
                 UnityEngine.UI.Image image = ShipInfoBoxIcon.GetComponent<UnityEngine.UI.Image>();
                 image.sprite = _spriteTypes.GetValueOrDefault(shipType);
                 image.SetNativeSize();
-                image.transform.localScale = new Vector3(.1f, .1f, 0);
+                if (shipType == ConfigData.ShipTypes.Queen)
+                {
+                    image.transform.localScale = new Vector3(.01f, .01f, 0);
+                }
+                else
+                {
+                    image.transform.localScale = new Vector3(.1f, .1f, 0);
+                }
 
                 ShipInfoBox.SetActive(true);
                 _showShipInfo = true;

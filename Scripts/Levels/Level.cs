@@ -225,12 +225,12 @@ namespace Assets.Scripts.Levels
             if (Stage.DoesUserHaveController && ((CurrentLevelOptions.FogOfWar == -1 && Utilities.CoinToss()) || CurrentLevelOptions.FogOfWar == 1))
             {
                 ActivateFogOfWar = true;
-                //Debug.Log($"The map has fog of war");
+                Debug.Log($"The map has fog of war");
             }
             else
             {
                 ActivateFogOfWar = false;
-                //Debug.Log($"The map does not have fog of war");
+                Debug.Log($"The map does not have fog of war");
             }
 
             if ((CurrentLevelOptions.Mining == -1  && !HasObstacles && Utilities.CoinToss()) || CurrentLevelOptions.Mining == 1)
@@ -852,8 +852,12 @@ namespace Assets.Scripts.Levels
 
                 Map.FogOfWar.SetActive(true);
             }
+            else
+            {
+                Map.FogOfWar.SetActive(false);
+            }
 
-            SetupHivemind();
+                SetupHivemind();
             if (Stage.ActivateAudio && Stage.PlayMusic)
             {
                 Stage.Audio.SetupMusic();
@@ -1142,6 +1146,10 @@ namespace Assets.Scripts.Levels
             {
                 _save_ships[_save_i].EndKill();
             }
+            State.FogOfWarVisions.ToList().ForEach((vision) =>
+            {
+                vision.Kill(0, true);
+            });
             // Should probably remove this
             //if (IsRestarting)
             //{

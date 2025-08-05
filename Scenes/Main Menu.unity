@@ -4055,6 +4055,38 @@ PrefabInstance:
 
 '
       objectReference: {fileID: 0}
+    - target: {fileID: 2504267109806262818, guid: 2a2b86bc2ea44d94b82bb5393041c13d, type: 3}
+      propertyPath: m_IsActive
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 2504267109806262819, guid: 2a2b86bc2ea44d94b82bb5393041c13d, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 2504267109806262819, guid: 2a2b86bc2ea44d94b82bb5393041c13d, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 2504267109806262819, guid: 2a2b86bc2ea44d94b82bb5393041c13d, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 2504267109806262819, guid: 2a2b86bc2ea44d94b82bb5393041c13d, type: 3}
+      propertyPath: m_ConstrainProportionsScale
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 2504267109806262828, guid: 2a2b86bc2ea44d94b82bb5393041c13d, type: 3}
+      propertyPath: m_Sprite
+      value: 
+      objectReference: {fileID: 21300000, guid: fdd0db5282fcda94c814f72aed817ade, type: 3}
+    - target: {fileID: 2504267109806262828, guid: 2a2b86bc2ea44d94b82bb5393041c13d, type: 3}
+      propertyPath: m_Enabled
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 2504267109806262828, guid: 2a2b86bc2ea44d94b82bb5393041c13d, type: 3}
+      propertyPath: m_PreserveAspect
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 2504267111644852032, guid: 2a2b86bc2ea44d94b82bb5393041c13d, type: 3}
       propertyPath: m_Name
       value: MenuContainer
@@ -4187,6 +4219,22 @@ PrefabInstance:
       propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_Target
       value: 
       objectReference: {fileID: 0}
+    - target: {fileID: 6216483634671346484, guid: 2a2b86bc2ea44d94b82bb5393041c13d, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6216483634671346484, guid: 2a2b86bc2ea44d94b82bb5393041c13d, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6216483634671346484, guid: 2a2b86bc2ea44d94b82bb5393041c13d, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6216483634671346484, guid: 2a2b86bc2ea44d94b82bb5393041c13d, type: 3}
+      propertyPath: m_ConstrainProportionsScale
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 6531548338288716537, guid: 2a2b86bc2ea44d94b82bb5393041c13d, type: 3}
       propertyPath: m_IsActive
       value: 0
@@ -4202,6 +4250,18 @@ PrefabInstance:
     - target: {fileID: 7107752853610766251, guid: 2a2b86bc2ea44d94b82bb5393041c13d, type: 3}
       propertyPath: m_IsActive
       value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7462933649784636324, guid: 2a2b86bc2ea44d94b82bb5393041c13d, type: 3}
+      propertyPath: m_Sprite
+      value: 
+      objectReference: {fileID: 21300000, guid: fdd0db5282fcda94c814f72aed817ade, type: 3}
+    - target: {fileID: 7462933649784636324, guid: 2a2b86bc2ea44d94b82bb5393041c13d, type: 3}
+      propertyPath: m_Enabled
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7462933649784636324, guid: 2a2b86bc2ea44d94b82bb5393041c13d, type: 3}
+      propertyPath: m_PreserveAspect
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 7703532936627732376, guid: 2a2b86bc2ea44d94b82bb5393041c13d, type: 3}
       propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_Target
@@ -4267,7 +4327,8 @@ PrefabInstance:
       propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[1].m_Arguments.m_ObjectArgumentAssemblyTypeName
       value: UnityEngine.Object, UnityEngine
       objectReference: {fileID: 0}
-    m_RemovedComponents: []
+    m_RemovedComponents:
+    - {fileID: 7462933649784636324, guid: 2a2b86bc2ea44d94b82bb5393041c13d, type: 3}
     m_RemovedGameObjects: []
     m_AddedGameObjects:
     - targetCorrespondingSourceObject: {fileID: 6216483634671346484, guid: 2a2b86bc2ea44d94b82bb5393041c13d, type: 3}

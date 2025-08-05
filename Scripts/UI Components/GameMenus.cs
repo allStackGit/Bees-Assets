@@ -103,7 +103,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void CloseDialogue()
         {
-            Debug.Log("Deciding not to exit");
+            //Debug.Log("Deciding not to exit");
             DeselectButton();
             LevelEndedDialogue.SetActive(false);
             SaveLevelDialogue.SetActive(false);

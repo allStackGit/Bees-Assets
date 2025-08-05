@@ -549,7 +549,7 @@ namespace Assets.Scripts
             { ShipTypes.Cruiser, .35f },
             { ShipTypes.Dreadnought, .35f },
             { ShipTypes.Drone, .35f },
-            { ShipTypes.Factory, .35f },
+            { ShipTypes.Factory, 1.35f },
             { ShipTypes.FireBarge, .35f },
             { ShipTypes.Flagship, .35f },
             { ShipTypes.Frigate, .35f },
@@ -630,7 +630,8 @@ namespace Assets.Scripts
         public static HashSet<ShipTypes> HumanShipTypes = new HashSet<ShipTypes>();
         public static readonly HashSet<ShipTypes> BeeSwarmShips = new HashSet<ShipTypes> { ShipTypes.Honeybee, ShipTypes.Hornet, ShipTypes.YellowJacket };
         public static readonly HashSet<ShipTypes> SmallShips = new HashSet<ShipTypes> { ShipTypes.Honeybee, ShipTypes.Hornet, ShipTypes.YellowJacket, ShipTypes.Scout, 
-            ShipTypes.Gunship, ShipTypes.Drone, ShipTypes.Wasp, ShipTypes.Striker, ShipTypes.Beacon, ShipTypes.Cruiser, ShipTypes.Dreadnought, ShipTypes.Frigate, ShipTypes.Leafcutter  };
+            ShipTypes.Gunship, ShipTypes.Drone, ShipTypes.Wasp, ShipTypes.Striker, ShipTypes.Beacon, ShipTypes.Frigate  };
+        public static readonly HashSet<ShipTypes> MediumShips = new HashSet<ShipTypes> { ShipTypes.Cruiser, ShipTypes.Dreadnought, ShipTypes.Leafcutter  };
         public static readonly HashSet<ShipTypes> LargeShips = new HashSet<ShipTypes> { ShipTypes.Queen, ShipTypes.Flagship, ShipTypes.Barge, ShipTypes.FireBarge, ShipTypes.Bumblebee,
         ShipTypes.WarpGate, ShipTypes.Beehive, ShipTypes.CarpenterBee, ShipTypes.Factory, ShipTypes.Carrier};
         public static readonly HashSet<ShipTypes> HumanSwarmShips = new HashSet<ShipTypes> { ShipTypes.Scout, ShipTypes.Carrier, ShipTypes.Gunship };
@@ -729,9 +730,9 @@ namespace Assets.Scripts
         /// </summary>
         public static Vector2 SnapDistance = new Vector2(5, 5);
         /// <summary>
-        /// The distance in from the center of the box when placing drag icons in the squad maker
+        /// The distance in from the center of the box when placing drag icons in the squad maker, the larger the number the closer to the top of the box
         /// </summary>
-        public static int OffsetFromCenterOfSquadMakerDropBox = 130;
+        public static int OffsetFromCenterOfSquadMakerDropBox = 230;
 
         public static Vector2 BaseDragIconSize = new Vector2(.075f, .075f);
 
@@ -766,10 +767,20 @@ namespace Assets.Scripts
         };
 
         /// <summary>
+        /// Supports up to 12 medium or larger ships, four rows of three columns
+        /// </summary>
+        public static Vector2[] GeneratedSquadFormationOffsets4x4Medium = new Vector2[] {
+            (ShipOffset * new Vector2(-FOX * 1.5f, .75f * FOY)), (ShipOffset * new Vector2(0, .75f * FOY)),  (ShipOffset * new Vector2(FOX * 1.5f, .75f * FOY)),
+            (ShipOffset * new Vector2(-FOX * 1.5f, -.75f * FOY)), (ShipOffset * new Vector2(0, -.75f * FOY)), (ShipOffset * new Vector2(FOX * 1.5f, -.75f * FOY)),
+            (ShipOffset * new Vector2(-FOX * 1.5f, 2.25f * FOY)), (ShipOffset * new Vector2(0,  2.255f * FOY)), (ShipOffset * new Vector2(FOX * 1.5f,  2.25f * FOY)),
+            (ShipOffset * new Vector2(-FOX * 1.5f, -FOY * 2.25f)), (ShipOffset * new Vector2(0, -FOY * 2.25f)), (ShipOffset * new Vector2(FOX * 1.5f, -FOY * 2.25f)),
+        };
+
+        /// <summary>
         /// Supports up to 4 SMALL ships, two rows of two columns
         /// </summary>
         public static Vector2[] GeneratedSquadFormationOffsets2x2 = new Vector2[] {
-            (ShipOffset * new Vector2(-FOX, 0)), (ShipOffset * new Vector2(0, 0)),
+            (ShipOffset * new Vector2(-FOX, .5f * FOY)), (ShipOffset * new Vector2(0, .5f * FOY)),
             (ShipOffset * new Vector2(-FOX, -FOY)), (ShipOffset * new Vector2(0, -FOY)), 
         };
 
@@ -777,8 +788,8 @@ namespace Assets.Scripts
         /// Supports up to 4 LARGE ships, two rows of two columns
         /// </summary>
         public static Vector2[] GeneratedSquadFormationOffsets2x2Large = new Vector2[] {
-            (ShipOffset * new Vector2(-FOX, 0)), (ShipOffset * new Vector2(FOX, 0)),
-            (ShipOffset * new Vector2(-FOX, -FOY)), (ShipOffset * new Vector2(FOX, -FOY)),
+            (ShipOffset * new Vector2(-FOX, FOY)), (ShipOffset * new Vector2(FOX, FOY)),
+            (ShipOffset * new Vector2(-FOX, -FOY * 1.5f)), (ShipOffset * new Vector2(FOX, -FOY * 1.5f)),
         };
 
 

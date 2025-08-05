@@ -90,15 +90,19 @@ namespace Assets.Scripts.Data
                     offsets = ConfigData.GeneratedSquadFormationOffsets2x2;
                 }
             }
-
-            for (int shipIndex = 0; shipIndex < shipCount; shipIndex++)
+            if (ConfigData.MediumShips.Contains(squadType))
             {
-                long id = Utilities.GetNegativeFleetshipId();
-
-                FleetShip fleetShip = new FleetShip(id, $"{squadType} - #{id}", squadType, false, true, false, 0, 0, 0, 0, 0, 0, 0);
-                AddShipToSquad(new SquadShip(fleetShip.Id, fleetShip.Type, offsets[shipIndex], this));
-
+                offsets = ConfigData.GeneratedSquadFormationOffsets4x4Medium;
             }
+
+                for (int shipIndex = 0; shipIndex < shipCount; shipIndex++)
+                {
+                    long id = Utilities.GetNegativeFleetshipId();
+
+                    FleetShip fleetShip = new FleetShip(id, $"{squadType} - #{id}", squadType, false, true, false, 0, 0, 0, 0, 0, 0, 0);
+                    AddShipToSquad(new SquadShip(fleetShip.Id, fleetShip.Type, offsets[shipIndex], this));
+
+                }
         }
         public List<SquadShip> GetSquadShips()
         {

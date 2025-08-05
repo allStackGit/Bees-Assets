@@ -19,7 +19,6 @@ namespace Assets.Scripts.Entities.Ships
                 Range = Ship.MaxRange * 2;
             }
             Transform.SetParent(Ship.transform.parent);
-            Transform.localScale = new Vector3(Range, Range, 0);
         }
         public void LateUpdate()
         {
@@ -27,27 +26,42 @@ namespace Assets.Scripts.Entities.Ships
         }
         public void Activate()
         {
-
+            Debug.Log($"Activating fog of war vision for {Ship.Name} with range {Range}");
+            Ship.Level.State.FogOfWarVisions.Add(this);
+            //Transform.SetParent(Ship.transform.parent);
+            Transform.localScale = new Vector3(Range, Range, 0);
             enabled = true;
             FogIlluminator.enabled = true;
         }
         public void Deactivate()
         {
+            Debug.Log($"Deactivating fog of war vision for {Ship.Name} with range {Range}");
+            Ship.Level.CancelTimer(_shrinkVisionStartTimer);
+            Ship.Level.CancelTimer(_shrinkVisionTimer);
+            Ship.Level.State.FogOfWarVisions.Remove(this);
             enabled = false;
             FogIlluminator.enabled = false;
         }
 
         private ScaledTimer _shrinkVisionStartTimer = new ScaledTimer();
         private ScaledTimer _shrinkVisionTimer = new ScaledTimer();
-        public void Kill(float initialDelay)
+        public void Kill(float initialDelay, bool endKill)
         {
-            Transform.SetParent(Ship.Level.Map.Transform);
-            _shrinkVisionTimer.Reuse(.1f, ShrinkVision, true);
-            _shrinkVisionStartTimer.Reuse(initialDelay, () =>
+            //Transform.SetParent(Ship.Level.Map.Transform);
+            if (!endKill)
             {
-                Ship.Level.AddTimer(_shrinkVisionTimer);
-            });
-            Ship.Level.AddTimer(_shrinkVisionStartTimer);
+                _shrinkVisionTimer.Reuse(.1f, ShrinkVision, true);
+                _shrinkVisionStartTimer.Reuse(initialDelay, () =>
+                {
+                    Ship.Level.AddTimer(_shrinkVisionTimer);
+                });
+                Ship.Level.AddTimer(_shrinkVisionStartTimer);
+            }
+            else
+            {
+                Deactivate();
+            }
+           
             //InvokeRepeating(nameof(ShrinkVision), initialDelay, .1f);
         }
 

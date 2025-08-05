@@ -35,6 +35,7 @@ namespace Assets.Scripts.Levels
         public List<AsteroidPiece> AsteroidPiecesToRelease = new List<AsteroidPiece>();
         public List<CollisionAsteroid> AsteroidsToRelease = new List<CollisionAsteroid>();
         public List<MiningAsteroid> MiningAsteroidsToRelease = new List<MiningAsteroid>();
+        public List<FogOfWarVision> FogOfWarVisions = new List<FogOfWarVision>();
 
         public int UserCommands, AICommands;
         public bool IsPaused;
