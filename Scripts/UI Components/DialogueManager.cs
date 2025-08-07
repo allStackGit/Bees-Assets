@@ -9,6 +9,7 @@ using UnityEngine.UI;
 
 public class DialogueManager : MonoBehaviour
 {
+    public CutsceneManager CutsceneManager;
     public GameObject DialogueBox;
     public TMP_Text DialogueText;
     public TMP_Text ContinuePrompt;
@@ -19,9 +20,10 @@ public class DialogueManager : MonoBehaviour
     private Queue<DialogueLine> dialogueLines = new Queue<DialogueLine>();
     private bool _hasContinuePrompt;
 
-    public void Setup(Level level)
+    public void Setup(Level level, CutsceneManager cutsceneManager)
     {
         Level = level;
+        CutsceneManager = cutsceneManager;
     }
 
     public void StartDialogue(List<DialogueLine> lines, bool hasContinueButton)
@@ -57,6 +59,11 @@ public class DialogueManager : MonoBehaviour
         StartCoroutine(TypeLine(line));
     }
 
+    public void SetPortrait(Sprite sprite)
+    {
+        PortraitImage.sprite = sprite;
+    }
+
     IEnumerator TypeLine(DialogueLine line)
     {
         DialogueText.text = "";
@@ -74,20 +81,24 @@ public class DialogueManager : MonoBehaviour
             {
                 DialogueText.text += c;
                 characterIndex++;
-                if (characterIndex % 6 == 0)
+                if (characterIndex == line.Text.Length)
                 {
-                    if (aOrB || characterIndex == line.Text.Length - 1)
+                    SetPortrait(line.PortraitA);
+                }
+                else if (characterIndex % 6 == 0)
+                {
+                    if (aOrB)
                     {
-                        PortraitImage.sprite = line.PortraitA;
+                        SetPortrait(line.PortraitA);
                     }
                     else
                     {
-                        PortraitImage.sprite = line.PortraitB;
+                        SetPortrait(line.PortraitB);
                     }
                     aOrB = !aOrB;
                 }
 
-                yield return new WaitForSeconds(0.03f);
+                yield return new WaitForSeconds(0.01f);
             }
         }
 
@@ -113,7 +124,7 @@ public class DialogueManager : MonoBehaviour
     void EndDialogue()
     {
         Debug.Log("Dialogue ended.");
-        DialogueBox.SetActive(false);
+        CutsceneManager.EndDialogue();
     }
 
 }

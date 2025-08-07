@@ -82,7 +82,15 @@ namespace Assets.Scripts.Scenes
             DeselectButton();
             ConfigData.CurrentGameMode = ConfigData.GameModes.Campaign;
             ConfigData.CurrentShips = ConfigData.CampaignShips;
-            SetupSquadMaker(side);
+
+            if (ConfigData.UserProgressData.CurrentLevel.HasPrelevelIntro)
+            {
+                SetupSquadMaker(side);
+            }
+            else
+            {
+                SceneManager.LoadSceneAsync("Hivemind Training", LoadSceneMode.Single);
+            }
         }
         public void PlayChallengeMode(string side)
         {

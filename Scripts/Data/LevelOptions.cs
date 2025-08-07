@@ -103,6 +103,10 @@ namespace Assets.Scripts.Data
         /// The squad compositions that the player chose
         /// </summary>
         public List<SavedSquad> ChosenSquads;
+        /// <summary>
+        /// Whether or not the level has a prelevel intro cutscene or dialogue before the player selects ships or starts the level
+        /// </summary>
+        public bool HasPrelevelIntro;
 
         public LevelOptions(int id, int side, string name, int mapIndex, int obstacleMapIndex, int asteroidOption, int fogOfWar, int mining, int supplyCapacity, 
             int enemyReinforcementsOption, int enemyReinforcementDelay, int enemyShipTypeOption, int enemySquadGenerationCount, List<SavedSquad> enemyReinforcements,

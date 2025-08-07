@@ -34,15 +34,13 @@ namespace Assets.Scripts.Data
         public int HumanFreePlayWins, BeeFreePlayWins;
 
         // Unlockables
-
         public bool IsBeeCampaignUnlocked = false;
-
         public bool IsHumanChallengeUnlocked = false;
         public bool IsBeeChallengeUnlocked = false;
-
         public bool IsHumanFreePlayUnlocked = false;
         public bool IsBeeFreePlayUnlocked = false;
 
+        // Ship types that the user has unlocked and can see in the codex or in the game
         public HashSet<ConfigData.ShipTypes> VisibleBeeShipTypes;
         public HashSet<ConfigData.ShipTypes> VisibleHumanShipTypes;
         public HashSet<ConfigData.ShipTypes> VisibleCodexBeeShipTypes;
@@ -57,6 +55,8 @@ namespace Assets.Scripts.Data
         public string PlayerName;
 
 
+        public LevelOptions CurrentLevel;
+
         public UserProgressData(bool shouldFileExist): base()
         {
             defaultJsonData = "{" +
@@ -70,7 +70,7 @@ namespace Assets.Scripts.Data
                 "\"IsHumanFreePlayUnlocked\": false, \"IsBeeFreePlayUnlocked\": false, " +
                 "\"VisibleBeeShipTypes\": [\"Honeybee\"], \"VisibleHumanShipTypes\": [\"Scout\", \"Gunship\"], \"InvisibleBeeShipTypes\": [], \"InvisibleHumanShipTypes\": []" +
                 ", \"VisibleCodexBeeShipTypes\": [], \"VisibleCodexHumanShipTypes\": [\"Scout\", \"Gunship\"], " +
-                "\"PlayerName\": Odysseus"+
+                "\"PlayerName\": \"Odysseus\""+
             "}";
             
             dynamic json = SetupFile(shouldFileExist, ConfigData.UserProgressFilename, (json) =>
@@ -119,6 +119,35 @@ namespace Assets.Scripts.Data
 
             });
             
+        }
+        public void LoadCurrentLevel()
+        {
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
+            {
+                if (ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide)
+                {
+                    CurrentLevel = ConfigData.GetLevelOptions(CurrentHumanCampaignLevel);
+                }
+                else
+                {
+                    CurrentLevel = ConfigData.GetLevelOptions(CurrentBeeCampaignLevel);
+                }
+            }
+            else if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge)
+            {
+                if (ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide)
+                {
+                    CurrentLevel = ConfigData.GetChallengeOptions(CurrentHumanChallengeLevel);
+                }
+                else
+                {
+                    CurrentLevel = ConfigData.GetChallengeOptions(CurrentBeeChallengeLevel);
+                }
+            }
+            else
+            {
+                Debug.LogError("LoadCurrentLevel called when not in Campaign or Challenge mode!");
+            }
         }
         public void SetCurrentLevel(int level)
         {

@@ -1,7 +1,9 @@
 using Assets.Scripts;
 using System.Collections.Generic;
+using System.Security.Cryptography;
 using UnityEngine;
 using UnityEngine.Playables;
+using UnityEngine.Timeline;
 
 public class CutsceneManager : MonoBehaviour
 {
@@ -13,6 +15,8 @@ public class CutsceneManager : MonoBehaviour
     public Stage Stage;
     public List<DialogueLine> PlutoLines_TechnicianIntro;
 
+    public TimelineAsset PlutoIntroCutscene;
+
     public void Setup()
     {
             PlutoLines_TechnicianIntro = new List<DialogueLine>
@@ -20,7 +24,7 @@ public class CutsceneManager : MonoBehaviour
                 new DialogueLine("Fleet Technician", Resources.LoadAll<Sprite>("Sprites/Portraits/samuel_chat"), $"Good morning, Commander {ConfigData.UserProgressData.PlayerName}! I brought your coffee."),
                 new DialogueLine("Fleet Technician", Resources.LoadAll<Sprite>("Sprites/Portraits/samuel_chat"), 2),
                 new DialogueLine("Fleet Technician", Resources.LoadAll<Sprite>("Sprites/Portraits/samuel_chat"), "I agree, it doesn't taste as good as Earth coffee. Or even Mars coffee. It's alright, we'll both get out of Pluto soon enough."),
-                new DialogueLine("Fleet Technician", Resources.LoadAll<Sprite>("Sprites/Portraits/samuel_chat"), "The tech gets a notification of some kind."),
+                new DialogueLine("Fleet Technician", Resources.LoadAll<Sprite>("Sprites/Portraits/samuel_chat"), "*The tech gets a notification of some kind.*", 2),
                 new DialogueLine("Fleet Technician", Resources.LoadAll<Sprite>("Sprites/Portraits/samuel_chat"), "Oh, that's odd. A scout is reporting an unidentified vessel approaching military airspace. What should we do?"),
                 new DialogueLine("Fleet Technician", Resources.LoadAll<Sprite>("Sprites/Portraits/samuel_chat"), 2),
                 new DialogueLine("Fleet Technician", Resources.LoadAll<Sprite>("Sprites/Portraits/samuel_chat"), "Right away, sir. Contacting the vessel."),
@@ -52,14 +56,23 @@ public class CutsceneManager : MonoBehaviour
     public void StartCutScene()
     {
         CutsceneCanvas.SetActive(true);
-        DialogueManager.Setup(Stage.PrimaryLevel);
+        DialogueManager.Setup(Stage.PrimaryLevel, this);
+        DialogueManager.SetPortrait(PlutoLines_TechnicianIntro[0].PortraitA);
+
+        Director.playableAsset = PlutoIntroCutscene;
         Director.Play();
     }
-
-    public void StartDialogue()
+    public void ShowDialogue()
     {
         DialogueCanvas.SetActive(true);
+    }
+    public void StartDialogue()
+    {
         StartPlutoTechnicianIntro();
+    }
+    public void EndDialogue()
+    {
+
     }
 
     private void StartPlutoTechnicianIntro()

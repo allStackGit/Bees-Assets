@@ -9812,6 +9812,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ea3c41145c06f7345a33943ceefd2cfc, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  CutsceneManager: {fileID: 0}
   DialogueBox: {fileID: 1423513645}
   DialogueText: {fileID: 379333076}
   ContinuePrompt: {fileID: 0}
@@ -9831,7 +9832,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 0.392}
+  m_Color: {r: 1, g: 1, b: 1, a: 0.78431374}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -16164,7 +16165,7 @@ PlayableDirector:
     value: {fileID: 2031537778}
   - key: {fileID: -4870149596510699955, guid: 1ba68c73cecfb184e9d013f40bfcfeac, type: 2}
     value: {fileID: 1546081974}
-  - key: {fileID: -6712022696630058353, guid: 1ba68c73cecfb184e9d013f40bfcfeac, type: 2}
+  - key: {fileID: 4026862235562070569, guid: 983e58ceab1a0db4e916a73ee9ae1ff4, type: 2}
     value: {fileID: 1423513651}
   m_ExposedReferences:
     m_References:
@@ -16202,24 +16203,13 @@ MonoBehaviour:
     m_Signals:
     - {fileID: 11400000, guid: bee5c92d8ee15c1468b69a73785f7628, type: 2}
     - {fileID: 11400000, guid: c619a995af2b0954a9dd272294112472, type: 2}
+    - {fileID: 11400000, guid: 420079f91a156564f820ea3bc16a73ce, type: 2}
     m_Events:
     - m_PersistentCalls:
         m_Calls:
         - m_Target: {fileID: 2031537779}
           m_TargetAssemblyTypeName: CutsceneManager, Assembly-CSharp
-          m_MethodName: EnablePlayerControl
-          m_Mode: 1
-          m_Arguments:
-            m_ObjectArgument: {fileID: 0}
-            m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
-            m_IntArgument: 0
-            m_FloatArgument: 0
-            m_StringArgument: 
-            m_BoolArgument: 0
-          m_CallState: 2
-        - m_Target: {fileID: 2031537779}
-          m_TargetAssemblyTypeName: CutsceneManager, Assembly-CSharp
-          m_MethodName: HideIntroMessage
+          m_MethodName: EndCutscene
           m_Mode: 1
           m_Arguments:
             m_ObjectArgument: {fileID: 0}
@@ -16234,6 +16224,20 @@ MonoBehaviour:
         - m_Target: {fileID: 2031537779}
           m_TargetAssemblyTypeName: CutsceneManager, Assembly-CSharp
           m_MethodName: StartDialogue
+          m_Mode: 1
+          m_Arguments:
+            m_ObjectArgument: {fileID: 0}
+            m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+            m_IntArgument: 0
+            m_FloatArgument: 0
+            m_StringArgument: 
+            m_BoolArgument: 0
+          m_CallState: 2
+    - m_PersistentCalls:
+        m_Calls:
+        - m_Target: {fileID: 2031537779}
+          m_TargetAssemblyTypeName: CutsceneManager, Assembly-CSharp
+          m_MethodName: ShowDialogue
           m_Mode: 1
           m_Arguments:
             m_ObjectArgument: {fileID: 0}
@@ -16262,6 +16266,7 @@ MonoBehaviour:
   CutsceneCanvas: {fileID: 52193778}
   DialogueCanvas: {fileID: 563360401}
   Stage: {fileID: 1136405786}
+  PlutoIntroCutscene: {fileID: 11400000, guid: 1ba68c73cecfb184e9d013f40bfcfeac, type: 2}
 --- !u!1001 &2087423607
 PrefabInstance:
   m_ObjectHideFlags: 0
