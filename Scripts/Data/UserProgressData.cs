@@ -54,6 +54,8 @@ namespace Assets.Scripts.Data
         public HashSet<ConfigData.ShipTypes> InvisibleShipTypes;
         public HashSet<ConfigData.ShipTypes> AllShipTypes;
 
+        public string PlayerName;
+
 
         public UserProgressData(bool shouldFileExist): base()
         {
@@ -68,6 +70,7 @@ namespace Assets.Scripts.Data
                 "\"IsHumanFreePlayUnlocked\": false, \"IsBeeFreePlayUnlocked\": false, " +
                 "\"VisibleBeeShipTypes\": [\"Honeybee\"], \"VisibleHumanShipTypes\": [\"Scout\", \"Gunship\"], \"InvisibleBeeShipTypes\": [], \"InvisibleHumanShipTypes\": []" +
                 ", \"VisibleCodexBeeShipTypes\": [], \"VisibleCodexHumanShipTypes\": [\"Scout\", \"Gunship\"], " +
+                "\"PlayerName\": Odysseus"+
             "}";
             
             dynamic json = SetupFile(shouldFileExist, ConfigData.UserProgressFilename, (json) =>

@@ -76,7 +76,7 @@ public class DialogueManager : MonoBehaviour
                 characterIndex++;
                 if (characterIndex % 6 == 0)
                 {
-                    if (aOrB)
+                    if (aOrB || characterIndex == line.Text.Length - 1)
                     {
                         PortraitImage.sprite = line.PortraitA;
                     }

@@ -11,6 +11,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.Playables;
+using UnityEngine.Rendering;
 
 namespace Assets.Scripts.Levels
 {
@@ -864,6 +865,7 @@ namespace Assets.Scripts.Levels
                 Stage.Audio.SetupMusic();
             }
 
+            Stage.CutsceneManager.Setup();
             Stage.CutsceneManager.StartCutScene();
 
             //float end = (Time.realtimeSinceStartup - StartTime) * 1000; // seconds to milliseconds
