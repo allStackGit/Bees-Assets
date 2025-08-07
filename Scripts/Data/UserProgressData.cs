@@ -45,6 +45,9 @@ namespace Assets.Scripts.Data
 
         public HashSet<ConfigData.ShipTypes> VisibleBeeShipTypes;
         public HashSet<ConfigData.ShipTypes> VisibleHumanShipTypes;
+        public HashSet<ConfigData.ShipTypes> VisibleCodexBeeShipTypes;
+        public HashSet<ConfigData.ShipTypes> VisibleCodexHumanShipTypes;
+        public HashSet<ConfigData.ShipTypes> VisibleCodexShipTypes;
         public HashSet<ConfigData.ShipTypes> InvisibleBeeShipTypes;
         public HashSet<ConfigData.ShipTypes> InvisibleHumanShipTypes;
         public HashSet<ConfigData.ShipTypes> VisibleShipTypes;
@@ -63,7 +66,8 @@ namespace Assets.Scripts.Data
                 "\"IsBeeCampaignUnlocked\": false, " +
                 "\"IsHumanChallengeUnlocked\": false, \"IsBeeChallengeUnlocked\": false, " +
                 "\"IsHumanFreePlayUnlocked\": false, \"IsBeeFreePlayUnlocked\": false, " +
-                "\"VisibleBeeShipTypes\": [], \"VisibleHumanShipTypes\": [\"Scout\", \"Gunship\"], \"InvisibleBeeShipTypes\": [], \"InvisibleHumanShipTypes\": []" +
+                "\"VisibleBeeShipTypes\": [\"Honeybee\"], \"VisibleHumanShipTypes\": [\"Scout\", \"Gunship\"], \"InvisibleBeeShipTypes\": [], \"InvisibleHumanShipTypes\": []" +
+                ", \"VisibleCodexBeeShipTypes\": [], \"VisibleCodexHumanShipTypes\": [\"Scout\", \"Gunship\"], " +
             "}";
             
             dynamic json = SetupFile(shouldFileExist, ConfigData.UserProgressFilename, (json) =>
@@ -95,10 +99,13 @@ namespace Assets.Scripts.Data
 
                 VisibleBeeShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(json.VisibleBeeShipTypes));
                 VisibleHumanShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(json.VisibleHumanShipTypes));
+                VisibleCodexBeeShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(json.VisibleCodexBeeShipTypes));
+                VisibleCodexHumanShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(json.VisibleCodexHumanShipTypes));
                 InvisibleBeeShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(json.InvisibleBeeShipTypes));
                 InvisibleHumanShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(json.InvisibleHumanShipTypes));
 
                 VisibleShipTypes = new HashSet<ConfigData.ShipTypes>(VisibleHumanShipTypes.Union(VisibleBeeShipTypes));
+                VisibleCodexShipTypes = new HashSet<ConfigData.ShipTypes>(VisibleCodexHumanShipTypes.Union(VisibleCodexBeeShipTypes));
                 InvisibleShipTypes = new HashSet<ConfigData.ShipTypes>(InvisibleHumanShipTypes.Union(VisibleBeeShipTypes));
                 AllShipTypes = new HashSet<ConfigData.ShipTypes>(InvisibleBeeShipTypes.Union(VisibleShipTypes).Union(InvisibleShipTypes).Union(VisibleBeeShipTypes).
                     Union(new HashSet<ConfigData.ShipTypes>() { ConfigData.ShipTypes.Beacon, ConfigData.ShipTypes.Drone, ConfigData.ShipTypes.Striker }));

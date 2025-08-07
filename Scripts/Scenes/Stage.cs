@@ -1,19 +1,20 @@
 using Assets.Scripts;
 using Assets.Scripts.Data;
+using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
+using Assets.Scripts.Server;
 using Assets.Scripts.UI_Components;
+using Assets.Scripts.UIComponents;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using UnityEngine;
-using UnityEngine.Pool;
-using Assets.Scripts.UIComponents;
 using System.Security.Cryptography;
-using Assets.Scripts.Entities.Projectiles;
-using Assets.Scripts.Server;
+using UnityEngine;
+using UnityEngine.Playables;
+using UnityEngine.Pool;
 
 /// <summary>
 /// Container scene for 1 or more Levels. Handles scene level variables and communication with the server
@@ -317,9 +318,14 @@ public class Stage : Scene
     /// Handles logging debug variables for the stage
     /// </summary>
     public DebugLogger DebugLogger;
+    /// <summary>
+    /// Whether or not the player is controlling the ships or if there's a cut scene or something loading. 
+    /// Only valid for levels that have a player
+    /// </summary>
+    public bool IsPlayerControlling;
+    public CutsceneManager CutsceneManager;
 
 
-   
 
 
 
@@ -590,12 +596,17 @@ public class Stage : Scene
             }
         }
     }
+    public void EnablePlayerControl()
+    {
+        Debug.Log($"Enabling player control for the stage");
+        IsPlayerControlling = true;
+    }
 
     // Update is called once per frame
     new void Update()
     {
         base.Update();
-        if (!IsTraining && IsFinalized)
+        if (!IsTraining && IsFinalized && IsPlayerControlling)
         {
             InputManager.Update();
         }

@@ -76,7 +76,9 @@ namespace Assets.Scripts.Levels
                     }
 
                     if (ConfigData.ArmedShipTypes.Contains(type) || (side == ConfigData.Configuration.BeeSide && Stage.OverrideBeeShipTypes.Count > 0)
-                        || (side == ConfigData.Configuration.HumanSide && Stage.OverrideHumanShipTypes.Count > 0) || Level.CurrentLevelOptions.EnemyShipTypeOption != 0)
+                        || (side == ConfigData.Configuration.HumanSide && Stage.OverrideHumanShipTypes.Count > 0) || Level.CurrentLevelOptions.EnemyShipTypeOption != 0
+                        || (side == ConfigData.Configuration.BeeSide && ConfigData.UserProgressData.VisibleBeeShipTypes.Intersect(ConfigData.ArmedShipTypes).Count() == 0) 
+                        || (side == ConfigData.Configuration.HumanSide && ConfigData.UserProgressData.VisibleHumanShipTypes.Intersect(ConfigData.ArmedShipTypes).Count() == 0))
                     {
                         hasArmedSquads = true;
                     }

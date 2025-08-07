@@ -10,6 +10,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using UnityEngine.Playables;
 
 namespace Assets.Scripts.Levels
 {
@@ -862,7 +863,9 @@ namespace Assets.Scripts.Levels
             {
                 Stage.Audio.SetupMusic();
             }
-            
+
+            Stage.CutsceneManager.StartCutScene();
+
             //float end = (Time.realtimeSinceStartup - StartTime) * 1000; // seconds to milliseconds
             //Debug.Log($"It took {Math.Round(end, 2)} ms to set up the level and {Math.Round(Time.realtimeSinceStartup, 2)}s total time.");
         }
