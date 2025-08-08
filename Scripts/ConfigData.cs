@@ -1,5 +1,6 @@
 ﻿using Assets.Scripts.Data;
 using Assets.Scripts.Entities.Ships;
+using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
 using Assets.Scripts.Server;
 using Assets.Scripts.Settings;
@@ -1085,6 +1086,25 @@ namespace Assets.Scripts
                     if (!Directory.Exists(path)) Directory.CreateDirectory(path);
                     return path;
 #endif
+        }
+        /// <summary>
+        /// Sets up the first time playing data, this is called when the user plays the game for the first time.
+        /// </summary>
+        public static void SetupFirstTimePlayingHumanCampaign()
+        {
+
+
+            // Do something to show a prompt to the user that they are playing for the first time and need to choose their name
+
+            // Setup first squad
+            int squadId = UserProgressData.GetNextSavedSquadId();
+            SavedSquad savedSquad = new SavedSquad(squadId, Configuration.UserSide, $"Squad #{squadId}", Vector2.zero, false, false,
+                       DefaultShootingStrategy, UnsetColor, null);
+            FleetShip fleetShip = CurrentShips.GetAvailableShips().Where((s) => s.Type == ShipTypes.Gunship).First();
+            savedSquad.AddShipToSquad(new SquadShip(fleetShip.Id, fleetShip.Type, Vector2.zero, savedSquad));
+
+            CurrentShips.SaveSquadData();
+            CurrentShips.SaveFleetData();
         }
         public static int GetUserId()
         {

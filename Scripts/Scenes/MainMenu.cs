@@ -1,14 +1,13 @@
-using System;
-
-using UnityEngine;
-
-using UnityEngine.SceneManagement;
 using Assets.Scripts;
-using System.Collections.Generic;
-using TMPro;
+using Assets.Scripts.Data;
 using Assets.Scripts.Settings; 
-using System.Linq;
 using Assets.Scripts.UI_Components;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using TMPro;
+using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace Assets.Scripts.Scenes
 {
@@ -32,7 +31,7 @@ namespace Assets.Scripts.Scenes
         }
 
         protected override void FinalizeSceneWithUserData()
-        {
+        { 
             base.FinalizeSceneWithUserData();
             if (!ConfigData.UserProgressData.IsHumanChallengeUnlocked)
             {
@@ -89,6 +88,11 @@ namespace Assets.Scripts.Scenes
             }
             else
             {
+                if (ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide && !ConfigData.UserProgressData.HasStartedHumanCampaign)
+                {
+                    ConfigData.SetupFirstTimePlayingHumanCampaign();
+                }
+                ConfigData.LevelOptions = (LevelOptions)ConfigData.UserProgressData.CurrentLevel.Clone();
                 SceneManager.LoadSceneAsync("Hivemind Training", LoadSceneMode.Single);
             }
         }

@@ -34,6 +34,7 @@ namespace Assets.Scripts.Data
         public int HumanFreePlayWins, BeeFreePlayWins;
 
         // Unlockables
+        public bool HasStartedHumanCampaign = false;
         public bool IsBeeCampaignUnlocked = false;
         public bool IsHumanChallengeUnlocked = false;
         public bool IsBeeChallengeUnlocked = false;
@@ -122,32 +123,7 @@ namespace Assets.Scripts.Data
         }
         public void LoadCurrentLevel()
         {
-            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
-            {
-                if (ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide)
-                {
-                    CurrentLevel = ConfigData.GetLevelOptions(CurrentHumanCampaignLevel);
-                }
-                else
-                {
-                    CurrentLevel = ConfigData.GetLevelOptions(CurrentBeeCampaignLevel);
-                }
-            }
-            else if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge)
-            {
-                if (ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide)
-                {
-                    CurrentLevel = ConfigData.GetChallengeOptions(CurrentHumanChallengeLevel);
-                }
-                else
-                {
-                    CurrentLevel = ConfigData.GetChallengeOptions(CurrentBeeChallengeLevel);
-                }
-            }
-            else
-            {
-                Debug.LogError("LoadCurrentLevel called when not in Campaign or Challenge mode!");
-            }
+            
         }
         public void SetCurrentLevel(int level)
         {
