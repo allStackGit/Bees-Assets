@@ -98,7 +98,7 @@ namespace Assets.Scripts.Data
         }
         public bool HasSquad(SavedSquad squad)
         {
-            return _savedSquadsList.Find((s) => s.Id == squad.Id) != null;
+            return _savedSquadsList.Find((s) => s.Id == squad.Id && s.Side == squad.Side) != null;
         }
         public void ClearSquads()
         {

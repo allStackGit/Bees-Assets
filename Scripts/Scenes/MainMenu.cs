@@ -82,6 +82,10 @@ namespace Assets.Scripts.Scenes
             ConfigData.CurrentGameMode = ConfigData.GameModes.Campaign;
             ConfigData.CurrentShips = ConfigData.CampaignShips;
 
+            //Debug.Log(ConfigData.UserProgressData.CurrentLevel?.Name);
+            //Debug.Log(ConfigData.UserProgressData.GetCurrentLevel());
+            ConfigData.UserProgressData.LoadCurrentLevel();
+
             if (ConfigData.UserProgressData.CurrentLevel.HasPrelevelIntro)
             {
                 SetupSquadMaker(side);
@@ -93,6 +97,18 @@ namespace Assets.Scripts.Scenes
                     ConfigData.SetupFirstTimePlayingHumanCampaign();
                 }
                 ConfigData.LevelOptions = (LevelOptions)ConfigData.UserProgressData.CurrentLevel.Clone();
+                if (ConfigData.UserProgressData.GetCurrentLevel() == 0)
+                {
+                    ConfigData.LevelOptions.ChosenSquads = ConfigData.CurrentShips.GetSavedSquads().Where(s=> s.Id == 0).ToList();
+                    //Debug.Log("Setting starting squads for level 0");
+                    //Debug.Log(ConfigData.LevelOptions.ChosenSquads.Count + " squads loaded");
+
+                }
+                else 
+                {
+                    //Debug.Log("Loading saved squads for level " + ConfigData.UserProgressData.GetCurrentLevel());
+                    ConfigData.LevelOptions.ChosenSquads = ConfigData.CurrentShips.GetSavedSquads().ToList();
+                }
                 SceneManager.LoadSceneAsync("Hivemind Training", LoadSceneMode.Single);
             }
         }

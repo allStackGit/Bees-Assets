@@ -245,7 +245,16 @@ namespace Assets.Scripts.Levels
             //Debug.Log($"Chosen squads: {Utilities.ListToString(Level.CurrentLevelOptions.ChosenSquads)}");
             if (side == ConfigData.Configuration.AISide)
             {
-                //Debug.Log($"Squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.EnemySquads)}");
+                Debug.Log($"Squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.EnemySquads)}");
+                Level.CurrentLevelOptions.EnemyExistingSquads.ForEach((squadId) =>
+                {
+                    SavedSquad existingSquad = ConfigData.CurrentShips.GetSavedSquad(squadId);
+                    if (existingSquad != null)
+                    {
+                        Level.CurrentLevelOptions.EnemySquads.Add(existingSquad);
+                    }
+                });
+                Debug.Log($"Squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.EnemySquads)}");
                 SpawnShipsAndSquads(Level.CurrentLevelOptions.EnemySquads, Level.StartingPositions[side - 1], Vector2.zero);
             }
             else
@@ -404,7 +413,7 @@ namespace Assets.Scripts.Levels
             float halfHeight = 0;
 
             // setup preliminary position so that the squad height and width can be calculated
-            //Debug.Log($"Placing squads at {startingPosition}");
+            Debug.Log($"Placing squads at {startingPosition}");
             squads.ForEach((squad) =>
             {
                 squad.SetStartingPosition(startingPosition);

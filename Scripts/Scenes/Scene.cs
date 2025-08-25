@@ -1,4 +1,5 @@
 using Assets.Scripts;
+using Assets.Scripts.Data;
 using Assets.Scripts.Server;
 using Assets.Scripts.UI_Components;
 using System;
@@ -98,6 +99,7 @@ namespace Assets.Scripts.Scenes
                 ConfigData.FreePlayShips = new Ships(ConfigData.GetFleetData(), ConfigData.GetSavedSquadsData());
                 ConfigData.CampaignShips = new Ships(ConfigData.GetCampaignFleetData(), ConfigData.GetCampaignSavedSquadsData());
                 ConfigData.CurrentShips = ConfigData.FreePlayShips;
+
             }
 
 

@@ -60,6 +60,10 @@ namespace Assets.Scripts.Data
         /// </summary>
         public int Mining;
         /// <summary>
+        /// Whether or not the level has a prelevel intro cutscene or dialogue before the player selects ships or starts the level
+        /// </summary>
+        public bool HasPrelevelIntro;
+        /// <summary>
         /// The maximum amount of TSV the player can use for this level
         /// </summary>
         public int SupplyCapacity;
@@ -100,17 +104,18 @@ namespace Assets.Scripts.Data
         /// </summary>
         public List<SavedSquad> EnemySquads;
         /// <summary>
+        /// The already built enemy squads that will come into the level
+        /// </summary>
+        public List<int> EnemyExistingSquads;
+        /// <summary>
         /// The squad compositions that the player chose
         /// </summary>
         public List<SavedSquad> ChosenSquads;
-        /// <summary>
-        /// Whether or not the level has a prelevel intro cutscene or dialogue before the player selects ships or starts the level
-        /// </summary>
-        public bool HasPrelevelIntro;
 
-        public LevelOptions(int id, int side, string name, int mapIndex, int obstacleMapIndex, int asteroidOption, int fogOfWar, int mining, int supplyCapacity, 
+
+        public LevelOptions(int id, int side, string name, int mapIndex, int obstacleMapIndex, int asteroidOption, int fogOfWar, int mining, bool hasPreLevelIntro, int supplyCapacity, 
             int enemyReinforcementsOption, int enemyReinforcementDelay, int enemyShipTypeOption, int enemySquadGenerationCount, List<SavedSquad> enemyReinforcements,
-             List<SavedSquad> enemySquads, List<SavedSquad> chosenSquads) 
+             List<SavedSquad> enemySquads, List<int> enemyExistingSquads, List<SavedSquad> chosenSquads) 
         {
             Id = id;
             Side = side;
@@ -120,6 +125,7 @@ namespace Assets.Scripts.Data
             AsteroidOption = asteroidOption;
             FogOfWar = fogOfWar;
             Mining = mining;
+            HasPrelevelIntro = hasPreLevelIntro;
             SupplyCapacity = supplyCapacity;
             EnemyReinforcementsOption = enemyReinforcementsOption;
             EnemyReinforcementDelay = enemyReinforcementDelay;
@@ -127,6 +133,7 @@ namespace Assets.Scripts.Data
             EnemySquadGenerationCount = enemySquadGenerationCount;
             EnemyReinforcements = enemyReinforcements;
             EnemySquads = enemySquads;
+            EnemyExistingSquads = enemyExistingSquads;
             ChosenSquads = chosenSquads;
             //Debug.Log($"Creating level: {GetEnemyList()}");
         }
@@ -141,17 +148,20 @@ namespace Assets.Scripts.Data
             AsteroidOption = -1;
             FogOfWar = -1;
             Mining = -1;
+            HasPrelevelIntro = false;
             EnemyReinforcementsOption = -1;
             EnemyReinforcements = new List<SavedSquad>();
+
             //FriendlyReinforcements = new List<SavedSquad>();
             EnemySquads = new List<SavedSquad>();
+            EnemyExistingSquads = new List<int>();
             ChosenSquads = new List<SavedSquad>();
         }
 
         public string ToJson()
         {
             string json = $"{{\"Id\": {Id}, \"Side\": {Side}, \"Name\": \"{Name}\", \"MapIndex\": {MapIndex}, \"ObstacleMapIndex\": {ObstacleMapIndex}, \"AsteroidOption\": {AsteroidOption}, " +
-                $"\"FogOfWar\": {FogOfWar}, \"Mining\": {Mining}, \"SupplyCapacity\": {SupplyCapacity}, \"EnemyReinforcementsOption\": {EnemyReinforcementsOption}," +
+                $"\"FogOfWar\": {FogOfWar}, \"Mining\": {Mining}, \"HasPrelevelIntro\": {HasPrelevelIntro} \"SupplyCapacity\": {SupplyCapacity}, \"EnemyReinforcementsOption\": {EnemyReinforcementsOption}," +
                 $" \"EnemyReinforcementDelay\": {EnemyReinforcementDelay}, \"EnemyReinforcements\": [";
             
             if (EnemyReinforcements.Count > 0)
@@ -164,6 +174,13 @@ namespace Assets.Scripts.Data
             if (EnemySquads.Count > 0)
             {
                 EnemySquads.ForEach((s) => json += $"{s.ToJson()}, ");
+                json = json.Remove(json.Length - 2);
+            }
+
+            json += "], \"EnemyExistingSquads\": [";
+            if (EnemyExistingSquads.Count > 0)
+            {
+                EnemyExistingSquads.ForEach((s) => json += $"{s}, ");
                 json = json.Remove(json.Length - 2);
             }
 

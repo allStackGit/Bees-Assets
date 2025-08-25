@@ -369,58 +369,13 @@ namespace Assets.Scripts.Levels
         }
         private Vector2 _trigger_moveToPoint;
         private Vector2 _trigger_double = new Vector2(0, 2);
-        private void SetTriggers()
-        {
-            Triggers.Clear();
 
-            Triggers.Add(new Trigger(() =>
-            {
-                return Time.realtimeSinceStartup - StartTime >= CurrentLevelOptions.EnemyReinforcementDelay;
-            }, () =>
-            {
-                Debug.Log($"{CurrentLevelOptions.EnemyReinforcementDelay} seconds have passed, spawning new enemy ships for side {ConfigData.Configuration.AISide}: {Utilities.ListToString(CurrentLevelOptions.EnemyReinforcements)}");
-                _trigger_moveToPoint = StartingPositions[ConfigData.Configuration.AISide - 1];
-                LevelConstructor.SpawnShipsAndSquads(CurrentLevelOptions.EnemyReinforcements, StartingPositions[ConfigData.Configuration.AISide - 1] * _trigger_double, _trigger_moveToPoint);
-
-            }));
-
-            //if (Utilities.CoinToss())
-            //{
-            //    Triggers.Add(new Trigger(() =>
-            //    {
-            //        return Time.realtimeSinceStartup - StartTime >= CurrentLevelOptions.EnemyReinforcementDelay;
-            //    }, () =>
-            //    {
-            //        Debug.Log($"{CurrentLevelOptions.EnemyReinforcementDelay} seconds have passed, spawning new enemy ships for side {ConfigData.Configuration.AISide}: {Utilities.ListToString(CurrentLevelOptions.EnemyReinforcements)}");
-            //        _trigger_moveToPoint = StartingPositions[ConfigData.Configuration.AISide - 1];
-            //        LevelConstructor.SpawnShipsAndSquads(CurrentLevelOptions.EnemyReinforcements, StartingPositions[ConfigData.Configuration.AISide - 1] * _trigger_double, _trigger_moveToPoint);
-
-            //    }));
-            //}
-            //else
-            //{
-            //    Triggers.Add(new Trigger(() =>
-            //    {
-            //        return Time.realtimeSinceStartup - StartTime >= CurrentLevelOptions.EnemyReinforcementDelay;
-            //    }, () =>
-            //    {
-            //        //Debug.Log($"{CurrentLevelOptions.EnemyReinforcementDelay} seconds have passed, spawning new enemy ships for side {ConfigData.Configuration.AISide}: {Utilities.ListToString(CurrentLevelOptions.EnemyReinforcements)}");
-            //        _trigger_moveToPoint = StartingPositions[ConfigData.Configuration.UserSide - 1];
-            //        LevelConstructor.SpawnShipsAndSquads(CurrentLevelOptions.FriendlyReinforcements, StartingPositions[ConfigData.Configuration.UserSide - 1] * _trigger_double, _trigger_moveToPoint);
-
-            //    }));
-            //}
-
-
-
-
-        }
         /// <summary>
         /// Checks if any of the trigger conditions to load new ships for a level have been satisfied or not. For actual levels, this should probably be defined in some external file on a per level basis
         /// </summary>
         private void CheckTriggers()
         {
-            //Debug.Log($"Checking triggers");
+            Debug.Log($"Checking triggers");
 
             Triggers.ForEach((trigger) =>
             {
@@ -949,27 +904,18 @@ namespace Assets.Scripts.Levels
                 AddTimer(_initialCommandDelayTimer);
             }
             
-            CancelTimer(_checkTriggersTimer);
-            //CancelInvoke(nameof(CheckTriggers));
-            if (ActivateLoadingShipsMidLevel)
-            {
-                 // Removed this to avoid dealing with reinforcements during training - Unremoved
+            //CancelTimer(_checkTriggersTimer);
 
-
-                SetTriggers();
-                _checkTriggersTimer.Reuse(5, CheckTriggers, true);
-                AddTimer(_checkTriggersTimer);
-
-
-                //InvokeRepeating(nameof(CheckTriggers), 5, 5);
-            }
+            SetTriggers();
+            _checkTriggersTimer.Reuse(5, CheckTriggers, true);
+            AddTimer(_checkTriggersTimer);
         }
         public void MakeSaveLevel()
         {
             SaveLevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}", CurrentLevelOptions.MapIndex,
                 CurrentLevelOptions.ObstacleMapIndex, CurrentLevelOptions.AsteroidOption == 2 ? 2 : (ActivateCollisionAsteroids ? 1 : 0),
-                ActivateFogOfWar ? 1 : 0, ActivateMining ? 1 : 0, -1, ActivateLoadingShipsMidLevel ? 1 : 0, CurrentLevelOptions.EnemyReinforcementDelay, CurrentLevelOptions.EnemyShipTypeOption, 0,
-                CurrentLevelOptions.EnemyReinforcements.ToList(), CurrentLevelOptions.EnemySquads.ToList(), new List<SavedSquad>());
+                ActivateFogOfWar ? 1 : 0, ActivateMining ? 1 : 0, false, -1, ActivateLoadingShipsMidLevel ? 1 : 0, CurrentLevelOptions.EnemyReinforcementDelay, CurrentLevelOptions.EnemyShipTypeOption, 0,
+                CurrentLevelOptions.EnemyReinforcements.ToList(), CurrentLevelOptions.EnemySquads.ToList(), new List<int>(), new List<SavedSquad>());
         }
         public void SetupShips()
         {
@@ -1404,5 +1350,34 @@ namespace Assets.Scripts.Levels
         {
             return Vector2.Distance(point, ForceBounds(point));
         }
+
+
+
+        /// <summary>
+        /// Sets all the triggers for events in the level. Currently has a maximum precision of 5 seconds
+        /// </summary>
+        private void SetTriggers()
+        {
+            Triggers.Clear();
+
+            switch (CurrentLevelOptions.Id)
+            {
+                case 0:
+                    Triggers.AddRange(new List<Trigger>(){
+                        new Trigger(() =>
+                        {
+                            return Time.realtimeSinceStartup - StartTime >= 10;
+                        },
+                        () =>
+                        {
+                            Debug.Log("Triggering for Level #0");
+                        },
+                        "Level 0 Test Trigger")
+                    });
+                    break;
+            }
+
+        }
+
     }
 }

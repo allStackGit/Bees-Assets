@@ -1,4 +1,5 @@
-﻿using Assets.Scripts.Scenes;
+﻿using Assets.Scripts.Levels;
+using Assets.Scripts.Scenes;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.Remoting.Messaging;
@@ -14,12 +15,13 @@ namespace Assets.Scripts.Data
         public int CurrentHumanChallengeLevel = -1; 
         public int CurrentBeeChallengeLevel = -1;
 
-        public int HumanCampaignSavedSquadId = -1;
-        public int BeeCampaignSavedSquadId = -1;
-        public int HumanChallengeSavedSquadId = -1;
-        public int BeeChallengeSavedSquadId = -1;
-        public int HumanFreePlaySavedSquadId = -1;
-        public int BeeFreePlaySavedSquadId = -1;
+        public int SavedSquadId = -1;
+        public int HumanCampaignSavedSquadNumber = -1;
+        public int BeeCampaignSavedSquadNumber = -1;
+        public int HumanChallengeSavedSquadNumber = -1;
+        public int BeeChallengeSavedSquadNumber = -1;
+        public int HumanFreePlaySavedSquadNumber = -1;
+        public int BeeFreePlaySavedSquadNumber = -1;
         /// <summary>
         /// How much TSV the user has mined, less whatever the user has spent
         /// </summary>
@@ -61,17 +63,7 @@ namespace Assets.Scripts.Data
         public UserProgressData(bool shouldFileExist): base()
         {
             defaultJsonData = "{" +
-                "\"CurrentHumanCampaignLevel\": 1, \"CurrentBeeCampaignLevel\": 1, \"CurrentHumanChallengeLevel\": 1, \"CurrentBeeChallengeLevel\": 1, " +
-                "\"HumanCampaignSavedSquadId\": -1, \"BeeCampaignSavedSquadId\": -1, \"HumanChallengeSavedSquadId\": -1, \"BeeChallengeSavedSquadId\": -1," +
-                "\"HumanFreePlaySavedSquadId\": -1, \"BeeFreePlaySavedSquadId\": -1," +
-                "\"MinedTSV\": 0, \"HivemindMinedTSV\": 0, " +
-                "\"HumanCampaignWins\": 0, \"BeeCampaignWins\": 0, \"HumanChallengeWins\": 0, \"BeeChallengeWins\": 0, \"HumanFreePlayWins\": 0, \"BeeFreePlayWins\": 0," +
-                "\"IsBeeCampaignUnlocked\": false, " +
-                "\"IsHumanChallengeUnlocked\": false, \"IsBeeChallengeUnlocked\": false, " +
-                "\"IsHumanFreePlayUnlocked\": false, \"IsBeeFreePlayUnlocked\": false, " +
-                "\"VisibleBeeShipTypes\": [\"Honeybee\"], \"VisibleHumanShipTypes\": [\"Scout\", \"Gunship\"], \"InvisibleBeeShipTypes\": [], \"InvisibleHumanShipTypes\": []" +
-                ", \"VisibleCodexBeeShipTypes\": [], \"VisibleCodexHumanShipTypes\": [\"Scout\", \"Gunship\"], " +
-                "\"PlayerName\": \"Odysseus\""+
+                "\"CurrentHumanCampaignLevel\": 0, \"CurrentBeeCampaignLevel\": 0, \"CurrentHumanChallengeLevel\": 0, \"CurrentBeeChallengeLevel\": 0, \"SavedSquadId\": -1, \"HumanCampaignSavedSquadNumber\": 0, \"BeeCampaignSavedSquadNumber\": 0, \"HumanChallengeSavedSquadNumber\": 0, \"BeeChallengeSavedSquadNumber\": 0, \"HumanFreePlaySavedSquadNumber\": 0, \"BeeFreePlaySavedSquadNumber\": 0, \"MinedTSV\": 0, \"HivemindMinedTSV\": 0, \"HumanCampaignWins\": 0, \"BeeCampaignWins\": 0, \"HumanChallengeWins\": 0, \"BeeChallengeWins\": 0, \"HumanFreePlayWins\": 0, \"BeeFreePlayWins\": 0, \"HasStartedHumanCampaign\": false, \"IsBeeCampaignUnlocked\": false, \"IsHumanChallengeUnlocked\": false, \"IsBeeChallengeUnlocked\": false, \"IsHumanFreePlayUnlocked\": false, \"IsBeeFreePlayUnlocked\": false, \"VisibleBeeShipTypes\": [\"Honeybee\"], \"VisibleHumanShipTypes\": [\"Scout\", \"Gunship\"], \"InvisibleBeeShipTypes\": [], \"InvisibleHumanShipTypes\": [], \"VisibleCodexBeeShipTypes\": [], \"VisibleCodexHumanShipTypes\": [\"Scout\", \"Gunship\"], \"PlayerName\": \"Odysseus\"" +
             "}";
             
             dynamic json = SetupFile(shouldFileExist, ConfigData.UserProgressFilename, (json) =>
@@ -84,15 +76,23 @@ namespace Assets.Scripts.Data
                 CurrentHumanChallengeLevel = json.CurrentHumanChallengeLevel;
                 CurrentBeeChallengeLevel = json.CurrentBeeChallengeLevel;
 
-                HumanCampaignSavedSquadId = json.HumanCampaignSavedSquadId;
-                BeeCampaignSavedSquadId = json.BeeCampaignSavedSquadId;
-                HumanChallengeSavedSquadId = json.HumanChallengeSavedSquadId;
-                BeeChallengeSavedSquadId = json.BeeChallengeSavedSquadId;
-                HumanFreePlaySavedSquadId = json.HumanFreePlaySavedSquadId;
-                BeeFreePlaySavedSquadId = json.BeeFreePlaySavedSquadId;
+                SavedSquadId = json.SavedSquadId;
+                HumanCampaignSavedSquadNumber = json.HumanCampaignSavedSquadNumber;
+                BeeCampaignSavedSquadNumber = json.BeeCampaignSavedSquadNumber;
+                HumanChallengeSavedSquadNumber = json.HumanChallengeSavedSquadNumber;
+                BeeChallengeSavedSquadNumber = json.BeeChallengeSavedSquadNumber;
+                HumanFreePlaySavedSquadNumber = json.HumanFreePlaySavedSquadNumber;
+                BeeFreePlaySavedSquadNumber = json.BeeFreePlaySavedSquadNumber;
 
                 MinedTSV = json.MinedTSV;
                 HivemindMinedTSV = json.HivemindMinedTSV;
+
+                HasStartedHumanCampaign = json.HasStartedHumanCampaign;
+                IsBeeCampaignUnlocked = json.IsBeeCampaignUnlocked;
+                IsHumanChallengeUnlocked = json.IsHumanChallengeUnlocked;
+                IsBeeChallengeUnlocked = json.IsBeeChallengeUnlocked;
+                IsHumanFreePlayUnlocked = json.IsHumanFreePlayUnlocked;
+                IsBeeFreePlayUnlocked = json.IsBeeFreePlayUnlocked;
 
                 HumanCampaignWins = json.HumanCampaignWins;
                 BeeCampaignWins = json.BeeCampaignWins;
@@ -114,16 +114,67 @@ namespace Assets.Scripts.Data
                 AllShipTypes = new HashSet<ConfigData.ShipTypes>(InvisibleBeeShipTypes.Union(VisibleShipTypes).Union(InvisibleShipTypes).Union(VisibleBeeShipTypes).
                     Union(new HashSet<ConfigData.ShipTypes>() { ConfigData.ShipTypes.Beacon, ConfigData.ShipTypes.Drone, ConfigData.ShipTypes.Striker }));
 
+                PlayerName = json.PlayerName;
                 ConfigData.BeeShipTypes = VisibleBeeShipTypes;
                 ConfigData.HumanShipTypes = VisibleHumanShipTypes;
-
 
             });
             
         }
+        public override string ToJson()
+        {
+            string json = "{" +
+                $"\"CurrentHumanCampaignLevel\": {CurrentHumanCampaignLevel}, \"CurrentBeeCampaignLevel\": {CurrentBeeCampaignLevel}, \"CurrentHumanChallengeLevel\": {CurrentHumanChallengeLevel}, \"CurrentBeeChallengeLevel\": {CurrentBeeChallengeLevel}, \"SavedSquadId\": {SavedSquadId}, \"HumanCampaignSavedSquadNumber\": {HumanCampaignSavedSquadNumber}, \"BeeCampaignSavedSquadNumber\": {BeeCampaignSavedSquadNumber}, \"HumanChallengeSavedSquadNumber\": {HumanChallengeSavedSquadNumber}, \"BeeChallengeSavedSquadNumber\": {BeeChallengeSavedSquadNumber}, \"HumanFreePlaySavedSquadNumber\": {HumanFreePlaySavedSquadNumber}, \"BeeFreePlaySavedSquadNumber\": {BeeFreePlaySavedSquadNumber}, \"MinedTSV\": {MinedTSV}, \"HivemindMinedTSV\": {HivemindMinedTSV}, \"HumanCampaignWins\": {HumanCampaignWins}, \"BeeCampaignWins\": {BeeCampaignWins}, \"HumanChallengeWins\": {HumanChallengeWins}, \"BeeChallengeWins\": {BeeChallengeWins}, \"HumanFreePlayWins\": {HumanFreePlayWins}, \"BeeFreePlayWins\": {BeeFreePlayWins}, \"HasStartedHumanCampaign\": \"{HasStartedHumanCampaign}\", \"IsBeeCampaignUnlocked\": \"{IsBeeCampaignUnlocked}\", \"IsHumanChallengeUnlocked\": \"{IsHumanChallengeUnlocked}\", \"IsBeeChallengeUnlocked\": \"{IsBeeChallengeUnlocked}\", \"IsHumanFreePlayUnlocked\": \"{IsHumanFreePlayUnlocked}\", \"IsBeeFreePlayUnlocked\": \"{IsBeeFreePlayUnlocked}\", \"PlayerName\": \"{PlayerName}\", \"VisibleBeeShipTypes\": [";
+
+            if (VisibleBeeShipTypes.Count > 0)
+            {
+                VisibleBeeShipTypes.ToList().ForEach((s) => json += $"\"{s}\", ");
+                json = json.Remove(json.Length - 2);
+            }
+
+            json += "], \"VisibleHumanShipTypes\": [";
+            if (VisibleHumanShipTypes.Count > 0)
+            {
+                VisibleHumanShipTypes.ToList().ForEach((s) => json += $"\"{s}\", ");
+                json = json.Remove(json.Length - 2);
+            }
+
+            json += "], \"InvisibleBeeShipTypes\": [";
+            if (InvisibleBeeShipTypes.Count > 0)
+            {
+                InvisibleBeeShipTypes.ToList().ForEach((s) => json += $"\"{s}\", ");
+                json = json.Remove(json.Length - 2);
+            }
+
+            json += "], \"InvisibleHumanShipTypes\": [";
+            if (InvisibleHumanShipTypes.Count > 0)
+            {
+                InvisibleHumanShipTypes.ToList().ForEach((s) => json += $"\"{s}\", ");
+                json = json.Remove(json.Length - 2);
+            }
+
+            json += "], \"VisibleCodexBeeShipTypes\": [";
+            if (VisibleCodexBeeShipTypes.Count > 0)
+            {
+                VisibleCodexBeeShipTypes.ToList().ForEach((s) => json += $"\"{s}\", ");
+                json = json.Remove(json.Length - 2);
+            }
+
+            json += "], \"VisibleCodexHumanShipTypes\": [";
+            if (VisibleCodexHumanShipTypes.Count > 0)
+            {
+                VisibleCodexHumanShipTypes.ToList().ForEach((s) => json += $"\"{s}\", ");
+                json = json.Remove(json.Length - 2);
+            }
+
+
+
+            json += "]}";
+            return json;
+        }
         public void LoadCurrentLevel()
         {
-            
+            CurrentLevel = ConfigData.GetCampaignLevelData().GetLevel(GetCurrentLevel());
         }
         public void SetCurrentLevel(int level)
         {
@@ -192,49 +243,12 @@ namespace Assets.Scripts.Data
         }
         public int GetNextSavedSquadId()
         {
-            int id = -1;
-            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
-            {
-                if (ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide)
-                {
-                    id = ++HumanCampaignSavedSquadId;
-                }
-                else
-                { 
-                    id = ++BeeCampaignSavedSquadId;
-                }
-            }
-            else if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge)
-            {
-                if (ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide)
-                {
-                    id = ++HumanChallengeSavedSquadId;
-                }
-                else
-                {
-                    id = ++BeeChallengeSavedSquadId;
-                }
-            }
-            else if (ConfigData.CurrentGameMode == ConfigData.GameModes.FreePlay)
-            {
-                if (ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide)
-                {
-                    id = ++HumanFreePlaySavedSquadId;
-                }
-                else
-                {
-                    id = ++BeeFreePlaySavedSquadId;
-                }
-            }
-
+            SavedSquadId += 1;
             Save();
-            return id;
-            
+            return SavedSquadId;
         }
 
-        public override string ToJson()
-        {
-            return JsonUtility.ToJson(this);
-        }
+
+
     }
 }
