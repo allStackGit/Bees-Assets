@@ -64,6 +64,10 @@ namespace Assets.Scripts.Data
         /// </summary>
         public bool HasPrelevelIntro;
         /// <summary>
+        /// Whether or not to show the squad action box for the player
+        /// </summary>
+        public bool HasSquadActionBox;
+        /// <summary>
         /// The maximum amount of TSV the player can use for this level
         /// </summary>
         public int SupplyCapacity;
@@ -113,9 +117,7 @@ namespace Assets.Scripts.Data
         public List<SavedSquad> ChosenSquads;
 
 
-        public LevelOptions(int id, int side, string name, int mapIndex, int obstacleMapIndex, int asteroidOption, int fogOfWar, int mining, bool hasPreLevelIntro, int supplyCapacity, 
-            int enemyReinforcementsOption, int enemyReinforcementDelay, int enemyShipTypeOption, int enemySquadGenerationCount, List<SavedSquad> enemyReinforcements,
-             List<SavedSquad> enemySquads, List<int> enemyExistingSquads, List<SavedSquad> chosenSquads) 
+        public LevelOptions(int id, int side, string name, int mapIndex, int obstacleMapIndex, int asteroidOption, int fogOfWar, int mining, bool hasPreLevelIntro, bool hasSquadActionBox, int supplyCapacity, int enemyReinforcementsOption, int enemyReinforcementDelay, int enemyShipTypeOption, int enemySquadGenerationCount, List<SavedSquad> enemyReinforcements, List<SavedSquad> enemySquads, List<int> enemyExistingSquads, List<SavedSquad> chosenSquads) 
         {
             Id = id;
             Side = side;
@@ -126,6 +128,7 @@ namespace Assets.Scripts.Data
             FogOfWar = fogOfWar;
             Mining = mining;
             HasPrelevelIntro = hasPreLevelIntro;
+            HasSquadActionBox = hasSquadActionBox;
             SupplyCapacity = supplyCapacity;
             EnemyReinforcementsOption = enemyReinforcementsOption;
             EnemyReinforcementDelay = enemyReinforcementDelay;
@@ -161,7 +164,7 @@ namespace Assets.Scripts.Data
         public string ToJson()
         {
             string json = $"{{\"Id\": {Id}, \"Side\": {Side}, \"Name\": \"{Name}\", \"MapIndex\": {MapIndex}, \"ObstacleMapIndex\": {ObstacleMapIndex}, \"AsteroidOption\": {AsteroidOption}, " +
-                $"\"FogOfWar\": {FogOfWar}, \"Mining\": {Mining}, \"HasPrelevelIntro\": {HasPrelevelIntro} \"SupplyCapacity\": {SupplyCapacity}, \"EnemyReinforcementsOption\": {EnemyReinforcementsOption}," +
+                $"\"FogOfWar\": {FogOfWar}, \"Mining\": {Mining}, \"HasPrelevelIntro\": {HasPrelevelIntro}, \"HasSquadActionBox:\": {HasSquadActionBox} \"SupplyCapacity\": {SupplyCapacity}, \"EnemyReinforcementsOption\": {EnemyReinforcementsOption}," +
                 $" \"EnemyReinforcementDelay\": {EnemyReinforcementDelay}, \"EnemyReinforcements\": [";
             
             if (EnemyReinforcements.Count > 0)

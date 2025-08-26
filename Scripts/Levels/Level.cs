@@ -10,8 +10,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.Playables;
 using UnityEngine.Rendering;
+using UnityEngine.UI;
 
 namespace Assets.Scripts.Levels
 {
@@ -559,7 +561,11 @@ namespace Assets.Scripts.Levels
                     Debug.Log("Neither side is dead!");
                 }
 
-                if (!Stage.IsTraining && ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
+                if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge)
+                {
+                    Stage.Menus.UpdateScore(ConfigData.UserProgressData.HumanChallengeWins, ConfigData.UserProgressData.BeeChallengeWins);
+                }
+                else if (!Stage.IsTraining && ConfigData.CurrentGameMode == ConfigData.GameModes.FreePlay)
                 {
                     Stage.Menus.UpdateScore(ConfigData.UserProgressData.HumanFreePlayWins, ConfigData.UserProgressData.BeeFreePlayWins);
                 }
@@ -734,6 +740,22 @@ namespace Assets.Scripts.Levels
             {
                 CurrentLevelOptions = (LevelOptions)ConfigData.LevelOptions.Clone();
             }
+            Debug.Log("CurrentLevelOptions.HasSquadActionBox " + CurrentLevelOptions.HasSquadActionBox);
+
+            if (CurrentLevelOptions.HasSquadActionBox)
+            {
+                Stage.Menus.ActionBox.Setup(Stage, this, Stage.EventSystem, ConfigData.Configuration.UserSide);
+            }
+            else
+            {
+                Destroy(Stage.UIElements[5]); // Action Box
+            }
+
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
+            {
+                Destroy(Stage.UIElements[2]); // Scoreboard
+                Stage.UIElements[3].GetComponent<HorizontalLayoutGroup>().padding.left = 0; // Move the squad tabs to the left since the scoreboard is gone
+            }
 
             if (Stage.GeneratedSquadCountOverride > 0)
             {
@@ -814,7 +836,15 @@ namespace Assets.Scripts.Levels
                 Map.FogOfWar.SetActive(false);
             }
 
-                SetupHivemind();
+            SetupHivemind();
+
+            //CancelTimer(_checkTriggersTimer);
+
+            SetTriggers();
+            _checkTriggersTimer.Reuse(5, CheckTriggers, true);
+            AddTimer(_checkTriggersTimer);
+
+
             if (Stage.ActivateAudio && Stage.PlayMusic)
             {
                 Stage.Audio.SetupMusic();
@@ -903,18 +933,13 @@ namespace Assets.Scripts.Levels
                 });
                 AddTimer(_initialCommandDelayTimer);
             }
-            
-            //CancelTimer(_checkTriggersTimer);
-
-            SetTriggers();
-            _checkTriggersTimer.Reuse(5, CheckTriggers, true);
-            AddTimer(_checkTriggersTimer);
+           
         }
         public void MakeSaveLevel()
         {
             SaveLevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}", CurrentLevelOptions.MapIndex,
                 CurrentLevelOptions.ObstacleMapIndex, CurrentLevelOptions.AsteroidOption == 2 ? 2 : (ActivateCollisionAsteroids ? 1 : 0),
-                ActivateFogOfWar ? 1 : 0, ActivateMining ? 1 : 0, false, -1, ActivateLoadingShipsMidLevel ? 1 : 0, CurrentLevelOptions.EnemyReinforcementDelay, CurrentLevelOptions.EnemyShipTypeOption, 0,
+                ActivateFogOfWar ? 1 : 0, ActivateMining ? 1 : 0, false, true, -1, ActivateLoadingShipsMidLevel ? 1 : 0, CurrentLevelOptions.EnemyReinforcementDelay, CurrentLevelOptions.EnemyShipTypeOption, 0,
                 CurrentLevelOptions.EnemyReinforcements.ToList(), CurrentLevelOptions.EnemySquads.ToList(), new List<int>(), new List<SavedSquad>());
         }
         public void SetupShips()
@@ -1226,11 +1251,6 @@ namespace Assets.Scripts.Levels
             }
 
             _saveCampaign_progress.Save();
-
-            if (!Stage.IsTraining)
-            {
-                Stage.Menus.UpdateScore(_saveCampaign_progress.HumanCampaignWins, _saveCampaign_progress.BeeCampaignWins);
-            }
         }
         private void LevelEndedDialogue()
         {
@@ -1354,7 +1374,7 @@ namespace Assets.Scripts.Levels
 
 
         /// <summary>
-        /// Sets all the triggers for events in the level. Currently has a maximum precision of 5 seconds
+        /// Sets all the triggers for events in the level. Triggers are checked every 5 seconds so this currently has a maximum precision of 5 seconds
         /// </summary>
         private void SetTriggers()
         {
@@ -1363,14 +1383,32 @@ namespace Assets.Scripts.Levels
             switch (CurrentLevelOptions.Id)
             {
                 case 0:
+                    // initialize necessary variables for triggers
+                    Scout firstScout = (Scout)State.GetHumanShips().First();
+                    Honeybee firstHoneybee = (Honeybee)State.GetBeeShips().First();
+
+
+                    firstScout.ProximityCollider = Instantiate(Stage.Prefabs.HumanProximityColliderPrefab, Vector3.zero, Quaternion.identity, firstScout.transform).GetComponent<ProximityCollider>();
+                    firstScout.HasProximityCollider = true;
+                    firstScout.ProximityCollider.Create(firstScout);
+                    firstScout.ProximityCollider.transform.localPosition = Vector3.zero;
+                    firstScout.ProximityCollider.Activate();
+
+                    firstScout.CanDropBeacons = false;
+                    firstScout.ChargingBar.gameObject.SetActive(false);
+
+                    Stage.SurrenderButton.SetActive(false);
+
+
                     Triggers.AddRange(new List<Trigger>(){
                         new Trigger(() =>
                         {
-                            return Time.realtimeSinceStartup - StartTime >= 10;
+                            Debug.Log($"Looking for {firstHoneybee}");
+                            return firstScout.ProximityCollider.NearbyEnemyShips.Contains(firstHoneybee);
                         },
                         () =>
                         {
-                            Debug.Log("Triggering for Level #0");
+                            Debug.Log("Scout spotted the honeybee!");
                         },
                         "Level 0 Test Trigger")
                     });

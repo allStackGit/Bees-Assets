@@ -410,7 +410,7 @@ namespace Assets.Scripts.Levels
             //        ship.TargetCoordinates = new Vector2(x, y);
             //    });
             //}
-            if (Level.Stage.DoesUserHaveController && IsSelected)
+            if (Level.Stage.Menus.HasSquadActionBox)
             {
                 Level.Stage.Menus.ActionBox.HighlightSelectedButtons();
             }

@@ -254,6 +254,10 @@ public class Stage : Scene
     /// </summary>
     public GameObject UIManager;
     /// <summary>
+    /// The surrender button in the main game menu
+    /// </summary>
+    public GameObject SurrenderButton;
+    /// <summary>
     /// The box for selecting squads and patrol areas
     /// </summary>
     public GameObject SelectionBox;
@@ -422,7 +426,6 @@ public class Stage : Scene
             // Setup  Game menu 
             Menus = UIManager.GetComponentInChildren<GameMenus>();
             Menus.Setup(this);
-            Menus.ActionBox.Setup(this, PrimaryLevel, EventSystem, ConfigData.Configuration.UserSide);
 
 
             // Setup Selection Box
@@ -438,11 +441,11 @@ public class Stage : Scene
                 Audio.Setup(PlayMusic, PrimaryLevel);
             }
 
-            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge)
             {
-                Menus.UpdateScore(ConfigData.UserProgressData.HumanCampaignWins, ConfigData.UserProgressData.BeeCampaignWins);
+                Menus.UpdateScore(ConfigData.UserProgressData.HumanChallengeWins, ConfigData.UserProgressData.BeeChallengeWins);
             }
-            else
+            else if (ConfigData.CurrentGameMode == ConfigData.GameModes.FreePlay)
             {
                 Menus.UpdateScore(ConfigData.UserProgressData.HumanFreePlayWins, ConfigData.UserProgressData.BeeFreePlayWins);
             }

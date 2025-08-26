@@ -28,7 +28,7 @@ namespace Assets.Scripts.Data
                     //Debug.Log(level.EnemyExistingSquads);
                     List<int> enemyExistingSquads = Utilities.JArrayToList<int>(level.EnemyExistingSquads);
                     //Debug.Log(level.Name);
-                    _levels.Add(new LevelOptions((int)level.Id, (int)level.Side, (string)level.Name, (int)level.MapIndex, (int)level.ObstacleMapIndex, (int)level.AsteroidOption, (int)level.FogOfWar, (int)level.Mining, (bool) level.HasPreLevelIntro, (int)level.SupplyCapacity, (int) level.EnemyReinforcementsOption, (int)level.EnemyReinforcementDelay, 0, 0, enemyReinforcements, enemySquads, enemyExistingSquads, new List<SavedSquad>()));
+                    _levels.Add(new LevelOptions((int)level.Id, (int)level.Side, (string)level.Name, (int)level.MapIndex, (int)level.ObstacleMapIndex, (int)level.AsteroidOption, (int)level.FogOfWar, (int)level.Mining, (bool) level.HasPreLevelIntro, (bool) level.HasSquadActionBox, (int)level.SupplyCapacity, (int) level.EnemyReinforcementsOption, (int)level.EnemyReinforcementDelay, 0, 0, enemyReinforcements, enemySquads, enemyExistingSquads, new List<SavedSquad>()));
                 });
             });
 

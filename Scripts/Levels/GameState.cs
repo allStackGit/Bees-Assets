@@ -351,7 +351,10 @@ namespace Assets.Scripts.Levels
                 SelectedSquads.Add(squad);
                 squad.IsSelected = true;
                 squad.MoveSquadBox();
-                Stage.Menus.ActionBox.SetupForSquad();
+                if (Level.Stage.Menus.HasSquadActionBox)
+                {
+                    Stage.Menus.ActionBox.SetupForSquad();
+                }
                 squad.GetShips().ForEach((ship) =>
                 {
                     if (ship.HasTargetCoordinates)
@@ -424,12 +427,12 @@ namespace Assets.Scripts.Levels
             if (SelectedSquads.Count == 0)
             {
                 HasSelectedSquads = false;
-                if (!Level.Stage.IsTraining)
+                if (Level.Stage.Menus.HasSquadActionBox)
                 {
                     Stage.Menus.ActionBox.Hide();
                 }
             }
-            else if (!Level.Stage.IsTraining)
+            else if (Level.Stage.Menus.HasSquadActionBox)
             {
                 Stage.Menus.ActionBox.SetupForSquad();
             }

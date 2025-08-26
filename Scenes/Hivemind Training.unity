@@ -8321,6 +8321,10 @@ PrefabInstance:
       value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
+      propertyPath: SurrenderButton
+      value: 
+      objectReference: {fileID: 1261917798}
+    - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: TargetFrameRate
       value: 0
       objectReference: {fileID: 0}
@@ -9087,6 +9091,11 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 2c69add7043f0224698172081a967d71, type: 3}
+--- !u!1 &1261917798 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 8675139255330635851, guid: 2c69add7043f0224698172081a967d71, type: 3}
+  m_PrefabInstance: {fileID: 1261917797}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1267390194 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 1592104863624447461, guid: bbe9c7f24d2564f4bb6678276fb4b65d, type: 3}
@@ -15989,6 +15998,7 @@ MonoBehaviour:
   LargeShipExplosionPrefab: {fileID: 5251504260705199934, guid: 70dc82c9665ce3f4eb24bbfe8e62b2c9, type: 3}
   HugeShipExplosionPrefab: {fileID: 5251504260705199934, guid: 6a4063a718e9d7341ac9460de59edcb0, type: 3}
   QueenShipExplosionPrefab: {fileID: 1317667449522872329, guid: 3916e7d63e371ed4ab56cbc6ead366b2, type: 3}
+  HumanProximityColliderPrefab: {fileID: 7908384552572958469, guid: dc6a14c773472f84cae1f827383831c9, type: 3}
   MovementMarkerPrefab: {fileID: 2507697582912947509, guid: d5ee77a24c7f6a6499324a8a600b4943, type: 3}
   TargetingMarkerPrefab: {fileID: 2507697582912947509, guid: 60a6013777594eb47842724022e04add, type: 3}
   SquadBoxPrefab: {fileID: 4393128050314196725, guid: 606f56cf5efd9f84d9e877d10187ad8b, type: 3}

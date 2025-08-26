@@ -44,6 +44,7 @@ namespace Assets.Scripts.Entities.Ships
         protected void OnTriggerExit2D(Collider2D collider)
         {
             NearbyEnemyShips.Remove(collider.GetComponent<Ship>());
+            //Debug.Log($"Just removed {collider.GetComponent<Ship>()} to {Ship} NearbyShips");
         }
     }
 }
