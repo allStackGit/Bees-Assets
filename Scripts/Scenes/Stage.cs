@@ -341,7 +341,7 @@ public class Stage : Scene
         //Debug.Log($"Start level stage");
         Name = "Level";
         base.Start();
-        DebugLogger.__CommandCounts = new int[20];
+        DebugLogger.__CommandCounts = new int[21];
     }
     int _spawn_i;
     Level _spawn_level;

@@ -369,15 +369,13 @@ namespace Assets.Scripts.Levels
             //Invoke(nameof(SpawnAsteroid), Stage.AsteroidMinimumSpawnRate + Utilities.RandomInt(Stage.CurrentAsteroidMaxSpawnRate - Stage.CurrentAsteroidMinimumSpawnRate));
 
         }
-        private Vector2 _trigger_moveToPoint;
-        private Vector2 _trigger_double = new Vector2(0, 2);
 
         /// <summary>
         /// Checks if any of the trigger conditions to load new ships for a level have been satisfied or not. For actual levels, this should probably be defined in some external file on a per level basis
         /// </summary>
         private void CheckTriggers()
         {
-            Debug.Log($"Checking triggers");
+            //Debug.Log($"Checking triggers");
 
             Triggers.ForEach((trigger) =>
             {
@@ -839,10 +837,13 @@ namespace Assets.Scripts.Levels
             SetupHivemind();
 
             //CancelTimer(_checkTriggersTimer);
+            if (!Stage.IsTraining)
+            {
+                SetTriggers();
+                _checkTriggersTimer.Reuse(5, CheckTriggers, true);
+                AddTimer(_checkTriggersTimer);
+            }
 
-            SetTriggers();
-            _checkTriggersTimer.Reuse(5, CheckTriggers, true);
-            AddTimer(_checkTriggersTimer);
 
 
             if (Stage.ActivateAudio && Stage.PlayMusic)
@@ -1383,11 +1384,12 @@ namespace Assets.Scripts.Levels
             switch (CurrentLevelOptions.Id)
             {
                 case 0:
-                    // initialize necessary variables for triggers
+                    // Setup specifics for the level
                     Scout firstScout = (Scout)State.GetHumanShips().First();
                     Honeybee firstHoneybee = (Honeybee)State.GetBeeShips().First();
 
 
+                    // Setup proximity collider for the scout
                     firstScout.ProximityCollider = Instantiate(Stage.Prefabs.HumanProximityColliderPrefab, Vector3.zero, Quaternion.identity, firstScout.transform).GetComponent<ProximityCollider>();
                     firstScout.HasProximityCollider = true;
                     firstScout.ProximityCollider.Create(firstScout);
@@ -1397,8 +1399,25 @@ namespace Assets.Scripts.Levels
                     firstScout.CanDropBeacons = false;
                     firstScout.ChargingBar.gameObject.SetActive(false);
 
+                    // Hide the surrender button
                     Stage.SurrenderButton.SetActive(false);
 
+                    // Add commands to the queue for the honeybee to move near Pluto
+                    State.SquadsAwaitingCommands.Dequeue(); // Remove the honeybee from the AI command queue
+
+                    MoveToPoint moveToPoint = Stage.Pool.gameObject.AddComponent<MoveToPoint>();
+                    moveToPoint.Create(Stage, ConfigData.CommandTypes.MoveToPoint);
+                    moveToPoint.Setup(firstHoneybee.Squad, false, null, null, new Vector2(70, -30)); // Center of Pluto
+                    firstHoneybee.Squad.CommandQueue.Enqueue(moveToPoint);
+
+                    for (int i = 0; i < 5; i++)
+                    {
+                        MoveToRandom moveToRandom = (MoveToRandom) Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.MoveToRandom);
+                        moveToRandom.Setup(firstHoneybee.Squad, false, null, null, 16);
+                        firstHoneybee.Squad.CommandQueue.Enqueue(moveToRandom);
+                    }
+
+                    firstHoneybee.Squad.AddToCommandList();
 
                     Triggers.AddRange(new List<Trigger>(){
                         new Trigger(() =>

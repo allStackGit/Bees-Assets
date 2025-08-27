@@ -99,7 +99,7 @@ namespace Assets.Scripts.Levels.Commands
             _destinations.Clear();
             IsFinalized = false;
         }
-        public void Setup(Squad squad, bool isHiveMindCommand, Squad enemy, string matchup)
+        public virtual void Setup(Squad squad, bool isHiveMindCommand, Squad enemy, string matchup)
         {
             //if (!IsDead)
             //{
@@ -116,7 +116,6 @@ namespace Assets.Scripts.Levels.Commands
             EnemySquad = enemy;
             Matchup = matchup;
             ItemId = Level.State.GetId();
-            GetSquad().OriginalCommandId = ItemId;
             IsHiveMindCommand = isHiveMindCommand;
 
             if (EnemySquad != null)
@@ -450,7 +449,7 @@ namespace Assets.Scripts.Levels.Commands
                 {
                     GetSquad().SetChase(false);
                 }
-                if (GetSquad().IsSelected && Stage.Menus != null)
+                if (GetSquad().IsSelected && Stage.Menus.HasSquadActionBox)
                 {
                     Stage.Menus.ActionBox.HighlightSelectedButtons();
                 }

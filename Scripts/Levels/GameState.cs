@@ -195,7 +195,10 @@ namespace Assets.Scripts.Levels
         {
             //_commands.Add(command);
             PastCommands.Add(new StoredCommand(command));
-            OutcomeIdToPastCommandIndex.Add(command.OutcomeId, PastCommands.Count - 1);
+            if (command.OutcomeId > 0)
+            {
+                OutcomeIdToPastCommandIndex.Add(command.OutcomeId, PastCommands.Count - 1);
+            }
             //Debug.Log($"Added Command {command} to past commands at index #{(PastCommands.Count - 1)}");
             AICommands++;
             Stage.DebugLogger.__HivemindCommands++;

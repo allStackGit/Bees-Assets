@@ -219,6 +219,7 @@ namespace Assets.Scripts
             FullRetreat, // 17
             Hold, // 18
             Heal, // 19
+            MoveToPoint, // 20
         }
 
         public enum ShootingStrategyTypes

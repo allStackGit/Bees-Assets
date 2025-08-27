@@ -66,8 +66,11 @@ namespace Assets.Scripts.Levels
         /// </summary>
         public bool HasCommand;
         public float CurrentSpeed;
-        public int CreationId;
-        public int OriginalCommandId;
+        /// <summary>
+        /// Represents a queue of commands to be processed.
+        /// </summary>
+        /// <remarks>When a user controlled or AI controlled squad needs specific override commands for campaign reasons, this is used.</remarks>
+        public Queue<Command> CommandQueue = new Queue<Command>();
 
         private List<Ship> _ships = new List<Ship>();
         private bool _shouldChase = false;
@@ -125,6 +128,7 @@ namespace Assets.Scripts.Levels
         {
             SetCommandNull();
             HasCommand = false;
+            CommandQueue.Clear();
             PastCommands.Clear();
             BannedStrats.Clear();
             Status = "idle";
@@ -677,7 +681,30 @@ namespace Assets.Scripts.Levels
             //{
             //    Debug.LogError($"{this} has beacons and is being added to the command list");
             //}
-            Level.State.AddToSquadsAwaitingHiveMindCommands(this);
+            if (CommandQueue.Count > 0)
+            {
+                Debug.Log($"{Name} has {CommandQueue.Count} commands in the queue and is adding the next one");
+                Command nextCommand = CommandQueue.Dequeue();
+                Debug.Log($"Dequeued command {nextCommand} for {Name}");
+                SetCommand(nextCommand);
+                if (GetCommand().CommandType == ConfigData.CommandTypes.MoveToPoint)
+                {
+                    ((MoveToPoint)GetCommand()).Execute(GetShootingStrategy(), 0, 0);
+                }
+                else if (GetCommand().CommandType == ConfigData.CommandTypes.MoveToRandom)
+                {
+                    ((MoveToRandom)GetCommand()).Execute(GetShootingStrategy(), 0, 0);
+                }
+                HasCommand = true;
+
+                CommandQueue.Enqueue(nextCommand);
+            }
+            else
+            {
+                Debug.Log($"Adding {Name} to squads awaiting hive mind commands");
+                Level.State.AddToSquadsAwaitingHiveMindCommands(this);
+
+            }
         }
         private HashSet<ConfigData.ShipTypes> _banned, _enemyShips;
         private string[] _bannedTypes;
@@ -1132,7 +1159,7 @@ namespace Assets.Scripts.Levels
         // Utility methods
         public override string ToString()
         {
-            return $"Squad {Name} with {_ships.Count} ships (#{ItemId}, #{CreationId})";
+            return $"Squad {Name} with {_ships.Count} ships (#{ItemId})";
         }
 
         public override bool Equals(System.Object obj)
