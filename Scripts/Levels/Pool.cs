@@ -99,6 +99,7 @@ public class Pool : MonoBehaviour
     public ObjectPool<SwipeSquad> SwipeSquadCommandPool;
     public ObjectPool<Hold> HoldCommandPool;
     public ObjectPool<Heal> HealCommandPool;
+    public ObjectPool<MoveToPoint> MoveToPointCommandPool;
 
     // [debug]
     //public List<GameObject> BigCollisionAsteroids;
@@ -182,6 +183,7 @@ public class Pool : MonoBehaviour
         SwipeSquadCommandPool = new ObjectPool<SwipeSquad>(CreatePooledSwipeSquadCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
         HoldCommandPool = new ObjectPool<Hold>(CreatePooledHoldCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
         HealCommandPool = new ObjectPool<Heal>(CreatePooledHealCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
+        MoveToPointCommandPool = new ObjectPool<MoveToPoint>(CreatePooledMoveToPointCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
 
         //FillPools();
     }
@@ -300,6 +302,13 @@ public class Pool : MonoBehaviour
         _spawn_heal = gameObject.AddComponent<Heal>();
         _spawn_heal.Create(Stage, ConfigData.CommandTypes.Heal);
         return _spawn_heal;
+    }
+    private MoveToPoint _spawn_moveToPoint;
+    public MoveToPoint CreatePooledMoveToPointCommand()
+    {
+        _spawn_moveToPoint = gameObject.AddComponent<MoveToPoint>();
+        _spawn_moveToPoint.Create(Stage, ConfigData.CommandTypes.MoveToPoint);
+        return _spawn_moveToPoint;
     }
     CarrierSquad _spawn_carrierSquad;
     public CarrierSquad CreatePooledCarrierSquad()
@@ -1214,6 +1223,9 @@ public class Pool : MonoBehaviour
             case ConfigData.CommandTypes.Heal:
                 HealCommandPool.Release((Heal)command);
                 break;
+            case ConfigData.CommandTypes.MoveToPoint:
+                MoveToPointCommandPool.Release((MoveToPoint)command);
+                break;
             default:
                 Debug.LogError($"Command type is invalid: {command.CommandType}");
                 break;
@@ -1257,6 +1269,8 @@ public class Pool : MonoBehaviour
                 return HoldCommandPool.Get();
             case ConfigData.CommandTypes.Heal:
                 return HealCommandPool.Get();
+            case ConfigData.CommandTypes.MoveToPoint:
+                return MoveToPointCommandPool.Get();
             default:
                 Debug.LogError($"Command type is invalid: {type}");
                 return null;

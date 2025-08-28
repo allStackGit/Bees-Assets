@@ -71,6 +71,15 @@ namespace Assets.Scripts.Levels
         /// </summary>
         /// <remarks>When a user controlled or AI controlled squad needs specific override commands for campaign reasons, this is used.</remarks>
         public Queue<Command> CommandQueue = new Queue<Command>();
+        /// <summary>
+        /// If there is a command queue, this is the action that will be triggered when the queue is empty, it's often used to refill the queue
+        /// </summary>
+        public Action CommandQueueEmptyAction;
+        public bool HasCommandQueue;
+        /// <summary>
+        /// If this is false, the squad will not respond to user input. Only important for user squads. Usually used with the command queue
+        /// </summary>
+        public bool CanAcceptUserInput;
 
         private List<Ship> _ships = new List<Ship>();
         private bool _shouldChase = false;
@@ -147,6 +156,7 @@ namespace Assets.Scripts.Levels
             CurrentSpeed = 0;
             //MatchupStrategy.Kill();
             enabled = true;
+            CommandQueueEmptyAction = null;
 
         }
         public virtual void Create(Stage stage)
@@ -335,6 +345,14 @@ namespace Assets.Scripts.Levels
                 SquadTab.ShowTab();
             }
         }
+        /// <summary>
+        /// Whether this squad can be selected. It must be user controlled, be able to accept user input, and not be already selected
+        /// </summary>
+        /// <returns></returns>
+        public bool CanBeSelected()
+        {
+            return IsUserControlled && CanAcceptUserInput && !Level.State.SelectedSquads.Contains(this);
+        }
         public void NameSquadShips()
         {
             foreach (Ship ship in GetShips())
@@ -418,7 +436,7 @@ namespace Assets.Scripts.Levels
             {
                 Level.Stage.Menus.ActionBox.HighlightSelectedButtons();
             }
-            //float start = Time.realtimeSinceStartup;
+            //float start = Time.realtimeSinceStartup; 
             _tempShips = GetShips();
             foreach (Ship ship in _tempShips)
             {
@@ -683,9 +701,9 @@ namespace Assets.Scripts.Levels
             //}
             if (CommandQueue.Count > 0)
             {
-                Debug.Log($"{Name} has {CommandQueue.Count} commands in the queue and is adding the next one");
+                //Debug.Log($"{Name} has {CommandQueue.Count} commands in the queue and is adding the next one");
                 Command nextCommand = CommandQueue.Dequeue();
-                Debug.Log($"Dequeued command {nextCommand} for {Name}");
+                //Debug.Log($"Dequeued command {nextCommand} for {Name}");
                 SetCommand(nextCommand);
                 if (GetCommand().CommandType == ConfigData.CommandTypes.MoveToPoint)
                 {
@@ -697,10 +715,14 @@ namespace Assets.Scripts.Levels
                 }
                 HasCommand = true;
 
-                CommandQueue.Enqueue(nextCommand);
+            }
+            else if (HasCommandQueue)
+            {
+                CommandQueueEmptyAction();
             }
             else
             {
+
                 Debug.Log($"Adding {Name} to squads awaiting hive mind commands");
                 Level.State.AddToSquadsAwaitingHiveMindCommands(this);
 

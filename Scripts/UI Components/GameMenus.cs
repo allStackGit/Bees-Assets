@@ -39,7 +39,10 @@ namespace Assets.Scripts.UIComponents
             CurrentLevel = stage.PrimaryLevel;
             if (!Stage.IsTraining)
             {
-                ActionBox = SquadActionBoxUI.GetComponent<SquadActionBox>();
+                if (CurrentLevel.CurrentLevelOptions.HasSquadActionBox)
+                {
+                    ActionBox = SquadActionBoxUI.GetComponent<SquadActionBox>();
+                }
                 Codex.SetupCodex();
                 //Settings.SetupSettings(Stage);
                 

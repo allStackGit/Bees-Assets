@@ -1405,17 +1405,25 @@ namespace Assets.Scripts.Levels
                     // Add commands to the queue for the honeybee to move near Pluto
                     State.SquadsAwaitingCommands.Dequeue(); // Remove the honeybee from the AI command queue
 
-                    MoveToPoint moveToPoint = Stage.Pool.gameObject.AddComponent<MoveToPoint>();
-                    moveToPoint.Create(Stage, ConfigData.CommandTypes.MoveToPoint);
-                    moveToPoint.Setup(firstHoneybee.Squad, false, null, null, new Vector2(70, -30)); // Center of Pluto
-                    firstHoneybee.Squad.CommandQueue.Enqueue(moveToPoint);
-
-                    for (int i = 0; i < 5; i++)
+                    firstHoneybee.Squad.HasCommandQueue = true;
+                    firstHoneybee.Squad.CommandQueueEmptyAction = () =>
                     {
-                        MoveToRandom moveToRandom = (MoveToRandom) Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.MoveToRandom);
-                        moveToRandom.Setup(firstHoneybee.Squad, false, null, null, 16);
-                        firstHoneybee.Squad.CommandQueue.Enqueue(moveToRandom);
-                    }
+                        Debug.Log($"Refilling command queue");
+                        MoveToPoint moveToPoint = (MoveToPoint)Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.MoveToPoint);
+                        moveToPoint.Setup(firstHoneybee.Squad, false, null, null, new Vector2(70, -30)); // Center of Pluto
+                        firstHoneybee.Squad.CommandQueue.Enqueue(moveToPoint);
+
+                        for (int i = 0; i < 5; i++)
+                        {
+                            MoveToRandom moveToRandom = (MoveToRandom)Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.MoveToRandom);
+                            moveToRandom.Setup(firstHoneybee.Squad, false, null, null, 16);
+                            firstHoneybee.Squad.CommandQueue.Enqueue(moveToRandom);
+                        }
+
+                        firstHoneybee.Squad.AddToCommandList();
+                    };
+
+
 
                     firstHoneybee.Squad.AddToCommandList();
 
@@ -1428,6 +1436,16 @@ namespace Assets.Scripts.Levels
                         () =>
                         {
                             Debug.Log("Scout spotted the honeybee!");
+
+                            State.SelectSquads(new List<Squad>());
+                            firstScout.Squad.Move(firstScout.Squad.GetPosition());
+                            firstScout.Squad.CanAcceptUserInput = false;
+
+                            MoveToPoint moveToPoint = (MoveToPoint)Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.MoveToPoint);
+                            moveToPoint.Setup(firstHoneybee.Squad, false, null, null, new Vector2(70, -30)); // Center of Pluto
+                            firstScout.Squad.CommandQueue.Enqueue(moveToPoint);
+
+                            firstScout.Squad.AddToCommandList();
                         },
                         "Level 0 Test Trigger")
                     });

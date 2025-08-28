@@ -347,9 +347,13 @@ namespace Assets.Scripts.Levels
         {
             return SelectedSquads.Where((squad) => squad != null).ToList();
         }
+        /// <summary>
+        /// The actual method that adds a selected squad to the list of selected squads and updates the UI
+        /// </summary>
+        /// <param name="squad"></param>
         public void AddSelectedSquad(Squad squad)
         {
-            if (squad != null && squad.IsUserControlled && !SelectedSquads.Contains(squad))
+            if (squad.CanBeSelected())
             {
                 SelectedSquads.Add(squad);
                 squad.IsSelected = true;
