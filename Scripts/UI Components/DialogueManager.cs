@@ -16,14 +16,27 @@ public class DialogueManager : MonoBehaviour
     public TMP_Text SpeakerName;
     public Image PortraitImage;
     public Level Level;
+    public Dialogues CurrentDialogue;
 
     private Queue<DialogueLine> dialogueLines = new Queue<DialogueLine>();
     private bool _hasContinuePrompt;
 
-    public void Setup(Level level, CutsceneManager cutsceneManager)
+    public enum Dialogues
+    {
+        Pluto_TechnicianIntro,
+        Pluto_TomIntro,
+    }
+
+    public void Setup(Level level, CutsceneManager cutsceneManager, Dialogues dialogueType)
     {
         Level = level;
         CutsceneManager = cutsceneManager;
+        CurrentDialogue = dialogueType;
+    }
+
+    public void SwitchDialogue(Dialogues dialogueType)
+    {
+        CurrentDialogue = dialogueType;
     }
 
     public void StartDialogue(List<DialogueLine> lines, bool hasContinueButton)
@@ -66,22 +79,41 @@ public class DialogueManager : MonoBehaviour
 
     IEnumerator TypeLine(DialogueLine line)
     {
-        DialogueText.text = "";
-        int characterIndex = 0;
-        bool aOrB = false;
-        ToggleContinuePrompt(false);
-
-        if (line.PauseDuration > 0)
+        if (line.Type == DialogueLine.DialogueType.Break)
         {
-            yield return new WaitForSeconds(line.PauseDuration);
+            CutsceneManager.BreakDialogue();
         }
         else
         {
+            DialogueText.text = "";
+            int characterIndex = 0;
+            bool aOrB = false;
+            ToggleContinuePrompt(false);
+
+            Debug.Log($"Typing line: {line.Text}, Type: {line.Type}");
+
             foreach (char c in line.Text)
             {
+
+                if (line.Type == DialogueLine.DialogueType.Action)
+                {
+                    if (characterIndex == 0)
+                    {
+                        DialogueText.text += "<i>";
+                    }
+                }
+
                 DialogueText.text += c;
+
+                if (line.Type == DialogueLine.DialogueType.Action)
+                {
+                    if (characterIndex == line.Text.Length - 1)
+                    {
+                        DialogueText.text += "</i>";
+                    }
+                }
                 characterIndex++;
-                if (characterIndex == line.Text.Length)
+                if (characterIndex == line.Text.Length || line.Type != DialogueLine.DialogueType.Speaking)
                 {
                     SetPortrait(line.PortraitA);
                 }
@@ -98,13 +130,18 @@ public class DialogueManager : MonoBehaviour
                     aOrB = !aOrB;
                 }
 
-                yield return new WaitForSeconds(0.01f);
+                yield return new WaitForSeconds(0.02f);
             }
+            if (line.PauseDuration > 0)
+            {
+                yield return new WaitForSeconds(line.PauseDuration);
+            }
+
+
+
+            ToggleContinuePrompt(true);
         }
-
-
-
-        ToggleContinuePrompt(true);
+        
     }
 
     private ScaledTimer _continuePromptTimer = new ScaledTimer();
@@ -124,7 +161,7 @@ public class DialogueManager : MonoBehaviour
     void EndDialogue()
     {
         Debug.Log("Dialogue ended.");
-        CutsceneManager.EndDialogue();
+        CutsceneManager.EndDialogue(CurrentDialogue);
     }
 
 }

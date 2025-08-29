@@ -9,6 +9,7 @@ using Assets.Scripts.UIComponents;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEditor;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.Playables;
@@ -834,7 +835,6 @@ namespace Assets.Scripts.Levels
                 Map.FogOfWar.SetActive(false);
             }
 
-            SetupHivemind();
 
             //CancelTimer(_checkTriggersTimer);
             if (!Stage.IsTraining)
@@ -851,11 +851,28 @@ namespace Assets.Scripts.Levels
                 Stage.Audio.SetupMusic();
             }
 
-            Stage.CutsceneManager.Setup();
-            Stage.CutsceneManager.StartCutScene();
+            SetupHivemind();
+
+
 
             //float end = (Time.realtimeSinceStartup - StartTime) * 1000; // seconds to milliseconds
             //Debug.Log($"It took {Math.Round(end, 2)} ms to set up the level and {Math.Round(Time.realtimeSinceStartup, 2)}s total time.");
+        }
+        /// <summary>
+        /// When everything is ready for the first level, select the user's first squad
+        /// </summary>
+        public void SelectFirstSquad()
+        {
+            if (State.GetSquadsBySide(ConfigData.Configuration.UserSide).Count > 0 && State.GetSquadsBySide(ConfigData.Configuration.AISide).Count > 0 && !Stage.IsTraining)
+            {
+                State.SelectSquad(State.GetSquadByNumber(ConfigData.Configuration.UserSide, 1));
+            }
+            else if (!Stage.IsTraining)
+            {
+                Debug.Log($"User squads: {State.GetSquadsBySide(ConfigData.Configuration.UserSide).Count}, AI squads: {State.GetSquadsBySide(ConfigData.Configuration.AISide).Count}");
+                Pause();
+                Stage.Menus.NoAliveShipsAlert.SetActive(true);
+            }
         }
         /// <summary>
         /// Cleans up the game state and requests and deletes the previous map
@@ -925,6 +942,13 @@ namespace Assets.Scripts.Levels
             //CancelInvoke(nameof(GetHiveMindCommands));
             if (Stage.ActivateHiveMind)
             {
+                State.GetSquadsBySide(ConfigData.Configuration.AISide).ForEach(s => { 
+                    if (!s.IsImmobile && !s.HasCommandQueue)
+                    {
+                        s.AddToCommandList();
+                    }
+                });
+
                 //Invoke(nameof(GetHiveMindCommands), Stage.InitialCommandDelay);
                 _hivemindTimer.Reuse(.25f, GetHiveMindCommands, true);
                 _initialCommandDelayTimer.Reuse(Stage.InitialCommandDelay - .25f, () =>
@@ -963,16 +987,6 @@ namespace Assets.Scripts.Levels
             //}
             LevelConstructor.SetupShips(ConfigData.Configuration.AISide);
             LevelConstructor.SetupShips(ConfigData.Configuration.UserSide);
-            if (State.GetSquadsBySide(ConfigData.Configuration.UserSide).Count > 0 && State.GetSquadsBySide(ConfigData.Configuration.AISide).Count > 0 && !Stage.IsTraining)
-            {
-                State.SelectSquad(State.GetSquadByNumber(ConfigData.Configuration.UserSide, 1));
-            }
-            else if (!Stage.IsTraining)
-            {
-                Debug.Log($"User squads: {State.GetSquadsBySide(ConfigData.Configuration.UserSide).Count}, AI squads: {State.GetSquadsBySide(ConfigData.Configuration.AISide).Count}");
-                Pause();
-                Stage.Menus.NoAliveShipsAlert.SetActive(true);
-            }
             CalculateShipClearances();
             if (CurrentLevelOptions.EnemyReinforcementDelay == 0)
             {
@@ -1387,6 +1401,8 @@ namespace Assets.Scripts.Levels
                     // Setup specifics for the level
                     Scout firstScout = (Scout)State.GetHumanShips().First();
                     Honeybee firstHoneybee = (Honeybee)State.GetBeeShips().First();
+                    int checksForUserControl = 0;
+                    bool hasBeenUserControlled = false;
 
 
                     // Setup proximity collider for the scout
@@ -1403,12 +1419,10 @@ namespace Assets.Scripts.Levels
                     Stage.SurrenderButton.SetActive(false);
 
                     // Add commands to the queue for the honeybee to move near Pluto
-                    State.SquadsAwaitingCommands.Dequeue(); // Remove the honeybee from the AI command queue
-
                     firstHoneybee.Squad.HasCommandQueue = true;
                     firstHoneybee.Squad.CommandQueueEmptyAction = () =>
                     {
-                        Debug.Log($"Refilling command queue");
+                        //Debug.Log($"Refilling command queue");
                         MoveToPoint moveToPoint = (MoveToPoint)Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.MoveToPoint);
                         moveToPoint.Setup(firstHoneybee.Squad, false, null, null, new Vector2(70, -30)); // Center of Pluto
                         firstHoneybee.Squad.CommandQueue.Enqueue(moveToPoint);
@@ -1420,12 +1434,19 @@ namespace Assets.Scripts.Levels
                             firstHoneybee.Squad.CommandQueue.Enqueue(moveToRandom);
                         }
 
-                        firstHoneybee.Squad.AddToCommandList();
+                        firstHoneybee.Squad.RunCommandQueue();
                     };
 
 
 
-                    firstHoneybee.Squad.AddToCommandList();
+                    firstHoneybee.Squad.RunCommandQueue();
+
+                    // [alert] maybe this should be for all levels
+                    Stage.CutsceneManager.Setup();
+                    Stage.CutsceneManager.StartCutScene();
+
+                    //Stage.CutsceneManager.ShowDialogue();
+                    //Stage.CutsceneManager.StartDialogue();
 
                     Triggers.AddRange(new List<Trigger>(){
                         new Trigger(() =>
@@ -1438,21 +1459,116 @@ namespace Assets.Scripts.Levels
                             Debug.Log("Scout spotted the honeybee!");
 
                             State.SelectSquads(new List<Squad>());
-                            firstScout.Squad.Move(firstScout.Squad.GetPosition());
+                            firstScout.Squad.StopMoving();
                             firstScout.Squad.CanAcceptUserInput = false;
 
-                            MoveToPoint moveToPoint = (MoveToPoint)Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.MoveToPoint);
-                            moveToPoint.Setup(firstHoneybee.Squad, false, null, null, new Vector2(70, -30)); // Center of Pluto
-                            firstScout.Squad.CommandQueue.Enqueue(moveToPoint);
+                            GameObject alarm = Instantiate(Stage.Prefabs.AlarmReactionPrefab);
+                            alarm.transform.SetParent(firstScout.transform);
+                            alarm.transform.localPosition = new Vector2(3, 1.5f);
+                            alarm.transform.eulerAngles = Vector3.zero;
 
-                            firstScout.Squad.AddToCommandList();
+                            Utilities.Shake(this, alarm, 1.5f, () =>
+                            {
+                                Destroy(alarm);
+
+                                firstScout.Squad.HasCommandQueue = true;
+                                firstScout.Squad.CommandQueueEmptyAction = () => {
+                                    Debug.Log($"Scout has reached out of sight position: {firstScout.GetPosition()}");
+                                    Stage.SetupCamera(); // Reset the camera position
+                                    Stage.CutsceneManager.ShowDialogue();
+                                    Stage.CutsceneManager.StartDialogue(DialogueManager.Dialogues.Pluto_TechnicianIntro);
+                                    firstScout.EndKill();
+                                };
+
+                                firstScout.CanOverrideBounds = true;
+                                MoveToPoint moveToPoint = (MoveToPoint)Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.MoveToPoint);
+                                moveToPoint.Setup(firstScout.Squad, false, null, null, StartingPositions[firstScout.Side - 1] - new Vector2(150, 150)); // Scout starting position - 100 
+                                firstScout.Squad.CommandQueue.Enqueue(moveToPoint);
+
+                                firstScout.Squad.RunCommandQueue();
+                            });
+                            
                         },
-                        "Level 0 Test Trigger")
+                        "Level 0 Looking for Honeybee Trigger"),
+
+                        new Trigger(() =>
+                        {
+                            Debug.Log($"Waiting for user to control Scout");
+                            checksForUserControl++;
+                            hasBeenUserControlled = firstScout.DistanceToPoint(StartingPositions[firstScout.Side - 1]) > 3;
+                            return hasBeenUserControlled || checksForUserControl >= 3; // Max of 15s / 3 checks
+                        },
+                        () =>
+                        {
+                            if (!hasBeenUserControlled)
+                            {
+                                Debug.Log("Showing tooltip for controlling Scout");
+                                Stage.Menus.Tooltip.SetActive(true);
+                                Stage.Menus.TooltipText.text = "You can move the ship by right clicking somewhere in space or on the mini map.";
+                            }
+                            else
+                            {
+                                Debug.Log($"Waited 15 seconds and the ship has been user controlled, not showing tooltip");
+                            }
+
+                        },
+                        "Level 0 Waiting for user to control Scout Trigger"),
+                        new Trigger(() =>
+                        {
+                            Debug.Log($"Waiting to hide tooltip");
+                            hasBeenUserControlled = firstScout.DistanceToPoint(StartingPositions[firstScout.Side - 1]) > 3;
+                            return hasBeenUserControlled; // Max of 15s / 3 checks
+                        },
+                        () =>
+                        {
+                            if (hasBeenUserControlled)
+                            {
+                                Stage.Menus.Tooltip.SetActive(false);
+                            }
+
+                        },
+                        "Level 0 Waiting for user to control Scout to hide tooltip Trigger"),
+                        new Trigger(() =>
+                        {
+                            return Stage.CutsceneManager.PlutoLines_TechnicianIntro_Completed;
+                        },
+                        () =>
+                        {
+                            Debug.Log("Technician intro completed, spawning gunship");
+
+                            // Spawn the gunship squad, take away user control, put it on cease fire
+                            LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() {ConfigData.CurrentShips.GetSavedSquad(1) }, StartingPositions[ConfigData.Configuration.UserSide - 1] - new Vector2(0, 100), StartingPositions[ConfigData.Configuration.UserSide - 1] - new Vector2(0, 100));
+
+                            Gunship firstGunship = (Gunship)State.GetHumanShips().First(); // Still the first ship since the Scout was removed
+                            firstGunship.Squad.CanAcceptUserInput = false;
+                            firstGunship.Squad.SetSquadCeaseFire(true);
+
+
+                            firstGunship.Squad.HasCommandQueue = true;
+                            firstGunship.Squad.CommandQueueEmptyAction = () => {
+                                Debug.Log($"Gunship has reached center position: {firstGunship.GetPosition()}");
+                                
+                                // Tom Dialogue
+                                Stage.CutsceneManager.ShowDialogue();
+                                Stage.CutsceneManager.StartDialogue(DialogueManager.Dialogues.Pluto_TomIntro);
+                            };
+
+                            MoveToPoint moveToPoint = (MoveToPoint)Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.MoveToPoint);
+                            moveToPoint.Setup(firstGunship.Squad, false, null, null, StartingPositions[ConfigData.Configuration.UserSide - 1] + new Vector2(0, 40)); // Gunship center-ish position
+                            firstGunship.Squad.CommandQueue.Enqueue(moveToPoint);
+
+                            firstGunship.Squad.RunCommandQueue();
+
+
+                            
+
+                            // Gunship goes to pursue honeybee
+
+                        },
+                        "Level 0 Waiting for user to control Scout to hide tooltip Trigger")
                     });
-                    break;
+                break;
             }
-
         }
-
     }
 }

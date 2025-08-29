@@ -21,6 +21,7 @@ using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.UI;
 using WebSocketSharp;
+using static UnityEngine.RuleTile.TilingRuleOutput;
 using Random = System.Random;
 
 namespace Assets.Scripts
@@ -684,6 +685,42 @@ namespace Assets.Scripts
                 list[_shuffle_k] = list[_shuffle_n];
                 list[_shuffle_n] = (T)_shuffle_value;
             }
+        }
+
+        private static ScaledTimer _shakeTimer = new ScaledTimer();
+        private static ScaledTimer _cancelTimer = new ScaledTimer();
+        public static void ShakeObject(GameObject gameObject, Vector2 originalPosition)
+        {
+            gameObject.transform.localPosition = originalPosition + new Vector2(RandomFloat(.5f) * RandomSign(), RandomFloat(.5f) * RandomSign());
+
+            gameObject.transform.localEulerAngles = new Vector3(0, 0, RandomFloat(15f) * RandomSign());
+        }
+
+        public static void Shake(Level level, GameObject gameObject, float duration, Action endAction)
+        {
+            Vector2 originalPosition = gameObject.transform.localPosition;
+
+            _shakeTimer.Reuse(.025f, () =>
+            {
+                //Debug.Log($"Shaking {gameObject.name}");
+                ShakeObject(gameObject, originalPosition);
+            }, true);
+
+            level.AddTimer(_shakeTimer);
+
+            _cancelTimer.Reuse(duration, () =>
+            {
+                //Debug.Log($"Canceling shake for {gameObject.name}");
+                CancelShake(level);
+                endAction();
+            }, false);
+
+            level.AddTimer(_cancelTimer);
+        }
+
+        public static void CancelShake(Level level)
+        {
+            level.CancelTimer(_shakeTimer);
         }
 
         public static bool AreVectorsEqual(Vector2 a, Vector2 b)

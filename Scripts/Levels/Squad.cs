@@ -135,6 +135,7 @@ namespace Assets.Scripts.Levels
         // Setup methods
         public virtual void ClearData()
         {
+            CanAcceptUserInput = false;
             SetCommandNull();
             HasCommand = false;
             CommandQueue.Clear();
@@ -157,6 +158,7 @@ namespace Assets.Scripts.Levels
             //MatchupStrategy.Kill();
             enabled = true;
             CommandQueueEmptyAction = null;
+            HasCommandQueue = false;
 
         }
         public virtual void Create(Stage stage)
@@ -169,8 +171,7 @@ namespace Assets.Scripts.Levels
             //Debug.Log($"Created squad {this}");
         }
         private ScaledTimer _checkChaseTimer = new ScaledTimer();
-        public void Setup(Level level, SavedSquad savedSquad, ConfigData.ShootingStrategyTypes shootingStrategy, bool ceaseFire, bool isMatchingSpeed, bool shouldChase,
-            bool isImobile, long id, int side, int squadNumber, string name, Color color)
+        public void Setup(Level level, SavedSquad savedSquad, ConfigData.ShootingStrategyTypes shootingStrategy, bool ceaseFire, bool isMatchingSpeed, bool shouldChase, bool isImobile, long id, int side, int squadNumber, string name, Color color)
         {
             ClearData();
             IsImmobile = isImobile;
@@ -197,6 +198,7 @@ namespace Assets.Scripts.Levels
             else
             {
                 IsHiveMindControlled = false;
+                CanAcceptUserInput = true;
             }
 
             if (Color != ConfigData.UnsetColor && IsUserControlled)
@@ -209,14 +211,6 @@ namespace Assets.Scripts.Levels
                 SquadBoxColor = ConfigData.GetUIColor("squadbox-default-color");
             }
             
-            if (IsHiveMindControlled && !IsImmobile)
-            {
-                AddToCommandList();
-            }
-            else
-            {
-                //Debug.Log($"Squad: {Name}, Side: {Side}, HiveMindControlled: {IsHiveMindControlled}, Has Brain: {HasBrain}");
-            }
 
             transform.parent = Level.Map.Transform;
 
@@ -409,6 +403,19 @@ namespace Assets.Scripts.Levels
 
 
         // Movement methods
+        public void StopMoving()
+        {
+            _tempShips = GetShips();
+            foreach (Ship ship in _tempShips)
+            {
+                //float x = Mathf.Clamp((destination.x + ship.OffsetFromCenter.x), Level.MinX, Level.MaxX);
+                //float y = Mathf.Clamp((destination.y + ship.OffsetFromCenter.y), Level.MinY, Level.MaxY);
+                if (ship.IsMobile)
+                {
+                    ship.StopMoving("Squad ordered to stop");
+                }
+            }
+        }
         public void Move(Vector2 destination)
         {
             //if (IsAttacking)
@@ -432,7 +439,7 @@ namespace Assets.Scripts.Levels
             //        ship.TargetCoordinates = new Vector2(x, y);
             //    });
             //}
-            if (Level.Stage.Menus.HasSquadActionBox)
+            if (IsSelected && Level.Stage.Menus.HasSquadActionBox)
             {
                 Level.Stage.Menus.ActionBox.HighlightSelectedButtons();
             }
@@ -694,14 +701,15 @@ namespace Assets.Scripts.Levels
         /// Puts this squad on the list of squads waiting for new hive mind commands
         /// </summary>
         public void AddToCommandList()
-        {          
-            //if (GetShips().Any((s) => s.ShipType == ConfigData.ShipTypes.Beacon))
-            //{
-            //    Debug.LogError($"{this} has beacons and is being added to the command list");
-            //}
+        {
+            Debug.Log($"Adding {this} to squads awaiting hive mind commands");
+            Level.State.AddToSquadsAwaitingHiveMindCommands(this);
+        }
+        public void RunCommandQueue()
+        {
             if (CommandQueue.Count > 0)
             {
-                //Debug.Log($"{Name} has {CommandQueue.Count} commands in the queue and is adding the next one");
+                //Debug.Log($"{this} has {CommandQueue.Count} commands in the queue and is starting the first one");
                 Command nextCommand = CommandQueue.Dequeue();
                 //Debug.Log($"Dequeued command {nextCommand} for {Name}");
                 SetCommand(nextCommand);
@@ -720,12 +728,9 @@ namespace Assets.Scripts.Levels
             {
                 CommandQueueEmptyAction();
             }
-            else
+            else if (IsHiveMindControlled && !IsImmobile)
             {
-
-                Debug.Log($"Adding {Name} to squads awaiting hive mind commands");
-                Level.State.AddToSquadsAwaitingHiveMindCommands(this);
-
+                AddToCommandList();
             }
         }
         private HashSet<ConfigData.ShipTypes> _banned, _enemyShips;

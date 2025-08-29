@@ -360,13 +360,14 @@ namespace Assets.Scripts.Levels
             //Debug.Log($"Modded Squad #{squadNumber}");
 
             _selectSquad_squad = Level.State.GetSquadByNumber(ConfigData.Configuration.UserSide, squadNumber);
-            if (_selectSquad_squad != null)
+            Level.State.SelectSquad(_selectSquad_squad);
+
+            if (_selectSquad_squad.IsSelected) //Center the camera on the selected squad
             {
                 _selectSquad_position = _selectSquad_squad.GetPosition();
                 Stage.Camera.transform.position = new Vector3(_selectSquad_position.x, _selectSquad_position.y, -10) + Level.Get3DPosition();
                 //ToggleZoom();
                 MaintainScrollBoundary();
-                Level.State.SelectSquad(_selectSquad_squad);
             }
         }
 

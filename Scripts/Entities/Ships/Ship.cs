@@ -153,6 +153,10 @@ namespace Assets.Scripts.Entities.Ships
         /// Whether or not the ship has the Cease Fire command from the squad or from being healed
         /// </summary>
         public bool IsCeaseFire;
+        /// <summary>
+        /// Whether or not a ship can move beyond the map bounds. Only allowed temporarily for campaign levels
+        /// </summary>
+        public bool CanOverrideBounds;
 
         public volatile bool PathfindingThreadComplete, IsPathfinding;
         public volatile Pathfinder.Path PathfindingValue;
@@ -737,6 +741,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             ProjectilesInFlight.Clear();
             WeaponsThatHaveUsWithinRange.Clear();
             SetToDefaultAngle();
+            CanOverrideBounds = false;
 
             //if (HasProximityCollider)
             //{
@@ -838,7 +843,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         {
             if (!CannotChangeMovementOrders)
             {
-                destination = Level.ForceBounds(destination);
+                destination = CanOverrideBounds ? destination : Level.ForceBounds(destination);
 
                 if (Level.HasObstacles && IsInBounds())
                 {

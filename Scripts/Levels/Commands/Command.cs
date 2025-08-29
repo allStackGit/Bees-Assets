@@ -460,13 +460,17 @@ namespace Assets.Scripts.Levels.Commands
                 GetSquad().HasCommand = false;
                 Level.State.CommandsToRelease.Add(this);
 
-                if (GetSquad().IsHiveMindControlled && Stage.ActivateHiveMind)
+                if (IsHiveMindCommand && Stage.ActivateHiveMind)
                 {
                     //if (GetSquad().GetShips().Any((s) => s.ShipType == ConfigData.ShipTypes.Beacon))
                     //{
                     //    Debug.Log($"{this} has a squad with beacons and it just finalized");
                     //}
                     GetSquad().AddToCommandList();
+                }
+                else
+                {
+                    GetSquad().RunCommandQueue();
                 }
                 // If this is a hivemind command with an outcomeId then find the past command in the state, update the TSV, and finalize it
                 if (IsHiveMindCommand && OutcomeId > 0)

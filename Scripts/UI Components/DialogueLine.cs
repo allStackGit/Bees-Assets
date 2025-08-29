@@ -15,7 +15,8 @@ public class DialogueLine
     {
         Speaking,
         Pause,
-        Action
+        Action,
+        Break
     }
     public DialogueLine(string name, Sprite[] portraits, string dialogueText)
     {
@@ -31,6 +32,7 @@ public class DialogueLine
         PortraitA = portraits[0];
         PortraitB = portraits[1];
         PauseDuration = pauseDuration;
+        Text = "";
         Type = DialogueType.Pause;
     }
 
@@ -42,6 +44,10 @@ public class DialogueLine
         PauseDuration = pauseDuration;
         Text = actionText;
         Type = DialogueType.Action;
+    }
+    public DialogueLine()
+    {
+        Type = DialogueType.Break;
     }
 
 }

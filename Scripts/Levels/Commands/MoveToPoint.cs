@@ -41,10 +41,11 @@ namespace Assets.Scripts.Levels.Commands
                 if (GetSquad().HasReachedDestination)
                 {
                     SetFinalize("Reached the specified destination on the map");
+                    //Debug.Log($"Ending MoveToPoint command for {GetSquad()}");
                 }
-                Destination = GetDestination();
                 SetAndMove(Destination);
                 GetSquad().Status = $"Moving to specific destination: {Destination}";
+                //Debug.Log($"Moving to specific destination: {Destination}");
             }
         }
     }

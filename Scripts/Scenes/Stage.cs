@@ -603,6 +603,7 @@ public class Stage : Scene
     {
         Debug.Log($"Enabling player control for the stage");
         IsPlayerControlling = true;
+        PrimaryLevel.SelectFirstSquad();
     }
 
     // Update is called once per frame

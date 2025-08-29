@@ -15,14 +15,12 @@ namespace Assets.Scripts.UIComponents
 {
     public class GameMenus : MonoBehaviour
     {
-        public GameObject MenuContainer, LevelEndedDialogue, SaveLevelDialogue, NoAliveShipsAlert, SquadActionBoxUI, VictoryLabel, DefeatLabel, MiniMapCloseButton, MiniMapOpenButton, 
-            MiniMapTopBorder, MiniMapLeftBorder, MiniMapCameraCollider, MiniMapOutput, HumanScore, BeeScore, ShipInfoBox, KeepGoingButton, ToggleFogOfWarButton, RestartLevelButton,
-            ChooseNewSquadsButton, SwitchSidesButton, SaveAsLevelButton, ExitToMainMenuButton, Scoreboard;
+        public GameObject MenuContainer, LevelEndedDialogue, SaveLevelDialogue, NoAliveShipsAlert, SquadActionBoxUI, VictoryLabel, DefeatLabel, MiniMapCloseButton, MiniMapOpenButton, MiniMapTopBorder, MiniMapLeftBorder, MiniMapCameraCollider, MiniMapOutput, HumanScore, BeeScore, ShipInfoBox, KeepGoingButton, ToggleFogOfWarButton, RestartLevelButton, ChooseNewSquadsButton, SwitchSidesButton, SaveAsLevelButton, ExitToMainMenuButton, Scoreboard, Tooltip;
         public SquadActionBox ActionBox;
         public Level CurrentLevel;
         public Stage Stage;
         public Dialogue ExitConfirmationDialogue;
-        public TMP_Text ShipInfoBoxTitle, ShipInfoBoxStats, TryNewSquadsButtonText;
+        public TMP_Text ShipInfoBoxTitle, ShipInfoBoxStats, TryNewSquadsButtonText, TooltipText;
         public TMP_InputField LevelNameInput, SupplyCapacityInput;
         public Codex Codex;
         public SettingsMenu Settings;
@@ -39,10 +37,7 @@ namespace Assets.Scripts.UIComponents
             CurrentLevel = stage.PrimaryLevel;
             if (!Stage.IsTraining)
             {
-                if (CurrentLevel.CurrentLevelOptions.HasSquadActionBox)
-                {
-                    ActionBox = SquadActionBoxUI.GetComponent<SquadActionBox>();
-                }
+                ActionBox = SquadActionBoxUI.GetComponent<SquadActionBox>();
                 Codex.SetupCodex();
                 //Settings.SetupSettings(Stage);
                 
