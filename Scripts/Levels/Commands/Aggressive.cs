@@ -16,6 +16,7 @@ namespace Assets.Scripts.Levels.Commands
         /// </summary>
         public bool HasTakenPosition;
         public int ConsecutiveTimesWithinRange = 0;
+
         /// <summary>
         ///  Sends the squad towards the enemy and follows them, attacking until one squad is dead
         /// </summary>

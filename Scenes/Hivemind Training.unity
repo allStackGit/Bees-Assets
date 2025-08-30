@@ -9983,6 +9983,7 @@ MonoBehaviour:
   SpeakerName: {fileID: 841713412}
   PortraitImage: {fileID: 438464036}
   Level: {fileID: 0}
+  CurrentDialogue: 0
 --- !u!114 &1423513649
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -16155,6 +16156,7 @@ MonoBehaviour:
   QueenShipExplosionPrefab: {fileID: 1317667449522872329, guid: 3916e7d63e371ed4ab56cbc6ead366b2, type: 3}
   HumanProximityColliderPrefab: {fileID: 7908384552572958469, guid: dc6a14c773472f84cae1f827383831c9, type: 3}
   AlarmReactionPrefab: {fileID: 7345324820923678335, guid: 0ab03f4421e322d4a9bc5cb8406c4601, type: 3}
+  ExitZonePrefab: {fileID: 3487513446035981714, guid: edac10c860a6f4a4c80753d9ac3afc36, type: 3}
   MovementMarkerPrefab: {fileID: 2507697582912947509, guid: d5ee77a24c7f6a6499324a8a600b4943, type: 3}
   TargetingMarkerPrefab: {fileID: 2507697582912947509, guid: 60a6013777594eb47842724022e04add, type: 3}
   SquadBoxPrefab: {fileID: 4393128050314196725, guid: 606f56cf5efd9f84d9e877d10187ad8b, type: 3}
@@ -16432,6 +16434,9 @@ MonoBehaviour:
   CutsceneCanvas: {fileID: 52193778}
   DialogueCanvas: {fileID: 563360401}
   Stage: {fileID: 1136405786}
+  PlutoLines_TechnicianIntro_Completed: 0
+  PlutoLines_TomIntro_Completed: 0
+  HitDialogueBreak: 0
   PlutoIntroCutscene: {fileID: 11400000, guid: 1ba68c73cecfb184e9d013f40bfcfeac, type: 2}
 --- !u!1001 &2087423607
 PrefabInstance:

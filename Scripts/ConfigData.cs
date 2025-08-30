@@ -1098,54 +1098,69 @@ namespace Assets.Scripts
             Debug.Log($"Setting up first time playing human campaign data");
             // Do something to show a prompt to the user that they are playing for the first time and need to choose their name [alert]
 
-            // Setup first squad
+            // Setup first squad #0
             int squadId = UserProgressData.GetNextSavedSquadId();
             //Debug.Log($"Creating first squad with id {squadId}");
 
             // Starting Scout Squad
-            SavedSquad savedSquadScout = new SavedSquad(squadId, Configuration.UserSide, $"Squad #{UserProgressData.HumanCampaignSavedSquadNumber++}", Vector2.zero, false, false,
-                       DefaultShootingStrategy, UnsetColor, null);
+            SavedSquad savedSquadScout = new SavedSquad(squadId, Configuration.UserSide, $"Squad #{UserProgressData.HumanCampaignSavedSquadNumber++}", Vector2.zero, false, false, DefaultShootingStrategy, UnsetColor, null);
             FleetShip scout = CurrentShips.GetAvailableShips().Where((s) => s.Type == ShipTypes.Scout).First();
             savedSquadScout.AddShipToSquad(new SquadShip(scout.Id, scout.Type, Vector2.zero, savedSquadScout));
             CurrentShips.AddSquad(savedSquadScout);
 
 
+            // Starting gunship squad #1
             squadId = UserProgressData.GetNextSavedSquadId();
-            //Debug.Log($"Creating second squad with id {squadId}");
-            // Starting gunship squad
-            SavedSquad savedSquadGunship = new SavedSquad(squadId, Configuration.UserSide, $"Squad #{UserProgressData.HumanCampaignSavedSquadNumber++}", Vector2.zero, false, false,
-                       DefaultShootingStrategy, UnsetColor, null);
+            SavedSquad savedSquadGunship = new SavedSquad(squadId, Configuration.UserSide, $"Squad #{UserProgressData.HumanCampaignSavedSquadNumber++}", Vector2.zero, false, false, DefaultShootingStrategy, UnsetColor, null);
             FleetShip gunship = CurrentShips.GetAvailableShips().Where((s) => s.Type == ShipTypes.Gunship).First();
             savedSquadGunship.AddShipToSquad(new SquadShip(gunship.Id, gunship.Type, Vector2.zero, savedSquadGunship));
             CurrentShips.AddSquad(savedSquadGunship);
 
 
 
+            // Starting Honeybee squad #2
             squadId = UserProgressData.GetNextSavedSquadId();
-            // Starting Honeybee squad
-            SavedSquad savedSquadHoneybee = new SavedSquad(squadId, Configuration.AISide, $"Squad #{UserProgressData.BeeCampaignSavedSquadNumber++}", Vector2.zero, false, false,
-                       DefaultShootingStrategy, UnsetColor, null);
+            SavedSquad savedSquadHoneybee = new SavedSquad(squadId, Configuration.AISide, $"Squad #{UserProgressData.BeeCampaignSavedSquadNumber++}", Vector2.zero, false, false, DefaultShootingStrategy, UnsetColor, null);
             FleetShip honeybee = CurrentShips.GetAvailableShips().Where((s) => s.Type == ShipTypes.Honeybee).First();
             savedSquadHoneybee.AddShipToSquad(new SquadShip(honeybee.Id, honeybee.Type, Vector2.zero, savedSquadHoneybee));
             CurrentShips.AddSquad(savedSquadHoneybee);
 
             UserProgressData.HasStartedHumanCampaign = true;
 
-            //Debug.Log(savedSquadScout);
-            //Debug.Log(savedSquadGunship);
-            //Debug.Log(savedSquadHoneybee);
+            
+
+            // Starting Hornet squads #3, #4, #5
+            for (int j = 0; j < 3; j++) // three hornet squads
+            {
+                squadId = UserProgressData.GetNextSavedSquadId();
+                SavedSquad savedSquadHornet = new SavedSquad(squadId, Configuration.AISide, $"Squad #{UserProgressData.BeeCampaignSavedSquadNumber++}", Vector2.zero, false, false, DefaultShootingStrategy, UnsetColor, null);
+                for (int i = 0; i < 3; i++) // three hornets
+                {
+                    FleetShip hornet = CurrentShips.GetAvailableShips().Where((s) => s.Type == ShipTypes.Hornet).First();
+                    savedSquadHornet.AddShipToSquad(new SquadShip(hornet.Id, hornet.Type, GeneratedSquadFormationOffsets4x4Medium[i], savedSquadHornet));
+                }
+                CurrentShips.AddSquad(savedSquadHornet);
+            }
+
+            // Starting Wasp squads #6, #7
+            for (int j = 0; j < 2; j++)
+            {
+                squadId = UserProgressData.GetNextSavedSquadId();
+                SavedSquad savedSquadWasp = new SavedSquad(squadId, Configuration.AISide, $"Squad #{UserProgressData.BeeCampaignSavedSquadNumber++}", Vector2.zero, false, false, DefaultShootingStrategy, UnsetColor, null);
+                for (int i = 0; i < 2; i++) // two wasps
+                {
+                    FleetShip wasp = CurrentShips.GetAvailableShips().Where((s) => s.Type == ShipTypes.Wasp).First();
+                    savedSquadWasp.AddShipToSquad(new SquadShip(wasp.Id, wasp.Type, GeneratedSquadFormationOffsets4x4Medium[i], savedSquadWasp));
+                }
+                CurrentShips.AddSquad(savedSquadWasp);
+            }
 
 
-            //Debug.Log(scout);
-            //Debug.Log(gunship);
-            //Debug.Log(honeybee);
-
+            UserProgressData.HasStartedHumanCampaign = true;
 
             UserProgressData.Save();
             CurrentShips.SaveSquadData();
             CurrentShips.SaveFleetData();
-
-            //Debug.LogError("Finished setting up first time playing human campaign data");
 
         }
         public static int GetUserId()

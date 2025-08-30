@@ -81,6 +81,10 @@ public class DialogueManager : MonoBehaviour
     {
         if (line.Type == DialogueLine.DialogueType.Break)
         {
+            DialogueText.text = "";
+            DialogueLine nextLine = dialogueLines.Peek();
+            SpeakerName.text = nextLine.SpeakerName;
+            SetPortrait(nextLine.PortraitA);
             CutsceneManager.BreakDialogue();
         }
         else
@@ -90,7 +94,7 @@ public class DialogueManager : MonoBehaviour
             bool aOrB = false;
             ToggleContinuePrompt(false);
 
-            Debug.Log($"Typing line: {line.Text}, Type: {line.Type}");
+            //Debug.Log($"Typing line: {line.Text}, Type: {line.Type}");
 
             foreach (char c in line.Text)
             {
@@ -134,7 +138,7 @@ public class DialogueManager : MonoBehaviour
             }
             if (line.PauseDuration > 0)
             {
-                yield return new WaitForSeconds(line.PauseDuration);
+                yield return new WaitForSeconds(line.PauseDuration); 
             }
 
 

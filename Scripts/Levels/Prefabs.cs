@@ -26,7 +26,7 @@ namespace Assets.Scripts.Levels
             
             TinyShipExplosionPrefab, SmallShipExplosionPrefab, MediumShipExplosionPrefab, LargeShipExplosionPrefab, HugeShipExplosionPrefab, QueenShipExplosionPrefab,
             
-            HumanProximityColliderPrefab, AlarmReactionPrefab;
+            HumanProximityColliderPrefab, AlarmReactionPrefab, ExitZonePrefab;
         /// <summary>
         /// UI Prefabs
         /// </summary>

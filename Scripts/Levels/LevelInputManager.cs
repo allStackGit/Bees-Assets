@@ -362,7 +362,7 @@ namespace Assets.Scripts.Levels
             _selectSquad_squad = Level.State.GetSquadByNumber(ConfigData.Configuration.UserSide, squadNumber);
             Level.State.SelectSquad(_selectSquad_squad);
 
-            if (_selectSquad_squad.IsSelected) //Center the camera on the selected squad
+            if (_selectSquad_squad != null && _selectSquad_squad.IsSelected) //Center the camera on the selected squad. The squad can be null if there are no available squads to select
             {
                 _selectSquad_position = _selectSquad_squad.GetPosition();
                 Stage.Camera.transform.position = new Vector3(_selectSquad_position.x, _selectSquad_position.y, -10) + Level.Get3DPosition();

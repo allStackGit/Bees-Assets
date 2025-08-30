@@ -550,7 +550,7 @@ namespace Assets.Scripts.Levels
                         DeactivateSquadBox();
                     }
 
-                    if (Level.State.IsSideKilled(Side))
+                    if (Level.State.IsSideKilled(Side) && ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
                     {
 
                         Level.State.GameOver = true;
@@ -707,31 +707,39 @@ namespace Assets.Scripts.Levels
         }
         public void RunCommandQueue()
         {
-            if (CommandQueue.Count > 0)
+            if (!IsDead)
             {
-                //Debug.Log($"{this} has {CommandQueue.Count} commands in the queue and is starting the first one");
-                Command nextCommand = CommandQueue.Dequeue();
-                //Debug.Log($"Dequeued command {nextCommand} for {Name}");
-                SetCommand(nextCommand);
-                if (GetCommand().CommandType == ConfigData.CommandTypes.MoveToPoint)
+                if (CommandQueue.Count > 0)
                 {
-                    ((MoveToPoint)GetCommand()).Execute(GetShootingStrategy(), 0, 0);
-                }
-                else if (GetCommand().CommandType == ConfigData.CommandTypes.MoveToRandom)
-                {
-                    ((MoveToRandom)GetCommand()).Execute(GetShootingStrategy(), 0, 0);
-                }
-                HasCommand = true;
+                    //Debug.Log($"{this} has {CommandQueue.Count} commands in the queue and is starting the first one");
+                    Command nextCommand = CommandQueue.Dequeue();
+                    //Debug.Log($"Dequeued command {nextCommand} for {Name}");
+                    SetCommand(nextCommand);
+                    if (GetCommand().CommandType == ConfigData.CommandTypes.MoveToPoint)
+                    {
+                        ((MoveToPoint)GetCommand()).Execute(GetShootingStrategy(), 0, 0);
+                    }
+                    else if (GetCommand().CommandType == ConfigData.CommandTypes.MoveToRandom)
+                    {
+                        ((MoveToRandom)GetCommand()).Execute(GetShootingStrategy(), 0, 0);
+                    }
+                    else if (GetCommand().CommandType == ConfigData.CommandTypes.Aggressive)
+                    {
+                        ((Aggressive)GetCommand()).Execute(GetShootingStrategy(), 0, 0);
+                    }
+                    HasCommand = true;
 
+                }
+                else if (HasCommandQueue)
+                {
+                    CommandQueueEmptyAction();
+                }
+                else if (IsHiveMindControlled && !IsImmobile)
+                {
+                    AddToCommandList();
+                }
             }
-            else if (HasCommandQueue)
-            {
-                CommandQueueEmptyAction();
-            }
-            else if (IsHiveMindControlled && !IsImmobile)
-            {
-                AddToCommandList();
-            }
+            
         }
         private HashSet<ConfigData.ShipTypes> _banned, _enemyShips;
         private string[] _bannedTypes;
