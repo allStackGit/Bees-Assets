@@ -68,7 +68,7 @@ public class DialogueManager : MonoBehaviour
         DialogueLine line = dialogueLines.Dequeue();
         StopAllCoroutines();
         SpeakerName.text = line.SpeakerName;
-
+        SetPortrait(line.PortraitA);
         StartCoroutine(TypeLine(line));
     }
 
@@ -157,7 +157,7 @@ public class DialogueManager : MonoBehaviour
         }
         else if (showOrHide)
         {
-            _continuePromptTimer.Reuse(1, DisplayNextLine, false);
+            _continuePromptTimer.Reuse(2, DisplayNextLine, false);
             Level.AddTimer(_continuePromptTimer);
         }
     }

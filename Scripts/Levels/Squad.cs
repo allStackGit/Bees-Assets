@@ -995,62 +995,84 @@ namespace Assets.Scripts.Levels
         }
         public void UserGuard(Squad squad)
         {
-
-            MakeUserCommand(ConfigData.CommandTypes.Guard, null);
-            ((Guard)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, squad);
-            
-            if (Level.Stage.DoesUserHaveController)
+            if (CanAcceptUserInput)
             {
-                Level.Stage.Menus.ActionBox.HighlightSelectedButtons();
+                MakeUserCommand(ConfigData.CommandTypes.Guard, null);
+                ((Guard)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, squad);
+
+                if (Level.Stage.DoesUserHaveController)
+                {
+                    Level.Stage.Menus.ActionBox.HighlightSelectedButtons();
+                }
             }
+
         }
         public void UserPatrol(Vector2 topLeft, Vector2 bottomRight)
         {
-            MakeUserCommand(ConfigData.CommandTypes.Patrol, null);
-            ((Patrol)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, topLeft, bottomRight);
-            if (Level.Stage.DoesUserHaveController)
+            if (CanAcceptUserInput)
             {
-                Level.Stage.Menus.ActionBox.HighlightSelectedButtons();
+                MakeUserCommand(ConfigData.CommandTypes.Patrol, null);
+                ((Patrol)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, topLeft, bottomRight);
+                if (Level.Stage.DoesUserHaveController)
+                {
+                    Level.Stage.Menus.ActionBox.HighlightSelectedButtons();
+                }
             }
+
 
 
         }
         public void UserMining(MiningAsteroid miningAsteroid)
         {
-            if (HasMiningShips)
+            if (CanAcceptUserInput)
             {
-                MakeUserCommand(ConfigData.CommandTypes.Mining, null);
-                ((Mining)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, miningAsteroid);
+                if (HasMiningShips)
+                {
+                    MakeUserCommand(ConfigData.CommandTypes.Mining, null);
+                    ((Mining)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, miningAsteroid);
+                }
+                else
+                {
+                    FinalizeUserCommand();
+                    Move(miningAsteroid.GetPosition());
+                }
             }
-            else
-            {
-                FinalizeUserCommand();
-                Move(miningAsteroid.GetPosition());
-            }
+
 
         }
         public void UserFullRetreat(WarpGate warpGate)
         {
-            MakeUserCommand(ConfigData.CommandTypes.FullRetreat, null);
-            ((FullRetreat)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, warpGate);
+            if (CanAcceptUserInput)
+            {
+                MakeUserCommand(ConfigData.CommandTypes.FullRetreat, null);
+                ((FullRetreat)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, warpGate);
+            }
+
 
         }
         public void UserHeal(List<Beehive> beehives)
         {
-            //Debug.Log($"Starting new heal command for {Name}");
-            MakeUserCommand(ConfigData.CommandTypes.Heal, null);
-            ((Heal)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, beehives);
+            if (CanAcceptUserInput)
+            {
+                //Debug.Log($"Starting new heal command for {Name}");
+                MakeUserCommand(ConfigData.CommandTypes.Heal, null);
+                ((Heal)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, beehives);
+            }
 
         }
         public void UserAggressive(Squad enemy)
         {
-            if (HasOnlyBombers)
+            if (CanAcceptUserInput)
             {
-                UserBombingRun(enemy);
-                return;
+                if (HasOnlyBombers)
+                {
+                    UserBombingRun(enemy);
+                    return;
+                }
+                MakeUserCommand(ConfigData.CommandTypes.Aggressive, enemy);
+                ((Aggressive)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0);
             }
-            MakeUserCommand(ConfigData.CommandTypes.Aggressive, enemy);
-            ((Aggressive)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0);
+
 
         }
         public void UserBombingRun(Squad enemy)

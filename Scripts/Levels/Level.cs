@@ -1,4 +1,4 @@
-using Assets.Scripts.Data;
+﻿using Assets.Scripts.Data;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships;
@@ -9,6 +9,7 @@ using Assets.Scripts.UIComponents;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using TMPro;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -746,12 +747,7 @@ namespace Assets.Scripts.Levels
             {
                 CurrentLevelOptions = (LevelOptions)ConfigData.LevelOptions.Clone();
             }
-            Debug.Log("CurrentLevelOptions.HasSquadActionBox " + CurrentLevelOptions.HasSquadActionBox);
-
-            if (CurrentLevelOptions.HasSquadActionBox)
-            {
-                Stage.Menus.ActionBox.Setup(Stage, this, Stage.EventSystem, ConfigData.Configuration.UserSide);
-            }
+            //Debug.Log("CurrentLevelOptions.HasSquadActionBox " + CurrentLevelOptions.HasSquadActionBox);
             
 
             if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
@@ -779,6 +775,19 @@ namespace Assets.Scripts.Levels
                 });
             }
 
+            Debug.Log($"Game mode: {ConfigData.CurrentGameMode}");
+
+            if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
+            {
+                Stage.IsPlayerControlling = true;
+                CurrentLevelOptions.HasSquadActionBox = true;
+                Stage.Menus.ActionBox.Setup(Stage, this, Stage.EventSystem, ConfigData.Configuration.UserSide);
+
+            }
+            else if (CurrentLevelOptions.HasSquadActionBox)
+            {
+                Stage.Menus.ActionBox.Setup(Stage, this, Stage.EventSystem, ConfigData.Configuration.UserSide);
+            }
 
             //Debug.Log($"Playing level: {CurrentLevelOptions.Name} with squads: {Utilities.ListToString(CurrentLevelOptions.ChosenSquads)}");
             // Check settings and config variables
@@ -841,11 +850,15 @@ namespace Assets.Scripts.Levels
 
 
             //CancelTimer(_checkTriggersTimer);
-            if (!Stage.IsTraining)
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
             {
                 SetTriggers();
                 _checkTriggersTimer.Reuse(5, CheckTriggers, true);
                 AddTimer(_checkTriggersTimer);
+            }
+            else
+            {
+                SelectFirstSquad();
             }
 
 
@@ -1402,16 +1415,23 @@ namespace Assets.Scripts.Levels
             switch (CurrentLevelOptions.Id)
             {
                 case 0:
+                    Debug.Log("Setting triggers for level 0");
                     // Setup specifics for the level
                     Scout firstScout = (Scout)State.GetHumanShips().First();
                     Honeybee firstHoneybee = (Honeybee)State.GetBeeShips().First();
                     Gunship firstGunship = null;
                     int checksForUserControl = 0;
+                    int passes = 0;
                     bool hasBeenUserControlled = false;
                     bool gunshipHasReachedCenterPosition = false;
                     HasContinuousTriggers = true;
                     ScaledTimer _beesPursuitTimer = new ScaledTimer();
                     ExitZone exitZone = null;
+                    GameObject moveScoutTooltip = null;
+                    GameObject controlGunshipTooltip = null;
+                    GameObject attackOnSightTooltip = null;
+                    GameObject flydownTooltip = null;
+                    Vector2 initialCameraPosition = Stage.Camera.transform.position;
 
 
                     // Setup proximity collider for the scout
@@ -1470,10 +1490,12 @@ namespace Assets.Scripts.Levels
                         () =>
                         {
                             Debug.Log("Scout spotted the honeybee!");
-
+                            Vector2 squadPosition = firstScout.GetPosition(); // Would normally be the position of the squad but we know there is only one ship in the squad
+                            Stage.Camera.transform.position = new Vector3(squadPosition.x, squadPosition.y, -10) + Get3DPosition();
                             State.SelectSquads(new List<Squad>());
                             firstScout.Squad.StopMoving();
                             firstScout.Squad.CanAcceptUserInput = false;
+                            firstScout.Squad.FinalizeUserCommand();
 
                             GameObject alarm = Instantiate(Stage.Prefabs.AlarmReactionPrefab);
                             alarm.transform.SetParent(firstScout.transform);
@@ -1521,8 +1543,9 @@ namespace Assets.Scripts.Levels
                             if (!hasBeenUserControlled)
                             {
                                 Debug.Log("Showing tooltip for controlling Scout");
-                                Stage.Menus.Tooltip.SetActive(true);
-                                Stage.Menus.TooltipText.text = "You can move the ship by right clicking somewhere in space.";
+                                moveScoutTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
+                                moveScoutTooltip.SetActive(true);
+                                moveScoutTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "You can move the ship by right clicking somewhere in space.";
                             }
                             else
                             {
@@ -1541,9 +1564,26 @@ namespace Assets.Scripts.Levels
                         {
                             if (hasBeenUserControlled)
                             {
-                                Stage.Menus.Tooltip.SetActive(false);
-                            }
 
+                                if (moveScoutTooltip != null)
+                                {
+                                    Destroy(moveScoutTooltip);
+                                }
+                                Stage.Menus.WASDTooltip.SetActive(true);
+
+                                NextTriggers.Add(new Trigger(() =>
+                                    {
+                                        Debug.Log($"Waiting to hide WASD tooltip");
+                                        return Vector2.Distance(Stage.Camera.transform.position, initialCameraPosition) > 10;
+                                    },
+                                    () =>
+                                    {
+                                        Stage.Menus.WASDTooltip.SetActive(false);
+
+                                    },
+                                    "Level 0 Waiting for user to control camera Trigger")
+                                );
+                            }
                         },
                         "Level 0 Waiting for user to control Scout to hide tooltip Trigger"),
                         new Trigger(() =>
@@ -1559,6 +1599,7 @@ namespace Assets.Scripts.Levels
 
                             firstGunship = (Gunship)State.GetHumanShips().First(); // Still the first ship since the Scout was removed
                             firstGunship.Squad.CanAcceptUserInput = false;
+                            firstGunship.Squad.FinalizeUserCommand();
                             firstGunship.Squad.SetSquadCeaseFire(true);
 
 
@@ -1607,6 +1648,9 @@ namespace Assets.Scripts.Levels
                                     // Gunship goes to pursue honeybee
                                     Debug.Log($"Gunship has honeybee within range");
 
+                                    Vector2 squadPosition = firstGunship.GetPosition(); // Would normally be the position of the squad but we know there is only one ship in the squad
+                                    Stage.Camera.transform.position = new Vector3(squadPosition.x, squadPosition.y, -10) + Get3DPosition();
+
                                     Stage.CutsceneManager.ContinueDialogue();
 
                                     NextTriggers.Add(new Trigger(() =>
@@ -1632,14 +1676,66 @@ namespace Assets.Scripts.Levels
                                                     firstGunship.Squad.CanAcceptUserInput = true;
                                                     aggressive.SetFinalize("Honeybee reached by gunship, ceding to user control");
 
+                                                    controlGunshipTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
+                                                    controlGunshipTooltip.SetActive(true);
+                                                    TMP_Text tooltipText =  controlGunshipTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>();
+                                                    RectTransform tooltipRectTransformPosition = controlGunshipTooltip.GetComponent<RectTransform>();
+                                                    RectTransform tooltipRectTransformSize = controlGunshipTooltip.transform.GetChild(0).GetComponent<RectTransform>();
 
-                                                    Stage.Menus.Tooltip.SetActive(true);
-                                                    Stage.Menus.Tooltip.transform.Find("MainPanel/Vertical").GetComponent<RectTransform>().sizeDelta = new Vector2(150, 225);
-                                                    Stage.Menus.TooltipText.text = "You can select the ship by left clicking on it or by clicking and dragging a selection box around it. <br><br> Once you do, you'll want to familiarize yourself with the controls to your bottom left. They aren't usually necessary but they are helpful. <br><br> When you're ready to engage the Honeybee, click \"Attack on Sight\" to disable the Cease Fire. Once the Gunship is within range it will automatically fire upon the Honeybee.";
+                                                    tooltipRectTransformSize.sizeDelta = new Vector2(150, 150);
+                                                    tooltipText.text = "You can select the ship by left clicking on it or by left clicking and dragging a selection box around it.";
+                                                    //controlGunshipTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "You can select the ship by left clicking on it or by clicking and dragging a selection box around it. <br><br> Once you do, you'll want to familiarize yourself with the controls to your bottom left. They aren't usually necessary but they are helpful. <br><br> When you're ready to engage the Honeybee, click \"Attack on Sight\" to disable the Cease Fire. Once the Gunship is within range it will automatically fire upon the Honeybee.";
+
+                                                    NextTriggers.Add(new Trigger(() =>
+                                                        {
+                                                            return firstGunship.Squad.IsSelected;
+                                                        },
+                                                        () =>
+                                                        {
+                                                            tooltipRectTransformSize.sizeDelta = new Vector2(150, 75);
+                                                            tooltipRectTransformPosition.localPosition = new Vector2(-500, 0);
+                                                            tooltipText.text = "You'll want to familiarize yourself with the controls to your bottom left. They aren't usually required but they are helpful.";
+
+                                                            NextTriggers.Add(new Trigger(() =>
+                                                                {
+                                                                    passes++;
+                                                                    return passes > 2;
+                                                                },
+                                                                () =>
+                                                                {
+                                                                    attackOnSightTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
+                                                                    attackOnSightTooltip.SetActive(true);
+                                                                    TMP_Text tooltipText =  attackOnSightTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>();
+                                                                    attackOnSightTooltip.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(200, 150);
+                                                                    attackOnSightTooltip.GetComponent<RectTransform>().localPosition = new Vector2(0, -150);
+                                                                    tooltipText.text = "When you're ready to engage the Honeybee, click \"Attack on Sight\" to disable the Cease Fire. Once the Gunship is within range it will automatically fire upon the Honeybee.";
+
+                                                                    NextTriggers.Add(new Trigger(() =>
+                                                                        {
+                                                                            return firstGunship.Squad.CeaseFire == false;
+                                                                        },
+                                                                        () =>
+                                                                        {
+                                                                            Destroy(attackOnSightTooltip);
+                                                                            Destroy(controlGunshipTooltip);
+
+                                                                        },
+                                                                        "Level 0 Removing Gunship Tooltips")
+                                                                    );
+
+                                                                },
+                                                                "Level 0 Showing Attack on Sight tooltip prompt")
+                                                            );
+
+                                                            
+
+                                                        },
+                                                        "Level 0 Showing squad controls tooltip when squad is selected")
+                                                    );
 
 
                                                     // Create bee reinforcement squads. One Squad of 3 hornets, one squad of 2 wasps
-                                                    LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() {ConfigData.CurrentShips.GetSavedSquad(3), ConfigData.CurrentShips.GetSavedSquad(4), ConfigData.CurrentShips.GetSavedSquad(5), ConfigData.CurrentShips.GetSavedSquad(6), ConfigData.CurrentShips.GetSavedSquad(7)}, StartingPositions[ConfigData.Configuration.AISide - 1] - new Vector2(0, 50), StartingPositions[ConfigData.Configuration.AISide - 1] - new Vector2(0, 50));
+                                                    LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() {ConfigData.CurrentShips.GetSavedSquad(3), ConfigData.CurrentShips.GetSavedSquad(4), ConfigData.CurrentShips.GetSavedSquad(5), ConfigData.CurrentShips.GetSavedSquad(6), ConfigData.CurrentShips.GetSavedSquad(7)}, StartingPositions[ConfigData.Configuration.AISide - 1] + new Vector2(0, 50), StartingPositions[ConfigData.Configuration.AISide - 1] + new Vector2(0, 50));
 
 
                                                     NextTriggers.Add(new Trigger(() =>
@@ -1680,7 +1776,13 @@ namespace Assets.Scripts.Levels
                                                                 () =>
                                                                 {
                                                                     Stage.CutsceneManager.ContinueDialogue(); // Gunship Sees bees
+                                                                    Vector2 squadPosition = firstGunship.GetPosition(); // Would normally be the position of the squad but we know there is only one ship in the squad
+                                                                    Stage.Camera.transform.position = new Vector3(squadPosition.x, squadPosition.y, -10) + Get3DPosition();
 
+                                                                    flydownTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
+                                                                    flydownTooltip.SetActive(true);
+                                                                    flydownTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "Fly down to safety!";
+                                                                    
                                                                     // Wait a few seconds and then the bees stop ceasefire, and pursue the gunship with aggressive command
                                                                     _beesPursuitTimer.Reuse(5, () =>
                                                                         {
@@ -1694,6 +1796,8 @@ namespace Assets.Scripts.Levels
 
                                                                                 squad.RunCommandQueue();
                                                                             });
+
+                                                                            Destroy(flydownTooltip);
                                                                         }
                                                                     );
                                                                     AddTimer(_beesPursuitTimer);
@@ -1725,12 +1829,12 @@ namespace Assets.Scripts.Levels
                                                                                 {
                                                                                     Debug.Log("Level complete!");
                                                                                 },
-                                                                                "Level 0 Showing Tooltip for controllering Gunship")
+                                                                                "Level 0 Level completing after the end of dialogue")
                                                                             );
                                                                             Stage.CutsceneManager.ContinueDialogue(); // Play the rest of the dialogue
 
                                                                         },
-                                                                        "Level 0 Showing dialogue after Bees approach")
+                                                                        "Level 0 Hiding map after player dies or leaves")
                                                                     );
 
                                                                 },
@@ -1739,21 +1843,6 @@ namespace Assets.Scripts.Levels
 
                                                         },
                                                         "Level 0 Showing Dialogue after defeating Honeybee")
-                                                    );
-
-                                                    checksForUserControl = 0;
-                                                    NextTriggers.Add(new Trigger(() =>
-                                                        {
-                                                            checksForUserControl++;
-                                                            return checksForUserControl > 3;
-                                                        },
-                                                        () =>
-                                                        {
-                                                            Stage.Menus.Tooltip.SetActive(false);
-
-
-                                                        },
-                                                        "Level 0 Showing Tooltip for controllering Gunship")
                                                     );
 
                                                 },

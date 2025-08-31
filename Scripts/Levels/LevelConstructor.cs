@@ -22,7 +22,7 @@ namespace Assets.Scripts.Levels
         public void RequestServerSetup()
         {
             Level.IsLevelSetupOnServer = false;
-            ConfigData.Socket.SendRequest(new SetupLevelRequest(new SetupLevel(ConfigData.UserProgressData.GetCurrentLevel(), ConfigData.GetUserId()),
+            ConfigData.Socket.SendRequest(new SetupLevelRequest(new SetupLevel(ConfigData.CurrentGameMode == ConfigData.GameModes.FreePlay ? -1 : ConfigData.UserProgressData.GetCurrentLevel(), ConfigData.GetUserId()),
                 ConfigData.StandardMaxTimeOnQueue, Level));
         }
         public void SetCarrierShipFleetships(List<Squad> squads)
@@ -245,7 +245,7 @@ namespace Assets.Scripts.Levels
             //Debug.Log($"Chosen squads: {Utilities.ListToString(Level.CurrentLevelOptions.ChosenSquads)}");
             if (side == ConfigData.Configuration.AISide)
             {
-                Debug.Log($"Squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.EnemySquads)}");
+                //Debug.Log($"Squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.EnemySquads)}");
                 Level.CurrentLevelOptions.EnemyExistingSquads.ForEach((squadId) =>
                 {
                     SavedSquad existingSquad = ConfigData.CurrentShips.GetSavedSquad(squadId);
@@ -259,7 +259,7 @@ namespace Assets.Scripts.Levels
             }
             else
             {
-                //Debug.Log($"Squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.ChosenSquads)}");
+                Debug.Log($"Chosen squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.ChosenSquads)}");
                 SpawnShipsAndSquads(Level.CurrentLevelOptions.ChosenSquads, Level.StartingPositions[side - 1], Vector2.zero);
             }
 

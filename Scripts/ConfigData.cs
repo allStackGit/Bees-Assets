@@ -876,7 +876,8 @@ namespace Assets.Scripts
         //public static List<SavedSquad> SquadsChosenForLevel = new List<SavedSquad>();
         public static bool IsLoadingUserData = false;
         public static bool IsUserLoadingCustomSquads, IsUserLoadingCustomEnemySquads;
-        public static GameModes CurrentGameMode;
+        public static GameModes CurrentGameMode = GameModes.FreePlay;
+
         public static bool AreAllSettingsLoaded => (ShipInfo != null && ShipInfo.IsLoaded) && (Configuration != null && Configuration.IsLoaded)
             && (StartingSettings != null && StartingSettings.IsLoaded);
         public static bool IsAllUserDataLoaded => IsUserProgressDataLoaded && IsFleetDataLoaded[0] && IsFleetDataLoaded[1] && IsSavedSquadsDataLoaded[0] && IsSavedSquadsDataLoaded[1] && IsUserSettingsDataLoaded && IsLevelsDataLoaded[0] && IsLevelsDataLoaded[1];
@@ -1136,7 +1137,7 @@ namespace Assets.Scripts
                 SavedSquad savedSquadHornet = new SavedSquad(squadId, Configuration.AISide, $"Squad #{UserProgressData.BeeCampaignSavedSquadNumber++}", Vector2.zero, false, false, DefaultShootingStrategy, UnsetColor, null);
                 for (int i = 0; i < 3; i++) // three hornets
                 {
-                    FleetShip hornet = CurrentShips.GetAvailableShips().Where((s) => s.Type == ShipTypes.Hornet).First();
+                    FleetShip hornet = CurrentShips.GetAvailableShips().Where((s) => s.Type == ShipTypes.Hornet).ElementAt(i);
                     savedSquadHornet.AddShipToSquad(new SquadShip(hornet.Id, hornet.Type, GeneratedSquadFormationOffsets4x4Medium[i], savedSquadHornet));
                 }
                 CurrentShips.AddSquad(savedSquadHornet);
@@ -1149,7 +1150,7 @@ namespace Assets.Scripts
                 SavedSquad savedSquadWasp = new SavedSquad(squadId, Configuration.AISide, $"Squad #{UserProgressData.BeeCampaignSavedSquadNumber++}", Vector2.zero, false, false, DefaultShootingStrategy, UnsetColor, null);
                 for (int i = 0; i < 2; i++) // two wasps
                 {
-                    FleetShip wasp = CurrentShips.GetAvailableShips().Where((s) => s.Type == ShipTypes.Wasp).First();
+                    FleetShip wasp = CurrentShips.GetAvailableShips().Where((s) => s.Type == ShipTypes.Wasp).ElementAt(i);
                     savedSquadWasp.AddShipToSquad(new SquadShip(wasp.Id, wasp.Type, GeneratedSquadFormationOffsets4x4Medium[i], savedSquadWasp));
                 }
                 CurrentShips.AddSquad(savedSquadWasp);
