@@ -23,8 +23,7 @@ public class DialogueManager : MonoBehaviour
 
     public enum Dialogues
     {
-        Pluto_TechnicianIntro,
-        Pluto_TomIntro,
+        Pluto_Anomaly,
     }
 
     public void Setup(Level level, CutsceneManager cutsceneManager, Dialogues dialogueType)
@@ -98,6 +97,22 @@ public class DialogueManager : MonoBehaviour
 
             foreach (char c in line.Text)
             {
+                if (Input.GetKey(KeyCode.Space))
+                {
+                    if (line.Type == DialogueLine.DialogueType.Action)
+                    {
+                        DialogueText.text = $"<i>{line.Text}</i>";
+                    }
+                    else
+                    {
+                        DialogueText.text = line.Text;
+                    }
+                    line.IsSkipped = true;
+                    SetPortrait(line.PortraitA);
+                    yield return new WaitForSeconds(0.02f);
+                    ToggleContinuePrompt(true);
+                    break;
+                }
 
                 if (line.Type == DialogueLine.DialogueType.Action)
                 {
@@ -138,12 +153,23 @@ public class DialogueManager : MonoBehaviour
             }
             if (line.PauseDuration > 0)
             {
-                yield return new WaitForSeconds(line.PauseDuration); 
+                if (Input.GetKey(KeyCode.Space))
+                {
+                    line.IsSkipped = true;
+                    yield return new WaitForSeconds(0.02f);
+                    DisplayNextLine();
+                }
+                else
+                {
+                    yield return new WaitForSeconds(line.PauseDuration);
+                }
             }
 
 
-
-            ToggleContinuePrompt(true);
+            if (!line.IsSkipped)
+            {
+                ToggleContinuePrompt(true);
+            }
         }
         
     }

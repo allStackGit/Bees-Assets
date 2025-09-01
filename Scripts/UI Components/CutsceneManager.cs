@@ -13,8 +13,8 @@ public class CutsceneManager : MonoBehaviour
     public DialogueManager DialogueManager;
     public GameObject CutsceneCanvas, DialogueCanvas;
     public Stage Stage;
-    public List<DialogueLine> PlutoLines_TechnicianIntro, PlutoLines_TomIntro;
-    public bool PlutoLines_TechnicianIntro_Completed, PlutoLines_TomIntro_Completed = false;
+    public List<DialogueLine> PlutoLines_Anomaly;
+    public bool PlutoLines_Anomaly_Completed = false;
     public bool HitDialogueBreak = false;
 
     public TimelineAsset PlutoIntroCutscene;
@@ -30,7 +30,7 @@ public class CutsceneManager : MonoBehaviour
         Portraits["Tom"] = Resources.LoadAll<Sprite>("Sprites/Portraits/starman");
         Portraits["High Command"] = Resources.LoadAll<Sprite>("Sprites/Portraits/highcommand");
 
-        PlutoLines_TechnicianIntro = new List<DialogueLine>
+        PlutoLines_Anomaly = new List<DialogueLine>
         {
             new DialogueLine("Samuel", Portraits["Samuel"], $"Good morning, Commander {ConfigData.UserProgressData.PlayerName}! I brought your coffee."),
             new DialogueLine("Samuel", Portraits["Samuel"], 3),
@@ -42,10 +42,9 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Samuel", Portraits["Samuel"], 2),
             new DialogueLine("Samuel", Portraits["Samuel"], "It isn’t responding, sir."),
             new DialogueLine("Samuel", Portraits["Samuel"], 2),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Understood, sir. We’ll send Lieutenant Tom out immediately.")
-        };
+            new DialogueLine("Samuel", Portraits["Samuel"], "Understood, sir. We’ll send Lieutenant Tom out immediately."),
+            new DialogueLine(),
 
-        PlutoLines_TomIntro = new List<DialogueLine> {
             new DialogueLine("Tom", Portraits["Tom"], $"This is Gunship P-4 reporting to command. I’m approaching the unidentified vessel now."),
             new DialogueLine(),
             new DialogueLine("Tom", Portraits["Tom"], "Unidentified vessel, you are in United Earth military airspace. Identify yourself now."),
@@ -73,12 +72,8 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Samuel", Portraits["Samuel"], 2),
             new DialogueLine("Samuel", Portraits["Samuel"], "Understood. Preparing our fleet to deploy, sir."),
 
-
-
-
-
-
         };
+
     }
     public void EnablePlayerControl()
     {
@@ -115,16 +110,10 @@ public class CutsceneManager : MonoBehaviour
         ShowDialogue();
         switch (dialogueType)
         {
-            case DialogueManager.Dialogues.Pluto_TechnicianIntro:
-                DialogueManager.Setup(Stage.PrimaryLevel, this, DialogueManager.Dialogues.Pluto_TechnicianIntro);
-                DialogueManager.SetPortrait(PlutoLines_TechnicianIntro[0].PortraitA);
-                DialogueManager.StartDialogue(PlutoLines_TechnicianIntro, false);
-                break;
-
-            case DialogueManager.Dialogues.Pluto_TomIntro:
-                DialogueManager.SwitchDialogue(DialogueManager.Dialogues.Pluto_TomIntro);
-                DialogueManager.SetPortrait(PlutoLines_TomIntro[0].PortraitA);
-                DialogueManager.StartDialogue(PlutoLines_TomIntro, false);
+            case DialogueManager.Dialogues.Pluto_Anomaly:
+                DialogueManager.Setup(Stage.PrimaryLevel, this, DialogueManager.Dialogues.Pluto_Anomaly);
+                DialogueManager.SetPortrait(PlutoLines_Anomaly[0].PortraitA);
+                DialogueManager.StartDialogue(PlutoLines_Anomaly, false);
                 break;
         }
 
@@ -146,12 +135,8 @@ public class CutsceneManager : MonoBehaviour
     {
         switch (dialogueType)
         {
-            case DialogueManager.Dialogues.Pluto_TechnicianIntro:
-                PlutoLines_TechnicianIntro_Completed = true;
-                DialogueCanvas.SetActive(false);
-                break;
-            case DialogueManager.Dialogues.Pluto_TomIntro:
-                PlutoLines_TomIntro_Completed = true;
+            case DialogueManager.Dialogues.Pluto_Anomaly:
+                PlutoLines_Anomaly_Completed = true;
                 DialogueCanvas.SetActive(false);
                 break;
         }

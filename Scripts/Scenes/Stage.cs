@@ -328,6 +328,14 @@ public class Stage : Scene
     /// </summary>
     public bool IsPlayerControlling;
     public CutsceneManager CutsceneManager;
+    /// <summary>
+    /// If there is a ship that the camera should follow, this is it
+    /// </summary>
+    public Ship CameraShip;
+    /// <summary>
+    /// Whether or not the camera is following a ship
+    /// </summary>
+    public bool IsFollowingShip;
 
 
 
@@ -607,12 +615,19 @@ public class Stage : Scene
     }
 
     // Update is called once per frame
+    private Vector2 _followingShipPosition;
     new void Update()
     {
         base.Update();
         if (!IsTraining && IsFinalized && IsPlayerControlling)
         {
             InputManager.Update();
+        }
+        if (IsFollowingShip)
+        {
+            _followingShipPosition = CameraShip.GetPosition();
+            Camera.transform.position = new Vector3(_followingShipPosition.x, _followingShipPosition.y, -10);
+            InputManager.MaintainScrollBoundary();
         }
 
         DebugLogger.LogData();

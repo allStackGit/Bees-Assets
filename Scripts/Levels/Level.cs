@@ -1490,8 +1490,7 @@ namespace Assets.Scripts.Levels
                         () =>
                         {
                             Debug.Log("Scout spotted the honeybee!");
-                            Vector2 squadPosition = firstScout.GetPosition(); // Would normally be the position of the squad but we know there is only one ship in the squad
-                            Stage.Camera.transform.position = new Vector3(squadPosition.x, squadPosition.y, -10) + Get3DPosition();
+
                             State.SelectSquads(new List<Squad>());
                             firstScout.Squad.StopMoving();
                             firstScout.Squad.CanAcceptUserInput = false;
@@ -1502,6 +1501,9 @@ namespace Assets.Scripts.Levels
                             alarm.transform.localPosition = new Vector2(3, 1.5f);
                             alarm.transform.eulerAngles = Vector3.zero;
 
+                            Stage.CameraShip = firstScout;
+                            Stage.IsFollowingShip = true;
+
                             Utilities.Shake(this, alarm, 1.5f, () =>
                             {
                                 Destroy(alarm);
@@ -1509,6 +1511,7 @@ namespace Assets.Scripts.Levels
                                 firstScout.Squad.HasCommandQueue = true;
                                 firstScout.Squad.CommandQueueEmptyAction = () => {
                                     Debug.Log($"Scout has reached out of sight position: {firstScout.GetPosition()}");
+                                    Stage.IsFollowingShip = false;
                                     Stage.SetupCamera(); // Reset the camera position
 
                                     // Hide the minimap and button again
@@ -1516,7 +1519,7 @@ namespace Assets.Scripts.Levels
                                     Stage.Menus.MiniMapOpenButton.SetActive(false);
 
 
-                                    Stage.CutsceneManager.StartDialogue(DialogueManager.Dialogues.Pluto_TechnicianIntro);
+                                    Stage.CutsceneManager.StartDialogue(DialogueManager.Dialogues.Pluto_Anomaly);
                                     firstScout.EndKill();
                                 };
 
@@ -1526,6 +1529,8 @@ namespace Assets.Scripts.Levels
                                 firstScout.Squad.CommandQueue.Enqueue(moveToPoint);
 
                                 firstScout.Squad.RunCommandQueue();
+
+
                             });
                             
                         },
@@ -1546,6 +1551,7 @@ namespace Assets.Scripts.Levels
                                 moveScoutTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
                                 moveScoutTooltip.SetActive(true);
                                 moveScoutTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "You can move the ship by right clicking somewhere in space.";
+                                moveScoutTooltip.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(150, 100);
                             }
                             else
                             {
@@ -1588,7 +1594,7 @@ namespace Assets.Scripts.Levels
                         "Level 0 Waiting for user to control Scout to hide tooltip Trigger"),
                         new Trigger(() =>
                         {
-                            return Stage.CutsceneManager.PlutoLines_TechnicianIntro_Completed;
+                            return Stage.CutsceneManager.HitDialogueBreak;
                         },
                         () =>
                         {
@@ -1609,7 +1615,7 @@ namespace Assets.Scripts.Levels
                                 gunshipHasReachedCenterPosition = true;
                                 
                                 // Tom Dialogue
-                                Stage.CutsceneManager.StartDialogue(DialogueManager.Dialogues.Pluto_TomIntro);
+                                Stage.CutsceneManager.ContinueDialogue();
                             };
 
                             MoveToPoint moveToPoint = (MoveToPoint)Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.MoveToPoint);
@@ -1638,6 +1644,8 @@ namespace Assets.Scripts.Levels
                             firstGunship.Squad.CommandQueue.Enqueue(aggressive);
 
                             firstGunship.Squad.RunCommandQueue();
+                            Stage.CameraShip = firstGunship;
+                            Stage.IsFollowingShip = true;
 
                             NextTriggers.Add(new Trigger(() =>
                                 {
@@ -1647,9 +1655,6 @@ namespace Assets.Scripts.Levels
                                 {
                                     // Gunship goes to pursue honeybee
                                     Debug.Log($"Gunship has honeybee within range");
-
-                                    Vector2 squadPosition = firstGunship.GetPosition(); // Would normally be the position of the squad but we know there is only one ship in the squad
-                                    Stage.Camera.transform.position = new Vector3(squadPosition.x, squadPosition.y, -10) + Get3DPosition();
 
                                     Stage.CutsceneManager.ContinueDialogue();
 
@@ -1674,6 +1679,7 @@ namespace Assets.Scripts.Levels
                                                 () =>
                                                 {
                                                     firstGunship.Squad.CanAcceptUserInput = true;
+                                                    Stage.IsFollowingShip = false;
                                                     aggressive.SetFinalize("Honeybee reached by gunship, ceding to user control");
 
                                                     controlGunshipTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
@@ -1692,7 +1698,7 @@ namespace Assets.Scripts.Levels
                                                         },
                                                         () =>
                                                         {
-                                                            tooltipRectTransformSize.sizeDelta = new Vector2(150, 75);
+                                                            tooltipRectTransformSize.sizeDelta = new Vector2(150, 150);
                                                             tooltipRectTransformPosition.localPosition = new Vector2(-500, 0);
                                                             tooltipText.text = "You'll want to familiarize yourself with the controls to your bottom left. They aren't usually required but they are helpful.";
 
@@ -1706,7 +1712,7 @@ namespace Assets.Scripts.Levels
                                                                     attackOnSightTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
                                                                     attackOnSightTooltip.SetActive(true);
                                                                     TMP_Text tooltipText =  attackOnSightTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>();
-                                                                    attackOnSightTooltip.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(200, 150);
+                                                                    attackOnSightTooltip.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(150, 200);
                                                                     attackOnSightTooltip.GetComponent<RectTransform>().localPosition = new Vector2(0, -150);
                                                                     tooltipText.text = "When you're ready to engage the Honeybee, click \"Attack on Sight\" to disable the Cease Fire. Once the Gunship is within range it will automatically fire upon the Honeybee.";
 
@@ -1756,17 +1762,17 @@ namespace Assets.Scripts.Levels
                                                                 squad.CommandQueueEmptyAction = () => {
                                                                     Debug.Log($"{squad} has finished command against gunship");
 
-                                                                };
-
-                                                                State.GetSquadsBySide(ConfigData.Configuration.AISide).ForEach((squad) => {
                                                                     MoveToPoint moveToPoint = (MoveToPoint)Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.MoveToPoint);
                                                                     moveToPoint.Setup(squad, false, null, null, firstGunship.GetPosition() - new Vector2(40, 40)); // Go near gunship
                                                                     squad.CommandQueue.Enqueue(moveToPoint);
 
                                                                     squad.RunCommandQueue();
-                                                                }); // Clear all commands for all bee squads
 
-                                                                
+                                                                };
+
+                                                                squad.RunCommandQueue();
+
+
                                                             });
 
                                                             NextTriggers.Add(new Trigger(() =>
@@ -1790,6 +1796,10 @@ namespace Assets.Scripts.Levels
                                                                             {
                                                                                 squad.SetSquadCeaseFire(false); // Turn on fire for all bee squads
 
+                                                                                squad.CommandQueueEmptyAction = () => { };
+
+                                                                                squad.GetCommand().SetFinalize("Time to attack gunship"); // End whatever they were doing before
+                                                                                squad.CommandQueue.Clear(); // Clear the command queue
                                                                                 Aggressive aggressive = (Aggressive)Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Aggressive);
                                                                                 aggressive.Setup(squad, false, firstGunship.Squad, null); // Bees pursuing Gunship
                                                                                 squad.CommandQueue.Enqueue(aggressive);
@@ -1807,23 +1817,39 @@ namespace Assets.Scripts.Levels
                                                                     GameObject exitBox = Instantiate(Stage.Prefabs.ExitZonePrefab, Map.transform);
                                                                     exitZone = exitBox.GetComponent<ExitZone>();
 
+                                                                    exitZone.OnShipEnter = (ship) =>
+                                                                    {
+                                                                        if (ship == firstGunship)
+                                                                        {
+                                                                            firstGunship.FogOfWarVision.Kill(0, true); // Remove fog of war vision immediately
+                                                                            firstGunship.EndKill();
+                                                                            Stage.CutsceneManager.ContinueDialogue(); // Play the rest of the dialogue
+
+                                                                        }
+
+                                                                        NextTriggers.Add(new Trigger(() =>
+                                                                            {
+                                                                                return Stage.CutsceneManager.PlutoLines_Anomaly_Completed;
+                                                                            },
+                                                                            () =>
+                                                                            {
+                                                                                Debug.Log("Level complete!");
+                                                                            },
+                                                                            "Level 0 Level completing after the end of dialogue")
+                                                                        );
+                                                                    };
+
 
                                                                     NextTriggers.Add(new Trigger(() =>
                                                                         {
-                                                                            return firstGunship.IsDead || exitZone.Ships.Contains(firstGunship); // Once gunship either dies or hits green box
+                                                                            return firstGunship.IsDead; // Once gunship dies
                                                                         },
                                                                         () =>
                                                                         {
-                                                                            if (!firstGunship.IsDead)
-                                                                            {
-                                                                                firstGunship.FogOfWarVision.Kill(0, true); // Remove fog of war vision immediately
-                                                                                firstGunship.EndKill();
-
-                                                                                
-                                                                            }
+                                                                            
                                                                             NextTriggers.Add(new Trigger(() =>
                                                                                 {
-                                                                                    return Stage.CutsceneManager.PlutoLines_TomIntro_Completed;
+                                                                                    return Stage.CutsceneManager.PlutoLines_Anomaly_Completed;
                                                                                 },
                                                                                 () =>
                                                                                 {

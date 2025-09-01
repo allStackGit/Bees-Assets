@@ -1,4 +1,5 @@
 ﻿using Assets.Scripts.Entities.Ships;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -8,6 +9,7 @@ namespace Assets.Scripts.Levels
     public class ExitZone : MonoBehaviour
     {
         public HashSet<Ship> Ships = new HashSet<Ship>();
+        public Action<Ship> OnShipEnter;
 
         private void OnTriggerEnter2D(Collider2D collision)
         {
@@ -16,6 +18,7 @@ namespace Assets.Scripts.Levels
             {
                 Ships.Add(ship);
                 Debug.Log($"Ship {ship.Name} entered exit zone.");
+                OnShipEnter(ship);
             }
         }
 
