@@ -19,7 +19,7 @@ namespace Assets.Scripts.UIComponents
         public SquadActionBox ActionBox;
         public Level CurrentLevel;
         public Stage Stage;
-        public Dialogue ExitConfirmationDialogue;
+        public Dialogue ExitConfirmationDialogue, CampaignLevelEndedDialogue;
         public TMP_Text ShipInfoBoxTitle, ShipInfoBoxStats, TryNewSquadsButtonText;
         public TMP_InputField LevelNameInput, SupplyCapacityInput;
         public Codex Codex;
@@ -54,9 +54,15 @@ namespace Assets.Scripts.UIComponents
 
             IsMiniMapOpen = MiniMapCloseButton.activeSelf;
 
-            ExitConfirmationDialogue = new Dialogue(Stage.DialoguePrefab, ConfigData.Configuration.AreYouSureExit, ConfigData.Configuration.LevelProgressLost,
-                new List<string>() { ConfigData.Configuration.Yes, ConfigData.Configuration.No }, new List<UnityAction>() { ExitToMainMenu });
+            ExitConfirmationDialogue = new Dialogue(Stage.DialoguePrefab, ConfigData.Configuration.AreYouSureExit, ConfigData.Configuration.LevelProgressLost, new List<string>() { ConfigData.Configuration.Yes, ConfigData.Configuration.No }, new List<UnityAction>() { ExitToMainMenu });
             ExitConfirmationDialogue.SetTextBoxHeight(200);
+
+            CampaignLevelEndedDialogue = new Dialogue(Stage.DialoguePrefab, "Level Completed!", "Do you want to continue?", new List<string>() { ConfigData.Configuration.Yes, "Exit to Main Menu" }, new List<UnityAction>() { () => {
+                Debug.Log("Continue!");
+                ConfigData.LoadLevel();
+            }, ExitToMainMenu });
+            CampaignLevelEndedDialogue.SetTextBoxHeight(100);
+            CampaignLevelEndedDialogue.SetButtonWidth(1, 180);
             //Debug.Log($"ActionBox:{ActionBox}");
             //Debug.Log($"EventSystem:{EventSystem}");
         }
@@ -70,6 +76,10 @@ namespace Assets.Scripts.UIComponents
             Debug.Log("Asking for confirmation");
             DeselectButton();
             ExitConfirmationDialogue.Show();
+        }
+        public void ShowLevelContinueDialogue()
+        {
+            CampaignLevelEndedDialogue.Show();
         }
         public void Exit()
         {

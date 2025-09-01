@@ -738,6 +738,21 @@ namespace Assets.Scripts
         {
             return _rnd.Next(max);
         }
+        private static readonly string _letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        public static char RandomLetter()
+        {
+            return _letters[RandomInt(_letters.Length)];
+        }
+        private static string lowerAlphaNumeric = "abcdefghijklmnopqrstuvwxyz0123456789";
+        public static string LowerAlphaNumericString()
+        {
+            string str = "";
+            for (int i = 0; i < 16; i++)
+            {
+                str += lowerAlphaNumeric[RandomInt(lowerAlphaNumeric.Length)];
+            }
+            return str;
+        }
         /// <summary>
         /// Generates a long by multiplying two random numbers no larger than max
         /// </summary>

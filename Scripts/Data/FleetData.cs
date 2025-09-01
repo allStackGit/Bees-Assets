@@ -48,7 +48,7 @@ namespace Assets.Scripts.Data
                     {
                         isVisible = true;
                     }
-                    AddShipToFleet(new FleetShip(id, $"{Utilities.ConvertShipTypeToName[shipType]} #{id}", shipType, false, isVisible, false, 0, 0, 0, 0, 0, 0, 0));
+                    AddShipToFleet(new FleetShip(id, shipType, false, isVisible, false, 0, 0, 0, 0, 0, 0, 0));
                     id++;
                 }
             });
@@ -62,8 +62,8 @@ namespace Assets.Scripts.Data
         {
             jsonShips.ForEach((ship) =>
             {
-                AddShipToFleet(new FleetShip((int) ship.i, (string) ship.n, (ConfigData.ShipTypes) ship.t, ((int)ship.s == 1 ? true : false), ((int) ship.v == 1 ? true : false),
-                    ((int)ship.d == 1 ? true : false), (int) ship.f, (int) ship.dd, (int) ship.r, (int) ship.k, (int) ship.b, (int) ship.w, (int)ship.m));
+                AddShipToFleet(new FleetShip((int) ship.i, (ConfigData.ShipTypes) ship.t, ((int)ship.s == 1 ? true : false), ((int) ship.v == 1 ? true : false),
+                    ((int)ship.d == 1 ? true : false), (int) ship.f, (int) ship.dd, (int) ship.r, (int) ship.k, (int) ship.b, (int) ship.w, (int)ship.m, (string)ship.n));
             });
         }
         public List<FleetShip> GetShips()
@@ -76,8 +76,7 @@ namespace Assets.Scripts.Data
         }
         public void AddShipToFleet(FleetShip ship)
         {
-            FleetShip exists = _shipList.Find((s) => s.Id == ship.Id);
-            if (exists == null) {
+            if (_shipList.Find((s) => s.Id == ship.Id) == null) {
                 _shipList.Add(ship);
             }
             

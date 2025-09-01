@@ -12,6 +12,7 @@ using System.Linq;
 using System.Threading;
 using UnityEngine;
 using UnityEngine.Pool;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;            
 
 namespace Assets.Scripts
@@ -693,8 +694,8 @@ namespace Assets.Scripts
         /// </summary>
         public const int MiningRate = 10;
         public static float ShipTurningRadius; 
-        public static List<Scene> Scenes = new List<Scene>();
-        public static Scene SocketManager;
+        public static List<Scenes.Scene> Scenes = new List<Scenes.Scene>();
+        public static Scenes.Scene SocketManager;
         public static HashSet<long> UsedHashes = new HashSet<long>();
         /// <summary>
         /// A game wide unique number
@@ -1100,31 +1101,17 @@ namespace Assets.Scripts
             // Do something to show a prompt to the user that they are playing for the first time and need to choose their name [alert]
 
             // Setup first squad #0
-            int squadId = UserProgressData.GetNextSavedSquadId();
-            //Debug.Log($"Creating first squad with id {squadId}");
 
             // Starting Scout Squad
-            SavedSquad savedSquadScout = new SavedSquad(squadId, Configuration.UserSide, $"Squad #{UserProgressData.HumanCampaignSavedSquadNumber++}", Vector2.zero, false, false, DefaultShootingStrategy, UnsetColor, null);
-            FleetShip scout = CurrentShips.GetAvailableShips().Where((s) => s.Type == ShipTypes.Scout).First();
-            savedSquadScout.AddShipToSquad(new SquadShip(scout.Id, scout.Type, Vector2.zero, savedSquadScout));
-            CurrentShips.AddSquad(savedSquadScout);
+            CurrentShips.BuildNewSquad($"Squad #{UserProgressData.HumanCampaignSavedSquadNumber++}", Configuration.HumanSide, ShipTypes.Scout, 1);
 
 
             // Starting gunship squad #1
-            squadId = UserProgressData.GetNextSavedSquadId();
-            SavedSquad savedSquadGunship = new SavedSquad(squadId, Configuration.UserSide, $"Squad #{UserProgressData.HumanCampaignSavedSquadNumber++}", Vector2.zero, false, false, DefaultShootingStrategy, UnsetColor, null);
-            FleetShip gunship = CurrentShips.GetAvailableShips().Where((s) => s.Type == ShipTypes.Gunship).First();
-            savedSquadGunship.AddShipToSquad(new SquadShip(gunship.Id, gunship.Type, Vector2.zero, savedSquadGunship));
-            CurrentShips.AddSquad(savedSquadGunship);
-
-
+            CurrentShips.BuildNewSquad($"Squad #{UserProgressData.HumanCampaignSavedSquadNumber++}", Configuration.HumanSide, ShipTypes.Gunship, 1);
+            CurrentShips.GetFleetShip(0).Name = "Gunship D-4";
 
             // Starting Honeybee squad #2
-            squadId = UserProgressData.GetNextSavedSquadId();
-            SavedSquad savedSquadHoneybee = new SavedSquad(squadId, Configuration.AISide, $"Squad #{UserProgressData.BeeCampaignSavedSquadNumber++}", Vector2.zero, false, false, DefaultShootingStrategy, UnsetColor, null);
-            FleetShip honeybee = CurrentShips.GetAvailableShips().Where((s) => s.Type == ShipTypes.Honeybee).First();
-            savedSquadHoneybee.AddShipToSquad(new SquadShip(honeybee.Id, honeybee.Type, Vector2.zero, savedSquadHoneybee));
-            CurrentShips.AddSquad(savedSquadHoneybee);
+            CurrentShips.BuildNewSquad($"Squad #{UserProgressData.BeeCampaignSavedSquadNumber++}", Configuration.BeeSide, ShipTypes.Honeybee, 1);
 
             UserProgressData.HasStartedHumanCampaign = true;
 
@@ -1133,27 +1120,13 @@ namespace Assets.Scripts
             // Starting Hornet squads #3, #4, #5
             for (int j = 0; j < 3; j++) // three hornet squads
             {
-                squadId = UserProgressData.GetNextSavedSquadId();
-                SavedSquad savedSquadHornet = new SavedSquad(squadId, Configuration.AISide, $"Squad #{UserProgressData.BeeCampaignSavedSquadNumber++}", Vector2.zero, false, false, DefaultShootingStrategy, UnsetColor, null);
-                for (int i = 0; i < 3; i++) // three hornets
-                {
-                    FleetShip hornet = CurrentShips.GetAvailableShips().Where((s) => s.Type == ShipTypes.Hornet).ElementAt(i);
-                    savedSquadHornet.AddShipToSquad(new SquadShip(hornet.Id, hornet.Type, GeneratedSquadFormationOffsets4x4Medium[i], savedSquadHornet));
-                }
-                CurrentShips.AddSquad(savedSquadHornet);
+                CurrentShips.BuildNewSquad($"Squad #{UserProgressData.BeeCampaignSavedSquadNumber++}", Configuration.BeeSide, ShipTypes.Hornet, 3);
             }
 
             // Starting Wasp squads #6, #7
             for (int j = 0; j < 2; j++)
             {
-                squadId = UserProgressData.GetNextSavedSquadId();
-                SavedSquad savedSquadWasp = new SavedSquad(squadId, Configuration.AISide, $"Squad #{UserProgressData.BeeCampaignSavedSquadNumber++}", Vector2.zero, false, false, DefaultShootingStrategy, UnsetColor, null);
-                for (int i = 0; i < 2; i++) // two wasps
-                {
-                    FleetShip wasp = CurrentShips.GetAvailableShips().Where((s) => s.Type == ShipTypes.Wasp).ElementAt(i);
-                    savedSquadWasp.AddShipToSquad(new SquadShip(wasp.Id, wasp.Type, GeneratedSquadFormationOffsets4x4Medium[i], savedSquadWasp));
-                }
-                CurrentShips.AddSquad(savedSquadWasp);
+                CurrentShips.BuildNewSquad($"Squad #{UserProgressData.BeeCampaignSavedSquadNumber++}", Configuration.BeeSide, ShipTypes.Wasp, 2);
             }
 
 
@@ -1163,6 +1136,34 @@ namespace Assets.Scripts
             CurrentShips.SaveSquadData();
             CurrentShips.SaveFleetData();
 
+        }
+        /// <summary>
+        /// Prepares the level by either selecting the squads the user will have if they don't get to choose themselves, or by setting up the pre level intro
+        /// </summary>
+        public static void LoadLevel()
+        {
+            UserProgressData.GetCurrentLevelOptions(); // sets up the level options for the current level
+            LevelOptions = (LevelOptions)UserProgressData.CurrentLevel.Clone(); // Sets the level options for the battle field
+
+            // Makes any level specific adjustments to the ships or intro
+            switch (UserProgressData.GetCurrentLevel())
+                {
+                case 0:
+                    LevelOptions.ChosenSquads = ConfigData.CurrentShips.GetSavedSquads().Where(s => s.Id == 0).ToList();
+                    SceneManager.LoadSceneAsync("Hivemind Training", LoadSceneMode.Single);
+                    Debug.Log($"Loading level 0, setting up pre level intro");
+                    break;
+                case 1:
+                    List<long> level1Squads = new List<long>() { 0, 1, 8, 9 };
+                    LevelOptions.ChosenSquads = CurrentShips.GetSavedSquads().Where(s => level1Squads.Contains(s.Id)).ToList();
+                    Debug.Log($"Loading level 1, setting up pre level intro");
+                    break;
+                default:
+                    Debug.LogError($"Tried to load unknown level {UserProgressData.GetCurrentLevel()}");
+                    break;
+            }
+
+            // Go to the intro scene if there is one, otherwise go straight to the battle scene
         }
         public static int GetUserId()
         {

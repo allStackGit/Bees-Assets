@@ -101,6 +101,8 @@ namespace Assets.Scripts.Data
                 HumanFreePlayWins = json.HumanFreePlayWins;
                 BeeFreePlayWins = json.BeeFreePlayWins;
 
+                PlayerName = json.PlayerName;
+
                 VisibleBeeShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(json.VisibleBeeShipTypes));
                 VisibleHumanShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(json.VisibleHumanShipTypes));
                 VisibleCodexBeeShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(json.VisibleCodexBeeShipTypes));
@@ -108,18 +110,24 @@ namespace Assets.Scripts.Data
                 InvisibleBeeShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(json.InvisibleBeeShipTypes));
                 InvisibleHumanShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(json.InvisibleHumanShipTypes));
 
-                VisibleShipTypes = new HashSet<ConfigData.ShipTypes>(VisibleHumanShipTypes.Union(VisibleBeeShipTypes));
-                VisibleCodexShipTypes = new HashSet<ConfigData.ShipTypes>(VisibleCodexHumanShipTypes.Union(VisibleCodexBeeShipTypes));
-                InvisibleShipTypes = new HashSet<ConfigData.ShipTypes>(InvisibleHumanShipTypes.Union(VisibleBeeShipTypes));
+                SetShipTypes();
                 AllShipTypes = new HashSet<ConfigData.ShipTypes>(InvisibleBeeShipTypes.Union(VisibleShipTypes).Union(InvisibleShipTypes).Union(VisibleBeeShipTypes).
                     Union(new HashSet<ConfigData.ShipTypes>() { ConfigData.ShipTypes.Beacon, ConfigData.ShipTypes.Drone, ConfigData.ShipTypes.Striker }));
 
-                PlayerName = json.PlayerName;
-                ConfigData.BeeShipTypes = VisibleBeeShipTypes;
-                ConfigData.HumanShipTypes = VisibleHumanShipTypes;
+
 
             });
             
+        }
+
+        public void SetShipTypes()
+        {
+            VisibleShipTypes = new HashSet<ConfigData.ShipTypes>(VisibleHumanShipTypes.Union(VisibleBeeShipTypes));
+            VisibleCodexShipTypes = new HashSet<ConfigData.ShipTypes>(VisibleCodexHumanShipTypes.Union(VisibleCodexBeeShipTypes));
+            InvisibleShipTypes = new HashSet<ConfigData.ShipTypes>(InvisibleHumanShipTypes.Union(InvisibleBeeShipTypes));
+            ConfigData.BeeShipTypes = VisibleBeeShipTypes;
+            ConfigData.HumanShipTypes = VisibleHumanShipTypes;
+
         }
         public override string ToJson()
         {
@@ -172,7 +180,7 @@ namespace Assets.Scripts.Data
             json += "]}";
             return json;
         }
-        public void LoadCurrentLevel()
+        public void GetCurrentLevelOptions()
         {
             CurrentLevel = ConfigData.GetCampaignLevelData().GetLevel(GetCurrentLevel());
         }

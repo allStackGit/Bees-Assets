@@ -13,6 +13,8 @@ namespace Assets.Scripts.UI_Components
     public class Dialogue
     {
         private GameObject _dialogue, _titleBox, _explanationBox, _buttonsContainer, _buttonPrefab;
+        private List<GameObject> _buttons = new List<GameObject>();
+        private float _buttonPrefabHeight;
 
 
         public bool IsOpen => _dialogue != null && _dialogue.activeSelf;
@@ -25,6 +27,7 @@ namespace Assets.Scripts.UI_Components
             _explanationBox = _dialogue.transform.Find($"Main Panel/Text/Explanation").gameObject;
             _buttonsContainer = _dialogue.transform.Find($"Main Panel/Buttons").gameObject;
             _buttonPrefab = _buttonsContainer.transform.Find($"Button Prefab").gameObject;
+            _buttonPrefabHeight = _buttonPrefab.GetComponent<RectTransform>().sizeDelta.y;
 
 
             _titleBox.GetComponent<TMP_Text>().text = title;
@@ -67,6 +70,7 @@ namespace Assets.Scripts.UI_Components
                 action();
                 Hide();
             });
+            _buttons.Add(buttonObject);
 
         }
         public void Show()
@@ -76,6 +80,10 @@ namespace Assets.Scripts.UI_Components
         public void Hide()
         {
             _dialogue.SetActive(false);
+        }
+        public void SetButtonWidth(int index, int widthScale)
+        {
+            _buttons[index].GetComponent<RectTransform>().sizeDelta = new Vector2(widthScale, _buttonPrefabHeight);
         }
         public void SetTextBoxHeight(int height)
         {

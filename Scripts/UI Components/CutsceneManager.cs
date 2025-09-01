@@ -45,7 +45,7 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Samuel", Portraits["Samuel"], "Understood, sir. We’ll send Lieutenant Tom out immediately."),
             new DialogueLine(),
 
-            new DialogueLine("Tom", Portraits["Tom"], $"This is Gunship P-4 reporting to command. I’m approaching the unidentified vessel now."),
+            new DialogueLine("Tom", Portraits["Tom"], $"This is Gunship D-4 reporting to command. I’m approaching the unidentified vessel now."),
             new DialogueLine(),
             new DialogueLine("Tom", Portraits["Tom"], "Unidentified vessel, you are in United Earth military airspace. Identify yourself now."),
             new DialogueLine("Samuel", Portraits["Samuel"], 1),
@@ -118,12 +118,22 @@ public class CutsceneManager : MonoBehaviour
         }
 
     }
+    private ScaledTimer _retryDialogue = new ScaledTimer();
     public void ContinueDialogue()
     {
-        Debug.Log("Continuing dialogue in cutscene manager.");
-        ShowDialogue();
-        HitDialogueBreak = false;
-        DialogueManager.DisplayNextLine();
+        if (HitDialogueBreak)
+        {
+            Debug.Log("Continuing dialogue in cutscene manager.");
+            ShowDialogue();
+            HitDialogueBreak = false;
+            DialogueManager.DisplayNextLine();
+        }
+        else
+        {
+            _retryDialogue.Reuse(1, ContinueDialogue, false);
+            Stage.PrimaryLevel.AddTimer(_retryDialogue);
+        }
+
     }
     public void BreakDialogue()
     {

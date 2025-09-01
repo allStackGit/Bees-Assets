@@ -26,13 +26,13 @@ namespace Assets.Scripts.Data
        
         public float Firepower => GetFirepower();
 
-        public FleetShip(long id, string name, ConfigData.ShipTypes type, bool hasCachedSprite, bool isVisibleToUser, bool isDead, int shotsFired, int damageDone, int damageReceived, int kills, int battlesFought, int battlesWon, int mineralsMined)
+        public FleetShip(long id, ConfigData.ShipTypes type, bool hasCachedSprite, bool isVisibleToUser, bool isDead, int shotsFired, int damageDone, int damageReceived, int kills, int battlesFought, int battlesWon, int mineralsMined, string name = "")
         {
             Id = id;
-            Name = name;
             Type = type;
+            Name = name == "" ? $"{GenerateShipName()}" : name;
             HasCachedSprite = hasCachedSprite;
-            IsVisibleToUser = isVisibleToUser;
+            IsVisibleToUser = isVisibleToUser; // [alert] We might not need this anymore since ships are added to the fleet as the game progresses
             IsDead = isDead;
             ShotsFired = shotsFired;
             DamageDone = damageDone;
@@ -44,7 +44,10 @@ namespace Assets.Scripts.Data
             Side = Utilities.ConvertShipTypeToSide.GetValueOrDefault(Type);
             GetStats();
         }
-        
+        public string GenerateShipName()
+        {
+            return Utilities.ConvertShipTypeToSide[Type] == ConfigData.Configuration.UserSide ? $"{Utilities.ConvertShipTypeToName[Type]} {Utilities.ConvertShipTypeToShipTypeLetter[Type]}-{Utilities.RandomInt(100)}" : Utilities.LowerAlphaNumericString();
+        }
         public Sprite LoadCachedSprite(int index, string type, Vector2Int size, Color squadColor)
         {
             try

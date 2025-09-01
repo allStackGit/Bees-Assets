@@ -1,11 +1,14 @@
 ﻿
 
+using Assets.Scripts.Data;
+using Assets.Scripts.Levels;
+using Assets.Scripts.Settings;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.Scripting.APIUpdating;
-using Assets.Scripts.Data;
+using static Assets.Scripts.ConfigData;
 
 namespace Assets.Scripts
 {
@@ -23,6 +26,19 @@ namespace Assets.Scripts
         }
 
         // get fleet methods
+        public void AddShipsToFleet(ConfigData.ShipTypes shipType, int shipCount)
+        {
+            int id = GetLastFleetId() + 1;
+            for (int i = 0; i < shipCount; i++)
+            {
+                _fleetData.AddShipToFleet(new FleetShip(id, shipType, false, true, false, 0, 0, 0, 0, 0, 0, 0));
+                id++;
+            }
+        }
+        public int GetLastFleetId()
+        {
+            return GetFleetShips().Count - 1;
+        }
         public List<FleetShip> GetFleetShips()
         {
             return _fleetData.GetShips();
@@ -319,6 +335,45 @@ namespace Assets.Scripts
             {
                 _savedSquadsData.RemoveSquadFromList(squad);
             }
+        }
+
+        public void BuildNewSquad(string name, int side, ConfigData.ShipTypes shipType, int shipCount)
+        {
+
+            Vector2[] offsets = ConfigData.GeneratedSquadFormationOffsets4x4;
+            if (shipCount == 1)
+            {
+                offsets[0] = Vector2.zero;
+            }
+            else
+            {
+                if (shipCount <= 4)
+                {
+                    if (ConfigData.LargeShips.Contains(shipType))
+                    {
+                        offsets = ConfigData.GeneratedSquadFormationOffsets2x2Large;
+                    }
+                    else
+                    {
+                        offsets = ConfigData.GeneratedSquadFormationOffsets2x2;
+                    }
+                }
+                if (ConfigData.MediumShips.Contains(shipType))
+                {
+                    offsets = ConfigData.GeneratedSquadFormationOffsets4x4Medium;
+                }
+            }
+
+
+
+            int squadId = ConfigData.UserProgressData.GetNextSavedSquadId();
+            SavedSquad savedSquad = new SavedSquad(squadId, side, name, Vector2.zero, false, false, DefaultShootingStrategy, UnsetColor, null);
+            for (int i = 0; i < shipCount; i++) 
+            {
+                FleetShip ship = CurrentShips.GetAvailableShips().Where((s) => s.Type == shipType).ElementAt(i);
+                savedSquad.AddShipToSquad(new SquadShip(ship.Id, ship.Type, offsets[i], savedSquad));
+            }
+            CurrentShips.AddSquad(savedSquad);
         }
 
 
