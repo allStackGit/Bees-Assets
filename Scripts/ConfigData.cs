@@ -717,6 +717,7 @@ namespace Assets.Scripts
         //public static int SelectedEnemyShipTypes = -1;
         public static LevelOptions LevelOptions;
         public static bool ChooseRandomLevel;
+        public static bool HasSeenPreLevelIntro;
 
 
         //public static KeyCode[] SquadKeys = new KeyCode[] { KeyCode.Alpha1, KeyCode.Alpha2, KeyCode.Alpha3, KeyCode.Alpha4, KeyCode.Alpha5, KeyCode.Alpha6, KeyCode.Alpha7, KeyCode.Alpha8, KeyCode.Alpha9, KeyCode.Alpha0 };
@@ -1154,9 +1155,18 @@ namespace Assets.Scripts
                     Debug.Log($"Loading level 0, setting up pre level intro");
                     break;
                 case 1:
-                    List<long> level1Squads = new List<long>() { 0, 1, 8, 9 };
-                    LevelOptions.ChosenSquads = CurrentShips.GetSavedSquads().Where(s => level1Squads.Contains(s.Id)).ToList();
-                    Debug.Log($"Loading level 1, setting up pre level intro");
+                    if (!HasSeenPreLevelIntro)
+                    {
+                        SceneManager.LoadSceneAsync("Level Intro", LoadSceneMode.Single);
+                    }
+                    else
+                    {
+                        List<long> level1Squads = new List<long>() { 0, 1, 8, 9 };
+                        LevelOptions.ChosenSquads = CurrentShips.GetSavedSquads().Where(s => level1Squads.Contains(s.Id)).ToList();
+                        HasSeenPreLevelIntro = false;
+                        SceneManager.LoadSceneAsync("Hivemind Training", LoadSceneMode.Single);
+                    }
+
                     break;
                 default:
                     Debug.LogError($"Tried to load unknown level {UserProgressData.GetCurrentLevel()}");

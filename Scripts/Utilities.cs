@@ -743,13 +743,13 @@ namespace Assets.Scripts
         {
             return _letters[RandomInt(_letters.Length)];
         }
-        private static string lowerAlphaNumeric = "abcdefghijklmnopqrstuvwxyz0123456789";
-        public static string LowerAlphaNumericString()
+        private static string hexidecimal = "abcdef0123456789";
+        public static string hexidecimalString()
         {
             string str = "";
             for (int i = 0; i < 16; i++)
             {
-                str += lowerAlphaNumeric[RandomInt(lowerAlphaNumeric.Length)];
+                str += hexidecimal[RandomInt(hexidecimal.Length)];
             }
             return str;
         }

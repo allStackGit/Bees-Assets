@@ -27,6 +27,9 @@ namespace Assets.Scripts.Levels
                 case 0:
                     Level0Triggers();
                     break;
+                case 1:
+                    Level1Triggers();
+                    break;
             }
         }
 
@@ -92,7 +95,10 @@ namespace Assets.Scripts.Levels
             firstHoneybee.Squad.RunCommandQueue();
 
             // [alert] maybe this should be for all levels
-            Stage.CutsceneManager.Setup();
+            Stage.CutsceneManager.Setup(() =>
+            {
+                Level0Ending();
+            });
             Stage.CutsceneManager.StartCutScene();
 
             //Stage.CutsceneManager.ShowDialogue();
@@ -452,17 +458,6 @@ namespace Assets.Scripts.Levels
                                                                 },
                                                                 () =>
                                                                 {
-
-                                                                    NextTriggers.Add(new Trigger(() =>
-                                                                        {
-                                                                            return Stage.CutsceneManager.PlutoLines_Anomaly_Completed;
-                                                                        },
-                                                                        () =>
-                                                                        {
-                                                                            Level0Ending();
-                                                                        },
-                                                                        "Level 0 Level completing after the end of dialogue")
-                                                                    );
                                                                     Stage.CutsceneManager.ContinueDialogue(); // Play the rest of the dialogue
 
                                                                 },
@@ -504,6 +499,7 @@ namespace Assets.Scripts.Levels
             ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Gunship, 1); // 1 Gunship
             ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 3); // 3 Frigates
             ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Dreadnought, 2); // 2 Dreadnoughts
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Honeybee, 1); // 1 Honeybee
 
             // Add new ships to the human's available ships
             SavedSquad gunshipSquad = ConfigData.CurrentShips.GetSavedSquad(1);
@@ -515,6 +511,9 @@ namespace Assets.Scripts.Levels
 
             // Starting Frigate squad #9
             CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Frigate, 3);
+
+            // Starting Honeybee squad #10
+            CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Honeybee, 1);
 
 
             // Add Honeybee, Frigate, and Dreadnought to the codex and visibility
@@ -540,6 +539,16 @@ namespace Assets.Scripts.Levels
             State.GameOver = true;
             Debug.Log("Did Standard level complete, showing dialogue");
             Stage.Menus.ShowLevelContinueDialogue();
+
+        }
+
+        public void Level1Triggers()
+        {
+            Debug.Log("Setting triggers for level 1");
+            Stage.EnablePlayerControl();
+        }
+        public void Level1Ending()
+        {
 
         }
     }

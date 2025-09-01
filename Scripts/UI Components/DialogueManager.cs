@@ -15,7 +15,6 @@ public class DialogueManager : MonoBehaviour
     public TMP_Text ContinuePrompt;
     public TMP_Text SpeakerName;
     public Image PortraitImage;
-    public Level Level;
     public Dialogues CurrentDialogue;
 
     private Queue<DialogueLine> dialogueLines = new Queue<DialogueLine>();
@@ -26,11 +25,14 @@ public class DialogueManager : MonoBehaviour
         Pluto_Anomaly,
     }
 
-    public void Setup(Level level, CutsceneManager cutsceneManager, Dialogues dialogueType)
+    public void Setup(CutsceneManager cutsceneManager, Dialogues dialogueType)
     {
-        Level = level;
         CutsceneManager = cutsceneManager;
         CurrentDialogue = dialogueType;
+    }
+    public void Setup(CutsceneManager cutsceneManager)
+    {
+        CutsceneManager = cutsceneManager;
     }
 
     public void SwitchDialogue(Dialogues dialogueType)
@@ -69,6 +71,17 @@ public class DialogueManager : MonoBehaviour
         SpeakerName.text = line.SpeakerName;
         SetPortrait(line.PortraitA);
         StartCoroutine(TypeLine(line));
+    }
+
+    public void DisplayNextLineWithDelay(float delaySeconds = 2f)
+    {
+        StartCoroutine(DisplayNextLineCoroutine(delaySeconds));
+    }
+
+    private IEnumerator DisplayNextLineCoroutine(float delaySeconds)
+    {
+        yield return new WaitForSeconds(delaySeconds);
+        DisplayNextLine();
     }
 
     public void SetPortrait(Sprite sprite)
@@ -174,7 +187,6 @@ public class DialogueManager : MonoBehaviour
         
     }
 
-    private ScaledTimer _continuePromptTimer = new ScaledTimer();
     public void ToggleContinuePrompt(bool showOrHide)
     {
         if (_hasContinuePrompt)
@@ -183,8 +195,7 @@ public class DialogueManager : MonoBehaviour
         }
         else if (showOrHide)
         {
-            _continuePromptTimer.Reuse(2, DisplayNextLine, false);
-            Level.AddTimer(_continuePromptTimer);
+            DisplayNextLineWithDelay(2f);
         }
     }
 

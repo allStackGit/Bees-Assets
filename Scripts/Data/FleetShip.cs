@@ -46,7 +46,7 @@ namespace Assets.Scripts.Data
         }
         public string GenerateShipName()
         {
-            return Utilities.ConvertShipTypeToSide[Type] == ConfigData.Configuration.UserSide ? $"{Utilities.ConvertShipTypeToName[Type]} {Utilities.ConvertShipTypeToShipTypeLetter[Type]}-{Utilities.RandomInt(100)}" : Utilities.LowerAlphaNumericString();
+            return Utilities.ConvertShipTypeToSide[Type] == ConfigData.Configuration.UserSide ? $"{Utilities.ConvertShipTypeToName[Type]} {Utilities.ConvertShipTypeToShipTypeLetter[Type]}-{Utilities.RandomInt(100)}" : Utilities.hexidecimalString();
         }
         public Sprite LoadCachedSprite(int index, string type, Vector2Int size, Color squadColor)
         {

@@ -1,4 +1,5 @@
 using Assets.Scripts;
+using System;
 using System.Collections.Generic;
 using System.Security.Cryptography;
 using UnityEngine;
@@ -7,15 +8,16 @@ using UnityEngine.Timeline;
 
 public class CutsceneManager : MonoBehaviour
 {
-    public Sprite SamuelPortaitA, SamuelPortaitB;
-
     public PlayableDirector Director;
     public DialogueManager DialogueManager;
-    public GameObject CutsceneCanvas, DialogueCanvas;
+    public GameObject CutsceneCanvas;
     public Stage Stage;
-    public List<DialogueLine> PlutoLines_Anomaly;
+    public List<DialogueLine> PlutoLines_Anomaly, PlutoLines_Reinforcements;
+    public List<List<DialogueLine>> AllDialogues;
     public bool PlutoLines_Anomaly_Completed = false;
     public bool HitDialogueBreak = false;
+    public Action EndDialogueAction;
+    public bool HasEndDialogueAction = false;
 
     public TimelineAsset PlutoIntroCutscene;
 
@@ -24,8 +26,13 @@ public class CutsceneManager : MonoBehaviour
 
     public List<DialogueLine> CurrentDialogueLines;
 
-    public void Setup()
+    public void Setup(Action endDialogueAction)
     {
+        if (endDialogueAction != null)
+        {
+            EndDialogueAction = endDialogueAction;
+            HasEndDialogueAction = true;
+        }
         Portraits["Samuel"] = Resources.LoadAll<Sprite>("Sprites/Portraits/samuel_chat");
         Portraits["Tom"] = Resources.LoadAll<Sprite>("Sprites/Portraits/starman");
         Portraits["High Command"] = Resources.LoadAll<Sprite>("Sprites/Portraits/highcommand");
@@ -33,15 +40,15 @@ public class CutsceneManager : MonoBehaviour
         PlutoLines_Anomaly = new List<DialogueLine>
         {
             new DialogueLine("Samuel", Portraits["Samuel"], $"Good morning, Commander {ConfigData.UserProgressData.PlayerName}! I brought your coffee."),
-            new DialogueLine("Samuel", Portraits["Samuel"], 3),
+            new DialogueLine("Samuel", Portraits["Samuel"], 1),
             new DialogueLine("Samuel", Portraits["Samuel"], "I agree, it doesn't taste as good as Earth coffee. Or even Mars coffee. It's alright, we'll both get out of Pluto soon enough."),
             new DialogueLine("Samuel", Portraits["Samuel"], "The tech gets a notification of some kind.", 2),
             new DialogueLine("Samuel", Portraits["Samuel"], "Oh, that's odd. A scout is reporting an unidentified vessel approaching military airspace. What should we do?"),
-            new DialogueLine("Samuel", Portraits["Samuel"], 2),
+            new DialogueLine("Samuel", Portraits["Samuel"], 1),
             new DialogueLine("Samuel", Portraits["Samuel"], "Right away, sir. Contacting the vessel."),
-            new DialogueLine("Samuel", Portraits["Samuel"], 2),
+            new DialogueLine("Samuel", Portraits["Samuel"], 1),
             new DialogueLine("Samuel", Portraits["Samuel"], "It isn’t responding, sir."),
-            new DialogueLine("Samuel", Portraits["Samuel"], 2),
+            new DialogueLine("Samuel", Portraits["Samuel"], 1),
             new DialogueLine("Samuel", Portraits["Samuel"], "Understood, sir. We’ll send Lieutenant Tom out immediately."),
             new DialogueLine(),
 
@@ -69,15 +76,18 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Samuel", Portraits["Samuel"], "Their fleet is huge! We need to contact High Command immediately!"),
             new DialogueLine("Samuel", Portraits["Samuel"], "Dial-up noises", 2),
             new DialogueLine("Samuel", Portraits["Samuel"], "Communications are down, sir. What should we do?"),
-            new DialogueLine("Samuel", Portraits["Samuel"], 2),
+            new DialogueLine("Samuel", Portraits["Samuel"], 1),
             new DialogueLine("Samuel", Portraits["Samuel"], "Understood. Preparing our fleet to deploy, sir."),
 
         };
 
-    }
-    public void EnablePlayerControl()
-    {
-        Stage.EnablePlayerControl();
+        PlutoLines_Reinforcements = new List<DialogueLine>
+        {
+            new DialogueLine("Samuel", Portraits["Samuel"], "The strange alien fleet has called in reinforcements. We have to rally our ships and form a defense, quickly!"),
+        };
+
+        AllDialogues = new List<List<DialogueLine>> { PlutoLines_Anomaly, PlutoLines_Reinforcements };
+
     }
     public void HideIntroMessage()
     {
@@ -85,7 +95,7 @@ public class CutsceneManager : MonoBehaviour
     }
     public void HideDialogue()
     {
-        DialogueCanvas.SetActive(false);
+        DialogueManager.gameObject.SetActive(false);
     }
     public void EndCutscene()
     {
@@ -103,7 +113,14 @@ public class CutsceneManager : MonoBehaviour
     }
     public void ShowDialogue()
     {
-        DialogueCanvas.SetActive(true);
+        DialogueManager.gameObject.SetActive(true);
+    }
+    public void PlaySingleDialogueLine(DialogueLine line)
+    {
+        ShowDialogue();
+        DialogueManager.Setup(this);
+        DialogueManager.SetPortrait(line.PortraitA);
+        DialogueManager.StartDialogue(new List<DialogueLine> { line }, false);
     }
     public void StartDialogue(DialogueManager.Dialogues dialogueType)
     {
@@ -111,7 +128,7 @@ public class CutsceneManager : MonoBehaviour
         switch (dialogueType)
         {
             case DialogueManager.Dialogues.Pluto_Anomaly:
-                DialogueManager.Setup(Stage.PrimaryLevel, this, DialogueManager.Dialogues.Pluto_Anomaly);
+                DialogueManager.Setup(this, DialogueManager.Dialogues.Pluto_Anomaly);
                 DialogueManager.SetPortrait(PlutoLines_Anomaly[0].PortraitA);
                 DialogueManager.StartDialogue(PlutoLines_Anomaly, false);
                 break;
@@ -139,16 +156,14 @@ public class CutsceneManager : MonoBehaviour
     {
         Debug.Log("Breaking dialogue in cutscene manager.");
         HitDialogueBreak = true;
-        DialogueCanvas.SetActive(false);
+        DialogueManager.gameObject.SetActive(false);
     }
     public void EndDialogue(DialogueManager.Dialogues dialogueType)
     {
-        switch (dialogueType)
+        DialogueManager.gameObject.SetActive(false);
+        if (HasEndDialogueAction)
         {
-            case DialogueManager.Dialogues.Pluto_Anomaly:
-                PlutoLines_Anomaly_Completed = true;
-                DialogueCanvas.SetActive(false);
-                break;
+            EndDialogueAction();
         }
     }
 

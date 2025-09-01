@@ -45,8 +45,7 @@ namespace Assets.Scripts.Scenes
                 IsSocketManager = true;
                 IsMainScene = true;
                 ConfigData.SocketManager = this;
-                NetworkDisconnection = new Dialogue( DialoguePrefab, "Server disconnected!", "The game needs to be connected to the server in order to function properly.",
-                                               new List<string>() { "Retry", "Exit Game" }, new List<UnityAction>() { ConfigData.RetryConnection, Exit });
+                NetworkDisconnection = new Dialogue( DialoguePrefab, "Server disconnected!", "The game needs to be connected to the server in order to function properly.", new List<string>() { "Retry", "Exit Game" }, new List<UnityAction>() { ConfigData.RetryConnection, Exit });
 
                 ConfigData.MaxThreads = SystemInfo.processorCount - 1;
 
