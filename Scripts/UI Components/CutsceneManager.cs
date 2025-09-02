@@ -36,6 +36,7 @@ public class CutsceneManager : MonoBehaviour
         Portraits["Samuel"] = Resources.LoadAll<Sprite>("Sprites/Portraits/samuel_chat");
         Portraits["Tom"] = Resources.LoadAll<Sprite>("Sprites/Portraits/starman");
         Portraits["High Command"] = Resources.LoadAll<Sprite>("Sprites/Portraits/highcommand");
+        Portraits["Oviya"] = Resources.LoadAll<Sprite>("Sprites/Portraits/oviya_chat");
 
         PlutoLines_Anomaly = new List<DialogueLine>
         {
@@ -84,6 +85,12 @@ public class CutsceneManager : MonoBehaviour
         PlutoLines_Reinforcements = new List<DialogueLine>
         {
             new DialogueLine("Samuel", Portraits["Samuel"], "The strange alien fleet has called in reinforcements. We have to rally our ships and form a defense, quickly!"),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Okay, commander, it's up to you to lead us to victory."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "This is a scout! They're the fastest ship around, and- oh, right! I'm Oviya, your scout commander. Sorry, Commander! Anyway, use the scout to… well, scout the battlefield."),
+            new DialogueLine("Ovyia", Portraits["Oviya"], "They get around fast, so as long as you keep giving orders, they probably won't get hit by enemy fire. Oh, but they don't have any guns, so don't try fighting with them."),
+            new DialogueLine("Ovyia", Portraits["Oviya"], 1),
+            new DialogueLine("Ovyia", Portraits["Oviya"], "Scouts also come loaded up with five beacons! You can drop them anywhere and they'll detect enemies."),
+
         };
 
         AllDialogues = new List<List<DialogueLine>> { PlutoLines_Anomaly, PlutoLines_Reinforcements };
@@ -117,10 +124,15 @@ public class CutsceneManager : MonoBehaviour
     }
     public void PlaySingleDialogueLine(DialogueLine line)
     {
+        PlayDialogueSection(new List<DialogueLine> { line });
+    }
+    public void PlayDialogueSection(List<DialogueLine> lines)
+    {
+        HitDialogueBreak = false;
         ShowDialogue();
         DialogueManager.Setup(this);
-        DialogueManager.SetPortrait(line.PortraitA);
-        DialogueManager.StartDialogue(new List<DialogueLine> { line }, false);
+        DialogueManager.SetPortrait(lines[0].PortraitA);
+        DialogueManager.StartDialogue(lines, false, false);
     }
     public void StartDialogue(DialogueManager.Dialogues dialogueType)
     {
@@ -130,7 +142,7 @@ public class CutsceneManager : MonoBehaviour
             case DialogueManager.Dialogues.Pluto_Anomaly:
                 DialogueManager.Setup(this, DialogueManager.Dialogues.Pluto_Anomaly);
                 DialogueManager.SetPortrait(PlutoLines_Anomaly[0].PortraitA);
-                DialogueManager.StartDialogue(PlutoLines_Anomaly, false);
+                DialogueManager.StartDialogue(PlutoLines_Anomaly, false, false);
                 break;
         }
 

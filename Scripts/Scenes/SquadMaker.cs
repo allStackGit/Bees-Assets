@@ -1852,10 +1852,7 @@ namespace Assets.Scripts.Scenes
             ConfigData.IsUserLoadingCustomSquads = true;
 
             //Debug.Log($"Setting level options for configdata");
-            ConfigData.LevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}",
-                _chosenMapOption, _chosenObstacleOption, _chosenAsteroidsOption, _chosenFogOfWarOption, _chosenMiningOption, false, true, -1,
-                _chosenEnemyReinforcementsOption, ConfigData.StandardReinforcementsDelay, _chosenEnemyShipTypes, _enemySquadGenerationCount, new List<SavedSquad>(),
-               new List<SavedSquad>(), new List<int>(), _chosenSquads);
+            ConfigData.LevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}", _chosenMapOption, _chosenObstacleOption, _chosenAsteroidsOption, _chosenFogOfWarOption, _chosenMiningOption, false, true, -1, _chosenEnemyReinforcementsOption, ConfigData.StandardReinforcementsDelay, _chosenEnemyShipTypes, _enemySquadGenerationCount, new List<SavedSquad>(), new List<SavedSquad>(), new List<int>(), _chosenSquads, Vector2.zero, Vector2.zero);
         }
 
         public void ChangeOpposingForceDropdown(int option)

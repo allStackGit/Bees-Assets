@@ -14,7 +14,7 @@ namespace Assets.Scripts.Levels
 {
     public partial class Level : MonoBehaviour
     {
-
+        private ScaledTimer _dialogueTimer = new ScaledTimer();
         /// <summary>
         /// Sets all the triggers for events in the level. Triggers are checked every 5 seconds so this currently has a maximum precision of 5 seconds
         /// </summary>
@@ -505,6 +505,7 @@ namespace Assets.Scripts.Levels
             SavedSquad gunshipSquad = ConfigData.CurrentShips.GetSavedSquad(1);
             FleetShip gunship = CurrentShips.GetAvailableShips().Where((s) => s.Type == ShipTypes.Gunship).First();
             gunshipSquad.AddShipToSquad(new SquadShip(gunship.Id, gunship.Type, Vector2.zero, gunshipSquad));
+            gunshipSquad.AutoRepositionSquad();
 
             // Starting Dreadnought squad #8
             CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Dreadnought, 2);
@@ -546,10 +547,134 @@ namespace Assets.Scripts.Levels
         {
             Debug.Log("Setting triggers for level 1");
             Stage.EnablePlayerControl();
+            HasContinuousTriggers = true;
+            GameObject basicTooltip = null;
+            GameObject highlightTooltip = null;
+            Squad scoutSquad = State.GetSquadById(0);
+            Squad gunshipSquad = State.GetSquadById(1);
+            Squad frigateSquad = State.GetSquadById(8); // Frigate squad that starts in the level
+            Squad dreadnoughtSquad = State.GetSquadById(9);
+            RectTransform rectTransform = null;
+
+
+            // Deselect all squads
+            State.SelectSquads(new List<Squad>());
+            frigateSquad.CanAcceptUserInput = false;
+            gunshipSquad.CanAcceptUserInput = false;
+            dreadnoughtSquad.CanAcceptUserInput = false;
+
+            // Prevent the Hivemind from giving commands
+            Stage.ActivateHiveMind = false;
+
+            // Start the dialogue
+            Stage.CutsceneManager.Setup(() =>
+            {
+                Level1Ending();
+            });
+
+            _dialogueTimer.Reuse(3, () =>
+            {
+                Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.PlutoLines_Reinforcements[1]);
+            });
+            AddTimer(_dialogueTimer);
+
+            Triggers.Add(new Trigger(() =>
+                {
+                    return Stage.CutsceneManager.HitDialogueBreak;
+                },
+                () =>
+                {
+                    basicTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
+                    basicTooltip.SetActive(true);
+                    TMP_Text tooltipText = basicTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>();
+                    RectTransform tooltipRectTransformPosition = basicTooltip.GetComponent<RectTransform>();
+                    RectTransform tooltipRectTransformSize = basicTooltip.transform.GetChild(0).GetComponent<RectTransform>();
+
+                    tooltipText.text = "Select a squad with the left mouse button.";
+                    tooltipRectTransformPosition.localPosition = new Vector2(200, 0);
+
+                    highlightTooltip = Instantiate(Stage.Menus.HighlightTooltipPrefab, Map.transform);
+                    highlightTooltip.SetActive(true);
+                    highlightTooltip.transform.position = scoutSquad.GetPosition();
+                    highlightTooltip.transform.localScale = new Vector2(scoutSquad.GetWidth() + 2, scoutSquad.GetHeight() + 2);
+
+                    NextTriggers.Add(new Trigger(() =>
+                        {
+                            return scoutSquad.IsSelected;
+                        },
+                        () =>
+                        {
+                            highlightTooltip.SetActive(false);
+                            basicTooltip.SetActive(false);
+                            Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(2, 4));
+
+                            NextTriggers.Add(new Trigger(() =>
+                                {
+                                    return Stage.CutsceneManager.HitDialogueBreak;
+                                },
+                                () =>
+                                {
+                                    tooltipText.text = "Here are different settings for your ship.You can determine your squad’s flight pattern and shooting strategies here. Take some time to familiarize yourself with these options.";
+                                    tooltipRectTransformSize.sizeDelta = new Vector2(-225, -150);
+                                    basicTooltip.SetActive(true);
+
+
+                                    GameObject pointerA =  Instantiate(Stage.Menus.PointerArrow, Stage.Menus.UIOverlay.transform);
+                                    rectTransform = pointerA.GetComponent<RectTransform>();
+                                    rectTransform.localPosition = new Vector2(-482, -255);
+                                    rectTransform.eulerAngles = new Vector3(0, 0, 170);
+                                    pointerA.SetActive(true);
+
+                                    GameObject pointerB = Instantiate(Stage.Menus.PointerArrow, Stage.Menus.UIOverlay.transform);
+                                    rectTransform = pointerB.GetComponent<RectTransform>();
+                                    rectTransform.localPosition = new Vector2(-380, -340);
+                                    rectTransform.eulerAngles = new Vector3(0, 0, 170);
+                                    rectTransform.localScale = new Vector2(0.25f, 0.5f);
+                                    pointerB.SetActive(true);
+
+                                    GameObject spaceBarMessage = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
+                                    spaceBarMessage.SetActive(true);
+                                    spaceBarMessage.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "Press and hold the space bar to continue";
+
+                                    NextTriggers.Add(new Trigger(() =>
+                                        {
+                                            return Input.GetKey(KeyCode.Space);
+                                        },
+                                        () =>
+                                        {
+                                            Destroy(pointerA);
+                                            Destroy(pointerB);
+                                            Destroy(spaceBarMessage);
+                                        },
+                                        "Level 1 Showing select scout squad tooltip")
+                                    );
+                                },
+                                "Level 1 Show HUD controls")
+                            );
+                        },
+                        "Level 1 Showing Oyiva dialogue")
+                    );
+
+                },
+                "Level 1 Showing select scout squad tooltip")
+            );
+
+
         }
         public void Level1Ending()
         {
+            Debug.Log("Level 1 complete!");
 
+            NextTriggers.Add(new Trigger(() =>
+            {
+                return true;
+            },
+                () =>
+                {
+
+                },
+                "Level 1 Showing select scout squad tooltip")
+            );
         }
     }
 }

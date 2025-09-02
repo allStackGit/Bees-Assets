@@ -4230,6 +4230,8 @@ MonoBehaviour:
   TooltipPrefab: {fileID: 1256836004264935655, guid: 4cd583014ad710c4d9f3c720b84a7190, type: 3}
   WASDTooltip: {fileID: 1484477657}
   UIOverlay: {fileID: 671516569}
+  HighlightTooltipPrefab: {fileID: 8912504570151464901, guid: 6b54cc1a121e2ce4785c6316061eb6c0, type: 3}
+  PointerArrow: {fileID: 6240089187840440776, guid: 1c0787cad914f0145888132699e917be, type: 3}
   ActionBox: {fileID: 0}
   CurrentLevel: {fileID: 0}
   Stage: {fileID: 0}
@@ -17656,6 +17658,22 @@ PrefabInstance:
     - target: {fileID: 622294108415055573, guid: 496655638f6b03a44b39f7e8dcb590ee, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1235618058829423516, guid: 496655638f6b03a44b39f7e8dcb590ee, type: 3}
+      propertyPath: m_Color.a
+      value: 0.8235294
+      objectReference: {fileID: 0}
+    - target: {fileID: 1235618058829423516, guid: 496655638f6b03a44b39f7e8dcb590ee, type: 3}
+      propertyPath: m_Color.b
+      value: 0.5764706
+      objectReference: {fileID: 0}
+    - target: {fileID: 1235618058829423516, guid: 496655638f6b03a44b39f7e8dcb590ee, type: 3}
+      propertyPath: m_Color.g
+      value: 0.5764706
+      objectReference: {fileID: 0}
+    - target: {fileID: 1235618058829423516, guid: 496655638f6b03a44b39f7e8dcb590ee, type: 3}
+      propertyPath: m_Color.r
+      value: 0.5764706
       objectReference: {fileID: 0}
     - target: {fileID: 6850395113328377477, guid: 496655638f6b03a44b39f7e8dcb590ee, type: 3}
       propertyPath: m_Name

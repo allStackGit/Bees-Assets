@@ -4,6 +4,7 @@ using Assets.Scripts.Scenes;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Xml.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Data
@@ -127,6 +128,38 @@ namespace Assets.Scripts.Data
                 _ships.Add(ship);
             }
             
+        }
+        public void AutoRepositionSquad()
+        {
+            int shipCount = GetSquadShips().Count;
+            Vector2[] offsets = ConfigData.GeneratedSquadFormationOffsets4x4;
+            if (shipCount == 1)
+            {
+                offsets[0] = Vector2.zero;
+            }
+            else
+            {
+                if (shipCount <= 4)
+                {
+                    if (GetSquadShips().Any((s) =>  ConfigData.LargeShips.Contains(s.ShipType)))
+                    {
+                        offsets = ConfigData.GeneratedSquadFormationOffsets2x2Large;
+                    }
+                    else
+                    {
+                        offsets = ConfigData.GeneratedSquadFormationOffsets2x2;
+                    }
+                }
+                if (GetSquadShips().Any((s) => ConfigData.MediumShips.Contains(s.ShipType)))
+                {
+                    offsets = ConfigData.GeneratedSquadFormationOffsets4x4Medium;
+                }
+            }
+
+            for (int i = 0; i < shipCount; i++)
+            {
+                GetSquadShips()[i].Offset = offsets[i];
+            }
         }
         public void SetChanged(bool changed)
         {

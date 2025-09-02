@@ -864,6 +864,23 @@ namespace Assets.Scripts
             {"saved-squad-label-default-color", new Color(0.6527f, 0.6625f, 0.7169f, 1)},
         };
 
+        [System.Serializable]
+        public class Vector2Wrapper
+        {
+            public float x, y;
+
+            public Vector2Wrapper(Vector2 vector)
+            {
+                x = vector.x;
+                y = vector.y;
+            }
+
+            public Vector2 ToVector2()
+            {
+                return new Vector2(x, y);
+            }
+        }
+
 
         //Carrying variables - Changing variables that need to be carried between scenes
 
@@ -1152,20 +1169,26 @@ namespace Assets.Scripts
                 case 0:
                     LevelOptions.ChosenSquads = ConfigData.CurrentShips.GetSavedSquads().Where(s => s.Id == 0).ToList();
                     SceneManager.LoadSceneAsync("Hivemind Training", LoadSceneMode.Single);
-                    Debug.Log($"Loading level 0, setting up pre level intro");
+                    //Debug.Log($"Loading level 0, setting up pre level intro");
                     break;
                 case 1:
-                    if (!HasSeenPreLevelIntro)
-                    {
-                        SceneManager.LoadSceneAsync("Level Intro", LoadSceneMode.Single);
-                    }
-                    else
-                    {
-                        List<long> level1Squads = new List<long>() { 0, 1, 8, 9 };
-                        LevelOptions.ChosenSquads = CurrentShips.GetSavedSquads().Where(s => level1Squads.Contains(s.Id)).ToList();
-                        HasSeenPreLevelIntro = false;
-                        SceneManager.LoadSceneAsync("Hivemind Training", LoadSceneMode.Single);
-                    }
+                    // Short circuit for faster loading [alert]
+                    List<long> level1Squads = new List<long>() { 0, 1, 8, 9 };
+                    LevelOptions.ChosenSquads = CurrentShips.GetSavedSquads().Where(s => level1Squads.Contains(s.Id)).ToList();
+                    HasSeenPreLevelIntro = false;
+                    SceneManager.LoadSceneAsync("Hivemind Training", LoadSceneMode.Single);
+
+                    //if (!HasSeenPreLevelIntro)
+                    //{
+                    //    SceneManager.LoadSceneAsync("Level Intro", LoadSceneMode.Single);
+                    //}
+                    //else
+                    //{
+                    //    List<long> level1Squads = new List<long>() { 0, 1, 8, 9 };
+                    //    LevelOptions.ChosenSquads = CurrentShips.GetSavedSquads().Where(s => level1Squads.Contains(s.Id)).ToList();
+                    //    HasSeenPreLevelIntro = false;
+                    //    SceneManager.LoadSceneAsync("Hivemind Training", LoadSceneMode.Single);
+                    //}
 
                     break;
                 default:

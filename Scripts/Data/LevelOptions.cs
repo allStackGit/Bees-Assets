@@ -115,9 +115,13 @@ namespace Assets.Scripts.Data
         /// The squad compositions that the player chose
         /// </summary>
         public List<SavedSquad> ChosenSquads;
+        /// <summary>
+        /// The starting positions for the player ships and the AI ships. If it's empty then we use the map defaults
+        /// </summary>
+        public Vector2 UserStartingPosition, AIStartingPosition;
 
 
-        public LevelOptions(int id, int side, string name, int mapIndex, int obstacleMapIndex, int asteroidOption, int fogOfWar, int mining, bool hasPreLevelIntro, bool hasSquadActionBox, int supplyCapacity, int enemyReinforcementsOption, int enemyReinforcementDelay, int enemyShipTypeOption, int enemySquadGenerationCount, List<SavedSquad> enemyReinforcements, List<SavedSquad> enemySquads, List<int> enemyExistingSquads, List<SavedSquad> chosenSquads) 
+        public LevelOptions(int id, int side, string name, int mapIndex, int obstacleMapIndex, int asteroidOption, int fogOfWar, int mining, bool hasPreLevelIntro, bool hasSquadActionBox, int supplyCapacity, int enemyReinforcementsOption, int enemyReinforcementDelay, int enemyShipTypeOption, int enemySquadGenerationCount, List<SavedSquad> enemyReinforcements, List<SavedSquad> enemySquads, List<int> enemyExistingSquads, List<SavedSquad> chosenSquads, Vector2 userStartingPosition, Vector2 aiStartingPosition) 
         {
             Id = id;
             Side = side;
@@ -138,6 +142,8 @@ namespace Assets.Scripts.Data
             EnemySquads = enemySquads;
             EnemyExistingSquads = enemyExistingSquads;
             ChosenSquads = chosenSquads;
+            UserStartingPosition = userStartingPosition;
+            AIStartingPosition = aiStartingPosition;
             //Debug.Log($"Creating level: {GetEnemyList()}");
         }
 
@@ -165,7 +171,7 @@ namespace Assets.Scripts.Data
         {
             string json = $"{{\"Id\": {Id}, \"Side\": {Side}, \"Name\": \"{Name}\", \"MapIndex\": {MapIndex}, \"ObstacleMapIndex\": {ObstacleMapIndex}, \"AsteroidOption\": {AsteroidOption}, " +
                 $"\"FogOfWar\": {FogOfWar}, \"Mining\": {Mining}, \"HasPrelevelIntro\": {HasPrelevelIntro}, \"HasSquadActionBox:\": {HasSquadActionBox} \"SupplyCapacity\": {SupplyCapacity}, \"EnemyReinforcementsOption\": {EnemyReinforcementsOption}," +
-                $" \"EnemyReinforcementDelay\": {EnemyReinforcementDelay}, \"EnemyReinforcements\": [";
+                $" \"EnemyReinforcementDelay\": {EnemyReinforcementDelay}, \"UserStartingPosition\": {{\"x\": {UserStartingPosition.x}, \"y\": {UserStartingPosition.y}}}, \"AIStartingPosition\": {{\"x\": {AIStartingPosition.x}, \"y\": {AIStartingPosition.y}}}, \"EnemyReinforcements\": [";
             
             if (EnemyReinforcements.Count > 0)
             {

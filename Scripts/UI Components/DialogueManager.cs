@@ -18,7 +18,7 @@ public class DialogueManager : MonoBehaviour
     public Dialogues CurrentDialogue;
 
     private Queue<DialogueLine> dialogueLines = new Queue<DialogueLine>();
-    private bool _hasContinuePrompt;
+    private bool _hasContinuePrompt, _isLastDialogue;
 
     public enum Dialogues
     {
@@ -40,8 +40,9 @@ public class DialogueManager : MonoBehaviour
         CurrentDialogue = dialogueType;
     }
 
-    public void StartDialogue(List<DialogueLine> lines, bool hasContinueButton)
+    public void StartDialogue(List<DialogueLine> lines, bool hasContinueButton, bool isLastDialogue)
     {
+        _isLastDialogue = isLastDialogue;
         Debug.Log("Starting dialogue in dialogue manager.");
         dialogueLines.Clear();
 
@@ -62,7 +63,14 @@ public class DialogueManager : MonoBehaviour
         //Debug.Log("Displaying next line in dialogue manager.");
         if (dialogueLines.Count == 0)
         {
-            EndDialogue();
+            if (_isLastDialogue)
+            {
+                EndDialogue();
+            }
+            else
+            {
+                CutsceneManager.BreakDialogue();
+            }
             return;
         }
 

@@ -982,7 +982,7 @@ namespace Assets.Scripts.Levels
             SaveLevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}", CurrentLevelOptions.MapIndex,
                 CurrentLevelOptions.ObstacleMapIndex, CurrentLevelOptions.AsteroidOption == 2 ? 2 : (ActivateCollisionAsteroids ? 1 : 0),
                 ActivateFogOfWar ? 1 : 0, ActivateMining ? 1 : 0, false, true, -1, ActivateLoadingShipsMidLevel ? 1 : 0, CurrentLevelOptions.EnemyReinforcementDelay, CurrentLevelOptions.EnemyShipTypeOption, 0,
-                CurrentLevelOptions.EnemyReinforcements.ToList(), CurrentLevelOptions.EnemySquads.ToList(), new List<int>(), new List<SavedSquad>());
+                CurrentLevelOptions.EnemyReinforcements.ToList(), CurrentLevelOptions.EnemySquads.ToList(), new List<int>(), new List<SavedSquad>(), Vector2.zero, Vector2.zero);
         }
         public void SetupShips()
         {
@@ -1014,9 +1014,26 @@ namespace Assets.Scripts.Levels
         public void SetupMapAndCamera()
         {
             Map.Setup(this);
+            
+            if (CurrentLevelOptions.UserStartingPosition != Vector2.zero)
+            {
+                StartingPositions[ConfigData.Configuration.UserSide - 1] = CurrentLevelOptions.UserStartingPosition;
+                Stage.DefaultCameraPosition = CurrentLevelOptions.UserStartingPosition;
 
-            StartingPositions[ConfigData.Configuration.AISide - 1] = Map.AIStartingPosition;
-            StartingPositions[ConfigData.Configuration.UserSide - 1] = Map.UserStartingPosition;
+            }
+            else
+            {
+                StartingPositions[ConfigData.Configuration.UserSide - 1] = Map.UserStartingPosition;
+            }
+            if (CurrentLevelOptions.AIStartingPosition != Vector2.zero)
+            {
+                StartingPositions[ConfigData.Configuration.AISide - 1] = CurrentLevelOptions.AIStartingPosition;
+            }
+            else
+            {
+                StartingPositions[ConfigData.Configuration.AISide - 1] = Map.AIStartingPosition;
+            }
+
 
             // Setup map bounds
             MapWidth = (int)(Mathf.Abs(Map.SpriteRenderer.localBounds.min.x) + Map.SpriteRenderer.localBounds.max.x);
