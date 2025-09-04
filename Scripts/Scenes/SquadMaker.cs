@@ -151,7 +151,7 @@ namespace Assets.Scripts.Scenes
             Setup();
 
 
-            ConfigData.CurrentShips.ReplaceDeadSquadShips();
+            ConfigData.CurrentShips.ReplaceDeadSquadShips(ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign);
             _fleetList = ConfigData.CurrentShips.GetAvailableShips();
             SetupFleetList();
             SetupSavedSquadsList();
@@ -504,7 +504,7 @@ namespace Assets.Scripts.Scenes
             // loop through all ship types
             _shipTypes.ForEach(type =>
             {
-                //Debug.Log($"Getting fleet ships for {type}");
+                Debug.Log($"Getting fleet ships for {type}");
                 GameObject shipLabel = null;
                 switch (type)
                 {
@@ -591,7 +591,7 @@ namespace Assets.Scripts.Scenes
                 // if ship type has any visible ships
                 if (visibleShips.Any())
                 {
-                    //Debug.Log($"Setting the ship count for {type}");
+                    Debug.Log($"Setting the ship count for {type}");
                     // get the count of the ship type and update the label
                     TMP_Text labelText = shipLabel.GetComponentInChildren<TMP_Text>();
                     labelText.text = $"({availableShips.Count})";
@@ -599,6 +599,15 @@ namespace Assets.Scripts.Scenes
                     if (parent != null)
                     {
                         parent.gameObject.SetActive(true);
+                    }
+                    if (type == ConfigData.ShipTypes.Scout)
+                    {
+                        BeaconFleetLabel.transform.parent.gameObject.SetActive(true);
+                    }
+                    else if (type == ConfigData.ShipTypes.Carrier)
+                    {
+                        StrikerFleetLabel.transform.parent.gameObject.SetActive(true);
+                        DroneFleetLabel.transform.parent.gameObject.SetActive(true);
                     }
                 }
                 else // if not, set the label to inactive

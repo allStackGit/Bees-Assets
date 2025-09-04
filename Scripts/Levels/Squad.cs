@@ -159,6 +159,7 @@ namespace Assets.Scripts.Levels
             enabled = true;
             CommandQueueEmptyAction = null;
             HasCommandQueue = false;
+            IsSelected = false;
 
         }
         public virtual void Create(Stage stage)
@@ -296,7 +297,7 @@ namespace Assets.Scripts.Levels
                 // trying to place ships on the map according to where they were in the squad maker
                 // Option 1: Convert the squadmaker coordinates directly to map coordinates
 
-                //Debug.Log($"Ship: {ship.Name} Position: {position}, Offset from Center: {ship.OffsetFromCenter}");
+                Debug.Log($"Ship: {ship.Name} Position: {position}, Offset from Center: {ship.OffsetFromCenter}");
 
                 _adjustment = ship.OffsetFromCenter;
 
@@ -320,7 +321,7 @@ namespace Assets.Scripts.Levels
                 //Debug.Log($"Sizefactor for {ship.Name}: {sizeFactor}");
                 //ship.transform.localPosition = Level.ForceBounds((position.x + adjustment.x), (position.y + adjustment.y));
                 ship.transform.localPosition = new Vector2(position.x + _adjustment.x, position.y + _adjustment.y);
-                //Debug.Log($"Local starting position for {ship.Name}: {ship.transform.localPosition}");
+                Debug.Log($"Local starting position for {ship.Name}: {ship.transform.localPosition}");
 
             });
 

@@ -930,7 +930,7 @@ namespace Assets.Scripts.Levels
             //} 
             Timers.Clear();
             _hasSetTimeoutTimer = false;
-            ConfigData.CurrentShips.ReplaceDeadSquadShips();
+            ConfigData.CurrentShips.ReplaceDeadSquadShips(ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign);
             State.ResetState();
             State.GameOver = false;
             State.LevelEnded = false;
@@ -1154,7 +1154,7 @@ namespace Assets.Scripts.Levels
 
                 }
 
-                ConfigData.CurrentShips.ReplaceDeadSquadShips();
+                ConfigData.CurrentShips.ReplaceDeadSquadShips(ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign);
                 ConfigData.CurrentShips.SaveFleetData();
                 ConfigData.CurrentShips.SaveSquadData();
 

@@ -255,16 +255,16 @@ namespace Assets.Scripts.Levels
                     }
                 });
                 Debug.Log($"Squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.EnemySquads)}");
-                SpawnShipsAndSquads(Level.CurrentLevelOptions.EnemySquads, Level.StartingPositions[side - 1], Vector2.zero);
+                SpawnShipsAndSquads(Level.CurrentLevelOptions.EnemySquads, Level.StartingPositions[side - 1], Vector2.zero, false);
             }
             else
             {
                 Debug.Log($"Chosen squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.ChosenSquads)}");
-                SpawnShipsAndSquads(Level.CurrentLevelOptions.ChosenSquads, Level.StartingPositions[side - 1], Vector2.zero);
+                SpawnShipsAndSquads(Level.CurrentLevelOptions.ChosenSquads, Level.StartingPositions[side - 1], Vector2.zero, false);
             }
 
         }
-        public void SpawnShipsAndSquads(List<SavedSquad> squads, Vector2 startingPosition, Vector2 moveToPoint)
+        public void SpawnShipsAndSquads(List<SavedSquad> squads, Vector2 startingPosition, Vector2 moveToPoint, bool squadsAreReinforcements)
         {
             List<Squad> setupSquads = new List<Squad>();
             List<Ship> carriers = new List<Ship>();
@@ -384,7 +384,7 @@ namespace Assets.Scripts.Levels
                 }
             });
 
-            PositionSquads(setupSquads, startingPosition, moveToPoint);
+            PositionSquads(setupSquads, startingPosition, moveToPoint, squadsAreReinforcements);
 
             if (carriers.Count > 0)
             {
@@ -397,7 +397,7 @@ namespace Assets.Scripts.Levels
             //    $"Bees: {Level.State.InitialTsv[ConfigData.Configuration.BeeSide-1]}");
             //Debugger.PrintList(HasBeeTypes);
         }
-        private void PositionSquads(List<Squad> squads, Vector2 startingPosition, Vector2 moveToPoint)
+        private void PositionSquads(List<Squad> squads, Vector2 startingPosition, Vector2 moveToPoint, bool squadsAreReinforcements)
         {
             Squad firstLevelSquad = null;
             Squad previousLeftSquad = null;
@@ -482,7 +482,7 @@ namespace Assets.Scripts.Levels
                 //Debug.Log($"{squad.Name} is potentially located at {position}. It's left side is at {leastWidth} and it's right side is at {greatestWidth}. It's " +
                 //$"{squad.GetWidth()} wide and {squad.GetHeight()} tall");
 
-                if (greatestWidth > Level.MaxX || leastWidth < Level.MinX)
+                if (!squadsAreReinforcements && (greatestWidth > Level.MaxX || leastWidth < Level.MinX))
                 {
                     // Debug Log how much the squad is out of bounds horizontally
                     if (greatestWidth > Level.MaxX)

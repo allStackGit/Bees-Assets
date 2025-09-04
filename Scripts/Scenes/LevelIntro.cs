@@ -16,7 +16,7 @@ namespace UIComponents
         protected override void FinalizeSceneWithUserData()
         {
             base.FinalizeSceneWithUserData();
-            ConfigData.CurrentGameMode = ConfigData.GameModes.Campaign; // [alert] Temporary, for testing purposes only
+            //ConfigData.CurrentGameMode = ConfigData.GameModes.Campaign; // [alert] Temporary, for testing purposes only
             LevelNumber = ConfigData.UserProgressData.GetCurrentLevel();
 
             CutsceneManager.Setup(() =>
@@ -32,7 +32,15 @@ namespace UIComponents
                     
                     StartCoroutine(DelayStart(3, () =>
                     {
-                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.PlutoLines_Reinforcements[0]);
+                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.PlutoLines_Reinforcements[0], true);
+                    }));
+                    break;
+                case 2:
+                    Debug.Log("Playing Pluto Bluer pastures dialogue.");
+
+                    StartCoroutine(DelayStart(3, () =>
+                    {
+                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.PlutoLinesBluerPastures[0], true);
                     }));
                     break;
             }

@@ -4231,6 +4231,7 @@ MonoBehaviour:
   WASDTooltip: {fileID: 1484477657}
   UIOverlay: {fileID: 671516569}
   HighlightTooltipPrefab: {fileID: 8912504570151464901, guid: 6b54cc1a121e2ce4785c6316061eb6c0, type: 3}
+  UIHighlightTooltipPrefab: {fileID: 8912504570151464901, guid: cc0e96b1a061afe4f86a013e4f5835f6, type: 3}
   PointerArrow: {fileID: 6240089187840440776, guid: 1c0787cad914f0145888132699e917be, type: 3}
   ActionBox: {fileID: 0}
   CurrentLevel: {fileID: 0}
@@ -17645,7 +17646,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 622294108415055573, guid: 496655638f6b03a44b39f7e8dcb590ee, type: 3}
       propertyPath: m_AnchoredPosition.y
-      value: 0
+      value: 100
       objectReference: {fileID: 0}
     - target: {fileID: 622294108415055573, guid: 496655638f6b03a44b39f7e8dcb590ee, type: 3}
       propertyPath: m_LocalEulerAnglesHint.x

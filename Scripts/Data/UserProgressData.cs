@@ -136,42 +136,42 @@ namespace Assets.Scripts.Data
 
             if (VisibleBeeShipTypes.Count > 0)
             {
-                VisibleBeeShipTypes.ToList().ForEach((s) => json += $"\"{s}\", ");
+                VisibleBeeShipTypes.ToList().ForEach((s) => json += $"\"{Utilities.ConvertShipTypeToName[s]}\", ");
                 json = json.Remove(json.Length - 2);
             }
 
             json += "], \"VisibleHumanShipTypes\": [";
             if (VisibleHumanShipTypes.Count > 0)
             {
-                VisibleHumanShipTypes.ToList().ForEach((s) => json += $"\"{s}\", ");
+                VisibleHumanShipTypes.ToList().ForEach((s) => json += $"\"{Utilities.ConvertShipTypeToName[s]}\", ");
                 json = json.Remove(json.Length - 2);
             }
 
             json += "], \"InvisibleBeeShipTypes\": [";
             if (InvisibleBeeShipTypes.Count > 0)
             {
-                InvisibleBeeShipTypes.ToList().ForEach((s) => json += $"\"{s}\", ");
+                InvisibleBeeShipTypes.ToList().ForEach((s) => json += $"\"{Utilities.ConvertShipTypeToName[s]}\", ");
                 json = json.Remove(json.Length - 2);
             }
 
             json += "], \"InvisibleHumanShipTypes\": [";
             if (InvisibleHumanShipTypes.Count > 0)
             {
-                InvisibleHumanShipTypes.ToList().ForEach((s) => json += $"\"{s}\", ");
+                InvisibleHumanShipTypes.ToList().ForEach((s) => json += $"\"{Utilities.ConvertShipTypeToName[s]}\", ");
                 json = json.Remove(json.Length - 2);
             }
 
             json += "], \"VisibleCodexBeeShipTypes\": [";
             if (VisibleCodexBeeShipTypes.Count > 0)
             {
-                VisibleCodexBeeShipTypes.ToList().ForEach((s) => json += $"\"{s}\", ");
+                VisibleCodexBeeShipTypes.ToList().ForEach((s) => json += $"\"{Utilities.ConvertShipTypeToName[s]}\", ");
                 json = json.Remove(json.Length - 2);
             }
 
             json += "], \"VisibleCodexHumanShipTypes\": [";
             if (VisibleCodexHumanShipTypes.Count > 0)
             {
-                VisibleCodexHumanShipTypes.ToList().ForEach((s) => json += $"\"{s}\", ");
+                VisibleCodexHumanShipTypes.ToList().ForEach((s) => json += $"\"{Utilities.ConvertShipTypeToName[s]}\", ");
                 json = json.Remove(json.Length - 2);
             }
 

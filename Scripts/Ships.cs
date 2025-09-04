@@ -283,11 +283,12 @@ namespace Assets.Scripts
         /// <summary>
         /// Replaces the dead ships is a SavedSquad with new ships from the fleet if available. If Level.ReplaceDeadShips isn't true then there aren't any dead ships to replace
         /// </summary>
-        public void ReplaceDeadSquadShips()
+        public void ReplaceDeadSquadShips(bool replaceAISide)
         {
             //Debug.Log($"Replacing dead squad ships");
+            List<SavedSquad> squads = replaceAISide ? GetSavedSquads() : GetSavedSquadsBySide(ConfigData.Configuration.UserSide);
             bool replaced = false;
-            GetSavedSquads().ForEach((squad) =>
+            squads.ForEach((squad) =>
             {
                 if (ReplaceDeadShipsInSquad(squad))
                 {

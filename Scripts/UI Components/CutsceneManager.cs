@@ -12,7 +12,7 @@ public class CutsceneManager : MonoBehaviour
     public DialogueManager DialogueManager;
     public GameObject CutsceneCanvas;
     public Stage Stage;
-    public List<DialogueLine> PlutoLines_Anomaly, PlutoLines_Reinforcements;
+    public List<DialogueLine> PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLinesBluerPastures;
     public List<List<DialogueLine>> AllDialogues;
     public bool PlutoLines_Anomaly_Completed = false;
     public bool HitDialogueBreak = false;
@@ -37,6 +37,9 @@ public class CutsceneManager : MonoBehaviour
         Portraits["Tom"] = Resources.LoadAll<Sprite>("Sprites/Portraits/starman");
         Portraits["High Command"] = Resources.LoadAll<Sprite>("Sprites/Portraits/highcommand");
         Portraits["Oviya"] = Resources.LoadAll<Sprite>("Sprites/Portraits/oviya_chat");
+        Portraits["Marco"] = Resources.LoadAll<Sprite>("Sprites/Portraits/marco_chat");
+        Portraits["Yoshiko"] = Resources.LoadAll<Sprite>("Sprites/Portraits/yoshiko_chat");
+        Portraits["Joey"] = Resources.LoadAll<Sprite>("Sprites/Portraits/joey_chat");
 
         PlutoLines_Anomaly = new List<DialogueLine>
         {
@@ -85,15 +88,41 @@ public class CutsceneManager : MonoBehaviour
         PlutoLines_Reinforcements = new List<DialogueLine>
         {
             new DialogueLine("Samuel", Portraits["Samuel"], "The strange alien fleet has called in reinforcements. We have to rally our ships and form a defense, quickly!"),
+
             new DialogueLine("Samuel", Portraits["Samuel"], "Okay, commander, it's up to you to lead us to victory."),
+
             new DialogueLine("Oviya", Portraits["Oviya"], "This is a scout! They're the fastest ship around, and- oh, right! I'm Oviya, your scout commander. Sorry, Commander! Anyway, use the scout to… well, scout the battlefield."),
-            new DialogueLine("Ovyia", Portraits["Oviya"], "They get around fast, so as long as you keep giving orders, they probably won't get hit by enemy fire. Oh, but they don't have any guns, so don't try fighting with them."),
-            new DialogueLine("Ovyia", Portraits["Oviya"], 1),
-            new DialogueLine("Ovyia", Portraits["Oviya"], "Scouts also come loaded up with five beacons! You can drop them anywhere and they'll detect enemies."),
+
+            new DialogueLine("Oviya", Portraits["Oviya"], "They get around fast, so as long as you keep giving orders, they probably won't get hit by enemy fire. Oh, but they don't have any guns, so don't try fighting with them."),
+
+            new DialogueLine("Oviya", Portraits["Oviya"], 1),
+
+            new DialogueLine("Oviya", Portraits["Oviya"], "Scouts also come loaded up with five beacons! You can drop them anywhere and they'll detect enemies."),
+
+            new DialogueLine("Samuel", Portraits["Samuel"], "You should try to find out where the enemy is with your scouts, then form a plan of attack."),
+
+            new DialogueLine("Marco", Portraits["Marco"], "I'll be commanding your gunships. They're fast-flying dogfighting specialists. Use their speed to your advantage if you can."),
+            new DialogueLine("Marco", Portraits["Marco"], "Even if they can't fly as well as me, they'll still be good at dodging fire."),
+
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Alright! It's been a while since we've had a good fight. I'm your dreadnought commander."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "These babies are made to brawl. They can take a lotta hits and dish it right back! Keep ‘em out front and watch ‘em tear it up. Woohoo!"),
+
+            new DialogueLine("Joey", Portraits["Joey"], "Alrighty, Commander, I'm commanding yer frigates. They're yer explosives experts. They can't shoot far, but they sure pack a wallop."),
+            new DialogueLine("Joey", Portraits["Joey"], "Those rockets will do some serious damage, and they can even hit multiple targets inside the blast radius."),
+
+            new DialogueLine("Samuel", Portraits["Samuel"], "Great work, commander. We’ve kept them at bay for now."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Some of our Scouts are already finding more fleets. We- um, how do I put this… We can’t win. Not here."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "We’ll have to send an emergency evacuation alert, then."),
 
         };
 
-        AllDialogues = new List<List<DialogueLine>> { PlutoLines_Anomaly, PlutoLines_Reinforcements };
+        PlutoLinesBluerPastures = new List<DialogueLine>
+        {
+            new DialogueLine("Samuel", Portraits["Samuel"], "Scouts are reporting overwhelming reinforcements from the enemy. We can’t outlast them, but we have to buy enough time for those on the planet to evacuate."),
+
+        };
+
+        AllDialogues = new List<List<DialogueLine>> { PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLinesBluerPastures };
 
     }
     public void HideIntroMessage()
@@ -122,17 +151,18 @@ public class CutsceneManager : MonoBehaviour
     {
         DialogueManager.gameObject.SetActive(true);
     }
-    public void PlaySingleDialogueLine(DialogueLine line)
+    public void PlaySingleDialogueLine(DialogueLine line, bool isLastDialogue = false)
     {
-        PlayDialogueSection(new List<DialogueLine> { line });
+        HitDialogueBreak = false;
+        PlayDialogueSection(new List<DialogueLine> { line }, isLastDialogue);
     }
-    public void PlayDialogueSection(List<DialogueLine> lines)
+    public void PlayDialogueSection(List<DialogueLine> lines, bool isLastDialogue = false)
     {
         HitDialogueBreak = false;
         ShowDialogue();
         DialogueManager.Setup(this);
         DialogueManager.SetPortrait(lines[0].PortraitA);
-        DialogueManager.StartDialogue(lines, false, false);
+        DialogueManager.StartDialogue(lines, false, isLastDialogue);
     }
     public void StartDialogue(DialogueManager.Dialogues dialogueType)
     {

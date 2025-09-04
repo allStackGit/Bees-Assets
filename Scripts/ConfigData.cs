@@ -1172,24 +1172,30 @@ namespace Assets.Scripts
                     //Debug.Log($"Loading level 0, setting up pre level intro");
                     break;
                 case 1:
-                    // Short circuit for faster loading [alert]
-                    List<long> level1Squads = new List<long>() { 0, 1, 8, 9 };
-                    LevelOptions.ChosenSquads = CurrentShips.GetSavedSquads().Where(s => level1Squads.Contains(s.Id)).ToList();
-                    HasSeenPreLevelIntro = false;
-                    SceneManager.LoadSceneAsync("Hivemind Training", LoadSceneMode.Single);
 
-                    //if (!HasSeenPreLevelIntro)
-                    //{
-                    //    SceneManager.LoadSceneAsync("Level Intro", LoadSceneMode.Single);
-                    //}
-                    //else
-                    //{
-                    //    List<long> level1Squads = new List<long>() { 0, 1, 8, 9 };
-                    //    LevelOptions.ChosenSquads = CurrentShips.GetSavedSquads().Where(s => level1Squads.Contains(s.Id)).ToList();
-                    //    HasSeenPreLevelIntro = false;
-                    //    SceneManager.LoadSceneAsync("Hivemind Training", LoadSceneMode.Single);
-                    //}
+                    if (!HasSeenPreLevelIntro)
+                    {
+                        SceneManager.LoadSceneAsync("Level Intro", LoadSceneMode.Single);
+                    }
+                    else
+                    {
+                        List<long> level1Squads = new List<long>() { 0, 1, 8, 9 };
+                        LevelOptions.ChosenSquads = CurrentShips.GetSavedSquads().Where(s => level1Squads.Contains(s.Id)).ToList();
+                        HasSeenPreLevelIntro = false;
+                        SceneManager.LoadSceneAsync("Hivemind Training", LoadSceneMode.Single);
+                    }
 
+                    break;
+                case 2:
+                    if (!HasSeenPreLevelIntro)
+                    {
+                        SceneManager.LoadSceneAsync("Level Intro", LoadSceneMode.Single);
+                    }
+                    else
+                    {
+                        HasSeenPreLevelIntro = false;
+                        SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
+                    }
                     break;
                 default:
                     Debug.LogError($"Tried to load unknown level {UserProgressData.GetCurrentLevel()}");

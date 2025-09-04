@@ -444,34 +444,41 @@ namespace Assets.Scripts.Levels.Commands
                 _tempShips = GetSquad().GetShips();
                 _tempShips.ForEach(ship => ship.TargetEnemyShipToFollow = null);
 
-                GetSquad().Status = "idle";
-                if (GetSquad().IsChasing())
-                {
-                    GetSquad().SetChase(false);
-                }
-                if (GetSquad().IsSelected && Stage.Menus.HasSquadActionBox)
-                {
-                    Stage.Menus.ActionBox.HighlightSelectedButtons();
-                }
+
 
                 //Debug.Log($"Finalizing and setting Squad Command #{OutcomeId}:{Strategy?.CommandType} to null for {Squad.Name} because of {FinalizationCause}");
 
-                GetSquad().SetCommandNull();
-                GetSquad().HasCommand = false;
+
                 Level.State.CommandsToRelease.Add(this);
 
-                if (IsHiveMindCommand && Stage.ActivateHiveMind)
+                if (!GetSquad().IsDead)
                 {
-                    //if (GetSquad().GetShips().Any((s) => s.ShipType == ConfigData.ShipTypes.Beacon))
-                    //{
-                    //    Debug.Log($"{this} has a squad with beacons and it just finalized");
-                    //}
-                    GetSquad().AddToCommandList();
+                    GetSquad().SetCommandNull();
+                    GetSquad().HasCommand = false;
+                    GetSquad().Status = "idle";
+                    if (GetSquad().IsChasing())
+                    {
+                        GetSquad().SetChase(false);
+                    }
+                    if (GetSquad().IsSelected && Stage.Menus.HasSquadActionBox)
+                    {
+                        Stage.Menus.ActionBox.HighlightSelectedButtons();
+                    }
+
+                    if (IsHiveMindCommand && Stage.ActivateHiveMind)
+                    {
+                        //if (GetSquad().GetShips().Any((s) => s.ShipType == ConfigData.ShipTypes.Beacon))
+                        //{
+                        //    Debug.Log($"{this} has a squad with beacons and it just finalized");
+                        //}
+                        GetSquad().AddToCommandList();
+                    }
+                    else
+                    {
+                        GetSquad().RunCommandQueue();
+                    }
                 }
-                else
-                {
-                    GetSquad().RunCommandQueue();
-                }
+
                 // If this is a hivemind command with an outcomeId then find the past command in the state, update the TSV, and finalize it
                 if (IsHiveMindCommand && OutcomeId > 0)
                 {
