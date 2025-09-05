@@ -16,7 +16,7 @@ namespace Assets.Scripts.Data
             UserStartingPosition = userStartingPosition;
             AIStartingPosition = aiStartingPosition;
             Location = location;
-            Name = $"{location} - #{Id}";
+            Name = $"{location}";
         }
 
         public override string ToString()

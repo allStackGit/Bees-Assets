@@ -276,7 +276,7 @@ namespace Assets.Scripts.Scenes
         private void SetupForCampaign()
         {
             //Debug.Log($"Setting up for campaign");
-            int i = 1;
+            int i = 0;
             ConfigData.GetCampaignLevelData().GetLevels().Where((level) => level.Side != Side).ToList().ForEach((level) =>
             {
                 //Debug.Log($"Adding option for {level} -> #{i}");
@@ -1323,7 +1323,7 @@ namespace Assets.Scripts.Scenes
                 //Vector2 placementPosition = Camera.WorldToScreenPoint(ship.Offset);
 
                 //ship.SetOffset(offsetPosition);
-                //Debug.Log($"Starting Position for {ship.GetFleetShip().Name}: {_currentUnsavedSquad.StartingPosition}, Offset position: {ship.Offset}"); 
+                Debug.Log($"Starting Position for {ship.GetFleetShip().Name}: {_currentSquad.StartingPosition}, Offset position: {ship.Offset}, Placement position: {placementPosition}");
                 dropper.MakeDragIcon(ship.GetFleetShip());
                 dropper.SetupActiveDragging(placementPosition, true);
                 DragIcon dragIcon = dropper.GetCurrentDragIcon();
@@ -1861,7 +1861,7 @@ namespace Assets.Scripts.Scenes
             ConfigData.IsUserLoadingCustomSquads = true;
 
             //Debug.Log($"Setting level options for configdata");
-            ConfigData.LevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}", _chosenMapOption, _chosenObstacleOption, _chosenAsteroidsOption, _chosenFogOfWarOption, _chosenMiningOption, false, true, -1, _chosenEnemyReinforcementsOption, ConfigData.StandardReinforcementsDelay, _chosenEnemyShipTypes, _enemySquadGenerationCount, new List<SavedSquad>(), new List<SavedSquad>(), new List<int>(), _chosenSquads, Vector2.zero, Vector2.zero);
+            ConfigData.LevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}", _chosenMapOption, _chosenObstacleOption, _chosenAsteroidsOption, _chosenFogOfWarOption, _chosenMiningOption, false, true, -1, _chosenEnemyReinforcementsOption, ConfigData.StandardReinforcementsDelay, _chosenEnemyShipTypes, _enemySquadGenerationCount, new List<SavedSquad>(), new List<SavedSquad>(), new List<int>(), "", _chosenSquads, Vector2.zero, Vector2.zero);
         }
 
         public void ChangeOpposingForceDropdown(int option)

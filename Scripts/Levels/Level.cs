@@ -884,7 +884,7 @@ namespace Assets.Scripts.Levels
             {
                 State.SelectSquad(State.GetSquadByNumber(ConfigData.Configuration.UserSide, 1));
             }
-            else if (!Stage.IsTraining)
+            else if (!Stage.IsTraining && ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
             {
                 Debug.Log($"User squads: {State.GetSquadsBySide(ConfigData.Configuration.UserSide).Count}, AI squads: {State.GetSquadsBySide(ConfigData.Configuration.AISide).Count}");
                 Pause();
@@ -982,7 +982,7 @@ namespace Assets.Scripts.Levels
             SaveLevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}", CurrentLevelOptions.MapIndex,
                 CurrentLevelOptions.ObstacleMapIndex, CurrentLevelOptions.AsteroidOption == 2 ? 2 : (ActivateCollisionAsteroids ? 1 : 0),
                 ActivateFogOfWar ? 1 : 0, ActivateMining ? 1 : 0, false, true, -1, ActivateLoadingShipsMidLevel ? 1 : 0, CurrentLevelOptions.EnemyReinforcementDelay, CurrentLevelOptions.EnemyShipTypeOption, 0,
-                CurrentLevelOptions.EnemyReinforcements.ToList(), CurrentLevelOptions.EnemySquads.ToList(), new List<int>(), new List<SavedSquad>(), Vector2.zero, Vector2.zero);
+                CurrentLevelOptions.EnemyReinforcements.ToList(), CurrentLevelOptions.EnemySquads.ToList(), new List<int>(), "", new List<SavedSquad>(), Vector2.zero, Vector2.zero);
         }
         public void SetupShips()
         {

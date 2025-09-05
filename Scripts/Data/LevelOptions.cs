@@ -112,6 +112,10 @@ namespace Assets.Scripts.Data
         /// </summary>
         public List<int> EnemyExistingSquads;
         /// <summary>
+        /// The basic report of the enemy forces that the player will face. This is shown to the player when they choose their squads
+        /// </summary>
+        public string EnemyReport;
+        /// <summary>
         /// The squad compositions that the player chose
         /// </summary>
         public List<SavedSquad> ChosenSquads;
@@ -121,7 +125,7 @@ namespace Assets.Scripts.Data
         public Vector2 UserStartingPosition, AIStartingPosition;
 
 
-        public LevelOptions(int id, int side, string name, int mapIndex, int obstacleMapIndex, int asteroidOption, int fogOfWar, int mining, bool hasPreLevelIntro, bool hasSquadActionBox, int supplyCapacity, int enemyReinforcementsOption, int enemyReinforcementDelay, int enemyShipTypeOption, int enemySquadGenerationCount, List<SavedSquad> enemyReinforcements, List<SavedSquad> enemySquads, List<int> enemyExistingSquads, List<SavedSquad> chosenSquads, Vector2 userStartingPosition, Vector2 aiStartingPosition) 
+        public LevelOptions(int id, int side, string name, int mapIndex, int obstacleMapIndex, int asteroidOption, int fogOfWar, int mining, bool hasPreLevelIntro, bool hasSquadActionBox, int supplyCapacity, int enemyReinforcementsOption, int enemyReinforcementDelay, int enemyShipTypeOption, int enemySquadGenerationCount, List<SavedSquad> enemyReinforcements, List<SavedSquad> enemySquads, List<int> enemyExistingSquads, string enemyReport, List<SavedSquad> chosenSquads, Vector2 userStartingPosition, Vector2 aiStartingPosition) 
         {
             Id = id;
             Side = side;
@@ -141,6 +145,7 @@ namespace Assets.Scripts.Data
             EnemyReinforcements = enemyReinforcements;
             EnemySquads = enemySquads;
             EnemyExistingSquads = enemyExistingSquads;
+            EnemyReport = enemyReport;
             ChosenSquads = chosenSquads;
             UserStartingPosition = userStartingPosition;
             AIStartingPosition = aiStartingPosition;
@@ -204,6 +209,10 @@ namespace Assets.Scripts.Data
 
         public string GetEnemyList()
         {
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
+            {
+                return GetEnemyReport();
+            }
             string enemyList = "Enemies: \n";
             List<ConfigData.ShipTypes> shipTypes = Side == ConfigData.Configuration.BeeSide ? ConfigData.UserProgressData.VisibleBeeShipTypes.ToList() : ConfigData.UserProgressData.VisibleHumanShipTypes.ToList();
             Dictionary<string, int> ships = new Dictionary<string, int>();
@@ -231,14 +240,18 @@ namespace Assets.Scripts.Data
 
             return enemyList;
         }
+        public string GetEnemyReport()
+        {
+            return $"Scout Report: {EnemyReport}";
+        }
         public string GetLevelDetails()
         {
             return $"Map: {ConfigData.Maps[MapIndex].Name}\n" +
-                $"Obstacles: {ConfigData.ObstacleMaps[ObstacleMapIndex]}\n" +
-                $"Asteroids: {(AsteroidOption == 0 ? "None" : (AsteroidOption == 1 ? "Yes" : "Double"))}\n" +
+                $"Obstacles: {(ObstacleMapIndex == 0 ? "No" : "Yes")}\n" +
+                $"Asteroids: {(AsteroidOption == 0 ? "No" : (AsteroidOption == 1 ? "Yes" : "Tons"))}\n" +
                 $"Fog of War: {(FogOfWar == 1 ? "Yes" : "No")}\n" +
-                $"Mining: {(Mining == 1 ? "Yes": "No")}\n" +
-                $"Supply Capacity: {SupplyCapacity}\n\n" +
+                $"Mining: {(Mining == 1 ? "Yes": "No")}\n\n" +
+                //$"Supply Capacity: {SupplyCapacity}\n\n" +
                 GetEnemyList();
         }
         public string GetAllLevelDetails()

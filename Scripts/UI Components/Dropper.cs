@@ -188,6 +188,8 @@ namespace Assets.Scripts.UIComponents
                     FleetShip fleetShip = _currentDragIcon.GetFleetShip();
                     Vector2 worldPointPosition = _scene.Camera.ScreenToWorldPoint(position);
 
+                    Debug.Log($"World point position of dropped ship: {worldPointPosition}");
+
                     _currentDragIcon.SetColor(squadColor);
                     Utilities.SetUIColor(_scene.SquadShipCount, ConfigData.GetUIColor("squad-ship-counter"));
 
@@ -289,6 +291,7 @@ namespace Assets.Scripts.UIComponents
 
 
                 Vector2 position = new Vector2(_scene.DropBox.transform.position.x+30, _scene.DropBox.transform.position.y + ConfigData.OffsetFromCenterOfSquadMakerDropBox);
+                Debug.Log($"Position after auto dropping {position}");
                 float movement;
                 float movementDown = level * yIncrement;
                 int steps = ships;

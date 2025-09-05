@@ -30,6 +30,9 @@ namespace Assets.Scripts.Levels
                 case 1:
                     Level1Triggers();
                     break;
+                case 2:
+                    Level2Triggers();
+                    break;
             }
         }
 
@@ -510,10 +513,12 @@ namespace Assets.Scripts.Levels
             gunshipSquad.AutoRepositionSquad();
 
             // Starting Dreadnought squad #8
-            CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Dreadnought, 2);
+            SavedSquad squad = CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Dreadnought, 2);
+            squad.StartingPosition = new Vector2(-33, -2); // Reposition it so that it works with the squad maker
 
             // Starting Frigate squad #9
-            CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Frigate, 3);
+            squad = CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Frigate, 3);
+            squad.StartingPosition = new Vector2(-33, -2); // Reposition it so that it works with the squad maker
 
             // Starting Honeybee squad #10
             CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Honeybee, 1);
@@ -872,6 +877,71 @@ namespace Assets.Scripts.Levels
                 () =>
                 {
 
+                },
+                "Level 1 Showing select scout squad tooltip")
+            );
+        }
+
+        public void Level2Triggers()
+        {
+            Debug.Log("Setting triggers for level 2");
+            Stage.EnablePlayerControl();
+            HasContinuousTriggers = true;
+
+            // Prevent the Hivemind from giving commands
+            Stage.ActivateHiveMind = false;
+
+            // Start the dialogue
+            Stage.CutsceneManager.Setup(() =>
+            {
+                Level2Ending();
+            });
+
+            _dialogueTimer.Reuse(3, () =>
+            {
+                Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_BluerPastures.GetRange(1, 4));
+            });
+            AddTimer(_dialogueTimer);
+
+            NextTriggers.Add(new Trigger(() =>
+                {
+                    return Stage.CutsceneManager.HitDialogueBreak;
+                },
+                () =>
+                {
+                    GameObject plutoCircle = Instantiate(Stage.Menus.PlutoCircle, Map.transform);
+                    plutoCircle.SetActive(true);
+                    List<DialogueLine> plutoLines = Stage.CutsceneManager.PlutoLines_BluerPastures.GetRange(5, 2);
+                    HashSet<ShipTypes> shipTypes = State.GetHumanShipTypes();
+                    if (shipTypes.Contains(ConfigData.ShipTypes.Dreadnought))
+                    {
+                        plutoLines.Add(Stage.CutsceneManager.PlutoLines_BluerPastures[7]);
+                    }
+                    if (shipTypes.Contains(ConfigData.ShipTypes.Gunship))
+                    {
+                        plutoLines.Add(Stage.CutsceneManager.PlutoLines_BluerPastures[8]);
+                    }
+                    if (shipTypes.Contains(ConfigData.ShipTypes.Frigate))
+                    {
+                        plutoLines.Add(Stage.CutsceneManager.PlutoLines_BluerPastures[9]);
+                    }
+                    plutoLines.Add(Stage.CutsceneManager.PlutoLines_BluerPastures[10]);
+                    Stage.CutsceneManager.PlayDialogueSection(plutoLines);
+                },
+                "Level 2 Showing Pluto outline")
+            );
+        }
+        public void Level2Ending()
+        {
+            Debug.Log("Level 2 complete!");
+
+            NextTriggers.Add(new Trigger(() =>
+                {
+                    return Stage.CutsceneManager.HitDialogueBreak;
+                },
+                () =>
+                {
+                   
                 },
                 "Level 1 Showing select scout squad tooltip")
             );

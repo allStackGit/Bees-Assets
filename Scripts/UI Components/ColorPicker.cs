@@ -200,7 +200,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void Toggle()
         {
-            //Debug.Log($"Called toggle() and the gameObject was active: {IsActive}");
+            //Debug.Log($"Called toggle() and the gameObject was active: {IsActive}:{gameObject.activeSelf}");
             gameObject.SetActive(!gameObject.activeSelf);
             //_hasActiveTexture = false;
             if (IsActive)

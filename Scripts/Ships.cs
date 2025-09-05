@@ -338,7 +338,7 @@ namespace Assets.Scripts
             }
         }
 
-        public void BuildNewSquad(string name, int side, ConfigData.ShipTypes shipType, int shipCount)
+        public SavedSquad BuildNewSquad(string name, int side, ConfigData.ShipTypes shipType, int shipCount)
         {
 
             Vector2[] offsets = ConfigData.GeneratedSquadFormationOffsets4x4;
@@ -375,6 +375,8 @@ namespace Assets.Scripts
                 savedSquad.AddShipToSquad(new SquadShip(ship.Id, ship.Type, offsets[i], savedSquad));
             }
             CurrentShips.AddSquad(savedSquad);
+
+            return savedSquad;
         }
 
 

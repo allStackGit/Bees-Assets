@@ -4233,6 +4233,7 @@ MonoBehaviour:
   HighlightTooltipPrefab: {fileID: 8912504570151464901, guid: 6b54cc1a121e2ce4785c6316061eb6c0, type: 3}
   UIHighlightTooltipPrefab: {fileID: 8912504570151464901, guid: cc0e96b1a061afe4f86a013e4f5835f6, type: 3}
   PointerArrow: {fileID: 6240089187840440776, guid: 1c0787cad914f0145888132699e917be, type: 3}
+  PlutoCircle: {fileID: 7884175094246085612, guid: 5c085b94312fc574a8f922bb6cc8fc97, type: 3}
   ActionBox: {fileID: 0}
   CurrentLevel: {fileID: 0}
   Stage: {fileID: 0}

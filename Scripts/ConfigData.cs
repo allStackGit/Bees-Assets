@@ -864,23 +864,6 @@ namespace Assets.Scripts
             {"saved-squad-label-default-color", new Color(0.6527f, 0.6625f, 0.7169f, 1)},
         };
 
-        [System.Serializable]
-        public class Vector2Wrapper
-        {
-            public float x, y;
-
-            public Vector2Wrapper(Vector2 vector)
-            {
-                x = vector.x;
-                y = vector.y;
-            }
-
-            public Vector2 ToVector2()
-            {
-                return new Vector2(x, y);
-            }
-        }
-
 
         //Carrying variables - Changing variables that need to be carried between scenes
 
@@ -1125,8 +1108,10 @@ namespace Assets.Scripts
 
 
             // Starting gunship squad #1
-            CurrentShips.BuildNewSquad($"Squad #{UserProgressData.HumanCampaignSavedSquadNumber++}", Configuration.HumanSide, ShipTypes.Gunship, 1);
+            SavedSquad squad = CurrentShips.BuildNewSquad($"Squad #{UserProgressData.HumanCampaignSavedSquadNumber++}", Configuration.HumanSide, ShipTypes.Gunship, 1);
             CurrentShips.GetFleetShip(0).Name = "Gunship D-4";
+            squad.StartingPosition = new Vector2(-33, -2); // Reposition it so that it works with the squad maker
+
 
             // Starting Honeybee squad #2
             CurrentShips.BuildNewSquad($"Squad #{UserProgressData.BeeCampaignSavedSquadNumber++}", Configuration.BeeSide, ShipTypes.Honeybee, 1);
@@ -1187,15 +1172,17 @@ namespace Assets.Scripts
 
                     break;
                 case 2:
-                    if (!HasSeenPreLevelIntro)
-                    {
-                        SceneManager.LoadSceneAsync("Level Intro", LoadSceneMode.Single);
-                    }
-                    else
-                    {
-                        HasSeenPreLevelIntro = false;
-                        SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
-                    }
+                    HasSeenPreLevelIntro = false;
+                    SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
+                    //if (!HasSeenPreLevelIntro)
+                    //{
+                    //    SceneManager.LoadSceneAsync("Level Intro", LoadSceneMode.Single);
+                    //}
+                    //else
+                    //{
+                    //    HasSeenPreLevelIntro = false;
+                    //    SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
+                    //}
                     break;
                 default:
                     Debug.LogError($"Tried to load unknown level {UserProgressData.GetCurrentLevel()}");

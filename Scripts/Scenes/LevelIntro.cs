@@ -40,7 +40,7 @@ namespace UIComponents
 
                     StartCoroutine(DelayStart(3, () =>
                     {
-                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.PlutoLinesBluerPastures[0], true);
+                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.PlutoLines_BluerPastures[0], true);
                     }));
                     break;
             }

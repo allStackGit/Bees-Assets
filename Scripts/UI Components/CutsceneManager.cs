@@ -12,7 +12,7 @@ public class CutsceneManager : MonoBehaviour
     public DialogueManager DialogueManager;
     public GameObject CutsceneCanvas;
     public Stage Stage;
-    public List<DialogueLine> PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLinesBluerPastures;
+    public List<DialogueLine> PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLines_BluerPastures;
     public List<List<DialogueLine>> AllDialogues;
     public bool PlutoLines_Anomaly_Completed = false;
     public bool HitDialogueBreak = false;
@@ -116,13 +116,28 @@ public class CutsceneManager : MonoBehaviour
 
         };
 
-        PlutoLinesBluerPastures = new List<DialogueLine>
+        PlutoLines_BluerPastures = new List<DialogueLine>
         {
             new DialogueLine("Samuel", Portraits["Samuel"], "Scouts are reporting overwhelming reinforcements from the enemy. We can’t outlast them, but we have to buy enough time for those on the planet to evacuate."),
 
+            new DialogueLine("Samuel", Portraits["Samuel"], "Commander, these… Bees?"),
+            new DialogueLine("Oviya", Portraits["Oviya"], "They do look like Bees."),
+            new DialogueLine("Joey", Portraits["Joey"], "Let’s just call ‘em that. It’s easier than U.F.O.s."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Um, right, whatever they are, they’re still coming. In order to evacuate Pluto base, we have to keep the Bees from reaching the surface."),
+
+            new DialogueLine("Samuel", Portraits["Samuel"], "If they get to that point, we’re going to start losing people and ships before they can lift off."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "This is a full emergency order, so personnel have to be on space-ready vessels within 5 minutes. As soon as we have the fleet ready to leave, we’ll evacuate out of here at full speed."),
+
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "We’ve got this, commander! Dreadnoughts standing by."),
+            new DialogueLine("Marco", Portraits["Marco"], "Gunships at the ready."),
+            new DialogueLine("Joey", Portraits["Joey"], "Frigates ready to go!"),
+            new DialogueLine("Oviya", Portraits["Oviya"], "I’ve got the couts mapping an escape route."),
+
+
+
         };
 
-        AllDialogues = new List<List<DialogueLine>> { PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLinesBluerPastures };
+        AllDialogues = new List<List<DialogueLine>> { PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLines_BluerPastures };
 
     }
     public void HideIntroMessage()

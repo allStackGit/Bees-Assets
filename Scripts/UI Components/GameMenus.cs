@@ -15,7 +15,7 @@ namespace Assets.Scripts.UIComponents
 {
     public class GameMenus : MonoBehaviour
     {
-        public GameObject MenuContainer, LevelEndedDialogue, SaveLevelDialogue, NoAliveShipsAlert, SquadActionBoxUI, VictoryLabel, DefeatLabel, MiniMapCloseButton, MiniMapOpenButton, MiniMapTopBorder, MiniMapLeftBorder, MiniMapCameraCollider, MiniMapOutput, HumanScore, BeeScore, ShipInfoBox, KeepGoingButton, ToggleFogOfWarButton, RestartLevelButton, ChooseNewSquadsButton, SwitchSidesButton, SaveAsLevelButton, ExitToMainMenuButton, Scoreboard, TooltipPrefab, WASDTooltip, UIOverlay, HighlightTooltipPrefab, UIHighlightTooltipPrefab, PointerArrow;
+        public GameObject MenuContainer, LevelEndedDialogue, SaveLevelDialogue, NoAliveShipsAlert, SquadActionBoxUI, VictoryLabel, DefeatLabel, MiniMapCloseButton, MiniMapOpenButton, MiniMapTopBorder, MiniMapLeftBorder, MiniMapCameraCollider, MiniMapOutput, HumanScore, BeeScore, ShipInfoBox, KeepGoingButton, ToggleFogOfWarButton, RestartLevelButton, ChooseNewSquadsButton, SwitchSidesButton, SaveAsLevelButton, ExitToMainMenuButton, Scoreboard, TooltipPrefab, WASDTooltip, UIOverlay, HighlightTooltipPrefab, UIHighlightTooltipPrefab, PointerArrow, PlutoCircle;
         public SquadActionBox ActionBox;
         public Level CurrentLevel;
         public Stage Stage;
