@@ -131,7 +131,28 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "We’ve got this, commander! Dreadnoughts standing by."),
             new DialogueLine("Marco", Portraits["Marco"], "Gunships at the ready."),
             new DialogueLine("Joey", Portraits["Joey"], "Frigates ready to go!"),
-            new DialogueLine("Oviya", Portraits["Oviya"], "I’ve got the couts mapping an escape route."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "I’ve got the scouts mapping an escape route."),
+
+            new DialogueLine("Samuel", Portraits["Samuel"], "Commander, Bees are firing down onto the surface! You need to stop them!"),
+
+            new DialogueLine("Joey", Portraits["Joey"], "That ship’s blasts are splitting up on impact. Don’t group yer ships up near it."),
+
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "So those are suicide ships! Don’t let them near any of our ships."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "I hope they aren’t manned…"),
+            new DialogueLine("Marco", Portraits["Marco"], "This is a war, boy, worry about it later."),
+
+            new DialogueLine("Samuel", Portraits["Samuel"], "Comms with the surface went down, commander."),
+            new DialogueLine("Marco", Portraits["Marco"], "They’re a lost cause. Get out of here, now."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "But-"),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "He’s right, Sam. We can’t lose everyone."),
+
+            new DialogueLine("Samuel", Portraits["Samuel"], "All personnel are ready to leave."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Go quickly! They’re closing in on our escape route!"),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Right!"),
+            new DialogueLine("Marco", Portraits["Marco"], "Get moving, people!"),
+
+            new DialogueLine("Samuel", Portraits["Samuel"], "Incredible work, commander! We didn’t lose anyone in the evacuation."),
+            new DialogueLine("Marco", Portraits["Marco"], "Impressive."),
 
 
 

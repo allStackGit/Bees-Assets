@@ -413,7 +413,7 @@ namespace Assets.Scripts.Levels
             float halfHeight = 0;
 
             // setup preliminary position so that the squad height and width can be calculated
-            Debug.Log($"Placing squads at {startingPosition}");
+            Debug.Log($"Placing {squads.Count} squads at {startingPosition}");
             squads.ForEach((squad) =>
             {
                 squad.SetStartingPosition(startingPosition);

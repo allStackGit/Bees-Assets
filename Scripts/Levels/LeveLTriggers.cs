@@ -49,7 +49,7 @@ namespace Assets.Scripts.Levels
             bool gunshipHasReachedCenterPosition = false;
             HasContinuousTriggers = true;
             ScaledTimer _beesPursuitTimer = new ScaledTimer();
-            ExitZone exitZone = null;
+            Zone exitZone = null;
             GameObject moveScoutTooltip = null;
             GameObject controlGunshipTooltip = null;
             GameObject attackOnSightTooltip = null;
@@ -443,7 +443,7 @@ namespace Assets.Scripts.Levels
 
                                                             // Green exit zone at bottom of the screen lights up
                                                             GameObject exitBox = Instantiate(Stage.Prefabs.ExitZonePrefab, Map.transform);
-                                                            exitZone = exitBox.GetComponent<ExitZone>();
+                                                            exitZone = exitBox.GetComponent<Zone>();
 
                                                             exitZone.OnShipEnter = (ship) =>
                                                             {
@@ -745,12 +745,7 @@ namespace Assets.Scripts.Levels
                                                                     // Create bee reinforcement squads. One Squad of 3 hornets, one squad of 2 wasps
                                                                     LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() { ConfigData.CurrentShips.GetSavedSquad(4), ConfigData.CurrentShips.GetSavedSquad(5), ConfigData.CurrentShips.GetSavedSquad(7) }, new Vector2(-295, -195), new Vector2(-225, -155), true);
 
-                                                                    State.GetSquadsBySide(ConfigData.Configuration.AISide).ForEach(s => {
-                                                                        if (!s.IsImmobile && !s.HasCommandQueue && !s.HasCommand)
-                                                                        {
-                                                                            s.AddToCommandList();
-                                                                        }
-                                                                    });
+                                                                    AddReinforcementsToHivemindCommandQueue();
 
                                                                     NextTriggers.Add(new Trigger(() =>
                                                                         {
@@ -888,6 +883,13 @@ namespace Assets.Scripts.Levels
             Stage.EnablePlayerControl();
             HasContinuousTriggers = true;
 
+            int personnelLost = 0;
+            int personnelEvacuated = 0;
+
+            ScaledTimer clock = new ScaledTimer();
+
+            // Every time the trigger is checked, 1 person is evacuated. If 15 people are lost then the level ends. If 15 people aren't lost then the level ends after 5 minutes and roughly 60 people are evacuated. The ship will have a ton of health and no weapons but in theory should still be physical so that projectiles can hit it and explode and when it loses health, personnel are lost. It should have sufficient TSV so that it's a very valuable target for the Bees even if they only do a tiny bit of damage relative to its significant health.
+
             // Prevent the Hivemind from giving commands
             Stage.ActivateHiveMind = false;
 
@@ -927,24 +929,215 @@ namespace Assets.Scripts.Levels
                     }
                     plutoLines.Add(Stage.CutsceneManager.PlutoLines_BluerPastures[10]);
                     Stage.CutsceneManager.PlayDialogueSection(plutoLines);
+
+                    NextTriggers.Add(new Trigger(() =>
+                        {
+                            return Stage.CutsceneManager.HitDialogueBreak;
+                        },
+                        () =>
+                        {
+                            Destroy(plutoCircle);
+                            float endTime = Time.time + 300; // 5 minutes to complete the level
+                            float timeLeft = endTime - Time.time;
+
+                            int minutesLeft;
+                            int secondsLeft;
+
+                            TMP_Text clockText = Stage.Menus.Clock.transform.GetChild(0).GetComponent<TMP_Text>();
+                            TMP_Text counterText = Stage.Menus.Counter.transform.GetChild(0).GetComponent<TMP_Text>();
+                            Stage.Menus.Counter.transform.GetChild(1).GetComponent<TMP_Text>().text = "Evacuated";
+
+
+                            Stage.Menus.Clock.SetActive(true);
+                            Stage.Menus.Counter.SetActive(true);
+
+                            clock.Reuse(1f, () =>
+                            {
+                                timeLeft = endTime - Time.time;
+                                minutesLeft = Mathf.FloorToInt(timeLeft / 60f);
+                                secondsLeft = Mathf.FloorToInt(timeLeft % 60f);
+
+                                if (timeLeft <= 0 || personnelLost >= 15)
+                                {
+                                    CancelTimer(clock);
+                                    if (personnelLost >= 15)
+                                    {
+                                        Debug.Log($"Level over, too many personnel lost: {personnelLost}");
+
+                                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_BluerPastures.GetRange(16, 4), true);
+                                    }
+                                    else
+                                    {
+                                        if (personnelLost == 0)
+                                        {
+                                            Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_BluerPastures.GetRange(20, 6), true);
+                                        }
+                                        else
+                                        {
+                                            Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_BluerPastures.GetRange(20, 4), true);
+                                        }
+                                            
+                                    }
+                                }
+                                else
+                                {
+                                    // Every 5 seconds, evacuate 1 person
+                                    if (Mathf.FloorToInt(timeLeft) % 5 == 0)
+                                    {
+                                        personnelEvacuated++;
+                                    }
+
+                                    // Display clock and personnel lost/evacuated on screen
+                                    counterText.text = $"{personnelEvacuated}";
+                                    clockText.text = $"{minutesLeft}:{secondsLeft:D2}";
+
+                                }
+
+                            }, true);
+                            AddTimer(clock);
+
+                            // Add in the first wave of Bees and give them commands
+
+                            // Pull the veterans if they're still alive
+                            List<SavedSquad> firstSquads = ConfigData.CurrentShips.GetSavedSquads().Where(s => s.Side == ConfigData.Configuration.AISide && s.Stats.BattlesFought > 0 && s.GetAliveSquadShips().Count > 0).ToList();
+
+                            // Bring in the new squads:
+                            // 1 Squad of 2 Honeybees
+                            // 1 Squad of 4 Wasps
+                            firstSquads.AddRange(new List<SavedSquad>() { ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Honeybee, 2), ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Wasp, 4) }); 
+
+
+                            // Spawn the squads
+                            LevelConstructor.SpawnShipsAndSquads(firstSquads, StartingPositions[ConfigData.Configuration.AISide -1] + new Vector2 (0, 50), StartingPositions[ConfigData.Configuration.AISide - 1], true);
+
+
+                            Stage.ActivateHiveMind = true;
+                            SetupHivemind();
+
+                            // Set timers for the subsequent waves of Bees reinforcements
+                            // Wave 2 4:00 left
+                            // 1 Squad of 2 Honeybees
+                            // 1 Squad of 4 Wasps
+                            // 1 Squad of 4 Hornets
+
+                            ScaledTimer wave2 = new ScaledTimer(60f, () =>
+                            {
+                                Debug.Log($"Spawning Bee reinforcements wave 2");
+
+                                LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() { ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Honeybee, 2), ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Wasp, 4), ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Hornet, 4) }, new Vector2(-295, -195), new Vector2(-225, -155), true);
+                                AddReinforcementsToHivemindCommandQueue();
+                            });
+
+                            AddTimer(wave2);
+
+                            // Wave 3 3:00 left
+                            // 2 Squad of 2 Honeybees
+                            // 1 Squad of 4 Wasps
+                            // 2 Squads of 4 Hornets
+                            // 1 Squad of 4 Yellow Jackets
+
+                            ScaledTimer wave3 = new ScaledTimer(120f, () =>
+                            {
+                                Debug.Log($"Spawning Bee reinforcements wave 3");
+                                LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() { ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Honeybee, 2), ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Honeybee, 2), ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Wasp, 4),ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Hornet, 4), ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Hornet, 4),ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.YellowJacket, 4) }, new Vector2(395, 245), new Vector2(225, 155), true);
+                                AddReinforcementsToHivemindCommandQueue();
+                            });
+
+                            AddTimer(wave3);
+
+                            // Wave 4 1:30 left
+                            // 1 Squad of 2 Honeybees
+                            // 1 Squad of 4 Yellow Jackets
+                            // 2 Squads of 2 Leafcutters
+
+                            ScaledTimer wave4 = new ScaledTimer(210f, () =>
+                            {
+                                Debug.Log($"Spawning Bee reinforcements wave 4");
+                                LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() { ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Honeybee, 2), ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.YellowJacket, 4), ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Leafcutter, 2), ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Leafcutter, 2) }, StartingPositions[ConfigData.Configuration.AISide - 1] + new Vector2(0, 50), StartingPositions[ConfigData.Configuration.AISide - 1], true);
+                                AddReinforcementsToHivemindCommandQueue();
+                            });
+
+                            AddTimer(wave4);
+
+                            // Make "exit" zone to detect when Bees enter Pluto
+                            //GameObject plutoZone = Instantiate(Stage.Prefabs.ExitZonePrefab, Map.transform);
+                            //Zone zone = plutoZone.GetComponent<Zone>();
+
+                            //// Change size, position, and shape
+                            //plutoZone.transform.localPosition = new Vector2(68, -28);
+                            //plutoZone.GetComponent<SpriteRenderer>().color = new Color(1, 1, 1, 0f);
+                            //plutoZone.AddComponent<CircleCollider2D>().isTrigger = true;
+                            //plutoZone.GetComponent<CircleCollider2D>().radius = 49f;
+                            //plutoZone.GetComponent<BoxCollider2D>().enabled = false;
+
+                            //zone.OnShipEnter = (ship) =>
+                            //{
+                            //    if (ship.Side == ConfigData.Configuration.BeeSide)
+                            //    {
+                            //        // Trigger Dialogue about Bees reaching Pluto
+                            //        Destroy(plutoZone);
+                            //    }
+                            //};
+
+                            // Set triggers for dialogues
+
+                            
+
+                            NextTriggers.Add(new Trigger(() =>
+                                {
+                                    return Stage.Pool.SplitShotProjectilePool.CountAll > 0;
+                                },
+                                () =>
+                                {
+                                    Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.PlutoLines_BluerPastures[12]);
+                                },
+                                "Level 2 Leafcutter splitter shot")
+                            );
+
+                            NextTriggers.Add(new Trigger(() =>
+                                {
+                                    return State.GetAllEnemyShips(ConfigData.Configuration.HumanSide).Any((s) => s.ShipType == ConfigData.ShipTypes.YellowJacket && s.IsDead && ((YellowJacket)s).ContactedShip != null);
+                                },
+                                () =>
+                                {
+                                    Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_BluerPastures.GetRange(13, 3));
+                                },
+                                "Level 2 Yellow Jacket Hitting ship")
+                            );
+
+
+                        },
+                        "Level 2 Starting combat")
+                    );
                 },
-                "Level 2 Showing Pluto outline")
+                "Level 2 Showing Pluto outline and dialogue")
             );
         }
         public void Level2Ending()
         {
             Debug.Log("Level 2 complete!");
 
-            NextTriggers.Add(new Trigger(() =>
-                {
-                    return Stage.CutsceneManager.HitDialogueBreak;
-                },
-                () =>
-                {
+            //NextTriggers.Add(new Trigger(() =>
+            //    {
+            //        return Stage.CutsceneManager.HitDialogueBreak;
+            //    },
+            //    () =>
+            //    {
                    
-                },
-                "Level 1 Showing select scout squad tooltip")
-            );
+            //    },
+            //    "Level 1 Showing select scout squad tooltip")
+            //);
         }
+
+        public void AddReinforcementsToHivemindCommandQueue()
+        {
+            State.GetSquadsBySide(ConfigData.Configuration.AISide).ForEach(s => {
+                if (!s.IsImmobile && !s.HasCommandQueue && !s.HasCommand)
+                {
+                    s.AddToCommandList();
+                }
+            });
+        }
+
     }
 }

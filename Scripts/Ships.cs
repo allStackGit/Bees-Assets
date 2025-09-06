@@ -379,6 +379,24 @@ namespace Assets.Scripts
             return savedSquad;
         }
 
+        public SavedSquad GetSquadByComposition(ConfigData.ShipTypes shipType, int shipCount)
+        {
+            SavedSquad savedSquad = GetSavedSquads().Find((squad) => squad.GetSquadShips().Count == shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType) && squad.GetAliveSquadShips().Count > 0);
+            if (savedSquad != null)
+            {
+                return savedSquad;
+            }
+            else
+            {
+                Debug.LogError($"No squad found with {shipCount} ships of type {shipType}");
+                return null;
+            }
+        }
+        public SavedSquad GetSquadByComposition(ConfigData.ShipTypes shipType)
+        {
+            return GetSavedSquads().FirstOrDefault((squad) => squad.GetSquadShips().All((s) => s.ShipType == shipType) && squad.GetSquadShips().Count <= 4);
+        }
+
 
         // alias underlying data methods
         public void SaveSquadData()

@@ -575,7 +575,7 @@ namespace Assets.Scripts
             { ShipTypes.Hornet, .35f },
             { ShipTypes.Leafcutter, .35f },
             { ShipTypes.Queen, .35f },
-            { ShipTypes.Wasp, .55f },
+            { ShipTypes.Wasp, .75f },
             { ShipTypes.YellowJacket, .55f },
         };
 

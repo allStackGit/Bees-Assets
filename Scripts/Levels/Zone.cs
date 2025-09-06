@@ -6,10 +6,11 @@ using UnityEngine;
 
 namespace Assets.Scripts.Levels
 {
-    public class ExitZone : MonoBehaviour
+    public class Zone : MonoBehaviour
     {
         public HashSet<Ship> Ships = new HashSet<Ship>();
         public Action<Ship> OnShipEnter;
+
 
         private void OnTriggerEnter2D(Collider2D collision)
         {
