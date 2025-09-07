@@ -28,15 +28,9 @@ namespace Assets.Scripts.Data
         /// </summary>
         public int MapIndex;
         /// <summary>
-        /// The index of the obstacle map that the level has
-        /// -1 = Random
-        /// 0 = No obstacles
-        /// 1 = Maze
-        /// 2 = Three Paths
-        /// 3 = The Forest
-        /// 4 = The Wall
+        /// The file name of the set of obstacles that need to be loaded in. null means no obstacles and "" means random obstacles.
         /// </summary>
-        public int ObstacleMapIndex;
+        public string Obstacles;
         /// <summary>
         /// Whether or not the map has asteroids
         /// -1 = Random
@@ -125,13 +119,13 @@ namespace Assets.Scripts.Data
         public Vector2 UserStartingPosition, AIStartingPosition;
 
 
-        public LevelOptions(int id, int side, string name, int mapIndex, int obstacleMapIndex, int asteroidOption, int fogOfWar, int mining, bool hasPreLevelIntro, bool hasSquadActionBox, int supplyCapacity, int enemyReinforcementsOption, int enemyReinforcementDelay, int enemyShipTypeOption, int enemySquadGenerationCount, List<SavedSquad> enemyReinforcements, List<SavedSquad> enemySquads, List<int> enemyExistingSquads, string enemyReport, List<SavedSquad> chosenSquads, Vector2 userStartingPosition, Vector2 aiStartingPosition) 
+        public LevelOptions(int id, int side, string name, int mapIndex, string obstacles, int asteroidOption, int fogOfWar, int mining, bool hasPreLevelIntro, bool hasSquadActionBox, int supplyCapacity, int enemyReinforcementsOption, int enemyReinforcementDelay, int enemyShipTypeOption, int enemySquadGenerationCount, List<SavedSquad> enemyReinforcements, List<SavedSquad> enemySquads, List<int> enemyExistingSquads, string enemyReport, List<SavedSquad> chosenSquads, Vector2 userStartingPosition, Vector2 aiStartingPosition) 
         {
             Id = id;
             Side = side;
             Name = name;
             MapIndex = mapIndex;
-            ObstacleMapIndex = obstacleMapIndex;
+            Obstacles = obstacles;
             AsteroidOption = asteroidOption;
             FogOfWar = fogOfWar;
             Mining = mining;
@@ -158,7 +152,7 @@ namespace Assets.Scripts.Data
             Side = side;
             Name = name;
             MapIndex = -1;
-            ObstacleMapIndex = -1;
+            Obstacles = null;
             AsteroidOption = -1;
             FogOfWar = -1;
             Mining = -1;
@@ -174,7 +168,7 @@ namespace Assets.Scripts.Data
 
         public string ToJson()
         {
-            string json = $"{{\"Id\": {Id}, \"Side\": {Side}, \"Name\": \"{Name}\", \"MapIndex\": {MapIndex}, \"ObstacleMapIndex\": {ObstacleMapIndex}, \"AsteroidOption\": {AsteroidOption}, " +
+            string json = $"{{\"Id\": {Id}, \"Side\": {Side}, \"Name\": \"{Name}\", \"MapIndex\": {MapIndex}, \"Obstacles\": {Obstacles}, \"AsteroidOption\": {AsteroidOption}, " +
                 $"\"FogOfWar\": {FogOfWar}, \"Mining\": {Mining}, \"HasPrelevelIntro\": {HasPrelevelIntro}, \"HasSquadActionBox:\": {HasSquadActionBox} \"SupplyCapacity\": {SupplyCapacity}, \"EnemyReinforcementsOption\": {EnemyReinforcementsOption}," +
                 $" \"EnemyReinforcementDelay\": {EnemyReinforcementDelay}, \"UserStartingPosition\": {{\"x\": {UserStartingPosition.x}, \"y\": {UserStartingPosition.y}}}, \"AIStartingPosition\": {{\"x\": {AIStartingPosition.x}, \"y\": {AIStartingPosition.y}}}, \"EnemyReinforcements\": [";
             
@@ -247,7 +241,7 @@ namespace Assets.Scripts.Data
         public string GetLevelDetails()
         {
             return $"Map: {ConfigData.Maps[MapIndex].Name}\n" +
-                $"Obstacles: {(ObstacleMapIndex == 0 ? "No" : "Yes")}\n" +
+                $"Obstacles: {(Obstacles == null ? "No" : "Yes")}\n" +
                 $"Asteroids: {(AsteroidOption == 0 ? "No" : (AsteroidOption == 1 ? "Yes" : "Tons"))}\n" +
                 $"Fog of War: {(FogOfWar == 1 ? "Yes" : "No")}\n" +
                 $"Mining: {(Mining == 1 ? "Yes": "No")}\n\n" +

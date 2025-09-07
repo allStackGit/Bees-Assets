@@ -43,7 +43,7 @@ public class DialogueManager : MonoBehaviour
     public void StartDialogue(List<DialogueLine> lines, bool hasContinueButton, bool isLastDialogue)
     {
         _isLastDialogue = isLastDialogue;
-        Debug.Log("Starting dialogue in dialogue manager.");
+        //Debug.Log("Starting dialogue in dialogue manager.");
         dialogueLines.Clear();
 
         foreach (DialogueLine line in lines)

@@ -24,14 +24,19 @@ namespace Assets.Scripts.UI_Components
 
         private void Awake()
         {
+            if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign || ConfigData.UserProgressData.GetCurrentLevel() != 2)
+            {
+                Destroy(gameObject);
+                return;
+            }
             Pages = new List<string>
             {
-                "The Squad Maker is where you create and view your squads and the ships in your fleet. You'll often come here before each level to choose the squads you want to bring into the level and manage your existing squads.",
-                "On the left you can see a list of all the ships in your fleet that <i>aren't</i> in your squads. On the right you can see all your current squads. When you lose ships in your squads they will automatically be replenished from your fleet if there are more available.",
-                "You can click once on a squad to choose it for the level or click twice to edit the squad. To remove a chosen squad from the level just click on it once. You can also hover over ships or squads to see their stats.",
-                "Each ship has a capacity value, and each level has a maximum capacity that you can bring into the level. You can view a ship's capacity by hovering over it in the fleet list.",
-                "When editing a squad you can click or drag a ship in the fleet to add it to the squad. The BLARP buttons can be used to set the formation of the squad. You can select a squad color as well.",
-                "Finally, when you're editing a squad, the Squad Action Box you see in the game will appear where you can modify the default actions and shooting strategies of the squad. Good luck!"
+                "This is where you create and view your squads. You'll come here before most levels to manage your squads and choose which ones to bring into the level.",
+                "On the left you'll find a list of all the ships in your fleet that haven't been assigned to a squad. On the right is a list of all of your current squads. Ships in your squads that are lost in battle are automatically replenished from your fleet if there are more available.",
+                "Each ship has a capacity value, and each level has a maximum capacity that limits how many ships you can bring into it. Hover over a ship type in the fleet list to check its capacity value.",
+                "Click on a squad to add it to the level, and click on it again to remove it from the level.",
+                "Double-click on a squad to edit it. Click or drag a ship from the fleet to add it to the squad, and use the BLARP buttons to set the formation. You can also customize the color of your squad and give it a name.",
+                "Use the Squad Action Box to modify the squad's default actions and shooting strategy. You will also to have the ability to change these during the level. Good luck!"
             };
 
             ArrowPositions = new List<Dictionary<Vector2, Vector3>>

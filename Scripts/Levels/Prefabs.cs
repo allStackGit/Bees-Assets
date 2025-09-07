@@ -16,7 +16,7 @@ namespace Assets.Scripts.Levels
         /// <summary>
         /// Ship Prefabs
         /// </summary>
-        public GameObject BargePrefab, BeehivePrefab, BumblebeePrefab, CarpenterBeePrefab, CarrierPrefab, CruiserPrefab, DreadnoughtPrefab, DronePrefab,FactoryPrefab, FireBargePrefab, FlagshipPrefab, FrigatePrefab, GunshipPrefab, HoneybeePrefab, HornetPrefab, LeafcutterPrefab, QueenPrefab,ScoutPrefab, StrikerPrefab, WarpGatePrefab, WaspPrefab, YellowJacketPrefab, BeaconPrefab,
+        public GameObject BargePrefab, BeehivePrefab, BumblebeePrefab, CarpenterBeePrefab, CarrierPrefab, CruiserPrefab, DreadnoughtPrefab, DronePrefab,FactoryPrefab, FireBargePrefab, FlagshipPrefab, FrigatePrefab, GunshipPrefab, HoneybeePrefab, HornetPrefab, LeafcutterPrefab, QueenPrefab,ScoutPrefab, StrikerPrefab, WarpGatePrefab, WaspPrefab, YellowJacketPrefab, BeaconPrefab, HumanTargetPrefab,
 
             BeeSmallLaserShotPrefab, BeeMediumLaserShotPrefab, BumblebeeShotPrefab, FlagshipShotPrefab, RocketPrefab, HumanSmallPrefab, HumanMediumPrefab, BeamPrefab, SplitShotPrefab, QueenSmallPrefab, QueenLargePrefab, StrikerBombPrefab, RocketExplosionPrefab, FireBargeExplosionPrefab,
             
@@ -122,6 +122,7 @@ namespace Assets.Scripts.Levels
                 { ConfigData.ShipTypes.Flagship, HugeShipExplosionPrefab },
                 { ConfigData.ShipTypes.WarpGate, HugeShipExplosionPrefab },
                 { ConfigData.ShipTypes.Factory, HugeShipExplosionPrefab },
+                { ConfigData.ShipTypes.HumanTarget, HugeShipExplosionPrefab }, // This should never explode
 
                 { ConfigData.ShipTypes.FireBarge, FireBargeExplosionPrefab },
 

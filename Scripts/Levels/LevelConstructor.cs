@@ -254,12 +254,12 @@ namespace Assets.Scripts.Levels
                         Level.CurrentLevelOptions.EnemySquads.Add(existingSquad);
                     }
                 });
-                Debug.Log($"Squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.EnemySquads)}");
+                //Debug.Log($"Squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.EnemySquads)}");
                 SpawnShipsAndSquads(Level.CurrentLevelOptions.EnemySquads, Level.StartingPositions[side - 1], Vector2.zero, false);
             }
             else
             {
-                Debug.Log($"Chosen squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.ChosenSquads)}");
+                //Debug.Log($"Chosen squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.ChosenSquads)}");
                 SpawnShipsAndSquads(Level.CurrentLevelOptions.ChosenSquads, Level.StartingPositions[side - 1], Vector2.zero, false);
             }
 
@@ -413,7 +413,7 @@ namespace Assets.Scripts.Levels
             float halfHeight = 0;
 
             // setup preliminary position so that the squad height and width can be calculated
-            Debug.Log($"Placing {squads.Count} squads at {startingPosition}");
+            //Debug.Log($"Placing {squads.Count} squads at {startingPosition}");
             squads.ForEach((squad) =>
             {
                 squad.SetStartingPosition(startingPosition);
@@ -610,6 +610,9 @@ namespace Assets.Scripts.Levels
                     break;
                 case ConfigData.ShipTypes.YellowJacket:
                     ship = Stage.Pool.YellowJacketPool.Get();
+                    break;
+                case ConfigData.ShipTypes.HumanTarget:
+                    ship = Stage.Pool.HumanTargetPool.Get();
                     break;
                 default:
                     Debug.LogError($"Tried to instanstiate a ship type ({type}) that doesn't exist");

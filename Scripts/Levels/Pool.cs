@@ -42,6 +42,7 @@ public class Pool : MonoBehaviour
     public ObjectPool<WarpGate> WarpGatePool;
     public ObjectPool<Wasp> WaspPool;
     public ObjectPool<YellowJacket> YellowJacketPool;
+    public ObjectPool<HumanTarget> HumanTargetPool;
 
 
     public ObjectPool<Assets.Scripts.UI_Components.Map> PlutoMapPool;
@@ -133,6 +134,7 @@ public class Pool : MonoBehaviour
         WarpGatePool = new ObjectPool<WarpGate>(CreatePooledWarpGate, OnTakeShipFromPool, OnReturnShipToPool, null, true);
         WaspPool = new ObjectPool<Wasp>(CreatePooledWasp, OnTakeShipFromPool, OnReturnShipToPool, null, true);
         YellowJacketPool = new ObjectPool<YellowJacket>(CreatePooledYellowJacket, OnTakeShipFromPool, OnReturnShipToPool, null, true);
+        HumanTargetPool = new ObjectPool<HumanTarget>(CreatePooledHumanTarget, OnTakeShipFromPool, OnReturnShipToPool, null, true);
 
         PlutoMapPool = new ObjectPool<Assets.Scripts.UI_Components.Map>(CreatePooledPlutoMap, null, null, null, true);
         NeptuneMapPool = new ObjectPool<Assets.Scripts.UI_Components.Map>(CreatePooledNeptuneMap, null, null, null, true);
@@ -444,6 +446,7 @@ public class Pool : MonoBehaviour
     private WarpGate _spawn_warpGate;
     private Wasp _spawn_wasp;
     private YellowJacket _spawn_yellowJacket;
+    private HumanTarget _spawn_humanTarget;
 
     // Map Fields
     private Assets.Scripts.UI_Components.Map _spawn_map;
@@ -624,6 +627,13 @@ public class Pool : MonoBehaviour
         _spawn_yellowJacket = Instantiate(Stage.Prefabs.YellowJacketPrefab, Vector2.zero, Quaternion.identity).GetComponent<YellowJacket>();
         _spawn_yellowJacket.Create(Stage);
         return _spawn_yellowJacket;
+    }
+
+    public HumanTarget CreatePooledHumanTarget()
+    {
+        _spawn_humanTarget = Instantiate(Stage.Prefabs.HumanTargetPrefab, Vector2.zero, Quaternion.identity).GetComponent<HumanTarget>();
+        _spawn_humanTarget.Create(Stage);
+        return _spawn_humanTarget;
     }
 
     // Map Creation Methods
@@ -884,6 +894,7 @@ public class Pool : MonoBehaviour
     }
     public ObstacleMap GetObstacleMapFromPool(int index)
     {
+        Debug.LogError("We need to rethink how this works");
         ObstacleMap obstacleMap = null;
         switch (index)
         {
@@ -1013,6 +1024,10 @@ public class Pool : MonoBehaviour
 
             case ConfigData.ShipTypes.YellowJacket:
                 YellowJacketPool.Release((YellowJacket)ship);
+                break;
+
+            case ConfigData.ShipTypes.HumanTarget:
+                HumanTargetPool.Release((HumanTarget)ship);
                 break;
 
             default:

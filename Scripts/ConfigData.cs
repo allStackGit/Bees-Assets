@@ -110,6 +110,8 @@ namespace Assets.Scripts
             WarpGate,
             Wasp,
             YellowJacket,
+
+            HumanTarget,
         }
         public enum ShipTypeLetters
         {
@@ -135,7 +137,9 @@ namespace Assets.Scripts
             T,
             U,
             V,
-            W
+            W,
+
+            X,
         }
         public enum WeaponTypes
         {
@@ -264,6 +268,8 @@ namespace Assets.Scripts
             TypeU,
             TypeV,
             TypeW,
+
+            TypeX
         }
 
         public enum SquadActions
@@ -339,7 +345,9 @@ namespace Assets.Scripts
             TypeT,
             TypeU,
             TypeV,
-            TypeW
+            TypeW,
+
+            TypeX
         }
 
         
@@ -387,6 +395,8 @@ namespace Assets.Scripts
             { ShipTypes.Scout,          new Vector2Int(40, 32)},
             { ShipTypes.Striker,        new Vector2Int(32, 32)},
             { ShipTypes.WarpGate,       new Vector2Int(224, 128)},
+            { ShipTypes.HumanTarget,    new Vector2Int(256, 256)},
+
 
             { ShipTypes.Beehive,        new Vector2Int(272, 272)},
             { ShipTypes.Bumblebee,      new Vector2Int(136, 96)},
@@ -624,6 +634,8 @@ namespace Assets.Scripts
             ShootingStrategyTypes.TypeU,
             ShootingStrategyTypes.TypeV,
             ShootingStrategyTypes.TypeW,
+
+            ShootingStrategyTypes.TypeX,
         };
 
         public static ShootingStrategyTypes DefaultShootingStrategy = ShootingStrategyTypes.FirstSeen;
@@ -633,7 +645,7 @@ namespace Assets.Scripts
             "First Seen", "Random", "Revenge", "Most Dangerous", "Most Health", "Least Health", "Most Powerful", "Least Powerful", "Closest", "Furthest",
  "Most Range", "Least Range", "Fastest",
  "Slowest", "Most Valuable", "Least Valuable", "Type A", "Type B", "Type C", "Type D", "Type E", "Type F", "Type G", "Type H", "Type I", "Type J", "Type K", "Type L",
- "Type M", "Type N", "Type O", "Type P", "Type Q", "Type R", "Type S", "Type T", "Type U", "Type V, Type W"
+ "Type M", "Type N", "Type O", "Type P", "Type Q", "Type R", "Type S", "Type T", "Type U", "Type V, Type W, Type X"
         };
 
         public static HashSet<ShipTypes> BeeShipTypes = new HashSet<ShipTypes>();
@@ -717,7 +729,7 @@ namespace Assets.Scripts
         //public static int SelectedEnemyShipTypes = -1;
         public static LevelOptions LevelOptions;
         public static bool ChooseRandomLevel;
-        public static bool HasSeenPreLevelIntro;
+        public static bool HasSeenPreLevelIntro, HasSeenIntermission;
 
 
         //public static KeyCode[] SquadKeys = new KeyCode[] { KeyCode.Alpha1, KeyCode.Alpha2, KeyCode.Alpha3, KeyCode.Alpha4, KeyCode.Alpha5, KeyCode.Alpha6, KeyCode.Alpha7, KeyCode.Alpha8, KeyCode.Alpha9, KeyCode.Alpha0 };
@@ -1110,6 +1122,7 @@ namespace Assets.Scripts
             // Starting gunship squad #1
             SavedSquad squad = CurrentShips.BuildNewSquad($"Squad #{UserProgressData.HumanCampaignSavedSquadNumber++}", Configuration.HumanSide, ShipTypes.Gunship, 1);
             CurrentShips.GetFleetShip(0).Name = "Gunship D-4";
+            squad.Stats.Commander = "Tom";
             squad.StartingPosition = new Vector2(-33, -2); // Reposition it so that it works with the squad maker
 
 
@@ -1172,17 +1185,25 @@ namespace Assets.Scripts
 
                     break;
                 case 2:
-                    HasSeenPreLevelIntro = false;
-                    SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
-                    //if (!HasSeenPreLevelIntro)
-                    //{
-                    //    SceneManager.LoadSceneAsync("Level Intro", LoadSceneMode.Single);
-                    //}
-                    //else
-                    //{
-                    //    HasSeenPreLevelIntro = false;
-                    //    SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
-                    //}
+                    if (!HasSeenPreLevelIntro)
+                    {
+                        SceneManager.LoadSceneAsync("Level Intro", LoadSceneMode.Single);
+                    }
+                    else
+                    {
+                        HasSeenPreLevelIntro = false;
+                        SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
+                    }
+                    break;
+                case 3:
+                    if (!HasSeenPreLevelIntro)
+                    {
+                        SceneManager.LoadSceneAsync("Level Intro", LoadSceneMode.Single);
+                    }
+                    else
+                    {
+                        SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
+                    }
                     break;
                 default:
                     Debug.LogError($"Tried to load unknown level {UserProgressData.GetCurrentLevel()}");

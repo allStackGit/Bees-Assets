@@ -21,6 +21,7 @@ namespace Assets.Scripts.Entities
         public ConfigData.ObstacleTypes ObstacleType;
         public Collider2D Collider, ProximityCollider, ClearanceMappingCollider;
         public SpriteRenderer SpriteRenderer;
+        public SpriteMask SpriteMask; // We probably just need this and not the sprite renderer [alert]
 
         public virtual void Create(Stage stage)
         {

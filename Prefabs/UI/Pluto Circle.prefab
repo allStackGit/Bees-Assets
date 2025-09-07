@@ -10,7 +10,7 @@ GameObject:
   m_Component:
   - component: {fileID: 5755559560765383542}
   - component: {fileID: 3450768185158085657}
-  m_Layer: 21
+  m_Layer: 5
   m_Name: Inner Circle
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -78,13 +78,13 @@ SpriteMask:
   m_SortingOrder: 0
   m_Sprite: {fileID: -2413806693520163455, guid: d6a43c80e4f549744bab8480334a95c7, type: 3}
   m_MaskAlphaCutoff: 0.2
-  m_FrontSortingLayerID: 0
-  m_BackSortingLayerID: 0
-  m_FrontSortingLayer: 0
-  m_BackSortingLayer: 0
+  m_FrontSortingLayerID: -1143279237
+  m_BackSortingLayerID: -1143279237
+  m_FrontSortingLayer: 32
+  m_BackSortingLayer: 32
   m_FrontSortingOrder: 0
-  m_BackSortingOrder: 0
-  m_IsCustomRangeActive: 0
+  m_BackSortingOrder: -1
+  m_IsCustomRangeActive: 1
   m_SpriteSortPoint: 0
   m_MaskSource: 0
 --- !u!1 &7884175094246085612
@@ -97,7 +97,7 @@ GameObject:
   m_Component:
   - component: {fileID: 4152261265596735885}
   - component: {fileID: 3093073386138611993}
-  m_Layer: 21
+  m_Layer: 5
   m_Name: Pluto Circle
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -161,8 +161,8 @@ SpriteRenderer:
   m_AutoUVMaxDistance: 0.5
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
-  m_SortingLayerID: 1914147823
-  m_SortingLayer: 31
+  m_SortingLayerID: -1143279237
+  m_SortingLayer: 32
   m_SortingOrder: 0
   m_Sprite: {fileID: -2413806693520163455, guid: a86470a33a6bf42c4b3595704624658b, type: 3}
   m_Color: {r: 0.9811321, g: 0.041651815, b: 0.041651815, a: 1}

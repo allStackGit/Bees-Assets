@@ -12,7 +12,7 @@ public class CutsceneManager : MonoBehaviour
     public DialogueManager DialogueManager;
     public GameObject CutsceneCanvas;
     public Stage Stage;
-    public List<DialogueLine> PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLines_BluerPastures;
+    public List<DialogueLine> PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLines_BluerPastures, PlutoToNeptune, Neptune_SeizeTheMeans;
     public List<List<DialogueLine>> AllDialogues;
     public bool PlutoLines_Anomaly_Completed = false;
     public bool HitDialogueBreak = false;
@@ -158,7 +158,21 @@ public class CutsceneManager : MonoBehaviour
 
         };
 
-        AllDialogues = new List<List<DialogueLine>> { PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLines_BluerPastures };
+        PlutoToNeptune = new List<DialogueLine>
+        {
+            new DialogueLine("Samuel", Portraits["Samuel"], "What do we do now? Those… bees outnumber us."),
+            new DialogueLine("Marco", Portraits["Marco"], "Badly"),
+
+        };
+
+        Neptune_SeizeTheMeans = new List<DialogueLine>
+        {
+            new DialogueLine("Samuel", Portraits["Samuel"], "We’re approaching Neptune to see if we can gather any allies there."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "The scout team has reported movement, but were unable to determine if it’s friendly or not. We’ll just have to find out."),
+
+        };
+
+        AllDialogues = new List<List<DialogueLine>> { PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLines_BluerPastures, PlutoToNeptune, Neptune_SeizeTheMeans };
 
     }
     public void HideIntroMessage()
@@ -232,7 +246,7 @@ public class CutsceneManager : MonoBehaviour
     }
     public void BreakDialogue()
     {
-        Debug.Log("Breaking dialogue in cutscene manager.");
+        //Debug.Log("Breaking dialogue in cutscene manager.");
         HitDialogueBreak = true;
         DialogueManager.gameObject.SetActive(false);
     }

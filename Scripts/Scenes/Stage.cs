@@ -358,7 +358,7 @@ public class Stage : Scene
     /// </summary>
     private void SpawnLevels()
     {
-        Debug.Log($"Spawning stage levels");
+        //Debug.Log($"Spawning stage levels");
         //transform.position = LevelLayouts[LevelCount][0];
         for (_spawn_i = 0; _spawn_i < LevelCount; _spawn_i++)
         {
@@ -482,7 +482,7 @@ public class Stage : Scene
         }
 
         _finalize_end = (Time.realtimeSinceStartup - StartTime) * 1000; // seconds to milliseconds
-        Debug.Log($"It took {Math.Round(_finalize_end, 2)} ms to set up the stage and {Math.Round(Time.realtimeSinceStartup, 2)}s total time.");
+        //Debug.Log($"It took {Math.Round(_finalize_end, 2)} ms to set up the stage and {Math.Round(Time.realtimeSinceStartup, 2)}s total time.");
     }
     Vector2 _camera_localizedPosition;
     /// <summary>
@@ -609,7 +609,7 @@ public class Stage : Scene
     }
     public void EnablePlayerControl()
     {
-        Debug.Log($"Enabling player control for the stage");
+        //Debug.Log($"Enabling player control for the stage");
         IsPlayerControlling = true;
         PrimaryLevel.SelectFirstSquad();
     }

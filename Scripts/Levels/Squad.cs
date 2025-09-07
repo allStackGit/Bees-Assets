@@ -82,6 +82,7 @@ namespace Assets.Scripts.Levels
         public bool CanAcceptUserInput;
 
         private List<Ship> _ships = new List<Ship>();
+        private bool _isInBounds;
         private bool _shouldChase = false;
         private ConfigData.ShootingStrategyTypes _chosenShootingStrategy; // there is a shooting strategy attached to the squad because users attach shooting strategies to the squad whereas the AI attaches them to the command
 
@@ -160,6 +161,7 @@ namespace Assets.Scripts.Levels
             CommandQueueEmptyAction = null;
             HasCommandQueue = false;
             IsSelected = false;
+            _isInBounds = false;
 
         }
         public virtual void Create(Stage stage)
@@ -454,6 +456,7 @@ namespace Assets.Scripts.Levels
                 {
                     ship.MoveToPoint(destination + ship.OffsetFromCenter);
                 }
+                
             }
             Destination = destination;
             //float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
@@ -703,8 +706,21 @@ namespace Assets.Scripts.Levels
         /// </summary>
         public void AddToCommandList()
         {
-            Debug.Log($"Adding {this} to squads awaiting hive mind commands");
+            //Debug.Log($"Adding {this} to squads awaiting hive mind commands");
             Level.State.AddToSquadsAwaitingHiveMindCommands(this);
+        }
+        /// <summary>
+        /// Whether or not the squad is in the bounds of the map. It's the sum of the IsInBounds() of the squad ships. Caches the result if it is in bounds
+        /// </summary>
+        /// <returns></returns>
+        public bool IsInBounds()
+        {
+            if (!_isInBounds)
+            {
+                //Debug.Log($"{Name} is not in bounds yet but might be? {GetPosition() == Level.ForceBounds(GetPosition())}, {GetPosition()}, {Level.ForceBounds(GetPosition())}");
+                _isInBounds = GetShips().All((s) => s.IsInBounds());
+            }
+            return _isInBounds;
         }
         public void RunCommandQueue()
         {

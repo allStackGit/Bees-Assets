@@ -54,6 +54,7 @@ namespace Assets.Scripts
             {ConfigData.ShipTypeLetters.U, ConfigData.ShipTypes.FireBarge },
             {ConfigData.ShipTypeLetters.V, ConfigData.ShipTypes.WarpGate },
             {ConfigData.ShipTypeLetters.W, ConfigData.ShipTypes.Beacon },
+            {ConfigData.ShipTypeLetters.X, ConfigData.ShipTypes.HumanTarget },
         };
         public static readonly Dictionary<ConfigData.ShipTypeLetters, char> ConvertShipTypeLetterToCharacter = new Dictionary<ConfigData.ShipTypeLetters, char>()
         {
@@ -80,6 +81,7 @@ namespace Assets.Scripts
             {ConfigData.ShipTypeLetters.U, 'U' },
             {ConfigData.ShipTypeLetters.V, 'V' },
             {ConfigData.ShipTypeLetters.W, 'W' },
+            {ConfigData.ShipTypeLetters.X, 'X' },
         };
         public static readonly Dictionary<ConfigData.ShipTypes, char> ConvertShipTypeToCharacter = new Dictionary<ConfigData.ShipTypes, char>()
         {
@@ -106,6 +108,7 @@ namespace Assets.Scripts
             {ConfigData.ShipTypes.FireBarge, 'U' },
             {ConfigData.ShipTypes.WarpGate, 'V' },
             {ConfigData.ShipTypes.Beacon, 'W' },
+            {ConfigData.ShipTypes.HumanTarget, 'X' },
         };
         public static readonly Dictionary<ConfigData.ShipTypes, ConfigData.ShipTypeLetters> ConvertShipTypeToShipTypeLetter = new Dictionary<ConfigData.ShipTypes, ConfigData.ShipTypeLetters>()
         {
@@ -132,6 +135,7 @@ namespace Assets.Scripts
             {ConfigData.ShipTypes.FireBarge, ConfigData.ShipTypeLetters.U },
             {ConfigData.ShipTypes.WarpGate, ConfigData.ShipTypeLetters.V },
             {ConfigData.ShipTypes.Beacon, ConfigData.ShipTypeLetters.W },
+            {ConfigData.ShipTypes.HumanTarget, ConfigData.ShipTypeLetters.X },
         };
 
         public static readonly Dictionary<ConfigData.ShipTypes, int> ConvertShipTypeToSide = new Dictionary<ConfigData.ShipTypes, int>()
@@ -159,6 +163,7 @@ namespace Assets.Scripts
             {ConfigData.ShipTypes.FireBarge, 2 },
             {ConfigData.ShipTypes.WarpGate, 2 },
             {ConfigData.ShipTypes.Beacon, 2 },
+            {ConfigData.ShipTypes.HumanTarget, 2 }
         };
 
         public static readonly Dictionary<ConfigData.ProjectileTypes, int> ConvertProjectileTypeToSide = new Dictionary<ConfigData.ProjectileTypes, int>()
@@ -203,6 +208,7 @@ namespace Assets.Scripts
             {ConfigData.ShipTypes.WarpGate, "Warp Gate"},
             {ConfigData.ShipTypes.Wasp, "Wasp"},
             {ConfigData.ShipTypes.YellowJacket, "Yellow Jacket"},
+            {ConfigData.ShipTypes.HumanTarget, "Human Target"},
         };
 
         public static Dictionary<string, ConfigData.ShipTypes> ConvertShipNameToShipType = new Dictionary<string, ConfigData.ShipTypes>
@@ -230,6 +236,7 @@ namespace Assets.Scripts
             {"Warp Gate", ConfigData.ShipTypes.WarpGate},
             {"Wasp", ConfigData.ShipTypes.Wasp},
             {"Yellow Jacket", ConfigData.ShipTypes.YellowJacket},
+            {"Human Target", ConfigData.ShipTypes.HumanTarget},
         };
 
         public static Dictionary<string, ConfigData.ShipTypes> ConvertPluralNameToShipType = new Dictionary<string, ConfigData.ShipTypes>
@@ -257,6 +264,7 @@ namespace Assets.Scripts
             {"Warp Gates", ConfigData.ShipTypes.WarpGate},
             {"Wasps", ConfigData.ShipTypes.Wasp},
             {"Yellow Jackets", ConfigData.ShipTypes.YellowJacket},
+            {"Human Targets", ConfigData.ShipTypes.HumanTarget},
         };
 
         public static Dictionary<ConfigData.ShipTypes, string> ConvertShipTypeToPluralName = new Dictionary<ConfigData.ShipTypes, string>
@@ -284,6 +292,7 @@ namespace Assets.Scripts
             {ConfigData.ShipTypes.WarpGate, "Warp Gates"},
             {ConfigData.ShipTypes.Wasp, "Wasps"},
             {ConfigData.ShipTypes.YellowJacket, "Yellow Jackets"},
+            {ConfigData.ShipTypes.HumanTarget, "Human Targets"},
         };
 
         public static Dictionary<string, ConfigData.CommandTypes> ConvertCommandNameToType = new Dictionary<string, ConfigData.CommandTypes>
@@ -354,6 +363,7 @@ namespace Assets.Scripts
             { ConfigData.MatchupStrategyTypes.TypeU, ConfigData.ShipTypes.FireBarge },
             { ConfigData.MatchupStrategyTypes.TypeV, ConfigData.ShipTypes.WarpGate },
             { ConfigData.MatchupStrategyTypes.TypeW, ConfigData.ShipTypes.Beacon },
+            { ConfigData.MatchupStrategyTypes.TypeX, ConfigData.ShipTypes.HumanTarget },
 
         };
 
@@ -399,6 +409,7 @@ namespace Assets.Scripts
             { "Type U", ConfigData.MatchupStrategyTypes.TypeU },
             { "Type V", ConfigData.MatchupStrategyTypes.TypeV },
             { "Type W", ConfigData.MatchupStrategyTypes.TypeW },
+            { "Type X", ConfigData.MatchupStrategyTypes.TypeX },
 
 
         };
@@ -428,6 +439,7 @@ namespace Assets.Scripts
             { ConfigData.ShootingStrategyTypes.TypeU, ConfigData.ShipTypes.FireBarge },
             { ConfigData.ShootingStrategyTypes.TypeV, ConfigData.ShipTypes.WarpGate },
             { ConfigData.ShootingStrategyTypes.TypeW, ConfigData.ShipTypes.Beacon },
+            { ConfigData.ShootingStrategyTypes.TypeX, ConfigData.ShipTypes.HumanTarget },
 
         };
 
@@ -471,7 +483,8 @@ namespace Assets.Scripts
             { "Type T", ConfigData.ShootingStrategyTypes.TypeT},
             { "Type U", ConfigData.ShootingStrategyTypes.TypeU},
             { "Type V", ConfigData.ShootingStrategyTypes.TypeV},
-            { "Type W", ConfigData.ShootingStrategyTypes.TypeW}
+            { "Type W", ConfigData.ShootingStrategyTypes.TypeW},
+            { "Type X", ConfigData.ShootingStrategyTypes.TypeX},
         };
 
         public static Dictionary<ConfigData.ShootingStrategyTypes, string> ConvertShootingStrategyTypeToName = new Dictionary<ConfigData.ShootingStrategyTypes, string>
@@ -514,7 +527,8 @@ namespace Assets.Scripts
             { ConfigData.ShootingStrategyTypes.TypeT, "Type T" },
             { ConfigData.ShootingStrategyTypes.TypeU, "Type U" },
             { ConfigData.ShootingStrategyTypes.TypeV, "Type V" },
-            { ConfigData.ShootingStrategyTypes.TypeW, "Type W" }
+            { ConfigData.ShootingStrategyTypes.TypeW, "Type W" },
+            { ConfigData.ShootingStrategyTypes.TypeX, "Type X" },
         };
 
         public static Dictionary<string, ConfigData.SquadActions> ConvertSquadActionNameToType = new Dictionary<string, ConfigData.SquadActions>
@@ -1437,7 +1451,7 @@ namespace Assets.Scripts
                 }
                 else
                 {
-                    Debug.LogError($"Tried to set the color of {gameObject.name} which doesn't have a UI image.");
+                    Debug.LogWarning($"Tried to set the color of {gameObject.name} which doesn't have a UI image.");
                 }
             }
         }

@@ -504,7 +504,7 @@ namespace Assets.Scripts.Scenes
             // loop through all ship types
             _shipTypes.ForEach(type =>
             {
-                Debug.Log($"Getting fleet ships for {type}");
+                //Debug.Log($"Getting fleet ships for {type}");
                 GameObject shipLabel = null;
                 switch (type)
                 {
@@ -591,7 +591,7 @@ namespace Assets.Scripts.Scenes
                 // if ship type has any visible ships
                 if (visibleShips.Any())
                 {
-                    Debug.Log($"Setting the ship count for {type}");
+                    //Debug.Log($"Setting the ship count for {type}");
                     // get the count of the ship type and update the label
                     TMP_Text labelText = shipLabel.GetComponentInChildren<TMP_Text>();
                     labelText.text = $"({availableShips.Count})";
@@ -612,7 +612,7 @@ namespace Assets.Scripts.Scenes
                 }
                 else // if not, set the label to inactive
                 {
-                    Debug.Log($"There were no visible ships for {type}");
+                    //Debug.Log($"There were no visible ships for {type}");
                     parent.gameObject.SetActive(false);
                 }
             });
@@ -1759,10 +1759,10 @@ namespace Assets.Scripts.Scenes
                         ConfigData.IsUserLoadingCustomSquads = true;
                         _chosenSquads.ForEach((chosenSquad) =>
                         {
-                            Debug.Log($"Chose {chosenSquad.Name} for level");
+                            //Debug.Log($"Chose {chosenSquad.Name} for level");
                             ConfigData.LevelOptions.ChosenSquads.Add((SavedSquad)chosenSquad.Clone());
                         });
-                        Debug.Log($"ConfigData.LevelOption.ChosenSquads: {Utilities.ListToString(ConfigData.LevelOptions.ChosenSquads)}");
+                        //Debug.Log($"ConfigData.LevelOption.ChosenSquads: {Utilities.ListToString(ConfigData.LevelOptions.ChosenSquads)}");
                     }
                     else if (!ConfigData.ChooseRandomLevel)
                     {
@@ -1861,7 +1861,7 @@ namespace Assets.Scripts.Scenes
             ConfigData.IsUserLoadingCustomSquads = true;
 
             //Debug.Log($"Setting level options for configdata");
-            ConfigData.LevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}", _chosenMapOption, _chosenObstacleOption, _chosenAsteroidsOption, _chosenFogOfWarOption, _chosenMiningOption, false, true, -1, _chosenEnemyReinforcementsOption, ConfigData.StandardReinforcementsDelay, _chosenEnemyShipTypes, _enemySquadGenerationCount, new List<SavedSquad>(), new List<SavedSquad>(), new List<int>(), "", _chosenSquads, Vector2.zero, Vector2.zero);
+            ConfigData.LevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}", _chosenMapOption, null, _chosenAsteroidsOption, _chosenFogOfWarOption, _chosenMiningOption, false, true, -1, _chosenEnemyReinforcementsOption, ConfigData.StandardReinforcementsDelay, _chosenEnemyShipTypes, _enemySquadGenerationCount, new List<SavedSquad>(), new List<SavedSquad>(), new List<int>(), "", _chosenSquads, Vector2.zero, Vector2.zero);
         }
 
         public void ChangeOpposingForceDropdown(int option)

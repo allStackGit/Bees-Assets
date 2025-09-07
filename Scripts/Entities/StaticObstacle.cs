@@ -23,10 +23,12 @@ namespace Assets.Scripts.Entities
 
         protected virtual void OnTriggerEnter2D(Collider2D collider)
         {
+            Debug.Log($"Trigger enter {collider}");
             Collision(collider);
         }
         protected virtual void OnTriggerStay2D(Collider2D collider)
         {
+            Debug.Log($"Trigger stay {collider}");
             if (ObstacleType == ConfigData.ObstacleTypes.StaticObstacle)
             {
                 _frameCollisions++;
@@ -41,7 +43,7 @@ namespace Assets.Scripts.Entities
 
         public virtual void ShipCollision(Ship ship)
         {
-            //Debug.Log($"{Name} was hit by {ship.Name}");
+            Debug.Log($"{Name} was hit by {ship.Name}");
             if (ship.ShipType == ConfigData.ShipTypes.Barge)
             {
                 _barge = ((Barge)ship);

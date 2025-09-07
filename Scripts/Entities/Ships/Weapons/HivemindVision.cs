@@ -47,6 +47,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                         // Clamp the value of seeing the ship between 1 & 20 TSV and add it to the command regardless of what the command is
                         Ship.Squad.GetCommand().Tsv += (int) Mathf.Clamp(_shipEnter.Tsv * ConfigData.TsvMultiplierForVision, ConfigData.MinimumTsvValueForSeeingAShip, ConfigData.MaximumTsvValueForSeeingAShip);
 
+                        //Debug.Log($"{Ship} has seen {_shipEnter} and is receiving {(int)Mathf.Clamp(_shipEnter.Tsv * ConfigData.TsvMultiplierForVision, ConfigData.MinimumTsvValueForSeeingAShip, ConfigData.MaximumTsvValueForSeeingAShip)} TSV for spotting it");
+
                         Ship.Level.State.HivemindShips[Ship.Side - 1][Ship.Id].Add(_shipEnter); // Add the newly seen ship to the hivemind
                         if (Ship.Squad.GetCommand().CommandType == ConfigData.CommandTypes.Scouting)
                         {

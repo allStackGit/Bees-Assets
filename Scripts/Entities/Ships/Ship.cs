@@ -956,7 +956,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 StopMoving("Got a new destination");
 
                 IsFollowingPath = false;
-                SetTargetCoordinates(Vector2.zero);
                 HasTargetCoordinates = false;
                 HasTargetDirection = true;
                 TargetDirection = direction;
@@ -1083,7 +1082,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             if (!HasObstacleInPath(FinalDestination))
             {
                 //Debug.Log($"Found a direct path for {Name} to {FinalDestination}");
-                SetTargetCoordinates(FinalDestination);
+                //SetTargetCoordinates(FinalDestination);
                 IsFollowingPath = false;
                 DestinationQueue.Clear();
                 //CancelInvoke(nameof(CheckForDirectPath));
@@ -1695,6 +1694,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             if (attackerFleetShip.Side != target.Side)
             {
                 attackerFleetShip.DamageDone += tsvLoss;
+                //Debug.Log($"{attackerFleetShip.Name} inflicted {tsvLoss} TSV Loss on {targetSquad.Name}");
                 //Debug.Log($"shooter {shooter}");
                 //Debug.Log($"squad {shooter.Squad}");
                 //Debug.Log($"saved Squad {shooter.Squad.SavedSquad}");
@@ -2047,7 +2047,16 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         public Ship SetAndGetTargetEnemy()
         {
             _tempIndex = 0;
-            _maxLoops = math.max(Squad.GetCommand().EnemySquad.GetShips().Count, 10);
+            try
+            {
+                _maxLoops = math.max(Squad.GetCommand().EnemySquad.GetShips().Count, 10);
+            }
+            catch (NullReferenceException e)
+            {
+                Debug.LogError($"Squad: {Squad}, Command: {Squad?.GetCommand()}, EnemySquad: {Squad?.GetCommand()?.EnemySquad}, enemy ship count: {Squad?.GetCommand()?.EnemySquad?.GetShips().Count}");
+
+                throw e;
+            }
             while (!HasTargetEnemyShipToFollow && _tempIndex < _maxLoops) // [note] the loop check should be removed if no longer needed
             {
                 _tempIndex++;
@@ -2442,7 +2451,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         private ScaledTimer _showShipStatsTimer = new ScaledTimer();
         private void OnMouseEnter()
         {
-            if (!ConfigData.SpawnedOnlyShipTypes.Contains(ShipType) && !Stage.IsTraining)
+            if (!ConfigData.SpawnedOnlyShipTypes.Contains(ShipType) && !Stage.IsTraining && ShipType != ConfigData.ShipTypes.HumanTarget)
             {
                 _showShipStatsTimer.Reuse(1, ShowShipStats);
                 Level.AddTimer(_showShipStatsTimer);

@@ -9,12 +9,18 @@ using UnityEngine;
 using UnityEngine.Rendering.Universal;
 using UnityEngine.SceneManagement;
 using static Assets.Scripts.ConfigData;
+using static UnityEngine.GraphicsBuffer;
 
 namespace Assets.Scripts.Levels
 {
     public partial class Level : MonoBehaviour
     {
         private ScaledTimer _dialogueTimer = new ScaledTimer();
+
+        /// <summary>
+        /// This represents an amount of value that the player has accomplished for a given level like rescuing personnel that in turn translates to reinforcements or some other bonus
+        /// </summary>
+        private int _questPoints;
         /// <summary>
         /// Sets all the triggers for events in the level. Triggers are checked every 5 seconds so this currently has a maximum precision of 5 seconds
         /// </summary>
@@ -492,64 +498,6 @@ namespace Assets.Scripts.Levels
 
             });
         }
-
-        public void Level0Ending()
-        {
-            Debug.Log("Level complete!");
-            Debug.Log("Updated Campaign State");
-
-            // Add new human ships to the game
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Gunship, 1); // 1 Gunship
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 2); // 2 Frigates
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Dreadnought, 1); // 2 Dreadnoughts
-
-            // Add new bee ships to the game
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Honeybee, 1); // 1 Honeybee
-
-            // Add new ships to the human's available ships
-            SavedSquad gunshipSquad = ConfigData.CurrentShips.GetSavedSquad(1);
-            FleetShip gunship = CurrentShips.GetAvailableShips().Where((s) => s.Type == ShipTypes.Gunship).First();
-            gunshipSquad.AddShipToSquad(new SquadShip(gunship.Id, gunship.Type, Vector2.zero, gunshipSquad));
-            gunshipSquad.AutoRepositionSquad();
-
-            // Starting Dreadnought squad #8
-            SavedSquad squad = CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Dreadnought, 2);
-            squad.StartingPosition = new Vector2(-33, -2); // Reposition it so that it works with the squad maker
-
-            // Starting Frigate squad #9
-            squad = CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Frigate, 3);
-            squad.StartingPosition = new Vector2(-33, -2); // Reposition it so that it works with the squad maker
-
-            // Starting Honeybee squad #10
-            CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Honeybee, 1);
-
-
-            // Add Honeybee, Frigate, and Dreadnought to the codex and visibility
-            ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Honeybee);
-            ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Frigate);
-            ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Dreadnought);
-
-            ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Hornet);
-            ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Wasp);
-            ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Frigate);
-            ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Dreadnought);
-
-            ConfigData.UserProgressData.SetShipTypes();
-
-            // Advance to next level in campaign
-            ConfigData.UserProgressData.AdvanceToNextLevel();
-
-            ConfigData.UserProgressData.Save();
-            CurrentShips.SaveSquadData();
-            CurrentShips.SaveFleetData();
-
-
-            State.GameOver = true;
-            Debug.Log("Did Standard level complete, showing dialogue");
-            Stage.Menus.ShowLevelContinueDialogue();
-
-        }
-
         public void Level1Triggers()
         {
             Debug.Log("Setting triggers for level 1");
@@ -788,95 +736,6 @@ namespace Assets.Scripts.Levels
 
 
         }
-        public void Level1Ending()
-        {
-            Debug.Log("Level 1 complete!");
-
-            // Add new human ships to the game, 20 Scouts, 2 Gunships, 2 Frigates, 1 Dreadnought
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Scout, 5); // 5 Scouts
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Gunship, 2); // 2 Gunships
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 2); // 2 Frigates
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Dreadnought, 1); // 1 Dreadnought
-
-            // Create the rest of the Bee fleet
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Hornet, 50); // 50 Hornets
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Wasp, 30); // 30 Wasps
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Leafcutter, 30); // 30 Leafcutters
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.YellowJacket, 20); // 20 Yellow Jackets
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Honeybee, 25); // 25 Honeybees
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Bumblebee, 15); // 15 Bumblebees
-            //ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Queen, 2); // 2 Queens
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.CarpenterBee, 10); // 10 Carpenter Bees
-            //ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Beehive, 5); // 5 Bee hives
-
-            // Create the new Bee squads
-
-            // 5 Honeybee squads of 2
-            for (int i = 0; i < 5; i++) 
-            {
-                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Honeybee, 2);
-            }
-
-            // 5 Wasp sqauds of 4
-            for (int i = 0;i < 5;i++) { 
-                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 4);
-            }
-
-            // 6 Hornet squads of 4
-            for (int i = 0; i < 6; i++) 
-            {
-                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 4);
-            }
-
-            // 4 Yellow Jacket squads of 4
-            for (int i = 0; i < 4; i++) 
-            {
-                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.YellowJacket, 4);
-            }
-
-            // 2 Leafcutter squads of 2
-            for (int i = 0; i < 2; i++) 
-            {
-                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Leafcutter, 2);
-            }
-
-
-
-            // Add Hornet and Wasp to codex and add leafcutter and yellow jacket to visibility
-            ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Hornet);
-            ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Wasp);
-
-            ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Leafcutter);
-            ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.YellowJacket);
-
-            ConfigData.UserProgressData.SetShipTypes();
-
-
-            // Advance to next level in campaign
-            ConfigData.UserProgressData.AdvanceToNextLevel();
-
-            ConfigData.UserProgressData.Save();
-            CurrentShips.SaveSquadData();
-            CurrentShips.SaveFleetData();
-
-
-            State.GameOver = true;
-            Debug.Log("Did Standard level complete, showing dialogue");
-            Stage.Menus.ShowLevelContinueDialogue();
-
-
-            NextTriggers.Add(new Trigger(() =>
-            {
-                return true;
-            },
-                () =>
-                {
-
-                },
-                "Level 1 Showing select scout squad tooltip")
-            );
-        }
-
         public void Level2Triggers()
         {
             Debug.Log("Setting triggers for level 2");
@@ -887,6 +746,7 @@ namespace Assets.Scripts.Levels
             int personnelEvacuated = 0;
 
             ScaledTimer clock = new ScaledTimer();
+
 
             // Every time the trigger is checked, 1 person is evacuated. If 15 people are lost then the level ends. If 15 people aren't lost then the level ends after 5 minutes and roughly 60 people are evacuated. The ship will have a ton of health and no weapons but in theory should still be physical so that projectiles can hit it and explode and when it loses health, personnel are lost. It should have sufficient TSV so that it's a very valuable target for the Bees even if they only do a tiny bit of damage relative to its significant health.
 
@@ -951,14 +811,22 @@ namespace Assets.Scripts.Levels
                             Stage.Menus.Clock.SetActive(true);
                             Stage.Menus.Counter.SetActive(true);
 
+                            // Create target on pluto
+                            HumanTarget humanTarget = CreateHumanTarget(new Vector2(68, -28));
+                            //humanTarget.transform.localScale = new Vector2(80, 80);
+                            Destroy(humanTarget.FogOfWarVision.gameObject);
+
                             clock.Reuse(1f, () =>
                             {
                                 timeLeft = endTime - Time.time;
                                 minutesLeft = Mathf.FloorToInt(timeLeft / 60f);
                                 secondsLeft = Mathf.FloorToInt(timeLeft % 60f);
 
+                                personnelLost = (humanTarget.MaxHealth - humanTarget.Health) / 200;
+
                                 if (timeLeft <= 0 || personnelLost >= 15)
                                 {
+                                    _questPoints = personnelEvacuated;
                                     CancelTimer(clock);
                                     if (personnelLost >= 15)
                                     {
@@ -1024,7 +892,7 @@ namespace Assets.Scripts.Levels
                             {
                                 Debug.Log($"Spawning Bee reinforcements wave 2");
 
-                                LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() { ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Honeybee, 2), ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Wasp, 4), ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Hornet, 4) }, new Vector2(-295, -195), new Vector2(-225, -155), true);
+                                LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() { ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Honeybee, 2), ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Wasp, 4), ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Hornet, 4) }, new Vector2(-295, -195), new Vector2(-185, -170), true);
                                 AddReinforcementsToHivemindCommandQueue();
                             });
 
@@ -1039,7 +907,7 @@ namespace Assets.Scripts.Levels
                             ScaledTimer wave3 = new ScaledTimer(120f, () =>
                             {
                                 Debug.Log($"Spawning Bee reinforcements wave 3");
-                                LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() { ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Honeybee, 2), ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Honeybee, 2), ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Wasp, 4),ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Hornet, 4), ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Hornet, 4),ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.YellowJacket, 4) }, new Vector2(395, 245), new Vector2(225, 155), true);
+                                LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() { ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Honeybee, 2), ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Honeybee, 2), ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Wasp, 4),ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Hornet, 4), ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.Hornet, 4),ConfigData.CurrentShips.GetSquadByComposition(ConfigData.ShipTypes.YellowJacket, 4) }, new Vector2(395, 245), new Vector2(180, 200), true);
                                 AddReinforcementsToHivemindCommandQueue();
                             });
 
@@ -1058,26 +926,6 @@ namespace Assets.Scripts.Levels
                             });
 
                             AddTimer(wave4);
-
-                            // Make "exit" zone to detect when Bees enter Pluto
-                            //GameObject plutoZone = Instantiate(Stage.Prefabs.ExitZonePrefab, Map.transform);
-                            //Zone zone = plutoZone.GetComponent<Zone>();
-
-                            //// Change size, position, and shape
-                            //plutoZone.transform.localPosition = new Vector2(68, -28);
-                            //plutoZone.GetComponent<SpriteRenderer>().color = new Color(1, 1, 1, 0f);
-                            //plutoZone.AddComponent<CircleCollider2D>().isTrigger = true;
-                            //plutoZone.GetComponent<CircleCollider2D>().radius = 49f;
-                            //plutoZone.GetComponent<BoxCollider2D>().enabled = false;
-
-                            //zone.OnShipEnter = (ship) =>
-                            //{
-                            //    if (ship.Side == ConfigData.Configuration.BeeSide)
-                            //    {
-                            //        // Trigger Dialogue about Bees reaching Pluto
-                            //        Destroy(plutoZone);
-                            //    }
-                            //};
 
                             // Set triggers for dialogues
 
@@ -1113,20 +961,231 @@ namespace Assets.Scripts.Levels
                 "Level 2 Showing Pluto outline and dialogue")
             );
         }
+
+
+
+        public void Level0Ending()
+        {
+            Debug.Log("Level complete!");
+            Debug.Log("Updated Campaign State");
+
+            // Add new human ships to the game
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Gunship, 1); // 1 Gunship
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 2); // 2 Frigates
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Dreadnought, 1); // 2 Dreadnoughts
+
+            // Add new bee ships to the game
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Honeybee, 1); // 1 Honeybee
+
+            // Add new ships to the human's available ships
+            SavedSquad gunshipSquad = ConfigData.CurrentShips.GetSavedSquad(1);
+            FleetShip gunship = CurrentShips.GetAvailableShips().Where((s) => s.Type == ShipTypes.Gunship).First();
+            gunshipSquad.AddShipToSquad(new SquadShip(gunship.Id, gunship.Type, Vector2.zero, gunshipSquad));
+            gunshipSquad.AutoRepositionSquad();
+
+            // Starting Dreadnought squad #8
+            SavedSquad squad = CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Dreadnought, 2);
+            squad.StartingPosition = new Vector2(-33, -2); // Reposition it so that it works with the squad maker
+
+            // Starting Frigate squad #9
+            squad = CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Frigate, 3);
+            squad.StartingPosition = new Vector2(-33, -2); // Reposition it so that it works with the squad maker
+
+            // Starting Honeybee squad #10
+            CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Honeybee, 1);
+
+
+            // Add Honeybee, Frigate, and Dreadnought to the codex and visibility
+            ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Honeybee);
+            ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Frigate);
+            ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Dreadnought);
+
+            ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Hornet);
+            ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Wasp);
+            ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Frigate);
+            ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Dreadnought);
+
+            ConfigData.UserProgressData.SetShipTypes();
+
+            // Advance to next level in campaign
+            ConfigData.UserProgressData.AdvanceToNextLevel();
+
+            ConfigData.UserProgressData.Save();
+            CurrentShips.SaveSquadData();
+            CurrentShips.SaveFleetData();
+
+
+            State.GameOver = true;
+            Debug.Log("Did Standard level complete, showing dialogue");
+            Stage.Menus.ShowLevelContinueDialogue();
+
+        }
+        public void Level1Ending()
+        {
+            Debug.Log("Level 1 complete!");
+
+            // Add new human ships to the game, 5 Scouts, 2 Gunships, 2 Frigates, 1 Dreadnought
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Scout, 5); // 5 Scouts
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Gunship, 2); // 2 Gunships
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 2); // 2 Frigates
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Dreadnought, 1); // 1 Dreadnought
+
+            // Create the rest of the Bee fleet
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Hornet, 50); // 50 Hornets
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Wasp, 30); // 30 Wasps
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Leafcutter, 30); // 30 Leafcutters
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.YellowJacket, 20); // 20 Yellow Jackets
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Honeybee, 25); // 25 Honeybees
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Bumblebee, 15); // 15 Bumblebees
+            //ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Queen, 2); // 2 Queens
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.CarpenterBee, 10); // 10 Carpenter Bees
+            //ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Beehive, 5); // 5 Bee hives
+
+            // Create the new Bee squads
+
+            // 5 Honeybee squads of 2
+            for (int i = 0; i < 5; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Honeybee, 2);
+            }
+
+            // 5 Wasp sqauds of 4
+            for (int i = 0; i < 5; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 4);
+            }
+
+            // 6 Hornet squads of 4
+            for (int i = 0; i < 6; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 4);
+            }
+
+            // 4 Yellow Jacket squads of 4
+            for (int i = 0; i < 4; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.YellowJacket, 4);
+            }
+
+            // 2 Leafcutter squads of 2
+            for (int i = 0; i < 2; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Leafcutter, 2);
+            }
+
+
+
+            // Add Hornet and Wasp to codex and add leafcutter and yellow jacket to visibility
+            ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Hornet);
+            ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Wasp);
+
+            ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Leafcutter);
+            ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.YellowJacket);
+
+            ConfigData.UserProgressData.SetShipTypes();
+
+
+            // Advance to next level in campaign
+            ConfigData.UserProgressData.AdvanceToNextLevel();
+
+            ConfigData.UserProgressData.Save();
+            CurrentShips.SaveSquadData();
+            CurrentShips.SaveFleetData();
+
+
+            State.GameOver = true;
+            Debug.Log("Did Standard level complete, showing dialogue");
+            Stage.Menus.ShowLevelContinueDialogue();
+
+        }
         public void Level2Ending()
         {
             Debug.Log("Level 2 complete!");
 
-            //NextTriggers.Add(new Trigger(() =>
-            //    {
-            //        return Stage.CutsceneManager.HitDialogueBreak;
-            //    },
-            //    () =>
-            //    {
-                   
-            //    },
-            //    "Level 1 Showing select scout squad tooltip")
-            //);
+            // Add 4 squads of 1 carpenter bees
+            for (int i = 0; i < 5; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.CarpenterBee, 1);
+            }
+
+            // Add one squad of two carpenter bees
+            CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.CarpenterBee, 2);
+
+            // Add 2 squads of 2 wasps and 1 squad of 3 wasps
+            for (int i = 0; i < 2; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 2);
+            }
+
+            CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 3);
+
+            // Add one squad of 2 leafcutters
+            CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Leafcutter, 2);
+
+            // Add three squads of 2 hornets and 2 squada of 1 hornet
+            for (int i = 0; i < 3; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 2);
+            }
+            for (int i = 0; i < 2; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 1);
+            }
+
+            switch (_questPoints)
+            {
+                case 60:
+                    // Player 10 Scouts, 8 Gunships, 4 Frigates, and 4 Dreadnoughts
+                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Scout, 5); // 5 Scouts
+                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Gunship, 8); // 8 Gunships
+                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 4); // 4 Frigates
+                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Dreadnought, 4); // 4Dreadnoughts
+                    break;
+                case > 50:
+                    // Player gets 5 Scouts, 6 Gunships, 2 Frigates, and 2 Dreadnoughts
+                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Scout, 5); // 5 Scouts
+                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Gunship, 6); // 6 Gunships
+                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 2); // 2 Frigates
+                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Dreadnought, 2); // 2 Dreadnoughts
+                    break;
+                case > 35:
+                    // Player gets 5 Scouts, 4 Gunships, 2 Frigates
+                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Scout, 5); // 5 Scouts
+                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Gunship, 4); // 4 Gunships
+                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 2); // 2 Frigates
+                    break;
+                case > 15:
+                    // Player gets 5 Scouts, 4 Gunships
+                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Scout, 5); // 5 Scouts
+                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Gunship, 4); // 4 Gunships
+                    break;
+                default:
+                    // Player Gets 5 Scouts, 1 Gunship
+                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Scout, 5); // 5 Scouts
+                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Gunship, 1); // 1 Gunships
+                    break;
+            }
+
+            // Add Leafcutter, and Yellow Jacket to codex and add Carpenter Bee to visibility
+            ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Leafcutter);
+            ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.YellowJacket);
+
+            ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.CarpenterBee);
+
+            ConfigData.UserProgressData.SetShipTypes();
+
+
+            // Advance to next level in campaign
+            ConfigData.UserProgressData.AdvanceToNextLevel();
+
+            ConfigData.UserProgressData.Save();
+            CurrentShips.SaveSquadData();
+            CurrentShips.SaveFleetData();
+
+
+            State.GameOver = true;
+            Debug.Log("Did Standard level complete, showing dialogue");
+            Stage.Menus.ShowLevelContinueDialogue();
         }
 
         public void AddReinforcementsToHivemindCommandQueue()
@@ -1137,6 +1196,40 @@ namespace Assets.Scripts.Levels
                     s.AddToCommandList();
                 }
             });
+        }
+
+        /// <summary>
+        /// A test function for executing random code after everything has been setup
+        /// </summary>
+        public void PostSetupTest()
+        {
+            Debug.Log("POST SETUP TEST HAS BEEN CALLED");
+            Debug.LogWarning("POST SETUP TEST HAS BEEN CALLED");
+
+
+
+            HumanTarget humanTarget = CreateHumanTarget(Vector2.zero);
+
+            Debug.Log("Placed Human Target");
+
+
+        }
+
+        public HumanTarget CreateHumanTarget(Vector2 position)
+        {
+            SavedSquad HTSquad = new SavedSquad(Utilities.GetNegativeSavedSquadId(), ConfigData.Configuration.HumanSide, "Human Target \"Ship\"", Vector2.zero, false, false, DefaultShootingStrategy, UnsetColor, null);
+
+            FleetShip fleetShip = new FleetShip(Utilities.GetNegativeFleetshipId(), ConfigData.ShipTypes.HumanTarget, false, true, false, 0, 0, 0, 0, 0, 0, 0);
+            HTSquad.AddShipToSquad(new SquadShip(fleetShip.Id, fleetShip.Type, Vector2.zero, HTSquad));
+
+            LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() { HTSquad }, position, Vector2.zero, true);
+
+            HumanTarget humanTarget = (HumanTarget)State.GetHumanShips().Where((s) => s.ShipType == ConfigData.ShipTypes.HumanTarget).FirstOrDefault();
+
+            humanTarget.Squad.CanAcceptUserInput = false;
+            Destroy(humanTarget.Squad.SquadTab);
+
+            return humanTarget;
         }
 
     }
