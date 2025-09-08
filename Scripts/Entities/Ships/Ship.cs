@@ -23,6 +23,7 @@ using System.Threading;
 using UnityEngine.Pool;
 using static UnityEngine.GraphicsBuffer;
 using UnityEngine.Rendering;
+using UnityEditorInternal;
 
 namespace Assets.Scripts.Entities.Ships
 {
@@ -206,7 +207,7 @@ namespace Assets.Scripts.Entities.Ships
         public bool __HasReachedDestination, __SquadHasReachedDestination, __IsInBounds;
         public List<Ship> __WeaponTargetShips, __SquadShips, __NearbyShips, __ShipsWarpingHere, __ShipsOnTopOf, __SortedTargetingQueue;
         public List<string> __ShipsWithinRangeOfWeapons, __PastCommands, __BannedStrats, __DamageStatuses, __CommandTargetingQueue, __NearbyAsteroids, __HivemindShips, __RejectReasons;
-        public int __Clearance;
+        public int __Clearance, __MineralsMined;
         //public List<Vector2> __PastLocations;
 
 
@@ -268,6 +269,7 @@ namespace Assets.Scripts.Entities.Ships
             __Width = GetWidth();
             __Height = GetHeight();
             __SquadShootingStrategy = Squad.GetShootingStrategy().ToString();
+            __MineralsMined = FleetShip.MineralsMinedThisLevel;
             //__SquadWidth = Squad.GetWidth();
             //__SquadHeight = Squad.GetHeight();
 
@@ -620,7 +622,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             FleetShip = fleetShip;
             OffsetFromCenter = offsetFromCenter;
             Health = OriginalHealth;
-            Name = $"{FleetShip.Type} #{Id}";
+            Name = $"{FleetShip.Type} #{FleetShip.Id}";
             gameObject.name = Name;
             ClearData();
 
@@ -629,6 +631,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 Level.State.HivemindShips[Side - 1].Add(Id, new HashSet<Ship>());
                 //Debug.Log($"Added {Name} to hivemind ships");
             }
+
 
 
             if (FleetShip.Id < 0)
@@ -827,7 +830,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 });
             }
         }
-        public void SetSquadName()
+        public void SetSquadName() // [debug]
         {
             // Set the name of the ships with the Squad name
             Name = $"{Squad.Name}: {Name}";
@@ -1638,7 +1641,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 _targetOldTSV = target.Tsv;
                 _targetOldHealth = target.Health;  // [debug]
                 target.Health -= math.min(power, target.Health);
-                target.Tsv = Utilities.CalculateTsv(target);
+                target.Tsv = Utilities.CalculateTsv(target) + (target.Health > 0 ? target.FleetShip.MineralsMinedThisLevel : 0);
+
+                //Debug.Log($"{target.Name} had {_targetOldTSV} TSV and {target.FleetShip.MineralsMinedThisLevel} minerals and now has {target.Tsv}-{Utilities.CalculateTsv(target)} TSV and {target.FleetShip.MineralsMinedThisLevel} minerals");
+                //Debug.Log($"{target.Name} went from {_targetOldHealth} health to {target.Health} health after being hit by {attacker}");
 
                 if (_targetOldHealth <= target.Health) // [debug]
                 {

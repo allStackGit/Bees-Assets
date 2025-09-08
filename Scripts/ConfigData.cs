@@ -1196,6 +1196,8 @@ namespace Assets.Scripts
                     }
                     break;
                 case 3:
+                    SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
+                    return;
                     if (!HasSeenPreLevelIntro)
                     {
                         SceneManager.LoadSceneAsync("Level Intro", LoadSceneMode.Single);

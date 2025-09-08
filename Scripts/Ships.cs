@@ -371,7 +371,7 @@ namespace Assets.Scripts
             SavedSquad savedSquad = new SavedSquad(squadId, side, name, Vector2.zero, false, false, DefaultShootingStrategy, UnsetColor, null);
             for (int i = 0; i < shipCount; i++) 
             {
-                FleetShip ship = CurrentShips.GetAvailableShips().Where((s) => s.Type == shipType).ElementAt(i);
+                FleetShip ship = CurrentShips.GetAvailableShipsOfType(shipType).ElementAt(i);
                 savedSquad.AddShipToSquad(new SquadShip(ship.Id, ship.Type, offsets[i], savedSquad));
             }
             CurrentShips.AddSquad(savedSquad);
@@ -379,9 +379,10 @@ namespace Assets.Scripts
             return savedSquad;
         }
 
-        public SavedSquad GetSquadByComposition(ConfigData.ShipTypes shipType, int shipCount)
+        public SavedSquad GetSquadByComposition(Level level, ConfigData.ShipTypes shipType, int shipCount)
         {
-            SavedSquad savedSquad = GetSavedSquads().Find((squad) => squad.GetSquadShips().Count == shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType) && squad.GetAliveSquadShips().Count > 0);
+            HashSet<SavedSquad> existingSquads = level.State.GetAllSquads().Select((squad) => squad.SavedSquad).ToHashSet();
+            SavedSquad savedSquad = GetSavedSquads().Find((squad) => squad.GetSquadShips().Count == shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType) && squad.GetAliveSquadShips().Count > 0 && !existingSquads.Contains(squad));
             if (savedSquad != null)
             {
                 return savedSquad;

@@ -203,7 +203,7 @@ public class DialogueManager : MonoBehaviour
         }
         else if (showOrHide)
         {
-            DisplayNextLineWithDelay(2f);
+            DisplayNextLineWithDelay(0f); // 2f
         }
     }
 

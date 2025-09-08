@@ -125,6 +125,7 @@ namespace Assets.Scripts.Data
         {
             if (!HasShip(ship.GetFleetShip()))
             {
+                Debug.Log($"Adding {ship.GetFleetShip().Name} #{ship.GetFleetShip().Id} to {Name}");
                 _ships.Add(ship);
             }
             

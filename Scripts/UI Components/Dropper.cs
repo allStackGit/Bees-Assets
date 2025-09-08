@@ -525,7 +525,7 @@ namespace Assets.Scripts.UIComponents
 
             if (HasHitDropBox(position))             // check if it's in the squad composition box
             {
-                Debug.Log("Has hit drop box");
+                //Debug.Log("Has hit drop box");
                 if (HasCurrentSquad && CurrentSquad.HasShips)
                 {
                     //Vector2 screenPoint = _scene.Camera.WorldToScreenPoint(ConfigData.ShipOffset);
@@ -550,7 +550,7 @@ namespace Assets.Scripts.UIComponents
                     }
                     else
                     {
-                        Debug.Log($"Too close to other ships");
+                        //Debug.Log($"Too close to other ships");
                         return false; // got to the squad box but too close to other ships
                     }
                 }
@@ -561,7 +561,7 @@ namespace Assets.Scripts.UIComponents
             }
             else
             {
-                Debug.Log("Didn't hit the squad drop box -----------------------------");
+                //Debug.Log("Didn't hit the squad drop box -----------------------------");
                 return false; // didn't drag over the squad maker box
             }
         }
@@ -572,7 +572,7 @@ namespace Assets.Scripts.UIComponents
             position = new Vector2(position.x, position.y);
             eventData.position = position;
             _scene.DropZone.transform.position = (Vector2)_scene.DropZone.transform.position;
-            Debug.Log($"Raycasting from {position}, trying to hit {_scene.DropZone.name} at {_scene.DropZone.transform.position}, autoplacing: {_isAutoPlacing}");
+            //Debug.Log($"Raycasting from {position}, trying to hit {_scene.DropZone.name} at {_scene.DropZone.transform.position}, autoplacing: {_isAutoPlacing}");
 
 
             List<RaycastResult> results = new List<RaycastResult>();
@@ -593,7 +593,7 @@ namespace Assets.Scripts.UIComponents
 
                 foreach (RaycastResult hit in results)
                 {
-                    Debug.Log($"This raycast hit {hit.gameObject.name}, Hit #3 is {thirdHit.gameObject.name}"); 
+                    //Debug.Log($"This raycast hit {hit.gameObject.name}, Hit #3 is {thirdHit.gameObject.name}"); 
                     if (hit.gameObject == _scene.DropZone && 
                         (
                             (
@@ -609,7 +609,7 @@ namespace Assets.Scripts.UIComponents
                 }
             }
 
-            Debug.Log($"Third hit {thirdHit} ---------------------------------------");
+            //Debug.Log($"Third hit {thirdHit} ---------------------------------------");
             return false;
         }
         private bool NotTooCloseToSquadShips(Vector2 position, Vector2 tooClose, SquadShip ship)

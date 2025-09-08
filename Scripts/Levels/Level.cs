@@ -247,12 +247,12 @@ namespace Assets.Scripts.Levels
             if ((CurrentLevelOptions.Mining == -1  && !HasObstacles && Utilities.CoinToss()) || CurrentLevelOptions.Mining == 1)
             {
                 ActivateMining = true;
-                //Debug.Log($"The map has mining");
+                Debug.Log($"The map has mining");
             }
             else
             {
                 ActivateMining = false;
-                //Debug.Log($"The map does not have mining");
+                Debug.Log($"The map does not have mining");
             }
 
             // This currently has an override (the " && false" at the end) to prevent reinforcements
@@ -364,10 +364,10 @@ namespace Assets.Scripts.Levels
         private MiningAsteroid _spawn_miningAsteroid;
         public Vector2 MiningAsteroidSpawnDistance;
         private int _spawn_i;
-        private void SpawnMiningAsteroids()
+        private void SpawnMiningAsteroids(int minimum = 1, int maximum = 5)
         {
             MiningAsteroidSpawnDistance = new Vector2(HalfMapWidth - 64, HalfMapHeight - 64);
-            for (_spawn_i = 0; _spawn_i < Utilities.RandomInt(5) + 1; _spawn_i++)
+            for (_spawn_i = 0; _spawn_i < Utilities.RandomInt((maximum + 1)-minimum) + minimum; _spawn_i++)
             {
                 _spawn_miningAsteroid = Stage.Pool.GetMiningAsteroidFromPool();
                 _spawn_miningAsteroid.Setup(this);
@@ -847,7 +847,7 @@ namespace Assets.Scripts.Levels
             AllSquads.AddRange(CurrentLevelOptions.EnemyReinforcements);
             //AllSquads.AddRange(CurrentLevelOptions.FriendlyReinforcements);
 
-            if (ActivateMining)
+            if (ActivateMining && ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
             {
                 SpawnMiningAsteroids();
             }

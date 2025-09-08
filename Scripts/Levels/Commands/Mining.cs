@@ -143,13 +143,14 @@ namespace Assets.Scripts.Levels.Commands
                     TargetAstroid.Health -= _amountMined;
                     //Debug.Log($"{GetSquad().Name} mined {_amountMined} from {TargetAstroid.Name}. It has {TargetAstroid.Health} health left");
 
-                    _amountPerShip = _amountMined / ShipsCurrentlyMining.Count; // this isn't exactly the same as MiningRate because the shsip might have mined the last of the asteroid
+                    _amountPerShip = _amountMined / ShipsCurrentlyMining.Count; // this isn't exactly the same as MiningRate because the ships might have mined the last of the asteroid
                     ShipsCurrentlyMining.ForEach((ship) =>
                     {
                         if (!ship.IsDead)
                         {
                             ship.FleetShip.MineralsMinedThisLevel += _amountPerShip;
                             ship.Tsv += _amountPerShip;
+                            //Debug.Log($"Just added {_amountPerShip} to {ship.Name}:{ship.FleetShip.Id} TSV. It's now at {ship.Tsv}");
                         }
 
                     });

@@ -15,8 +15,8 @@ namespace Assets.Scripts.Entities.Projectiles
         /// <summary>
         ///  After a few frames, the explosion is no longer damaging and becomes harmless to whoever hits it
         /// </summary>
-        private bool _isHarmless;
-        private HashSet<Ship> _shipsHit = new HashSet<Ship>();
+        public bool IsHarmless;
+        public List<Ship> _shipsHit = new List<Ship>();
         private HashSet<Obstacle> _obstaclesHit = new HashSet<Obstacle>();
         public CircleCollider2D CircleCollider;
 
@@ -25,11 +25,21 @@ namespace Assets.Scripts.Entities.Projectiles
             base.ClearData();
             _shipsHit.Clear();
             _obstaclesHit.Clear();
-            _isHarmless = false;
+            IsHarmless = false;
+        }
+        public override void Activate()
+        {
+            base.Activate();
+            CircleCollider.enabled = true;
+        }
+        public override void Deactivate()
+        {
+            base.Deactivate();
+            CircleCollider.enabled = false;
         }
         public override void ContactTarget(Ship target)
         {
-            //Debug.Log($"Explosion hit {target.Name}");
+            //Debug.Log($"Explosion {Name} hit {target.Name}");
             _shipsHit.Add(target);
         }
 
@@ -71,7 +81,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
         public void SetHarmless()
         {
-            _isHarmless = true;
+            IsHarmless = true;
             //Debug.Log($"{Name} is now harmless");
         }
         public override void RemoveDamageSentEntry()
@@ -105,13 +115,13 @@ namespace Assets.Scripts.Entities.Projectiles
 
         protected override void ShipCollision(Ship ship)
         {
-            //Debug.Log($"Rocket explosion collided with {ship.Name}");
+            //Debug.Log($"Rocket explosion {Name} collided with {ship.Name}");
             if (!ship.IsDead)
             {
                 // if hit enemy projectile or Fire Barge explosion
                 if ((!IsFriendly(ship) || (Shooter.ShipType == ConfigData.ShipTypes.FireBarge && this != Shooter)))
                 {
-                    if (!_isHarmless && !HasHitShip(ship)) // if it's an explosion it should do damage but not if it's already contacted the ship
+                    if (!IsHarmless && !HasHitShip(ship)) // if it's an explosion it should do damage but not if it's already contacted the ship
                     {
                         ContactTarget(ship);
                         Ship.LogAttackingDamage(Power, Shooter, FleetShip, SavedSquad, ship);

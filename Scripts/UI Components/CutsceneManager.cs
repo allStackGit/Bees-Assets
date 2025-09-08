@@ -40,6 +40,7 @@ public class CutsceneManager : MonoBehaviour
         Portraits["Marco"] = Resources.LoadAll<Sprite>("Sprites/Portraits/marco_chat");
         Portraits["Yoshiko"] = Resources.LoadAll<Sprite>("Sprites/Portraits/yoshiko_chat");
         Portraits["Joey"] = Resources.LoadAll<Sprite>("Sprites/Portraits/joey_chat");
+        Portraits["Wesley"] = Resources.LoadAll<Sprite>("Sprites/Portraits/wesley_chat");
 
         PlutoLines_Anomaly = new List<DialogueLine>
         {
@@ -161,8 +162,23 @@ public class CutsceneManager : MonoBehaviour
         PlutoToNeptune = new List<DialogueLine>
         {
             new DialogueLine("Samuel", Portraits["Samuel"], "What do we do now? Those… bees outnumber us."),
-            new DialogueLine("Marco", Portraits["Marco"], "Badly"),
-
+            new DialogueLine("Marco", Portraits["Marco"], "Badly."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "That doesn’t mean we lose!"),
+            new DialogueLine("Joey", Portraits["Joey"], "But it’s a heck of a lot harder."),
+            new DialogueLine("Marco", Portraits["Marco"], "And I’m not going into a fight like that unless I absolutely have to."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "What we need is allies."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Just because interplanetary comms are cut off doesn’t mean others aren’t still out there… right?"),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "They couldn’t have destroyed all the United Fleet. It’s the finest military presence in the solar system!"),
+            new DialogueLine("Marco", Portraits["Marco"], "The <i>only</i> military presence in the solar system. Until now. And we don’t know how many more bees there are."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "There’s no way they could take Mars… or even Earth."),
+            new DialogueLine("Marco", Portraits["Marco"], "No way to know."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "The next closest human settlement is Neptune. Commander, I recommend we go there."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "There might be survivors!"),
+            new DialogueLine("Joey", Portraits["Joey"], "It’s just a Jensen mining facility, so we won’t find any more United Fleet help. But we can help anyone that’s sticking it out."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "And our production carriers can use those to make us ships!"),
+            new DialogueLine("Joey", Portraits["Joey"], "If there’s still anything left there."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "It’s our best option right now. If Neptune is wiped out, then we move on."),
+            new DialogueLine("Joey", Portraits["Joey"], "And if it’s not, we have to deal with Wesley…"),
         };
 
         Neptune_SeizeTheMeans = new List<DialogueLine>
@@ -170,6 +186,100 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Samuel", Portraits["Samuel"], "We’re approaching Neptune to see if we can gather any allies there."),
             new DialogueLine("Samuel", Portraits["Samuel"], "The scout team has reported movement, but were unable to determine if it’s friendly or not. We’ll just have to find out."),
 
+            new DialogueLine("Samuel", Portraits["Samuel"], "Sir, we’re getting an emergency signal from somewhere on Neptune."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "-day, Mayd- this is an emerg- enem- facility dest- need evac-"),
+            new DialogueLine("Samuel", Portraits["Samuel"], "It’s very faint, but it’s clear we need to go help."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "It looks like the bees are gathered around ore-rich asteroids around the planet. Scouts are reporting the mining facility on the surface is flattened."),
+            new DialogueLine("Joey", Portraits["Joey"], "There’s an underground bunker beneath the facility. I’ll be damned if that’s not where the signal is coming from."),
+            new DialogueLine("Marco", Portraits["Marco"], "Let’s clear out those bees so we can land safely."),
+
+            new DialogueLine("Samuel", Portraits["Samuel"], "Strange, that ship doesn’t seem to be firing back."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Why won’t they fight?! Cowards."),
+            new DialogueLine("Marco", Portraits["Marco"], "Can it, Yoshiko. Look, they’re attached to the asteroid’s surface."),
+            new DialogueLine("Joey", Portraits["Joey"], "Mining ships. I know Jensen was working on a model like that. Just less… insectile."),
+
+            new DialogueLine("Samuel", Portraits["Samuel"], "Great work, commander. We can check the facility now."),
+
+            new DialogueLine("Samuel", Portraits["Samuel"], "We’ve lost all the squads we sent out, commander. There’s no safe way onto Neptune."),
+            new DialogueLine("Marco", Portraits["Marco"], "There’s not much time to hang around here. The closest United Fleet base is on Uranus. We can find help there. Those people in the mining facility will just have to hang on a bit longer until others can come back."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Scouts are reporting a bee blockade between here and Uranus. We’ll have to break it."),
+
+            
+            new DialogueLine("Samuel", Portraits["Samuel"], "Commander, we’ve rescued the mining personnel from their bunker. Their leader has come to speak with you."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "I’m no leader. That would be my manager, Derek. I’m simply the regional head of the accounting department for Jensen Industries."),
+            new DialogueLine("Joey", Portraits["Joey"], "Same as always."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "Ah, greetings, Joey."),
+            new DialogueLine("Joey", Portraits["Joey"], "Howdy. Where’s Derek, then?"),
+            new DialogueLine("Wesley", Portraits["Wesley"], "Derek is no longer with us. He didn’t make it to the bunker in time. I’ve been the de facto leader for the remaining Jensen personnel."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Then why did you say-"),
+            new DialogueLine("Joey", Portraits["Joey"], "Don’t bother. Wesley, tell us what we need to know for this war against the bees."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "Bees? Is that what’s attacking us? I was not aware they had the biology to survive in space. They’re hardly surviving on Earth any longer, due to-"),
+            new DialogueLine("Marco", Portraits["Marco"], "They’re not bees."),
+            new DialogueLine("Joey", Portraits["Joey"], "They just look like ‘em. Easier to call ‘em that."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "Ah. Right. Of course. Well, these… bees quickly disposed of our contracted defense team and started bombing the surface. The emergency code was sent, and we all attempted to secure ourselves in the underground bunker. Not everyone made it."),
+            new DialogueLine("Marco", Portraits["Marco"], "Great. So we have an accountant-"),
+            new DialogueLine("Wesley", Portraits["Wesley"], "Regional head of the accounting department."),
+            new DialogueLine("Marco", Portraits["Marco"], "………"),
+            new DialogueLine("Marco", Portraits["Marco"], "We have that and a bunch of miners, then? This isn’t really helping our chances."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "Well, um, we do have a line of prototype factory ships, capable of mining ore-rich asteroids, as well as personnel trained to man them."),
+            new DialogueLine("Joey", Portraits["Joey"], "And plenty of those asteroids nearby. Well, I’ll be, Wesley, this really is helpful"),
+            new DialogueLine("Wesley", Portraits["Wesley"], "They are property of Jensen Corporation, and all personnel including myself are on their payroll. I’m sure we can reach some sort of agreement for their use, perhaps a loan."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "But of course, these ships are the intellectual property of Jensen, so I can’t have any of you stealing these plans."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "We don’t have any way to contact Jensen Corporation, Wesley."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "Well, that is unfortunate. I do need approval from a home office manager before I-"),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "How many punches does it take to get him to shut up?"),
+            new DialogueLine("Joey", Portraits["Joey"], "I dunno, you’ll have to just try until he quiets down."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "N-nw, now, I’m sure w-we don’t have to resort to such… b-barbaric means! We’re all adults here!"),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "I'm thinking at least a dozen. Six to the nose and six to the stomach."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "Ahh! Please don’t engage in a physical altercation, it’s far from necessary! Please, use the factory ships however you please! We can negotiate fair compensation once we’ve made contact with my superiors."),
+            new DialogueLine("Joey", Portraits["Joey"], "There ya go, commander. Factory ships at your disposal."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Thank you, Wesley."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "Yes, of course, just leave my nose intact, please. It’s my best feature."),
+            
+            
+            /*
+             * 
+             *  new DialogueLine("Samuel", Portraits["Samuel"], ""),
+             *  new DialogueLine("Marco", Portraits["Marco"], ""),
+             *  new DialogueLine("Oviya", Portraits["Oviya"], ""),
+             *  new DialogueLine("Joey", Portraits["Joey"], ""),
+             *  new DialogueLine("Wesley", Portraits["Wesley"], ""),
+             *  new DialogueLine("Yoshiko", Portraits["Yoshiko"], ""),
+             * */
+
+            /*
+             Samuel: Commander, we’ve rescued the mining personnel from their bunker. Their leader has come to speak with you.
+Wesley: I’m no leader. That would be my manager, Derek. I’m simply the regional head of the accounting department for Jensen Industries.
+Joey: Same as always.
+Wesley: Ah, greetings, Joey.
+Joey: Howdy. Where’s Derek, then?
+Wesley: Derek is no longer with us. He didn’t make it to the bunker in time. I’ve been the de facto leader for the remaining Jensen personnel.
+Samuel: Then why did you say-
+Joey: Don’t bother. Wesley, tell us what we need to know for this war against the bees.
+Wesley: Bees? Is that what’s attacking us? I was not aware they had the biology to survive in space. They’re hardly surviving on Earth any longer, due to-
+Marco: They’re not bees.
+Joey: They just look like ‘em. Easier to call ‘em that.
+Wesley: Ah. Right. Of course. Well, these… bees quickly disposed of our contracted defense team and started bombing the surface. The emergency code was sent, and we all attempted to secure ourselves in the underground bunker. Not everyone made it.
+Marco: Great. So we have an accountant-
+Wesley: Regional head of the accounting department.
+Marco: ………
+Marco: We have that and a bunch of miners, then? This isn’t really helping our chances.
+Wesley: Well, um, we do have a line of prototype factory ships, capable of mining ore-rich asteroids, as well asand personnel trained to man them.
+Joey: And plenty of those asteroids nearby. Well, I’ll be, Wesley, this really isis really helpful.
+Wesley: They are property of Jensen Corporation, and all personnel including myself are on their payroll. I’m sure we can reach some sort of agreement for their use, perhaps a loan. But of course, these ships are the intellectual property of Jensen, so I can’t have any of you stealing these plans.
+Samuel: We don’t have any way to contact Jensen Corporation, Wesley.
+Wesley: Well, that is unfortunate. I do need approval from a home office manager before I-
+Yoshiko: How many punches does it take to get him to shut up?
+Joey: I dunno, you’ll have to just try until he quiets down.
+Wesley: N-nw, now, I’m sure w-we don’t have to resort to such… b-barbaric means! We’re all adults here!
+Yoshiko: I’m thinking at least a dozen. Six to the nose and six to the stomach.
+Wesley: Ahh! Please don’t engage in a physical altercation, it’s far from necessary! Please, use the factory ships however you please! We can negotiate fair compensation once we’ve made contact with my superiors.
+Joey: There ya go, commander. Factory ships at your disposal.
+Samuel: Thank you, Wesley.
+Wesley: Yes, of course, just leave my nose intact, please. It’s my best feature.
+
+
+             */
         };
 
         AllDialogues = new List<List<DialogueLine>> { PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLines_BluerPastures, PlutoToNeptune, Neptune_SeizeTheMeans };

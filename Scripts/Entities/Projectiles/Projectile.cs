@@ -234,7 +234,7 @@ namespace Assets.Scripts.Entities.Projectiles
         protected virtual void OnTriggerEnter2D(Collider2D collider) // projectile collision
         {
             _collidingThing = collider.gameObject;
-            //Debug.Log($"Projectile {Name} collided with {collidingThing.name}");
+            //Debug.Log($"Projectile {Name} collided with {_collidingThing.name}");
             if (_collidingThing.CompareTag("Ship"))
             {
                 CollidingQueue.Enqueue(_collidingThing.GetComponent<Ship>());
