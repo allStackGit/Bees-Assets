@@ -50,6 +50,7 @@ namespace Assets.Scripts.Entities.Ships
         {
             // Create Squad
             Squad squad = Stage.Pool.GetSquadFromPool();
+            squad.IsMinionSquad = true;
             squad.Setup(
                 Level,
                 Squad.SavedSquad,

@@ -42,7 +42,7 @@ namespace Assets.Scripts.Levels
         /// </summary>
         public GameObject SquadBox;
         public SquadTab SquadTab;
-        public bool HasMovedBox, IsMatchingSpeed, IsImmobile, CeaseFire, HasAddedShips, IsShowingRanges, IsGrowingSquad, HasCustomColor, HasSquadTab, HasSquadBox;
+        public bool HasMovedBox, IsMatchingSpeed, IsImmobile, CeaseFire, HasAddedShips, IsShowingRanges, IsGrowingSquad, HasCustomColor, HasSquadTab, HasSquadBox, IsMinionSquad;
         public Vector2 Destination;
         /// <summary>
         /// It's important to check for the death of a squad on anything run by a timer outside of the squad object

@@ -16,6 +16,7 @@ namespace Assets.Scripts.Levels
         {
             base.Create(stage);
             SquadType = ConfigData.SquadTypes.CarrierSquad;
+            IsMinionSquad = true;
         }
         public void SetupCarrierSquad(Carrier carrier, ConfigData.ShipTypes squadType)
         {

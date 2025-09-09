@@ -9,6 +9,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.Rendering.Universal;
 using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 using static Assets.Scripts.ConfigData;
 using static UnityEngine.GraphicsBuffer;
 
@@ -22,7 +23,7 @@ namespace Assets.Scripts.Levels
         /// This represents an amount of value that the player has accomplished for a given level like rescuing personnel that in turn translates to reinforcements or some other bonus
         /// </summary>
         private int _questPoints;
-        private bool _hasSetLevelRetreat;
+        private bool _someShipsHaveRetreated;
         /// <summary>
         /// Sets all the triggers for events in the level. Triggers are checked every 5 seconds so this currently has a maximum precision of 5 seconds
         /// </summary>
@@ -46,6 +47,9 @@ namespace Assets.Scripts.Levels
                     break;
                 case 4:
                     Level4Triggers();
+                    break;
+                case 5:
+                    Level5Triggers();
                     break;
             }
         }
@@ -1098,18 +1102,6 @@ namespace Assets.Scripts.Levels
         }
         public void Level4Triggers()
         {
-            NextTriggers.Add(new Trigger(() =>
-                {
-                    return true;
-                },
-                () =>
-                {
-
-                },
-                "Level 2 Leafcutter splitter shot")
-            );
-
-            //Stage.EnablePlayerControl();
             HasContinuousTriggers = true;
 
             Stage.CutsceneManager.Setup(() =>
@@ -1140,8 +1132,17 @@ namespace Assets.Scripts.Levels
                 () =>
                 {
                     // Show mining locations on Mini map
+                    GameObject[] minimapIcons = new GameObject[5];
+                    for (int i = 0; i < 5; i++)
+                    {
+                        minimapIcons[i] = Instantiate(Stage.Prefabs.MinimapCircle, Map.transform);
+                        minimapIcons[i].transform.localPosition = miningAsteroids[i].transform.localPosition;
+                        minimapIcons[i].GetComponent<SpriteRenderer>().color = Color.red;
+                        minimapIcons[i].transform.localScale = new Vector2(24, 24);
 
-                    Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Neptune_OfProduction.GetRange(3, 2));
+                    }
+
+                    Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Neptune_OfProduction.GetRange(3, 3));
 
                     NextTriggers.Add(new Trigger(() =>
                         {
@@ -1151,66 +1152,39 @@ namespace Assets.Scripts.Levels
                         {
                             Stage.EnablePlayerControl();
                             // Hide the mining locations on the mini map
+                            for (int i = 0; i < minimapIcons.Length; i++)
+                            {
+                                Destroy(minimapIcons[i]);
+                            }
 
                             // Show the mining tooltips
+                            GameObject basicTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
+                            basicTooltip.SetActive(true);
+                             basicTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "To mine, first select your factory ships, then right click on ore-rich asteroids. Once the factory ship arrives, it will automatically begin collecting materials."; ;
+                            basicTooltip.GetComponent<RectTransform>().localPosition = new Vector2(0, 0);
+                            basicTooltip.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(150, 200);
+
+
+                            GameObject endMissionTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
+                            endMissionTooltip.SetActive(true);
+                            endMissionTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "You can retreat from the mission at any time. Click on the Retreat button in the menu and an area will appear on the left side of the map where your ships can retreat to safety.";
+                            endMissionTooltip.GetComponent<RectTransform>().localPosition = new Vector2(-400, 0);
+                            endMissionTooltip.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(150, 200);
+
 
                             // Show button to end mission
+                            Stage.Menus.RetreatButton.SetActive(true);
+                            Stage.Menus.RetreatButton.GetComponent<Button>().onClick.AddListener(SetRetreatForLevel4);
+
+
+                            ScaledTimer hideTooltips = new ScaledTimer(30f, () =>
+                            {
+                                Destroy(basicTooltip);
+                                Destroy(endMissionTooltip);
+                            });
+                            AddTimer(hideTooltips);
 
                             // Set timers for Bee waves
-
-                            // 9 Honeybee squads of 2
-                            for (int i = 0; i < 9; i++)
-                            {
-                                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Honeybee, 2);
-                            }
-
-                            // 3 Wasp sqauds of 4
-                            for (int i = 0; i < 5; i++)
-                            {
-                                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 4);
-                            }
-
-                            // 10 Wasp sqauds of 6
-                            for (int i = 0; i < 10; i++)
-                            {
-                                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 6);
-                            }
-
-                            // 4 Hornet squads of 4
-                            for (int i = 0; i < 4; i++)
-                            {
-                                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 4);
-                            }
-
-                            // 2 Hornet squads of 6
-                            for (int i = 0; i < 2; i++)
-                            {
-                                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 6);
-                            }
-
-                            // 8 Hornet squads of 8
-                            for (int i = 0; i < 7; i++)
-                            {
-                                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 8);
-                            }
-
-                            // 15 Yellow Jacket squads of 4
-                            for (int i = 0; i < 15; i++)
-                            {
-                                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.YellowJacket, 4);
-                            }
-
-                            // 2 Leafcutter squads of 4
-                            for (int i = 0; i < 2; i++)
-                            {
-                                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Leafcutter, 4);
-                            }
-
-                            // 8 Leafcutter squads of 6
-                            for (int i = 0; i < 8; i++)
-                            {
-                                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Leafcutter, 6);
-                            }
 
                             // Wave 1 @ 2 Minutes
                             // 2 Squads of 2 Honeybees
@@ -1227,7 +1201,7 @@ namespace Assets.Scripts.Levels
                                     ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4)
                                 }, CurrentLevelOptions.AIStartingPosition - new Vector2(-100, 0), CurrentLevelOptions.AIStartingPosition);
 
-                                Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Neptune_OfProduction[5]);
+                                Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Neptune_OfProduction[6]);
                             });
 
                             AddTimer(wave1);
@@ -1248,18 +1222,18 @@ namespace Assets.Scripts.Levels
                                     ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4)
                                 }, CurrentLevelOptions.AIStartingPosition - new Vector2(-100, 0), CurrentLevelOptions.AIStartingPosition);
 
-                                Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Neptune_OfProduction[Utilities.RandomInt(5) + 7]);
+                                Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Neptune_OfProduction[Utilities.RandomInt(5) + 8]);
                             });
 
                             AddTimer(wave2);
 
-                            // Wave 3 @ 5 Minutes
+                            // Wave 3 @ 6 Minutes
                             // 1 Squad of 2 Honeybees
                             // 2 Squads of 4 Wasps
                             // 2 Squads of 6 Hornets
                             // 3 Squads of 4 Yellow Jackets
 
-                            ScaledTimer wave3 = new ScaledTimer(300f, () =>
+                            ScaledTimer wave3 = new ScaledTimer(360f, () =>
                             {
                                 Debug.Log($"Spawning Bee reinforcements wave 3");
 
@@ -1274,12 +1248,12 @@ namespace Assets.Scripts.Levels
                                     ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4),
                                 }, CurrentLevelOptions.AIStartingPosition - new Vector2(-100, 0), CurrentLevelOptions.AIStartingPosition);
 
-                                Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Neptune_OfProduction[6]);
+                                Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Neptune_OfProduction[7]);
                             });
                             AddTimer(wave3);
 
 
-                            // Wave 4 @ 6 Minutes
+                            // Wave 4 @ 8 Minutes
                             // 1 Squad of 2 Honeybees
                             // 2 Squad of 6 Wasps
                             // 2 Squad of 8 Hornets
@@ -1287,7 +1261,7 @@ namespace Assets.Scripts.Levels
                             // 2 Squads of 4 Leafcutters
                             // All squads not previously killed
                             ScaledTimer wave5 = new ScaledTimer();
-                            ScaledTimer wave4 = new ScaledTimer(360f, () =>
+                            ScaledTimer wave4 = new ScaledTimer(480f, () =>
                             {
                                 Debug.Log($"Spawning Bee reinforcements wave 4");
 
@@ -1313,9 +1287,9 @@ namespace Assets.Scripts.Levels
 
                                 AddReinforcementSquads(reinforcementSquads, CurrentLevelOptions.AIStartingPosition - new Vector2(-100, 0), CurrentLevelOptions.AIStartingPosition);
 
-                                Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Neptune_OfProduction[Utilities.RandomInt(5) + 7]);
+                                Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Neptune_OfProduction[Utilities.RandomInt(5) + 8]);
 
-                                // Wave 5+ @ 7+ Minutes
+                                // Wave 5+ @ 9+ Minutes
                                 // 1 Squad of 2 Honeybees
                                 // 2 Squad of 6 Wasps + 2 / per wave
                                 // 2 Squad of 8 Hornets + 1 / per wave
@@ -1356,7 +1330,7 @@ namespace Assets.Scripts.Levels
 
                                     AddReinforcementSquads(reinforcementSquads, CurrentLevelOptions.AIStartingPosition - new Vector2(-100, 0), CurrentLevelOptions.AIStartingPosition);
 
-                                    Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Neptune_OfProduction[Utilities.RandomInt(5) + 7]);
+                                    Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Neptune_OfProduction[Utilities.RandomInt(5) + 8]);
                                 }, true);
 
                                 AddTimer(wave5);
@@ -1370,24 +1344,24 @@ namespace Assets.Scripts.Levels
                             // Set dialogue triggers
                             NextTriggers.Add(new Trigger(() =>
                                 {
-                                    return State.IsSideKilled(ConfigData.Configuration.UserSide) && !_hasSetLevelRetreat;
+                                    return State.IsSideKilled(ConfigData.Configuration.UserSide) && !_someShipsHaveRetreated;
                                 },
                                 () =>
                                 {
                                     CancelTimer(wave5);
-                                    Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Neptune_OfProduction[2], true);
+                                    Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Neptune_OfProduction[14], true);
                                 },
                                 "Level 4 Player losing dialogue")
                             );
 
                             NextTriggers.Add(new Trigger(() =>
                                 {
-                                    return State.IsSideKilled(ConfigData.Configuration.UserSide) && _hasSetLevelRetreat;
+                                    return State.IsSideKilled(ConfigData.Configuration.UserSide) && _someShipsHaveRetreated;
                                 },
                                () =>
                                {
                                    CancelTimer(wave5);
-                                   Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Neptune_OfProduction[2], true);
+                                   Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Neptune_OfProduction[15], true);
                                },
                                "Level 4 Player retreating dialogue")
                            );
@@ -1403,11 +1377,101 @@ namespace Assets.Scripts.Levels
         /// </summary>
         public void SetRetreatForLevel4()
         {
+            Stage.Menus.CloseDialogue();
             // Make exit zone
-            _hasSetLevelRetreat = true;
-            Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Neptune_OfProduction[2]);
-        }
+            ScaledTimer retreatDialogue = new ScaledTimer(1, () =>
+            {
+                Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Neptune_OfProduction[13]);
+            });
+            AddTimer(retreatDialogue);
 
+            // Green exit zone at left of the screen lights up
+            GameObject exitBox = Instantiate(Stage.Prefabs.ExitZonePrefab, Map.transform);
+            exitBox.transform.localPosition = new Vector2(-512, 0);
+            exitBox.transform.localScale = new Vector2(50, 256);
+            Zone exitZone = exitBox.GetComponent<Zone>();
+
+            exitZone.OnShipEnter = (ship) =>
+            {
+                if (ship.Side == ConfigData.Configuration.UserSide)
+                {
+                    _someShipsHaveRetreated = true;
+                    ship.EndKill();
+                }
+            };
+        }
+        public void Level5Triggers()
+        {
+            NextTriggers.Add(new Trigger(() =>
+            {
+                return true;
+            },
+                () =>
+                {
+
+                },
+                "Level  Leafcutter splitter shot")
+            );
+            HasContinuousTriggers = true;
+
+            Stage.CutsceneManager.Setup(() =>
+            {
+                Level5Ending();
+            });
+
+            // Spawn the Bees
+
+            // 1 Squad of 2 Leafcutters
+            // 2 Squads of 6 Hornets
+            // 2 Squads of 2 Honeybees
+            // 1 Squad of 4 Wasps
+
+            AddReinforcementSquads(new List<SavedSquad>() {
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 2),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4),
+            }, CurrentLevelOptions.AIStartingPosition - new Vector2(-100, 0), CurrentLevelOptions.AIStartingPosition);
+
+            Stage.EnablePlayerControl();
+            // Spawn the exit zone
+            //GameObject exitBox = Instantiate(Stage.Prefabs.ExitZonePrefab, Map.transform);
+            //exitBox.transform.localPosition = new Vector2(512, 0);
+            //exitBox.transform.localScale = new Vector2(50, 256);
+            //Zone exitZone = exitBox.GetComponent<Zone>();
+
+            //exitZone.OnShipEnter = (ship) =>
+            //{
+            //    if (ship.Side == ConfigData.Configuration.UserSide)
+            //    {
+            //        _someShipsHaveRetreated = true;
+            //        ship.EndKill();
+            //    }
+            //};
+
+            // Set dialogue triggers
+            NextTriggers.Add(new Trigger(() =>
+            {
+                return State.IsSideKilled(ConfigData.Configuration.UserSide) || State.IsSideKilled(ConfigData.Configuration.AISide);
+            },
+                () =>
+                {
+                    if (State.IsSideKilled(ConfigData.Configuration.AISide)) // Player won
+                    {
+                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Neptune_PressingForward.GetRange(1, 4), true);
+
+                    }
+                    else
+                    {
+                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Neptune_PressingForward.GetRange(5, 2), true);
+                    }
+                },
+                "Level 5 Ending dialogue")
+            );
+
+        }
 
         public void Level0Ending()
         {
@@ -1753,7 +1817,22 @@ namespace Assets.Scripts.Levels
         public void Level4Ending()
         {
             Debug.Log("Level 4 complete");
-            return;
+
+            // Advance to next level in campaign
+            ConfigData.UserProgressData.AdvanceToNextLevel();
+
+            ConfigData.UserProgressData.Save();
+            CurrentShips.SaveSquadData();
+            CurrentShips.SaveFleetData();
+
+
+            State.GameOver = true;
+            Stage.Menus.ShowLevelContinueDialogue();
+        }
+        public void Level5Ending()
+        {
+            Debug.Log("Level 5 complete");
+            //return;
 
             // Advance to next level in campaign
             ConfigData.UserProgressData.AdvanceToNextLevel();
@@ -1819,11 +1898,13 @@ namespace Assets.Scripts.Levels
             {
                 if (spawnedSquads.Contains(squads[i]))
                 {
+                    //Debug.Log($"{squads[i]} has already been spawned onto the level, getting a new squad with the same composition");
                     squads[i] = CurrentShips.GetSquadByComposition(this, squads[i].GetSquadShips()[0].ShipType, squads[i].GetSquadShips().Count);
                 }
                 if (squads[i] != null)
                 {
                     spawnedSquads.Add(squads[i]);
+                    //Debug.Log($"Spawning squad onto level: {squads[i]}");
                     LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() { squads[i] }, startingPosition, nextPosition, true);
                 }
 

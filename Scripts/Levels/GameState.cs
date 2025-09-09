@@ -155,16 +155,28 @@ namespace Assets.Scripts.Levels
         public void AddShip(Ship ship)
         {
             // Debug.Log($"{ship.name} has been added to the state");
+            if (ship.FleetShip.IsLoadedIntoLevel)
+            {
+                Debug.LogError($"Trying to add {ship.Name} with fleet ship {ship.FleetShip} when that fleetship already exists in the level"); // [debug]
+            }
+            ship.FleetShip.IsLoadedIntoLevel = true;
             Ships.Add(ship);
             ShipsById.Add(ship.Id, ship);
         }
         public void AddSquad(Squad squad)
         {
+            //Debug.Log($"Adding {squad.SavedSquad} to level");
+            if (squad.SavedSquad.IsLoadedIntoLevel && !squad.IsMinionSquad)
+            {
+                Debug.LogError($"Trying to add {squad.SavedSquad.Name} when that saved squad already exists in the level"); // [debug]
+            }
+            squad.SavedSquad.IsLoadedIntoLevel = true;
             Squads.Add(squad);
             OriginalSquadCounts[squad.Side - 1]++;
         }
         public void RemoveSquad(Squad squad)
         {
+            squad.SavedSquad.IsLoadedIntoLevel = false;
             Squads.Remove(squad);
             SquadsToRelease.Add(squad);
         }
@@ -182,6 +194,7 @@ namespace Assets.Scripts.Levels
         }
         public void RemoveShip(Ship ship)
         {
+            ship.FleetShip.IsLoadedIntoLevel = false;
             Ships.Remove(ship);
             MiningShips.Remove(ship);
             ShipsById.Remove(ship.Id);

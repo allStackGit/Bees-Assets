@@ -19,6 +19,9 @@ namespace Assets.Scripts.Data
         /// </summary>
         public int FleetId = -1;
 
+        /// <summary>
+        ///  The current global saved squad Id of the next saved squad. Every saved squad of every game type gets its saved squad Id from here unless it's not being saved and has a negative Id
+        /// </summary>
         public int SavedSquadId = -1;
         public int HumanCampaignSavedSquadNumber = -1;
         public int BeeCampaignSavedSquadNumber = -1;
@@ -263,10 +266,10 @@ namespace Assets.Scripts.Data
             return FleetId++;
         }
         /// <summary>
-        /// Gets the next incremental Saved Squad Id Does not save the data to "disk"
+        /// Gets the next incremental Saved Squad Number for naming purposes. Does not save the data to "disk". Should only be used when creating the user's squads.
         /// </summary>
         /// <returns></returns>
-        public int GetNextSavedSquadId()
+        public int GetNextSavedSquadNumber()
         {
             if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
             {
@@ -293,6 +296,14 @@ namespace Assets.Scripts.Data
                 return BeeFreePlaySavedSquadNumber++;
             }
 
+        }
+        /// <summary>
+        /// Returns the next saved squad id. Used for uniquely identifying every saved squad regardless of game mode
+        /// </summary>
+        /// <returns></returns>
+        public int GetNextSavedSquadId()
+        {
+            return SavedSquadId++;
         }
 
 

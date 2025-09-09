@@ -24,7 +24,9 @@ namespace Assets.Scripts.Data
         public float Speed;
         public List<float> SpecialFirePower = new List<float>();
 
+        // Not saved to JSON
         public bool DoesBelongToSavedSquad;
+        public bool IsLoadedIntoLevel;
        
         public float Firepower => GetFirepower();
 
@@ -163,7 +165,7 @@ namespace Assets.Scripts.Data
         }
         public override string ToString()
         {
-            return $"#{Id} ({Type}) - {Name}";
+            return $"#{Id} ({Type}) - {Name} ({(IsDead ? "D" : "A")})";
         }
 
     }

@@ -12,8 +12,7 @@ public class CutsceneManager : MonoBehaviour
     public DialogueManager DialogueManager;
     public GameObject CutsceneCanvas;
     public Stage Stage;
-    public List<DialogueLine> PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLines_BluerPastures, PlutoToNeptune, Neptune_SeizeTheMeans, Neptune_OfProduction;
-    public List<List<DialogueLine>> AllDialogues;
+    public List<DialogueLine> PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLines_BluerPastures, PlutoToNeptune, Neptune_SeizeTheMeans, Neptune_OfProduction, Neptune_PressingForward, NeptuneToUranus, Uranus_OnTheOffensive;
     public bool PlutoLines_Anomaly_Completed = false;
     public bool HitDialogueBreak = false;
     public Action EndDialogueAction;
@@ -248,7 +247,8 @@ public class CutsceneManager : MonoBehaviour
 
             new DialogueLine("Oviya", Portraits["Oviya"], "The mining asteroids can be found at these locations."),
             new DialogueLine("Wesley", Portraits["Wesley"], "Our factory ships should be quite capable of increasing your prof- erm, resources in order to further bolster your fleet. Simply direct them to a mining location."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Collect these ores as long as you can, commander, but don’t risk too many lives. If a factory ship goes down, it’ll lose all the resources it collected. It won’t be worth it in the end."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Collect these ores as long as you can, commander, but don’t risk too many lives."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "If a factory ship goes down, it’ll lose all the resources it collected. It won’t be worth it in the end."),
 
             new DialogueLine("Oviya", Portraits["Oviya"], "It looks like there are bee scouting parties approaching. They’ll soon find out their fleet here was destroyed."),
 
@@ -259,6 +259,35 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Joey", Portraits["Joey"], "Gracious, how many more bees are there?"),
             new DialogueLine("Oviya", Portraits["Oviya"], "Scouts are reporting even more bees than before. Brace yourselves."),
             new DialogueLine("Samuel", Portraits["Samuel"], "Commander, get ready for another fight. We have bees incoming."),
+
+            new DialogueLine("Samuel", Portraits["Samuel"], "The commander is calling a retreat. Regroup for our next battle!"),
+            new DialogueLine("Samuel", Portraits["Samuel"], "We’ve lost all the ships we sent out, commander. It’s time to regroup."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "That's everyone commander, we made it out."),
+        };
+
+        Neptune_PressingForward = new List<DialogueLine>()
+        {
+            new DialogueLine("Samuel", Portraits["Samuel"], "It’s time to break through this blockade, commander. Use everything at your disposal."),
+
+            new DialogueLine("Samuel", Portraits["Samuel"], "Great work, commander! We’re free to travel to Uranus."),
+            new DialogueLine("Marco", Portraits["Marco"], "That was a tough fight, commander, you did well."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "We showed those bee losers who the real fighters are!"),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Don’t get too cocky now, Yoshiko. Let’s focus on what’s next."),
+
+            new DialogueLine("Samuel", Portraits["Samuel"], "Commander, we’ve lost contact with all our forces. What do we do now? The bees from Pluto are catching up."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "The fight diverted forces from elsewhere in the blockade. We can escape if we go now!"),
+
+
+        };
+
+        NeptuneToUranus = new List<DialogueLine>()
+        {
+
+        };
+
+        Uranus_OnTheOffensive = new List<DialogueLine>()
+        {
+
         };
 
         /*
@@ -276,17 +305,10 @@ public class CutsceneManager : MonoBehaviour
 
         /*
 
-Yoshiko: Incoming ships! Get ready for a fight!
-Marco: More bees. Hope you know what you’re doing, commander.
-Joey: Gracious, how many more bees are there? 
-Oviya: Scouts are reporting even more bees than before. Brace yourselves.
-Samuel: Commander, get ready for another fight. We have bees incoming.
-
+Samuel: Commander, we’ve lost contact with all our forces. What do we do now? The bees from Pluto are catching up.
+Oviya: The fight diverted forces from elsewhere in the blockade. We can escape if we go now!
 
          */
-
-        AllDialogues = new List<List<DialogueLine>> { PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLines_BluerPastures, PlutoToNeptune, Neptune_SeizeTheMeans, Neptune_OfProduction };
-
     }
     public void HideIntroMessage()
     {

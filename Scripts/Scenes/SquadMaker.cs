@@ -1255,7 +1255,7 @@ namespace Assets.Scripts.Scenes
             _currentSquad.Id = ConfigData.UserProgressData.GetNextSavedSquadId();
             if (_currentSquad.Name == "")
             {
-                _currentSquad.Name = $"Squadron #{_currentSquad.Id}";
+                _currentSquad.Name = $"Squadron #{ConfigData.UserProgressData.GetNextSavedSquadNumber()}";
             }
             ConfigData.CurrentShips.AddSquad(_currentSquad);
             AddSavedSquadToList(ConfigData.CurrentShips.GetSavedSquads().Last());

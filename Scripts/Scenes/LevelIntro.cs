@@ -60,8 +60,6 @@ namespace UIComponents
                             CutsceneManager.PlayDialogueSection(CutsceneManager.PlutoToNeptune, true);
                         }));
                     }
-
-
                     break;
                 case 4:
                     Debug.Log("Playing Neptune Of Production! dialogue.");
@@ -70,6 +68,35 @@ namespace UIComponents
                     {
                         CutsceneManager.PlayDialogueSection(CutsceneManager.Neptune_OfProduction.GetRange(0, 2), true);
                     }));
+                    break;
+                case 5:
+                    Debug.Log("Playing Neptune Pressing Forward dialogue.");
+                    ConfigData.HasSeenIntermission = true;
+                    StartCoroutine(DelayStart(3, () =>
+                    {
+                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Neptune_PressingForward[0], true);
+                    }));
+                    break;
+                case 6:
+                    Debug.Log("Playing Uranus On the Offensive dialogue.");
+
+                    if (ConfigData.HasSeenIntermission)
+                    {
+                        StartCoroutine(DelayStart(3, () =>
+                        {
+                            CutsceneManager.PlayDialogueSection(CutsceneManager.Uranus_OnTheOffensive.GetRange(0, 2), true);
+                        }));
+                    }
+                    else
+                    {
+                        SkipButton.SetActive(true);
+                        StartCoroutine(DelayStart(3, () =>
+                        {
+                            CutsceneManager.PlayDialogueSection(CutsceneManager.NeptuneToUranus, true);
+                        }));
+                    }
+
+
                     break;
             }
         }

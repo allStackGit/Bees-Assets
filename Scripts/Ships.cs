@@ -69,7 +69,7 @@ namespace Assets.Scripts
         }
         public FleetShip GetFirstAvailableShipOfType(ConfigData.ShipTypes type)
         {
-            return GetAvailableShips().Where((ship) => ship.Type == type).First();
+            return GetAvailableShips().Where((ship) => ship.Type == type).FirstOrDefault();
         }
         public List<FleetShip> GetVisibleAndAliveShipsOfType(ConfigData.ShipTypes type)
         {
@@ -374,7 +374,14 @@ namespace Assets.Scripts
             for (int i = 0; i < shipCount; i++) 
             {
                 FleetShip ship = CurrentShips.GetFirstAvailableShipOfType(shipType);
-                savedSquad.AddShipToSquad(new SquadShip(ship.Id, ship.Type, offsets[i]));
+                if (ship != null)
+                {
+                    savedSquad.AddShipToSquad(new SquadShip(ship.Id, ship.Type, offsets[i]));
+                }
+                else
+                {
+                    Debug.LogError($"Could not fully create {name} because there were only {i-1}/{shipCount} ships of {shipType}");
+                }
             }
             //Debug.Log($"Built {savedSquad}");
             CurrentShips.AddSquad(savedSquad);
@@ -384,11 +391,10 @@ namespace Assets.Scripts
 
         public SavedSquad GetSquadByComposition(Level level, ConfigData.ShipTypes shipType, int shipCount)
         {
-            HashSet<SavedSquad> existingSquads = level.State.GetAllSquads().Select((squad) => squad.SavedSquad).ToHashSet();
-            SavedSquad savedSquad = GetSavedSquads().Find((squad) => squad.GetSquadShips().Count == shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType) && squad.GetAliveSquadShips().Count > 0 && !existingSquads.Contains(squad));
+            SavedSquad savedSquad = GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetSquadShips().Count == shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType) && squad.GetAliveSquadShips().Count > 0);
             if (savedSquad != null)
             {
-                Debug.Log($"Got Squad {savedSquad}");
+                //Debug.Log($"Got Squad {savedSquad}");
                 return savedSquad;
             }
             else

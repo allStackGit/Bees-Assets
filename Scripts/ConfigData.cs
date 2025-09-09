@@ -1185,6 +1185,12 @@ namespace Assets.Scripts
 
                     break;
                 case 2:
+                case 3:
+                case 4: 
+                case 5:
+                case 6:
+                    //SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
+                    //return;
                     if (!HasSeenPreLevelIntro)
                     {
                         SceneManager.LoadSceneAsync("Level Intro", LoadSceneMode.Single);
@@ -1192,28 +1198,6 @@ namespace Assets.Scripts
                     else
                     {
                         HasSeenPreLevelIntro = false;
-                        SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
-                    }
-                    break;
-                case 3:
-                    if (!HasSeenPreLevelIntro)
-                    {
-                        SceneManager.LoadSceneAsync("Level Intro", LoadSceneMode.Single);
-                    }
-                    else
-                    {
-                        SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
-                    }
-                    break;
-                case 4:
-                    SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
-                    return;
-                    if (!HasSeenPreLevelIntro)
-                    {
-                        SceneManager.LoadSceneAsync("Level Intro", LoadSceneMode.Single);
-                    }
-                    else
-                    {
                         SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
                     }
                     break;

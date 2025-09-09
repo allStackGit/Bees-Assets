@@ -25,6 +25,9 @@ namespace Assets.Scripts.Data
         private List<SquadShip> _ships = new List<SquadShip>();
         private bool _hasChanged;
 
+        // Not saved to JSON
+        public bool IsLoadedIntoLevel;
+
         public bool HasMaxShips => GetSquadShips().Count == ConfigData.Configuration.MaxSquadSize;
         public bool IsEmptySquad => GetSquadShips().Count == 0 && Name == "" && !CeaseFire && !IsMatchingSpeed;
         public bool HasChanged => _hasChanged;
