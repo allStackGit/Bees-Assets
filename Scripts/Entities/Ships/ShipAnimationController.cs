@@ -31,7 +31,7 @@ namespace Assets.Scripts.Entities.Ships
                 if (Ship.Stage.LoadedShipAnimationSprites.ContainsKey(key))
                 {
                     RecoloredSprites = Ship.Stage.LoadedShipAnimationSprites[key];
-                    Debug.Log($"Loaded cached sprites from Stage instead of Disk for {Ship.ShipType} with {Ship.Squad.SavedSquad.Color}");
+                    //Debug.Log($"Loaded cached sprites from Stage instead of Disk for {Ship.ShipType} with {Ship.Squad.SavedSquad.Color}");
                 }
                 else
                 {

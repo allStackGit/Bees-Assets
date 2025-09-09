@@ -395,6 +395,8 @@ namespace Assets.Scripts.Levels
         private void CheckTriggers()
         {
             //Debug.Log($"Checking triggers");
+            Triggers.AddRange(NextTriggers);
+            NextTriggers.Clear();
 
             Triggers.ForEach((trigger) =>
             {
@@ -403,9 +405,9 @@ namespace Assets.Scripts.Levels
                     trigger.Action();
                 }
             });
+            //Triggers.AddRange(NextTriggers);
+            //NextTriggers.Clear();
             Triggers = Triggers.Where((trigger) => !trigger.HasBeenTriggered).ToList();
-            Triggers.AddRange(NextTriggers);
-            NextTriggers.Clear();
             if (!HasContinuousTriggers && Triggers.Count == 0) {
                 CancelTimer(_checkTriggersTimer);
                 //CancelInvoke(nameof(CheckTriggers));

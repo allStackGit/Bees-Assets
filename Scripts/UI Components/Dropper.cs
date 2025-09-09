@@ -188,7 +188,7 @@ namespace Assets.Scripts.UIComponents
                     FleetShip fleetShip = _currentDragIcon.GetFleetShip();
                     Vector2 worldPointPosition = _scene.Camera.ScreenToWorldPoint(position);
 
-                    Debug.Log($"World point position of dropped ship: {worldPointPosition}");
+                    //Debug.Log($"World point position of dropped ship: {worldPointPosition}");
 
                     _currentDragIcon.SetColor(squadColor);
                     Utilities.SetUIColor(_scene.SquadShipCount, ConfigData.GetUIColor("squad-ship-counter"));
@@ -206,7 +206,7 @@ namespace Assets.Scripts.UIComponents
                     {
                         if (!CurrentSquad.HasShip(fleetShip))
                         {
-                            CurrentSquad.AddShipToSquad(new SquadShip(fleetShip.Id, fleetShip.Type, worldPointPosition, CurrentSquad));
+                            CurrentSquad.AddShipToSquad(new SquadShip(fleetShip.Id, fleetShip.Type, worldPointPosition));
                         }
                         else
                         {
@@ -224,7 +224,7 @@ namespace Assets.Scripts.UIComponents
                             false, false, ConfigData.DefaultShootingStrategy, squadColor));
 
                         CurrentSquad.SetChanged(true);
-                        CurrentSquad.AddShipToSquad(new SquadShip(fleetShip.Id, fleetShip.Type, worldPointPosition, CurrentSquad));
+                        CurrentSquad.AddShipToSquad(new SquadShip(fleetShip.Id, fleetShip.Type, worldPointPosition));
 
                         if (_scene.HasActionBox)
                         {
@@ -282,7 +282,7 @@ namespace Assets.Scripts.UIComponents
 
                 Vector2 change = Utilities.WorldUnitsToScreenPixels(ConfigData.ShipOffset, _scene.Camera) * 1.05f;
 
-                Debug.Log($"Ship offset world units for auto placing: {ConfigData.ShipOffset}, screen pixels {change}");
+                //Debug.Log($"Ship offset world units for auto placing: {ConfigData.ShipOffset}, screen pixels {change}");
 
                 //Debug.Log($"change: {change}");
 
@@ -291,7 +291,7 @@ namespace Assets.Scripts.UIComponents
 
 
                 Vector2 position = new Vector2(_scene.DropBox.transform.position.x+30, _scene.DropBox.transform.position.y + ConfigData.OffsetFromCenterOfSquadMakerDropBox);
-                Debug.Log($"Position after auto dropping {position}");
+                //Debug.Log($"Position after auto dropping {position}");
                 float movement;
                 float movementDown = level * yIncrement;
                 int steps = ships;

@@ -98,7 +98,7 @@ namespace Assets.Scripts.Levels
         public float SlowestSpeed => GetShips().Min(s => s.Speed);
         public bool HasEnemy => HasCommand && GetCommand().HasEnemy;
         public bool IsAttacking => HasCommand && GetCommand().IsAttacking;
-        public Vector2 StartingPosition => Side == ConfigData.Configuration.UserSide ? Level.Map.UserStartingPosition : Level.Map.AIStartingPosition;
+        public Vector2 StartingPosition => Side == ConfigData.Configuration.UserSide ? Level.CurrentLevelOptions.UserStartingPosition : Level.CurrentLevelOptions.AIStartingPosition;
         public bool IsDefenseless => GetShips().All((s) => s.Firepower == 0);
         public bool HasMiningShips => GetShips().Any((s) => s.IsMiningShip);
         public bool AttackOnSight => !CeaseFire;

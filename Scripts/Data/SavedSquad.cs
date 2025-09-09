@@ -101,7 +101,7 @@ namespace Assets.Scripts.Data
                 long id = Utilities.GetNegativeFleetshipId();
 
                 FleetShip fleetShip = new FleetShip(id, squadType, false, true, false, 0, 0, 0, 0, 0, 0, 0);
-                AddShipToSquad(new SquadShip(fleetShip.Id, fleetShip.Type, offsets[shipIndex], this));
+                AddShipToSquad(new SquadShip(fleetShip.Id, fleetShip.Type, offsets[shipIndex]));
 
             }
         }
@@ -123,10 +123,12 @@ namespace Assets.Scripts.Data
         }
         public void AddShipToSquad(SquadShip ship)
         {
-            if (!HasShip(ship.GetFleetShip()))
+            FleetShip fleetShip = ship.GetFleetShip();
+            if (!HasShip(fleetShip))
             {
-                Debug.Log($"Adding {ship.GetFleetShip().Name} #{ship.GetFleetShip().Id} to {Name}");
+                //Debug.Log($"Adding {ship.GetFleetShip().Name} #{ship.GetFleetShip().Id} to {Name}");
                 _ships.Add(ship);
+                fleetShip.DoesBelongToSavedSquad = true;
             }
             
         }
@@ -293,7 +295,7 @@ namespace Assets.Scripts.Data
             {
                 FleetShip fleetShip = squadShip.GetFleetShip();
                 FleetShip newFleetShip = new FleetShip(Utilities.GetNegativeFleetshipId(), fleetShip.Type, false, true, false, 0, 0, 0, 0, 0, 0, 0, fleetShip.Name);
-                SquadShip newSquadShip = new SquadShip(newFleetShip.Id, newFleetShip.Type, squadShip.Offset, convert);
+                SquadShip newSquadShip = new SquadShip(newFleetShip.Id, newFleetShip.Type, squadShip.Offset);
                 convert.AddShipToSquad(newSquadShip);
             });
             return convert;
@@ -330,7 +332,7 @@ namespace Assets.Scripts.Data
         }
         public override string ToString()
         {
-            return $"{Name} - #{Id}, Ships: {GetSquadShips().Count}";
+            return $"{Name} - #{Id}, {GetSquadShips().Count} Ships: {Utilities.ListToString(GetSquadShips().Select((s) => s.GetFleetShip()).ToList())}";
         }
     }
 }

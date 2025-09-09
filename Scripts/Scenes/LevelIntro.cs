@@ -63,6 +63,14 @@ namespace UIComponents
 
 
                     break;
+                case 4:
+                    Debug.Log("Playing Neptune Of Production! dialogue.");
+                    ConfigData.HasSeenIntermission = true;
+                    StartCoroutine(DelayStart(3, () =>
+                    {
+                        CutsceneManager.PlayDialogueSection(CutsceneManager.Neptune_OfProduction.GetRange(0, 2), true);
+                    }));
+                    break;
             }
         }
 

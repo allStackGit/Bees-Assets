@@ -986,8 +986,8 @@ namespace Assets.Scripts
                     SquadShip cacheSquadShip = cacheSquadShips[i];
                     if (cacheSquadShip.ShipType == ConfigData.ShipTypes.Carrier)
                     {
-                        cacheSquadShips.Add(new SquadShip(-1, ConfigData.ShipTypes.Drone, Vector2.zero, squad));
-                        cacheSquadShips.Add(new SquadShip(-1, ConfigData.ShipTypes.Striker, Vector2.zero, squad));
+                        cacheSquadShips.Add(new SquadShip(-1, ConfigData.ShipTypes.Drone, Vector2.zero));
+                        cacheSquadShips.Add(new SquadShip(-1, ConfigData.ShipTypes.Striker, Vector2.zero));
                     }
 
                     // If the ship's type exists in the dictionary
@@ -1156,8 +1156,7 @@ namespace Assets.Scripts
                 ships.ForEach((ship) =>
                 {
                     // Adding each ship to the squad
-                    squadShip = new SquadShip((long)ship.FleetId, ConvertShipNameToShipType[(string)ship.ShipType], new Vector2((float)ship.Offset.x, (float)ship.Offset.y),
-                     savedSquad);
+                    squadShip = new SquadShip((long)ship.FleetId, ConvertShipNameToShipType[(string)ship.ShipType], new Vector2((float)ship.Offset.x, (float)ship.Offset.y));
 
                     savedSquad.AddShipToSquad(squadShip);
                 });

@@ -1,0 +1,689 @@
+fileFormatVersion: 2
+guid: 1852ba8ad6305d34e8f74f71389dc988
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: -5877435258934139336
+    second: remains_Factory_DEDA08_18_0
+  - first:
+      213: 7846710454724805530
+    second: remains_Factory_DEDA08_18_1
+  - first:
+      213: 8811984651573395714
+    second: remains_Factory_DEDA08_18_2
+  - first:
+      213: -1459114923664877240
+    second: remains_Factory_DEDA08_18_3
+  - first:
+      213: 8297485308028153489
+    second: remains_Factory_DEDA08_18_4
+  - first:
+      213: 3083101341862644819
+    second: remains_Factory_DEDA08_18_5
+  - first:
+      213: -2246496503292855642
+    second: remains_Factory_DEDA08_18_6
+  - first:
+      213: -1730162455560382874
+    second: remains_Factory_DEDA08_18_7
+  - first:
+      213: -4449983968430349858
+    second: remains_Factory_DEDA08_18_8
+  - first:
+      213: 4126214044762247007
+    second: remains_Factory_DEDA08_18_9
+  - first:
+      213: 567907645558016460
+    second: remains_Factory_DEDA08_18_10
+  - first:
+      213: 69351839448919170
+    second: remains_Factory_DEDA08_18_11
+  - first:
+      213: 2975790786141908231
+    second: remains_Factory_DEDA08_18_12
+  - first:
+      213: 4281391776038103358
+    second: remains_Factory_DEDA08_18_13
+  - first:
+      213: -2617167578195673022
+    second: remains_Factory_DEDA08_18_14
+  - first:
+      213: 7081859454358931253
+    second: remains_Factory_DEDA08_18_15
+  - first:
+      213: 3916829238607078496
+    second: remains_Factory_DEDA08_18_16
+  - first:
+      213: -8836285148443973005
+    second: remains_Factory_DEDA08_18_17
+  - first:
+      213: 7489425502596744417
+    second: remains_Factory_DEDA08_18_18
+  - first:
+      213: 5695808227706649703
+    second: remains_Factory_DEDA08_18_19
+  - first:
+      213: -2543820625935398024
+    second: remains_Factory_DEDA08_18_20
+  - first:
+      213: -4286646495118311277
+    second: remains_Factory_DEDA08_18_21
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 100
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: remains_Factory_DEDA08_18_0
+      rect:
+        serializedVersion: 2
+        x: 78
+        y: 210
+        width: 14
+        height: 15
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 836efd0a5c72f6ea0800000000000000
+      internalID: -5877435258934139336
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_DEDA08_18_1
+      rect:
+        serializedVersion: 2
+        x: 155
+        y: 207
+        width: 13
+        height: 13
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: a93473db59d15ec60800000000000000
+      internalID: 7846710454724805530
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_DEDA08_18_2
+      rect:
+        serializedVersion: 2
+        x: 68
+        y: 195
+        width: 9
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 2010a3b4a557a4a70800000000000000
+      internalID: 8811984651573395714
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_DEDA08_18_3
+      rect:
+        serializedVersion: 2
+        x: 78
+        y: 181
+        width: 17
+        height: 28
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 849db7825be20cbe0800000000000000
+      internalID: -1459114923664877240
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_DEDA08_18_4
+      rect:
+        serializedVersion: 2
+        x: 144
+        y: 174
+        width: 22
+        height: 33
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 19e6a0afce6962370800000000000000
+      internalID: 8297485308028153489
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_DEDA08_18_5
+      rect:
+        serializedVersion: 2
+        x: 51
+        y: 177
+        width: 12
+        height: 12
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 35cc040e55069ca20800000000000000
+      internalID: 3083101341862644819
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_DEDA08_18_6
+      rect:
+        serializedVersion: 2
+        x: 68
+        y: 143
+        width: 30
+        height: 37
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 6aa721c2557d2d0e0800000000000000
+      internalID: -2246496503292855642
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_DEDA08_18_7
+      rect:
+        serializedVersion: 2
+        x: 89
+        y: 109
+        width: 60
+        height: 77
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 6661b98d96a3df7e0800000000000000
+      internalID: -1730162455560382874
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_DEDA08_18_8
+      rect:
+        serializedVersion: 2
+        x: 156
+        y: 142
+        width: 50
+        height: 43
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: ed1a681682b7e32c0800000000000000
+      internalID: -4449983968430349858
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_DEDA08_18_9
+      rect:
+        serializedVersion: 2
+        x: 34
+        y: 143
+        width: 31
+        height: 22
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: f5f0845efc1434930800000000000000
+      internalID: 4126214044762247007
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_DEDA08_18_10
+      rect:
+        serializedVersion: 2
+        x: 59
+        y: 137
+        width: 6
+        height: 6
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: cc9c6b6aefc91e700800000000000000
+      internalID: 567907645558016460
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_DEDA08_18_11
+      rect:
+        serializedVersion: 2
+        x: 174
+        y: 99
+        width: 31
+        height: 48
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 28c6fda612366f000800000000000000
+      internalID: 69351839448919170
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_DEDA08_18_12
+      rect:
+        serializedVersion: 2
+        x: 16
+        y: 77
+        width: 71
+        height: 40
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 70d6edd14f12c4920800000000000000
+      internalID: 2975790786141908231
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_DEDA08_18_13
+      rect:
+        serializedVersion: 2
+        x: 63
+        y: 61
+        width: 34
+        height: 25
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e39a703f22f8a6b30800000000000000
+      internalID: 4281391776038103358
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_DEDA08_18_14
+      rect:
+        serializedVersion: 2
+        x: 109
+        y: 73
+        width: 20
+        height: 25
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 2404af734f3fdabd0800000000000000
+      internalID: -2617167578195673022
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_DEDA08_18_15
+      rect:
+        serializedVersion: 2
+        x: 113
+        y: 82
+        width: 31
+        height: 24
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 5374e4607a1d74260800000000000000
+      internalID: 7081859454358931253
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_DEDA08_18_16
+      rect:
+        serializedVersion: 2
+        x: 138
+        y: 37
+        width: 31
+        height: 49
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 064e905b07f5b5630800000000000000
+      internalID: 3916829238607078496
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_DEDA08_18_17
+      rect:
+        serializedVersion: 2
+        x: 153
+        y: 83
+        width: 27
+        height: 20
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 37aefe069753f5580800000000000000
+      internalID: -8836285148443973005
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_DEDA08_18_18
+      rect:
+        serializedVersion: 2
+        x: 201
+        y: 70
+        width: 14
+        height: 14
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 1e4c70e50d8cfe760800000000000000
+      internalID: 7489425502596744417
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_DEDA08_18_19
+      rect:
+        serializedVersion: 2
+        x: 80
+        y: 34
+        width: 38
+        height: 36
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 76cb339c7639b0f40800000000000000
+      internalID: 5695808227706649703
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_DEDA08_18_20
+      rect:
+        serializedVersion: 2
+        x: 174
+        y: 59
+        width: 11
+        height: 12
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 87b0fc25e9882bcd0800000000000000
+      internalID: -2543820625935398024
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_DEDA08_18_21
+      rect:
+        serializedVersion: 2
+        x: 124
+        y: 12
+        width: 25
+        height: 20
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 390cccc69b5c284c0800000000000000
+      internalID: -4286646495118311277
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
+    nameFileIdTable:
+      remains_Factory_DEDA08_18_0: -5877435258934139336
+      remains_Factory_DEDA08_18_1: 7846710454724805530
+      remains_Factory_DEDA08_18_10: 567907645558016460
+      remains_Factory_DEDA08_18_11: 69351839448919170
+      remains_Factory_DEDA08_18_12: 2975790786141908231
+      remains_Factory_DEDA08_18_13: 4281391776038103358
+      remains_Factory_DEDA08_18_14: -2617167578195673022
+      remains_Factory_DEDA08_18_15: 7081859454358931253
+      remains_Factory_DEDA08_18_16: 3916829238607078496
+      remains_Factory_DEDA08_18_17: -8836285148443973005
+      remains_Factory_DEDA08_18_18: 7489425502596744417
+      remains_Factory_DEDA08_18_19: 5695808227706649703
+      remains_Factory_DEDA08_18_2: 8811984651573395714
+      remains_Factory_DEDA08_18_20: -2543820625935398024
+      remains_Factory_DEDA08_18_21: -4286646495118311277
+      remains_Factory_DEDA08_18_3: -1459114923664877240
+      remains_Factory_DEDA08_18_4: 8297485308028153489
+      remains_Factory_DEDA08_18_5: 3083101341862644819
+      remains_Factory_DEDA08_18_6: -2246496503292855642
+      remains_Factory_DEDA08_18_7: -1730162455560382874
+      remains_Factory_DEDA08_18_8: -4449983968430349858
+      remains_Factory_DEDA08_18_9: 4126214044762247007
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

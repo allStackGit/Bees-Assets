@@ -14,6 +14,10 @@ namespace Assets.Scripts.Data
         public int CurrentBeeCampaignLevel = -1; 
         public int CurrentHumanChallengeLevel = -1; 
         public int CurrentBeeChallengeLevel = -1;
+        /// <summary>
+        /// The current global fleet Id of the next ship. Every fleet ship of every game type gets its fleet Id from here unless it's not being saved and has a negative Id
+        /// </summary>
+        public int FleetId = -1;
 
         public int SavedSquadId = -1;
         public int HumanCampaignSavedSquadNumber = -1;
@@ -63,7 +67,7 @@ namespace Assets.Scripts.Data
         public UserProgressData(bool shouldFileExist): base()
         {
             defaultJsonData = "{" +
-                "\"CurrentHumanCampaignLevel\": 0, \"CurrentBeeCampaignLevel\": 0, \"CurrentHumanChallengeLevel\": 0, \"CurrentBeeChallengeLevel\": 0, \"SavedSquadId\": -1, \"HumanCampaignSavedSquadNumber\": 0, \"BeeCampaignSavedSquadNumber\": 0, \"HumanChallengeSavedSquadNumber\": 0, \"BeeChallengeSavedSquadNumber\": 0, \"HumanFreePlaySavedSquadNumber\": 0, \"BeeFreePlaySavedSquadNumber\": 0, \"MinedTSV\": 0, \"HivemindMinedTSV\": 0, \"HumanCampaignWins\": 0, \"BeeCampaignWins\": 0, \"HumanChallengeWins\": 0, \"BeeChallengeWins\": 0, \"HumanFreePlayWins\": 0, \"BeeFreePlayWins\": 0, \"HasStartedHumanCampaign\": false, \"IsBeeCampaignUnlocked\": false, \"IsHumanChallengeUnlocked\": false, \"IsBeeChallengeUnlocked\": false, \"IsHumanFreePlayUnlocked\": false, \"IsBeeFreePlayUnlocked\": false, \"VisibleBeeShipTypes\": [\"Honeybee\"], \"VisibleHumanShipTypes\": [\"Scout\", \"Gunship\"], \"InvisibleBeeShipTypes\": [], \"InvisibleHumanShipTypes\": [], \"VisibleCodexBeeShipTypes\": [], \"VisibleCodexHumanShipTypes\": [\"Scout\", \"Gunship\"], \"PlayerName\": \"Odysseus\"" +
+                "\"CurrentHumanCampaignLevel\": 0, \"CurrentBeeCampaignLevel\": 0, \"CurrentHumanChallengeLevel\": 0, \"CurrentBeeChallengeLevel\": 0, \"FleetId\": 0 \"SavedSquadId\": -1, \"HumanCampaignSavedSquadNumber\": 0, \"BeeCampaignSavedSquadNumber\": 0, \"HumanChallengeSavedSquadNumber\": 0, \"BeeChallengeSavedSquadNumber\": 0, \"HumanFreePlaySavedSquadNumber\": 0, \"BeeFreePlaySavedSquadNumber\": 0, \"MinedTSV\": 0, \"HivemindMinedTSV\": 0, \"HumanCampaignWins\": 0, \"BeeCampaignWins\": 0, \"HumanChallengeWins\": 0, \"BeeChallengeWins\": 0, \"HumanFreePlayWins\": 0, \"BeeFreePlayWins\": 0, \"HasStartedHumanCampaign\": false, \"IsBeeCampaignUnlocked\": false, \"IsHumanChallengeUnlocked\": false, \"IsBeeChallengeUnlocked\": false, \"IsHumanFreePlayUnlocked\": false, \"IsBeeFreePlayUnlocked\": false, \"VisibleBeeShipTypes\": [\"Honeybee\"], \"VisibleHumanShipTypes\": [\"Scout\", \"Gunship\"], \"InvisibleBeeShipTypes\": [], \"InvisibleHumanShipTypes\": [], \"VisibleCodexBeeShipTypes\": [], \"VisibleCodexHumanShipTypes\": [\"Scout\", \"Gunship\"], \"PlayerName\": \"Odysseus\"" +
             "}";
             
             dynamic json = SetupFile(shouldFileExist, ConfigData.UserProgressFilename, (json) =>
@@ -75,6 +79,7 @@ namespace Assets.Scripts.Data
                 CurrentBeeCampaignLevel = json.CurrentBeeCampaignLevel;
                 CurrentHumanChallengeLevel = json.CurrentHumanChallengeLevel;
                 CurrentBeeChallengeLevel = json.CurrentBeeChallengeLevel;
+                FleetId = json.FleetId;
 
                 SavedSquadId = json.SavedSquadId;
                 HumanCampaignSavedSquadNumber = json.HumanCampaignSavedSquadNumber;
@@ -132,7 +137,7 @@ namespace Assets.Scripts.Data
         public override string ToJson()
         {
             string json = "{" +
-                $"\"CurrentHumanCampaignLevel\": {CurrentHumanCampaignLevel}, \"CurrentBeeCampaignLevel\": {CurrentBeeCampaignLevel}, \"CurrentHumanChallengeLevel\": {CurrentHumanChallengeLevel}, \"CurrentBeeChallengeLevel\": {CurrentBeeChallengeLevel}, \"SavedSquadId\": {SavedSquadId}, \"HumanCampaignSavedSquadNumber\": {HumanCampaignSavedSquadNumber}, \"BeeCampaignSavedSquadNumber\": {BeeCampaignSavedSquadNumber}, \"HumanChallengeSavedSquadNumber\": {HumanChallengeSavedSquadNumber}, \"BeeChallengeSavedSquadNumber\": {BeeChallengeSavedSquadNumber}, \"HumanFreePlaySavedSquadNumber\": {HumanFreePlaySavedSquadNumber}, \"BeeFreePlaySavedSquadNumber\": {BeeFreePlaySavedSquadNumber}, \"MinedTSV\": {MinedTSV}, \"HivemindMinedTSV\": {HivemindMinedTSV}, \"HumanCampaignWins\": {HumanCampaignWins}, \"BeeCampaignWins\": {BeeCampaignWins}, \"HumanChallengeWins\": {HumanChallengeWins}, \"BeeChallengeWins\": {BeeChallengeWins}, \"HumanFreePlayWins\": {HumanFreePlayWins}, \"BeeFreePlayWins\": {BeeFreePlayWins}, \"HasStartedHumanCampaign\": \"{HasStartedHumanCampaign}\", \"IsBeeCampaignUnlocked\": \"{IsBeeCampaignUnlocked}\", \"IsHumanChallengeUnlocked\": \"{IsHumanChallengeUnlocked}\", \"IsBeeChallengeUnlocked\": \"{IsBeeChallengeUnlocked}\", \"IsHumanFreePlayUnlocked\": \"{IsHumanFreePlayUnlocked}\", \"IsBeeFreePlayUnlocked\": \"{IsBeeFreePlayUnlocked}\", \"PlayerName\": \"{PlayerName}\", \"VisibleBeeShipTypes\": [";
+                $"\"CurrentHumanCampaignLevel\": {CurrentHumanCampaignLevel}, \"CurrentBeeCampaignLevel\": {CurrentBeeCampaignLevel}, \"CurrentHumanChallengeLevel\": {CurrentHumanChallengeLevel}, \"CurrentBeeChallengeLevel\": {CurrentBeeChallengeLevel}, \"FleetId\": {FleetId}, \"SavedSquadId\": {SavedSquadId}, \"HumanCampaignSavedSquadNumber\": {HumanCampaignSavedSquadNumber}, \"BeeCampaignSavedSquadNumber\": {BeeCampaignSavedSquadNumber}, \"HumanChallengeSavedSquadNumber\": {HumanChallengeSavedSquadNumber}, \"BeeChallengeSavedSquadNumber\": {BeeChallengeSavedSquadNumber}, \"HumanFreePlaySavedSquadNumber\": {HumanFreePlaySavedSquadNumber}, \"BeeFreePlaySavedSquadNumber\": {BeeFreePlaySavedSquadNumber}, \"MinedTSV\": {MinedTSV}, \"HivemindMinedTSV\": {HivemindMinedTSV}, \"HumanCampaignWins\": {HumanCampaignWins}, \"BeeCampaignWins\": {BeeCampaignWins}, \"HumanChallengeWins\": {HumanChallengeWins}, \"BeeChallengeWins\": {BeeChallengeWins}, \"HumanFreePlayWins\": {HumanFreePlayWins}, \"BeeFreePlayWins\": {BeeFreePlayWins}, \"HasStartedHumanCampaign\": \"{HasStartedHumanCampaign}\", \"IsBeeCampaignUnlocked\": \"{IsBeeCampaignUnlocked}\", \"IsHumanChallengeUnlocked\": \"{IsHumanChallengeUnlocked}\", \"IsBeeChallengeUnlocked\": \"{IsBeeChallengeUnlocked}\", \"IsHumanFreePlayUnlocked\": \"{IsHumanFreePlayUnlocked}\", \"IsBeeFreePlayUnlocked\": \"{IsBeeFreePlayUnlocked}\", \"PlayerName\": \"{PlayerName}\", \"VisibleBeeShipTypes\": [";
 
             if (VisibleBeeShipTypes.Count > 0)
             {
@@ -249,11 +254,45 @@ namespace Assets.Scripts.Data
             }
             
         }
+        /// <summary>
+        /// Gets the next incremental Fleet Id. Does not save the data to "disk"
+        /// </summary>
+        /// <returns></returns>
+        public int GetNextFleetId()
+        {
+            return FleetId++;
+        }
+        /// <summary>
+        /// Gets the next incremental Saved Squad Id Does not save the data to "disk"
+        /// </summary>
+        /// <returns></returns>
         public int GetNextSavedSquadId()
         {
-            SavedSquadId += 1;
-            Save();
-            return SavedSquadId;
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
+            {
+                if (ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide)
+                {
+                    return HumanCampaignSavedSquadNumber++;
+                }
+                return BeeCampaignSavedSquadNumber++;
+            }
+            else if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge)
+            {
+                if (ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide)
+                {
+                    return HumanChallengeSavedSquadNumber++;
+                }
+                return BeeChallengeSavedSquadNumber++;
+            }
+            else
+            {
+                if (ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide)
+                {
+                    return HumanFreePlaySavedSquadNumber++;
+                }
+                return BeeFreePlaySavedSquadNumber++;
+            }
+
         }
 
 

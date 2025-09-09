@@ -1225,7 +1225,7 @@ namespace Assets.Scripts.Scenes
                     if (fleetShip != null)
                     {
                         //Debug.Log($"Adding {fleetShip} to duplicated squad {_currentSquad.Name}");
-                        _currentSquad.AddShipToSquad(new SquadShip(fleetShip.Id, fleetShip.Type, originalSquadShip.Offset - originalSquad.StartingPosition, _currentSquad));
+                        _currentSquad.AddShipToSquad(new SquadShip(fleetShip.Id, fleetShip.Type, originalSquadShip.Offset - originalSquad.StartingPosition));
                         GetFleetList().Remove(fleetShip);
                     }
                     //else
@@ -1323,7 +1323,7 @@ namespace Assets.Scripts.Scenes
                 //Vector2 placementPosition = Camera.WorldToScreenPoint(ship.Offset);
 
                 //ship.SetOffset(offsetPosition);
-                Debug.Log($"Starting Position for {ship.GetFleetShip().Name}: {_currentSquad.StartingPosition}, Offset position: {ship.Offset}, Placement position: {placementPosition}");
+                //Debug.Log($"Starting Position for {ship.GetFleetShip().Name}: {_currentSquad.StartingPosition}, Offset position: {ship.Offset}, Placement position: {placementPosition}");
                 dropper.MakeDragIcon(ship.GetFleetShip());
                 dropper.SetupActiveDragging(placementPosition, true);
                 DragIcon dragIcon = dropper.GetCurrentDragIcon();

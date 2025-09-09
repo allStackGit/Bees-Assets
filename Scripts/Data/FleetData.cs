@@ -30,9 +30,10 @@ namespace Assets.Scripts.Data
         private string MakeDefaultList(Dictionary<ConfigData.ShipTypes, int> startingShips)
         {
             List<ConfigData.ShipTypes> shipTypes = startingShips.Keys.ToList();
-            int id = 0;
+
             shipTypes.ForEach((shipType) =>
             {
+                int id = ConfigData.UserProgressData.GetNextFleetId();
                 int shipCount = startingShips.GetValueOrDefault(shipType);
                 int side = ConfigData.Configuration.HumanSide;
 
@@ -49,7 +50,6 @@ namespace Assets.Scripts.Data
                         isVisible = true;
                     }
                     AddShipToFleet(new FleetShip(id, shipType, false, isVisible, false, 0, 0, 0, 0, 0, 0, 0));
-                    id++;
                 }
             });
             string json = ToJson();

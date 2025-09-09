@@ -43,8 +43,9 @@ namespace Assets.Scripts.UI_Components
             {
                 new Dictionary<Vector2, Vector3>(),
                 new Dictionary<Vector2, Vector3>(),
-                new Dictionary<Vector2, Vector3>() { { new Vector2(190, 330), new Vector3(0, 0, 270) } },
                 new Dictionary<Vector2, Vector3>() { { new Vector2(480, -300), new Vector3(0, 0, 230) }, { new Vector2(-320, 50), new Vector3(0, 0, 0) }  },
+                new Dictionary<Vector2, Vector3>() { { new Vector2(190, 330), new Vector3(0, 0, 270) } },
+                
                 new Dictionary<Vector2, Vector3>() { { new Vector2(-380, -5), new Vector3(0, 0, 90) }, { new Vector2(-430, 337), new Vector3(0, 0, 90) }, { new Vector2(80, 100), new Vector3(0, 0, 180) } },
 
             };

@@ -14,45 +14,56 @@ namespace Assets.Scripts.Data
         public ConfigData.ShipTypes ShipType;
         public Vector2 Offset;
 
-        private SavedSquad _squad;
         private Vector2 _size => ConfigData.ShipSizes.GetValueOrDefault(GetFleetShip().Type);
+        private FleetShip _fleetShip;
+        private bool _hasCachedFleetShip = false;
 
 
-        public SquadShip(long fleetId, ConfigData.ShipTypes shipType, Vector2 offset, SavedSquad squad)
+        public SquadShip(long fleetId, ConfigData.ShipTypes shipType, Vector2 offset)
         {
             FleetId = fleetId;
             ShipType = shipType;
             Offset = offset;
-            _squad = squad;
         }
+        /// <summary>
+        /// Grabs and caches the fleet ship. The first time it's called it will minimally need to parse through all the fleet ships to find a matching Id and possibility initialize the fleet data too.
+        /// </summary>
+        /// <returns></returns>
         public FleetShip GetFleetShip()
         {
-            if (ConfigData.CurrentShips != null)
+            if (!_hasCachedFleetShip)
             {
-                FleetShip fleetShip = ConfigData.CurrentShips.GetFleetShip(FleetId);
-                if (fleetShip != null)
+                if (ConfigData.CurrentShips != null)
                 {
-                    return fleetShip;
+                    FleetShip fleetShip = ConfigData.CurrentShips.GetFleetShip(FleetId);
+                    if (fleetShip != null)
+                    {
+                        _fleetShip = fleetShip;
+                    }
+                    else
+                    {
+                        //Debug.LogWarning($"A null fleetship was asked for with id #{FleetId}. This was probably a randomly created fleetship.");
+                        _fleetShip = new FleetShip(FleetId, ShipType, false, true, false, 0, 0, 0, 0, 0, 0, 0);
+                    }
                 }
                 else
                 {
-                    //Debug.LogWarning($"A null fleetship was asked for with id #{FleetId}. This was probably a randomly created fleetship.");
-                    return new FleetShip(FleetId, ShipType, false, true, false, 0, 0, 0, 0, 0, 0, 0);
+                    FleetShip fleetShip = ConfigData.GetFleetData().GetFleetShip(FleetId);
+                    if (fleetShip != null)
+                    {
+                        _fleetShip = fleetShip;
+                    }
+                    else
+                    {
+                        //Debug.LogWarning($"A null fleetship was asked for with id #{FleetId}. This was probably a randomly created fleetship.");
+                        _fleetShip = new FleetShip(FleetId, ShipType, false, true, false, 0, 0, 0, 0, 0, 0, 0);
+                    }
                 }
             }
-            else
-            {
-                FleetShip fleetShip = ConfigData.GetFleetData().GetFleetShip(FleetId);
-                if (fleetShip != null)
-                {
-                    return fleetShip;
-                }
-                else
-                {
-                    //Debug.LogWarning($"A null fleetship was asked for with id #{FleetId}. This was probably a randomly created fleetship.");
-                    return new FleetShip(FleetId, ShipType, false, true, false, 0, 0, 0, 0, 0, 0, 0);
-                }
-            }
+            //_hasCachedFleetShip = true;
+            //Debug.Log($"Returning {_fleetShip} for {this}");
+            return _fleetShip;
+
             
         }
         public void SetOffset(Vector2 offset)
@@ -93,6 +104,10 @@ namespace Assets.Scripts.Data
         public bool Equals (SquadShip other)
         {
             return FleetId == other.FleetId;
+        }
+        public override string ToString()
+        {
+            return $"SquadShip of {ShipType} with FleetId #{FleetId}";
         }
     }
 }

@@ -12,7 +12,7 @@ public class CutsceneManager : MonoBehaviour
     public DialogueManager DialogueManager;
     public GameObject CutsceneCanvas;
     public Stage Stage;
-    public List<DialogueLine> PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLines_BluerPastures, PlutoToNeptune, Neptune_SeizeTheMeans;
+    public List<DialogueLine> PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLines_BluerPastures, PlutoToNeptune, Neptune_SeizeTheMeans, Neptune_OfProduction;
     public List<List<DialogueLine>> AllDialogues;
     public bool PlutoLines_Anomaly_Completed = false;
     public bool HitDialogueBreak = false;
@@ -201,7 +201,8 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Samuel", Portraits["Samuel"], "Great work, commander. We can check the facility now."),
 
             new DialogueLine("Samuel", Portraits["Samuel"], "We’ve lost all the squads we sent out, commander. There’s no safe way onto Neptune."),
-            new DialogueLine("Marco", Portraits["Marco"], "There’s not much time to hang around here. The closest United Fleet base is on Uranus. We can find help there. Those people in the mining facility will just have to hang on a bit longer until others can come back."),
+            new DialogueLine("Marco", Portraits["Marco"], "There’s not much time to hang around here. The closest United Fleet base is on Uranus."),
+             new DialogueLine("Marco", Portraits["Marco"], "We can find help there. Those people in the mining facility will just have to hang on a bit longer until others can come back."),
             new DialogueLine("Oviya", Portraits["Oviya"], "Scouts are reporting a bee blockade between here and Uranus. We’ll have to break it."),
 
             
@@ -216,10 +217,11 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Wesley", Portraits["Wesley"], "Bees? Is that what’s attacking us? I was not aware they had the biology to survive in space. They’re hardly surviving on Earth any longer, due to-"),
             new DialogueLine("Marco", Portraits["Marco"], "They’re not bees."),
             new DialogueLine("Joey", Portraits["Joey"], "They just look like ‘em. Easier to call ‘em that."),
-            new DialogueLine("Wesley", Portraits["Wesley"], "Ah. Right. Of course. Well, these… bees quickly disposed of our contracted defense team and started bombing the surface. The emergency code was sent, and we all attempted to secure ourselves in the underground bunker. Not everyone made it."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "Ah. Right. Of course. Well, these… bees quickly disposed of our contracted defense team and started bombing the surface."),
+             new DialogueLine("Wesley", Portraits["Wesley"], "The emergency code was sent, and we all attempted to secure ourselves in the underground bunker. Not everyone made it."),
             new DialogueLine("Marco", Portraits["Marco"], "Great. So we have an accountant-"),
             new DialogueLine("Wesley", Portraits["Wesley"], "Regional head of the accounting department."),
-            new DialogueLine("Marco", Portraits["Marco"], "………"),
+            new DialogueLine("Marco", Portraits["Marco"], "..."),
             new DialogueLine("Marco", Portraits["Marco"], "We have that and a bunch of miners, then? This isn’t really helping our chances."),
             new DialogueLine("Wesley", Portraits["Wesley"], "Well, um, we do have a line of prototype factory ships, capable of mining ore-rich asteroids, as well as personnel trained to man them."),
             new DialogueLine("Joey", Portraits["Joey"], "And plenty of those asteroids nearby. Well, I’ll be, Wesley, this really is helpful"),
@@ -236,53 +238,54 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Samuel", Portraits["Samuel"], "Thank you, Wesley."),
             new DialogueLine("Wesley", Portraits["Wesley"], "Yes, of course, just leave my nose intact, please. It’s my best feature."),
             
-            
-            /*
-             * 
-             *  new DialogueLine("Samuel", Portraits["Samuel"], ""),
-             *  new DialogueLine("Marco", Portraits["Marco"], ""),
-             *  new DialogueLine("Oviya", Portraits["Oviya"], ""),
-             *  new DialogueLine("Joey", Portraits["Joey"], ""),
-             *  new DialogueLine("Wesley", Portraits["Wesley"], ""),
-             *  new DialogueLine("Yoshiko", Portraits["Yoshiko"], ""),
-             * */
 
-            /*
-             Samuel: Commander, we’ve rescued the mining personnel from their bunker. Their leader has come to speak with you.
-Wesley: I’m no leader. That would be my manager, Derek. I’m simply the regional head of the accounting department for Jensen Industries.
-Joey: Same as always.
-Wesley: Ah, greetings, Joey.
-Joey: Howdy. Where’s Derek, then?
-Wesley: Derek is no longer with us. He didn’t make it to the bunker in time. I’ve been the de facto leader for the remaining Jensen personnel.
-Samuel: Then why did you say-
-Joey: Don’t bother. Wesley, tell us what we need to know for this war against the bees.
-Wesley: Bees? Is that what’s attacking us? I was not aware they had the biology to survive in space. They’re hardly surviving on Earth any longer, due to-
-Marco: They’re not bees.
-Joey: They just look like ‘em. Easier to call ‘em that.
-Wesley: Ah. Right. Of course. Well, these… bees quickly disposed of our contracted defense team and started bombing the surface. The emergency code was sent, and we all attempted to secure ourselves in the underground bunker. Not everyone made it.
-Marco: Great. So we have an accountant-
-Wesley: Regional head of the accounting department.
-Marco: ………
-Marco: We have that and a bunch of miners, then? This isn’t really helping our chances.
-Wesley: Well, um, we do have a line of prototype factory ships, capable of mining ore-rich asteroids, as well asand personnel trained to man them.
-Joey: And plenty of those asteroids nearby. Well, I’ll be, Wesley, this really isis really helpful.
-Wesley: They are property of Jensen Corporation, and all personnel including myself are on their payroll. I’m sure we can reach some sort of agreement for their use, perhaps a loan. But of course, these ships are the intellectual property of Jensen, so I can’t have any of you stealing these plans.
-Samuel: We don’t have any way to contact Jensen Corporation, Wesley.
-Wesley: Well, that is unfortunate. I do need approval from a home office manager before I-
-Yoshiko: How many punches does it take to get him to shut up?
-Joey: I dunno, you’ll have to just try until he quiets down.
-Wesley: N-nw, now, I’m sure w-we don’t have to resort to such… b-barbaric means! We’re all adults here!
-Yoshiko: I’m thinking at least a dozen. Six to the nose and six to the stomach.
-Wesley: Ahh! Please don’t engage in a physical altercation, it’s far from necessary! Please, use the factory ships however you please! We can negotiate fair compensation once we’ve made contact with my superiors.
-Joey: There ya go, commander. Factory ships at your disposal.
-Samuel: Thank you, Wesley.
-Wesley: Yes, of course, just leave my nose intact, please. It’s my best feature.
-
-
-             */
         };
 
-        AllDialogues = new List<List<DialogueLine>> { PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLines_BluerPastures, PlutoToNeptune, Neptune_SeizeTheMeans };
+        Neptune_OfProduction = new List<DialogueLine>()
+        {
+            new DialogueLine("Samuel", Portraits["Samuel"], "Scouts are reporting the bee forces on all sides. Their fleet from Pluto is catching up, and they’ve already established a blockade between here and Uranus."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Now that we have factory ships, we can gather resources from the same asteroids the bees were defending. That’ll give us a fighting chance against the blockade, but we need to be quick."),
+
+            new DialogueLine("Oviya", Portraits["Oviya"], "The mining asteroids can be found at these locations."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "Our factory ships should be quite capable of increasing your prof- erm, resources in order to further bolster your fleet. Simply direct them to a mining location."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Collect these ores as long as you can, commander, but don’t risk too many lives. If a factory ship goes down, it’ll lose all the resources it collected. It won’t be worth it in the end."),
+
+            new DialogueLine("Oviya", Portraits["Oviya"], "It looks like there are bee scouting parties approaching. They’ll soon find out their fleet here was destroyed."),
+
+            new DialogueLine("Oviya", Portraits["Oviya"], "More bees are en route. The longer we stay here, the more dangerous it becomes, commander."),
+
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Incoming ships! Get ready for a fight!"),
+            new DialogueLine("Marco", Portraits["Marco"], "More bees. Hope you know what you’re doing, commander."),
+            new DialogueLine("Joey", Portraits["Joey"], "Gracious, how many more bees are there?"),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Scouts are reporting even more bees than before. Brace yourselves."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Commander, get ready for another fight. We have bees incoming."),
+        };
+
+        /*
+         * 
+         *  new DialogueLine("Samuel", Portraits["Samuel"], ""),
+         *  new DialogueLine("Marco", Portraits["Marco"], ""),
+         *  new DialogueLine("Oviya", Portraits["Oviya"], ""),
+         *  new DialogueLine("Joey", Portraits["Joey"], ""),
+         *  new DialogueLine("Wesley", Portraits["Wesley"], ""),
+         *  new DialogueLine("Yoshiko", Portraits["Yoshiko"], ""),
+         * */
+
+
+
+
+        /*
+
+Yoshiko: Incoming ships! Get ready for a fight!
+Marco: More bees. Hope you know what you’re doing, commander.
+Joey: Gracious, how many more bees are there? 
+Oviya: Scouts are reporting even more bees than before. Brace yourselves.
+Samuel: Commander, get ready for another fight. We have bees incoming.
+
+
+         */
+
+        AllDialogues = new List<List<DialogueLine>> { PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLines_BluerPastures, PlutoToNeptune, Neptune_SeizeTheMeans, Neptune_OfProduction };
 
     }
     public void HideIntroMessage()

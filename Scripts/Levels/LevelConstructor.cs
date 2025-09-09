@@ -450,8 +450,7 @@ namespace Assets.Scripts.Levels
                 }
                 else
                 {
-                //    Debug.Log($"{squad.Name} is potentially located at {position} before changing the y level. It's left side is at {leastWidth} and it's right side is at {greatestWidth}. It's " +
-                //$"{squad.GetWidth()} wide and {squad.GetHeight()} tall");
+                    //Debug.Log($"{squad.Name} is potentially located at {position} before changing the y level. It's left side is at {leastWidth} and it's right side is at {greatestWidth}. It's {squad.GetWidth()} wide and {squad.GetHeight()} tall");
                     position.y = firstLevelSquad.GetPosition().y; // set the squad on the same y level as the last squad
 
                     // adjust the position left or right from center based on how many squads have already been placed on this level
@@ -479,29 +478,30 @@ namespace Assets.Scripts.Levels
                 greatestWidth = position.x + halfWidth + 0;
                 leastWidth = position.x - (halfWidth + 0);
 
-                //Debug.Log($"{squad.Name} is potentially located at {position}. It's left side is at {leastWidth} and it's right side is at {greatestWidth}. It's " +
-                //$"{squad.GetWidth()} wide and {squad.GetHeight()} tall");
+                //Debug.Log($"{squad.Name} is potentially located at {position}. It's left side is at {leastWidth} and it's right side is at {greatestWidth}. It's {squad.GetWidth()} wide and {squad.GetHeight()} tall");
 
                 if (!squadsAreReinforcements && (greatestWidth > Level.MaxX || leastWidth < Level.MinX))
                 {
                     // Debug Log how much the squad is out of bounds horizontally
                     if (greatestWidth > Level.MaxX)
                     {
-                        //Debug.Log($"{squad.Name} is over the margin of MaxX by {Mathf.Abs(greatestWidth - MaxX)}");
+                        //Debug.Log($"{squad.Name} is over the margin of MaxX by {Mathf.Abs(greatestWidth - Level.MaxX)}");
                     }
                     else
                     {
-                        //Debug.Log($"{squad.Name} is over the margin of MinX by {Mathf.Abs(leastWidth - MinX)}");
+                        //Debug.Log($"{squad.Name} is over the margin of MinX by {Mathf.Abs(leastWidth - Level.MinX)}");
                     }
 
-
+                    //Debug.Log($"Placing {squad.Name} at original x of starting position: {squad.StartingPosition}");
                     position.x = squad.StartingPosition.x; // center the squad on the original x point. The y point should be on the same level as the previous squads
+                    //Debug.Log($"Position for {squad.Name} : {position}");
 
                     // increase the vertical margin for this squad from the starting position of the first squad. The half height of this squad and the half height
                     // of the first squad on the previous level.
                     bottomHeight = halfHeight;
                     bottomHeight += firstLevelSquad.GetHeight() / 2;
                     position.y += bottomHeight + 20; // add the half height and 10 for additional margin off the squad below
+                    //Debug.Log($"Position for {squad.Name} : {position}");
 
                     // reset the left and right width and steps
                     rightWidth = halfWidth;
@@ -511,6 +511,7 @@ namespace Assets.Scripts.Levels
                     // calculate the furthest extents of the squad and add 10 for good margin. Use it to determine if the squad is over the horizontal edges
                     greatestWidth = position.x + halfWidth + 0;
                     leastWidth = position.x - (halfWidth + 0);
+                    //Debug.Log($"Position for {squad.Name} : {position}");
 
                     //Debug.Log(
                     //$"Because {squad.Name} is over the margin it is being relocated to {position}. It's left side is at {leastWidth} and it's right side is at {greatestWidth}.\n " +
@@ -521,9 +522,10 @@ namespace Assets.Scripts.Levels
                     firstLevelSquad = squad; // set this squad as the first level squad of this level
                     //Debug.Log($"Positioned first squad on this level: {squad.Name}");
                 }
+                
 
                 //Debug.Log($"The previous squad {previousSquad.Name} was centered on {previousSquad.GetPosition()} and has a half width of {previousSquad.GetWidth() / 2}. " +
-                //   $"The current squad {squad.Name} will be centered on {position} and have a half width of {halfWidth}. ");
+                //Debug.Log($"The current squad {squad.Name} will be centered on {position} and have a half width of {halfWidth}. ");
 
 
 

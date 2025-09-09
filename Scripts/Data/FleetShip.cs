@@ -23,6 +23,8 @@ namespace Assets.Scripts.Data
         public List<float> RateOfFire, ProjectileValue, RotationRates;
         public float Speed;
         public List<float> SpecialFirePower = new List<float>();
+
+        public bool DoesBelongToSavedSquad;
        
         public float Firepower => GetFirepower();
 
@@ -161,7 +163,7 @@ namespace Assets.Scripts.Data
         }
         public override string ToString()
         {
-            return $"#{Id} - {Name} HCS? {HasCachedSprite}";
+            return $"#{Id} ({Type}) - {Name}";
         }
 
     }

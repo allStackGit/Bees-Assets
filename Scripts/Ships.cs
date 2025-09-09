@@ -28,16 +28,12 @@ namespace Assets.Scripts
         // get fleet methods
         public void AddShipsToFleet(ConfigData.ShipTypes shipType, int shipCount)
         {
-            int id = GetLastFleetId() + 1;
+            int id = ConfigData.UserProgressData.GetNextFleetId();
             for (int i = 0; i < shipCount; i++)
             {
                 _fleetData.AddShipToFleet(new FleetShip(id, shipType, false, true, false, 0, 0, 0, 0, 0, 0, 0));
                 id++;
             }
-        }
-        public int GetLastFleetId()
-        {
-            return GetFleetShips().Count - 1;
         }
         public List<FleetShip> GetFleetShips()
         {
@@ -53,7 +49,7 @@ namespace Assets.Scripts
         }
         public List<FleetShip> GetAvailableShips()
         {
-            return GetFleetShips().Where((ship) => ship.IsShipVisibleAndAlive() && !IsShipInSquad(ship)).ToList();
+            return GetFleetShips().Where((ship) => ship.IsShipVisibleAndAlive() && !ship.DoesBelongToSavedSquad && !IsShipInSquad(ship)).ToList();
         }
         public List<FleetShip> GetVisibleAndAliveShips()
         {
@@ -70,6 +66,10 @@ namespace Assets.Scripts
         public List<FleetShip> GetAvailableShipsOfType(ConfigData.ShipTypes type)
         {
             return GetAvailableShips().Where((ship) => ship.Type == type).ToList();
+        }
+        public FleetShip GetFirstAvailableShipOfType(ConfigData.ShipTypes type)
+        {
+            return GetAvailableShips().Where((ship) => ship.Type == type).First();
         }
         public List<FleetShip> GetVisibleAndAliveShipsOfType(ConfigData.ShipTypes type)
         {
@@ -262,6 +262,7 @@ namespace Assets.Scripts
             {
                 if (squad.HasShip(ship))
                 {
+                    ship.DoesBelongToSavedSquad = true;
                     return true;
                 }
             }
@@ -312,7 +313,7 @@ namespace Assets.Scripts
             //}
             squad.GetDeadShips().ForEach((squadShip) =>
             {
-                FleetShip replacement = GetAvailableShipsOfType(squadShip.GetFleetShip().Type).FirstOrDefault();
+                FleetShip replacement = GetFirstAvailableShipOfType(squadShip.GetFleetShip().Type);
                 if (replacement != null)
                 {
                     if (squadShip.GetFleetShip().HasCachedSprite)
@@ -369,11 +370,13 @@ namespace Assets.Scripts
 
             int squadId = ConfigData.UserProgressData.GetNextSavedSquadId();
             SavedSquad savedSquad = new SavedSquad(squadId, side, name, Vector2.zero, false, false, DefaultShootingStrategy, UnsetColor, null);
+            //List<FleetShip> fleetShips = CurrentShips.GetAvailableShipsOfType(shipType);
             for (int i = 0; i < shipCount; i++) 
             {
-                FleetShip ship = CurrentShips.GetAvailableShipsOfType(shipType).ElementAt(i);
-                savedSquad.AddShipToSquad(new SquadShip(ship.Id, ship.Type, offsets[i], savedSquad));
+                FleetShip ship = CurrentShips.GetFirstAvailableShipOfType(shipType);
+                savedSquad.AddShipToSquad(new SquadShip(ship.Id, ship.Type, offsets[i]));
             }
+            //Debug.Log($"Built {savedSquad}");
             CurrentShips.AddSquad(savedSquad);
 
             return savedSquad;
@@ -385,6 +388,7 @@ namespace Assets.Scripts
             SavedSquad savedSquad = GetSavedSquads().Find((squad) => squad.GetSquadShips().Count == shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType) && squad.GetAliveSquadShips().Count > 0 && !existingSquads.Contains(squad));
             if (savedSquad != null)
             {
+                Debug.Log($"Got Squad {savedSquad}");
                 return savedSquad;
             }
             else
