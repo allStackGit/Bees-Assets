@@ -51,6 +51,9 @@ namespace Assets.Scripts.Levels
                 case 5:
                     Level5Triggers();
                     break;
+                case 6:
+                    Level6Triggers();
+                    break;
             }
         }
 
@@ -1402,16 +1405,6 @@ namespace Assets.Scripts.Levels
         }
         public void Level5Triggers()
         {
-            NextTriggers.Add(new Trigger(() =>
-            {
-                return true;
-            },
-                () =>
-                {
-
-                },
-                "Level  Leafcutter splitter shot")
-            );
             HasContinuousTriggers = true;
 
             Stage.CutsceneManager.Setup(() =>
@@ -1471,6 +1464,129 @@ namespace Assets.Scripts.Levels
                 "Level 5 Ending dialogue")
             );
 
+        }
+        public void Level6Triggers()
+        {
+            NextTriggers.Add(new Trigger(() =>
+            {
+                return true;
+            },
+                () =>
+                {
+
+                },
+                "Level  Leafcutter splitter shot")
+            );
+            HasContinuousTriggers = true;
+
+            Stage.CutsceneManager.Setup(() =>
+            {
+                Level6Ending();
+            });
+
+            // Add new Bee squads
+            // Add 2 squads of 2 Wasps
+            for (int i = 0; i < 2; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 2);
+            }
+
+            // Add 3 squads of 4 Hornets
+            for (int i = 0; i < 3; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 4);
+            }
+
+            // Add 2 squads of 1 Leafcutter
+            for (int i = 0; i < 2; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Leafcutter, 1);
+            }
+
+            // Add one squad of one Bumblebee
+            CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Bumblebee, 1);
+
+            // Add 1 squad of 4 Yellow Jackets
+            CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.YellowJacket, 4);
+
+            // Spawn the Bees
+
+            // 2 Squads of 1 Leafcutter
+            // 3 Squads of 4 Hornets
+            // 1 Squad of 4 Yellow Jackets
+            // 2 Squads of 2 Wasps
+            // 1 Squad of 1 Bumblebee
+
+            AddReinforcementSquads(new List<SavedSquad>() {
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 2),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4),
+            }, CurrentLevelOptions.AIStartingPosition - new Vector2(-100, 0), CurrentLevelOptions.AIStartingPosition);
+
+            AddReinforcementSquads(new List<SavedSquad>() {
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 2),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 1),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 1),
+            }, CurrentLevelOptions.AIStartingPosition - new Vector2(-100, 0), CurrentLevelOptions.AIStartingPosition);
+
+            AddReinforcementSquads(new List<SavedSquad>() {
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 2),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Bumblebee, 1),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4),
+            }, CurrentLevelOptions.AIStartingPosition - new Vector2(-100, 0), CurrentLevelOptions.AIStartingPosition);
+
+            // Start the dialogue
+            _dialogueTimer.Reuse(3, () =>
+            {
+                Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_OnTheOffensive.GetRange(2, 3));
+            });
+            AddTimer(_dialogueTimer);
+
+            NextTriggers.Add(new Trigger(() =>
+                {
+                    return Stage.CutsceneManager.HitDialogueBreak;
+                },
+                () =>
+                {
+                    Stage.EnablePlayerControl();
+
+                    // Spawn the cruiser after a little bit and show dialogue. Have hornets or something attacking it
+                    // ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4),
+
+
+
+                    // Set dialogue triggers
+
+                    // spotting bumblebee
+
+                    // Getting hit by bumblebee
+
+                    // Kiling bumblebee
+
+                    // Level ending
+                    NextTriggers.Add(new Trigger(() =>
+                        {
+                            return State.IsSideKilled(ConfigData.Configuration.UserSide) || State.IsSideKilled(ConfigData.Configuration.AISide);
+                        },
+                        () =>
+                        {
+                            if (State.IsSideKilled(ConfigData.Configuration.AISide)) // Player won
+                            {
+                                Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_OnTheOffensive.GetRange(17, 20), true);
+
+                            }
+                            else
+                            {
+                                Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_OnTheOffensive.GetRange(27, 3), true);
+                            }
+                        },
+                        "Level 6 Ending dialogue")
+                    );
+                },
+                "Level 6 Starting")
+            );
+
+
+            
         }
 
         public void Level0Ending()
@@ -1832,7 +1948,51 @@ namespace Assets.Scripts.Levels
         public void Level5Ending()
         {
             Debug.Log("Level 5 complete");
+
+            // Add new Bee squads
+            // Add 2 squads of 2 Wasps
+            for (int i = 0; i < 2; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 2);
+            }
+
+            // Add 3 squads of 4 Hornets
+            for (int i = 0; i < 3; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 4);
+            }
+
+            // Add 2 squads of 1 Leafcutter
+            for (int i = 0; i < 2; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Leafcutter, 1);
+            }
+
+            // Add one squad of one Bumblebee
+            CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Bumblebee, 1);
+
+            // Add 1 squad of 4 Yellow Jackets
+            CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.YellowJacket, 4);
+
+
+            // Advance to next level in campaign
+            ConfigData.UserProgressData.AdvanceToNextLevel();
+
+            ConfigData.UserProgressData.Save();
+            CurrentShips.SaveSquadData();
+            CurrentShips.SaveFleetData();
+
+
+            State.GameOver = true;
+            Stage.Menus.ShowLevelContinueDialogue();
+        }
+
+        public void Level6Ending()
+        {
+            Debug.Log("Level 6 complete");
             //return;
+
+            // Skip next level if the player doesn't have factories or if they lost this level
 
             // Advance to next level in campaign
             ConfigData.UserProgressData.AdvanceToNextLevel();
