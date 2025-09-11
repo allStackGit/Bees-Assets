@@ -168,7 +168,7 @@ namespace Assets.Scripts.Levels
             //Debug.Log($"Adding {squad.SavedSquad} to level");
             if (squad.SavedSquad.IsLoadedIntoLevel && !squad.IsMinionSquad)
             {
-                Debug.LogError($"Trying to add {squad.SavedSquad.Name} when that saved squad already exists in the level"); // [debug]
+                Debug.LogError($"Trying to add {squad.SavedSquad} when that saved squad already exists in the level"); // [debug]
             }
             squad.SavedSquad.IsLoadedIntoLevel = true;
             Squads.Add(squad);

@@ -143,7 +143,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void StartDragExistingIcon(FleetShip fleetShip)
         {
-            _currentDragIcon = GetDragIcons().Find((d) => d.GetFleetShip().Equals(fleetShip));
+            _currentDragIcon = GetDragIcons().Find((d) => d.GetFleetShip() == fleetShip);
         }
         public void DraggingNewIcon()
         {

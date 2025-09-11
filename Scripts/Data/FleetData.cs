@@ -3,6 +3,7 @@ using Newtonsoft.Json;
 using System.Collections.Generic;
 using System.Linq;
 using Assets.Scripts.Scenes;
+using UnityEngine;
 
 namespace Assets.Scripts.Data
 {
@@ -76,8 +77,12 @@ namespace Assets.Scripts.Data
         }
         public void AddShipToFleet(FleetShip ship)
         {
-            if (_shipList.Find((s) => s.Id == ship.Id) == null) {
+            if (!_shipList.Contains(ship)) { // [debug]
                 _shipList.Add(ship);
+            }
+            else
+            {
+                Debug.LogWarning($"Could not add fleetship to fleet because the Id already exists: {ship}");
             }
             
         }

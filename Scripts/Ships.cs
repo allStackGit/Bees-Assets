@@ -380,7 +380,8 @@ namespace Assets.Scripts
                 }
                 else
                 {
-                    Debug.LogError($"Could not fully create {name} because there were only {i-1}/{shipCount} ships of {shipType}");
+                    Debug.LogError($"Could not fully create {name} because there were only {i}/{shipCount} ships of {shipType}");
+                    Debug.Log(Utilities.ListToString(CurrentShips.GetFleetShips().Where((fs) => fs.Type == shipType).ToList()));
                 }
             }
             //Debug.Log($"Built {savedSquad}");
@@ -389,19 +390,31 @@ namespace Assets.Scripts
             return savedSquad;
         }
 
-        public SavedSquad GetSquadByComposition(Level level, ConfigData.ShipTypes shipType, int shipCount)
+        public SavedSquad GetSquadByComposition(Level level, ConfigData.ShipTypes shipType, int shipCount, bool canHaveFewerShips = false, bool canHaveMoreShips = false)
         {
-            SavedSquad savedSquad = GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetSquadShips().Count == shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType) && squad.GetAliveSquadShips().Count > 0);
-            if (savedSquad != null)
+            SavedSquad savedSquad = GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetSquadShips().Count == shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType) && squad.GetAliveSquadShips().Count > 0); ;
+            if (savedSquad == null)
             {
-                //Debug.Log($"Got Squad {savedSquad}");
-                return savedSquad;
+                if (!canHaveFewerShips && !canHaveMoreShips)
+                {
+                    Debug.LogError($"No squad found with {shipCount} ships of type {shipType}");
+                }
+                else if (canHaveFewerShips)
+                {
+                    savedSquad = GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetSquadShips().Count <= shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType) && squad.GetAliveSquadShips().Count > 0);
+                    if (savedSquad == null && canHaveMoreShips)
+                    {
+                        savedSquad = GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetSquadShips().Count >= shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType) && squad.GetAliveSquadShips().Count > 0);
+                    }
+                }
+                else if (canHaveMoreShips)
+                {
+                    savedSquad = GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetSquadShips().Count >= shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType) && squad.GetAliveSquadShips().Count > 0);
+
+                }                
             }
-            else
-            {
-                Debug.LogError($"No squad found with {shipCount} ships of type {shipType}");
-                return null;
-            }
+            return savedSquad;
+
         }
         public SavedSquad GetSquadByComposition(ConfigData.ShipTypes shipType)
         {

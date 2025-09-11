@@ -23,7 +23,6 @@ namespace Assets.Scripts.Entities.Ships
         public bool IsCharging;
         public int OriginalPower;
         public Weapon Charge;
-        public HashSet<Ship> ShipsHit = new HashSet<Ship>();
         public ChargingBar ChargingBar;
         /// <summary>
         /// The animation that runs while the barge is charging forward

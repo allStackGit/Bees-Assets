@@ -1141,7 +1141,7 @@ namespace Assets.Scripts.Levels
         }
         public void FinalizeUserCommand()
         {
-            if (HasCommand)
+            if (HasCommand || HasCommandQueue)
             {
                 //Debug.Log($"Finalizing command for {Name}");
                 //if (Command.Type != "Charge" || !((Charge)Command).IsCharging)
@@ -1170,7 +1170,7 @@ namespace Assets.Scripts.Levels
                     });
                 }
                 GetCommand().SetFinalize("New command given");
-                
+
             }
         }
         public MiningAsteroid GetNearestMiningAsteroid()

@@ -12,7 +12,7 @@ public class CutsceneManager : MonoBehaviour
     public DialogueManager DialogueManager;
     public GameObject CutsceneCanvas;
     public Stage Stage;
-    public List<DialogueLine> PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLines_BluerPastures, PlutoToNeptune, Neptune_SeizeTheMeans, Neptune_OfProduction, Neptune_PressingForward, NeptuneToUranus, Uranus_OnTheOffensive;
+    public List<DialogueLine> PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLines_BluerPastures, PlutoToNeptune, Neptune_SeizeTheMeans, Neptune_OfProduction, Neptune_PressingForward, NeptuneToUranus, Uranus_OnTheOffensive, Uranus_OnTheDefensive, Uranus_ANewThreat;
     public bool PlutoLines_Anomaly_Completed = false;
     public bool HitDialogueBreak = false;
     public Action EndDialogueAction;
@@ -43,6 +43,8 @@ public class CutsceneManager : MonoBehaviour
         Portraits["Alejandra"] = Resources.LoadAll<Sprite>("Sprites/Portraits/alejandra_chat");
         Portraits["Emilia"] = Resources.LoadAll<Sprite>("Sprites/Portraits/emilia_chat");
         Portraits["Fritz"] = Resources.LoadAll<Sprite>("Sprites/Portraits/fritz_chat");
+        Portraits["Marge"] = Resources.LoadAll<Sprite>("Sprites/Portraits/marge_chat");
+        Portraits["Barge Pilot"] = Resources.LoadAll<Sprite>("Sprites/Portraits/starman");
 
         PlutoLines_Anomaly = new List<DialogueLine>
         {
@@ -243,7 +245,7 @@ public class CutsceneManager : MonoBehaviour
 
         };
 
-        Neptune_OfProduction = new List<DialogueLine>()
+        Neptune_OfProduction = new List<DialogueLine>
         {
             new DialogueLine("Samuel", Portraits["Samuel"], "Scouts are reporting the bee forces on all sides. Their fleet from Pluto is catching up, and they’ve already established a blockade between here and Uranus."),
             new DialogueLine("Samuel", Portraits["Samuel"], "Now that we have factory ships, we can gather resources from the same asteroids the bees were defending. That’ll give us a fighting chance against the blockade, but we need to be quick."),
@@ -268,7 +270,7 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Samuel", Portraits["Samuel"], "That's everyone commander, we made it out."),
         };
 
-        Neptune_PressingForward = new List<DialogueLine>()
+        Neptune_PressingForward = new List<DialogueLine>
         {
             new DialogueLine("Samuel", Portraits["Samuel"], "It’s time to break through this blockade, commander. Use everything at your disposal."),
 
@@ -283,7 +285,7 @@ public class CutsceneManager : MonoBehaviour
 
         };
 
-        NeptuneToUranus = new List<DialogueLine>()
+        NeptuneToUranus = new List<DialogueLine>
         {
             new DialogueLine("Oviya", Portraits["Oviya"], "Our next destination is Uranus. There are bases on the planet proper and one of its moons-"),
             new DialogueLine("Samuel", Portraits["Samuel"], "Commander! We’re picking up other human vessels on our radars!"),
@@ -302,7 +304,7 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Samuel", Portraits["Samuel"], "We’ll prepare for boarding here."),
             new DialogueLine("Samuel", Portraits["Samuel"], 2),
             new DialogueLine("Samuel", Portraits["Samuel"], "The Titania research and engineering team should make a great addition to the fleet."),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "We will. You appear horribly disorganized are quite disorganized here, after all. Your fleet isn’t even in regulation formations, or any formation for that matter. You could use my help."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "We will. You appear horribly disorganized after all. Your fleet isn’t even in regulation formations, or any formation for that matter. You could use my help."),
             new DialogueLine("Marco", Portraits["Marco"], "You’ve been on our ship for about ten seconds."),
             new DialogueLine("Emilia", Portraits["Emilia"], "Well, I think you’re doing great! The way you fought was amazing! And we need their help, too, Alejandra."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Of course. I have great admiration for this group. Was that not clear?"),
@@ -313,12 +315,14 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Samuel", Portraits["Samuel"], "Erm… yes, that’s what we’re calling this enemy."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Yes, I do suppose they bear some resemblance to the endangered species. Fascinating observation."),
             new DialogueLine("Emilia", Portraits["Emilia"], "I like that name! Stupid bees! Yeah, it feels good to say."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "What are you writing? Um- nevermind. Anyway, we fought them, but there were too many for us to beat. We’ve been making our way closer to Earth and picking up survivors along the way."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "What are you writing? Um- nevermind."),
+            new DialogueLine("Samuel", Portraits["Samuel"], " Anyway, we fought them, but there were too many for us to beat. We’ve been making our way closer to Earth and picking up survivors along the way."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "And I assume you’ve encountered their communications jamming as well?"),
             new DialogueLine("Joey", Portraits["Joey"], "Yes, ma’am. "),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "It’s been frustrating. We lacked significant combat capabilities, so we had to go dark after the first assault."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "It was enough to throw them off, but it seems the fighting on Uranus was intense enough to be their main focus. We took the opportunity to flee."),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "I can’t say if there are survivors there. It was primarily a mining facility, but because it supplied the manufacturing operations on Saturn, we had some of our advanced Cruisers patrolling the area."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "I can’t say if there are survivors there."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "It was primarily a mining facility, but because it supplied the manufacturing operations on Saturn, we had some of our advanced Cruisers patrolling the area."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "We may need to act fast."),
             new DialogueLine("Marco", Portraits["Marco"], "We’re used to that by now."),
             new DialogueLine("Joey", Portraits["Joey"], "You said you were the research lead? Where’s the engineering lead?"),
@@ -332,13 +336,14 @@ public class CutsceneManager : MonoBehaviour
 
         };
 
-        Uranus_OnTheOffensive = new List<DialogueLine>()
+        Uranus_OnTheOffensive = new List<DialogueLine>
         {
             new DialogueLine("Samuel", Portraits["Samuel"], "There is still fighting around Uranus, another resource-rich area. If we take the bees down, we can bolster our own fleet with resources and personnel."),
             new DialogueLine("Samuel", Portraits["Samuel"], "Radars are jammed in the area, so we’ll need to rely on our scouts for vision."),
 
 
-            new DialogueLine("Oviya", Portraits["Oviya"], "Bee presence around Uranus is heavy, but not insurmountable. We’re far enough from the blockade that we aren’t expecting reinforcements now. Victory should ensure us time to collect more resources for the fleet."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Bee presence around Uranus is heavy, but not insurmountable. We’re far enough from the blockade that we aren’t expecting reinforcements now."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Victory should ensure us time to collect more resources for the fleet."),
             new DialogueLine("Samuel", Portraits["Samuel"], "We aren’t receiving any human signals, but it does look like there’s fighting ahead."),
             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Let’s get in there! And fast!"),
 
@@ -385,6 +390,86 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Marco", Portraits["Marco"], "We can’t risk further casualties, Yoshiko. Keep your head on straight."),
         };
 
+        Uranus_OnTheDefensive = new List<DialogueLine>
+        {
+            new DialogueLine("Samuel", Portraits["Samuel"], "Our success has bought us some time to collect resources around Uranus. There will likely be reinforcements called on from the bees we just fought, though. Take care."),
+
+            new DialogueLine("Oviya", Portraits["Oviya"], "Reinforcements from the remnants of the blockade are incoming."),
+
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "More bees! Let’s give ‘em hell!"),
+            new DialogueLine("Marco", Portraits["Marco"], "Even more ships. Commander, I trust you’ll know when to exit."),
+            new DialogueLine("Joey", Portraits["Joey"], "More bees? What in tarnation? Where are they coming from? "),
+            new DialogueLine("Oviya", Portraits["Oviya"], "We've found more bee ships, inbound to our location."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Another wave of ships!"),
+            new DialogueLine("Wesley", Portraits["Wesley"], "More of those… bees? Don’t risk our profit margins. You’ll receive a bill from Jensen if you lose any factory ships."),
+
+            new DialogueLine("Oviya", Portraits["Oviya"], "We're seeing more reinforcements from a different direction, now. It could be their main fleet. Things are going to get tough from here."),
+
+            new DialogueLine("Fritz", Portraits["Fritz"], "Ahaha! We have more bees come to meet the light! That’s right, Dee, this one’s for you!"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "More wrinkles in our plans approaching. I trust you can sort them out, commander."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Oh! Uh- is this thing on? Commander! There’s more bees! Get 'em!"),
+
+            new DialogueLine("Samuel", Portraits["Samuel"], "Fleet, it’s time to regroup and head out! Return to the commander’s position immediately."),
+
+            new DialogueLine("Samuel", Portraits["Samuel"], "We’ve lost all the ships we sent out, commander. It’s time to regroup."),
+
+            new DialogueLine("Oviya", Portraits["Oviya"], "Hold on, we have more bees on our radar! They’re… not coming towards us?"),
+            new DialogueLine("Marco", Portraits["Marco"], "No rest for the weary…"),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Alright, commander, gather your squads and let's investigate."),
+
+            new DialogueLine("Samuel", Portraits["Samuel"], "That was close! Let's get out of here."),
+        };
+
+        Uranus_ANewThreat = new List<DialogueLine> {
+            new DialogueLine("Samuel", Portraits["Samuel"], "We need to check out a grouping of bees further out from Uranus. They’re moving… very slowly."),
+
+            new DialogueLine("Marge", Portraits["Marge"], "Is this dang thing working? Hello! Any humans left? Hang in there, team, we’re gonna get through this, okay?"),
+            new DialogueLine("Barge Pilot", Portraits["Barge Pilot"], "It’s not looking good, Marge…"),
+            new DialogueLine("Marge", Portraits["Marge"], "I'll get you through, okay?"),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Hello? Identify yourself."),
+            new DialogueLine("Marge", Portraits["Marge"], "Oh, thank the stars! Are you UF? Come help us, quick! We’re surrounded over here!"),
+
+            new DialogueLine("Marge", Portraits["Marge"], "No!!! They’re gonna pay for that!"),
+
+            new DialogueLine("Marge", Portraits["Marge"], "There’s more coming! "),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Those are yellow jackets! Don’t let them hit those Barges!"),
+
+            new DialogueLine("Marge", Portraits["Marge"], "Just cuz I don’t have guns don't mean I can’t fight! Take this!"),
+
+            new DialogueLine("Marge", Portraits["Marge"], "I thought we were goners. I can’t thank you enough for risking yourselves."),
+            new DialogueLine("Marco", Portraits["Marco"], "We're getting pretty used to these rescue missions, don’t sweat it."),
+            new DialogueLine("Fritz", Portraits["Fritz"], "And we get to explode stuff! Win win!"),
+            new DialogueLine("Marge", Portraits["Marge"], "…right."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "How’d you end up here?"),
+            new DialogueLine("Marge", Portraits["Marge"], "Well, we were on a transport line from Saturn. Those… things-"),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Bees!"),
+            new DialogueLine("Marge", Portraits["Marge"], "They do look like that, huh? Wait- you all don’t think they’re really bees, right?"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Of course not, that’s preposterous."),
+            new DialogueLine("Fritz", Portraits["Fritz"], "…really?! Jeremy lied to me…"),
+            new DialogueLine("Marge", Portraits["Marge"], "Right. Glad most of us have our heads screwed on straight! Either way, they chased behind us during our trip over."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "And they chased you from Saturn. This is bad."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Why’s that? Well obviously it’s bad because the bees attacked there."),
+            new DialogueLine("Joey", Portraits["Joey"], "Saturn’s the biggest UF station this side of the asteroid belt."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "And its largest off-Earth manufacturing site."),
+            new DialogueLine("Joey", Portraits["Joey"], "They’re mighty fine facilities."),
+            new DialogueLine("Marco", Portraits["Marco"], "If they’re smart, they’re using those facilities."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "You think they can make more bees? They can probably make more bees."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Let’s get within scouting distance as soon as possible. If it’s as bad as we think, we need to stop this as soon as possible."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Oh, this is gonna be a big fight. I can tell!"),
+
+            new DialogueLine("Samuel", Portraits["Samuel"], "We couldn’t save them…"),
+            new DialogueLine("Marco", Portraits["Marco"], "Sometimes that’s life, kid. We’ll avenge them."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "It looks like they were coming from Saturn."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Bees included. This is bad."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Why’s that? Well obviously it’s bad because the bees attacked there."),
+            new DialogueLine("Joey", Portraits["Joey"], "Saturn’s the biggest UF station this side of the asteroid belt."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "And its largest off-Earth manufacturing site."),
+            new DialogueLine("Joey", Portraits["Joey"], "They’re mighty fine facilities."),
+            new DialogueLine("Marco", Portraits["Marco"], "If they’re smart, they’re using those facilities."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "You think they can make more bees? They can probably make more bees."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Let’s get within scouting distance as soon as possible. If it’s as bad as we think, we need to stop this immediately."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Oh, this is gonna be a big fight. I can tell!"),
+        };
         /*
          * 
          *  new DialogueLine("Samuel", Portraits["Samuel"], ""),
@@ -396,13 +481,14 @@ public class CutsceneManager : MonoBehaviour
          *  new DialogueLine("Alejandra", Portraits["Alejandra"], ""),
          *  new DialogueLine("Emilia", Portraits["Emilia"], ""),
          *  new DialogueLine("Fritz", Portraits["Fritz"], ""),
+         *  new DialogueLine("Marge", Portraits["Marge"], ""),
+         *  
          * */
 
 
-
+        
 
         /*
-
 
 
          */

@@ -1189,6 +1189,8 @@ namespace Assets.Scripts
                 case 4: 
                 case 5:
                 case 6:
+                case 7:
+                case 8:
                     //SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
                     //return;
                     if (!HasSeenPreLevelIntro)

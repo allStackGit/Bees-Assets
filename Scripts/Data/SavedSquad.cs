@@ -267,9 +267,54 @@ namespace Assets.Scripts.Data
         {
             return GetSquadShips().Sum((s) => s.GetFleetShip().GetCapacity());
         }
-        public bool Equals(SavedSquad squad)
+        private SavedSquad _savedSquad;
+        public override bool Equals(System.Object obj)
         {
-            return squad.Id == Id;
+            if (obj == null)
+            {
+                return false;
+            }
+
+            // If parameter cannot be cast to class return false.
+            _savedSquad = obj as SavedSquad;
+            if (_savedSquad == null)
+            {
+                return false;
+            }
+
+            return Id == _savedSquad.Id;
+        }
+
+        public bool Equals(FleetShip other)
+        {
+            return Id == other.Id;
+        }
+
+        public override int GetHashCode()
+        {
+            return Id.GetHashCode();
+        }
+
+        public static bool operator ==(SavedSquad a, SavedSquad b)
+        {
+            // If both are null, or both are same instance, return true.
+            if (System.Object.ReferenceEquals(a, b))
+            {
+                return true;
+            }
+
+            // If one is null, but not both, return false.
+            if (((object)a == null) || ((object)b == null))
+            {
+                return false;
+            }
+
+            return a.Id == b.Id;
+        }
+
+        public static bool operator !=(SavedSquad a, SavedSquad b)
+        {
+            return !(a == b);
         }
         public object Clone()
         {

@@ -1,4 +1,5 @@
 ﻿
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -89,7 +90,15 @@ namespace Assets.Scripts.Levels.Commands
                 if (!_guardedSquad.IsDead)
                 {
                     _timer_position = _guardedSquad.GetCenterPoint();
-                    _timer_offsetFromSquad = new Vector2(GetSquad().GetWidth() + _timer_offset, GetSquad().GetHeight() + _timer_offset);
+                    try
+                    {
+                        _timer_offsetFromSquad = new Vector2(GetSquad().GetWidth() + _timer_offset, GetSquad().GetHeight() + _timer_offset);
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogError($"Squad: {GetSquad()}, Command: {this}, Squad Ships: {Utilities.ListToString(GetSquad().GetShips())}");
+                        throw e;
+                    }
 
                     switch (GuardPosition)
                     {
@@ -116,7 +125,15 @@ namespace Assets.Scripts.Levels.Commands
                 }
                 else
                 {
-                    GetSquad().SetSquadSpeed(GetSquad().MaxSpeed);
+                    try
+                    {
+                        GetSquad().SetSquadSpeed(GetSquad().MaxSpeed);
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogError($"Squad: {GetSquad()}, Command: {this}, Squad Ships: {Utilities.ListToString(GetSquad().GetShips())}");
+                        throw e;
+                    }
                     //CancelInvoke(nameof(Timer));
                     SetFinalize("Guarded squad died");
                 }
@@ -124,23 +141,18 @@ namespace Assets.Scripts.Levels.Commands
         }
         private Squad GetClosestAvailableSquadToGuard()
         {
-            return Level.State.GetSquadsBySide(Side)
-                .Where((s) => s != GetSquad() && (!s.HasCommand || s.GetCommand().CommandType != ConfigData.CommandTypes.Guard))
-                .OrderBy(s => s.DistanceToPoint(GetSquad().GetPosition())).FirstOrDefault();
+            return Level.State.GetSquadsBySide(Side).Where((s) => s != GetSquad() && (!s.HasCommand || s.GetCommand().CommandType != ConfigData.CommandTypes.Guard)).OrderBy(s => s.DistanceToPoint(GetSquad().GetPosition())).FirstOrDefault();
         }
         private List<Squad> _f_otherGuardSquads = new List<Squad>();
         public List<Squad> GetGuardingSquads()
         {
             if (_guardedSquad != null && OtherGuardSquads.Count > 0)
             {
-                _f_otherGuardSquads = OtherGuardSquads.Where(
-                (squad) => squad.HasCommand && squad != GetSquad()
-                && squad.GetCommand().CommandType == ConfigData.CommandTypes.Guard).ToList();
+                _f_otherGuardSquads = OtherGuardSquads.Where((squad) => squad.HasCommand && squad != GetSquad() && squad.GetCommand().CommandType == ConfigData.CommandTypes.Guard).ToList();
 
                 if (_f_otherGuardSquads.Count > 0)
                 {
-                    return _f_otherGuardSquads.Where((squad) => ((Guard)squad.GetCommand())._guardedSquad != null
-                    && ((Guard)squad.GetCommand())._guardedSquad == _guardedSquad).ToList();
+                    return _f_otherGuardSquads.Where((squad) => ((Guard)squad.GetCommand())._guardedSquad != null && ((Guard)squad.GetCommand())._guardedSquad == _guardedSquad).ToList();
                 }
             }
             _f_otherGuardSquads.Clear();

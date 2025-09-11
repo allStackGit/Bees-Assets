@@ -158,6 +158,10 @@ namespace Assets.Scripts.Entities.Ships
         /// Whether or not a ship can move beyond the map bounds. Only allowed temporarily for campaign levels
         /// </summary>
         public bool CanOverrideBounds;
+        /// <summary>
+        /// A set of all the ships that this ship has hit
+        /// </summary>
+        public HashSet<Ship> ShipsHit = new HashSet<Ship>();
 
         public volatile bool PathfindingThreadComplete, IsPathfinding;
         public volatile Pathfinder.Path PathfindingValue;
@@ -179,7 +183,7 @@ namespace Assets.Scripts.Entities.Ships
         /// </summary>
         public bool HasReachedDestination => !HasTargetCoordinates;
         /// <summary>
-        /// A list of all the ships that are within range of this ship's weapon(s) for debugging purposes only
+        /// A list of all the ships that are within range of this ship's weapon(s). Not very performant, use with caution
         /// </summary>
         public List<Ship> ShipsWithinRange => HasWeapons ? Weapons.Select((w) => w.ShipsWithinRange).Aggregate(new HashSet<Ship>(), (list, current) => {
             list.UnionWith(current.Values.ToHashSet());
@@ -745,6 +749,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             WeaponsThatHaveUsWithinRange.Clear();
             SetToDefaultAngle();
             CanOverrideBounds = false;
+            ShipsHit.Clear();
 
             //if (HasProximityCollider)
             //{
@@ -1638,6 +1643,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                     power = 0;
                 }
 
+                attacker.ShipsHit.Add(target);
                 _targetOldTSV = target.Tsv;
                 _targetOldHealth = target.Health;  // [debug]
                 target.Health -= math.min(power, target.Health);

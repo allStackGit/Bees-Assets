@@ -27,7 +27,6 @@ namespace UIComponents
             switch (LevelNumber)
             {
                 case 1:
-                    Debug.Log("Playing Pluto reinforcements dialogue.");
                     ConfigData.HasSeenIntermission = true;
                     StartCoroutine(DelayStart(3, () =>
                     {
@@ -35,7 +34,6 @@ namespace UIComponents
                     }));
                     break;
                 case 2:
-                    Debug.Log("Playing Pluto Bluer pastures dialogue.");
                     ConfigData.HasSeenIntermission = true;
                     StartCoroutine(DelayStart(3, () =>
                     {
@@ -43,7 +41,6 @@ namespace UIComponents
                     }));
                     break;
                 case 3:
-                    Debug.Log("Playing Neptune Sieze the Means dialogue.");
 
                     if (ConfigData.HasSeenIntermission)
                     {
@@ -62,7 +59,6 @@ namespace UIComponents
                     }
                     break;
                 case 4:
-                    Debug.Log("Playing Neptune Of Production! dialogue.");
                     ConfigData.HasSeenIntermission = true;
                     StartCoroutine(DelayStart(3, () =>
                     {
@@ -70,7 +66,6 @@ namespace UIComponents
                     }));
                     break;
                 case 5:
-                    Debug.Log("Playing Neptune Pressing Forward dialogue.");
                     ConfigData.HasSeenIntermission = true;
                     StartCoroutine(DelayStart(3, () =>
                     {
@@ -78,7 +73,6 @@ namespace UIComponents
                     }));
                     break;
                 case 6:
-                    Debug.Log("Playing Uranus On the Offensive dialogue.");
 
                     if (ConfigData.HasSeenIntermission)
                     {
@@ -95,14 +89,27 @@ namespace UIComponents
                             CutsceneManager.PlayDialogueSection(CutsceneManager.NeptuneToUranus, true);
                         }));
                     }
-
-
+                    break;
+                case 7:
+                    ConfigData.HasSeenIntermission = true;
+                    StartCoroutine(DelayStart(3, () =>
+                    {
+                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Uranus_OnTheDefensive[0], true);
+                    }));
+                    break;
+                case 8:
+                    ConfigData.HasSeenIntermission = true;
+                    StartCoroutine(DelayStart(3, () =>
+                    {
+                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Uranus_ANewThreat[0], true);
+                    }));
                     break;
             }
         }
 
         public void ShowContinueButton()
         {
+            SkipButton.SetActive(false);
             ContinueButton.SetActive(true);
         }
 

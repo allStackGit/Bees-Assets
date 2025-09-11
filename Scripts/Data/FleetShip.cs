@@ -1,4 +1,5 @@
-﻿using Assets.Scripts.Settings;
+﻿using Assets.Scripts.Entities;
+using Assets.Scripts.Settings;
 
 using System;
 using System.Collections.Generic;
@@ -153,9 +154,54 @@ namespace Assets.Scripts.Data
             //Debug.Log($"Calculating TSV for {Type}. Firepower: {Firepower}");
             return GetTsv();
         }
-        public bool Equals(FleetShip ship)
+        private FleetShip _fleetShip;
+        public override bool Equals(System.Object obj)
         {
-            return ship.Id == Id;
+            if (obj == null)
+            {
+                return false;
+            }
+
+            // If parameter cannot be cast to class return false.
+            _fleetShip = obj as FleetShip;
+            if (_fleetShip == null)
+            {
+                return false;
+            }
+
+            return Id == _fleetShip.Id;
+        }
+
+        public bool Equals(FleetShip other)
+        {
+            return Id == other.Id;
+        }
+
+        public override int GetHashCode()
+        {
+            return Id.GetHashCode();
+        }
+
+        public static bool operator ==(FleetShip a, FleetShip b)
+        {
+            // If both are null, or both are same instance, return true.
+            if (System.Object.ReferenceEquals(a, b))
+            {
+                return true;
+            }
+
+            // If one is null, but not both, return false.
+            if (((object)a == null) || ((object)b == null))
+            {
+                return false;
+            }
+
+            return a.Id == b.Id;
+        }
+
+        public static bool operator !=(FleetShip a, FleetShip b)
+        {
+            return !(a == b);
         }
         public string ToJson()
         {

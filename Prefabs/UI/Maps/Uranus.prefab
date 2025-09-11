@@ -85,6 +85,9 @@ SpriteRenderer:
   m_ReflectionProbeUsage: 1
   m_RayTracingMode: 0
   m_RayTraceProcedural: 0
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
+  m_SmallMeshCulling: 1
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
@@ -192,6 +195,9 @@ SpriteRenderer:
   m_ReflectionProbeUsage: 1
   m_RayTracingMode: 0
   m_RayTraceProcedural: 0
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
+  m_SmallMeshCulling: 1
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
@@ -254,6 +260,7 @@ MonoBehaviour:
   Name: Uranus
   Index: 0
   RingSparkle: {fileID: 7210241141521788838}
+  Transform: {fileID: 0}
   ItemId: 0
 --- !u!1001 &1225857934425999943
 PrefabInstance:
@@ -490,6 +497,14 @@ PrefabInstance:
       propertyPath: m_Name
       value: Ariel
       objectReference: {fileID: 0}
+    - target: {fileID: 6122219953094928062, guid: c3579c228df2e284bbe4b88e145ab5e0, type: 3}
+      propertyPath: m_BackSortingLayer
+      value: 31
+      objectReference: {fileID: 0}
+    - target: {fileID: 6122219953094928062, guid: c3579c228df2e284bbe4b88e145ab5e0, type: 3}
+      propertyPath: m_FrontSortingLayer
+      value: 31
+      objectReference: {fileID: 0}
     - target: {fileID: 7532473174318184516, guid: c3579c228df2e284bbe4b88e145ab5e0, type: 3}
       propertyPath: m_LocalPosition.x
       value: -193
@@ -557,6 +572,14 @@ PrefabInstance:
       propertyPath: m_Name
       value: Miranda
       objectReference: {fileID: 0}
+    - target: {fileID: 6122219953094928062, guid: c8503c9a59d14614189ada87b25f4454, type: 3}
+      propertyPath: m_BackSortingLayer
+      value: 31
+      objectReference: {fileID: 0}
+    - target: {fileID: 6122219953094928062, guid: c8503c9a59d14614189ada87b25f4454, type: 3}
+      propertyPath: m_FrontSortingLayer
+      value: 31
+      objectReference: {fileID: 0}
     - target: {fileID: 7532473174318184516, guid: c8503c9a59d14614189ada87b25f4454, type: 3}
       propertyPath: m_LocalPosition.x
       value: 361
@@ -623,6 +646,14 @@ PrefabInstance:
     - target: {fileID: 4623242301682616239, guid: 50608955cf291a24c9d659605b5dbc60, type: 3}
       propertyPath: m_Name
       value: Titania
+      objectReference: {fileID: 0}
+    - target: {fileID: 6122219953094928062, guid: 50608955cf291a24c9d659605b5dbc60, type: 3}
+      propertyPath: m_BackSortingLayer
+      value: 31
+      objectReference: {fileID: 0}
+    - target: {fileID: 6122219953094928062, guid: 50608955cf291a24c9d659605b5dbc60, type: 3}
+      propertyPath: m_FrontSortingLayer
+      value: 31
       objectReference: {fileID: 0}
     - target: {fileID: 7532473174318184516, guid: 50608955cf291a24c9d659605b5dbc60, type: 3}
       propertyPath: m_LocalEulerAnglesHint.x
@@ -703,6 +734,14 @@ PrefabInstance:
     - target: {fileID: 4623242301682616239, guid: 18866f315416a0440b28be86899042d8, type: 3}
       propertyPath: m_Name
       value: Umbriel
+      objectReference: {fileID: 0}
+    - target: {fileID: 6122219953094928062, guid: 18866f315416a0440b28be86899042d8, type: 3}
+      propertyPath: m_BackSortingLayer
+      value: 31
+      objectReference: {fileID: 0}
+    - target: {fileID: 6122219953094928062, guid: 18866f315416a0440b28be86899042d8, type: 3}
+      propertyPath: m_FrontSortingLayer
+      value: 31
       objectReference: {fileID: 0}
     - target: {fileID: 7532473174318184516, guid: 18866f315416a0440b28be86899042d8, type: 3}
       propertyPath: m_LocalPosition.x
