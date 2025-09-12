@@ -299,6 +299,7 @@ namespace Assets.Scripts
 
         public enum GameModes
         {
+            Unset,
             Campaign,
             FreePlay,
             Challenge,
@@ -991,8 +992,10 @@ namespace Assets.Scripts
                 SetupFleetData(!FirstTimePlaying, allStartingShips);
                 SetupCampaignFleetData(!FirstTimePlaying, allCampaignStartingShips);
                 SetupSavedSquadsData(!FirstTimePlaying);
+                SetupCampaignSavedSquadsData(!FirstTimePlaying);
                 SetupUserSettingsData(!FirstTimePlaying);
                 SetupLevelData(!FirstTimePlaying);
+                SetupCampaignLevelData(!FirstTimePlaying);
                 //Debug.Log($"Current Level after loading user data: {GetLevel()}");
             }
 
@@ -1121,7 +1124,7 @@ namespace Assets.Scripts
 
             // Starting gunship squad #1
             SavedSquad squad = CurrentShips.BuildNewSquad($"Squad #{UserProgressData.HumanCampaignSavedSquadNumber++}", Configuration.HumanSide, ShipTypes.Gunship, 1);
-            CurrentShips.GetFleetShip(0).Name = "Gunship D-4";
+            squad.GetSquadShips().Find((s) => s.ShipType == ShipTypes.Gunship).GetFleetShip().Name = "Gunship D-4";
             squad.Stats.Commander = "Tom";
             squad.StartingPosition = new Vector2(-33, -2); // Reposition it so that it works with the squad maker
 
@@ -1239,8 +1242,11 @@ namespace Assets.Scripts
         }
         public static void SetupLevelData(bool shouldFileExist)
         {
-            _campaignLevelData = new LevelData(shouldFileExist, 0);
             _levelData = new LevelData(shouldFileExist, 1);
+        }
+        public static void SetupCampaignLevelData(bool shouldFileExist)
+        {
+            _campaignLevelData = new LevelData(shouldFileExist, 0);
         }
         public static LevelData GetLevelData()
         {
@@ -1268,8 +1274,11 @@ namespace Assets.Scripts
         }
         public static void SetupSavedSquadsData(bool shouldFileExist)
         {
-            _campaignSavedSquadsData = new SavedSquadsData(shouldFileExist, 0);
             _savedSquadsData = new SavedSquadsData(shouldFileExist, 1);
+        }
+        public static void SetupCampaignSavedSquadsData(bool shouldFileExist)
+        {
+            _campaignSavedSquadsData = new SavedSquadsData(shouldFileExist, 0);
         }
         public static SavedSquadsData GetSavedSquadsData()
         {

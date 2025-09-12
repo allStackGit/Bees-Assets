@@ -103,7 +103,7 @@ namespace Assets.Scripts.Data
             {
                 long id = Utilities.GetNegativeFleetshipId();
 
-                FleetShip fleetShip = new FleetShip(id, squadType, false, true, false, 0, 0, 0, 0, 0, 0, 0);
+                FleetShip fleetShip = new FleetShip(id, squadType, false, true, 0, 0, 0, 0, 0, 0, 0);
                 AddShipToSquad(new SquadShip(fleetShip.Id, fleetShip.Type, offsets[shipIndex]));
 
             }
@@ -342,7 +342,7 @@ namespace Assets.Scripts.Data
             GetSquadShips().ForEach((squadShip) =>
             {
                 FleetShip fleetShip = squadShip.GetFleetShip();
-                FleetShip newFleetShip = new FleetShip(Utilities.GetNegativeFleetshipId(), fleetShip.Type, false, true, false, 0, 0, 0, 0, 0, 0, 0, fleetShip.Name);
+                FleetShip newFleetShip = new FleetShip(Utilities.GetNegativeFleetshipId(), fleetShip.Type, false, true, 0, 0, 0, 0, 0, 0, 0, fleetShip.Name);
                 SquadShip newSquadShip = new SquadShip(newFleetShip.Id, newFleetShip.Type, squadShip.Offset);
                 convert.AddShipToSquad(newSquadShip);
             });

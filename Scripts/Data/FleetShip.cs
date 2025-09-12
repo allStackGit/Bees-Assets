@@ -31,13 +31,12 @@ namespace Assets.Scripts.Data
        
         public float Firepower => GetFirepower();
 
-        public FleetShip(long id, ConfigData.ShipTypes type, bool hasCachedSprite, bool isVisibleToUser, bool isDead, int shotsFired, int damageDone, int damageReceived, int kills, int battlesFought, int battlesWon, int mineralsMined, string name = "")
+        public FleetShip(long id, ConfigData.ShipTypes type, bool hasCachedSprite, bool isDead, int shotsFired, int damageDone, int damageReceived, int kills, int battlesFought, int battlesWon, int mineralsMined, string name = "")
         {
             Id = id;
             Type = type;
             Name = name == "" ? $"{GenerateShipName()}" : name;
             HasCachedSprite = hasCachedSprite;
-            IsVisibleToUser = isVisibleToUser; // [alert] We might not need this anymore since ships are added to the fleet as the game progresses
             IsDead = isDead;
             ShotsFired = shotsFired;
             DamageDone = damageDone;
@@ -124,9 +123,9 @@ namespace Assets.Scripts.Data
             }
 
         }
-        public bool IsShipVisibleAndAlive()
+        public bool IsShipAlive()
         {
-            return !IsDead && IsVisibleToUser;
+            return !IsDead;
         }
         public float GetFirepower()
         {
@@ -205,7 +204,7 @@ namespace Assets.Scripts.Data
         }
         public string ToJson()
         {
-            return $"{{\"i\": {Id}, \"n\": \"{Name}\", \"t\": {(int) Type}, \"v\": {(IsVisibleToUser ? 1 : 0)}, \"d\": {(IsDead ? 1 : 0)}," +
+            return $"{{\"i\": {Id}, \"n\": \"{Name}\", \"t\": {(int) Type}, \"d\": {(IsDead ? 1 : 0)}," +
                 $"\"s\": {(HasCachedSprite ? 1 : 0)}, \"f\": {ShotsFired}, \"dd\": {DamageDone}, \"r\": {DamageReceived}, \"k\": {Kills}, \"b\": {BattlesFought}, \"w\": {BattlesWon}, " +
                 $"\"m\": {MineralsMined}}}";
         }

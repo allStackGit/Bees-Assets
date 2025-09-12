@@ -19,7 +19,7 @@ namespace Assets.Scripts.UIComponents
         public SquadActionBox ActionBox;
         public Level CurrentLevel;
         public Stage Stage;
-        public Dialogue ExitConfirmationDialogue, CampaignLevelEndedDialogue;
+        public Dialogue ExitConfirmationDialogue, CampaignLevelEndedDialogue, CampaignCompletedDialogue;
         public TMP_Text ShipInfoBoxTitle, ShipInfoBoxStats, TryNewSquadsButtonText;
         public TMP_InputField LevelNameInput, SupplyCapacityInput;
         public Codex Codex;
@@ -63,6 +63,10 @@ namespace Assets.Scripts.UIComponents
             }, ExitToMainMenu });
             CampaignLevelEndedDialogue.SetTextBoxHeight(100);
             CampaignLevelEndedDialogue.SetButtonWidth(1, 180);
+
+            CampaignCompletedDialogue = new Dialogue(Stage.DialoguePrefab, "Campaign Completed!", "Congratulations! You've finished the Beta Campaign!", new List<string>() { "Exit to Main Menu" }, new List<UnityAction>() {ExitToMainMenu });
+            CampaignCompletedDialogue.SetTextBoxHeight(120);
+            CampaignCompletedDialogue.SetButtonWidth(0, 180);
             //Debug.Log($"ActionBox:{ActionBox}");
             //Debug.Log($"EventSystem:{EventSystem}");
         }
@@ -79,7 +83,14 @@ namespace Assets.Scripts.UIComponents
         }
         public void ShowLevelContinueDialogue()
         {
-            CampaignLevelEndedDialogue.Show();
+            if (ConfigData.UserProgressData.GetCurrentLevel() >= ConfigData.Configuration.TotalLevels)
+            {
+                CampaignCompletedDialogue.Show();
+            }
+            else
+            {
+                CampaignLevelEndedDialogue.Show();
+            }
         }
         public void Exit()
         {

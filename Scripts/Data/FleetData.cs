@@ -31,10 +31,10 @@ namespace Assets.Scripts.Data
         private string MakeDefaultList(Dictionary<ConfigData.ShipTypes, int> startingShips)
         {
             List<ConfigData.ShipTypes> shipTypes = startingShips.Keys.ToList();
-
+            int id;
             shipTypes.ForEach((shipType) =>
             {
-                int id = ConfigData.UserProgressData.GetNextFleetId();
+                
                 int shipCount = startingShips.GetValueOrDefault(shipType);
                 int side = ConfigData.Configuration.HumanSide;
 
@@ -44,13 +44,9 @@ namespace Assets.Scripts.Data
                 }
                 for (int i = 0; i < shipCount; i++)
                 {
-                    
-                    bool isVisible = false;
-                    if (ConfigData.InitialVisibleShips.Contains(id))
-                    {
-                        isVisible = true;
-                    }
-                    AddShipToFleet(new FleetShip(id, shipType, false, isVisible, false, 0, 0, 0, 0, 0, 0, 0));
+                    id = ConfigData.UserProgressData.GetNextFleetId();
+
+                    AddShipToFleet(new FleetShip(id, shipType, false, false, 0, 0, 0, 0, 0, 0, 0));
                 }
             });
             string json = ToJson();
@@ -63,8 +59,7 @@ namespace Assets.Scripts.Data
         {
             jsonShips.ForEach((ship) =>
             {
-                AddShipToFleet(new FleetShip((int) ship.i, (ConfigData.ShipTypes) ship.t, ((int)ship.s == 1 ? true : false), ((int) ship.v == 1 ? true : false),
-                    ((int)ship.d == 1 ? true : false), (int) ship.f, (int) ship.dd, (int) ship.r, (int) ship.k, (int) ship.b, (int) ship.w, (int)ship.m, (string)ship.n));
+                AddShipToFleet(new FleetShip((int) ship.i, (ConfigData.ShipTypes) ship.t, ((int)ship.s == 1 ? true : false), ((int)ship.d == 1 ? true : false), (int) ship.f, (int) ship.dd, (int) ship.r, (int) ship.k, (int) ship.b, (int) ship.w, (int)ship.m, (string)ship.n));
             });
         }
         public List<FleetShip> GetShips()

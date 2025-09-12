@@ -336,6 +336,7 @@ namespace Assets.Scripts.Levels
                                         () =>
                                         {
                                             firstGunship.Squad.CanAcceptUserInput = true;
+                                            firstGunship.Squad.HasCommandQueue = false;
                                             Stage.IsFollowingShip = false;
                                             aggressive.SetFinalize("Honeybee reached by gunship, ceding to user control");
 
@@ -2042,7 +2043,7 @@ namespace Assets.Scripts.Levels
                {
                    if (bargeSquad.IsDead) // Bees Won
                    {
-                       Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_ANewThreat.GetRange(21, 12));
+                       Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_ANewThreat.GetRange(30, 12), true);
                    }
                    else
                    {
@@ -2259,7 +2260,7 @@ namespace Assets.Scripts.Levels
 
             // Unlock Free play mode
             ConfigData.UserProgressData.IsHumanFreePlayUnlocked = true;
-            ConfigData.UserProgressData.IsBeeFreePlayUnlocked = true;
+            //ConfigData.UserProgressData.IsBeeFreePlayUnlocked = true;
 
             // Add Leafcutter, and Yellow Jacket to codex and add Carpenter Bee to visibility
             ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Leafcutter);
@@ -2290,6 +2291,7 @@ namespace Assets.Scripts.Levels
             {
                 ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Factory, 5); // 5 Factories
                 ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Factory);
+                ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Factory);
             }
             else
             {
@@ -2473,9 +2475,10 @@ namespace Assets.Scripts.Levels
                 CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Bumblebee, 2);
             }
 
-            // Add Honeybee, Frigate, and Dreadnought to the codex and visibility
             ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Bumblebee);
             ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Cruiser);
+
+            ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Cruiser);
 
 
             ConfigData.UserProgressData.SetShipTypes();
@@ -2509,6 +2512,31 @@ namespace Assets.Scripts.Levels
         public void Level8Ending()
         {
             Debug.Log("Level 8 complete");
+
+            ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Barge);
+            ConfigData.UserProgressData.SetShipTypes();
+
+            // Unlock stuff because you finished the campaign
+            ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Flagship);
+            ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.FireBarge);
+            ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Carrier);
+            ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.WarpGate);
+
+            ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Queen);
+            ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Beehive);
+
+            ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Flagship);
+            ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.FireBarge);
+            ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Carrier);
+            ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.WarpGate);
+
+            ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Queen);
+            ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Beehive);
+
+            ConfigData.UserProgressData.SetShipTypes();
+
+            ConfigData.UserProgressData.IsBeeFreePlayUnlocked = true;
+            ConfigData.UserProgressData.IsHumanChallengeUnlocked = true;
 
             //return;
             // Advance to next level in campaign
@@ -2555,7 +2583,7 @@ namespace Assets.Scripts.Levels
         {
             SavedSquad HTSquad = new SavedSquad(Utilities.GetNegativeSavedSquadId(), ConfigData.Configuration.HumanSide, "Human Target \"Ship\"", Vector2.zero, false, false, DefaultShootingStrategy, UnsetColor, null);
 
-            FleetShip fleetShip = new FleetShip(Utilities.GetNegativeFleetshipId(), ConfigData.ShipTypes.HumanTarget, false, true, false, 0, 0, 0, 0, 0, 0, 0);
+            FleetShip fleetShip = new FleetShip(Utilities.GetNegativeFleetshipId(), ConfigData.ShipTypes.HumanTarget, false, true, 0, 0, 0, 0, 0, 0, 0);
             HTSquad.AddShipToSquad(new SquadShip(fleetShip.Id, fleetShip.Type, Vector2.zero));
 
             LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() { HTSquad }, position, Vector2.zero, true);

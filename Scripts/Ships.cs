@@ -31,7 +31,7 @@ namespace Assets.Scripts
             int id = ConfigData.UserProgressData.GetNextFleetId();
             for (int i = 0; i < shipCount; i++)
             {
-                _fleetData.AddShipToFleet(new FleetShip(id, shipType, false, true, false, 0, 0, 0, 0, 0, 0, 0));
+                _fleetData.AddShipToFleet(new FleetShip(id, shipType, false, true, 0, 0, 0, 0, 0, 0, 0));
                 id++;
             }
         }
@@ -39,9 +39,9 @@ namespace Assets.Scripts
         {
             return _fleetData.GetShips();
         }
-        public List<FleetShip> GetVisibleFleetShipsBySide(int side)
+        public List<FleetShip> GetAliveFleetShipsBySide(int side)
         {
-            return GetVisibleAndAliveShips().Where((s) => s.Side == side).ToList();
+            return GetAliveShips().Where((s) => s.Side == side).ToList();
         }
         public FleetShip GetFleetShip(long id)
         {
@@ -49,15 +49,11 @@ namespace Assets.Scripts
         }
         public List<FleetShip> GetAvailableShips()
         {
-            return GetFleetShips().Where((ship) => ship.IsShipVisibleAndAlive() && !ship.DoesBelongToSavedSquad && !IsShipInSquad(ship)).ToList();
+            return GetFleetShips().Where((ship) => ship.IsShipAlive() && !ship.DoesBelongToSavedSquad && !IsShipInSquad(ship)).ToList();
         }
-        public List<FleetShip> GetVisibleAndAliveShips()
+        public List<FleetShip> GetAliveShips()
         {
-            return GetFleetShips().Where((ship) => ship.IsShipVisibleAndAlive()).ToList();
-        }
-        public List<FleetShip> GetVisibleShips()
-        {
-            return GetFleetShips().Where((ship) => ship.IsVisibleToUser).ToList();
+            return GetFleetShips().Where((ship) => ship.IsShipAlive()).ToList();
         }
         public List<FleetShip> GetShipsOfType(ConfigData.ShipTypes type)
         {
@@ -71,9 +67,9 @@ namespace Assets.Scripts
         {
             return GetAvailableShips().Where((ship) => ship.Type == type).FirstOrDefault();
         }
-        public List<FleetShip> GetVisibleAndAliveShipsOfType(ConfigData.ShipTypes type)
+        public List<FleetShip> GetAliveShipsOfType(ConfigData.ShipTypes type)
         {
-            return GetVisibleAndAliveShips().Where((ship) => ship.Type == type).ToList();
+            return GetAliveShips().Where((ship) => ship.Type == type).ToList();
         }
         public int GetShipRanking(FleetShip ship, string statType) {
             List<FleetShip> rankings = new List<FleetShip>();
@@ -82,7 +78,7 @@ namespace Assets.Scripts
             switch (statType)
             {
                 case "ShotsFired":
-                    rankings = GetVisibleFleetShipsBySide(side).OrderByDescending((s) => s.ShotsFired).ToList();
+                    rankings = GetAliveFleetShipsBySide(side).OrderByDescending((s) => s.ShotsFired).ToList();
                     ranking = rankings.IndexOf(ship)+1;
                     while (ranking > 1 && ship.ShotsFired == rankings.ElementAt(ranking - 2).ShotsFired)
                     {
@@ -90,7 +86,7 @@ namespace Assets.Scripts
                     }
                     break;
                 case "DamageDone":
-                    rankings = GetVisibleFleetShipsBySide(side).OrderByDescending((s) => s.DamageDone).ToList();
+                    rankings = GetAliveFleetShipsBySide(side).OrderByDescending((s) => s.DamageDone).ToList();
                     ranking = rankings.IndexOf(ship) + 1;
                     while (ranking > 1 && ship.DamageDone == rankings.ElementAt(ranking - 2).DamageDone)
                     {
@@ -98,7 +94,7 @@ namespace Assets.Scripts
                     }
                     break;
                 case "DamageReceived":
-                    rankings = GetVisibleFleetShipsBySide(side).OrderByDescending((s) => s.DamageReceived).ToList();
+                    rankings = GetAliveFleetShipsBySide(side).OrderByDescending((s) => s.DamageReceived).ToList();
                     ranking = rankings.IndexOf(ship) + 1;
                     while (ranking > 1 && ship.DamageReceived == rankings.ElementAt(ranking - 2).DamageReceived)
                     {
@@ -106,7 +102,7 @@ namespace Assets.Scripts
                     }
                     break;
                 case "Kills":
-                    rankings = GetVisibleFleetShipsBySide(side).OrderByDescending((s) => s.Kills).ToList();
+                    rankings = GetAliveFleetShipsBySide(side).OrderByDescending((s) => s.Kills).ToList();
                     ranking = rankings.IndexOf(ship) + 1;
                     while (ranking > 1 && ship.Kills == rankings.ElementAt(ranking - 2).Kills)
                     {
@@ -114,7 +110,7 @@ namespace Assets.Scripts
                     }
                     break;
                 case "Record":
-                    rankings = GetVisibleFleetShipsBySide(side).OrderByDescending((s) => s.BattlesFought > 0 ? ((double)s.BattlesWon/(double)s.BattlesFought) : 0).ToList();
+                    rankings = GetAliveFleetShipsBySide(side).OrderByDescending((s) => s.BattlesFought > 0 ? ((double)s.BattlesWon/(double)s.BattlesFought) : 0).ToList();
                     ranking = rankings.IndexOf(ship) + 1;
                     
                     if (ranking > 1)
@@ -141,7 +137,7 @@ namespace Assets.Scripts
                     
                     break;
                 case "Minerals Mined":
-                    rankings = GetVisibleFleetShipsBySide(side).OrderByDescending((s) => s.MineralsMined).ToList();
+                    rankings = GetAliveFleetShipsBySide(side).OrderByDescending((s) => s.MineralsMined).ToList();
                     ranking = rankings.IndexOf(ship) + 1;
                     while (ranking > 1 && ship.MineralsMined == rankings.ElementAt(ranking - 2).MineralsMined)
                     {

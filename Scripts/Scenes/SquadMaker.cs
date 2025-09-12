@@ -1,5 +1,6 @@
 ﻿
 using Assets.Scripts.Data;
+using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Settings;
 using Assets.Scripts.UI_Components;
 using Assets.Scripts.UIComponents;
@@ -22,6 +23,7 @@ using UnityEngine.Rendering.Universal;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using UnityEngine.UIElements;
+using static Assets.Scripts.ConfigData;
 
 namespace Assets.Scripts.Scenes
 {
@@ -58,7 +60,7 @@ namespace Assets.Scripts.Scenes
             SquadInfoBoxTitle, SquadInfoBoxDetails, SquadInfoBoxIcon, ShipStatsBox, ShipStatsBoxDetails, SquadNameInput, ShipNameInput,
             SquadShipCount, SquadShipCountLabel, SquadColorLabel, SquadColorPickerButton, NextButton, StartButton, FogOfWarLabel, FogOfWarDropdown, MiningLabel,
             MiningDropdown, EnemyReinforcementsLabel, EnemyReinforcementsDropdown, MapLabel, MapDropdown, AsteroidsLabel, AsteroidsDropdown, ObstaclesLabel, ObstaclesDropdown,
-            OpposingForceLabel, OpposingForcePresetDropdown, ChosenEnemyShipTypeLabel, ChosenEnemyShipTypesDropdown, LevelTitleContainer, LevelDetailsContainer, ChooseLevelLabel;
+            OpposingForceLabel, OpposingForcePresetDropdown, ChosenEnemyShipTypeLabel, ChosenEnemyShipTypesDropdown, LevelTitleContainer, LevelDetailsContainer, ChooseLevelLabel, BuildButton, BuildPopup, Minerals, BuildCost, BuildButtonHighlight, BuildButtonMessage;
 
         public Dialogue DeleteSquadConfirmation, ClearSquadConfirmation, LoadSquadConfirmation, ChooseSquadConfirmation, UnchooseSquadConfirmation, OverCapacityAlert, NoChosenSquadsAlert,
             ChoosingUnsavedSquadAlert, ChoosingDeadSquadAlert, GoBackConfirmation, SquadSavingStatus, CannotDuplicateSquad;
@@ -84,6 +86,31 @@ namespace Assets.Scripts.Scenes
         public TMP_Text LevelTitle, LevelDetails;
         public bool IsRandomizedOpposingSide;
         public string CurrentFormation = "Line";
+        public Dictionary<ConfigData.ShipTypes, int> ShipsBeingBuilt = new Dictionary<ConfigData.ShipTypes, int>
+        {
+            { ConfigData.ShipTypes.Barge, 0 },
+            { ConfigData.ShipTypes.Beehive, 0 },
+            { ConfigData.ShipTypes.Bumblebee, 0 },
+            { ConfigData.ShipTypes.CarpenterBee, 0 },
+            { ConfigData.ShipTypes.Carrier, 0 },
+            { ConfigData.ShipTypes.Cruiser, 0 },
+            { ConfigData.ShipTypes.Dreadnought, 0 },
+            { ConfigData.ShipTypes.Factory, 0 },
+            { ConfigData.ShipTypes.FireBarge, 0 },
+            { ConfigData.ShipTypes.Flagship, 0 },
+            { ConfigData.ShipTypes.Frigate, 0 },
+            { ConfigData.ShipTypes.Gunship, 0 },
+            { ConfigData.ShipTypes.Honeybee, 0 },
+            { ConfigData.ShipTypes.Hornet, 0 },
+            { ConfigData.ShipTypes.Leafcutter, 0 },
+            { ConfigData.ShipTypes.Queen, 0 },
+            { ConfigData.ShipTypes.Scout, 0 },
+            { ConfigData.ShipTypes.WarpGate, 0 },
+            { ConfigData.ShipTypes.Wasp, 0 },
+            { ConfigData.ShipTypes.YellowJacket, 0 }
+        };
+        public TMP_Text TotalBuildCostText, MineralsText;
+        public int TotalBuildCost = 0;
 
 
 
@@ -269,7 +296,6 @@ namespace Assets.Scripts.Scenes
 
 
 
-
             //Debug.Log($"{_squadListOriginalScrollHeight}, {_squadListOptionsScrollHeight}, {_squadListLevelScrollHeight}");
 
         }
@@ -286,6 +312,17 @@ namespace Assets.Scripts.Scenes
             Debug.Log($"User is on level #{ConfigData.UserProgressData.GetCurrentLevel()}");
 
             LoadLevel(ConfigData.UserProgressData.GetCurrentLevel());
+
+            if (ConfigData.UserProgressData.MinedTSV > 0 && ConfigData.CurrentShips.GetAliveShipsOfType(ConfigData.ShipTypes.Factory).Count > 0)
+            {
+                BuildButton.SetActive(true);
+                SetupBuildInterface();
+
+                if (!ConfigData.UserProgressData.HasSeenBuildInterface)
+                {
+                    ShowBuildButtonMessage();
+                }
+            }
         }
         private void SetupLevelDropdown()
         {
@@ -586,10 +623,10 @@ namespace Assets.Scripts.Scenes
 
                 Transform parent = shipLabel.transform.parent;
                 List<FleetShip> availableShips = ConfigData.CurrentShips.GetAvailableShipsOfType(type);
-                List<FleetShip> visibleShips = ConfigData.CurrentShips.GetVisibleAndAliveShipsOfType(type);
+                List<FleetShip> visibleShips = ConfigData.CurrentShips.GetAliveShipsOfType(type);
 
                 // if ship type has any visible ships
-                if (visibleShips.Any())
+                if (visibleShips.Any() && ConfigData.UserProgressData.VisibleShipTypes.Contains(type))
                 {
                     //Debug.Log($"Setting the ship count for {type}");
                     // get the count of the ship type and update the label
@@ -1450,6 +1487,94 @@ namespace Assets.Scripts.Scenes
 
 
         // UI Interaction
+        public void ShowBuildButtonMessage()
+        {
+            BuildButtonHighlight.SetActive(true);
+            BuildButtonMessage.SetActive(true);
+        }
+        public void HideBuildButtonMessage()
+        {
+            BuildButtonHighlight.SetActive(false);
+            BuildButtonMessage.SetActive(false);
+            ConfigData.UserProgressData.HasSeenBuildInterface = true;
+            ConfigData.UserProgressData.Save();
+        }
+        public void SetupBuildInterface()
+        {
+            List <ConfigData.ShipTypes> list = ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide ? ConfigData.UserProgressData.VisibleHumanShipTypes.ToList() : ConfigData.UserProgressData.VisibleBeeShipTypes.ToList();
+
+            List<ConfigData.ShipTypes> hideList = ShipsBeingBuilt.Keys.ToHashSet().Except(list).ToList();
+            BuildPopup.SetActive(true);
+            list.ToList().ForEach((shipType) =>
+            {
+                GameObject shipLabel = GameObject.Find($"{Utilities.ConvertShipTypeToName[shipType]} Build Ship");
+                shipLabel.transform.Find("Ship Cost").GetComponent<TMP_Text>().text = $"Cost: {ConfigData.GetShipInfo(shipType).Tsv}";
+            });
+            hideList.ToList().ForEach((shipType) =>
+            {
+                GameObject.Find($"{Utilities.ConvertShipTypeToName[shipType]} Build Ship").SetActive(false);
+            });
+            BuildPopup.SetActive(false);
+        }
+        public void ShowBuildInterface()
+        {
+            BuildPopup.SetActive(true);
+        }
+        public void BuildShips()
+        {
+            if (TotalBuildCost <= ConfigData.UserProgressData.MinedTSV)
+            {
+                ConfigData.UserProgressData.MinedTSV -= TotalBuildCost;
+                TotalBuildCost = 0;
+                MineralsText.text = $"Minerals: {ConfigData.UserProgressData.MinedTSV.ToString("N0")}";
+                TotalBuildCostText.text = $"Total Cost: {TotalBuildCost.ToString("N0")}";
+
+                ShipsBeingBuilt.Keys.ToList().ForEach(key => {
+                    int shipCount = ShipsBeingBuilt[key];
+
+                    if (shipCount > 0)
+                    {
+                        ConfigData.CurrentShips.AddShipsToFleet(key, shipCount);
+
+                        GameObject.Find($"{Utilities.ConvertShipTypeToName[key]} Build Ship").transform.Find("Ship Count").GetComponent<TMP_Text>().text = "(0)";
+
+                        GameObject.Find($"{Utilities.ConvertShipTypeToName[key]} Inventory Ship").transform.Find("Ship Count").GetComponent<TMP_Text>().text = $"({ConfigData.CurrentShips.GetAvailableShipsOfType(key).Count})";
+
+                        ShipsBeingBuilt[key] = 0;
+                    }
+
+
+
+                });
+                BuildPopup.SetActive(false);
+
+                ConfigData.UserProgressData.Save();
+                ConfigData.CurrentShips.SaveFleetData();
+
+            }
+        }
+        public void AddShip(string shipString)
+        {
+            ConfigData.ShipTypes ship = Utilities.ConvertShipNameToShipType[shipString];
+            ShipsBeingBuilt[ship]++;
+            GameObject.Find($"{shipString} Build Ship").transform.Find("Ship Count").GetComponent<TMP_Text>().text = $"({ShipsBeingBuilt[ship]})";
+            TotalBuildCost += ConfigData.GetShipInfo(ship).Tsv;
+            TotalBuildCostText.text = $"Total Cost: {TotalBuildCost.ToString("N0")}";
+        }
+        public void SubtractShip(string shipString)
+        {
+            ConfigData.ShipTypes ship = Utilities.ConvertShipNameToShipType[shipString];
+            if (ShipsBeingBuilt[ship] > 0)
+            {
+                ShipsBeingBuilt[ship]--;
+
+                GameObject.Find($"{shipString} Build Ship").transform.Find("Ship Count").GetComponent<TMP_Text>().text = $"({ShipsBeingBuilt[ship]})";
+
+                TotalBuildCost -= ConfigData.GetShipInfo(ship).Tsv;
+
+                TotalBuildCostText.text = $"Total Cost: {TotalBuildCost.ToString("N0")}";
+            }
+        }
         public void ShowShipInfo(string ship)
         {
             if (!GetDropper().IsDragging)

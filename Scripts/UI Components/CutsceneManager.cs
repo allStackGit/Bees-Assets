@@ -12,7 +12,7 @@ public class CutsceneManager : MonoBehaviour
     public DialogueManager DialogueManager;
     public GameObject CutsceneCanvas;
     public Stage Stage;
-    public List<DialogueLine> PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLines_BluerPastures, PlutoToNeptune, Neptune_SeizeTheMeans, Neptune_OfProduction, Neptune_PressingForward, NeptuneToUranus, Uranus_OnTheOffensive, Uranus_OnTheDefensive, Uranus_ANewThreat;
+    public List<DialogueLine> PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLines_BluerPastures, PlutoToNeptune, Neptune_SeizeTheMeans, Neptune_OfProduction, Neptune_PressingForward, NeptuneToUranus, Uranus_OnTheOffensive, Uranus_OnTheDefensive, Uranus_ANewThreat, LostCampaign;
     public bool PlutoLines_Anomaly_Completed = false;
     public bool HitDialogueBreak = false;
     public Action EndDialogueAction;
@@ -51,7 +51,7 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Samuel", Portraits["Samuel"], $"Good morning, Commander {ConfigData.UserProgressData.PlayerName}! I brought your coffee."),
             new DialogueLine("Samuel", Portraits["Samuel"], 1),
             new DialogueLine("Samuel", Portraits["Samuel"], "I agree, it doesn't taste as good as Earth coffee. Or even Mars coffee. It's alright, we'll both get out of Pluto soon enough."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "The tech gets a notification of some kind.", 2),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Samuel gets a notification of some kind.", 2),
             new DialogueLine("Samuel", Portraits["Samuel"], "Oh, that's odd. A scout is reporting an unidentified vessel approaching military airspace. What should we do?"),
             new DialogueLine("Samuel", Portraits["Samuel"], 1),
             new DialogueLine("Samuel", Portraits["Samuel"], "Right away, sir. Contacting the vessel."),
@@ -454,7 +454,7 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Joey", Portraits["Joey"], "They’re mighty fine facilities."),
             new DialogueLine("Marco", Portraits["Marco"], "If they’re smart, they’re using those facilities."),
             new DialogueLine("Emilia", Portraits["Emilia"], "You think they can make more bees? They can probably make more bees."),
-            new DialogueLine("Oviya", Portraits["Oviya"], "Let’s get within scouting distance as soon as possible. If it’s as bad as we think, we need to stop this as soon as possible."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Let’s get within scouting distance as soon as possible. If it’s as bad as we think, we need to stop this immediately."),
             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Oh, this is gonna be a big fight. I can tell!"),
 
             new DialogueLine("Samuel", Portraits["Samuel"], "We couldn’t save them…"),
@@ -469,6 +469,13 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Emilia", Portraits["Emilia"], "You think they can make more bees? They can probably make more bees."),
             new DialogueLine("Oviya", Portraits["Oviya"], "Let’s get within scouting distance as soon as possible. If it’s as bad as we think, we need to stop this immediately."),
             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Oh, this is gonna be a big fight. I can tell!"),
+        };
+
+        LostCampaign = new List<DialogueLine>
+        {
+            new DialogueLine("Samuel", Portraits["Samuel"], "I'm sorry to say commander, we no longer have enough ships left to continue the fight."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Who need ships?! I'll fight them with my bare hands!"),
+            new DialogueLine("Marco", Portraits["Marco"], "Others will continue the fight. When we're stronger, we'll join them again."),
         };
         /*
          * 

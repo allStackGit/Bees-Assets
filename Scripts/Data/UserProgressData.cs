@@ -51,6 +51,7 @@ namespace Assets.Scripts.Data
         public bool IsBeeFreePlayUnlocked = false;
 
         public bool HasMetAlejandraAndEmilia = false;
+        public bool HasSeenBuildInterface = false;
 
         // Ship types that the user has unlocked and can see in the codex or in the game
         public HashSet<ConfigData.ShipTypes> VisibleBeeShipTypes;
@@ -72,7 +73,7 @@ namespace Assets.Scripts.Data
         public UserProgressData(bool shouldFileExist): base()
         {
             defaultJsonData = "{" +
-                "\"CurrentHumanCampaignLevel\": 0, \"CurrentBeeCampaignLevel\": 0, \"CurrentHumanChallengeLevel\": 0, \"CurrentBeeChallengeLevel\": 0, \"FleetId\": 0 \"SavedSquadId\": -1, \"HumanCampaignSavedSquadNumber\": 0, \"BeeCampaignSavedSquadNumber\": 0, \"HumanChallengeSavedSquadNumber\": 0, \"BeeChallengeSavedSquadNumber\": 0, \"HumanFreePlaySavedSquadNumber\": 0, \"BeeFreePlaySavedSquadNumber\": 0, \"MinedTSV\": 0, \"HivemindMinedTSV\": 0, \"HumanCampaignWins\": 0, \"BeeCampaignWins\": 0, \"HumanChallengeWins\": 0, \"BeeChallengeWins\": 0, \"HumanFreePlayWins\": 0, \"BeeFreePlayWins\": 0, \"HasStartedHumanCampaign\": false, \"IsBeeCampaignUnlocked\": false, \"IsHumanChallengeUnlocked\": false, \"IsBeeChallengeUnlocked\": false, \"IsHumanFreePlayUnlocked\": false, \"IsBeeFreePlayUnlocked\": false, \"HasMetAlejandraAndEmilia\": false, \"VisibleBeeShipTypes\": [\"Honeybee\"], \"VisibleHumanShipTypes\": [\"Scout\", \"Gunship\"], \"InvisibleBeeShipTypes\": [], \"InvisibleHumanShipTypes\": [], \"VisibleCodexBeeShipTypes\": [], \"VisibleCodexHumanShipTypes\": [\"Scout\", \"Gunship\"], \"PlayerName\": \"Odysseus\"" +
+                "\"CurrentHumanCampaignLevel\": 0, \"CurrentBeeCampaignLevel\": 0, \"CurrentHumanChallengeLevel\": 0, \"CurrentBeeChallengeLevel\": 0, \"FleetId\": 0, \"SavedSquadId\": -1, \"HumanCampaignSavedSquadNumber\": 0, \"BeeCampaignSavedSquadNumber\": 0, \"HumanChallengeSavedSquadNumber\": 0, \"BeeChallengeSavedSquadNumber\": 0, \"HumanFreePlaySavedSquadNumber\": 0, \"BeeFreePlaySavedSquadNumber\": 0, \"MinedTSV\": 0, \"HivemindMinedTSV\": 0, \"HumanCampaignWins\": 0, \"BeeCampaignWins\": 0, \"HumanChallengeWins\": 0, \"BeeChallengeWins\": 0, \"HumanFreePlayWins\": 0, \"BeeFreePlayWins\": 0, \"HasStartedHumanCampaign\": false, \"IsBeeCampaignUnlocked\": false, \"IsHumanChallengeUnlocked\": false, \"IsBeeChallengeUnlocked\": false, \"IsHumanFreePlayUnlocked\": false, \"IsBeeFreePlayUnlocked\": false, \"HasMetAlejandraAndEmilia\": false, \"HasSeenBuildInterface\": false, \"VisibleBeeShipTypes\": [\"Honeybee\"], \"VisibleHumanShipTypes\": [\"Scout\", \"Gunship\"], \"InvisibleBeeShipTypes\": [], \"InvisibleHumanShipTypes\": [], \"VisibleCodexBeeShipTypes\": [], \"VisibleCodexHumanShipTypes\": [\"Scout\", \"Gunship\"], \"PlayerName\": \"\"" +
             "}";
             
             dynamic json = SetupFile(shouldFileExist, ConfigData.UserProgressFilename, (json) =>
@@ -105,6 +106,7 @@ namespace Assets.Scripts.Data
                 IsBeeFreePlayUnlocked = json.IsBeeFreePlayUnlocked;
 
                 HasMetAlejandraAndEmilia = json.HasMetAlejandraAndEmilia;
+                HasSeenBuildInterface = json.HasSeenBuildInterface;
 
                 HumanCampaignWins = json.HumanCampaignWins;
                 BeeCampaignWins = json.BeeCampaignWins;
@@ -144,7 +146,7 @@ namespace Assets.Scripts.Data
         public override string ToJson()
         {
             string json = "{" +
-                $"\"CurrentHumanCampaignLevel\": {CurrentHumanCampaignLevel}, \"CurrentBeeCampaignLevel\": {CurrentBeeCampaignLevel}, \"CurrentHumanChallengeLevel\": {CurrentHumanChallengeLevel}, \"CurrentBeeChallengeLevel\": {CurrentBeeChallengeLevel}, \"FleetId\": {FleetId}, \"SavedSquadId\": {SavedSquadId}, \"HumanCampaignSavedSquadNumber\": {HumanCampaignSavedSquadNumber}, \"BeeCampaignSavedSquadNumber\": {BeeCampaignSavedSquadNumber}, \"HumanChallengeSavedSquadNumber\": {HumanChallengeSavedSquadNumber}, \"BeeChallengeSavedSquadNumber\": {BeeChallengeSavedSquadNumber}, \"HumanFreePlaySavedSquadNumber\": {HumanFreePlaySavedSquadNumber}, \"BeeFreePlaySavedSquadNumber\": {BeeFreePlaySavedSquadNumber}, \"MinedTSV\": {MinedTSV}, \"HivemindMinedTSV\": {HivemindMinedTSV}, \"HumanCampaignWins\": {HumanCampaignWins}, \"BeeCampaignWins\": {BeeCampaignWins}, \"HumanChallengeWins\": {HumanChallengeWins}, \"BeeChallengeWins\": {BeeChallengeWins}, \"HumanFreePlayWins\": {HumanFreePlayWins}, \"BeeFreePlayWins\": {BeeFreePlayWins}, \"HasStartedHumanCampaign\": \"{HasStartedHumanCampaign}\", \"IsBeeCampaignUnlocked\": \"{IsBeeCampaignUnlocked}\", \"IsHumanChallengeUnlocked\": \"{IsHumanChallengeUnlocked}\", \"IsBeeChallengeUnlocked\": \"{IsBeeChallengeUnlocked}\", \"IsHumanFreePlayUnlocked\": \"{IsHumanFreePlayUnlocked}\", \"IsBeeFreePlayUnlocked\": \"{IsBeeFreePlayUnlocked}\", \"HasMetAlejandraAndEmilia\": \"{HasMetAlejandraAndEmilia}\", \"PlayerName\": \"{PlayerName}\", \"VisibleBeeShipTypes\": [";
+                $"\"CurrentHumanCampaignLevel\": {CurrentHumanCampaignLevel}, \"CurrentBeeCampaignLevel\": {CurrentBeeCampaignLevel}, \"CurrentHumanChallengeLevel\": {CurrentHumanChallengeLevel}, \"CurrentBeeChallengeLevel\": {CurrentBeeChallengeLevel}, \"FleetId\": {FleetId}, \"SavedSquadId\": {SavedSquadId}, \"HumanCampaignSavedSquadNumber\": {HumanCampaignSavedSquadNumber}, \"BeeCampaignSavedSquadNumber\": {BeeCampaignSavedSquadNumber}, \"HumanChallengeSavedSquadNumber\": {HumanChallengeSavedSquadNumber}, \"BeeChallengeSavedSquadNumber\": {BeeChallengeSavedSquadNumber}, \"HumanFreePlaySavedSquadNumber\": {HumanFreePlaySavedSquadNumber}, \"BeeFreePlaySavedSquadNumber\": {BeeFreePlaySavedSquadNumber}, \"MinedTSV\": {MinedTSV}, \"HivemindMinedTSV\": {HivemindMinedTSV}, \"HumanCampaignWins\": {HumanCampaignWins}, \"BeeCampaignWins\": {BeeCampaignWins}, \"HumanChallengeWins\": {HumanChallengeWins}, \"BeeChallengeWins\": {BeeChallengeWins}, \"HumanFreePlayWins\": {HumanFreePlayWins}, \"BeeFreePlayWins\": {BeeFreePlayWins}, \"HasStartedHumanCampaign\": \"{HasStartedHumanCampaign}\", \"IsBeeCampaignUnlocked\": \"{IsBeeCampaignUnlocked}\", \"IsHumanChallengeUnlocked\": \"{IsHumanChallengeUnlocked}\", \"IsBeeChallengeUnlocked\": \"{IsBeeChallengeUnlocked}\", \"IsHumanFreePlayUnlocked\": \"{IsHumanFreePlayUnlocked}\", \"IsBeeFreePlayUnlocked\": \"{IsBeeFreePlayUnlocked}\", \"HasMetAlejandraAndEmilia\": \"{HasMetAlejandraAndEmilia}\", \"HasSeenBuildInterface\": \"{HasSeenBuildInterface}\", \"PlayerName\": \"{PlayerName}\", \"VisibleBeeShipTypes\": [";
 
             if (VisibleBeeShipTypes.Count > 0)
             {
@@ -226,9 +228,13 @@ namespace Assets.Scripts.Data
             }
 
         }
-        public int GetCurrentLevel()
+        public int GetCurrentLevel(ConfigData.GameModes gameMode = ConfigData.GameModes.Unset)
         {
-            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
+            if (gameMode == ConfigData.GameModes.Unset)
+            {
+                gameMode = ConfigData.CurrentGameMode;
+            }
+            if (gameMode == ConfigData.GameModes.Campaign)
             {
                 if (ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide)
                 {
@@ -236,7 +242,7 @@ namespace Assets.Scripts.Data
                 }
                 return CurrentBeeCampaignLevel;
             }
-            else if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge)
+            else if (gameMode == ConfigData.GameModes.Challenge)
             {
                 if (ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide)
                 {
@@ -267,7 +273,7 @@ namespace Assets.Scripts.Data
         /// <returns></returns>
         public int GetNextFleetId()
         {
-            return FleetId++;
+            return ++FleetId;
         }
         /// <summary>
         /// Gets the next incremental Saved Squad Number for naming purposes. Does not save the data to "disk". Should only be used when creating the user's squads.
@@ -307,7 +313,7 @@ namespace Assets.Scripts.Data
         /// <returns></returns>
         public int GetNextSavedSquadId()
         {
-            return SavedSquadId++;
+            return ++SavedSquadId;
         }
 
 

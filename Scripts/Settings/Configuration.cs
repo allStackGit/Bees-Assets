@@ -35,6 +35,7 @@ namespace Assets.Scripts.Settings
         public int CarrierCarryDroneMax;
         public int CarrierCarryStrikerMax;
         public int CarrierSquadCount;
+        public int TotalLevels;
         public Dictionary<string, string> Tooltips;
 
         public string Yes;
@@ -101,7 +102,7 @@ namespace Assets.Scripts.Settings
             CarrierCarryDroneMax = (int)so.CarrierCarryDroneMax;
             CarrierCarryStrikerMax = (int)so.CarrierCarryStrikerMax;
             CarrierSquadCount = (int)so.CarrierSquadCount;
-            //TotalLevels = (int)so.TotalLevels;
+            TotalLevels = (int)so.TotalLevels;
 
             Yes = (string)so.Yes;
             No = (string)so.No;

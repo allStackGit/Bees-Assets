@@ -7,15 +7,19 @@ using System.Collections.Generic;
 using System.Linq;
 using TMPro;
 using UnityEngine;
+using UnityEngine.Events;
 using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 
 namespace Assets.Scripts.Scenes
 {
     public class MainMenu : Scene
     {
         public GameObject MenuPanel, MenuPanelBacker;
-        public GameObject HumanChallengeModeButton, HumanTrainingRoomButton;
+        public GameObject HumanChallengeModeButton, HumanTrainingRoomButton, BeeFreePlayButton, HumanCampaignModeButton, CommanderNameDialogue, ResetCampaignButton, ResetChallengeModeButton;
+        public TMP_InputField NameInput;
         public Codex CodexManager;
+        public Dialogue ResetConfirmation;
         new void Start()
         {
             Name = "Main Menu";
@@ -36,12 +40,45 @@ namespace Assets.Scripts.Scenes
             if (!ConfigData.UserProgressData.IsHumanChallengeUnlocked)
             {
                 HumanChallengeModeButton.SetActive(false);
+                ResetChallengeModeButton.SetActive(false);
             }
             if (!ConfigData.UserProgressData.IsHumanFreePlayUnlocked)
             {
                 HumanTrainingRoomButton.SetActive(false);
             }
+            if (!ConfigData.UserProgressData.IsBeeFreePlayUnlocked)
+            {
+                BeeFreePlayButton.SetActive(false);
+            }
             CodexManager.SetupCodex();
+
+            int currentLevel = ConfigData.UserProgressData.GetCurrentLevel(ConfigData.GameModes.Campaign);
+            if (currentLevel >= ConfigData.Configuration.TotalLevels)
+            {
+                HumanCampaignModeButton.transform.GetChild(0).GetComponent<TMP_Text>().text = "Beta Campaign Completed!";
+                HumanCampaignModeButton.GetComponent<Button>().enabled = false;
+            }
+
+            if (ConfigData.UserProgressData.PlayerName == "")
+            {
+                CommanderNameDialogue.SetActive(true);
+            }
+            if (currentLevel > 1)
+            {
+                ResetConfirmation = new Dialogue(DialoguePrefab, ConfigData.Configuration.AreYouSure, "This will set you back to the beginning of the campaign.",
+                new List<string>() { ConfigData.Configuration.Yes, ConfigData.Configuration.No }, new List<UnityAction>() { ResetCampaign });
+            }
+        }
+        public void SubmitName()
+        {
+            string name = NameInput.text;
+            Debug.Log($"Name: {name}");
+            if (name.Trim().Length > 0)
+            {
+                CommanderNameDialogue.SetActive(false);
+                ConfigData.UserProgressData.PlayerName = name;
+                ConfigData.UserProgressData.Save();
+            }
         }
 
         public void ShowMenuPanel()
@@ -95,6 +132,37 @@ namespace Assets.Scripts.Scenes
             {
                 ConfigData.LoadLevel();
             }
+        }
+        public void ConfirmResetCampaign()
+        {
+            ResetConfirmation.Show();
+        }
+        public void ResetCampaign()
+        {
+            Dictionary<ConfigData.ShipTypes, int> allStartingShips = new Dictionary<ConfigData.ShipTypes, int>();
+            ConfigData.StartingSettings.HumanStartingShips.ToList().ForEach((s) => allStartingShips.Add(s.Key, s.Value));
+            ConfigData.StartingSettings.BeeStartingShips.ToList().ForEach((s) => allStartingShips.Add(s.Key, s.Value));
+
+            Dictionary<ConfigData.ShipTypes, int> allCampaignStartingShips = new Dictionary<ConfigData.ShipTypes, int>();
+            ConfigData.StartingSettings.HumanCampaignStartingShips.ToList().ForEach((s) => allCampaignStartingShips.Add(s.Key, s.Value));
+            ConfigData.StartingSettings.BeeCampaignStartingShips.ToList().ForEach((s) => allCampaignStartingShips.Add(s.Key, s.Value));
+
+            ConfigData.UserProgressData.HumanCampaignWins = 0;
+            ConfigData.UserProgressData.BeeCampaignWins = 0;
+            ConfigData.UserProgressData.CurrentHumanCampaignLevel = 0;
+            ConfigData.UserProgressData.HasStartedHumanCampaign = false;
+            ConfigData.UserProgressData.HumanCampaignSavedSquadNumber = 0;
+            ConfigData.UserProgressData.BeeCampaignSavedSquadNumber = 0;
+            ConfigData.UserProgressData.HasMetAlejandraAndEmilia = false;
+            ConfigData.UserProgressData.HasSeenBuildInterface = false;
+            ConfigData.UserProgressData.MinedTSV = 0;
+
+            ConfigData.UserProgressData.Save();
+            ConfigData.SetupCampaignFleetData(true, allCampaignStartingShips);
+            ConfigData.SetupCampaignSavedSquadsData(true);
+            ConfigData.SetupCampaignLevelData(true);
+
+            ResetCampaignButton.SetActive(false);
         }
         public void PlayChallengeMode(string side)
         {

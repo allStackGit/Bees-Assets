@@ -23,6 +23,11 @@ namespace UIComponents
             {
                 ShowContinueButton();
             });
+            if (ConfigData.CurrentShips.GetAliveFleetShipsBySide(ConfigData.Configuration.UserSide).Count == 0)
+            {
+                CutsceneManager.PlayDialogueSection(CutsceneManager.LostCampaign, true);
+                return;
+            }
 
             switch (LevelNumber)
             {

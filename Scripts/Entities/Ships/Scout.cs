@@ -86,7 +86,7 @@ namespace Assets.Scripts.Entities.Ships
                     Squad squad = CreateMinionSquad();
                     ship.Setup(
                         Level,
-                        new FleetShip(id, MinionType, false, true, false, 0, 0, 0, 0, 0, 0, 0),
+                        new FleetShip(id, MinionType, false, true, 0, 0, 0, 0, 0, 0, 0),
                         squad,
                         Vector2.zero
                     );
