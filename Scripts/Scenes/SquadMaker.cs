@@ -1360,7 +1360,7 @@ namespace Assets.Scripts.Scenes
                 //Vector2 placementPosition = Camera.WorldToScreenPoint(ship.Offset);
 
                 //ship.SetOffset(offsetPosition);
-                //Debug.Log($"Starting Position for {ship.GetFleetShip().Name}: {_currentSquad.StartingPosition}, Offset position: {ship.Offset}, Placement position: {placementPosition}");
+                Debug.Log($"Starting Position for {ship.GetFleetShip().Name}: {_currentSquad.StartingPosition}, Offset position: {ship.Offset}, Placement position: {placementPosition}");
                 dropper.MakeDragIcon(ship.GetFleetShip());
                 dropper.SetupActiveDragging(placementPosition, true);
                 DragIcon dragIcon = dropper.GetCurrentDragIcon();

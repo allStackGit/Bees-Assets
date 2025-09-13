@@ -474,13 +474,13 @@ namespace Assets.Scripts.Levels
             return GetAllSquads().Where(squad => squad.Side == side && !squad.IsDead).ToList();
         }
         /// <summary>
-        /// Get all squads where the side does not match the side given
+        /// Get all alive squads where the side does not match the side given
         /// </summary>
         /// <param name="side"></param>
         /// <returns></returns>
         public List<Squad> GetEnemySquads(int side)
         {
-            return GetAllSquads().Where(squad => squad.Side != side).ToList();
+            return GetAllSquads().Where(squad => squad.Side != side && !squad.IsDead).ToList();
         }
         public void AddToSquadsAwaitingHiveMindCommands(Squad squad)
         {

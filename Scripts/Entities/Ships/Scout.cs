@@ -86,7 +86,7 @@ namespace Assets.Scripts.Entities.Ships
                     Squad squad = CreateMinionSquad();
                     ship.Setup(
                         Level,
-                        new FleetShip(id, MinionType, false, true, 0, 0, 0, 0, 0, 0, 0),
+                        new FleetShip(id, MinionType, false, false, 0, 0, 0, 0, 0, 0, 0),
                         squad,
                         Vector2.zero
                     );
@@ -97,6 +97,7 @@ namespace Assets.Scripts.Entities.Ships
                     ship.transform.localPosition = GetPosition();
                     ship.MotherSquad = Squad;
                     squad.AddShip(ship);
+                    squad.CanAcceptUserInput = false;
                     ship.LookForShips();
 
                     if (BeaconsDropped == ConfigData.MaxBeaconsDroppedPerScout)

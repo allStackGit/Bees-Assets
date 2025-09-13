@@ -1,0 +1,585 @@
+fileFormatVersion: 2
+guid: fb6efd87b46186e4a84eb7e87facd493
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: 1246838642133322631
+    second: remains_Factory_0B00EF_11_0
+  - first:
+      213: -5962744930047542468
+    second: remains_Factory_0B00EF_11_1
+  - first:
+      213: -7055436584897823138
+    second: remains_Factory_0B00EF_11_2
+  - first:
+      213: 6294151755159262080
+    second: remains_Factory_0B00EF_11_3
+  - first:
+      213: 5268167205600612402
+    second: remains_Factory_0B00EF_11_4
+  - first:
+      213: 4135949647620650587
+    second: remains_Factory_0B00EF_11_5
+  - first:
+      213: 7093700949849250360
+    second: remains_Factory_0B00EF_11_6
+  - first:
+      213: 8901937938785580308
+    second: remains_Factory_0B00EF_11_7
+  - first:
+      213: -6132634054139577547
+    second: remains_Factory_0B00EF_11_8
+  - first:
+      213: -977138869057414776
+    second: remains_Factory_0B00EF_11_9
+  - first:
+      213: 4533982688077196222
+    second: remains_Factory_0B00EF_11_10
+  - first:
+      213: -5040290017198739653
+    second: remains_Factory_0B00EF_11_11
+  - first:
+      213: -1279632673579957328
+    second: remains_Factory_0B00EF_11_12
+  - first:
+      213: -2447618675411587105
+    second: remains_Factory_0B00EF_11_13
+  - first:
+      213: -6327341635868246064
+    second: remains_Factory_0B00EF_11_14
+  - first:
+      213: 2546179292972042584
+    second: remains_Factory_0B00EF_11_15
+  - first:
+      213: 4603548427726574805
+    second: remains_Factory_0B00EF_11_16
+  - first:
+      213: 3404192869622198801
+    second: remains_Factory_0B00EF_11_17
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 100
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: remains_Factory_0B00EF_11_0
+      rect:
+        serializedVersion: 2
+        x: 85
+        y: 203
+        width: 14
+        height: 15
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 78b46949329ad4110800000000000000
+      internalID: 1246838642133322631
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_0B00EF_11_1
+      rect:
+        serializedVersion: 2
+        x: 148
+        y: 200
+        width: 13
+        height: 13
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: c3b314ef313104da0800000000000000
+      internalID: -5962744930047542468
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_0B00EF_11_2
+      rect:
+        serializedVersion: 2
+        x: 75
+        y: 188
+        width: 9
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e5ebeddaecd061e90800000000000000
+      internalID: -7055436584897823138
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_0B00EF_11_3
+      rect:
+        serializedVersion: 2
+        x: 85
+        y: 174
+        width: 17
+        height: 28
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 0835ba86ca1595750800000000000000
+      internalID: 6294151755159262080
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_0B00EF_11_4
+      rect:
+        serializedVersion: 2
+        x: 137
+        y: 167
+        width: 22
+        height: 33
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 230df2b592a4c1940800000000000000
+      internalID: 5268167205600612402
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_0B00EF_11_5
+      rect:
+        serializedVersion: 2
+        x: 58
+        y: 170
+        width: 12
+        height: 12
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: b56b4539a48d56930800000000000000
+      internalID: 4135949647620650587
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_0B00EF_11_6
+      rect:
+        serializedVersion: 2
+        x: 75
+        y: 99
+        width: 75
+        height: 80
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 83a9d9a0e63e17260800000000000000
+      internalID: 7093700949849250360
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_0B00EF_11_7
+      rect:
+        serializedVersion: 2
+        x: 149
+        y: 90
+        width: 50
+        height: 88
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 41533ed04690a8b70800000000000000
+      internalID: 8901937938785580308
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_0B00EF_11_8
+      rect:
+        serializedVersion: 2
+        x: 41
+        y: 136
+        width: 31
+        height: 22
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 53bfb81e1d184eaa0800000000000000
+      internalID: -6132634054139577547
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_0B00EF_11_9
+      rect:
+        serializedVersion: 2
+        x: 66
+        y: 130
+        width: 6
+        height: 6
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 8891b9d20618072f0800000000000000
+      internalID: -977138869057414776
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_0B00EF_11_10
+      rect:
+        serializedVersion: 2
+        x: 23
+        y: 84
+        width: 44
+        height: 40
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: ebbac949b31fbee30800000000000000
+      internalID: 4533982688077196222
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_0B00EF_11_11
+      rect:
+        serializedVersion: 2
+        x: 54
+        y: 68
+        width: 48
+        height: 54
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: b3febe71fea4d0ab0800000000000000
+      internalID: -5040290017198739653
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_0B00EF_11_12
+      rect:
+        serializedVersion: 2
+        x: 109
+        y: 75
+        width: 28
+        height: 30
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 0b38848fcd4dd3ee0800000000000000
+      internalID: -1279632673579957328
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_0B00EF_11_13
+      rect:
+        serializedVersion: 2
+        x: 131
+        y: 44
+        width: 31
+        height: 47
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: fdfea7268cf480ed0800000000000000
+      internalID: -2447618675411587105
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_0B00EF_11_14
+      rect:
+        serializedVersion: 2
+        x: 194
+        y: 77
+        width: 14
+        height: 14
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 0dfb88d4e44c038a0800000000000000
+      internalID: -6327341635868246064
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_0B00EF_11_15
+      rect:
+        serializedVersion: 2
+        x: 87
+        y: 41
+        width: 38
+        height: 38
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 859cd04a398d55320800000000000000
+      internalID: 2546179292972042584
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_0B00EF_11_16
+      rect:
+        serializedVersion: 2
+        x: 167
+        y: 66
+        width: 11
+        height: 12
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 5d453f487e613ef30800000000000000
+      internalID: 4603548427726574805
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Factory_0B00EF_11_17
+      rect:
+        serializedVersion: 2
+        x: 117
+        y: 19
+        width: 25
+        height: 20
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 112bfb4f06f1e3f20800000000000000
+      internalID: 3404192869622198801
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
+    nameFileIdTable:
+      remains_Factory_0B00EF_11_0: 1246838642133322631
+      remains_Factory_0B00EF_11_1: -5962744930047542468
+      remains_Factory_0B00EF_11_10: 4533982688077196222
+      remains_Factory_0B00EF_11_11: -5040290017198739653
+      remains_Factory_0B00EF_11_12: -1279632673579957328
+      remains_Factory_0B00EF_11_13: -2447618675411587105
+      remains_Factory_0B00EF_11_14: -6327341635868246064
+      remains_Factory_0B00EF_11_15: 2546179292972042584
+      remains_Factory_0B00EF_11_16: 4603548427726574805
+      remains_Factory_0B00EF_11_17: 3404192869622198801
+      remains_Factory_0B00EF_11_2: -7055436584897823138
+      remains_Factory_0B00EF_11_3: 6294151755159262080
+      remains_Factory_0B00EF_11_4: 5268167205600612402
+      remains_Factory_0B00EF_11_5: 4135949647620650587
+      remains_Factory_0B00EF_11_6: 7093700949849250360
+      remains_Factory_0B00EF_11_7: 8901937938785580308
+      remains_Factory_0B00EF_11_8: -6132634054139577547
+      remains_Factory_0B00EF_11_9: -977138869057414776
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

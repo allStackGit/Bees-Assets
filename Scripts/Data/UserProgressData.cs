@@ -79,6 +79,7 @@ namespace Assets.Scripts.Data
             dynamic json = SetupFile(shouldFileExist, ConfigData.UserProgressFilename, (json) =>
             {
                 ConfigData.IsUserProgressDataLoaded = true;
+                Debug.Log($"User progress data is loaded");
                 //Debug.Log("Updated config file");
                 //Debug.Log($"JSON from DataFile: {json}");
                 CurrentHumanCampaignLevel = json.CurrentHumanCampaignLevel;
@@ -259,10 +260,12 @@ namespace Assets.Scripts.Data
         {
             if (ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide)
             {
+                Debug.Log($"Advancing from {CurrentHumanCampaignLevel} to {CurrentHumanCampaignLevel+1} in the human campaign");
                 SetCurrentLevel(CurrentHumanCampaignLevel + 1);
             }
             else
             {
+                Debug.Log($"Advancing from {CurrentBeeCampaignLevel} to {CurrentBeeCampaignLevel + 1} in the bee campaign");
                 SetCurrentLevel(CurrentBeeCampaignLevel + 1);
             }
             

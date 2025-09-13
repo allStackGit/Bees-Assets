@@ -26,9 +26,11 @@ namespace Assets.Scripts.Data
             dynamic json = SetupFile(shouldFileExist, ConfigData.SavedSquadsDataFilenames[type], (json) =>
             {
                 ConfigData.IsSavedSquadsDataLoaded[type] = true;
-
+                _savedSquadsList.Clear();
+                Debug.Log($"Loaded saved squad data for {ConfigData.SavedSquadsDataFilenames[type]}");
                 Utilities.LoadSquadsFromJson(Utilities.JArrayToList<dynamic>((JArray)JsonConvert.DeserializeObject(file.GetContents()))).ForEach(s =>
                 {
+                    
                     AddSquad(s);
                 });
                 //Debug.Log($"Loaded ships {GetShips().Find((s => s.Id == Utilities.RandomInt(GetShips().Count - 1))).Name}");

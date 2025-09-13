@@ -1,15 +1,17 @@
-﻿using UnityEngine;
-using UnityEngine.SceneManagement;
-using TMPro;
-using System.Collections.Generic;
-using Assets.Scripts.Scenes;
-using Assets.Scripts.UI_Components;
-using UnityEngine.Events;
-using Assets.Scripts.Data;
-using System.Linq;
-using System;
+﻿using Assets.Scripts.Data;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Levels;
+using Assets.Scripts.Scenes;
+using Assets.Scripts.UI_Components;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using TMPro;
+using UnityEngine;
+using UnityEngine.Events;
+using UnityEngine.SceneManagement;
+using static UnityEngine.GraphicsBuffer;
 
 namespace Assets.Scripts.UIComponents
 {
@@ -151,7 +153,12 @@ namespace Assets.Scripts.UIComponents
 
                 ship.Kill(null, null, null);
             }
-
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
+            {
+                //Debug.Log($"Surrending level #{ConfigData.UserProgressData.GetCurrentLevel()}");
+                CurrentLevel.CloseLevel();
+                CurrentLevel.GetType().GetMethod($"Level{ConfigData.UserProgressData.GetCurrentLevel()}Ending").Invoke(CurrentLevel, null);
+            }
 
         }
         public void TryNewLevel()

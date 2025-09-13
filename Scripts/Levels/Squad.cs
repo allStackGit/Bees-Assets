@@ -527,7 +527,7 @@ namespace Assets.Scripts.Levels
             {
                 _tempSquad = GetClosestEnemySquad();
                 //Debug.Log($"The closest Enemy to {Name} is {closestSquad.Name}");
-                if (CanSeeSquad(_tempSquad))
+                if (_tempSquad != null && CanSeeSquad(_tempSquad))
                 {
                     //Debug.Log($"Initiating chase by {Name} against {closestSquad.Name}.");
                     UserAggressive(_tempSquad);

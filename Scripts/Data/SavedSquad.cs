@@ -42,6 +42,7 @@ namespace Assets.Scripts.Data
             this.Side = side;
             this.Name = name;
             this.StartingPosition = startingPosition;
+            //Debug.Log($"Starting position for startup {this} is {StartingPosition}");
             this.CeaseFire = ceaseFire;
             this.IsMatchingSpeed = isMatchingSpeed;
             this.ChosenShootingStrategy = chosenShootingStrategy;
@@ -103,7 +104,7 @@ namespace Assets.Scripts.Data
             {
                 long id = Utilities.GetNegativeFleetshipId();
 
-                FleetShip fleetShip = new FleetShip(id, squadType, false, true, 0, 0, 0, 0, 0, 0, 0);
+                FleetShip fleetShip = new FleetShip(id, squadType, false, false, 0, 0, 0, 0, 0, 0, 0);
                 AddShipToSquad(new SquadShip(fleetShip.Id, fleetShip.Type, offsets[shipIndex]));
 
             }
@@ -129,7 +130,7 @@ namespace Assets.Scripts.Data
             FleetShip fleetShip = ship.GetFleetShip();
             if (!HasShip(fleetShip))
             {
-                //Debug.Log($"Adding {ship.GetFleetShip().Name} #{ship.GetFleetShip().Id} to {Name}");
+                Debug.Log($"Adding {ship} to {Name}");                        
                 _ships.Add(ship);
                 fleetShip.DoesBelongToSavedSquad = true;
             }
@@ -164,7 +165,7 @@ namespace Assets.Scripts.Data
 
             for (int i = 0; i < shipCount; i++)
             {
-                GetSquadShips()[i].Offset = offsets[i];
+                GetSquadShips()[i].Offset = offsets[i] * 2f;
             }
         }
         public void SetChanged(bool changed)
@@ -241,7 +242,7 @@ namespace Assets.Scripts.Data
         {
             //Debug.Log($"Before Orienting squad, center point: {StartingPosition}");
 
-             StartingPosition = GetCenterPoint();
+            StartingPosition = GetCenterPoint();
             //Debug.Log($"After Orienting squad, center point: {StartingPosition}");
             GetSquadShips().ForEach((ship) =>
             {
@@ -342,7 +343,7 @@ namespace Assets.Scripts.Data
             GetSquadShips().ForEach((squadShip) =>
             {
                 FleetShip fleetShip = squadShip.GetFleetShip();
-                FleetShip newFleetShip = new FleetShip(Utilities.GetNegativeFleetshipId(), fleetShip.Type, false, true, 0, 0, 0, 0, 0, 0, 0, fleetShip.Name);
+                FleetShip newFleetShip = new FleetShip(Utilities.GetNegativeFleetshipId(), fleetShip.Type, false, false, 0, 0, 0, 0, 0, 0, 0, fleetShip.Name);
                 SquadShip newSquadShip = new SquadShip(newFleetShip.Id, newFleetShip.Type, squadShip.Offset);
                 convert.AddShipToSquad(newSquadShip);
             });
@@ -370,6 +371,8 @@ namespace Assets.Scripts.Data
         }
         public string ToJson()
         {
+            //Debug.Log($"Starting position for JSON {this} is {StartingPosition}");
+
             string json = $"{{\"Id\": {Id}, \"Side\": {Side}, \"Name\": \"{Name}\", \"Color\": {{\"r\": {Color.r}, \"g\": {Color.g}, \"b\": {Color.b}, \"a\": {Color.a} }}, \"StartingPosition\":" +
                 $" {{\"x\": {StartingPosition.x}, \"y\": {StartingPosition.y} }}, \"CeaseFire\": {(CeaseFire ? "true" : "false")}, \"IsMatchingSpeed\": {(IsMatchingSpeed ? "true" : "false")}, \"ChosenShootingStrategy\":" +
                 $" \"{Utilities.ConvertShootingStrategyTypeToName[ChosenShootingStrategy]}\", \"Stats\": {Stats.ToJson()}, \"Ships\": [";

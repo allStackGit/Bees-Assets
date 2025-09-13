@@ -20,6 +20,7 @@ namespace Assets.Scripts.Scenes
         public TMP_InputField NameInput;
         public Codex CodexManager;
         public Dialogue ResetConfirmation;
+        public bool IsResettingCampaign;
         new void Start()
         {
             Name = "Main Menu";
@@ -63,10 +64,18 @@ namespace Assets.Scripts.Scenes
             {
                 CommanderNameDialogue.SetActive(true);
             }
-            if (currentLevel > 1)
+            if (currentLevel > -1 && !IsResettingCampaign)
             {
+                ResetCampaignButton.SetActive(true);
                 ResetConfirmation = new Dialogue(DialoguePrefab, ConfigData.Configuration.AreYouSure, "This will set you back to the beginning of the campaign.",
                 new List<string>() { ConfigData.Configuration.Yes, ConfigData.Configuration.No }, new List<UnityAction>() { ResetCampaign });
+            }
+            if (IsResettingCampaign)
+            {
+                ConfigData.CampaignShips = new Ships(ConfigData.GetCampaignFleetData(), ConfigData.GetCampaignSavedSquadsData());
+                HumanCampaignModeButton.transform.GetChild(0).GetComponent<TMP_Text>().text = "Play Campaign";
+                HumanCampaignModeButton.GetComponent<Button>().enabled = true;
+                IsResettingCampaign = false;
             }
         }
         public void SubmitName()
@@ -125,7 +134,6 @@ namespace Assets.Scripts.Scenes
                 ConfigData.UserProgressData.GetCurrentLevelOptions();
                 ConfigData.SetupFirstTimePlayingHumanCampaign();
                 ConfigData.LevelOptions = (LevelOptions)ConfigData.UserProgressData.CurrentLevel.Clone();
-                ConfigData.LevelOptions.ChosenSquads = ConfigData.CurrentShips.GetSavedSquads().Where(s => s.Id == 0).ToList();
                 SceneManager.LoadSceneAsync("Hivemind Training", LoadSceneMode.Single);
             }
             else
@@ -139,9 +147,6 @@ namespace Assets.Scripts.Scenes
         }
         public void ResetCampaign()
         {
-            Dictionary<ConfigData.ShipTypes, int> allStartingShips = new Dictionary<ConfigData.ShipTypes, int>();
-            ConfigData.StartingSettings.HumanStartingShips.ToList().ForEach((s) => allStartingShips.Add(s.Key, s.Value));
-            ConfigData.StartingSettings.BeeStartingShips.ToList().ForEach((s) => allStartingShips.Add(s.Key, s.Value));
 
             Dictionary<ConfigData.ShipTypes, int> allCampaignStartingShips = new Dictionary<ConfigData.ShipTypes, int>();
             ConfigData.StartingSettings.HumanCampaignStartingShips.ToList().ForEach((s) => allCampaignStartingShips.Add(s.Key, s.Value));
@@ -157,10 +162,20 @@ namespace Assets.Scripts.Scenes
             ConfigData.UserProgressData.HasSeenBuildInterface = false;
             ConfigData.UserProgressData.MinedTSV = 0;
 
-            ConfigData.UserProgressData.Save();
-            ConfigData.SetupCampaignFleetData(true, allCampaignStartingShips);
-            ConfigData.SetupCampaignSavedSquadsData(true);
-            ConfigData.SetupCampaignLevelData(true);
+
+            ConfigData.IsSavedSquadsDataLoaded[0] = false;
+            ConfigData.IsFleetDataLoaded[0] = false;
+            ConfigData.IsLoadingUserData = true;
+            IsFinalized = false;
+            IsResettingCampaign = true;
+
+            //HumanCampaignModeButton.transform.GetChild(0).GetComponent<TMP_Text>().text = "Resetting...";
+            //HumanCampaignModeButton.GetComponent<Button>().enabled = false;
+
+            ConfigData.SetupCampaignFleetData(false, allCampaignStartingShips);
+            ConfigData.SetupCampaignSavedSquadsData(false);
+            ConfigData.UserProgressData.Save(); // Save this after the others so changes to fleet and squad ID are saved
+
 
             ResetCampaignButton.SetActive(false);
         }

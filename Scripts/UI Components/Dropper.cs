@@ -238,7 +238,7 @@ namespace Assets.Scripts.UIComponents
                 {
                     Debug.Log("INVALID PLACEMENT. REMOVING DRAG ICON");
                     //_currentDragIcon.Icon.SetActive(false);
-                    _currentDragIcon.RemoveDragIcon();
+                    //_currentDragIcon.RemoveDragIcon();
                 }
             }
             ResetDrag();

@@ -21,7 +21,7 @@ namespace Assets.Scripts.UIComponents
     {
         public GameObject MatchSpeedButton, CeaseFireButton, AttackOnSightButton, PatrolButton, GuardButton, ChaseButton, HoldButton, DetonateButton, ChargeButton, 
             DropBeaconButton, TypeSelector, ActionTitle, ActionExplanation;
-
+        public TMP_Text ActionExplanationText;
         private EventSystem _eventSystem;
         private SquadMaker _squadMaker = null;
         private Level Level = null;
@@ -53,7 +53,7 @@ namespace Assets.Scripts.UIComponents
             _eventSystem = eventSystem;
             Side = side;
             SetDropdownOptions();
-
+            ActionExplanationText.fontSize = 14;
         }
         public void Hide()
         {
@@ -389,7 +389,7 @@ namespace Assets.Scripts.UIComponents
                 }
                 //Debug.Log($"Setting text for {button}");
                 TMP_Text title = ActionTitle.GetComponentInChildren<TMP_Text>();
-                TMP_Text explanation = ActionExplanation.GetComponentInChildren<TMP_Text>();
+                
                 title.text = button;
 
                 string side = "Bees";
@@ -408,115 +408,116 @@ namespace Assets.Scripts.UIComponents
                 switch (button)
                 {
                     case "Patrol":
-                        explanation.text = $"{beginningActionText} patrol around the border that you select (by selecting an area), engaging any {side} they encounter.";
+                        ActionExplanationText.text = $"{beginningActionText} patrol around the border that you select (by selecting an area), engaging any {side} they encounter.";
                         break;
 
                     case "Guard":
-                        explanation.text = $"{beginningActionText} guard the squadron you select (by right clicking on it) by flying nearby and following it.";
+                        ActionExplanationText.text = $"{beginningActionText} guard the squadron you select (by right clicking on it) by flying nearby and following it.";
                         break;
 
                     case "Chase":
-                        explanation.text = $"{beginningActionText} chase down and engage the first {side} they see.";
+                        ActionExplanationText.text = $"{beginningActionText} chase down and engage the first {side} they see.";
                         break;
 
                     case "Hold":
-                        explanation.text = $"{beginningActionText} hold their position and fire upon any {side} that gets within range.";
+                        ActionExplanationText.text = $"{beginningActionText} hold their position and fire upon any {side} that gets within range.";
                         break;
 
                     case "Detonate":
-                        explanation.text = $"The Fire Barge(s) of the selected squadron(s) will detonate their nuclear cargo, severely damaging or destroying all ships around them.";
+                        ActionExplanationText.text = $"The Fire Barge(s) of the selected squadron(s) will detonate their nuclear cargo, severely damaging or destroying all ships around them.";
                         break;
 
                     case "Charge":
-                        explanation.text = $"The Barge(s) of the selected squadron(s) will build up power and then charge forward, ramming ships in front of them and taking damage.";
+                        ActionExplanationText.text = $"The Barge(s) of the selected squadron(s) will build up power and then charge forward, ramming ships in front of them and taking damage.";
                         break;
 
                     case "Drop Beacon":
-                        explanation.text = $"The Scouts(s) of the selected squadron(s) will drop a beacon, clearing away the fog of war in a small area until destroyed.";
+                        ActionExplanationText.text = $"The Scouts(s) of the selected squadron(s) will drop a beacon, clearing away the fog of war in a small area until destroyed.";
                         break;
 
                     case "Match Speed":
-                        explanation.text = $"{beginningActionText} all fly at the same speed: the speed of the slowest ships.";
+                        ActionExplanationText.text = $"{beginningActionText} all fly at the same speed: the speed of the slowest ships.";
                         break;
 
                     case "Attack on Sight":
-                        explanation.text = $"{beginningActionText} fire upon any {side} that gets within range. This is standard behavior.";
+                        ActionExplanationText.text = $"{beginningActionText} fire upon any {side} that gets within range. This is standard behavior.";
                         break;
 
                     case "Cease Fire":
-                        explanation.text = $"{beginningActionText} not fire on anyone under any circumstances.";
+                        ActionExplanationText.text = $"{beginningActionText} not fire on anyone under any circumstances.";
                         break;
 
 
 
                     case "First Seen":
-                        explanation.text = $"{beginningStrategyText} {side} they see first.";
+                        ActionExplanationText.text = $"{beginningStrategyText} {side} they see first.";
                         break;
                     case "Random":
-                        explanation.text = $"The ships of the selected squadron(s) will shoot randomly at any {side} they see.";
+                        ActionExplanationText.text = $"The ships of the selected squadron(s) will shoot randomly at any {side} they see.";
                         if (HasSquadMaker)
                         {
-                            explanation.text = $"The ships of this squadron will shoot randomly at any {side} they see.";
+                            ActionExplanationText.text = $"The ships of this squadron will shoot randomly at any {side} they see.";
                         }
                         break;
 
                     case "Revenge":
-                        explanation.text = $"{beginningStrategyText} {side} that have most recently killed our own ships.";
+                        ActionExplanationText.text = $"{beginningStrategyText} {side} that have most recently killed our own ships.";
                         break;
 
                     case "Most Dangerous":
-                        explanation.text = $"{beginningStrategyText} {side} that have dealt the most damage.";
+                        ActionExplanationText.text = $"{beginningStrategyText} {side} that have dealt the most damage.";
                         break;
 
                     case "Most Health":
-                        explanation.text = $"{beginningStrategyText} {side} that have the most health.";
+                        ActionExplanationText.text = $"{beginningStrategyText} {side} that have the most health.";
                         break;
 
                     case "Least Health":
-                        explanation.text = $"{beginningStrategyText} {side} that have the least health.";
+                        ActionExplanationText.text = $"{beginningStrategyText} {side} that have the least health.";
                         break;
 
                     case "Most Powerful":
-                        explanation.text = $"{beginningStrategyText} {side} that have the most fire power.";
+                        ActionExplanationText.text = $"{beginningStrategyText} {side} that have the most fire power.";
                         break;
 
                     case "Least Powerful":
-                        explanation.text = $"{beginningStrategyText} {side} that have the least fire power.";
+                        ActionExplanationText.text = $"{beginningStrategyText} {side} that have the least fire power.";
                         break;
 
                     case "Closest":
-                        explanation.text = $"{beginningStrategyText} {side} that are closest to them.";
+                        ActionExplanationText.text = $"{beginningStrategyText} {side} that are closest to them.";
                         break;
 
                     case "Furthest":
-                        explanation.text = $"{beginningStrategyText} {side} that are furthest from them.";
+                        ActionExplanationText.text = $"{beginningStrategyText} {side} that are furthest from them.";
                         break;
 
                     case "Most Range":
-                        explanation.text = $"{beginningStrategyText} {side} that have the longest range.";
+                        ActionExplanationText.text = $"{beginningStrategyText} {side} that have the longest range.";
                         break;
 
                     case "Least Range":
-                        explanation.text = $"{beginningStrategyText} {side} that have the shortest range.";
+                        ActionExplanationText.text = $"{beginningStrategyText} {side} that have the shortest range.";
                         break;
 
                     case "Fastest":
-                        explanation.text = $"{beginningStrategyText} fastest {side}.";
+                        ActionExplanationText.text = $"{beginningStrategyText} fastest {side}.";
                         break;
 
                     case "Slowest":
-                        explanation.text = $"{beginningStrategyText} slowest {side}.";
+                        ActionExplanationText.text = $"{beginningStrategyText} slowest {side}.";
                         break;
 
                     case "Most Valuable":
-                        explanation.text = $"{beginningStrategyText} {side} that have the most estimated strategic value.";
+                        ActionExplanationText.text = $"{beginningStrategyText} {side} that have the most estimated strategic value.";
                         break;
 
                     case "Least Valuable":
-                        explanation.text = $"{beginningStrategyText} {side} that have the least estimated strategic value.";
+                        ActionExplanationText.text = $"{beginningStrategyText} {side} that have the least estimated strategic value.";
                         break;
 
                     case "Barges":
+                    case "Beacons":
                     case "Carriers":
                     case "Cruisers":
                     case "Dreadnoughts":
@@ -538,7 +539,7 @@ namespace Assets.Scripts.UIComponents
                     case "Queen":
                     case "Wasps":
                     case "Yellow Jackets":
-                        explanation.text = $"{beginningStrategyText} {button}.";
+                        ActionExplanationText.text = $"{beginningStrategyText} {button}.";
                         break;
                 }
             }

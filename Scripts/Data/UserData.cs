@@ -1,6 +1,8 @@
 ﻿
 using Assets.Scripts.Scenes;
+using NUnit.Framework;
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Assets.Scripts.Data
@@ -12,6 +14,7 @@ namespace Assets.Scripts.Data
         protected string defaultJsonData = "";
         private Action<dynamic> _onceDataIsLoaded;
         private bool _hasCalledAction;
+        protected string filename;
         public UserData()
         {
         }
@@ -19,7 +22,8 @@ namespace Assets.Scripts.Data
         {
             _onceDataIsLoaded = onceDataIsLoaded;
             //Debug.Log("Called setup file");
-            file = new DataFile(filename);
+            this.filename = filename;
+            this.file = new DataFile(filename);
             dynamic json = null;
             // check if the file should already exist (which it should if this isn't the user's first time) and if it does in fact exist
             if (!file.Exists())
@@ -31,17 +35,17 @@ namespace Assets.Scripts.Data
                 }
                 Debug.Log($"DataFile {filename} doesn't exist");
             }
-            else
+            else if (shouldFileExist)
             {
                 //Debug.Log($"Datafile {filename} exists, reading from it");
                 json = file.LoadJsonObject();
 
                 //Debug.Log($"got json variable in UserData. Did not await {json}");
             }
-            if (json == null || file.GetContents() == "")
+            if (!shouldFileExist || json == null || file.GetContents() == "")
             {
-                //Debug.Log($"Datafile {filename} doesn't exist or is blank, writing default data");
-                json = file.WriteData(defaultJsonData);
+                Debug.Log($"Datafile {filename} doesn't exist or is blank, writing default data");
+                json = this.file.WriteData(defaultJsonData);
             }
             
             return json;
@@ -62,6 +66,7 @@ namespace Assets.Scripts.Data
                 _hasCalledAction = true;
                 if (_onceDataIsLoaded != null)
                 {
+                    Debug.Log($"Loaded data for {this.filename}");
                     _onceDataIsLoaded(GetDataFile().GetJsonObject());
                 }
             }

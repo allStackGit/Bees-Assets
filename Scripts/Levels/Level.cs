@@ -573,14 +573,18 @@ namespace Assets.Scripts.Levels
                         ConfigData.UserProgressData.Save();
                     }
                 }
-                else if (State.IsSideKilled(ConfigData.Configuration.HumanSide) && State.IsSideKilled(ConfigData.Configuration.BeeSide))
+                if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
                 {
-                    Debug.LogError("Both sides are dead!");
+                    if (State.IsSideKilled(ConfigData.Configuration.HumanSide) && State.IsSideKilled(ConfigData.Configuration.BeeSide))
+                    {
+                        Debug.LogError("Both sides are dead!");
+                    }
+                    else
+                    {
+                        Debug.LogError("Neither side is dead!");
+                    }
                 }
-                else
-                {
-                    Debug.LogError("Neither side is dead!");
-                }
+                
 
                 if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge)
                 {
@@ -1296,10 +1300,10 @@ namespace Assets.Scripts.Levels
                 _saveCampaign_progress.BeeCampaignWins++;
             }
 
-            if (WinningSide == ConfigData.Configuration.UserSide)
-            {
-                _saveCampaign_progress.AdvanceToNextLevel();
-            }
+            //if (WinningSide == ConfigData.Configuration.UserSide)
+            //{
+            //    _saveCampaign_progress.AdvanceToNextLevel();
+            //}
 
             for (_saveCampaign_i = 0; _saveCampaign_i < AllSquads.Count; _saveCampaign_i++)
             {

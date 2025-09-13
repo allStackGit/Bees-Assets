@@ -416,7 +416,7 @@ MonoBehaviour:
   TypeSelector: {fileID: 6972302390186626829}
   ActionTitle: {fileID: 3955689702258820380}
   ActionExplanation: {fileID: 1905241953672553277}
-  UIAudioController: {fileID: 0}
+  ActionExplanationText: {fileID: 1905241953672553275}
 --- !u!1 &6979828201682286336
 GameObject:
   m_ObjectHideFlags: 0
@@ -4579,6 +4579,17 @@ RectTransform:
   m_CorrespondingSourceObject: {fileID: 5749248882632121077, guid: 247934df76f0d8a4f8a1af315276df20, type: 3}
   m_PrefabInstance: {fileID: 6177153166649047503}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &1905241953672553275 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 5749248882632121076, guid: 247934df76f0d8a4f8a1af315276df20, type: 3}
+  m_PrefabInstance: {fileID: 6177153166649047503}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1905241953672553277}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &1905241953672553277 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 5749248882632121074, guid: 247934df76f0d8a4f8a1af315276df20, type: 3}

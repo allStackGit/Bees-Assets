@@ -47,6 +47,9 @@ namespace Assets.Scripts.Data
             MineralsMined = mineralsMined;
             Side = Utilities.ConvertShipTypeToSide.GetValueOrDefault(Type);
             GetStats();
+
+            DoesBelongToSavedSquad = false;
+
         }
         public string GenerateShipName()
         {
@@ -210,7 +213,7 @@ namespace Assets.Scripts.Data
         }
         public override string ToString()
         {
-            return $"#{Id} ({Type}) - {Name} ({(IsDead ? "D" : "A")})";
+            return $"#{Id} ({Type}) - {Name} ({(IsDead ? "D" : "A")}) ({(DoesBelongToSavedSquad ? "Y" : "N")})";
         }
 
     }

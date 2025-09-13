@@ -346,7 +346,7 @@ public class Stage : Scene
     {
         FixedDeltaTime = Time.fixedDeltaTime;
         StartTime = Time.realtimeSinceStartup;
-        //Debug.Log($"Start level stage");
+        Debug.Log($"Start level stage");
         Name = "Level";
         base.Start();
         DebugLogger.__CommandCounts = new int[21];
@@ -388,7 +388,7 @@ public class Stage : Scene
     Transform _finalize_colliderContainer;
     protected override void FinalizeSceneWithUserData()
     {
-        //Debug.Log($"Finalize scene");
+        Debug.Log($"Finalize scene");
 
 
         base.FinalizeSceneWithUserData();

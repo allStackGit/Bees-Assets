@@ -1,0 +1,283 @@
+{
+  "Levels": [
+    {
+      "Id": 0,
+      "Side": 1,
+      "Name": "Anomaly",
+      "MapIndex": 0,
+      "Obstacles": null,
+      "AsteroidOption": 0,
+      "FogOfWar": 1,
+      "Mining": 0,
+      "HasPreLevelIntro": false,
+      "HasSquadActionBox": false,
+      "SupplyCapacity": 25,
+      "EnemyReinforcementsOption": 0,
+      "EnemyReinforcementDelay": 0,
+      "EnemyReinforcements": [],
+      "EnemySquads": [
+
+      ],
+      "EnemyExistingSquads": [
+        2 // Honeybee
+      ],
+      "EnemyReport": "",
+      "UserStartingPosition": {
+        "x": 0,
+        "y": 0
+      },
+      "AIStartingPosition": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "Id": 1,
+      "Side": 1,
+      "Name": "Reinforcements",
+      "MapIndex": 0,
+      "Obstacles": null,
+      "AsteroidOption": 0,
+      "FogOfWar": 1,
+      "Mining": 0,
+      "HasPreLevelIntro": true,
+      "HasSquadActionBox": true,
+      "SupplyCapacity": 135,
+      "EnemyReinforcementsOption": 0,
+      "EnemyReinforcementDelay": 0,
+      "EnemyReinforcements": [],
+      "EnemySquads": [
+
+      ],
+      "EnemyExistingSquads": [
+
+      ],
+      "EnemyReport": "",
+      "UserStartingPosition": {
+        "x": 5,
+        "y": 10
+      },
+      "AIStartingPosition": {
+        "x": 0,
+        "y": 300
+      }
+    },
+    {
+      "Id": 2,
+      "Side": 1,
+      "Name": "Bluer Pastures",
+      "MapIndex": 0,
+      "Obstacles": "Bluer Pastures",
+      "AsteroidOption": 0,
+      "FogOfWar": 0,
+      "Mining": 0,
+      "HasPreLevelIntro": true,
+      "HasSquadActionBox": true,
+      "SupplyCapacity": 200,
+      "EnemyReinforcementsOption": 0,
+      "EnemyReinforcementDelay": 0,
+      "EnemyReinforcements": [],
+      "EnemySquads": [
+
+      ],
+      "EnemyExistingSquads": [
+
+      ],
+      "EnemyReport": "We expect large numbers of the Hornets, Honeybees, and Wasps we've seen already but we aren't certain on the exact fleet size. There are also several unidentified ships we haven't seen yet.",
+      "UserStartingPosition": {
+        "x": 35,
+        "y": 10
+      },
+      "AIStartingPosition": {
+        "x": 0,
+        "y": 230
+      }
+    },
+    {
+      "Id": 3,
+      "Side": 1,
+      "Name": "Seize the Means",
+      "MapIndex": 1,
+      "Obstacles": null,
+      "AsteroidOption": 0,
+      "FogOfWar": 1,
+      "Mining": 1,
+      "HasPreLevelIntro": true,
+      "HasSquadActionBox": true,
+      "SupplyCapacity": 500,
+      "EnemyReinforcementsOption": 0,
+      "EnemyReinforcementDelay": 0,
+      "EnemyReinforcements": [],
+      "EnemySquads": [
+
+      ],
+      "EnemyExistingSquads": [
+
+      ],
+      "EnemyReport": "The scouts have reported movement but that's all we know.",
+      "UserStartingPosition": {
+        "x": -400,
+        "y": 0
+      },
+      "AIStartingPosition": {
+        "x": 0,
+        "y": 230
+      }
+    },
+    {
+      "Id": 4,
+      "Side": 1,
+      "Name": "Of Production!",
+      "MapIndex": 1,
+      "Obstacles": null,
+      "AsteroidOption": 0,
+      "FogOfWar": 0,
+      "Mining": 1,
+      "HasPreLevelIntro": true,
+      "HasSquadActionBox": true,
+      "SupplyCapacity": 1500,
+      "EnemyReinforcementsOption": 0,
+      "EnemyReinforcementDelay": 0,
+      "EnemyReinforcements": [],
+      "EnemySquads": [
+
+      ],
+      "EnemyExistingSquads": [
+
+      ],
+      "EnemyReport": "We don't think there are any Bees in our immedate vicinity but there are Bees all around Neptune so we could be attacked at any time. There are lots of rich asteroids around so we'll want to bring in the Factory ships.",
+      "UserStartingPosition": {
+        "x": -200,
+        "y": 0
+      },
+      "AIStartingPosition": {
+        "x": 480,
+        "y": 0
+      }
+    },
+    {
+      "Id": 5,
+      "Side": 1,
+      "Name": "Pressing Forward",
+      "MapIndex": 1,
+      "Obstacles": "Pressing Forward",
+      "AsteroidOption": 0,
+      "FogOfWar": 1,
+      "Mining": 0,
+      "HasPreLevelIntro": true,
+      "HasSquadActionBox": true,
+      "SupplyCapacity": 1000,
+      "EnemyReinforcementsOption": 0,
+      "EnemyReinforcementDelay": 0,
+      "EnemyReinforcements": [],
+      "EnemySquads": [
+
+      ],
+      "EnemyExistingSquads": [
+
+      ],
+      "EnemyReport": "We've found a weak spot with a smaller number of bees. We need to punch a hole in the blockade that we can get through.",
+      "UserStartingPosition": {
+        "x": -200,
+        "y": 0
+      },
+      "AIStartingPosition": {
+        "x": 480,
+        "y": 0
+      }
+    },
+    {
+      "Id": 6,
+      "Side": 1,
+      "Name": "On the Offensive",
+      "MapIndex": 2,
+      "Obstacles": "On the Offensive",
+      "AsteroidOption": 0,
+      "FogOfWar": 1,
+      "Mining": 0,
+      "HasPreLevelIntro": true,
+      "HasSquadActionBox": true,
+      "SupplyCapacity": 500,
+      "EnemyReinforcementsOption": 0,
+      "EnemyReinforcementDelay": 0,
+      "EnemyReinforcements": [],
+      "EnemySquads": [
+
+      ],
+      "EnemyExistingSquads": [
+
+      ],
+      "EnemyReport": "We know there's a scattering of bees, including some ships we don't recognize, but otherwise we're flying dark.",
+      "UserStartingPosition": {
+        "x": 450,
+        "y": 450
+      },
+      "AIStartingPosition": {
+        "x": 480,
+        "y": 0
+      }
+    },
+    {
+      "Id": 7,
+      "Side": 1,
+      "Name": "On the Defensive",
+      "MapIndex": 2,
+      "Obstacles": "On the Defensive",
+      "AsteroidOption": 0,
+      "FogOfWar": 0,
+      "Mining": 1,
+      "HasPreLevelIntro": true,
+      "HasSquadActionBox": true,
+      "SupplyCapacity": 1500,
+      "EnemyReinforcementsOption": 0,
+      "EnemyReinforcementDelay": 0,
+      "EnemyReinforcements": [],
+      "EnemySquads": [
+
+      ],
+      "EnemyExistingSquads": [
+
+      ],
+      "EnemyReport": "There aren't any bees around right now but we know there are many close by and they may close in on us.",
+      "UserStartingPosition": {
+        "x": -200,
+        "y": -200
+      },
+      "AIStartingPosition": {
+        "x": 450,
+        "y": 450
+      }
+    },
+    {
+      "Id": 8,
+      "Side": 1,
+      "Name": "A New Threat",
+      "MapIndex": 2,
+      "Obstacles": null,
+      "AsteroidOption": 0,
+      "FogOfWar": 0,
+      "Mining": 0,
+      "HasPreLevelIntro": true,
+      "HasSquadActionBox": true,
+      "SupplyCapacity": 1000,
+      "EnemyReinforcementsOption": 0,
+      "EnemyReinforcementDelay": 0,
+      "EnemyReinforcements": [],
+      "EnemySquads": [
+
+      ],
+      "EnemyExistingSquads": [
+
+      ],
+      "EnemyReport": "We've spotted some Bees further out moving very slowly. That's all we know",
+      "UserStartingPosition": {
+        "x": -200,
+        "y": -200
+      },
+      "AIStartingPosition": {
+        "x": 450,
+        "y": 450
+      }
+    }
+  ]
+}

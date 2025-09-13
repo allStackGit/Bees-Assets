@@ -18,7 +18,7 @@ namespace Assets.Scripts.Levels
             if (!Ships.Contains(ship))
             {
                 Ships.Add(ship);
-                Debug.Log($"Ship {ship.Name} entered exit zone.");
+                //Debug.Log($"Ship {ship.Name} entered exit zone.");
                 OnShipEnter(ship);
             }
         }
@@ -29,7 +29,7 @@ namespace Assets.Scripts.Levels
             if (Ships.Contains(ship))
             {
                 Ships.Remove(ship);
-                Debug.Log($"Ship {ship.Name} exited exit zone.");
+                //Debug.Log($"Ship {ship.Name} exited exit zone.");
             }
         }
     }

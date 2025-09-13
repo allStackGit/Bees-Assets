@@ -33,8 +33,8 @@ public class CutsceneManager : MonoBehaviour
             HasEndDialogueAction = true;
         }
         Portraits["Samuel"] = Resources.LoadAll<Sprite>("Sprites/Portraits/samuel_chat");
-        Portraits["Tom"] = Resources.LoadAll<Sprite>("Sprites/Portraits/starman");
-        Portraits["High Command"] = Resources.LoadAll<Sprite>("Sprites/Portraits/highcommand");
+        Portraits["Tom"] = Resources.LoadAll<Sprite>("Sprites/Portraits/tom_chat");
+        Portraits["High Command"] = Resources.LoadAll<Sprite>("Sprites/Portraits/commander_chat");
         Portraits["Oviya"] = Resources.LoadAll<Sprite>("Sprites/Portraits/oviya_chat");
         Portraits["Marco"] = Resources.LoadAll<Sprite>("Sprites/Portraits/marco_chat");
         Portraits["Yoshiko"] = Resources.LoadAll<Sprite>("Sprites/Portraits/yoshiko_chat");
@@ -44,7 +44,7 @@ public class CutsceneManager : MonoBehaviour
         Portraits["Emilia"] = Resources.LoadAll<Sprite>("Sprites/Portraits/emilia_chat");
         Portraits["Fritz"] = Resources.LoadAll<Sprite>("Sprites/Portraits/fritz_chat");
         Portraits["Marge"] = Resources.LoadAll<Sprite>("Sprites/Portraits/marge_chat");
-        Portraits["Barge Pilot"] = Resources.LoadAll<Sprite>("Sprites/Portraits/starman");
+        Portraits["Barge Pilot"] = Resources.LoadAll<Sprite>("Sprites/Portraits/tom_chat");
 
         PlutoLines_Anomaly = new List<DialogueLine>
         {
@@ -557,7 +557,7 @@ public class CutsceneManager : MonoBehaviour
     {
         if (HitDialogueBreak)
         {
-            Debug.Log("Continuing dialogue in cutscene manager.");
+            //Debug.Log("Continuing dialogue in cutscene manager.");
             ShowDialogue();
             HitDialogueBreak = false;
             DialogueManager.DisplayNextLine();

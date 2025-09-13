@@ -13,18 +13,20 @@ namespace Assets.Scripts.Data
     public class FleetData : UserData
     {
         private List<FleetShip> _shipList = new List<FleetShip>();
+        public string Type;
 
 
         public FleetData(bool shouldFileExist, Dictionary<ConfigData.ShipTypes, int> startingShips, int type) : base()
         {
+            Type = ConfigData.FleetDataFilenames[type];
             defaultJsonData = MakeDefaultList(startingShips);
 
             dynamic json = SetupFile(shouldFileExist, ConfigData.FleetDataFilenames[type], (json) =>
             {
                 ConfigData.IsFleetDataLoaded[type] = true;
-                //Debug.Log("Updated config file");
+                Debug.Log($"Loading ships for {Type}");
                 LoadShipsFromJson(Utilities.JArrayToList<dynamic>((JArray)JsonConvert.DeserializeObject(file.GetContents())));
-                //Debug.Log($"Loaded ships {GetShips().Find((s => s.Id == Utilities.RandomInt(GetShips().Count-1))).Name}");
+                Debug.Log($"Loaded {GetShips().Count} ships: {GetShips()[Utilities.RandomInt(GetShips().Count-1)].Name}");
             });
 
         }
@@ -50,13 +52,14 @@ namespace Assets.Scripts.Data
                 }
             });
             string json = ToJson();
-            //Debug.Log($"JSON for starting ships {GetShips().Count}, {GetShips().First().Name}");
+            Debug.Log($"JSON for {Type} starting ships {GetShips().Count}, {GetShips().First().Name}");
             //Debug.Log(json);
             ClearFleet();
             return json;
         }
         private void LoadShipsFromJson(List<dynamic> jsonShips)
         {
+            Debug.Log($"About to load {jsonShips.Count} ships for {Type}");
             jsonShips.ForEach((ship) =>
             {
                 AddShipToFleet(new FleetShip((int) ship.i, (ConfigData.ShipTypes) ship.t, ((int)ship.s == 1 ? true : false), ((int)ship.d == 1 ? true : false), (int) ship.f, (int) ship.dd, (int) ship.r, (int) ship.k, (int) ship.b, (int) ship.w, (int)ship.m, (string)ship.n));
@@ -72,7 +75,7 @@ namespace Assets.Scripts.Data
         }
         public void AddShipToFleet(FleetShip ship)
         {
-            if (!_shipList.Contains(ship)) { // [debug]
+            if (!_shipList.Contains(ship)) {
                 _shipList.Add(ship);
             }
             else

@@ -67,8 +67,16 @@ namespace Assets.Scripts.Levels
         {
             Debug.Log("Setting triggers for level 0");
             // Setup specifics for the level
+            LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() {
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Scout, 1),
+            }, StartingPositions[ConfigData.Configuration.UserSide - 1], Vector2.zero, false);
             Scout firstScout = (Scout)State.GetHumanShips().First();
+
+            LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() {
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 1),
+            }, StartingPositions[ConfigData.Configuration.AISide - 1], Vector2.zero, false);
             Honeybee firstHoneybee = (Honeybee)State.GetBeeShips().First();
+
             Gunship firstGunship = null;
             int checksForUserControl = 0;
             int passes = 0;
@@ -127,7 +135,7 @@ namespace Assets.Scripts.Levels
             // [alert] maybe this should be for all levels
             Stage.CutsceneManager.Setup(() =>
             {
-                Level0Ending();
+                Level0Ending(firstGunship.Squad.SavedSquad);
             });
             Stage.CutsceneManager.StartCutScene();
 
@@ -182,7 +190,7 @@ namespace Assets.Scripts.Levels
 
                         firstScout.CanOverrideBounds = true;
                         MoveToPoint moveToPoint = (MoveToPoint)Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.MoveToPoint);
-                        moveToPoint.Setup(firstScout.Squad, false, null, null, StartingPositions[firstScout.Side - 1] - new Vector2(150, 150)); // Scout starting position - 100 
+                        moveToPoint.Setup(firstScout.Squad, false, null, null, StartingPositions[ConfigData.Configuration.UserSide - 1] - new Vector2(0, 150)); // Scout starting position - 100 
                         firstScout.Squad.CommandQueue.Enqueue(moveToPoint);
 
                         firstScout.Squad.RunCommandQueue();
@@ -258,7 +266,9 @@ namespace Assets.Scripts.Levels
                     Debug.Log("Technician intro completed, spawning gunship");
 
                     // Spawn the gunship squad, take away user control, put it on cease fire
-                    LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() {ConfigData.CurrentShips.GetSavedSquad(1) }, StartingPositions[ConfigData.Configuration.UserSide - 1] - new Vector2(0, 100), StartingPositions[ConfigData.Configuration.UserSide - 1] - new Vector2(0, 100), true);
+                     AddReinforcementSquads(new List<SavedSquad>() {
+                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Gunship, 1),
+                    }, StartingPositions[ConfigData.Configuration.UserSide - 1] - new Vector2(0, 100), Vector2.zero);
 
                     firstGunship = (Gunship)State.GetHumanShips().First(); // Still the first ship since the Scout was removed
                     firstGunship.Squad.CanAcceptUserInput = false;
@@ -398,7 +408,15 @@ namespace Assets.Scripts.Levels
 
 
                                             // Create bee reinforcement squads. One Squad of 3 hornets, one squad of 2 wasps
-                                            LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() {ConfigData.CurrentShips.GetSavedSquad(3), ConfigData.CurrentShips.GetSavedSquad(4), ConfigData.CurrentShips.GetSavedSquad(5), ConfigData.CurrentShips.GetSavedSquad(6), ConfigData.CurrentShips.GetSavedSquad(7)}, StartingPositions[ConfigData.Configuration.AISide - 1] + new Vector2(0, 50), StartingPositions[ConfigData.Configuration.AISide - 1] + new Vector2(0, 50), true);
+                                            AddReinforcementSquads(new List<SavedSquad>() {
+                                                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 3),
+                                                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 3),
+                                                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 3),
+                                                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 2),
+                                                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 2),
+
+
+                                            }, StartingPositions[ConfigData.Configuration.AISide - 1] + new Vector2(0, 50), StartingPositions[ConfigData.Configuration.AISide - 1]);
 
 
                                             NextTriggers.Add(new Trigger(() =>
@@ -417,7 +435,7 @@ namespace Assets.Scripts.Levels
 
                                                         squad.HasCommandQueue = true;
                                                         squad.CommandQueueEmptyAction = () => {
-                                                            Debug.Log($"{squad} has finished command against gunship");
+                                                            //Debug.Log($"{squad} has finished command against gunship");
 
                                                             MoveToPoint moveToPoint = (MoveToPoint)Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.MoveToPoint);
                                                             moveToPoint.Setup(squad, false, null, null, firstGunship.GetPosition() - new Vector2(30, 30)); // Go near gunship
@@ -484,11 +502,12 @@ namespace Assets.Scripts.Levels
 
                                                             NextTriggers.Add(new Trigger(() =>
                                                                 {
-                                                                    return firstGunship.IsDead; // Once gunship dies
+                                                                    return firstGunship.IsDead; // Once gunship dies or retreats
                                                                 },
                                                                 () =>
                                                                 {
-                                                                    Stage.CutsceneManager.ContinueDialogue(); // Play the rest of the dialogue
+                                                                    CloseLevel();
+                                                                    Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Anomaly.GetRange(33, 5), true); // Play the rest of the dialoguew
 
                                                                 },
                                                                 "Level 0 Hiding map after player dies or leaves")
@@ -526,6 +545,15 @@ namespace Assets.Scripts.Levels
             HasContinuousTriggers = true;
             GameObject basicTooltip = null;
             GameObject highlightTooltip = null;
+
+
+            LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() {
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Scout, 1),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Gunship, 2, true),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Dreadnought, 1),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Frigate, 2),
+            }, StartingPositions[ConfigData.Configuration.UserSide - 1], Vector2.zero, false);
+
             Squad scoutSquad = State.GetSquadByNumber(ConfigData.Configuration.HumanSide, 1); // Scout squad that starts in the level
             Squad gunshipSquad = State.GetSquadByNumber(ConfigData.Configuration.HumanSide, 2);
             Squad dreadnoughtSquad = State.GetSquadByNumber(ConfigData.Configuration.HumanSide, 3);
@@ -699,6 +727,13 @@ namespace Assets.Scripts.Levels
                                                                 "Level 1 Showing Joey Frigate Dialogue")
                                                             );
 
+                                                            // Create bee starting squads. One squad of 1 honeybee, one Squads of 3 hornets, one squad of 2 wasps
+                                                            LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() {
+                                                                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 1),
+                                                                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 3, true),
+                                                                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 2, true),
+                                                            }, new Vector2(0, 316), new Vector2(0, 225), true);
+
                                                             Stage.ActivateHiveMind = true;
                                                             SetupHivemind();
 
@@ -711,28 +746,36 @@ namespace Assets.Scripts.Levels
                                                                 {
                                                                     Debug.Log($"Spawning Bee reinforcements");
 
-                                                                    // Create bee reinforcement squads. One Squad of 3 hornets, one squad of 2 wasps
-                                                                    LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() { ConfigData.CurrentShips.GetSavedSquad(4), ConfigData.CurrentShips.GetSavedSquad(5), ConfigData.CurrentShips.GetSavedSquad(7) }, new Vector2(-295, -195), new Vector2(-225, -155), true);
+                                                                    // Create bee reinforcement squads. Two Squads of 3 hornets, one squad of 2 wasps
+                                                                    AddReinforcementSquads(new List<SavedSquad>() {
+                                                                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 3, true),
+                                                                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 3, true),
+                                                                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 2, true),
+                                                                    }, new Vector2(0, 316), new Vector2(0, 225));
 
                                                                     AddReinforcementsToHivemindCommandQueue();
 
-                                                                    NextTriggers.Add(new Trigger(() =>
-                                                                        {
-                                                                            return State.IsSideKilled(ConfigData.Configuration.UserSide) || State.IsSideKilled(ConfigData.Configuration.AISide);
-                                                                        },
-                                                                        () =>
-                                                                        {
-                                                                            if (State.IsSideKilled(ConfigData.Configuration.AISide))
-                                                                            {
-                                                                                Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(13, 3), true);
-                                                                            }
-                                                                            else
-                                                                            {
-                                                                                Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(14, 2), true);
-                                                                            }
-                                                                        },
-                                                                        "Level 1 Showing select scout squad tooltip")
-                                                                    );
+                                                                    
+                                                                },
+                                                                "Level 1 Showing select scout squad tooltip")
+                                                            );
+                                                            NextTriggers.Add(new Trigger(() =>
+                                                                {
+                                                                    return State.IsSideKilled(ConfigData.Configuration.UserSide) || State.IsSideKilled(ConfigData.Configuration.AISide);
+                                                                },
+                                                                () =>
+                                                                {
+                                                                    CloseLevel();
+                                                                    if (State.IsSideKilled(ConfigData.Configuration.AISide)) // Player won
+                                                                    {
+                                                                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(13, 3), true);
+
+                                                                        
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(14, 2), true);
+                                                                    }
                                                                 },
                                                                 "Level 1 Showing select scout squad tooltip")
                                                             );
@@ -835,7 +878,6 @@ namespace Assets.Scripts.Levels
                             // Create target on pluto
                             HumanTarget humanTarget = CreateHumanTarget(new Vector2(68, -28));
                             //humanTarget.transform.localScale = new Vector2(80, 80);
-                            Destroy(humanTarget.FogOfWarVision.gameObject);
 
                             clock.Reuse(1f, () =>
                             {
@@ -852,11 +894,12 @@ namespace Assets.Scripts.Levels
                                     if (personnelLost >= 15)
                                     {
                                         Debug.Log($"Level over, too many personnel lost: {personnelLost}");
-
+                                        CloseLevel();
                                         Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_BluerPastures.GetRange(16, 4), true);
                                     }
-                                    else
+                                    else // Time ran out, player won
                                     {
+                                        CloseLevel();
                                         if (personnelLost == 0)
                                         {
                                             Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_BluerPastures.GetRange(20, 6), true);
@@ -1068,23 +1111,16 @@ namespace Assets.Scripts.Levels
                     // Set level end trigger
                     NextTriggers.Add(new Trigger(() =>
                         {
-                            return State.IsSideKilled(ConfigData.Configuration.HumanSide) || State.IsSideKilled(ConfigData.Configuration.BeeSide);
+                            return State.IsSideKilled(ConfigData.Configuration.HumanSide) || State.IsSideKilled(ConfigData.Configuration.AISide);
                         },
                         () =>
                         {
-                            if (State.IsSideKilled(ConfigData.Configuration.BeeSide))
+                            CloseLevel();
+                            if (State.IsSideKilled(ConfigData.Configuration.AISide))
                             {
                                 Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Neptune_SeizeTheMeans[12]);
 
                                 WinningSide = ConfigData.Configuration.HumanSide;
-
-                                // End kill all the human ships
-                                State.GetShips(ConfigData.Configuration.HumanSide).ForEach((ship) =>
-                                {
-                                    ship.EndKill();
-                                    Stage.IsPlayerControlling = false;
-                                });
-
 
                                 NextTriggers.Add(new Trigger(() =>
                                     {
@@ -1349,6 +1385,19 @@ namespace Assets.Scripts.Levels
                                 }, true);
 
                                 AddTimer(wave5);
+
+                                NextTriggers.Add(new Trigger(() =>
+                                    {
+                                        return State.IsSideKilled(ConfigData.Configuration.AISide); // player won somehow?
+                                    },
+                                    () =>
+                                    {
+                                        CloseLevel();
+                                        CancelTimer(wave5);
+                                        Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Neptune_OfProduction[15], true);
+                                    },
+                                    "Level 4 Player Won? dialogue")
+                                );
                             });
 
                             AddTimer(wave4);
@@ -1363,6 +1412,7 @@ namespace Assets.Scripts.Levels
                                 },
                                 () =>
                                 {
+                                    CloseLevel();
                                     CancelTimer(wave5);
                                     Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Neptune_OfProduction[14], true);
                                 },
@@ -1375,11 +1425,13 @@ namespace Assets.Scripts.Levels
                                 },
                                () =>
                                {
+                                   CloseLevel();
                                    CancelTimer(wave5);
                                    Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Neptune_OfProduction[15], true);
                                },
                                "Level 4 Player retreating dialogue")
-                           );
+                            );
+
                         },
                         "Level 4 Show mining tooltips")
                     );
@@ -1465,6 +1517,7 @@ namespace Assets.Scripts.Levels
             },
                 () =>
                 {
+                    CloseLevel();
                     if (State.IsSideKilled(ConfigData.Configuration.AISide)) // Player won
                     {
                         Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Neptune_PressingForward.GetRange(1, 4), true);
@@ -1472,6 +1525,7 @@ namespace Assets.Scripts.Levels
                     }
                     else
                     {
+                        CloseLevel();
                         Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Neptune_PressingForward.GetRange(5, 2), true);
                     }
                 },
@@ -1547,8 +1601,7 @@ namespace Assets.Scripts.Levels
                     ScaledTimer cruiserTimer = new ScaledTimer(5f, () =>
                     {
                         ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Cruiser, 3);
-                        SavedSquad cruiserSquad = CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Cruiser, 3);
-                        cruiserSquad.StartingPosition = new Vector2(-33, -2); // Reposition it so that it works with the squad maker
+                        SavedSquad cruiserSquad = CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Cruiser, 3);
 
                         LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() { cruiserSquad }, new Vector2(200, 200), Vector2.zero, true);
 
@@ -1614,6 +1667,7 @@ namespace Assets.Scripts.Levels
                         },
                         () =>
                         {
+                            CloseLevel();
                             if (State.IsSideKilled(ConfigData.Configuration.AISide)) // Player won
                             {
                                 Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_OnTheOffensive.GetRange(18, ConfigData.CurrentShips.GetFirstAvailableShipOfType(ConfigData.ShipTypes.Factory) != null ? 20 : 17), true);
@@ -1641,7 +1695,7 @@ namespace Assets.Scripts.Levels
             // Add 3 squads of 2 Bumblebees
             for (int i = 0; i < 3; i++)
             {
-                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Bumblebee, 2);
+                CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Bumblebee, 2);
             }
 
             Stage.EnablePlayerControl();
@@ -1883,19 +1937,28 @@ namespace Assets.Scripts.Levels
             // Level ending
             NextTriggers.Add(new Trigger(() =>
                 {
-                    return State.IsSideKilled(ConfigData.Configuration.UserSide);
+                    return State.IsSideKilled(ConfigData.Configuration.UserSide) || State.IsSideKilled(ConfigData.Configuration.AISide);
                 },
                 () =>
                 {
-                    if (!_someShipsHaveRetreated)
+                    CloseLevel();
+                    if (State.IsSideKilled(ConfigData.Configuration.UserSide)) // Player lost or retreated
                     {
-                        Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Uranus_OnTheDefensive[13]);
+                        if (!_someShipsHaveRetreated)
+                        {
+                            Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Uranus_OnTheDefensive[13]);
+                        }
+                        else
+                        {
+                            Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Uranus_OnTheDefensive[17]);
+                        }
+
+                        
                     }
                     else
                     {
                         Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Uranus_OnTheDefensive[17]);
                     }
-
                     NextTriggers.Add(new Trigger(() =>
                         {
                             return Stage.CutsceneManager.HitDialogueBreak;
@@ -1957,8 +2020,7 @@ namespace Assets.Scripts.Levels
 
             // Add the three barges and spawn them
             ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Barge, 3);
-            SavedSquad barges = CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Barge, 3);
-            barges.StartingPosition = new Vector2(-33, -2); // Reposition it so that it works with the squad maker
+            SavedSquad barges = CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Barge, 3);
 
             LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() { barges }, new Vector2(300, 300), Vector2.zero, true);
             Squad bargeSquad = State.GetHumanShips().Find((s) => s.ShipType == ConfigData.ShipTypes.Barge).Squad;
@@ -2041,6 +2103,7 @@ namespace Assets.Scripts.Levels
                 },
                () =>
                {
+                   CloseLevel();
                    if (bargeSquad.IsDead) // Bees Won
                    {
                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_ANewThreat.GetRange(30, 12), true);
@@ -2055,7 +2118,21 @@ namespace Assets.Scripts.Levels
            );
         }
 
-        public void Level0Ending()
+        public void CloseLevel()
+        {
+            Pause();
+            Map.FogOfWar.SetActive(true); // Fade to black 
+            State.GetShips().ToList().ForEach((ship) =>
+            {
+                if (ship.HasUserFogOfWarVision)
+                {
+                    ship.FogOfWarVision.Kill(0, true);
+                }
+                ship.EndKill();
+            });
+            UnPause();
+        }
+        public void Level0Ending(SavedSquad gunshipSquad)
         {
             Debug.Log("Level complete!");
 
@@ -2064,25 +2141,23 @@ namespace Assets.Scripts.Levels
             ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 2); // 2 Frigates
             ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Dreadnought, 1); // 2 Dreadnoughts
 
-            // Add new bee ships to the game
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Honeybee, 1); // 1 Honeybee
 
             // Add new ships to the human's available ships
-            SavedSquad gunshipSquad = ConfigData.CurrentShips.GetSavedSquad(1);
             FleetShip gunship = CurrentShips.GetFirstAvailableShipOfType(ConfigData.ShipTypes.Gunship);
+            //Debug.Log($"Gunship squad {gunshipSquad}, gunship {gunship}");
             gunshipSquad.AddShipToSquad(new SquadShip(gunship.Id, gunship.Type, Vector2.zero));
             gunshipSquad.AutoRepositionSquad();
 
             // Starting Dreadnought squad #8
-            SavedSquad squad = CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Dreadnought, 2);
-            squad.StartingPosition = new Vector2(-33, -2); // Reposition it so that it works with the squad maker
+            SavedSquad squad = CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Dreadnought, 1);
+            squad.StartingPosition = ConfigData.StartingPositionOffset;
 
             // Starting Frigate squad #9
-            squad = CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Frigate, 3);
-            squad.StartingPosition = new Vector2(-33, -2); // Reposition it so that it works with the squad maker
+            squad = CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Frigate, 2);
+            squad.StartingPosition = ConfigData.StartingPositionOffset;
 
             // Starting Honeybee squad #10
-            CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Honeybee, 1);
+            CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Honeybee, 1);
 
 
             // Add Honeybee, Frigate, and Dreadnought to the codex and visibility
@@ -2120,49 +2195,37 @@ namespace Assets.Scripts.Levels
             ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 2); 
             ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Dreadnought, 1); // 1 Dreadnought
 
-            // Create the rest of the Bee fleet
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Honeybee, 28);
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Hornet, 124);
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Wasp, 99);
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.YellowJacket, 76);
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Leafcutter, 72);
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.CarpenterBee, 6);
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Bumblebee, 7);
-
-            //ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Bumblebee, 15); // 15 Bumblebees
-            //ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Queen, 2); // 2 Queens
-            //ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Beehive, 5); // 5 Bee hives
 
             // Create the new Bee squads
 
             // 5 Honeybee squads of 2
             for (int i = 0; i < 5; i++)
             {
-                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Honeybee, 2);
+                CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Honeybee, 2);
             }
 
             // 5 Wasp sqauds of 4
             for (int i = 0; i < 5; i++)
             {
-                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 4);
+                CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 4);
             }
 
             // 6 Hornet squads of 4
             for (int i = 0; i < 6; i++)
             {
-                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 4);
+                CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 4);
             }
 
             // 4 Yellow Jacket squads of 4
             for (int i = 0; i < 4; i++)
             {
-                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.YellowJacket, 4);
+                CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.YellowJacket, 4);
             }
 
             // 2 Leafcutter squads of 2
             for (int i = 0; i < 2; i++)
             {
-                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Leafcutter, 2);
+                CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Leafcutter, 2);
             }
 
 
@@ -2195,33 +2258,33 @@ namespace Assets.Scripts.Levels
             Debug.Log("Level 2 complete!");
 
             // Add 4 squads of 1 carpenter bees
-            for (int i = 0; i < 5; i++)
+            for (int i = 0; i < 4; i++)
             {
-                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.CarpenterBee, 1);
+                CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.CarpenterBee, 1);
             }
 
             // Add one squad of two carpenter bees
-            CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.CarpenterBee, 2);
+            CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.CarpenterBee, 2);
 
             // Add 2 squads of 2 wasps and 1 squad of 3 wasps
             for (int i = 0; i < 2; i++)
             {
-                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 2);
+                CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 2);
             }
 
-            CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 3);
+            CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 3);
 
             // Add one squad of 2 leafcutters
-            CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Leafcutter, 2);
+            CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Leafcutter, 2);
 
             // Add three squads of 2 hornets and 2 squads of 1 hornet
             for (int i = 0; i < 3; i++)
             {
-                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 2);
+                CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 2);
             }
             for (int i = 0; i < 2; i++)
             {
-                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 1);
+                CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 1);
             }
 
             switch (_questPoints)
@@ -2335,55 +2398,55 @@ namespace Assets.Scripts.Levels
             // 9 Honeybee squads of 2
             for (int i = 0; i < 9; i++)
             {
-                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Honeybee, 2);
+                CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Honeybee, 2);
             }
 
             // 3 Wasp sqauds of 4
-            for (int i = 0; i < 5; i++)
+            for (int i = 0; i < 3; i++)
             {
-                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 4);
+                CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 4);
             }
 
             // 10 Wasp sqauds of 6
             for (int i = 0; i < 10; i++)
             {
-                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 6);
+                CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 6);
             }
 
             // 4 Hornet squads of 4
             for (int i = 0; i < 4; i++)
             {
-                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 4);
+                CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 4);
             }
 
             // 2 Hornet squads of 6
             for (int i = 0; i < 2; i++)
             {
-                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 6);
+                CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 6);
             }
 
             // 8 Hornet squads of 8
-            for (int i = 0; i < 7; i++)
+            for (int i = 0; i < 8; i++)
             {
-                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 8);
+                CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 8);
             }
 
             // 15 Yellow Jacket squads of 4
             for (int i = 0; i < 15; i++)
             {
-                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.YellowJacket, 4);
+                CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.YellowJacket, 4);
             }
 
             // 2 Leafcutter squads of 4
             for (int i = 0; i < 2; i++)
             {
-                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Leafcutter, 4);
+                CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Leafcutter, 4);
             }
 
             // 8 Leafcutter squads of 6
             for (int i = 0; i < 8; i++)
             {
-                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Leafcutter, 6);
+                CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Leafcutter, 6);
             }
 
 
@@ -2421,26 +2484,26 @@ namespace Assets.Scripts.Levels
             // Add 2 squads of 2 Wasps
             for (int i = 0; i < 2; i++)
             {
-                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 2);
+                CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 2);
             }
 
             // Add 3 squads of 4 Hornets
             for (int i = 0; i < 3; i++)
             {
-                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 4);
+                CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 4);
             }
 
             // Add 2 squads of 1 Leafcutter
             for (int i = 0; i < 2; i++)
             {
-                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Leafcutter, 1);
+                CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Leafcutter, 1);
             }
 
             // Add one squad of one Bumblebee
-            CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Bumblebee, 1);
+            CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Bumblebee, 1);
 
             // Add 1 squad of 4 Yellow Jackets
-            CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.YellowJacket, 4);
+            CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.YellowJacket, 4);
 
             ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Bumblebee);
             ConfigData.UserProgressData.SetShipTypes();
@@ -2472,7 +2535,7 @@ namespace Assets.Scripts.Levels
             // Add 3 squads of 2 Bumblebees
             for (int i = 0; i < 3; i++)
             {
-                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Bumblebee, 2);
+                CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Bumblebee, 2);
             }
 
             ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Bumblebee);
@@ -2583,7 +2646,7 @@ namespace Assets.Scripts.Levels
         {
             SavedSquad HTSquad = new SavedSquad(Utilities.GetNegativeSavedSquadId(), ConfigData.Configuration.HumanSide, "Human Target \"Ship\"", Vector2.zero, false, false, DefaultShootingStrategy, UnsetColor, null);
 
-            FleetShip fleetShip = new FleetShip(Utilities.GetNegativeFleetshipId(), ConfigData.ShipTypes.HumanTarget, false, true, 0, 0, 0, 0, 0, 0, 0);
+            FleetShip fleetShip = new FleetShip(Utilities.GetNegativeFleetshipId(), ConfigData.ShipTypes.HumanTarget, false, false, 0, 0, 0, 0, 0, 0, 0);
             HTSquad.AddShipToSquad(new SquadShip(fleetShip.Id, fleetShip.Type, Vector2.zero));
 
             LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() { HTSquad }, position, Vector2.zero, true);
@@ -2592,6 +2655,11 @@ namespace Assets.Scripts.Levels
 
             humanTarget.Squad.CanAcceptUserInput = false;
             Destroy(humanTarget.Squad.SquadTab);
+            if (humanTarget.HasUserFogOfWarVision)
+            {
+                Destroy(humanTarget.FogOfWarVision.gameObject);
+                humanTarget.HasUserFogOfWarVision = false;
+            }
 
             return humanTarget;
         }

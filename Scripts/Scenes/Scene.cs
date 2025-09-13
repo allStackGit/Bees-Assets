@@ -114,7 +114,7 @@ namespace Assets.Scripts.Scenes
             ConfigData.RetryConnection();
         } 
         // Update is called once per frame
-        protected void Update()
+        protected virtual void Update()
         {
             __Updates++;
             SocketTimer.Update();
@@ -161,6 +161,7 @@ namespace Assets.Scripts.Scenes
                         }
                         else
                         {
+                            Debug.Log($"IsMainScene: {IsMainScene}, ConfigData.AreAllSettingsLoaded {ConfigData.AreAllSettingsLoaded}, !ConfigData.IsAllUserDataLoaded {!ConfigData.IsAllUserDataLoaded}");
                             ConfigData.SetupUserData();
                             ConfigData.CheckDataFiles();
                             ConfigData.SquadMakerSide = ConfigData.Configuration.SquadMakerFirstSide;

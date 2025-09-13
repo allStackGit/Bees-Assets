@@ -116,7 +116,7 @@ namespace Assets.Scripts.Entities.Ships
 
             ship.Setup(
                     Level,
-                    new FleetShip(id, MinionType, false, true, 0, 0, 0, 0, 0, 0, 0),
+                    new FleetShip(id, MinionType, false, false, 0, 0, 0, 0, 0, 0, 0),
                     squad,
                     offset
                 );

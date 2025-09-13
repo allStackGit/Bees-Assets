@@ -40,6 +40,7 @@ namespace Assets.Scripts.Data
         }
         public LevelOptions GetLevel(int levelId)
         {
+            //Debug.Log($"Getting level #{levelId}");
             return _levels[levelId];
         }
 

@@ -581,12 +581,12 @@ namespace Assets.Scripts
 
             { ShipTypes.Beehive, 4f },
             { ShipTypes.Bumblebee, 1.35f },
-            { ShipTypes.CarpenterBee, 1.55f },
+            { ShipTypes.CarpenterBee, 3.55f },
             { ShipTypes.Honeybee, .35f },
             { ShipTypes.Hornet, .35f },
             { ShipTypes.Leafcutter, .35f },
             { ShipTypes.Queen, .35f },
-            { ShipTypes.Wasp, .75f },
+            { ShipTypes.Wasp, 1f },
             { ShipTypes.YellowJacket, .55f },
         };
 
@@ -702,6 +702,10 @@ namespace Assets.Scripts
         public const float VisionShrinkingMultiplier = .8f;
         public static Vector2 HalfSize = new Vector2(.5f, .5f);
         /// <summary>
+        /// This offsets the initial player squads' starting positions so that they show up properly in the squad maker
+        /// </summary>
+        public static Vector2 StartingPositionOffset = new Vector2(-33, -2);
+        /// <summary>
         /// This is how fast the the ships mine the asteroids. The Mine() method is called every 3 seconds so the the ships gather TSV (and destroy the asteroid) at a
         /// rate of MiningRate / 3 per second [TSV]
         /// </summary>
@@ -804,8 +808,8 @@ namespace Assets.Scripts
         /// Supports up to 4 SMALL ships, two rows of two columns
         /// </summary>
         public static Vector2[] GeneratedSquadFormationOffsets2x2 = new Vector2[] {
-            (ShipOffset * new Vector2(-FOX, .5f * FOY)), (ShipOffset * new Vector2(0, .5f * FOY)),
-            (ShipOffset * new Vector2(-FOX, -FOY)), (ShipOffset * new Vector2(0, -FOY)), 
+            (ShipOffset * new Vector2(-FOX * .5f, .5f * FOY)), (ShipOffset * new Vector2(FOX * .5f, .5f * FOY)),
+            (ShipOffset * new Vector2(-FOX * .5f, -FOY)), (ShipOffset * new Vector2(FOX * .5f, -FOY)), 
         };
 
         /// <summary>
@@ -976,7 +980,7 @@ namespace Assets.Scripts
             if (AreAllSettingsLoaded && !IsAllUserDataLoaded && !IsLoadingUserData)
             {
                 IsLoadingUserData = true;
-                //Debug.Log("Setting up user data");
+                Debug.Log("Setting up user data");
 
                 //Debug.Log($"Current Level before loading user data: {GetLevel()}");
                 Dictionary<ConfigData.ShipTypes, int> allStartingShips = new Dictionary<ConfigData.ShipTypes, int>();
@@ -995,7 +999,6 @@ namespace Assets.Scripts
                 SetupCampaignSavedSquadsData(!FirstTimePlaying);
                 SetupUserSettingsData(!FirstTimePlaying);
                 SetupLevelData(!FirstTimePlaying);
-                SetupCampaignLevelData(!FirstTimePlaying);
                 //Debug.Log($"Current Level after loading user data: {GetLevel()}");
             }
 
@@ -1119,18 +1122,21 @@ namespace Assets.Scripts
             // Setup first squad #0
 
             // Starting Scout Squad
-            CurrentShips.BuildNewSquad($"Squad #{UserProgressData.HumanCampaignSavedSquadNumber++}", Configuration.HumanSide, ShipTypes.Scout, 1);
+            SavedSquad squad = CurrentShips.BuildNewSquad($"Squadron #{UserProgressData.HumanCampaignSavedSquadNumber++}", Configuration.HumanSide, ShipTypes.Scout, 1);
+            squad.StartingPosition = ConfigData.StartingPositionOffset;
+            //Debug.Log($"Starting position for {squad} is {squad.StartingPosition}");
 
 
             // Starting gunship squad #1
-            SavedSquad squad = CurrentShips.BuildNewSquad($"Squad #{UserProgressData.HumanCampaignSavedSquadNumber++}", Configuration.HumanSide, ShipTypes.Gunship, 1);
+            squad = CurrentShips.BuildNewSquad($"Squadron #{UserProgressData.HumanCampaignSavedSquadNumber++}", Configuration.HumanSide, ShipTypes.Gunship, 1);
             squad.GetSquadShips().Find((s) => s.ShipType == ShipTypes.Gunship).GetFleetShip().Name = "Gunship D-4";
             squad.Stats.Commander = "Tom";
-            squad.StartingPosition = new Vector2(-33, -2); // Reposition it so that it works with the squad maker
+            squad.StartingPosition = ConfigData.StartingPositionOffset;
+            //Debug.Log($"Starting position for {squad} is {squad.StartingPosition}");
 
 
             // Starting Honeybee squad #2
-            CurrentShips.BuildNewSquad($"Squad #{UserProgressData.BeeCampaignSavedSquadNumber++}", Configuration.BeeSide, ShipTypes.Honeybee, 1);
+            CurrentShips.BuildNewSquad($"Squadron #{UserProgressData.BeeCampaignSavedSquadNumber++}", Configuration.BeeSide, ShipTypes.Honeybee, 1);
 
             UserProgressData.HasStartedHumanCampaign = true;
 
@@ -1139,13 +1145,13 @@ namespace Assets.Scripts
             // Starting Hornet squads #3, #4, #5
             for (int j = 0; j < 3; j++) // three hornet squads
             {
-                CurrentShips.BuildNewSquad($"Squad #{UserProgressData.BeeCampaignSavedSquadNumber++}", Configuration.BeeSide, ShipTypes.Hornet, 3);
+                CurrentShips.BuildNewSquad($"Squadron #{UserProgressData.BeeCampaignSavedSquadNumber++}", Configuration.BeeSide, ShipTypes.Hornet, 3);
             }
 
             // Starting Wasp squads #6, #7
             for (int j = 0; j < 2; j++)
             {
-                CurrentShips.BuildNewSquad($"Squad #{UserProgressData.BeeCampaignSavedSquadNumber++}", Configuration.BeeSide, ShipTypes.Wasp, 2);
+                CurrentShips.BuildNewSquad($"Squadron #{UserProgressData.BeeCampaignSavedSquadNumber++}", Configuration.BeeSide, ShipTypes.Wasp, 2);
             }
 
 
@@ -1168,24 +1174,19 @@ namespace Assets.Scripts
             switch (UserProgressData.GetCurrentLevel())
                 {
                 case 0:
-                    LevelOptions.ChosenSquads = ConfigData.CurrentShips.GetSavedSquads().Where(s => s.Id == 0).ToList();
                     SceneManager.LoadSceneAsync("Hivemind Training", LoadSceneMode.Single);
-                    //Debug.Log($"Loading level 0, setting up pre level intro");
+                    Debug.Log($"Loading level 0");
                     break;
                 case 1:
-
                     if (!HasSeenPreLevelIntro)
                     {
                         SceneManager.LoadSceneAsync("Level Intro", LoadSceneMode.Single);
                     }
                     else
                     {
-                        List<long> level1Squads = new List<long>() { 0, 1, 8, 9 };
-                        LevelOptions.ChosenSquads = CurrentShips.GetSavedSquads().Where(s => level1Squads.Contains(s.Id)).ToList();
                         HasSeenPreLevelIntro = false;
                         SceneManager.LoadSceneAsync("Hivemind Training", LoadSceneMode.Single);
                     }
-
                     break;
                 case 2:
                 case 3:
@@ -1243,11 +1244,9 @@ namespace Assets.Scripts
         public static void SetupLevelData(bool shouldFileExist)
         {
             _levelData = new LevelData(shouldFileExist, 1);
-        }
-        public static void SetupCampaignLevelData(bool shouldFileExist)
-        {
             _campaignLevelData = new LevelData(shouldFileExist, 0);
         }
+
         public static LevelData GetLevelData()
         {
             return _levelData;

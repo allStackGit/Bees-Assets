@@ -47,7 +47,7 @@ namespace Assets.Scripts.Levels
 
                 _ship.Setup(
                         Level,
-                        new FleetShip(_id, CarrierSquadType, true, true, 0, 0, 0, 0, 0, 0, 0),
+                        new FleetShip(_id, CarrierSquadType, true, false, 0, 0, 0, 0, 0, 0, 0),
                         this,
                         ConfigData.CarrierColumnFormationOffsets[_shipIndex]
                     );
