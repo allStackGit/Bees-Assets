@@ -64,7 +64,7 @@ namespace Assets.Scripts.Scenes
             {
                 CommanderNameDialogue.SetActive(true);
             }
-            if (currentLevel > -1 && !IsResettingCampaign)
+            if (currentLevel > 1 && !IsResettingCampaign)
             {
                 ResetCampaignButton.SetActive(true);
                 ResetConfirmation = new Dialogue(DialoguePrefab, ConfigData.Configuration.AreYouSure, "This will set you back to the beginning of the campaign.",
@@ -72,7 +72,7 @@ namespace Assets.Scripts.Scenes
             }
             if (IsResettingCampaign)
             {
-                ConfigData.CampaignShips = new Ships(ConfigData.GetCampaignFleetData(), ConfigData.GetCampaignSavedSquadsData());
+                ConfigData.CampaignShips = new Ships(ConfigData.GetFleetData(0), ConfigData.GetCampaignSavedSquadsData());
                 HumanCampaignModeButton.transform.GetChild(0).GetComponent<TMP_Text>().text = "Play Campaign";
                 HumanCampaignModeButton.GetComponent<Button>().enabled = true;
                 IsResettingCampaign = false;

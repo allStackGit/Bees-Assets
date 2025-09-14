@@ -177,7 +177,7 @@ public class DialogueManager : MonoBehaviour
                 if (Input.GetKey(KeyCode.Space))
                 {
                     line.IsSkipped = true;
-                    yield return new WaitForSeconds(0.00f); // .02f
+                    yield return new WaitForSeconds(0.02f); // .02f
                     DisplayNextLine();
                 }
                 else
@@ -203,7 +203,7 @@ public class DialogueManager : MonoBehaviour
         }
         else if (showOrHide)
         {
-            DisplayNextLineWithDelay(0f); // 2f
+            DisplayNextLineWithDelay(2f); // 2f
         }
     }
 

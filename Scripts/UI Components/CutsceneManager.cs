@@ -137,6 +137,8 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Marco", Portraits["Marco"], "Gunships at the ready."),
             new DialogueLine("Joey", Portraits["Joey"], "Frigates ready to go!"),
             new DialogueLine("Oviya", Portraits["Oviya"], "I’ve got the scouts mapping an escape route."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Let's take out as many as we can on our way out! That’ll show 'em!"),
+            new DialogueLine("Marco", Portraits["Marco"], "Don’t be risky with our fleet’s lives, Yoshiko. Destroy enemy ships where we can <i>safely</i>. That’s the only way we’ll get through this."),
 
             new DialogueLine("Samuel", Portraits["Samuel"], "Commander, Bees are firing down onto the surface! You need to stop them!"),
 
@@ -179,7 +181,7 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Oviya", Portraits["Oviya"], "The next closest human settlement is Neptune. Commander, I recommend we go there."),
             new DialogueLine("Samuel", Portraits["Samuel"], "There might be survivors!"),
             new DialogueLine("Joey", Portraits["Joey"], "It’s just a Jensen mining facility, so we won’t find any more United Fleet help. But we can help anyone that’s sticking it out."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "And our production carriers can use those to make us ships!"),
+            new DialogueLine("Samuel", Portraits["Samuel"], "And they could have a way to make more ships for our fleet!"),
             new DialogueLine("Joey", Portraits["Joey"], "If there’s still anything left there."),
             new DialogueLine("Oviya", Portraits["Oviya"], "It’s our best option right now. If Neptune is wiped out, then we move on."),
             new DialogueLine("Joey", Portraits["Joey"], "And if it’s not, we have to deal with Wesley…"),
@@ -194,7 +196,7 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Wesley", Portraits["Wesley"], "-day, Mayd- this is an emerg- enem- facility dest- need evac-"),
             new DialogueLine("Samuel", Portraits["Samuel"], "It’s very faint, but it’s clear we need to go help."),
             new DialogueLine("Oviya", Portraits["Oviya"], "It looks like the bees are gathered around ore-rich asteroids around the planet. Scouts are reporting the mining facility on the surface is flattened."),
-            new DialogueLine("Joey", Portraits["Joey"], "There’s an underground bunker beneath the facility. I’ll be damned if that’s not where the signal is coming from."),
+            new DialogueLine("Joey", Portraits["Joey"], "There’s an underground bunker beneath the facility. I’m darn sure that’s where your signal’s coming from."),
             new DialogueLine("Marco", Portraits["Marco"], "Let’s clear out those bees so we can land safely."),
 
             new DialogueLine("Samuel", Portraits["Samuel"], "Strange, that ship doesn’t seem to be firing back."),
@@ -254,6 +256,9 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Wesley", Portraits["Wesley"], "Our factory ships should be quite capable of increasing your prof- erm, resources in order to further bolster your fleet. Simply direct them to a mining location."),
             new DialogueLine("Samuel", Portraits["Samuel"], "Collect these ores as long as you can, commander, but don’t risk too many lives."),
             new DialogueLine("Samuel", Portraits["Samuel"], "If a factory ship goes down, it’ll lose all the resources it collected. It won’t be worth it in the end."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "Be careful with those factories! They’re not built for combat or maneuverability."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "In that case, you’ll have to plan your retreat carefully."),
+
 
             new DialogueLine("Oviya", Portraits["Oviya"], "It looks like there are bee scouting parties approaching. They’ll soon find out their fleet here was destroyed."),
 
@@ -280,8 +285,12 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Oviya", Portraits["Oviya"], "Don’t get too cocky now, Yoshiko. Let’s focus on what’s next."),
 
             new DialogueLine("Samuel", Portraits["Samuel"], "Commander, we’ve lost contact with all our forces. What do we do now? The bees from Pluto are catching up."),
-            new DialogueLine("Oviya", Portraits["Oviya"], "The fight diverted forces from elsewhere in the blockade. We can escape if we go now!"),
-
+            new DialogueLine("Oviya", Portraits["Oviya"], "The fight diverted forces from elsewhere in the blockade. We can escape if we move quickly!"),
+            new DialogueLine("Marco", Portraits["Marco"], "Those factories are slow and defenseless. Leave them behind."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "Now hold on a second! Those ships have already proven lots of shareholder val-"),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "He’s right, Wes, if they can’t fight and they can’t move they won’t make it!"),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Agreed. Now move!"),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Full speed ahead!"),
 
         };
 
@@ -309,7 +318,13 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Emilia", Portraits["Emilia"], "Well, I think you’re doing great! The way you fought was amazing! And we need their help, too, Alejandra."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Of course. I have great admiration for this group. Was that not clear?"),
             new DialogueLine("Joey", Portraits["Joey"], "Clear as mud, ma’am."),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "My apologies. Now, tell me about your fleet’s survival. Any information on these unidentified, possibly alien vessels will be critical."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "My apologies."),
+
+            new DialogueLine("Joey", Portraits["Joey"], "Tell me about those Carriers you mentioned, they sound mighty interesting."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Oh! Oh! They’re really cool! So the Carrier itself doesn’t fight anything, but it has Drones and Strikers on board, and those can go out and attack things."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "And we possess all of the blueprints for that design with us, so if you have adequate production facilities, you may construct more than we have here."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Now, tell me about your fleet’s survival. Any information on these unidentified, possibly alien vessels will be critical."),
+
             new DialogueLine("Samuel", Portraits["Samuel"], "We originally came from Pluto. We fought with the bees-"),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Bees?"),
             new DialogueLine("Samuel", Portraits["Samuel"], "Erm… yes, that’s what we’re calling this enemy."),
@@ -493,9 +508,10 @@ public class CutsceneManager : MonoBehaviour
          * */
 
 
-        
+
 
         /*
+
 
 
          */

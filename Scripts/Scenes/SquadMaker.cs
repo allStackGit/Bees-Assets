@@ -122,7 +122,6 @@ namespace Assets.Scripts.Scenes
         private Dropper _dropper;
         private List<GameObject> _deadShipBoxes = new List<GameObject>();
         private List<SavedSquad> _chosenSquads = new List<SavedSquad>();
-        private List<FleetShip> _fleetList = null;
         private List<ConfigData.ShipTypes> _shipTypes = new List<ConfigData.ShipTypes>();
         private SavedSquad _currentSquad = null;
         private SavedSquad _squadToLoad = null;
@@ -179,20 +178,23 @@ namespace Assets.Scripts.Scenes
 
 
             ConfigData.CurrentShips.ReplaceDeadSquadShips(ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign);
-            _fleetList = ConfigData.CurrentShips.GetAvailableShips();
             SetupFleetList();
             SetupSavedSquadsList();
 
             // turn squad labels red for all squads that still have dead ships
             ConfigData.CurrentShips.GetSavedSquadsBySide(Side).ForEach((squad) =>
             {
-                if (squad.HasDeadShips)
+                if (!squad.HasAliveShips)
+                {
+                    GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>().color = ConfigData.GetUIColor("bad");
+                }
+                else if (squad.HasDeadShips)
                 {
                     //Debug.Log($"{squad.Name} still has dead ships");
                     //Debug.Log(GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}"));
                     //Debug.Log(GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>());
                     //Debug.Log(GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>().color);
-                    GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>().color = ConfigData.GetUIColor("bad");
+                    GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>().color = ConfigData.GetUIColor("warning");
                 }
             });
             //Debug.Log("Finalized the page");
@@ -657,7 +659,7 @@ namespace Assets.Scripts.Scenes
         private void SetupSavedSquadsList()
         {
             //Debug.Log("Setting up the list of saved squads");
-            ConfigData.CurrentShips.GetSavedSquads().Where((s) => s.Side == Side).ToList().ForEach((savedSquad) =>
+            ConfigData.CurrentShips.GetSavedSquadsBySide(Side).ForEach((savedSquad) =>
             {
                 AddSavedSquadToList(savedSquad);
             });
@@ -715,7 +717,7 @@ namespace Assets.Scripts.Scenes
                 //Debug.Log(TimeScale);
                 _singleClick = true;
                 int id = int.Parse(label.name.Substring(label.name.LastIndexOf("#") + 1));
-                SavedSquad squad = ConfigData.CurrentShips.GetSavedSquads().Where((s) => s.Id == id).First();
+                SavedSquad squad = ConfigData.CurrentShips.GetSavedSquad(id);
                 _squadToLoad = squad;
                 _squadToChoose = squad;
                 Invoke(nameof(ResetSingleClick), .5f);
@@ -770,7 +772,7 @@ namespace Assets.Scripts.Scenes
         {
             UIAudioController.Instance.PlayButtonSound();
             int id = int.Parse(label.name.Substring(label.name.LastIndexOf("#") + 1));
-            SavedSquad squad = ConfigData.CurrentShips.GetSavedSquads().Where((s) => s.Id == id).First();
+            SavedSquad squad = ConfigData.CurrentShips.GetSavedSquad(id);
             _squadToUnchoose = squad;
 
 
@@ -1027,9 +1029,10 @@ namespace Assets.Scripts.Scenes
             }
         }
         // [alert] this should be rewritten to be more performant
-        public void UpdateShipCounter(FleetShip fleetShip)
+        public void UpdateShipCounter(ConfigData.ShipTypes shipType)
         {
-            GameObject inventoryContainer = FindObjectsByType<GameObject>(FindObjectsSortMode.None).ToList().Find((gameObject) => gameObject.name == $"{Utilities.ConvertShipTypeToName[fleetShip.Type]} Inventory Ship");
+            Debug.Log($"Updating ship counter for {shipType}");
+            GameObject inventoryContainer = GameObject.Find($"{Utilities.ConvertShipTypeToName[shipType]} Inventory Ship");
             //Debug.Log($"{inventoryContainer}, {$"{Utilities.ConvertShipTypeToName[fleetShip.Type]} Inventory Ship"}");
             if (inventoryContainer != null)
             {
@@ -1037,7 +1040,7 @@ namespace Assets.Scripts.Scenes
                 TMP_Text text = shipCountLabel.GetComponent<TMP_Text>();
                 if (text != null)
                 {
-                    text.text = $"({_fleetList.Where((ship) => ship.Type == fleetShip.Type).ToList().Count})";
+                    text.text = $"({ConfigData.CurrentShips.GetAvailableShipsOfType(shipType).Count})";
                     inventoryContainer.SetActive(true);
                 }
             }
@@ -1111,10 +1114,6 @@ namespace Assets.Scripts.Scenes
         {
             return _currentSquad;
         }
-        public List<FleetShip> GetFleetList()
-        {
-            return _fleetList;
-        }
         public string GetSquadName()
         {
             return _nameText;
@@ -1144,30 +1143,30 @@ namespace Assets.Scripts.Scenes
         }
         public void ClearUnsavedSquad()
         {
-            SavedSquad savedSquad = ConfigData.CurrentShips.GetSavedSquad(_currentSquad.Id);
-            _currentSquad.Id = -1; // make sure it doesn't match any existing squad
+            long originalId = _currentSquad.Id;
+            SavedSquad originalSquad = ConfigData.CurrentShips.GetSavedSquad(originalId);
 
+            _currentSquad.Id = -1; // make sure it doesn't match any existing squad
+            //Debug.Log(originalSquad);
             // remove all icons from the screen
             GetDropper().RemoveDragIcons();
+
+
+            // Add back the original ships
+            if (originalSquad != null)
+            {
+                originalSquad.GetSquadShips().ForEach((s) =>
+                {
+                    s.GetFleetShip().DoesBelongToSavedSquad = true;
+                    UpdateShipCounter(s.ShipType);
+                });
+            }
+
 
             // clear name, drag icon, and color
             _nameText = "";
             _squadColor = ConfigData.UnsetColor;
             SquadNameInput.GetComponent<TMP_InputField>().text = "";
-
-            if (savedSquad != null)
-            {
-                List<ConfigData.ShipTypes> updatedShipTypes = new List<ConfigData.ShipTypes>();
-                savedSquad.GetSquadShips().ForEach((ship) =>
-                {
-                    ConfigData.ShipTypes shipType = ship.ShipType;
-                    if (!updatedShipTypes.Contains(shipType))
-                    {
-                        updatedShipTypes.Add(shipType);
-                        UpdateShipCounter(ship.GetFleetShip());
-                    }
-                });
-            }
 
             // remove the unsaved squad
             _currentSquad = null;
@@ -1181,7 +1180,7 @@ namespace Assets.Scripts.Scenes
         public void SaveSquad()
         {
             UIAudioController.Instance.PlayButtonSound();
-            if (HasCurrentSquad)
+            if (HasCurrentSquad && _currentSquad.HasShips)
             {
                 _currentSquad.OrientSquad();
                 //Debug.Log($"Saving {_currentUnsavedSquad.Name}");
@@ -1211,12 +1210,12 @@ namespace Assets.Scripts.Scenes
         }
         public void ClearChanges()
         {
-            //Debug.Log("Clearing changes");
-            SavedSquad savedSquad = ConfigData.CurrentShips.GetSavedSquad(_currentSquad.Id);
-            if (savedSquad != null)
-            {
-                _fleetList.RemoveAll((fleetShip) => savedSquad.HasShip(fleetShip));
-            }
+            Debug.Log("Clearing changes");
+            //SavedSquad savedSquad = ConfigData.CurrentShips.GetSavedSquad(_currentSquad.Id);
+            //if (savedSquad != null)
+            //{
+            //    ConfigData.CurrentShips.GetFleetShips().RemoveAll((fleetShip) => savedSquad.HasShip(fleetShip));
+            //}
             if (HasCurrentSquad)
             {
                 ClearUnsavedSquad();
@@ -1233,15 +1232,20 @@ namespace Assets.Scripts.Scenes
                 //    FleetShip fleetShip = ship.GetFleetShip();
                 //    _fleetList.Add(fleetShip);
                 //});
+                long id = _currentSquad.Id;
 
-                // remove the squad from the saved squad list
-                ConfigData.CurrentShips.RemoveSquad(_currentSquad);
 
                 // remove the entry from the squad ui list
                 RemoveSavedSquadFromList(_currentSquad);
 
-                // clear the squad maker
+                // remove the empty squad from the saved squad list
+                ConfigData.CurrentShips.RemoveSquad(ConfigData.CurrentShips.GetSavedSquad(id));
+
+
+                // clear the squad maker and the squad's ships
                 ClearUnsavedSquad();
+
+
 
                 // save the squads
                 ConfigData.CurrentShips.SaveSquadData();
@@ -1258,12 +1262,13 @@ namespace Assets.Scripts.Scenes
                 _currentSquad.GetSquadShips().Clear();
                 originalSquadShips.ForEach((originalSquadShip) =>
                 {
-                    FleetShip fleetShip = GetFleetList().Where((s) => s.Type == originalSquadShip.ShipType).FirstOrDefault();
+                    FleetShip fleetShip = ConfigData.CurrentShips.GetFirstAvailableShipOfType(originalSquadShip.ShipType);
                     if (fleetShip != null)
                     {
                         //Debug.Log($"Adding {fleetShip} to duplicated squad {_currentSquad.Name}");
                         _currentSquad.AddShipToSquad(new SquadShip(fleetShip.Id, fleetShip.Type, originalSquadShip.Offset - originalSquad.StartingPosition));
-                        GetFleetList().Remove(fleetShip);
+                        UpdateShipCounter(fleetShip.Type);
+                        //ConfigData.CurrentShips.GetFleetShips().Remove(fleetShip);
                     }
                     //else
                     //{
@@ -1288,7 +1293,7 @@ namespace Assets.Scripts.Scenes
         }
         public void SaveNewSquad()
         {
-            //Debug.Log("New squad, does not exist yet");
+            Debug.Log("New squad, does not exist yet");
             _currentSquad.Id = ConfigData.UserProgressData.GetNextSavedSquadId();
             if (_currentSquad.Name == "")
             {
@@ -1299,6 +1304,7 @@ namespace Assets.Scripts.Scenes
 
             ConfigData.CurrentShips.SaveSquadData();
             ConfigData.CurrentShips.SaveFleetData();
+            ConfigData.UserProgressData.Save();
             SquadSavingStatus.Show();
             StartCoroutine(Utilities.CacheSquadCustomSprites((SavedSquad)_currentSquad.Clone(), _shipPartSprites, "ship", ConfigData.ShipSizes, SquadSavingStatus));
             StartCoroutine(Utilities.CacheSquadCustomSprites((SavedSquad)_currentSquad.Clone(), _shipRemainsSprites, "remains", ConfigData.ShipRemainsSizes));
@@ -1327,6 +1333,9 @@ namespace Assets.Scripts.Scenes
             }
             ClearUnsavedSquad();
         }
+        /// <summary>
+        /// When a squad is loaded, this is the list of ships that were originally in the squad at the time it was loaded so that when changes are cleared we know what the original squad had
+        /// </summary>
         public void LoadSquad()
         {
             if (HasCurrentSquad)
@@ -1353,7 +1362,7 @@ namespace Assets.Scripts.Scenes
 
             });
             Dropper dropper = GetDropper();
-            _currentSquad.GetSquadShips().ForEach((ship) =>
+            _currentSquad.GetSquadShips().ToList().ForEach((ship) =>
             {
                 //Vector2 placementPosition = Utilities.WorldUnitsToScreenPixels(new Vector2(squad.StartingPosition.x + ship.Offset.x, squad.StartingPosition.y + ship.Offset.y), Camera);
                 Vector2 placementPosition = Camera.WorldToScreenPoint(ship.Offset);
@@ -1514,6 +1523,9 @@ namespace Assets.Scripts.Scenes
             {
                 GameObject.Find($"{Utilities.ConvertShipTypeToName[shipType]} Build Ship").SetActive(false);
             });
+
+            MineralsText.text = $"Minerals: {ConfigData.UserProgressData.MinedTSV.ToString("N0")}";
+
             BuildPopup.SetActive(false);
         }
         public void ShowBuildInterface()
@@ -1538,7 +1550,7 @@ namespace Assets.Scripts.Scenes
 
                         GameObject.Find($"{Utilities.ConvertShipTypeToName[key]} Build Ship").transform.Find("Ship Count").GetComponent<TMP_Text>().text = "(0)";
 
-                        GameObject.Find($"{Utilities.ConvertShipTypeToName[key]} Inventory Ship").transform.Find("Ship Count").GetComponent<TMP_Text>().text = $"({ConfigData.CurrentShips.GetAvailableShipsOfType(key).Count})";
+                        UpdateShipCounter(key);
 
                         ShipsBeingBuilt[key] = 0;
                     }
@@ -1559,6 +1571,14 @@ namespace Assets.Scripts.Scenes
             ShipsBeingBuilt[ship]++;
             GameObject.Find($"{shipString} Build Ship").transform.Find("Ship Count").GetComponent<TMP_Text>().text = $"({ShipsBeingBuilt[ship]})";
             TotalBuildCost += ConfigData.GetShipInfo(ship).Tsv;
+            if (TotalBuildCost > ConfigData.UserProgressData.MinedTSV)
+            {
+                TotalBuildCostText.color = ConfigData.GetUIColor("bad");
+            }
+            else
+            {
+                TotalBuildCostText.color = Color.white;
+            }
             TotalBuildCostText.text = $"Total Cost: {TotalBuildCost.ToString("N0")}";
         }
         public void SubtractShip(string shipString)
@@ -1632,7 +1652,8 @@ namespace Assets.Scripts.Scenes
                 if (label != null)
                 {
                     int id = int.Parse(label.name.Substring(label.name.LastIndexOf("#") + 1));
-                    SavedSquad squad = ConfigData.CurrentShips.GetSavedSquads().Where((s) => s.Id == id).First();
+                    Debug.Log($"Saved squad Id: {id}");
+                    SavedSquad squad = ConfigData.CurrentShips.GetSavedSquad(id);
                     SquadStatBlock stats = squad.Stats;
                     //Debug.Log($"Squad ID: {id}");
 
@@ -1692,7 +1713,8 @@ namespace Assets.Scripts.Scenes
                     int id = int.Parse(label.name.Substring(label.name.LastIndexOf("#") + 1));
                     _currentShipInfo = ConfigData.CurrentShips.GetFleetShip(id);
                     //Debug.Log($"Squad ID: {id}");
-                    //Debug.Log(_currentShipInfo.Name);
+
+                    Debug.Log($"id: #{id}, {_currentShipInfo?.Name}");
 
                     ShipStatsBoxDetails.GetComponent<TMP_Text>().text = $"Battles: {_currentShipInfo.BattlesFought.ToString("N0")}: {_currentShipInfo.BattlesWon}W - {_currentShipInfo.BattlesLost}L     (#{ConfigData.CurrentShips.GetShipRanking(_currentShipInfo, "Record")})\n" +
                         $"Shots Fired: {_currentShipInfo.ShotsFired.ToString("N0")}     (#{ConfigData.CurrentShips.GetShipRanking(_currentShipInfo, "ShotsFired")})\n" +

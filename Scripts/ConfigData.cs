@@ -709,7 +709,7 @@ namespace Assets.Scripts
         /// This is how fast the the ships mine the asteroids. The Mine() method is called every 3 seconds so the the ships gather TSV (and destroy the asteroid) at a
         /// rate of MiningRate / 3 per second [TSV]
         /// </summary>
-        public const int MiningRate = 10;
+        public const int MiningRate = 6;
         public static float ShipTurningRadius; 
         public static List<Scenes.Scene> Scenes = new List<Scenes.Scene>();
         public static Scenes.Scene SocketManager;
@@ -1040,8 +1040,8 @@ namespace Assets.Scripts
                 //Debug.Log($"Waiting for User Progress Data");
                 UserProgressData.WaitForData();
                 //Debug.Log($"Waiting for Fleet Data");
-                GetFleetData().WaitForData();
-                GetCampaignFleetData().WaitForData();
+                GetFleetData(1).WaitForData();
+                GetFleetData(0).WaitForData();
                 //Debug.Log($"Waiting for Saved Squads Data");
                 GetSavedSquadsData().WaitForData();
                 GetCampaignSavedSquadsData().WaitForData();
@@ -1263,13 +1263,21 @@ namespace Assets.Scripts
         {
             _fleetData = new FleetData(shouldFileExist, startingShips, 1);
         }
-        public static FleetData GetFleetData()
+        public static FleetData GetFleetData(int type)
         {
-            return _fleetData;
-        }
-        public static FleetData GetCampaignFleetData()
-        {
-            return _campaignFleetData;
+            if (type == 0)
+            {
+                return _campaignFleetData;
+
+            }
+            else if (type == 1)
+            {
+                return _fleetData;
+            }
+            else
+            {
+                throw new Exception($"Invalid fleet type given! {type}");
+            }
         }
         public static void SetupSavedSquadsData(bool shouldFileExist)
         {

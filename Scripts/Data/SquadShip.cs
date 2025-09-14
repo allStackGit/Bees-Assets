@@ -42,25 +42,37 @@ namespace Assets.Scripts.Data
                     }
                     else
                     {
-                        Debug.LogWarning($"A null fleetship ({ShipType}) was asked for with id #{FleetId}. This was probably a randomly created fleetship.");
+                        if (FleetId >= 0)
+                        {
+                            Debug.LogError($"A null fleetship ({ShipType}) was asked for with id #{FleetId}. This was probably a randomly created fleetship.");
+                        }
                         _fleetShip = new FleetShip(FleetId, ShipType, false, false, 0, 0, 0, 0, 0, 0, 0);
                     }
                 }
                 else
                 {
-                    FleetShip fleetShip = ConfigData.GetFleetData().GetFleetShip(FleetId);
+                    FleetShip fleetShip = ConfigData.GetFleetData(0).GetFleetShip(FleetId);
                     if (fleetShip != null)
                     {
                         _fleetShip = fleetShip;
                     }
                     else
                     {
-                        Debug.LogWarning($"A null fleetship ({ShipType}) was asked for with id #{FleetId}. This was probably because the fleet data hasn't loaded yet.");
-                        _fleetShip = new FleetShip(FleetId, ShipType, false, false, 0, 0, 0, 0, 0, 0, 0);
+                        fleetShip = ConfigData.GetFleetData(1).GetFleetShip(FleetId);
+                        if (fleetShip != null)
+                        {
+                            _fleetShip = fleetShip;
+                        }
+                        else
+                        {
+                            Debug.LogError($"A null fleetship ({ShipType}) was asked for with id #{FleetId}. This was probably because the fleet data hasn't loaded yet.");
+                            _fleetShip = new FleetShip(FleetId, ShipType, false, false, 0, 0, 0, 0, 0, 0, 0);
+                        }
+
                     }
                 }
             }
-            //_hasCachedFleetShip = true;
+            _hasCachedFleetShip = true;
             //Debug.Log($"Returning {_fleetShip} for {this}");
             return _fleetShip;
 

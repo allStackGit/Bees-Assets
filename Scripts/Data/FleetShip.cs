@@ -47,9 +47,6 @@ namespace Assets.Scripts.Data
             MineralsMined = mineralsMined;
             Side = Utilities.ConvertShipTypeToSide.GetValueOrDefault(Type);
             GetStats();
-
-            DoesBelongToSavedSquad = false;
-
         }
         public string GenerateShipName()
         {

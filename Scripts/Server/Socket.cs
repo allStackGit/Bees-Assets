@@ -604,12 +604,12 @@ namespace Assets.Scripts.Server
 
                     if (_dataFilename == ConfigData.FleetDataFilenames[0])
                     {
-                        _fleetData = ConfigData.GetCampaignFleetData();
+                        _fleetData = ConfigData.GetFleetData(0);
                         _fleetData.GetDataFile().WriteData(_fleetData.GetDefaultJson());
                     }
                     else if (_dataFilename == ConfigData.FleetDataFilenames[1])
                     {
-                        _fleetData = ConfigData.GetFleetData();
+                        _fleetData = ConfigData.GetFleetData(1);
                         _fleetData.GetDataFile().WriteData(_fleetData.GetDefaultJson());
                     }
                     else if (_dataFilename == ConfigData.SavedSquadsDataFilenames[0])

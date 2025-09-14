@@ -24,9 +24,9 @@ namespace Assets.Scripts.Data
             dynamic json = SetupFile(shouldFileExist, ConfigData.FleetDataFilenames[type], (json) =>
             {
                 ConfigData.IsFleetDataLoaded[type] = true;
-                Debug.Log($"Loading ships for {Type}");
+                //Debug.Log($"Loading ships for {Type}");
                 LoadShipsFromJson(Utilities.JArrayToList<dynamic>((JArray)JsonConvert.DeserializeObject(file.GetContents())));
-                Debug.Log($"Loaded {GetShips().Count} ships: {GetShips()[Utilities.RandomInt(GetShips().Count-1)].Name}");
+                Debug.Log($"Loaded {GetShips().Count} ships: {GetShips()[Utilities.RandomInt(GetShips().Count-1)]}");
             });
 
         }
@@ -52,14 +52,14 @@ namespace Assets.Scripts.Data
                 }
             });
             string json = ToJson();
-            Debug.Log($"JSON for {Type} starting ships {GetShips().Count}, {GetShips().First().Name}");
+            //Debug.Log($"JSON for {Type} starting ships {GetShips().Count}, {GetShips().First().Name}");
             //Debug.Log(json);
             ClearFleet();
             return json;
         }
         private void LoadShipsFromJson(List<dynamic> jsonShips)
         {
-            Debug.Log($"About to load {jsonShips.Count} ships for {Type}");
+            //Debug.Log($"About to load {jsonShips.Count} ships for {Type}");
             jsonShips.ForEach((ship) =>
             {
                 AddShipToFleet(new FleetShip((int) ship.i, (ConfigData.ShipTypes) ship.t, ((int)ship.s == 1 ? true : false), ((int)ship.d == 1 ? true : false), (int) ship.f, (int) ship.dd, (int) ship.r, (int) ship.k, (int) ship.b, (int) ship.w, (int)ship.m, (string)ship.n));

@@ -95,8 +95,8 @@ namespace Assets.Scripts.Scenes
 
             if (IsMainScene && ConfigData.CurrentShips == null)
             {
-                ConfigData.FreePlayShips = new Ships(ConfigData.GetFleetData(), ConfigData.GetSavedSquadsData());
-                ConfigData.CampaignShips = new Ships(ConfigData.GetCampaignFleetData(), ConfigData.GetCampaignSavedSquadsData());
+                ConfigData.FreePlayShips = new Ships(ConfigData.GetFleetData(1), ConfigData.GetSavedSquadsData());
+                ConfigData.CampaignShips = new Ships(ConfigData.GetFleetData(0), ConfigData.GetCampaignSavedSquadsData());
                 ConfigData.CurrentShips = ConfigData.FreePlayShips;
 
             }
@@ -161,7 +161,7 @@ namespace Assets.Scripts.Scenes
                         }
                         else
                         {
-                            Debug.Log($"IsMainScene: {IsMainScene}, ConfigData.AreAllSettingsLoaded {ConfigData.AreAllSettingsLoaded}, !ConfigData.IsAllUserDataLoaded {!ConfigData.IsAllUserDataLoaded}");
+                            //Debug.Log($"IsMainScene: {IsMainScene}, ConfigData.AreAllSettingsLoaded {ConfigData.AreAllSettingsLoaded}, !ConfigData.IsAllUserDataLoaded {!ConfigData.IsAllUserDataLoaded}");
                             ConfigData.SetupUserData();
                             ConfigData.CheckDataFiles();
                             ConfigData.SquadMakerSide = ConfigData.Configuration.SquadMakerFirstSide;

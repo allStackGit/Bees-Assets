@@ -130,7 +130,7 @@ namespace Assets.Scripts.Data
             FleetShip fleetShip = ship.GetFleetShip();
             if (!HasShip(fleetShip))
             {
-                Debug.Log($"Adding {ship} to {Name}");                        
+                //Debug.Log($"Adding {ship} to {Name}");                        
                 _ships.Add(ship);
                 fleetShip.DoesBelongToSavedSquad = true;
             }
@@ -174,6 +174,7 @@ namespace Assets.Scripts.Data
         }
         public void RemoveShipFromSquad(SquadShip ship)
         {
+            ship.GetFleetShip().DoesBelongToSavedSquad = false;
             _ships.Remove(ship);
             if (_ships.Any())
             {

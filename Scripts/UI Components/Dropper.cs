@@ -26,7 +26,6 @@ namespace Assets.Scripts.UIComponents
 
         public bool IsDragging => _isDragging;
         public SavedSquad CurrentSquad => _scene.GetCurrentSquad();
-        public List<FleetShip> FleetList => _scene.GetFleetList();
         public bool HasCurrentSquad => CurrentSquad != null;
 
         public Dropper(SquadMaker scene)
@@ -53,13 +52,14 @@ namespace Assets.Scripts.UIComponents
         // Drag icon flow
         public void PullNewDragIcon(ConfigData.ShipTypes shipType)
         {
-            FleetShip fleetShip = FleetList.Where((s) => s.Type == shipType).FirstOrDefault();
+            FleetShip fleetShip = ConfigData.CurrentShips.GetFirstAvailableShipOfType(shipType);
+            Debug.Log($"Pulled {fleetShip} for drag icon");
 
             // if you've got a valid ship to drag, you're not already dragging, and the squad hasn't hit it's max size
             if (fleetShip != null && !_isDragging && (!HasCurrentSquad || !CurrentSquad.HasMaxShips))
             {
                 MakeDragIcon(fleetShip);
-                FleetList.Remove(_currentDragIcon.GetFleetShip());
+                //ConfigData.CurrentShips.GetFleetShips().Remove(fleetShip);
             }
             else
             {
@@ -114,7 +114,7 @@ namespace Assets.Scripts.UIComponents
                 //_scene.DragStatusBox.transform.localScale = new Vector3(.30f, .30f, 0) / ConfigData.GetShipSizeFactor(_currentDragIcon.GetFleetShip().Type);
                 _scene.DragStatusBox.SetActive(true);
                 _scene.DropBox.SetActive(true);
-                _scene.UpdateShipCounter(_currentDragIcon.GetFleetShip());
+                _scene.UpdateShipCounter(_currentDragIcon.GetFleetShip().Type);
                 _scene.DelayedHideShipStats();
 
             }
@@ -176,7 +176,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void EndDragging()
         {
-            //Debug.Log($"Stopped dragging {_dragIcon.GetFleetShip().Type}");
+            Debug.Log($"Stopped dragging {_currentDragIcon?.GetFleetShip().Type}");
             if (_currentDragIcon != null)
             {
                 if (IsValidDropLocation)
@@ -232,15 +232,17 @@ namespace Assets.Scripts.UIComponents
                         }
 
                     }
-                    
+                    _scene.UpdateShipCounter(_currentDragIcon.GetFleetShip().Type);
+
                 }
                 else
                 {
                     Debug.Log("INVALID PLACEMENT. REMOVING DRAG ICON");
                     //_currentDragIcon.Icon.SetActive(false);
-                    //_currentDragIcon.RemoveDragIcon();
+                    _currentDragIcon.RemoveDragIcon();
                 }
             }
+            
             ResetDrag();
 
         }
@@ -470,26 +472,26 @@ namespace Assets.Scripts.UIComponents
             FleetShip fleetShip = dragIcon.GetFleetShip();
 
             SavedSquad dragIconsSquad = ConfigData.CurrentShips.GetSavedSquadFromFleetShip(fleetShip);
-            bool isShipInSquad = false;
-            bool isShipsSquadThisSquad = false;
-            if (dragIconsSquad != null && HasCurrentSquad)
-            {
-                isShipInSquad = ConfigData.CurrentShips.IsShipInSquad(fleetShip);
-                isShipsSquadThisSquad = dragIconsSquad.Equals(CurrentSquad);
-                //Debug.Log($"Trying to remove ship from unsaved squad. The squad is {squad.Name} #{squad.Id}, and the " +
-                //    $"currentUnsavedSquad is {_currentUnsavedSquad.Id}, and are they equal? {isSquadThisSquad}");
-            }
+            //bool isShipInSquad = false;
+            //bool isShipsSquadThisSquad = false;
+            //if (dragIconsSquad != null && HasCurrentSquad)
+            //{
+            //    isShipInSquad = ConfigData.CurrentShips.IsShipInSquad(fleetShip);
+            //    isShipsSquadThisSquad = dragIconsSquad.Equals(CurrentSquad);
+            //    //Debug.Log($"Trying to remove ship from unsaved squad. The squad is {squad.Name} #{squad.Id}, and the " +
+            //    //    $"currentUnsavedSquad is {_currentUnsavedSquad.Id}, and are they equal? {isSquadThisSquad}");
+            //}
 
             _dragIcons.Remove(dragIcon);
 
             // if the drag icon fleetship is not in a saved squad of it is in a saved squad but it's the current squad, add the ship back to the fleet list
-            if ((!isShipInSquad || isShipsSquadThisSquad) && !fleetShip.IsDead)
-            {
-                FleetList.Add(fleetShip);
-            }
+            //if ((!isShipInSquad || isShipsSquadThisSquad) && !fleetShip.IsDead)
+            //{
+            //    ConfigData.CurrentShips.GetFleetShips().Add(fleetShip);
+            //}
 
             // update fleet list count
-            _scene.UpdateShipCounter(fleetShip);
+            //_scene.UpdateShipCounter(fleetShip.Type);
 
             // destroy the dead ship box if it exists
             if (dragIcon.GetDeadShipBox() != null)

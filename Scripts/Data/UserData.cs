@@ -71,7 +71,7 @@ namespace Assets.Scripts.Data
                 }
             }
         }
-        public bool IsDataLoaded()
+        public virtual bool IsDataLoaded()
         {
             return file.IsDataLoaded();
         }

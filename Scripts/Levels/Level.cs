@@ -1133,7 +1133,6 @@ namespace Assets.Scripts.Levels
         public void SaveAndEnd()
         {
             //Debug.Log($"Saving and ending");
-
             if (Stage.RecordStats && !Stage.IsTraining)
             {
 
@@ -1167,7 +1166,6 @@ namespace Assets.Scripts.Levels
                         {
                             _save_fleetship.BattlesWon++;
                         }
-                        //Debug.Log($"{fleetShip.Name} has mined {fleetShip.MineralsMined} minerals in its lifetime. It has mined {fleetShip.MineralsMinedThisLevel} minerals this level");
                         _save_fleetship.MineralsMined += _save_fleetship.MineralsMinedThisLevel;
                         _save_fleetship.MineralsMinedThisLevel = 0;
 
@@ -1178,11 +1176,6 @@ namespace Assets.Scripts.Levels
                 ConfigData.CurrentShips.ReplaceDeadSquadShips(ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign);
                 ConfigData.CurrentShips.SaveFleetData();
                 ConfigData.CurrentShips.SaveSquadData();
-
-                if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
-                {
-                    SaveCampaignStats();
-                }
                 
             }
             //Debug.Log($"Resetting scene");
@@ -1285,47 +1278,7 @@ namespace Assets.Scripts.Levels
 
 
         }
-        private UserProgressData _saveCampaign_progress = ConfigData.UserProgressData;
-        private int _saveCampaign_i;
-        private SavedSquad _saveCampaign_savedSquad;
-        private FleetShip _saveCampaign_fleetShip;
-        private void SaveCampaignStats()
-        {
-            if (WinningSide == ConfigData.Configuration.HumanSide)
-            {
-                _saveCampaign_progress.HumanCampaignWins++;
-            }
-            else
-            {
-                _saveCampaign_progress.BeeCampaignWins++;
-            }
 
-            //if (WinningSide == ConfigData.Configuration.UserSide)
-            //{
-            //    _saveCampaign_progress.AdvanceToNextLevel();
-            //}
-
-            for (_saveCampaign_i = 0; _saveCampaign_i < AllSquads.Count; _saveCampaign_i++)
-            {
-                _saveCampaign_savedSquad = AllSquads[_saveCampaign_i];
-                _saveCampaign_savedSquad.GetSquadShips().ForEach((ship) =>
-                {
-                    _saveCampaign_fleetShip = ship.GetFleetShip();
-                    //Debug.Log($"{fleetShip.Name} has mined {fleetShip.MineralsMined} minerals in its lifetime. It has mined {fleetShip.MineralsMinedThisLevel} minerals this level");
-                    if (_saveCampaign_fleetShip.Side == ConfigData.Configuration.UserSide)
-                    {
-                        _saveCampaign_progress.MinedTSV += _saveCampaign_fleetShip.MineralsMinedThisLevel;
-                    }
-                    else
-                    {
-                        _saveCampaign_progress.HivemindMinedTSV += _saveCampaign_fleetShip.MineralsMinedThisLevel;
-                    }
-
-                });
-            }
-
-            _saveCampaign_progress.Save();
-        }
         private void LevelEndedDialogue()
         {
             Stage.Menus.OpenLevelEndedDialogue();

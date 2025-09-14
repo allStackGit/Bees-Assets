@@ -1865,6 +1865,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                             _weapons[_tempIndex].ShipsWithinRange.Remove(this.Id);
                         }
                     }
+                    Squad.HasMovedBox = false;
                     Squad.MoveSquadBox();
                 }
 

@@ -49,7 +49,7 @@ namespace Assets.Scripts
         }
         public List<FleetShip> GetAvailableShips()
         {
-            return GetFleetShips().Where((ship) => ship.IsShipAlive() && !ship.DoesBelongToSavedSquad && !IsShipInSquad(ship)).ToList();
+            return GetFleetShips().Where((ship) => ship.IsShipAlive() && !ship.DoesBelongToSavedSquad).ToList();
         }
         public List<FleetShip> GetAliveShips()
         {
@@ -252,18 +252,6 @@ namespace Assets.Scripts
         }
 
         // check squad methods
-        public bool IsShipInSquad(FleetShip ship)
-        {
-            foreach (SavedSquad squad in GetSavedSquads())
-            {
-                if (squad.HasShip(ship))
-                {
-                    ship.DoesBelongToSavedSquad = true;
-                    return true;
-                }
-            }
-            return false;
-        }
         public bool DoesSquadExist(long id)
         {
             return GetSavedSquad(id) != null;

@@ -12,14 +12,14 @@ namespace Assets.Scripts.Data
     {
         // class that holds and manages storage for user fleet data
         private List<SavedSquad> _savedSquadsList = new List<SavedSquad>();
-
+        public int Type;
 
 
         public SavedSquadsData(bool shouldFileExist, int type) : base()
         {
             // [alert] this should be equal to the JSON data for whatever starting squads there will be, currently two squads, one of three scouts and one
             // of three gunships
-
+            Type = type;
             defaultJsonData = "[]"; // [alert] need to change to actual defaults
             //Debug.Log($"defaultJSON: {defaultJsonData}");
 
@@ -27,7 +27,7 @@ namespace Assets.Scripts.Data
             {
                 ConfigData.IsSavedSquadsDataLoaded[type] = true;
                 _savedSquadsList.Clear();
-                Debug.Log($"Loaded saved squad data for {ConfigData.SavedSquadsDataFilenames[type]}");
+                //Debug.Log($"Loaded saved squad data for {ConfigData.SavedSquadsDataFilenames[type]}");
                 Utilities.LoadSquadsFromJson(Utilities.JArrayToList<dynamic>((JArray)JsonConvert.DeserializeObject(file.GetContents()))).ForEach(s =>
                 {
                     
@@ -36,6 +36,10 @@ namespace Assets.Scripts.Data
                 //Debug.Log($"Loaded ships {GetShips().Find((s => s.Id == Utilities.RandomInt(GetShips().Count - 1))).Name}");
             });
 
+        }
+        public override bool IsDataLoaded()
+        {
+            return base.IsDataLoaded() && ConfigData.IsFleetDataLoaded[Type];
         }
         public List<SavedSquad> GetSquads()
         {
