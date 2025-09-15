@@ -350,6 +350,7 @@ public class Stage : Scene
         Name = "Level";
         base.Start();
         DebugLogger.__CommandCounts = new int[21];
+
     }
     int _spawn_i;
     Level _spawn_level;

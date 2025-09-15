@@ -241,10 +241,10 @@ namespace Assets.Scripts.Data
         // the ships need to orient around the center so that when they are loaded onto a map they have a reference position to the center of the squad
         public void OrientSquad()
         {
-            //Debug.Log($"Before Orienting squad, center point: {StartingPosition}");
+            Debug.Log($"Before Orienting squad {this}, center point: {StartingPosition}");
 
-            StartingPosition = GetCenterPoint();
-            //Debug.Log($"After Orienting squad, center point: {StartingPosition}");
+            StartingPosition = GetCenterPoint() + ConfigData.StartingPositionOffset;
+            Debug.Log($"After Orienting squad {this}, center point: {StartingPosition}");
             GetSquadShips().ForEach((ship) =>
             {
                 //Debug.Log($"Squad ship offset before orienting around center: {ship.Offset}");

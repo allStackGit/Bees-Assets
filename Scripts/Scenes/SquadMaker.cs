@@ -1,5 +1,6 @@
 ﻿
 using Assets.Scripts.Data;
+using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Settings;
 using Assets.Scripts.UI_Components;
@@ -140,7 +141,7 @@ namespace Assets.Scripts.Scenes
         private bool _startingLevel = false;
         private int _chosenOpposingForceOption;
         private int _enemySquadGenerationCount;
-        private int _chosenObstacleOption = -1;
+        private string _chosenObstacleOption = "";
         private int _chosenAsteroidsOption = -1;
         private int _chosenMapOption = -1;
         private int _chosenFogOfWarOption = -1;
@@ -194,7 +195,7 @@ namespace Assets.Scripts.Scenes
                     //Debug.Log(GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}"));
                     //Debug.Log(GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>());
                     //Debug.Log(GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>().color);
-                    GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>().color = ConfigData.GetUIColor("warning");
+                    GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>().color = ConfigData.GetUIColor("medium");
                 }
             });
             //Debug.Log("Finalized the page");
@@ -1031,7 +1032,7 @@ namespace Assets.Scripts.Scenes
         // [alert] this should be rewritten to be more performant
         public void UpdateShipCounter(ConfigData.ShipTypes shipType)
         {
-            Debug.Log($"Updating ship counter for {shipType}");
+            //Debug.Log($"Updating ship counter for {shipType}");
             GameObject inventoryContainer = GameObject.Find($"{Utilities.ConvertShipTypeToName[shipType]} Inventory Ship");
             //Debug.Log($"{inventoryContainer}, {$"{Utilities.ConvertShipTypeToName[fleetShip.Type]} Inventory Ship"}");
             if (inventoryContainer != null)
@@ -1575,10 +1576,6 @@ namespace Assets.Scripts.Scenes
             {
                 TotalBuildCostText.color = ConfigData.GetUIColor("bad");
             }
-            else
-            {
-                TotalBuildCostText.color = Color.white;
-            }
             TotalBuildCostText.text = $"Total Cost: {TotalBuildCost.ToString("N0")}";
         }
         public void SubtractShip(string shipString)
@@ -1591,6 +1588,11 @@ namespace Assets.Scripts.Scenes
                 GameObject.Find($"{shipString} Build Ship").transform.Find("Ship Count").GetComponent<TMP_Text>().text = $"({ShipsBeingBuilt[ship]})";
 
                 TotalBuildCost -= ConfigData.GetShipInfo(ship).Tsv;
+
+                if (TotalBuildCost <= ConfigData.UserProgressData.MinedTSV)
+                {
+                    TotalBuildCostText.color = Color.white;
+                }
 
                 TotalBuildCostText.text = $"Total Cost: {TotalBuildCost.ToString("N0")}";
             }
@@ -1652,7 +1654,7 @@ namespace Assets.Scripts.Scenes
                 if (label != null)
                 {
                     int id = int.Parse(label.name.Substring(label.name.LastIndexOf("#") + 1));
-                    Debug.Log($"Saved squad Id: {id}");
+                    //Debug.Log($"Saved squad Id: {id}");
                     SavedSquad squad = ConfigData.CurrentShips.GetSavedSquad(id);
                     SquadStatBlock stats = squad.Stats;
                     //Debug.Log($"Squad ID: {id}");
@@ -1660,13 +1662,14 @@ namespace Assets.Scripts.Scenes
                     TMP_Text titleText = SquadInfoBoxTitle.GetComponent<TMP_Text>();
                     TMP_Text detaislText = SquadInfoBoxDetails.GetComponent<TMP_Text>();
 
+                    string battles = ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign ? $"Battles: {stats.BattlesFought.ToString("N0")}: {stats.BattlesWon}W - {stats.BattlesLost}L     (#{ConfigData.CurrentShips.GetSquadRanking(squad, "Record")})\n" : "";
+
 
                     titleText.text = $"{squad.Name}";
                     detaislText.text = $"Commander: {stats.Commander}\n\n" +
                         $"Ships: {(squad.GetSquadShips().Count - squad.GetDeadShips().Count).ToString("N0")} / {squad.GetSquadShips().Count.ToString("N0")} " +
                         $"{(squad.HasDeadShips ? $" <color=#{UnityEngine.ColorUtility.ToHtmlStringRGB(ConfigData.GetUIColor("bad"))}><smallcaps><b>(Unfilled)</b></smallcaps></color>" : "")}\n" +
-                        $"Capacity: {squad.GetCapacity().ToString("N0")} / {squad.GetMaxCapacity().ToString("N0")}\n" +
-                        $"Battles: {stats.BattlesFought.ToString("N0")}: {stats.BattlesWon}W - {stats.BattlesLost}L     (#{ConfigData.CurrentShips.GetSquadRanking(squad, "Record")})\n" +
+                        $"Capacity: {squad.GetCapacity().ToString("N0")} / {squad.GetMaxCapacity().ToString("N0")}\n" + battles +
                         $"Damage Done: {stats.DamageDone.ToString("N0")}     (#{ConfigData.CurrentShips.GetSquadRanking(squad, "DamageDone")})\n" +
                         $"Damage Received: {stats.DamageReceived.ToString("N0")}     (#{ConfigData.CurrentShips.GetSquadRanking(squad, "DamageReceived")})\n" +
                         $"Kills: {stats.Kills.ToString("N0")}     (#{ConfigData.CurrentShips.GetSquadRanking(squad, "Kills")})\n" +
@@ -1676,7 +1679,14 @@ namespace Assets.Scripts.Scenes
                     GameObject squadIcon = label.transform.Find("Icon Container/Ship Icon").gameObject;
                     image.sprite = squadIcon.GetComponent<UnityEngine.UI.Image>().sprite;
                     image.SetNativeSize();
-                    image.transform.localScale = new Vector3(.1f, .1f, 0);
+                    if (squad.GetMostValuableShip().ShipType == ConfigData.ShipTypes.Queen)
+                    {
+                        image.transform.localScale = new Vector3(.01f, .01f, 0);
+                    }
+                    else
+                    {
+                        image.transform.localScale = new Vector3(.1f, .1f, 0);
+                    }
 
 
                     SquadInfoBox.SetActive(true);
@@ -1716,7 +1726,9 @@ namespace Assets.Scripts.Scenes
 
                     Debug.Log($"id: #{id}, {_currentShipInfo?.Name}");
 
-                    ShipStatsBoxDetails.GetComponent<TMP_Text>().text = $"Battles: {_currentShipInfo.BattlesFought.ToString("N0")}: {_currentShipInfo.BattlesWon}W - {_currentShipInfo.BattlesLost}L     (#{ConfigData.CurrentShips.GetShipRanking(_currentShipInfo, "Record")})\n" +
+                    string battles = ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign ? $"Battles: {_currentShipInfo.BattlesFought.ToString("N0")}: {_currentShipInfo.BattlesWon}W - {_currentShipInfo.BattlesLost}L     (#{ConfigData.CurrentShips.GetShipRanking(_currentShipInfo, "Record")})\n" : "";
+
+                    ShipStatsBoxDetails.GetComponent<TMP_Text>().text = battles +
                         $"Shots Fired: {_currentShipInfo.ShotsFired.ToString("N0")}     (#{ConfigData.CurrentShips.GetShipRanking(_currentShipInfo, "ShotsFired")})\n" +
                         $"Damage Done: {_currentShipInfo.DamageDone.ToString("N0")}     (#{ConfigData.CurrentShips.GetShipRanking(_currentShipInfo, "DamageDone")})\n" +
                         $"Damage Received: {_currentShipInfo.DamageReceived.ToString("N0")}     (#{ConfigData.CurrentShips.GetShipRanking(_currentShipInfo, "DamageReceived")})\n" +
@@ -2008,7 +2020,7 @@ namespace Assets.Scripts.Scenes
             ConfigData.IsUserLoadingCustomSquads = true;
 
             //Debug.Log($"Setting level options for configdata");
-            ConfigData.LevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}", _chosenMapOption, null, _chosenAsteroidsOption, _chosenFogOfWarOption, _chosenMiningOption, false, true, -1, _chosenEnemyReinforcementsOption, ConfigData.StandardReinforcementsDelay, _chosenEnemyShipTypes, _enemySquadGenerationCount, new List<SavedSquad>(), new List<SavedSquad>(), new List<int>(), "", _chosenSquads, Vector2.zero, Vector2.zero);
+            ConfigData.LevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}", _chosenMapOption, _chosenObstacleOption, new List<Obstacle>(), _chosenAsteroidsOption, _chosenFogOfWarOption, _chosenMiningOption, false, true, -1, _chosenEnemyReinforcementsOption, ConfigData.StandardReinforcementsDelay, _chosenEnemyShipTypes, _enemySquadGenerationCount, new List<SavedSquad>(), new List<SavedSquad>(), new List<int>(), "", _chosenSquads, Vector2.zero, Vector2.zero);
         }
 
         public void ChangeOpposingForceDropdown(int option)
@@ -2055,7 +2067,7 @@ namespace Assets.Scripts.Scenes
         }
         public void ChangeObstaclesDropdown(int option)
         {
-            _chosenObstacleOption = option - 1;
+            _chosenObstacleOption = option == 0 ? (Utilities.CoinToss() ? "" : "No") : (option == 2 ? "No" : "");
         }
         public void ChangeAsteroidsDropdown(int option)
         {

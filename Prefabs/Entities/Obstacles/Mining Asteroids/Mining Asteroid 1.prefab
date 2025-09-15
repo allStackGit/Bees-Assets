@@ -163,7 +163,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1501ae890c06fea428447685a28d354a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  Health: 1500
+  Health: 750
   OriginalHealth: 0
   Id: 0
   MapPointsIndex: 0
@@ -176,4 +176,5 @@ MonoBehaviour:
   ProximityCollider: {fileID: 0}
   ClearanceMappingCollider: {fileID: 0}
   SpriteRenderer: {fileID: 8637692631591286298}
+  SpriteMask: {fileID: 0}
   SquadsMining: []

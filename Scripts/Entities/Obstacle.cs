@@ -55,7 +55,10 @@ namespace Assets.Scripts.Entities
             return transform.localPosition;
         }
 
-
+        public string ToJson()
+        {
+            return $"Position: {{\"x\": {transform.localPosition.x}, \"y\": {transform.localPosition.y} }}, Scale: {{\"x\": {transform.localScale.x}, \"y\": {transform.localScale.y}}}";
+        }
 
         public override bool Equals(System.Object obj)
         {

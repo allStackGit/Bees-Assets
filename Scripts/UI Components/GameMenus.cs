@@ -165,6 +165,7 @@ namespace Assets.Scripts.UIComponents
         {
             DeselectButton();
             CurrentLevel.UnPause();
+            CurrentLevel.CloseLevel();
             ConfigData.SquadMakerSide = ConfigData.Configuration.SquadMakerFirstSide;
             SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
         }
@@ -188,6 +189,7 @@ namespace Assets.Scripts.UIComponents
         {
             DeselectButton();
             CurrentLevel.UnPause();
+            CurrentLevel.CloseLevel();
             ConfigData.SwapSides();
             SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
         }
@@ -207,6 +209,7 @@ namespace Assets.Scripts.UIComponents
         {
             Debug.Log("Exiting to main menu");
             CurrentLevel.UnPause();
+            CurrentLevel.CloseLevel();
             DeselectButton();
             CloseDialogue();
             SceneManager.LoadSceneAsync("Main Menu", LoadSceneMode.Single);

@@ -295,17 +295,18 @@ namespace Assets.Scripts
             //{
             //    Debug.Log($"There are no dead ships for {squad}");
             //}
-            squad.GetDeadShips().ForEach((squadShip) =>
+            squad.GetDeadShips().ToList().ForEach((squadShip) =>
             {
-                FleetShip replacement = GetFirstAvailableShipOfType(squadShip.GetFleetShip().Type);
+                FleetShip replacement = GetFirstAvailableShipOfType(squadShip.ShipType);
                 if (replacement != null)
                 {
                     if (squadShip.GetFleetShip().HasCachedSprite)
                     {
                         replacement.HasCachedSprite = true;
                     }
+                    squad.RemoveShipFromSquad(squadShip);
+                    squad.AddShipToSquad(new SquadShip(replacement.Id, squadShip.ShipType, squadShip.Offset));
                     Debug.Log($"Replaced dead {squadShip.GetFleetShip()} with {replacement}");
-                    squadShip.FleetId = replacement.Id;
                     replaced = true;
                 }
                 //else
@@ -369,9 +370,13 @@ namespace Assets.Scripts
                 }
             }
             //Debug.Log($"Built {savedSquad}");
-            CurrentShips.AddSquad(savedSquad);
+            if (savedSquad.HasShips)
+            {
+                CurrentShips.AddSquad(savedSquad);
+                return CurrentShips.GetSavedSquad(savedSquad.Id);
+            }
+            return null;
 
-            return CurrentShips.GetSavedSquad(savedSquad.Id);
         }
 
         public SavedSquad GetSquadByComposition(Level level, ConfigData.ShipTypes shipType, int shipCount, bool canHaveFewerShips = false, bool canHaveMoreShips = false)

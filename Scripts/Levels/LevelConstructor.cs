@@ -268,6 +268,8 @@ namespace Assets.Scripts.Levels
         {
             List<Squad> setupSquads = new List<Squad>();
             List<Ship> carriers = new List<Ship>();
+            Debug.Log($"Spawning squads {Utilities.ListToString(squads)}");
+            Level.AllSquads.AddRange(squads);
             squads.ForEach((savedSquad) =>
             {
                 //Debug.Log($"The squad is {savedSquad.Name}");

@@ -992,7 +992,7 @@ namespace Assets.Scripts.Levels
                                     // Bring in the new squads:
                                     // 1 Squad of 2 Honeybees
                                     // 1 Squad of 4 Wasps
-                                    firstSquads.AddRange(new List<SavedSquad>() { ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2), ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4) });
+                                    firstSquads.AddRange(new List<SavedSquad>() { ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true), ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true) });
 
 
                                     // Spawn the squads
@@ -1013,9 +1013,9 @@ namespace Assets.Scripts.Levels
                                         Debug.Log($"Spawning Bee reinforcements wave 2");
 
                                         AddReinforcementSquads(new List<SavedSquad>() {
-                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2),
-                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4),
-                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4)
+                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
+                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true),
+                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4, true, true)
                                         }, new Vector2(-295, -195), new Vector2(-185, -170));
                                         AddReinforcementsToHivemindCommandQueue();
                                     });
@@ -1032,12 +1032,12 @@ namespace Assets.Scripts.Levels
                                     {
                                         Debug.Log($"Spawning Bee reinforcements wave 3");
                                         AddReinforcementSquads(new List<SavedSquad>() {
-                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2),
-                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2),
-                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4),
-                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4),
-                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4),
-                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4)
+                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
+                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
+                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true),
+                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4, true, true),
+                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4, true, true),
+                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4, true, true)
                                         }, new Vector2(395, 245), new Vector2(180, 200));
                                         AddReinforcementsToHivemindCommandQueue();
                                     });
@@ -1053,10 +1053,10 @@ namespace Assets.Scripts.Levels
                                     {
                                         Debug.Log($"Spawning Bee reinforcements wave 4");
                                         AddReinforcementSquads(new List<SavedSquad>() {
-                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2),
-                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4),
-                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 2),
-                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 2)
+                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
+                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4, true, true),
+                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 2, true, true),
+                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 2, true, true)
                                         }, StartingPositions[ConfigData.Configuration.AISide - 1] + new Vector2(0, 50), StartingPositions[ConfigData.Configuration.AISide - 1]);
                                         AddReinforcementsToHivemindCommandQueue();
                                     });
@@ -1138,15 +1138,15 @@ namespace Assets.Scripts.Levels
                 () =>
                 {
                     // Spawn the Bees
-                    AddReinforcementSquads(new List<SavedSquad>() { ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 2), ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.CarpenterBee, 2), ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 2) }, miningAsteroids[0].transform.localPosition, Vector2.zero);
+                    AddReinforcementSquads(new List<SavedSquad>() { ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 2), ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.CarpenterBee, 2), ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 2, true, true) }, miningAsteroids[0].transform.localPosition, Vector2.zero);
 
                     AddReinforcementSquads(new List<SavedSquad>() { ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 2), ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.CarpenterBee, 1), ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 1) }, miningAsteroids[1].transform.localPosition, Vector2.zero);
 
                     AddReinforcementSquads(new List<SavedSquad>() { ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 2), ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.CarpenterBee, 1), ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 1) }, miningAsteroids[2].transform.localPosition, Vector2.zero);
 
-                    AddReinforcementSquads(new List<SavedSquad>() { ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 3), ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.CarpenterBee, 1), ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 2) }, miningAsteroids[3].transform.localPosition, Vector2.zero);
+                    AddReinforcementSquads(new List<SavedSquad>() { ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 3), ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.CarpenterBee, 1), ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 2, true, true) }, miningAsteroids[3].transform.localPosition, Vector2.zero);
 
-                    AddReinforcementSquads(new List<SavedSquad>() { ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.CarpenterBee, 1), ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 2) }, miningAsteroids[4].transform.localPosition, Vector2.zero);
+                    AddReinforcementSquads(new List<SavedSquad>() { ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.CarpenterBee, 1), ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 2, true, true) }, miningAsteroids[4].transform.localPosition, Vector2.zero);
 
 
                     // Enable player control and hive mind
@@ -1169,16 +1169,16 @@ namespace Assets.Scripts.Levels
                     // Set level end trigger
                     NextTriggers.Add(new Trigger(() =>
                         {
-                            return State.IsSideKilled(ConfigData.Configuration.HumanSide) || State.IsSideKilled(ConfigData.Configuration.AISide);
+                            return State.IsSideKilled(ConfigData.Configuration.UserSide) || State.IsSideKilled(ConfigData.Configuration.AISide);
                         },
                         () =>
                         {
+                            WinningSide = State.IsSideKilled(ConfigData.Configuration.UserSide) ? ConfigData.Configuration.AISide : ConfigData.Configuration.UserSide;
+                            Debug.Log($"Winning Side: {WinningSide}");
                             CloseLevel();
-                            if (State.IsSideKilled(ConfigData.Configuration.AISide))
+                            if (WinningSide == ConfigData.Configuration.UserSide)
                             {
                                 Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Neptune_SeizeTheMeans[12]);
-
-                                WinningSide = ConfigData.Configuration.HumanSide;
 
                                 NextTriggers.Add(new Trigger(() =>
                                     {
@@ -1300,10 +1300,10 @@ namespace Assets.Scripts.Levels
                                 Debug.Log($"Spawning Bee reinforcements wave 1");
 
                                 AddReinforcementSquads(new List<SavedSquad>() {
-                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2),
-                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2),
-                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4),
-                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4)
+                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
+                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
+                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4, true, true),
+                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4, true, true)
                                 }, CurrentLevelOptions.AIStartingPosition - new Vector2(-100, 0), CurrentLevelOptions.AIStartingPosition);
 
                                 AddReinforcementsToHivemindCommandQueue();
@@ -1322,10 +1322,10 @@ namespace Assets.Scripts.Levels
                                 Debug.Log($"Spawning Bee reinforcements wave 2");
 
                                 AddReinforcementSquads(new List<SavedSquad>() {
-                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2),
-                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4),
-                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4),
-                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4)
+                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
+                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true),
+                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4, true, true),
+                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4, true, true)
                                 }, CurrentLevelOptions.AIStartingPosition - new Vector2(-100, 0), CurrentLevelOptions.AIStartingPosition);
 
                                 AddReinforcementsToHivemindCommandQueue();
@@ -1345,14 +1345,14 @@ namespace Assets.Scripts.Levels
                                 Debug.Log($"Spawning Bee reinforcements wave 3");
 
                                 AddReinforcementSquads(new List<SavedSquad>() {
-                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2),
-                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4),
-                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4),
-                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6),
-                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6),
-                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4),
-                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4),
-                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4),
+                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
+                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true),
+                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true),
+                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6, true, true),
+                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6, true, true),
+                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4, true, true),
+                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4, true, true),
+                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4, true, true),
                                 }, CurrentLevelOptions.AIStartingPosition - new Vector2(-100, 0), CurrentLevelOptions.AIStartingPosition);
 
                                 AddReinforcementsToHivemindCommandQueue();
@@ -1380,16 +1380,16 @@ namespace Assets.Scripts.Levels
                                 // 1 Squad of 2 Honeybees
                                 // 1 Squad of 4 Wasps
                                 reinforcementSquads.AddRange(new List<SavedSquad>() {
-                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2),
-                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 6),
-                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 6),
-                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 8),
-                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 8),
-                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4),
-                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4),
-                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4),
-                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 4),
-                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 4),
+                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
+                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 6, true, true),
+                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 6, true, true),
+                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 8, true, true),
+                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 8, true, true),
+                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4, true, true),
+                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4, true, true),
+                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4, true, true),
+                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 4, true, true),
+                                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 4, true, true),
                                 });
 
                                 AddReinforcementSquads(reinforcementSquads, CurrentLevelOptions.AIStartingPosition - new Vector2(-100, 0), CurrentLevelOptions.AIStartingPosition);
@@ -1410,30 +1410,30 @@ namespace Assets.Scripts.Levels
                                     Debug.Log($"Spawning Bee reinforcements wave 5+");
 
                                     reinforcementSquads = new List<SavedSquad>() {
-                                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2),
-                                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 6),
-                                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 6),
-                                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 8),
-                                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 8),
-                                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4),
-                                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4),
-                                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4),
-                                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 6),
-                                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 6),
+                                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
+                                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 6, true, true),
+                                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 6, true, true),
+                                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 8, true, true),
+                                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 8, true, true),
+                                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4, true, true),
+                                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4, true, true),
+                                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4, true, true),
+                                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 6, true, true),
+                                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 6, true, true),
                                     };
 
                                     for (int i = 0; i < waveCount - 5; i++)
                                     {
-                                        reinforcementSquads.Add(ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 6));
-                                        reinforcementSquads.Add(ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 6));
+                                        reinforcementSquads.Add(ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 6, true, true));
+                                        reinforcementSquads.Add(ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 6, true, true));
 
-                                        reinforcementSquads.Add(ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 8));
+                                        reinforcementSquads.Add(ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 8, true, true));
 
-                                        reinforcementSquads.Add(ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4));
-                                        reinforcementSquads.Add(ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4));
+                                        reinforcementSquads.Add(ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4, true, true));
+                                        reinforcementSquads.Add(ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4, true, true));
 
-                                        reinforcementSquads.Add(ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 6));
-                                        reinforcementSquads.Add(ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 6));
+                                        reinforcementSquads.Add(ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 6, true, true));
+                                        reinforcementSquads.Add(ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 6, true, true));
                                     }
 
                                     AddReinforcementSquads(reinforcementSquads, CurrentLevelOptions.AIStartingPosition - new Vector2(-100, 0), CurrentLevelOptions.AIStartingPosition);
@@ -1543,12 +1543,12 @@ namespace Assets.Scripts.Levels
             // 1 Squad of 4 Wasps
 
             AddReinforcementSquads(new List<SavedSquad>() {
-                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2),
-                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2),
-                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6),
-                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6),
-                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 2),
-                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6, true, true),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6, true, true),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 2, true, true),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true),
             }, CurrentLevelOptions.AIStartingPosition - new Vector2(-100, 0), CurrentLevelOptions.AIStartingPosition);
             AddReinforcementsToHivemindCommandQueue();
 
@@ -1575,8 +1575,10 @@ namespace Assets.Scripts.Levels
             },
                 () =>
                 {
+                    WinningSide = State.IsSideKilled(ConfigData.Configuration.UserSide) ? ConfigData.Configuration.AISide : ConfigData.Configuration.UserSide;
+                    Debug.Log($"Winning Side: {WinningSide}");
                     CloseLevel();
-                    if (State.IsSideKilled(ConfigData.Configuration.AISide)) // Player won
+                    if (WinningSide == ConfigData.Configuration.UserSide) // Player won
                     {
                         Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Neptune_PressingForward.GetRange(1, 4), true);
 
@@ -1611,19 +1613,19 @@ namespace Assets.Scripts.Levels
             // 1 Squad of 1 Bumblebee
 
             AddReinforcementSquads(new List<SavedSquad>() {
-                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 2),
-                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 2, true, true),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4, true, true),
             }, new Vector2(250, 250), Vector2.zero);
 
             AddReinforcementSquads(new List<SavedSquad>() {
-                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 2),
-                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 1),
-                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 1),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 2, true, true),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 1, false, true),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 1, false, true),
             }, Vector2.zero, Vector2.zero);
 
             AddReinforcementSquads(new List<SavedSquad>() {
                 ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Bumblebee, 1),
-                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4, true, true),
             }, new Vector2(-250, -250), Vector2.zero);
 
             State.GetHumanShips().ForEach((ship) =>
@@ -1665,7 +1667,7 @@ namespace Assets.Scripts.Levels
 
                         // Add hornets attacking cruisers
                         AddReinforcementSquads(new List<SavedSquad>() {
-                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 8),
+                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 8, true, true),
                         }, new Vector2(280, 200), Vector2.zero);
                         AddReinforcementsToHivemindCommandQueue();
 
@@ -1725,8 +1727,10 @@ namespace Assets.Scripts.Levels
                         },
                         () =>
                         {
+                            WinningSide = State.IsSideKilled(ConfigData.Configuration.UserSide) ? ConfigData.Configuration.AISide : ConfigData.Configuration.UserSide;
+                            Debug.Log($"Winning Side: {WinningSide}");
                             CloseLevel();
-                            if (State.IsSideKilled(ConfigData.Configuration.AISide)) // Player won
+                            if (WinningSide == ConfigData.Configuration.UserSide) // Player won
                             {
                                 Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_OnTheOffensive.GetRange(18, ConfigData.CurrentShips.GetFirstAvailableShipOfType(ConfigData.ShipTypes.Factory) != null ? 20 : 17), true);
                                 WinningSide = ConfigData.Configuration.UserSide;
@@ -1999,8 +2003,10 @@ namespace Assets.Scripts.Levels
                 },
                 () =>
                 {
+                    WinningSide = State.IsSideKilled(ConfigData.Configuration.UserSide) ? ConfigData.Configuration.AISide : ConfigData.Configuration.UserSide;
+                    Debug.Log($"Winning Side: {WinningSide}");
                     CloseLevel();
-                    if (State.IsSideKilled(ConfigData.Configuration.UserSide)) // Player lost or retreated
+                    if (WinningSide == ConfigData.Configuration.AISide) // Player lost or retreated
                     {
                         if (!_someShipsHaveRetreated)
                         {
@@ -2251,8 +2257,8 @@ namespace Assets.Scripts.Levels
             // Add new human ships to the game, 10 Scouts, 2 Gunships, 2 Frigates, 1 Dreadnought
             ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Scout, 10);
             ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Gunship, 2); 
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 2); 
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Dreadnought, 1); // 1 Dreadnought
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 1); 
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Dreadnought, 1); 
 
 
             // Create the new Bee squads
@@ -2349,17 +2355,17 @@ namespace Assets.Scripts.Levels
             switch (_questPoints)
             {
                 case 60:
-                    // Player 10 Scouts, 8 Gunships, 6 Frigates, and 4 Dreadnoughts
+                    // Player 10 Scouts, 8 Gunships, 4 Frigates, and 2 Dreadnoughts
                     ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Scout, 5); 
                     ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Gunship, 8); 
-                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 6);
-                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Dreadnought, 4); 
+                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 4);
+                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Dreadnought, 2); 
                     break;
                 case > 50:
-                    // Player gets 5 Scouts, 6 Gunships, 4 Frigates, and 2 Dreadnoughts
+                    // Player gets 5 Scouts, 6 Gunships, 2 Frigates, and 2 Dreadnoughts
                     ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Scout, 5); 
                     ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Gunship, 6); 
-                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 4); 
+                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 2); 
                     ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Dreadnought, 2);
                     break;
                 case > 35:
@@ -2380,6 +2386,7 @@ namespace Assets.Scripts.Levels
                     break;
             }
             ConfigData.HasSeenPreLevelIntro = false;
+            ConfigData.HasSeenIntermission = false;
 
             // Unlock Free play mode
             ConfigData.UserProgressData.IsHumanFreePlayUnlocked = true;
@@ -2410,7 +2417,7 @@ namespace Assets.Scripts.Levels
             Debug.Log("Level 3 complete");
 
 
-            if (WinningSide == ConfigData.Configuration.HumanSide) // Humans won
+            if (WinningSide == ConfigData.Configuration.UserSide) // Humans won
             {
                 ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Factory, 5); // 5 Factories
                 ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Factory);
@@ -2430,6 +2437,7 @@ namespace Assets.Scripts.Levels
                     {
                         _save_savedSquad.GetSquadShips().ForEach((ship) => // Don't need to check if ships are dead because if they are the minerals mined will have been set to zero
                         {
+                            _save_fleetship = ship.GetFleetShip();
                             mineralsMined += _save_fleetship.MineralsMinedThisLevel;
                             _save_fleetship.MineralsMinedThisLevel = 0;
                         });
@@ -2557,6 +2565,15 @@ namespace Assets.Scripts.Levels
         {
             Debug.Log("Level 5 complete");
 
+            if (WinningSide == ConfigData.Configuration.AISide)
+            {
+                // If the Bees won and you had to abandon the factories...
+                CurrentShips.GetFleetShips().Where((f) => f.Type == ConfigData.ShipTypes.Factory).ToList().ForEach((f) =>
+                {
+                    f.IsDead = true;
+                });
+            }
+
             // Add new Bee squads
             // Add 2 squads of 2 Wasps
             for (int i = 0; i < 2; i++)
@@ -2590,6 +2607,9 @@ namespace Assets.Scripts.Levels
             ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Bumblebee);
             ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Carrier);
             ConfigData.UserProgressData.SetShipTypes();
+
+            ConfigData.HasSeenPreLevelIntro = false;
+            ConfigData.HasSeenIntermission = false;
 
             ConfigData.UserProgressData.HasMetAlejandraAndEmilia = true;
 
@@ -2668,7 +2688,7 @@ namespace Assets.Scripts.Levels
             ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Carrier);
             ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.WarpGate);
 
-            ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Queen);
+            //ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Queen);
             ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Beehive);
 
             ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Flagship);
@@ -2676,7 +2696,7 @@ namespace Assets.Scripts.Levels
             ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Carrier);
             ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.WarpGate);
 
-            ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Queen);
+            //ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Queen);
             ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Beehive);
 
             ConfigData.UserProgressData.SetShipTypes();

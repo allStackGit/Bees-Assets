@@ -191,25 +191,25 @@ namespace Assets.Scripts.Levels
             //Debug.Log($"Playing on the {MapData.Name} ({Map.Name}) at index #{CurrentLevelOptions.MapIndex} map");
 
             //Debug.Log($"Obstacle Map Index: {CurrentLevelOptions.ObstacleMapIndex}");
-            if (((CurrentLevelOptions.Obstacles == "" && Utilities.CoinToss()) || CurrentLevelOptions.Obstacles != null) && !Stage.IsTraining) // User chose random and random chose obstacles OR user chose obstacles
+            if (((CurrentLevelOptions.Obstacles == "" && Utilities.CoinToss()) || CurrentLevelOptions.Obstacles != "No") && !Stage.IsTraining) // User chose random and random chose obstacles OR user chose obstacles
             {
                 HasObstacles = true;
-                //Debug.Log($"The map has obstacles");
+                Debug.Log($"The map has obstacles: {CurrentLevelOptions.Obstacles}");
                 if (CurrentLevelOptions.Obstacles == "")
                 {
-                    CurrentLevelOptions.Obstacles = ConfigData.ObstacleMaps[Utilities.RandomInt(ConfigData.ObstacleMaps.Count - 1) + 1].Name;
+                    //CurrentLevelOptions.Obstacles = ConfigData.ObstacleMaps[Utilities.RandomInt(ConfigData.ObstacleMaps.Count - 1) + 1].Name;
                 }
                 //ObstacleMap = Stage.Pool.GetObstacleMapFromPool(CurrentLevelOptions.Obstacles);
 
                 if ((CurrentLevelOptions.AsteroidOption == -1 && Utilities.RandomInt(4) == 0) || CurrentLevelOptions.AsteroidOption > 0) // User chose random and random chose asteroids OR User chose asteroids
                 {
                     ActivateCollisionAsteroids = true;
-                    //Debug.Log($"The map has obstacles ({CurrentLevelOptions.ObstacleMapIndex}) and asteroids as well");
+                    Debug.Log($"The map has obstacles ({CurrentLevelOptions.Obstacles}) and asteroids as well");
                 }
                 else // user chose no asteroids or random chose no asteroids
                 {
                     ActivateCollisionAsteroids = false;
-                    //Debug.Log($"The map has obstacles ({CurrentLevelOptions.ObstacleMapIndex}) and not asteroids");
+                    Debug.Log($"The map has obstacles ({CurrentLevelOptions.Obstacles}) and not asteroids");
                 }
             }
             else // either the user chose no obstacles or random chose no obstacles
@@ -219,16 +219,16 @@ namespace Assets.Scripts.Levels
                 {
                     HasObstacles = true;
                     //ObstacleMap = Stage.Pool.GetObstacleMapFromPool(0);
-                    CurrentLevelOptions.Obstacles = null;
+                    CurrentLevelOptions.Obstacles = "No";
                     ActivateCollisionAsteroids = true;
-                    //Debug.Log($"The map has asteroids but not obstacles");
+                    Debug.Log($"The map has asteroids but not obstacles");
                 }
                 else
                 {
-                    CurrentLevelOptions.Obstacles = null;
+                    CurrentLevelOptions.Obstacles = "No";
                     ActivateCollisionAsteroids = false;
                     HasObstacles = false;
-                    //Debug.Log($"The map does not have asteroids or obstacles");
+                    Debug.Log($"The map does not have asteroids or obstacles");
                 }
             }
 
@@ -317,29 +317,66 @@ namespace Assets.Scripts.Levels
                 _clearance_Ships = _clearance_Ships.Where((s) => s.ShipType != _clearance_Ships[0].ShipType).ToList();
             }
         }
+        private List<Obstacle> GenerateRandomObstacles()
+        {
+            List<Obstacle> obstacles = new List<Obstacle>();
+            Vector2 maxSpawnDistance = new Vector2(MaxX - 150, MaxY - 150);
+            GameObject obstacleBackground = Instantiate(Stage.Prefabs.ObstacleBackgroundPrefab, Map.transform);
+            SpriteRenderer sr = obstacleBackground.GetComponent<SpriteRenderer>();
+            sr.sprite = Map.SpriteRenderer.sprite;
+            sr.size = Map.SpriteRenderer.size;
+            for (int i = 0; i < Utilities.RandomInt(10) + 1; i++)
+            {
+                GameObject obstacleObject = Instantiate(Stage.Prefabs.ObstaclePrefab, obstacleBackground.transform);
+                Obstacle obstacle = obstacleObject.GetComponent<Obstacle>();
+                if (Utilities.CoinToss())
+                {
+                    obstacle.transform.localScale = new Vector2(Utilities.RandomInt(150) + 20, Utilities.RandomInt(50) + 20); // wider rather than taller
+                }
+                else
+                {
+                    obstacle.transform.localScale = new Vector2(Utilities.RandomInt(50) + 20, Utilities.RandomInt(150) + 20); // taller rather than wider
+                }
+                obstacle.transform.localPosition = Utilities.RandomCoordinate(this, Vector2.zero, maxSpawnDistance - new Vector2(0, obstacle.transform.localScale.y / 2), Vector2.zero);
+                Debug.Log($"Spawning obstacle of size {obstacle.transform.localScale} at {obstacle.transform.localPosition}");
+                obstacles.Add(obstacle);
+            }
+            return obstacles;
+        }
         //private Vector2 _spawn_position;
         private void SpawnObstacles()
         {
 
             // Load the obstacles
-            GameObject obstacleContainer = Instantiate(Resources.Load<GameObject>($"Obstacles/{CurrentLevelOptions.Obstacles}"), Map.transform);
-            List<Obstacle> obstacles = obstacleContainer.GetComponentsInChildren<Obstacle>()/*.Select((prefabObstacle) =>
+            Debug.Log($"Loading obstacles:  Obstacles/{CurrentLevelOptions.Obstacles}");
+            ObstacleMap = new ObstacleMap(1);
+            if (CurrentLevelOptions.Obstacles != "No")
             {
-                return Instantiate(prefabObstacle.gameObject).GetComponent<Obstacle>();
-            })*/.ToList();
+                if (CurrentLevelOptions.Obstacles == "")
+                {
+                    ObstacleMap.Obstacles = GenerateRandomObstacles();
+                    CurrentLevelOptions.ObstacleList = ObstacleMap.Obstacles;
+
+                }
+                else if (CurrentLevelOptions.ObstacleList.Count > 0)
+                {
+                    ObstacleMap.Obstacles = CurrentLevelOptions.ObstacleList;
+                }
+                else
+                {
+                    GameObject obstacleContainer = Instantiate(Resources.Load<GameObject>($"Obstacles/{CurrentLevelOptions.Obstacles}"), Map.transform);
+                    List<Obstacle> obstacles = obstacleContainer.GetComponentsInChildren<Obstacle>().ToList();
+
+                    ObstacleMap.Obstacles = obstacles;
+                }
+            }
+          
 
             ObstacleMap = new ObstacleMap(1);
-            ObstacleMap.Obstacles = obstacles;
 
-            Stage.CurrentAsteroidMaxSpawnRate = Stage.AsteroidMaxSpawnRate;
-            Stage.CurrentAsteroidMinimumSpawnRate = Stage.AsteroidMinimumSpawnRate;
             ObstacleMap.Obstacles.ForEach((obstacle) =>
             {
                 obstacle.gameObject.SetActive(true);
-                //_spawn_position = obstacle.transform.position;
-                //obstacle.transform.parent = Map.transform;
-                //obstacle.transform.localPosition = _spawn_position;
-                //State.AddObstacle(obstacle.GetComponent<Obstacle>());
             });
 
             if (ActivateCollisionAsteroids) 
@@ -573,7 +610,7 @@ namespace Assets.Scripts.Levels
                         ConfigData.UserProgressData.Save();
                     }
                 }
-                if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
+                else if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
                 {
                     if (State.IsSideKilled(ConfigData.Configuration.HumanSide) && State.IsSideKilled(ConfigData.Configuration.BeeSide))
                     {
@@ -848,9 +885,9 @@ namespace Assets.Scripts.Levels
                 MakeSaveLevel();
             }
 
-            AllSquads.AddRange(CurrentLevelOptions.EnemySquads);
-            AllSquads.AddRange(CurrentLevelOptions.ChosenSquads);
-            AllSquads.AddRange(CurrentLevelOptions.EnemyReinforcements);
+            //AllSquads.AddRange(CurrentLevelOptions.EnemySquads);
+            //AllSquads.AddRange(CurrentLevelOptions.ChosenSquads);
+            //AllSquads.AddRange(CurrentLevelOptions.EnemyReinforcements);
             //AllSquads.AddRange(CurrentLevelOptions.FriendlyReinforcements);
 
             if (ActivateMining && ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
@@ -1000,7 +1037,7 @@ namespace Assets.Scripts.Levels
         public void MakeSaveLevel()
         {
             SaveLevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}", CurrentLevelOptions.MapIndex,
-                CurrentLevelOptions.Obstacles, CurrentLevelOptions.AsteroidOption == 2 ? 2 : (ActivateCollisionAsteroids ? 1 : 0),
+                CurrentLevelOptions.Obstacles, CurrentLevelOptions.ObstacleList, CurrentLevelOptions.AsteroidOption == 2 ? 2 : (ActivateCollisionAsteroids ? 1 : 0),
                 ActivateFogOfWar ? 1 : 0, ActivateMining ? 1 : 0, false, true, -1, ActivateLoadingShipsMidLevel ? 1 : 0, CurrentLevelOptions.EnemyReinforcementDelay, CurrentLevelOptions.EnemyShipTypeOption, 0,
                 CurrentLevelOptions.EnemyReinforcements.ToList(), CurrentLevelOptions.EnemySquads.ToList(), new List<int>(), "", new List<SavedSquad>(), Vector2.zero, Vector2.zero);
         }
@@ -1092,7 +1129,7 @@ namespace Assets.Scripts.Levels
                 //CancelInvoke(nameof(SetLocationHistory));
                 //InvokeRepeating(nameof(SetLocationHistory), .5f, .5f);
 
-
+                //Debug.Log($"");
                 SpawnObstacles();
                 if (Pathfinder != null)
                 {
@@ -1132,7 +1169,7 @@ namespace Assets.Scripts.Levels
         /// </summary>
         public void SaveAndEnd()
         {
-            //Debug.Log($"Saving and ending");
+            Debug.Log($"Saving and ending");
             if (Stage.RecordStats && !Stage.IsTraining)
             {
 
@@ -1149,7 +1186,7 @@ namespace Assets.Scripts.Levels
                         continue;
                     }
 
-                    //Debug.Log($"Logging stats for sqauds battles fought for {savedSquad.Name}");
+                    Debug.Log($"Logging stats for sqauds battles fought for {_save_savedSquad}");
                     _save_savedSquad.Stats.BattlesFought++;
 
                     if (_save_savedSquad.Side == WinningSide)

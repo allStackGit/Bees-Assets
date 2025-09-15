@@ -9750,19 +9750,19 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 804775440909196062, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
       propertyPath: m_Options.m_Options.Array.size
-      value: 6
+      value: 3
       objectReference: {fileID: 0}
     - target: {fileID: 804775440909196062, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
       propertyPath: m_Options.m_Options.Array.data[0].m_Text
-      value: Random
+      value: 'Random '
       objectReference: {fileID: 0}
     - target: {fileID: 804775440909196062, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
       propertyPath: m_Options.m_Options.Array.data[1].m_Text
-      value: No Obstacles
+      value: Yes
       objectReference: {fileID: 0}
     - target: {fileID: 804775440909196062, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
       propertyPath: m_Options.m_Options.Array.data[2].m_Text
-      value: Maze
+      value: No
       objectReference: {fileID: 0}
     - target: {fileID: 804775440909196062, guid: 3334fdfdd7b55934c8fa658748ba236d, type: 3}
       propertyPath: m_Options.m_Options.Array.data[3].m_Text

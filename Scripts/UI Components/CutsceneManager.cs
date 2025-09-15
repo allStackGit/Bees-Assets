@@ -102,7 +102,7 @@ public class CutsceneManager : MonoBehaviour
 
             new DialogueLine("Oviya", Portraits["Oviya"], 1),
 
-            new DialogueLine("Oviya", Portraits["Oviya"], "Scouts also come loaded up with five beacons! You can drop them anywhere and they'll detect enemies."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Scouts also come loaded up with five beacons! You can drop them anywhere and they'll detect enemies that enter their field of vision."),
 
             new DialogueLine("Samuel", Portraits["Samuel"], "You should try to find out where the enemy is with your scouts, then form a plan of attack."),
 

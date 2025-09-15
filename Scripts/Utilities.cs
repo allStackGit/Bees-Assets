@@ -1169,6 +1169,22 @@ namespace Assets.Scripts
             return savedSquads.ToList();
         }
 
+        private static List<Obstacle> _obstacles;
+        private static Obstacle _obstacle;
+        public static List<SavedSquad> LoadObstaclesFromJson(List<dynamic> jsonObstacles)
+        {
+            _obstacles.Clear();
+            // Iterating through each squad in the jsonSquads
+            jsonObstacles.ForEach((obstacles) =>
+            {
+                _obstacle = new Obstacle();
+                _obstacles.Add(_obstacle);
+            });
+
+            // Returning the list of saved squads
+            return savedSquads.ToList();
+        }
+
 
 
         // Private class-level variables for GetAllKeys method

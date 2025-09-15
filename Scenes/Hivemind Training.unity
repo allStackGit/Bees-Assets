@@ -12295,6 +12295,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Toggle Fog of War Buttonn
       objectReference: {fileID: 0}
+    - target: {fileID: 8675139255330635851, guid: 2c69add7043f0224698172081a967d71, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -17135,6 +17139,8 @@ MonoBehaviour:
   AlarmReactionPrefab: {fileID: 7345324820923678335, guid: 0ab03f4421e322d4a9bc5cb8406c4601, type: 3}
   ExitZonePrefab: {fileID: 3487513446035981714, guid: edac10c860a6f4a4c80753d9ac3afc36, type: 3}
   MinimapCircle: {fileID: 4488103413143062924, guid: 8f88715b815a7f849afd591a4f8e8c5e, type: 3}
+  ObstaclePrefab: {fileID: 2254396663677463879, guid: e6e906216d499064a9ce6774a36d2fa1, type: 3}
+  ObstacleBackgroundPrefab: {fileID: 5088379900833165171, guid: ccd1ff021d71d56468e6e3c3b96ac8cd, type: 3}
   MovementMarkerPrefab: {fileID: 2507697582912947509, guid: d5ee77a24c7f6a6499324a8a600b4943, type: 3}
   TargetingMarkerPrefab: {fileID: 2507697582912947509, guid: 60a6013777594eb47842724022e04add, type: 3}
   SquadBoxPrefab: {fileID: 4393128050314196725, guid: 606f56cf5efd9f84d9e877d10187ad8b, type: 3}
