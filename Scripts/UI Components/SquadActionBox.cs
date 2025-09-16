@@ -692,6 +692,7 @@ namespace Assets.Scripts.UIComponents
                 {
                     squad.GetShips().Where((s) => s.ShipType == ConfigData.ShipTypes.FireBarge).ToList().ForEach((ship) =>
                     {
+                        Level.Stage.Audio.BargeDetonationClick.Play();
                         ((FireBarge)ship).Detonate();
                     });
                 });

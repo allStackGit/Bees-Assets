@@ -54,12 +54,15 @@ namespace Assets.Scripts
         public AudioSource QueenCrownLaser;
         public AudioSource StrikerBombRelease;
         public AudioSource RocketFiring;
+        public AudioSource BargeDetonationClick;
 
         public List<AudioSource> TinyShipExplosionSounds;
         public List<AudioSource> SmallShipExplosionSounds;
         public List<AudioSource> LargeShipExplosionSounds;
 
         public AudioSource EnteringWarpGateSound;
+        public AudioSource WarpGateStartingSound;
+        public AudioSource WarpGateLoopingSound;
 
         //public Dictionary<string, AudioSource> BeesIntros = new Dictionary<string, AudioSource>();
         //public Dictionary<string, AudioSource> BeesLoops = new Dictionary<string, AudioSource>();

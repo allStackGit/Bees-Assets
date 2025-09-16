@@ -1086,7 +1086,7 @@ AudioSource:
   Priority: 254
   DopplerLevel: 1
   MinDistance: 1
-  MaxDistance: 1200
+  MaxDistance: 100
   Pan2D: 0
   rolloffMode: 0
   BypassEffects: 0
@@ -1393,6 +1393,7 @@ MonoBehaviour:
   QueenCrownLaser: {fileID: 8360120336523906081}
   StrikerBombRelease: {fileID: 896106575290904985}
   RocketFiring: {fileID: 5311772709856226948}
+  BargeDetonationClick: {fileID: 0}
   TinyShipExplosionSounds:
   - {fileID: 8214255436993151699}
   SmallShipExplosionSounds:
@@ -1400,6 +1401,8 @@ MonoBehaviour:
   LargeShipExplosionSounds:
   - {fileID: 2950189649656497719}
   EnteringWarpGateSound: {fileID: 1570496373856235047}
+  WarpGateStartingSound: {fileID: 0}
+  WarpGateLoopingSound: {fileID: 0}
   Loops: []
   Intros: []
   IntroLength: 0

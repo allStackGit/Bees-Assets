@@ -1450,6 +1450,7 @@ namespace Assets.Scripts.Levels
                         }
                         else
                         {
+                            _hive_squad.Move(StartingPositions[_hive_squad.Side - 1]);
                             outOfBoundsHiveSquads.Add(_hive_squad);
                         }
                         //Debug.Log("Giving command");

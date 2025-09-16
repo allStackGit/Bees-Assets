@@ -12,6 +12,7 @@ namespace Assets.Scripts.Entities.Ships
     public class FireBarge : Ship
     {
         RocketExplosion Explosion;
+        AudioSource ExplosionSound;
         public Weapon Bomb;
         private ScaledTimer _delayedKillTimer = new ScaledTimer();
         public override void Create(Stage stage)
@@ -44,8 +45,10 @@ namespace Assets.Scripts.Entities.Ships
                 if (!endKill)
                 {
                     Explosion = (RocketExplosion)Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.FireBargeExplosion);
+                    ExplosionSound = Explosion.GetComponent<AudioSource>();
                     ShipExplosion = Explosion.gameObject;
                     DropExplosionAnimation();
+                    ExplosionSound.Play();
                     Explosion.Setup(Level, Bomb, this, null, GetPosition(), 0, 0, Bomb.Power);
                     Level.State.FireBargeExplosions.Add(Explosion);
                     ProjectilesInFlight.Add(Explosion);

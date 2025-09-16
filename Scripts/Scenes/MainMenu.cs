@@ -139,7 +139,7 @@ namespace Assets.Scripts.Scenes
                 ConfigData.UserProgressData.GetCurrentLevelOptions();
                 ConfigData.SetupFirstTimePlayingHumanCampaign();
                 ConfigData.LevelOptions = (LevelOptions)ConfigData.UserProgressData.CurrentLevel.Clone();
-                SceneManager.LoadSceneAsync("Hivemind Training", LoadSceneMode.Single);
+                SceneManager.LoadSceneAsync("Space", LoadSceneMode.Single);
             }
             else
             {

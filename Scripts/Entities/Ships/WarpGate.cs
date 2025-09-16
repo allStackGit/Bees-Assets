@@ -13,11 +13,31 @@ namespace Assets.Scripts.Entities.Ships
     {
         public HashSet<long> ShipsWarpingHere = new HashSet<long>();
         public Collider2D WarpCollider;
-        public AudioSource EnteringWarpGateSound;
+        public AudioSource EnteringWarpGateSound, WarpGateStartingSound, WarpGateLoopingSound;
+        public bool IsAudioLoaded;
         public override void ClearData()
         {
             base.ClearData();
             ShipsWarpingHere.Clear();
+
+            if (Stage.ActivateAudio)
+            {
+                EnteringWarpGateSound = Instantiate(Stage.Audio.EnteringWarpGateSound);
+                EnteringWarpGateSound.transform.parent = transform;
+                EnteringWarpGateSound.transform.localPosition = Vector2.zero;
+
+                WarpGateStartingSound = Instantiate(Stage.Audio.WarpGateStartingSound);
+                WarpGateStartingSound.transform.parent = transform;
+                WarpGateStartingSound.transform.localPosition = Vector2.zero;
+
+                WarpGateLoopingSound = Instantiate(Stage.Audio.WarpGateLoopingSound);
+                WarpGateLoopingSound.transform.parent = transform;
+                WarpGateLoopingSound.transform.localPosition = Vector2.zero;
+
+                IsAudioLoaded = true;
+            }
+
+            ShipAnimationController.Setup();
         }
 
         private GameObject _collidingThing;
@@ -27,12 +47,7 @@ namespace Assets.Scripts.Entities.Ships
         {
             base.Setup(level, fleetShip, squad, offsetFromCenter);
             ShipAnimationController.Deactivate();
-            if (IsUserControlled && Stage.ActivateAudio)
-            {
-                EnteringWarpGateSound = Instantiate(Stage.Audio.EnteringWarpGateSound);
-                EnteringWarpGateSound.transform.parent = transform;
-                EnteringWarpGateSound.transform.localPosition = Vector2.zero;
-            }
+            
         }
         protected override void OnTriggerEnter2D(Collider2D collider)
         {

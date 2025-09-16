@@ -2013,7 +2013,7 @@ namespace Assets.Scripts.Scenes
             }
 
             //ConfigData.SquadsChosenForLevel.ForEach((s) => Debug.Log(s.ToString()));
-            _nextScene = "Hivemind Training";
+            _nextScene = "Space";
             Invoke(nameof(LoadScene), .5f);
             //SceneManager.LoadSceneAsync("Training Room One Screen", LoadSceneMode.Single); // [alert] this should go to the actual level based on the level number
             //SceneManager.LoadSceneAsync("RL Tiny Box", LoadSceneMode.Single); // [alert] [rl-training]

@@ -385,6 +385,11 @@ namespace Assets.Scripts.Entities.Ships
                 if (ShipAnimation != null)
                 {
                     HasShipAnimation = true;
+
+                    if (ShipAnimationController != null)
+                    {
+                        ShipAnimationController.Setup();
+                    }
                 }
 
                 if (HasRemainsShip) // [testing] all ships should have multiple shattered ships eventually

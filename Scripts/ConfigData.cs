@@ -1174,7 +1174,7 @@ namespace Assets.Scripts
             switch (UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide))
                 {
                 case 0:
-                    SceneManager.LoadSceneAsync("Hivemind Training", LoadSceneMode.Single);
+                    SceneManager.LoadSceneAsync("Space", LoadSceneMode.Single);
                     Debug.Log($"Loading level 0");
                     break;
                 case 1:
@@ -1185,7 +1185,7 @@ namespace Assets.Scripts
                     else
                     {
                         HasSeenPreLevelIntro = false;
-                        SceneManager.LoadSceneAsync("Hivemind Training", LoadSceneMode.Single);
+                        SceneManager.LoadSceneAsync("Space", LoadSceneMode.Single);
                     }
                     break;
                 case 2:

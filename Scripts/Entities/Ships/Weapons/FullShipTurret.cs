@@ -9,7 +9,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
     public class FullShipTurret : LaserBuilder
     {
         private Vector3 _rightRotationRate, _leftRotationRate;
-        private AudioSource _chargingSound;
+        //private AudioSource _chargingSound;
         public override void Create(Ship ship, ConfigData.WeaponTypes type, ConfigData.WeaponSoundTypes weaponSound, int range, int power, float rateOfFire, float projectileValue, GameObject piece, ConfigData.ProjectileTypes projectileType, bool fireAtFrontOfShip, float rotationRate)
         {
             base.Create(ship, type, weaponSound, range, power, rateOfFire, projectileValue, piece, projectileType, fireAtFrontOfShip, rotationRate);

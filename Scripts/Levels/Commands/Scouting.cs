@@ -114,18 +114,19 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (_foundShips)
             {
-                //Debug.Log($"Ending scouting command for {Squad.Name} because we found ships");
+                Debug.Log($"Ending scouting command for {GetSquad()} because we found ships");
                 SetFinalize("Found ships");
             }
             else
             {
                 SetFinalize("Ran out of time");
-                //Debug.Log($"Ending scouting command for {Squad.Name} because we ran out of time");
+                Debug.Log($"Ending scouting command for {GetSquad()} because we ran out of time");
             }
         }
 
         public override void SetFinalize(string cause)
         {
+            Debug.Log($"Setting finalize ({cause}) for Scout command with {GetSquad()}");
             Level.CancelTimer(_dropBeaconsTimer);
             Level.CancelTimer(_endCommandTimer);
             base.SetFinalize(cause);

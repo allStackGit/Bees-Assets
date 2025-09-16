@@ -16,10 +16,19 @@ namespace Assets.Scripts.Entities.Ships
         public Ship Ship;
         public Sprite CurrentSprite;
         public Sprite[] RecoloredSprites;
-        public bool ShouldSwapSprite, UseSecondaryLoop, IsReadyToWarp;
+        public bool ShouldSwapSprite, UseSecondaryLoop, IsReadyToWarp, IsWarpGate;
+        public WarpGate WarpGate;
 
         public int TotalSprites, SpriteIndex, ModuloIndex, SkipSprites;
 
+        public void Setup()
+        {
+            if (Ship.ShipType == ConfigData.ShipTypes.WarpGate)
+            {
+                IsWarpGate = true;
+                WarpGate = (WarpGate)Ship;
+            }
+        }
         public void RecolorAnimationSprites()
         {
             RecoloredSprites = new Sprite[TotalSprites];
@@ -100,7 +109,7 @@ namespace Assets.Scripts.Entities.Ships
         }
         public void Activate()
         {
-            if (!Ship.Stage.IsTraining || Ship.ShipType == ConfigData.ShipTypes.WarpGate)
+            if (!Ship.Stage.IsTraining || IsWarpGate)
             {
                 SpriteRenderer.enabled = true;
                 Animator.enabled = true;
@@ -108,20 +117,32 @@ namespace Assets.Scripts.Entities.Ships
                 Animator.Update(0f); // reset the animation to the first frame
                 enabled = true;
 
-                if (Ship.ShipType == ConfigData.ShipTypes.WarpGate)
+                if (IsWarpGate)
                 {
                     Animator.Play("Warp Gate Opening", 0, 0f);
+                    if (Ship.Stage.ActivateAudio)
+                    {
+                        WarpGate.WarpGateStartingSound.enabled = true;
+                        WarpGate.WarpGateLoopingSound.enabled = true;
+                        WarpGate.WarpGateStartingSound.Play();
+                    }
                 }
             }
 
         }
         public void Deactivate()
         {
-            if (!Ship.Stage.IsTraining || Ship.ShipType == ConfigData.ShipTypes.WarpGate)
+            if (!Ship.Stage.IsTraining || IsWarpGate)
             {
                 SpriteRenderer.enabled = false;
                 Animator.enabled = false;
                 enabled = false;
+
+                if (Ship.Stage.ActivateAudio && IsWarpGate && WarpGate.IsAudioLoaded)
+                {
+                    WarpGate.WarpGateStartingSound.enabled = false;
+                    WarpGate.WarpGateLoopingSound.enabled = false;
+                }
             }
 
         }
@@ -136,6 +157,8 @@ namespace Assets.Scripts.Entities.Ships
             Debug.Log($"{Ship.Name} Changing sprite loop, ready to warp");
             UseSecondaryLoop = true;
             IsReadyToWarp = true; // this is called by the warp gate animation which makes the animation necessary for non-visual reasons
+            WarpGate.WarpGateStartingSound.Stop();
+            WarpGate.WarpGateLoopingSound.Play();
         }
     }
 }
