@@ -49,8 +49,15 @@ namespace Assets.Scripts
         public AudioSource BigCannonSound;
         public AudioSource BigCannonSound2;
         public AudioSource BeamCannonSound;
+        public AudioSource FlagshipLaserChargingSound;
+        public AudioSource FlagshipLaserFiringSound;
+        public AudioSource QueenCrownLaser;
+        public AudioSource StrikerBombRelease;
+        public AudioSource RocketFiring;
 
         public List<AudioSource> TinyShipExplosionSounds;
+        public List<AudioSource> SmallShipExplosionSounds;
+        public List<AudioSource> LargeShipExplosionSounds;
 
         public AudioSource EnteringWarpGateSound;
 
@@ -73,8 +80,15 @@ namespace Assets.Scripts
             WeaponSounds.Add(ConfigData.WeaponSoundTypes.SmallLaser, new AudioSource[] { SmallCannonSound, SmallCannonSound2 });
             WeaponSounds.Add(ConfigData.WeaponSoundTypes.BigLaser, new AudioSource[] { BigCannonSound, BigCannonSound2 });
             WeaponSounds.Add(ConfigData.WeaponSoundTypes.BeamCannon, new AudioSource[] { BeamCannonSound });
+            WeaponSounds.Add(ConfigData.WeaponSoundTypes.FlagshipLaser, new AudioSource[] { FlagshipLaserFiringSound });
+            WeaponSounds.Add(ConfigData.WeaponSoundTypes.QueenLaser, new AudioSource[] { QueenCrownLaser });
+            WeaponSounds.Add(ConfigData.WeaponSoundTypes.RocketLaunch, new AudioSource[] { RocketFiring });
 
-            ExplosionSounds.Add(ConfigData.Tiny, TinyShipExplosionSounds);
+
+            //ExplosionSounds.Add(ConfigData.Tiny, TinyShipExplosionSounds);
+            //ExplosionSounds.Add(ConfigData.Small, SmallShipExplosionSounds);
+            //ExplosionSounds.Add(ConfigData.Large, LargeShipExplosionSounds);
+
 
 
             //mute bee intros

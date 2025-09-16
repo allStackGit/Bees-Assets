@@ -9091,7 +9091,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: HasRandomizedOptions
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: MiniMapDisplayCanvas
@@ -9103,7 +9103,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: UseFullyRandomSquads
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: UIElements.Array.size
@@ -9251,11 +9251,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: GeneratedSquadCountMinimum
-      value: 0
+      value: 4
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: GeneratedSquadCountOverride
-      value: 0
+      value: 16
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: 'OverrideStrats.Array.data[0]'
@@ -9335,11 +9335,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: OverrideHumanShipTypes.Array.size
-      value: 0
+      value: 3
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: 'OverrideBeeShipTypes.Array.data[0]'
-      value: 2
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: 'OverrideBeeShipTypes.Array.data[1]'
@@ -9375,15 +9375,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: 'OverrideHumanShipTypes.Array.data[0]'
-      value: 18
+      value: 11
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: 'OverrideHumanShipTypes.Array.data[1]'
-      value: 10
+      value: 12
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: 'OverrideHumanShipTypes.Array.data[2]'
-      value: 9
+      value: 5
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: 'OverrideHumanShipTypes.Array.data[3]'
@@ -16413,9 +16413,21 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 362926869417004273, guid: f2d78717771ac274ea7912399058897f, type: 3}
+      propertyPath: DopplerLevel
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 362926869417004273, guid: f2d78717771ac274ea7912399058897f, type: 3}
+      propertyPath: spreadCustomCurve.m_Curve.Array.data[0].value
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 504117766079600539, guid: f2d78717771ac274ea7912399058897f, type: 3}
       propertyPath: Priority
       value: 255
+      objectReference: {fileID: 0}
+    - target: {fileID: 504117766079600539, guid: f2d78717771ac274ea7912399058897f, type: 3}
+      propertyPath: m_Volume
+      value: 0.25
       objectReference: {fileID: 0}
     - target: {fileID: 504117766079600539, guid: f2d78717771ac274ea7912399058897f, type: 3}
       propertyPath: MaxDistance
@@ -16424,6 +16436,10 @@ PrefabInstance:
     - target: {fileID: 504117766079600539, guid: f2d78717771ac274ea7912399058897f, type: 3}
       propertyPath: rolloffMode
       value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 896106575290904985, guid: f2d78717771ac274ea7912399058897f, type: 3}
+      propertyPath: panLevelCustomCurve.m_Curve.Array.data[0].value
+      value: 0.5
       objectReference: {fileID: 0}
     - target: {fileID: 1127479679600382545, guid: f2d78717771ac274ea7912399058897f, type: 3}
       propertyPath: Priority
@@ -16440,6 +16456,10 @@ PrefabInstance:
     - target: {fileID: 2630246959727864061, guid: f2d78717771ac274ea7912399058897f, type: 3}
       propertyPath: Priority
       value: 255
+      objectReference: {fileID: 0}
+    - target: {fileID: 2630246959727864061, guid: f2d78717771ac274ea7912399058897f, type: 3}
+      propertyPath: m_Volume
+      value: 0.25
       objectReference: {fileID: 0}
     - target: {fileID: 2630246959727864061, guid: f2d78717771ac274ea7912399058897f, type: 3}
       propertyPath: MaxDistance
@@ -16469,6 +16489,10 @@ PrefabInstance:
       propertyPath: m_IsActive
       value: 1
       objectReference: {fileID: 0}
+    - target: {fileID: 3366005094386711334, guid: f2d78717771ac274ea7912399058897f, type: 3}
+      propertyPath: OutputAudioMixerGroup
+      value: 
+      objectReference: {fileID: 24300002, guid: 1f87ed63a65f9214685a2f232628993f, type: 2}
     - target: {fileID: 3815728182135017080, guid: f2d78717771ac274ea7912399058897f, type: 3}
       propertyPath: Priority
       value: 256
@@ -16486,12 +16510,20 @@ PrefabInstance:
       value: 254
       objectReference: {fileID: 0}
     - target: {fileID: 3955847834331746193, guid: f2d78717771ac274ea7912399058897f, type: 3}
-      propertyPath: MaxDistance
-      value: 100
-      objectReference: {fileID: 0}
-    - target: {fileID: 3955847834331746193, guid: f2d78717771ac274ea7912399058897f, type: 3}
       propertyPath: rolloffMode
       value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 5329815347374682978, guid: f2d78717771ac274ea7912399058897f, type: 3}
+      propertyPath: OutputAudioMixerGroup
+      value: 
+      objectReference: {fileID: 24300002, guid: 1f87ed63a65f9214685a2f232628993f, type: 2}
+    - target: {fileID: 5660502556874005051, guid: f2d78717771ac274ea7912399058897f, type: 3}
+      propertyPath: m_Volume
+      value: 0.3
+      objectReference: {fileID: 0}
+    - target: {fileID: 5660502556874005051, guid: f2d78717771ac274ea7912399058897f, type: 3}
+      propertyPath: panLevelCustomCurve.m_Curve.Array.data[0].value
+      value: 0.85
       objectReference: {fileID: 0}
     - target: {fileID: 6460533826645500174, guid: f2d78717771ac274ea7912399058897f, type: 3}
       propertyPath: Priority
@@ -16505,6 +16537,10 @@ PrefabInstance:
       propertyPath: rolloffMode
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 9029131865215431600, guid: f2d78717771ac274ea7912399058897f, type: 3}
+      propertyPath: OutputAudioMixerGroup
+      value: 
+      objectReference: {fileID: 24300002, guid: 1f87ed63a65f9214685a2f232628993f, type: 2}
     m_RemovedComponents: []
     m_RemovedGameObjects:
     - {fileID: 3366005094055406045, guid: f2d78717771ac274ea7912399058897f, type: 3}
@@ -17197,6 +17233,8 @@ MonoBehaviour:
   MiningAsteroidPrefabs:
   - {fileID: 7879729711353278377, guid: fe6d0fb0d85c85c479edc717c832af86, type: 3}
   - {fileID: 7879729711353278377, guid: 3834dda5c834aa449bc5195a6e2d6c11, type: 3}
+  - {fileID: 7879729711353278377, guid: 43696f10417afb1439a06a95be1a8122, type: 3}
+  - {fileID: 7879729711353278377, guid: 1516477eccab4ff4b9abdc7e7999689a, type: 3}
   CollisionAsteroidPrefabs:
   - {fileID: 226534545502904114, guid: c56c01c11c9ad6a4aa3c7694969bdc5b, type: 3}
   - {fileID: 439529657869320101, guid: fd259f1b80ec2cb4ab265509be0d9310, type: 3}
@@ -18099,7 +18137,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 2944892714679254333, guid: e154edb1d8fb554428cdc7380556de19, type: 3}
       propertyPath: orthographic size
-      value: 3000
+      value: 550
       objectReference: {fileID: 0}
     - target: {fileID: 2944892714679254333, guid: e154edb1d8fb554428cdc7380556de19, type: 3}
       propertyPath: m_CullingMask.m_Bits

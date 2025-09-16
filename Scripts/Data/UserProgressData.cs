@@ -199,7 +199,7 @@ namespace Assets.Scripts.Data
         }
         public void GetCurrentLevelOptions()
         {
-            CurrentLevel = ConfigData.GetCampaignLevelData().GetLevel(GetCurrentLevel());
+            CurrentLevel = ConfigData.GetCampaignLevelData().GetLevel(GetCurrentLevel(ConfigData.Configuration.UserSide));
         }
         public void SetCurrentLevel(int level)
         {
@@ -231,15 +231,16 @@ namespace Assets.Scripts.Data
             }
 
         }
-        public int GetCurrentLevel(ConfigData.GameModes gameMode = ConfigData.GameModes.Unset)
+        public int GetCurrentLevel(int side, ConfigData.GameModes gameMode = ConfigData.GameModes.Unset)
         {
+
             if (gameMode == ConfigData.GameModes.Unset)
             {
                 gameMode = ConfigData.CurrentGameMode;
             }
             if (gameMode == ConfigData.GameModes.Campaign)
             {
-                if (ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide)
+                if (side == ConfigData.Configuration.HumanSide)
                 {
                     return CurrentHumanCampaignLevel;
                 }
@@ -247,7 +248,7 @@ namespace Assets.Scripts.Data
             }
             else if (gameMode == ConfigData.GameModes.Challenge)
             {
-                if (ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide)
+                if (side == ConfigData.Configuration.HumanSide)
                 {
                     return CurrentHumanChallengeLevel;
                 }

@@ -29,7 +29,7 @@ namespace Assets.Scripts.Scenes
         }
         public void ContinueGame()
         {
-            Debug.Log($"Continuing Game! User is on level #{ConfigData.UserProgressData.GetCurrentLevel()}");
+            Debug.Log($"Continuing Game! User is on level #{ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide)}");
             //SceneManager.LoadSceneAsync("Level Intro"); 
             //SceneManager.LoadSceneAsync("Squad Maker");
             DeselectButton();
@@ -53,7 +53,8 @@ namespace Assets.Scripts.Scenes
             }
             CodexManager.SetupCodex();
 
-            int currentLevel = ConfigData.UserProgressData.GetCurrentLevel(ConfigData.GameModes.Campaign);
+            int currentLevel = ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.HumanSide, ConfigData.GameModes.Campaign);
+            Debug.Log($"Current Level: {currentLevel} Total Levels: {ConfigData.Configuration.TotalLevels}");
             if (currentLevel >= ConfigData.Configuration.TotalLevels)
             {
                 HumanCampaignModeButton.transform.GetChild(0).GetComponent<TMP_Text>().text = "Beta Campaign Completed!";
@@ -124,6 +125,10 @@ namespace Assets.Scripts.Scenes
        
         public void PlayCampaign(string side)
         {
+            if (ConfigData.Configuration.UserSide != ConfigData.Configuration.HumanSide)
+            {
+                ConfigData.SwapSides();
+            }
             DeselectButton();
             ConfigData.CurrentGameMode = ConfigData.GameModes.Campaign;
             ConfigData.CurrentShips = ConfigData.CampaignShips;

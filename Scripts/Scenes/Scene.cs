@@ -103,6 +103,7 @@ namespace Assets.Scripts.Scenes
 
 
             //ConfigData.Ships.ReplaceDeadSquadShips();
+            UIAudioController.Instance.PlayMusic();
             IsFinalized = true;
         }
         /// <summary>

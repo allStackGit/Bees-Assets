@@ -394,6 +394,8 @@ public class Stage : Scene
 
         base.FinalizeSceneWithUserData();
 
+        UIAudioController.Instance.PauseMusic();
+
         if (IsMainScene && LevelCount > 0)
         {
             Prefabs.LoadConversions();

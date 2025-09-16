@@ -327,7 +327,7 @@ namespace Assets.Scripts.Levels
             sr.size = Map.SpriteRenderer.size;
             for (int i = 0; i < Utilities.RandomInt(10) + 1; i++)
             {
-                GameObject obstacleObject = Instantiate(Stage.Prefabs.ObstaclePrefab, obstacleBackground.transform);
+                GameObject obstacleObject = Instantiate(Stage.Prefabs.ObstaclePrefab, Map.transform);
                 Obstacle obstacle = obstacleObject.GetComponent<Obstacle>();
                 if (Utilities.CoinToss())
                 {
@@ -338,6 +338,10 @@ namespace Assets.Scripts.Levels
                     obstacle.transform.localScale = new Vector2(Utilities.RandomInt(50) + 20, Utilities.RandomInt(150) + 20); // taller rather than wider
                 }
                 obstacle.transform.localPosition = Utilities.RandomCoordinate(this, Vector2.zero, maxSpawnDistance - new Vector2(0, obstacle.transform.localScale.y / 2), Vector2.zero);
+
+                obstacle.Collider.enabled = false;
+                obstacle.Collider.enabled = true;
+
                 Debug.Log($"Spawning obstacle of size {obstacle.transform.localScale} at {obstacle.transform.localPosition}");
                 obstacles.Add(obstacle);
             }
@@ -352,15 +356,29 @@ namespace Assets.Scripts.Levels
             ObstacleMap = new ObstacleMap(1);
             if (CurrentLevelOptions.Obstacles != "No")
             {
-                if (CurrentLevelOptions.Obstacles == "")
+                if (CurrentLevelOptions.Obstacles == "" && CurrentLevelOptions.ObstacleList.Count == 0)
                 {
                     ObstacleMap.Obstacles = GenerateRandomObstacles();
-                    CurrentLevelOptions.ObstacleList = ObstacleMap.Obstacles;
+                    //CurrentLevelOptions.ObstacleList = ObstacleMap.Obstacles;
 
                 }
                 else if (CurrentLevelOptions.ObstacleList.Count > 0)
                 {
-                    ObstacleMap.Obstacles = CurrentLevelOptions.ObstacleList;
+                    GameObject obstacleBackground = Instantiate(Stage.Prefabs.ObstacleBackgroundPrefab, Map.transform);
+                    SpriteRenderer sr = obstacleBackground.GetComponent<SpriteRenderer>();
+                    sr.sprite = Map.SpriteRenderer.sprite;
+                    sr.size = Map.SpriteRenderer.size;
+
+                    ObstacleMap.Obstacles = CurrentLevelOptions.ObstacleList.Select((vectorPair) =>
+                    {
+                        GameObject obstacleObject = Instantiate(Stage.Prefabs.ObstaclePrefab, Map.transform);
+                        Obstacle obstacle = obstacleObject.GetComponent<Obstacle>();
+
+                        obstacle.transform.localPosition = vectorPair.Item1;
+                        obstacle.transform.localScale = vectorPair.Item2;
+                        Debug.Log($"Spawning saved obstacle of size {obstacle.transform.localScale} at {obstacle.transform.localPosition}");
+                        return obstacle;
+                    }).ToList();
                 }
                 else
                 {
@@ -371,13 +389,12 @@ namespace Assets.Scripts.Levels
                 }
             }
           
-
-            ObstacleMap = new ObstacleMap(1);
-
             ObstacleMap.Obstacles.ForEach((obstacle) =>
             {
                 obstacle.gameObject.SetActive(true);
             });
+
+            Debug.Log($"LevelData: {Utilities.ListToString(ObstacleMap.Obstacles)}");
 
             if (ActivateCollisionAsteroids) 
             {
@@ -636,8 +653,12 @@ namespace Assets.Scripts.Levels
                 {
                     DidUserWin = true;
                 }
+                else
+                {
+                    DidUserWin = false;
+                }
 
-                UnPause();
+                    UnPause();
             }
 
             if (ActivateCollisionAsteroids)
@@ -939,7 +960,15 @@ namespace Assets.Scripts.Levels
         {
             if (State.GetSquadsBySide(ConfigData.Configuration.UserSide).Count > 0 && State.GetSquadsBySide(ConfigData.Configuration.AISide).Count > 0 && !Stage.IsTraining)
             {
-                State.SelectSquad(State.GetSquadByNumber(ConfigData.Configuration.UserSide, 1));
+                Squad squad = State.GetSquadByNumber(ConfigData.Configuration.UserSide, 1);
+                State.SelectSquad(squad);
+                if (!Stage.UnlockCamera)
+                {
+                    Vector2 squadPosition = squad.GetPosition();
+                    Stage.Camera.transform.position = new Vector3(squadPosition.x, squadPosition.y, -10) + Get3DPosition();
+                    Stage.InputManager.MaintainScrollBoundary();
+                }
+
             }
             else if (!Stage.IsTraining && ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
             {
@@ -1016,15 +1045,29 @@ namespace Assets.Scripts.Levels
             //CancelInvoke(nameof(GetHiveMindCommands));
             if (Stage.ActivateHiveMind)
             {
-                State.GetSquadsBySide(ConfigData.Configuration.AISide).ForEach(s => { 
-                    if (!s.IsImmobile && !s.HasCommandQueue)
-                    {
-                        s.AddToCommandList();
-                    }
-                });
+                
 
-                //Invoke(nameof(GetHiveMindCommands), Stage.InitialCommandDelay);
-                _hivemindTimer.Reuse(.25f, GetHiveMindCommands, true);
+                if (!HasPlayer)
+                {
+                    State.GetAllSquads().ForEach(s => {
+                        if (!s.IsImmobile && !s.HasCommandQueue)
+                        {
+                            s.AddToCommandList();
+                        }
+                    });
+                }
+                else
+                {
+                    State.GetSquadsBySide(ConfigData.Configuration.AISide).ForEach(s => {
+                        if (!s.IsImmobile && !s.HasCommandQueue)
+                        {
+                            s.AddToCommandList();
+                        }
+                    });
+                }
+
+                    //Invoke(nameof(GetHiveMindCommands), Stage.InitialCommandDelay);
+                    _hivemindTimer.Reuse(.25f, GetHiveMindCommands, true);
                 _initialCommandDelayTimer.Reuse(Stage.InitialCommandDelay - .25f, () =>
                 {
 

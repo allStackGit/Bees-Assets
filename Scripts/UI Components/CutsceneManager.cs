@@ -44,7 +44,7 @@ public class CutsceneManager : MonoBehaviour
         Portraits["Emilia"] = Resources.LoadAll<Sprite>("Sprites/Portraits/emilia_chat");
         Portraits["Fritz"] = Resources.LoadAll<Sprite>("Sprites/Portraits/fritz_chat");
         Portraits["Marge"] = Resources.LoadAll<Sprite>("Sprites/Portraits/marge_chat");
-        Portraits["Barge Pilot"] = Resources.LoadAll<Sprite>("Sprites/Portraits/tom_chat");
+        Portraits["Barge Pilot"] = Resources.LoadAll<Sprite>("Sprites/Portraits/barge_pilot_chat");
 
         PlutoLines_Anomaly = new List<DialogueLine>
         {

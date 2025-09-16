@@ -12,8 +12,9 @@ namespace Assets.Scripts.Entities.Projectiles
         public Ship ContactedShip;
         private ScaledTimer _killSequenceTimer = new ScaledTimer();
         private ScaledTimer _damageTimer = new ScaledTimer();
+        public AudioSource BombReleaseSound;
+        public AudioSource BombExplosionSound;
         // Use this for initialization
-
         public void Setup(Level level, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power, Ship contactedShip)
         {
             base.Setup(level, weapon, shooter, target, startingPosition, angle, range, power);
@@ -21,6 +22,7 @@ namespace Assets.Scripts.Entities.Projectiles
             transform.parent = ContactedShip.transform;
             _killSequenceTimer.Reuse(1.5f, KillSequence);
             Level.AddTimer(_killSequenceTimer);
+            BombReleaseSound.Play();
             //Invoke(nameof(KillSequence), 1.5f);
         }
 
@@ -34,6 +36,7 @@ namespace Assets.Scripts.Entities.Projectiles
                     Explosion.transform.parent = ContactedShip.transform;
                     Explosion.transform.localPosition = GetPosition();
                     Explosion.SetActive(true);
+                    BombExplosionSound.Play();
                 }
 
                 _damageTimer.Reuse(.5f, Damage);

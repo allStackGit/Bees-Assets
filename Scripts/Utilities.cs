@@ -1169,20 +1169,20 @@ namespace Assets.Scripts
             return savedSquads.ToList();
         }
 
-        private static List<Obstacle> _obstacles;
-        private static Obstacle _obstacle;
-        public static List<SavedSquad> LoadObstaclesFromJson(List<dynamic> jsonObstacles)
+        private static List<(Vector2, Vector2)> _obstacles = new List<(Vector2, Vector2)>();
+        private static (Vector2, Vector2) _obstacle;
+        public static List<(Vector2, Vector2)> LoadObstaclesFromJson(List<dynamic> jsonObstacles)
         {
             _obstacles.Clear();
             // Iterating through each squad in the jsonSquads
-            jsonObstacles.ForEach((obstacles) =>
+            jsonObstacles.ForEach((obstacle) =>
             {
-                _obstacle = new Obstacle();
+                _obstacle = (new Vector2((float) obstacle.Position.x, (float) obstacle.Position.y), new Vector2((float)obstacle.Scale.x, (float)obstacle.Scale.y));
                 _obstacles.Add(_obstacle);
             });
 
             // Returning the list of saved squads
-            return savedSquads.ToList();
+            return _obstacles.ToList();
         }
 
 

@@ -1171,7 +1171,7 @@ namespace Assets.Scripts
             LevelOptions = (LevelOptions)UserProgressData.CurrentLevel.Clone(); // Sets the level options for the battle field
 
             // Makes any level specific adjustments to the ships or intro
-            switch (UserProgressData.GetCurrentLevel())
+            switch (UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide))
                 {
                 case 0:
                     SceneManager.LoadSceneAsync("Hivemind Training", LoadSceneMode.Single);
@@ -1208,7 +1208,7 @@ namespace Assets.Scripts
                     }
                     break;
                 default:
-                    Debug.LogError($"Tried to load unknown level {UserProgressData.GetCurrentLevel()}");
+                    Debug.LogError($"Tried to load unknown level {UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide)}");
                     break;
             }
 

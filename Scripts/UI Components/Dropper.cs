@@ -176,7 +176,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void EndDragging()
         {
-            Debug.Log($"Stopped dragging {_currentDragIcon?.GetFleetShip().Type}");
+            //Debug.Log($"Stopped dragging {_currentDragIcon?.GetFleetShip().Type}");
             if (_currentDragIcon != null)
             {
                 if (IsValidDropLocation)

@@ -7,6 +7,7 @@ namespace Assets.Scripts.UI_Components
     {
         public static UIAudioController Instance { get; private set; }
         public AudioSource ButtonClick;
+        public AudioSource MenuMusic;
 
         void Awake()
         {
@@ -25,6 +26,18 @@ namespace Assets.Scripts.UI_Components
         public void PlayButtonSound()
         {
             ButtonClick.Play();
+        }
+        public void PlayMusic()
+        {
+            if (!MenuMusic.isPlaying)
+            {
+                MenuMusic.Play();
+            }
+        }
+        public void PauseMusic()
+        {
+            Debug.Log($"Stopping the menu music");
+            MenuMusic.Pause();
         }
     }
 }

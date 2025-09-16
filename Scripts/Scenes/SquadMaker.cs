@@ -140,6 +140,7 @@ namespace Assets.Scripts.Scenes
         private bool _doubleClick = false;
         private bool _startingLevel = false;
         private int _chosenOpposingForceOption;
+        private List<(Vector2, Vector2)> _chosenObstacles = new List<(Vector2, Vector2)>();
         private int _enemySquadGenerationCount;
         private string _chosenObstacleOption = "";
         private int _chosenAsteroidsOption = -1;
@@ -222,9 +223,9 @@ namespace Assets.Scripts.Scenes
             //    StartButton.SetActive(true);
             //}
 
-            _squadListOriginalScrollHeight = 435 + 238;
-            _squadListOptionsScrollHeight = _squadListOriginalScrollHeight - 238;
-            _squadListLevelScrollHeight = _squadListOriginalScrollHeight - 395;
+            _squadListOriginalScrollHeight = 415 + 248;
+            _squadListOptionsScrollHeight = _squadListOriginalScrollHeight - 248;
+            _squadListLevelScrollHeight = _squadListOriginalScrollHeight - 385;
 
             // Make Dialogues
             DeleteSquadConfirmation = new Dialogue(DialoguePrefab, ConfigData.Configuration.AreYouSure, ConfigData.Configuration.DeleteSquadConfirmation,
@@ -312,9 +313,9 @@ namespace Assets.Scripts.Scenes
                 _levelOptionIndexesToLevels[i] = level;
                 i++;
             });
-            Debug.Log($"User is on level #{ConfigData.UserProgressData.GetCurrentLevel()}");
+            Debug.Log($"User is on level #{ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide)}");
 
-            LoadLevel(ConfigData.UserProgressData.GetCurrentLevel());
+            LoadLevel(ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide));
 
             if (ConfigData.UserProgressData.MinedTSV > 0 && ConfigData.CurrentShips.GetAliveShipsOfType(ConfigData.ShipTypes.Factory).Count > 0)
             {
@@ -1075,13 +1076,13 @@ namespace Assets.Scripts.Scenes
             ChosenEnemyShipTypeLabel.SetActive(show);
             ChosenEnemyShipTypesDropdown.SetActive(show);
 
-            //Debug.Log($"Changing height to {(show ? _squadListOptionsScrollHeight : _squadListOriginalScrollHeight)} because show is {show}");
+            Debug.Log($"Changing height for choose level options to {(show ? _squadListOptionsScrollHeight : _squadListOriginalScrollHeight)} because show is {show}");
             RectTransform squadListRect = ChosenSquadList.transform.parent.parent.GetComponent<RectTransform>();
             squadListRect.sizeDelta = new Vector2(squadListRect.sizeDelta.x, (show ? _squadListOptionsScrollHeight : _squadListOriginalScrollHeight));
         }
         public void ToggleLevelDetails(bool show)
         {
-            //Debug.Log($"Changing height to {(show ? _squadListLevelScrollHeight : _squadListOriginalScrollHeight)} because show is {show}");
+            Debug.Log($"Changing height for level details to {(show ? _squadListLevelScrollHeight : _squadListOriginalScrollHeight)} because show is {show}");
             LevelTitleContainer.SetActive(show);
             LevelDetailsContainer.SetActive(show);
             RectTransform squadListRect = ChosenSquadList.transform.parent.parent.GetComponent<RectTransform>();
@@ -1884,6 +1885,7 @@ namespace Assets.Scripts.Scenes
             // reset options
             ConfigData.BeeShipTypes = ConfigData.UserProgressData.VisibleBeeShipTypes;
             ConfigData.HumanShipTypes = ConfigData.UserProgressData.VisibleHumanShipTypes;
+            
             //ConfigData.SelectedObstacleMapIndex = -1;
             //ConfigData.SelectedAsteroidOption = -1;
             //ConfigData.SelectedLevelMapIndex = -1;
@@ -2020,7 +2022,7 @@ namespace Assets.Scripts.Scenes
             ConfigData.IsUserLoadingCustomSquads = true;
 
             //Debug.Log($"Setting level options for configdata");
-            ConfigData.LevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}", _chosenMapOption, _chosenObstacleOption, new List<Obstacle>(), _chosenAsteroidsOption, _chosenFogOfWarOption, _chosenMiningOption, false, true, -1, _chosenEnemyReinforcementsOption, ConfigData.StandardReinforcementsDelay, _chosenEnemyShipTypes, _enemySquadGenerationCount, new List<SavedSquad>(), new List<SavedSquad>(), new List<int>(), "", _chosenSquads, Vector2.zero, Vector2.zero);
+            ConfigData.LevelOptions = new LevelOptions(ConfigData.GetLevelData().GetNewId(), ConfigData.Configuration.AISide, $"Random Level #{ConfigData.GetLevelData().GetNewId()}", _chosenMapOption, _chosenObstacleOption, _chosenObstacles, _chosenAsteroidsOption, _chosenFogOfWarOption, _chosenMiningOption, false, true, -1, _chosenEnemyReinforcementsOption, ConfigData.StandardReinforcementsDelay, _chosenEnemyShipTypes, _enemySquadGenerationCount, new List<SavedSquad>(), new List<SavedSquad>(), new List<int>(), "", _chosenSquads, Vector2.zero, Vector2.zero);
         }
 
         public void ChangeOpposingForceDropdown(int option)

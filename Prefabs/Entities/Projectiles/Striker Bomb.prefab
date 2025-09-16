@@ -31,7 +31,9 @@ Transform:
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
-  m_Children: []
+  m_Children:
+  - {fileID: 8244350408587355278}
+  - {fileID: 118613924245335216}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!212 &8383538919454772690
@@ -153,3 +155,159 @@ MonoBehaviour:
   Animator: {fileID: 3264064880638548597}
   IsDead: 1
   ContactedShip: {fileID: 0}
+  BombReleaseSound: {fileID: 5741011424187942506}
+  BombExplosionSound: {fileID: 4350649594553716308}
+--- !u!1001 &4160670410988700723
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 2587070028850966723}
+    m_Modifications:
+    - target: {fileID: 422554897371073127, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+      propertyPath: Priority
+      value: 128
+      objectReference: {fileID: 0}
+    - target: {fileID: 422554897371073127, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+      propertyPath: m_Resource
+      value: 
+      objectReference: {fileID: 8300000, guid: dad8960b1c5c24741bc540fd12e8d29e, type: 3}
+    - target: {fileID: 422554897371073127, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+      propertyPath: m_audioClip
+      value: 
+      objectReference: {fileID: 8300000, guid: dad8960b1c5c24741bc540fd12e8d29e, type: 3}
+    - target: {fileID: 422554897371073127, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+      propertyPath: spreadCustomCurve.m_Curve.Array.data[0].value
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 422554897371073127, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+      propertyPath: panLevelCustomCurve.m_Curve.Array.data[0].value
+      value: 0.95
+      objectReference: {fileID: 0}
+    - target: {fileID: 4042206123539507331, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4042206123539507331, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4042206123539507331, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4042206123539507331, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4042206123539507331, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4042206123539507331, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4042206123539507331, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4042206123539507331, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4042206123539507331, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4042206123539507331, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7065955879882523301, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+      propertyPath: m_Name
+      value: Striker Bomb Explosion Sound
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+--- !u!4 &118613924245335216 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 4042206123539507331, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+  m_PrefabInstance: {fileID: 4160670410988700723}
+  m_PrefabAsset: {fileID: 0}
+--- !u!82 &4350649594553716308 stripped
+AudioSource:
+  m_CorrespondingSourceObject: {fileID: 422554897371073127, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+  m_PrefabInstance: {fileID: 4160670410988700723}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1001 &5364099458936671245
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 2587070028850966723}
+    m_Modifications:
+    - target: {fileID: 4042206123539507331, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4042206123539507331, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4042206123539507331, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4042206123539507331, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4042206123539507331, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4042206123539507331, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4042206123539507331, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4042206123539507331, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4042206123539507331, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4042206123539507331, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7065955879882523301, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+      propertyPath: m_Name
+      value: Striker Bomb Release Sound
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+--- !u!82 &5741011424187942506 stripped
+AudioSource:
+  m_CorrespondingSourceObject: {fileID: 422554897371073127, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+  m_PrefabInstance: {fileID: 5364099458936671245}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &8244350408587355278 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 4042206123539507331, guid: f643c927449f15747baeb2c154d334f0, type: 3}
+  m_PrefabInstance: {fileID: 5364099458936671245}
+  m_PrefabAsset: {fileID: 0}

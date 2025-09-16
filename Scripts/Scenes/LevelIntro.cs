@@ -17,7 +17,7 @@ namespace UIComponents
         {
             base.FinalizeSceneWithUserData();
             //ConfigData.CurrentGameMode = ConfigData.GameModes.Campaign; // [alert] Temporary, for testing purposes only
-            LevelNumber = ConfigData.UserProgressData.GetCurrentLevel();
+            LevelNumber = ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide);
 
             CutsceneManager.Setup(() =>
             {

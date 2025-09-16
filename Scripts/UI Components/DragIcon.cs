@@ -95,11 +95,11 @@ namespace Assets.Scripts.UIComponents
             FleetShip fleetShip = GetFleetShip();
             if (currentSquad != null)
             {
-                Debug.Log($"Removing drag icon from {currentSquad}");
+                //Debug.Log($"Removing drag icon from {currentSquad}");
                 SquadShip squadShip = currentSquad.GetShip(fleetShip.Id);
                 if (squadShip != null)
                 {
-                    Debug.Log($"Removing squad ship from {currentSquad}");
+                    //Debug.Log($"Removing squad ship from {currentSquad}");
                     currentSquad.RemoveShipFromSquad(squadShip);
                     _scene.UpdateShipCounter(fleetShip.Type);
                 }

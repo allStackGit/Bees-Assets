@@ -907,7 +907,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                                 }
                                 else
                                 {
-                                    //Debug.Log($"{Name} is already pathfinding on {PathfindingThread} so it can't pathfind right now");
+                                    Debug.Log($"{Name} is already pathfinding on {PathfindingThread} so it can't pathfind right now");
                                 }
                                 return;
                             }
@@ -1649,8 +1649,12 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 target.Health -= math.min(power, target.Health);
                 target.Tsv = Utilities.CalculateTsv(target) + (target.Health > 0 ? target.FleetShip.MineralsMinedThisLevel : 0);
 
-                //Debug.Log($"{target.Name} had {_targetOldTSV} TSV and {target.FleetShip.MineralsMinedThisLevel} minerals and now has {target.Tsv}-{Utilities.CalculateTsv(target)} TSV and {target.FleetShip.MineralsMinedThisLevel} minerals");
-                //Debug.Log($"{target.Name} went from {_targetOldHealth} health to {target.Health} health after being hit by {attacker}");
+                if (target.FleetShip.MineralsMinedThisLevel > 0)
+                {
+                    Debug.Log($"{target.Name} had {_targetOldTSV} TSV and {target.FleetShip.MineralsMinedThisLevel} minerals and now has {target.Tsv}-{Utilities.CalculateTsv(target)} TSV and {target.FleetShip.MineralsMinedThisLevel} minerals");
+                    Debug.Log($"{target.Name} went from {_targetOldHealth} health to {target.Health} health after being hit by {attacker}");
+
+                }
 
                 if (_targetOldHealth <= target.Health) // [debug]
                 {
@@ -2442,6 +2446,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 ShipExplosion.transform.parent = Level.Map.Transform;
                 ShipExplosion.transform.localPosition = GetPosition();
                 ShipExplosion.transform.eulerAngles = Vector3.forward * Rotation;
+                //ShipExplosion.GetComponent<ShipExplosionAnimation>().Play();
                 ShipExplosion.SetActive(true);
 
                 if (Level.Stage.ActivateAudio && HasShipExplosionSoundEffect)

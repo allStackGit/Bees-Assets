@@ -9,11 +9,17 @@ namespace Assets.Scripts.Entities.Ships.Weapons
     public class FullShipTurret : LaserBuilder
     {
         private Vector3 _rightRotationRate, _leftRotationRate;
+        private AudioSource _chargingSound;
         public override void Create(Ship ship, ConfigData.WeaponTypes type, ConfigData.WeaponSoundTypes weaponSound, int range, int power, float rateOfFire, float projectileValue, GameObject piece, ConfigData.ProjectileTypes projectileType, bool fireAtFrontOfShip, float rotationRate)
         {
             base.Create(ship, type, weaponSound, range, power, rateOfFire, projectileValue, piece, projectileType, fireAtFrontOfShip, rotationRate);
             _rightRotationRate = new Vector3(0, 0, 1 * Stage.FixedDeltaTime * RotationRate);
             _leftRotationRate = new Vector3(0, 0, 1 * Stage.FixedDeltaTime * RotationRate * -1);
+
+
+            //_chargingSound = Instantiate(Stage.Audio.FlagshipLaserChargingSound);
+            //_chargingSound.transform.parent = PieceTransform;
+            //_chargingSound.transform.localPosition = Vector2.zero;
         }
         public override void ResetRotation()
         {
@@ -68,10 +74,15 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             if (!IsAimedAtTarget)
             {
                 LaserBuilderAnimation.SetActive(false);
+                //_chargingSound.Stop();
             }
             else
             {
                 LaserBuilderAnimation.SetActive(true);
+                //if (!_chargingSound.isPlaying)
+                //{
+                //    _chargingSound.Play();
+                //}
             }
 
             MoveTargetingMarker();
@@ -144,6 +155,12 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
 
             return false;
+        }
+        protected override void SendProjectile()
+        {
+            base.SendProjectile();
+            LaserBuilderAnimation.SetActive(false);
+            //_chargingSound.Stop();
         }
     }
 }

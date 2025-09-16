@@ -133,6 +133,7 @@ namespace Assets.Scripts.Levels.Commands
                     {
                         Debug.LogError($"Squad: {GetSquad()}, Command: {this}, Squad Ships: {Utilities.ListToString(GetSquad().GetShips())}");
                         GetSquad().SetSquadSpeed(GetSquad().MaxSpeed);
+                        throw e;
                     }
                     //CancelInvoke(nameof(Timer));
                     SetFinalize("Guarded squad died");

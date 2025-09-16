@@ -290,42 +290,50 @@ namespace Assets.Scripts.Levels
             //float largestShipSize = ConfigData.ShipSizeFactor.GetValueOrDefault(
             //    GetShips().OrderByDescending((s) => ConfigData.ShipSizeFactor.GetValueOrDefault(s.ShipType)).ToList().First().ShipType
             //    );
-            GetShips().ForEach((ship) =>
+            if (GetShips().Count == 1)
             {
-                // The size factor (1-16)
-                //Vector2 sizeFactor = (largestShipSize / ConfigData.DragIconSize) * ConfigData.WorldUnitScaleFactor;
-
-
-                // trying to place ships on the map according to where they were in the squad maker
-                // Option 1: Convert the squadmaker coordinates directly to map coordinates
-
-                //Debug.Log($"Ship: {ship.Name} Position: {position}, Offset from Center: {ship.OffsetFromCenter}");
-
-                _adjustment = ship.OffsetFromCenter;
-
-                if (ship.ShipType == ConfigData.ShipTypes.Queen)
+                GetShips()[0].transform.localPosition = position;
+            }
+            else
+            {
+                GetShips().ForEach((ship) =>
                 {
-                    _adjustment *= _queenMultiplier; // Need larger spacing between the Queen(s) because it's so large
-                }
-                else if (ship.ShipType == ConfigData.ShipTypes.Bumblebee)
-                {
-                    _adjustment *= 1.2f;
-                }
-                else if (_wideShips.Contains(ship.ShipType))
-                {
-                    _adjustment *= _wideMultiplier;
-                }
-                else if (_ultraWideShips.Contains(ship.ShipType))
-                {
-                    _adjustment *= _ultraWideMultiplier;
-                }
+                    // The size factor (1-16)
+                    //Vector2 sizeFactor = (largestShipSize / ConfigData.DragIconSize) * ConfigData.WorldUnitScaleFactor;
 
-                //Debug.Log($"Sizefactor for {ship.Name}: {sizeFactor}");
-                //ship.transform.localPosition = Level.ForceBounds((position.x + adjustment.x), (position.y + adjustment.y));
-                ship.transform.localPosition = new Vector2(position.x + _adjustment.x, position.y + _adjustment.y);
-                //Debug.Log($"Local starting position for {ship.Name}: {ship.transform.localPosition}");
 
-            });
+                    // trying to place ships on the map according to where they were in the squad maker
+                    // Option 1: Convert the squadmaker coordinates directly to map coordinates
+
+                    //Debug.Log($"Ship: {ship.Name} Position: {position}, Offset from Center: {ship.OffsetFromCenter}");
+
+                    _adjustment = ship.OffsetFromCenter;
+
+                    if (ship.ShipType == ConfigData.ShipTypes.Queen && GetShips().Count > 1)
+                    {
+                        _adjustment *= _queenMultiplier; // Need larger spacing between the Queen(s) because it's so large
+                    }
+                    else if (ship.ShipType == ConfigData.ShipTypes.Bumblebee)
+                    {
+                        _adjustment *= 1.2f;
+                    }
+                    else if (_wideShips.Contains(ship.ShipType))
+                    {
+                        _adjustment *= _wideMultiplier;
+                    }
+                    else if (_ultraWideShips.Contains(ship.ShipType))
+                    {
+                        _adjustment *= _ultraWideMultiplier;
+                    }
+
+                    //Debug.Log($"Sizefactor for {ship.Name}: {sizeFactor}");
+                    //ship.transform.localPosition = Level.ForceBounds((position.x + adjustment.x), (position.y + adjustment.y));
+                    ship.transform.localPosition = new Vector2(position.x + _adjustment.x, position.y + _adjustment.y);
+                    //Debug.Log($"Local starting position for {ship.Name}: {ship.transform.localPosition}");
+
+                });
+            }
+                
 
         }
         public void SetSquadTab()

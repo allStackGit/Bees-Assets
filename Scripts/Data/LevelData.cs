@@ -26,7 +26,7 @@ namespace Assets.Scripts.Data
                 {
                     List<SavedSquad> enemyReinforcements = Utilities.LoadSquadsFromJson(Utilities.JArrayToList<dynamic>(level.EnemyReinforcements));
                     List<SavedSquad> enemySquads = Utilities.LoadSquadsFromJson(Utilities.JArrayToList<dynamic>(level.EnemySquads));
-                    List<Obstacle> obstacles = Utilities.LoadObstaclesFromJson(Utilities.JArrayToList<dynamic>(level.ObstacleList));
+                    List<(Vector2, Vector2)> obstacles = Utilities.LoadObstaclesFromJson(Utilities.JArrayToList<dynamic>(level.ObstacleList));
                     //Debug.Log(level);
                     //Debug.Log(level.EnemyExistingSquads);
                     List<int> enemyExistingSquads = Utilities.JArrayToList<int>(level.EnemyExistingSquads);

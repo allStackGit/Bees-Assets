@@ -85,7 +85,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void ShowLevelContinueDialogue()
         {
-            if (ConfigData.UserProgressData.GetCurrentLevel() >= ConfigData.Configuration.TotalLevels)
+            if (ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide) >= ConfigData.Configuration.TotalLevels)
             {
                 CampaignCompletedDialogue.Show();
             }
@@ -157,7 +157,7 @@ namespace Assets.Scripts.UIComponents
             {
                 //Debug.Log($"Surrending level #{ConfigData.UserProgressData.GetCurrentLevel()}");
                 CurrentLevel.CloseLevel();
-                CurrentLevel.GetType().GetMethod($"Level{ConfigData.UserProgressData.GetCurrentLevel()}Ending").Invoke(CurrentLevel, null);
+                CurrentLevel.GetType().GetMethod($"Level{ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide)}Ending").Invoke(CurrentLevel, null);
             }
 
         }
@@ -261,8 +261,13 @@ namespace Assets.Scripts.UIComponents
                 capacity = 0;
             }
 
-            //Debug.Log($"LevelData: {LevelData.GetEnemyList()}");
+            Debug.Log($"LevelData: {Utilities.ListToString(CurrentLevel.ObstacleMap.Obstacles)}");
             LevelOptions level = (LevelOptions)CurrentLevel.SaveLevelOptions.Clone();
+            level.ObstacleList = CurrentLevel.ObstacleMap.Obstacles.Select((obstacle) =>
+            {
+                Debug.Log($"Making obstacle list for saved level");
+                return ((Vector2) obstacle.transform.localPosition, (Vector2) obstacle.transform.localScale);
+            }).ToList();
             level.Name = LevelNameInput.text;
             level.SupplyCapacity = capacity;
             ConfigData.GetLevelData().AddLevel(level);

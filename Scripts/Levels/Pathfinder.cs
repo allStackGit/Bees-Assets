@@ -496,14 +496,14 @@ namespace Assets.Scripts.Levels
 
             Vector2 position = obstacle.GetPosition();
             Vector2 bounds = collider.bounds.size;
-            //Debug.Log($"{obstacle.Name} has bounds of {bounds}");
+            //Debug.Log($"{obstacle.name} has bounds of {bounds}, {obstacle.Collider}");
 
             int width = (int)Math.Ceiling(bounds.x);
             int height = (int)Math.Ceiling(bounds.y);
             int startX = (int)Math.Floor(position.x - (width / 2));
             int startY = (int)Math.Floor(position.y + (height / 2));
 
-            //Debug.Log($"Checking points on {obstacle.Name} starting at {startX} and going across {width}");
+            //Debug.Log($"Checking points on {obstacle.Name} at position {obstacle.GetPosition()} starting at {startX} and going across {width}");
 
             List<int[]> points = new List<int[]>();
 
@@ -514,6 +514,7 @@ namespace Assets.Scripts.Levels
                     Vector2Int point = new Vector2Int(x, y);
                     if (collider.OverlapPoint(point))
                     {
+                        //Debug.Log($"Found overlap point for {obstacle} at {point}");
                         Vector2Int converted = ConvertToMapCoordinates(point);
                         points.Add(new int[] { converted.x, converted.y });
 

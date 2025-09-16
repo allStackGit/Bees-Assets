@@ -26,7 +26,7 @@ namespace Assets.Scripts.Entities.Ships
         }
         public void Activate()
         {
-            //Debug.Log($"Activating fog of war vision for {Ship.Name} with range {Range}");
+            Debug.Log($"Activating fog of war vision for {Ship.Name} with range {Range}");
             Ship.Level.State.FogOfWarVisions.Add(this);
             //Transform.SetParent(Ship.transform.parent);
             Transform.localScale = new Vector3(Range, Range, 0);
@@ -35,7 +35,7 @@ namespace Assets.Scripts.Entities.Ships
         }
         public void Deactivate()
         {
-            //Debug.Log($"Deactivating fog of war vision for {Ship.Name} with range {Range}");
+            Debug.Log($"Deactivating fog of war vision for {Ship.Name} with range {Range}");
             Ship.Level.CancelTimer(_shrinkVisionStartTimer);
             Ship.Level.CancelTimer(_shrinkVisionTimer);
             Ship.Level.State.FogOfWarVisions.Remove(this);
@@ -47,6 +47,7 @@ namespace Assets.Scripts.Entities.Ships
         private ScaledTimer _shrinkVisionTimer = new ScaledTimer();
         public void Kill(float initialDelay, bool endKill)
         {
+            Debug.Log($"Killing fog of war vision for {Ship.Name}");
             //Transform.SetParent(Ship.Level.Map.Transform);
             if (!endKill)
             {

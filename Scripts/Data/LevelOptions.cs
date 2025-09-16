@@ -4,6 +4,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using static UnityEngine.RuleTile.TilingRuleOutput;
 
 namespace Assets.Scripts.Data
 {
@@ -33,9 +34,9 @@ namespace Assets.Scripts.Data
         /// </summary>
         public string Obstacles;
         /// <summary>
-        /// Used if there are randomly generated obstacles.
+        /// Used if there are randomly generated obstacles. A list of vector pairs relating to the position and scale of the obstacle, respectively
         /// </summary>
-        public List<Obstacle> ObstacleList;
+        public List<(Vector2, Vector2)> ObstacleList;
         /// <summary>
         /// Whether or not the map has asteroids
         /// -1 = Random
@@ -124,13 +125,14 @@ namespace Assets.Scripts.Data
         public Vector2 UserStartingPosition, AIStartingPosition;
 
 
-        public LevelOptions(int id, int side, string name, int mapIndex, string obstacles, List<Obstacle> obstacleList, int asteroidOption, int fogOfWar, int mining, bool hasPreLevelIntro, bool hasSquadActionBox, int supplyCapacity, int enemyReinforcementsOption, int enemyReinforcementDelay, int enemyShipTypeOption, int enemySquadGenerationCount, List<SavedSquad> enemyReinforcements, List<SavedSquad> enemySquads, List<int> enemyExistingSquads, string enemyReport, List<SavedSquad> chosenSquads, Vector2 userStartingPosition, Vector2 aiStartingPosition) 
+        public LevelOptions(int id, int side, string name, int mapIndex, string obstacles, List<(Vector2, Vector2)> obstacleList, int asteroidOption, int fogOfWar, int mining, bool hasPreLevelIntro, bool hasSquadActionBox, int supplyCapacity, int enemyReinforcementsOption, int enemyReinforcementDelay, int enemyShipTypeOption, int enemySquadGenerationCount, List<SavedSquad> enemyReinforcements, List<SavedSquad> enemySquads, List<int> enemyExistingSquads, string enemyReport, List<SavedSquad> chosenSquads, Vector2 userStartingPosition, Vector2 aiStartingPosition) 
         {
             Id = id;
             Side = side;
             Name = name;
             MapIndex = mapIndex;
             Obstacles = obstacles;
+            ObstacleList = obstacleList;
             AsteroidOption = asteroidOption;
             FogOfWar = fogOfWar;
             Mining = mining;
@@ -148,6 +150,7 @@ namespace Assets.Scripts.Data
             ChosenSquads = chosenSquads;
             UserStartingPosition = userStartingPosition;
             AIStartingPosition = aiStartingPosition;
+           
             //Debug.Log($"Creating level: {GetEnemyList()}");
         }
 
@@ -166,6 +169,7 @@ namespace Assets.Scripts.Data
             EnemyReinforcements = new List<SavedSquad>();
 
             //FriendlyReinforcements = new List<SavedSquad>();
+            ObstacleList = new List<(Vector2, Vector2)>();
             EnemySquads = new List<SavedSquad>();
             EnemyExistingSquads = new List<int>();
             ChosenSquads = new List<SavedSquad>();
@@ -173,7 +177,7 @@ namespace Assets.Scripts.Data
 
         public string ToJson()
         {
-            string json = $"{{\"Id\": {Id}, \"Side\": {Side}, \"Name\": \"{Name}\", \"MapIndex\": {MapIndex}, \"Obstacles\": \"No\", \"AsteroidOption\": {AsteroidOption}, " +
+            string json = $"{{\"Id\": {Id}, \"Side\": {Side}, \"Name\": \"{Name}\", \"MapIndex\": {MapIndex}, \"Obstacles\": \"{Obstacles}\", \"AsteroidOption\": {AsteroidOption}, " +
                 $"\"FogOfWar\": {FogOfWar}, \"Mining\": {Mining}, \"HasPreLevelIntro\": \"{HasPreLevelIntro}\", \"HasSquadActionBox\": \"{HasSquadActionBox}\", \"SupplyCapacity\": {SupplyCapacity}, \"EnemyReinforcementsOption\": {EnemyReinforcementsOption}," +
                 $" \"EnemyReinforcementDelay\": {EnemyReinforcementDelay}, \"UserStartingPosition\": {{\"x\": {UserStartingPosition.x}, \"y\": {UserStartingPosition.y}}}, \"AIStartingPosition\": {{\"x\": {AIStartingPosition.x}, \"y\": {AIStartingPosition.y}}}, \"EnemyReinforcements\": [";
             
@@ -200,7 +204,7 @@ namespace Assets.Scripts.Data
             json += "], \"ObstacleList\": [";
             if (ObstacleList.Count > 0)
             {
-                ObstacleList.ForEach((o) => json += $"{o.ToJson()}, ");
+                ObstacleList.ForEach((o) => json += $"{{Position: {{\"x\": {o.Item1.x}, \"y\": {o.Item1.y} }}, Scale: {{\"x\": {o.Item2.x}, \"y\": {o.Item2.y}}}}}, ");
                 json = json.Remove(json.Length - 2);
             }
 

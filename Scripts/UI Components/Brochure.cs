@@ -24,7 +24,7 @@ namespace Assets.Scripts.UI_Components
 
         private void Awake()
         {
-            if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign || ConfigData.UserProgressData.GetCurrentLevel() != 2)
+            if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign || ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.HumanSide) != 2)
             {
                 Destroy(gameObject);
                 return;

@@ -22,7 +22,7 @@ namespace Assets.Scripts.Levels
         public void RequestServerSetup()
         {
             Level.IsLevelSetupOnServer = false;
-            ConfigData.Socket.SendRequest(new SetupLevelRequest(new SetupLevel(ConfigData.CurrentGameMode == ConfigData.GameModes.FreePlay ? -1 : ConfigData.UserProgressData.GetCurrentLevel(), ConfigData.GetUserId()),
+            ConfigData.Socket.SendRequest(new SetupLevelRequest(new SetupLevel(ConfigData.CurrentGameMode == ConfigData.GameModes.FreePlay ? -1 : ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide), ConfigData.GetUserId()),
                 ConfigData.StandardMaxTimeOnQueue, Level));
         }
         public void SetCarrierShipFleetships(List<Squad> squads)
@@ -254,12 +254,12 @@ namespace Assets.Scripts.Levels
                         Level.CurrentLevelOptions.EnemySquads.Add(existingSquad);
                     }
                 });
-                //Debug.Log($"Squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.EnemySquads)}");
+                Debug.Log($"Squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.EnemySquads)} at {Level.StartingPositions[side - 1]}");
                 SpawnShipsAndSquads(Level.CurrentLevelOptions.EnemySquads, Level.StartingPositions[side - 1], Vector2.zero, false);
             }
             else
             {
-                //Debug.Log($"Chosen squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.ChosenSquads)}");
+                Debug.Log($"Chosen squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.ChosenSquads)} at {Level.StartingPositions[side - 1]}");
                 SpawnShipsAndSquads(Level.CurrentLevelOptions.ChosenSquads, Level.StartingPositions[side - 1], Vector2.zero, false);
             }
 
@@ -268,7 +268,7 @@ namespace Assets.Scripts.Levels
         {
             List<Squad> setupSquads = new List<Squad>();
             List<Ship> carriers = new List<Ship>();
-            Debug.Log($"Spawning squads {Utilities.ListToString(squads)}");
+            //Debug.Log($"Spawning squads {Utilities.ListToString(squads)}");
             Level.AllSquads.AddRange(squads);
             squads.ForEach((savedSquad) =>
             {
@@ -415,7 +415,7 @@ namespace Assets.Scripts.Levels
             float halfHeight = 0;
 
             // setup preliminary position so that the squad height and width can be calculated
-            //Debug.Log($"Placing {squads.Count} squads at {startingPosition}");
+            Debug.Log($"Placing {squads.Count} squads at {startingPosition}");
             squads.ForEach((squad) =>
             {
                 squad.SetStartingPosition(startingPosition);
@@ -448,7 +448,7 @@ namespace Assets.Scripts.Levels
                     previousLeftSquad = squad;
                     previousRightSquad = squad;
 
-                    //Debug.Log($"Positioned first squad: {squad.Name}");
+                    //Debug.Log($"Positioned first squad: {squad.Name} at {position}");
                 }
                 else
                 {
@@ -527,7 +527,7 @@ namespace Assets.Scripts.Levels
                 
 
                 //Debug.Log($"The previous squad {previousSquad.Name} was centered on {previousSquad.GetPosition()} and has a half width of {previousSquad.GetWidth() / 2}. " +
-                //Debug.Log($"The current squad {squad.Name} will be centered on {position} and have a half width of {halfWidth}. ");
+                //Debug.Log($"The current squad {squad} will be centered on {position} and have a half width of {halfWidth}. ");
 
 
 
