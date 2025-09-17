@@ -138,7 +138,7 @@ namespace Assets.Scripts.Entities.Ships
                 Animator.enabled = false;
                 enabled = false;
 
-                if (Ship.Stage.ActivateAudio && IsWarpGate && WarpGate.IsAudioLoaded)
+                if (IsWarpGate && WarpGate.IsAudioLoaded)
                 {
                     WarpGate.WarpGateStartingSound.enabled = false;
                     WarpGate.WarpGateLoopingSound.enabled = false;
@@ -157,8 +157,12 @@ namespace Assets.Scripts.Entities.Ships
             Debug.Log($"{Ship.Name} Changing sprite loop, ready to warp");
             UseSecondaryLoop = true;
             IsReadyToWarp = true; // this is called by the warp gate animation which makes the animation necessary for non-visual reasons
-            WarpGate.WarpGateStartingSound.Stop();
-            WarpGate.WarpGateLoopingSound.Play();
+            if (WarpGate.IsAudioLoaded)
+            {
+                WarpGate.WarpGateStartingSound.Stop();
+                WarpGate.WarpGateLoopingSound.Play();
+            }
+
         }
     }
 }

@@ -329,6 +329,7 @@ namespace Assets.Scripts.Levels
                     });
                 });
                 IsFiringManually = true;
+                Cursor.SetCursor(Stage.ManualFireCursor, new Vector2(-6, 4), CursorMode.Auto);
             }
             else
             {
@@ -794,12 +795,14 @@ namespace Assets.Scripts.Levels
         public void SetPatrolAreaActive()
         {
             // No locally declared variables.
+            Cursor.SetCursor(Stage.PatrolCursor, Vector2.zero, CursorMode.Auto);
             _selectingPatrolArea = true;
         }
 
         public void SetSelectGuardTargetActive()
         {
             // No locally declared variables.
+            Cursor.SetCursor(Stage.GuardCursor, Vector2.zero, CursorMode.Auto);
             _selectingGuardTarget = true;
         }
 
@@ -811,6 +814,7 @@ namespace Assets.Scripts.Levels
                 squad.UserGuard(ship.Squad); // Make all selected ships guard this squad.
             });
             _selectingGuardTarget = false;
+            Cursor.SetCursor(null, Vector2.zero, CursorMode.Auto);
         }
         // ===========================================================
         // Fields for CheckForSelectingSquad()
@@ -992,6 +996,7 @@ namespace Assets.Scripts.Levels
                     squad.UserPatrol(_checkForSelectingPatrolArea_startingPosition, _checkForSelectingPatrolArea_endingPosition);
                 });
                 _selectingPatrolArea = false;
+                Cursor.SetCursor(null, Vector2.zero, CursorMode.Auto);
                 return true;
             }
             return false;

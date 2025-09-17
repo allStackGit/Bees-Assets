@@ -323,7 +323,7 @@ namespace Assets.Scripts.Levels
             Vector2 maxSpawnDistance = new Vector2(MaxX - 150, MaxY - 150);
             GameObject obstacleBackground = Instantiate(Stage.Prefabs.ObstacleBackgroundPrefab, Map.transform);
             SpriteRenderer sr = obstacleBackground.GetComponent<SpriteRenderer>();
-            sr.sprite = Map.SpriteRenderer.sprite;
+            //sr.sprite = Map.SpriteRenderer.sprite;
             sr.size = Map.SpriteRenderer.size;
             for (int i = 0; i < Utilities.RandomInt(10) + 1; i++)
             {

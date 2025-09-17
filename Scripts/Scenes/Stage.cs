@@ -336,6 +336,9 @@ public class Stage : Scene
     /// Whether or not the camera is following a ship
     /// </summary>
     public bool IsFollowingShip;
+    public Texture2D ManualFireCursor;
+    public Texture2D PatrolCursor;
+    public Texture2D GuardCursor;
 
 
 

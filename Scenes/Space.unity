@@ -8958,6 +8958,10 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 1128415138}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
+      propertyPath: GuardCursor
+      value: 
+      objectReference: {fileID: 2800000, guid: cc62725baf0c0bc46b3dabfd648c9cb3, type: 3}
+    - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: IsDebugging
       value: 0
       objectReference: {fileID: 0}
@@ -8981,6 +8985,10 @@ PrefabInstance:
       propertyPath: VisonSprite
       value: 
       objectReference: {fileID: -2413806693520163455, guid: d6a43c80e4f549744bab8480334a95c7, type: 3}
+    - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
+      propertyPath: PatrolCursor
+      value: 
+      objectReference: {fileID: 2800000, guid: 0db2141e0c591d646bc821310bfc84ec, type: 3}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: SelectionBox
       value: 
@@ -9037,6 +9045,10 @@ PrefabInstance:
       propertyPath: CutsceneDirector
       value: 
       objectReference: {fileID: 2031537776}
+    - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
+      propertyPath: ManualFireCursor
+      value: 
+      objectReference: {fileID: 2800000, guid: 715b8297f580d3b499e6df4666bed556, type: 3}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: OverrideMapIndex
       value: 0
