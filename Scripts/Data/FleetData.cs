@@ -26,7 +26,7 @@ namespace Assets.Scripts.Data
                 ConfigData.IsFleetDataLoaded[type] = true;
                 //Debug.Log($"Loading ships for {Type}");
                 LoadShipsFromJson(Utilities.JArrayToList<dynamic>((JArray)JsonConvert.DeserializeObject(file.GetContents())));
-                Debug.Log($"Loaded {GetShips().Count} ships: {GetShips()[Utilities.RandomInt(GetShips().Count-1)]}");
+                //Debug.Log($"Loaded {GetShips().Count} ships: {GetShips()[Utilities.RandomInt(GetShips().Count-1)]}");
             });
 
         }

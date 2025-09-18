@@ -178,7 +178,7 @@ namespace Assets.Scripts.Data
             _ships.Remove(ship);
             if (_ships.Any())
             {
-                StartingPosition = GetCenterPoint();
+                StartingPosition = GetCenterPoint() /*+ ConfigData.StartingPositionOffset*/;
             }
             SetChanged(true);
         }
@@ -243,7 +243,7 @@ namespace Assets.Scripts.Data
         {
             Debug.Log($"Before Orienting squad {this}, center point: {StartingPosition}");
 
-            StartingPosition = GetCenterPoint() + ConfigData.StartingPositionOffset;
+            StartingPosition = GetCenterPoint() /*+ ConfigData.StartingPositionOffset*/;
             Debug.Log($"After Orienting squad {this}, center point: {StartingPosition}");
             GetSquadShips().ForEach((ship) =>
             {

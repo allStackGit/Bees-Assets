@@ -2,6 +2,7 @@
 using Assets.Scripts.Data;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
+using Assets.Scripts.Levels;
 using Assets.Scripts.Settings;
 using Assets.Scripts.UI_Components;
 using Assets.Scripts.UIComponents;
@@ -293,6 +294,10 @@ namespace Assets.Scripts.Scenes
             {
                 SetupForCampaign();
             }
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge)
+            {
+                SetupForChallengeMode();
+            }
             UpdateSquadMakerSupplyLabel();
             UpdateChosenSquadsSupplyLabel();
             UpdateSquadShipCounter();
@@ -328,10 +333,35 @@ namespace Assets.Scripts.Scenes
                 }
             }
         }
+        private void SetupForChallengeMode()
+        {
+            //Debug.Log($"Setting up for campaign");
+            int i = 0;
+            ConfigData.GetChallengeLevelData().GetLevels().Where((level) => level.Side != Side).ToList().ForEach((level) =>
+            {
+                //Debug.Log($"Adding option for {level} -> #{i}");
+                _levelOptionIndexesToLevels[i] = level;
+                i++;
+            });
+            //Debug.Log($"User is on level #{ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide)}");
+
+            LoadLevel(ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide));
+
+            if (ConfigData.UserProgressData.MinedTSV > 0 && ConfigData.CurrentShips.GetAliveShipsOfType(ConfigData.ShipTypes.Factory).Count > 0)
+            {
+                BuildButton.SetActive(true);
+                SetupBuildInterface();
+
+                if (!ConfigData.UserProgressData.HasSeenBuildInterface)
+                {
+                    ShowBuildButtonMessage();
+                }
+            }
+        }
         private void SetupLevelDropdown()
         {
             //Debug.Log($"Setting up level dropdown");
-            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
+            if (ConfigData.CurrentGameMode != ConfigData.GameModes.FreePlay)
             {
                 LevelDropdown.gameObject.SetActive(false);
                 ChooseLevelLabel.SetActive(false);
@@ -339,14 +369,24 @@ namespace Assets.Scripts.Scenes
             else
             {
                 int i = 2;
-                ConfigData.GetLevelData().GetLevels().Where((level) => level.Side != Side).ToList().ForEach((level) =>
+                List<LevelOptions> levels = ConfigData.GetLevelData().GetLevels().Where((level) => level.Side != Side).ToList();
+                if (levels.Count > 0)
                 {
-                    //Debug.Log($"Adding option for {level} -> #{i}");
-                    LevelDropdown.options.Add(new TMP_Dropdown.OptionData(level.Name));
-                    _levelOptionIndexesToLevels[i] = level;
-                    i++;
-                });
-                LevelDropdown.SetValueWithoutNotify(1);
+                    levels.ForEach((level) =>
+                    {
+                        //Debug.Log($"Adding option for {level} -> #{i}");
+                        LevelDropdown.options.Add(new TMP_Dropdown.OptionData(level.Name));
+                        _levelOptionIndexesToLevels[i] = level;
+                        i++;
+                    });
+                    LevelDropdown.SetValueWithoutNotify(1);
+                }
+                else
+                {
+                    LevelDropdown.options.RemoveAt(0);
+                    LevelDropdown.transform.GetChild(0).GetComponent<TMP_Text>().text = "None";
+                }
+
             }
 
         }
@@ -356,6 +396,8 @@ namespace Assets.Scripts.Scenes
             // Hide the level options and extend the squad list size
             ToggleLevelDetails(false);
             ToggleLevelOptions(false);
+            LevelDropdown.gameObject.SetActive(false);
+            ChooseLevelLabel.SetActive(false);
         }
         public void LoadLevel(int levelIndex)
         {
@@ -1076,13 +1118,13 @@ namespace Assets.Scripts.Scenes
             ChosenEnemyShipTypeLabel.SetActive(show);
             ChosenEnemyShipTypesDropdown.SetActive(show);
 
-            Debug.Log($"Changing height for choose level options to {(show ? _squadListOptionsScrollHeight : _squadListOriginalScrollHeight)} because show is {show}");
+            //Debug.Log($"Changing height for choose level options to {(show ? _squadListOptionsScrollHeight : _squadListOriginalScrollHeight)} because show is {show}");
             RectTransform squadListRect = ChosenSquadList.transform.parent.parent.GetComponent<RectTransform>();
             squadListRect.sizeDelta = new Vector2(squadListRect.sizeDelta.x, (show ? _squadListOptionsScrollHeight : _squadListOriginalScrollHeight));
         }
         public void ToggleLevelDetails(bool show)
         {
-            Debug.Log($"Changing height for level details to {(show ? _squadListLevelScrollHeight : _squadListOriginalScrollHeight)} because show is {show}");
+            //Debug.Log($"Changing height for level details to {(show ? _squadListLevelScrollHeight : _squadListOriginalScrollHeight)} because show is {show}");
             LevelTitleContainer.SetActive(show);
             LevelDetailsContainer.SetActive(show);
             RectTransform squadListRect = ChosenSquadList.transform.parent.parent.GetComponent<RectTransform>();
@@ -1367,7 +1409,7 @@ namespace Assets.Scripts.Scenes
             _currentSquad.GetSquadShips().ToList().ForEach((ship) =>
             {
                 //Vector2 placementPosition = Utilities.WorldUnitsToScreenPixels(new Vector2(squad.StartingPosition.x + ship.Offset.x, squad.StartingPosition.y + ship.Offset.y), Camera);
-                Vector2 placementPosition = Camera.WorldToScreenPoint(ship.Offset);
+                Vector2 placementPosition = Camera.WorldToScreenPoint(ship.Offset + ConfigData.StartingPositionOffset);
                 //Vector2 placementPosition = Camera.WorldToScreenPoint(ship.Offset);
 
                 //ship.SetOffset(offsetPosition);
@@ -1725,7 +1767,7 @@ namespace Assets.Scripts.Scenes
                     _currentShipInfo = ConfigData.CurrentShips.GetFleetShip(id);
                     //Debug.Log($"Squad ID: {id}");
 
-                    Debug.Log($"id: #{id}, {_currentShipInfo?.Name}");
+                    //Debug.Log($"id: #{id}, {_currentShipInfo?.Name}");
 
                     string battles = ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign ? $"Battles: {_currentShipInfo.BattlesFought.ToString("N0")}: {_currentShipInfo.BattlesWon}W - {_currentShipInfo.BattlesLost}L     (#{ConfigData.CurrentShips.GetShipRanking(_currentShipInfo, "Record")})\n" : "";
 

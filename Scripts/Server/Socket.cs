@@ -598,7 +598,7 @@ namespace Assets.Scripts.Server
                     _standingRequest.Response = _userDataResponse;
                     _standingRequest.Status = 1;
                 }
-                else
+                else // [data-file]
                 {
                     _dataFilename = _standingRequest.Request.DataFile;
 
@@ -612,6 +612,13 @@ namespace Assets.Scripts.Server
                         _fleetData = ConfigData.GetFleetData(1);
                         _fleetData.GetDataFile().WriteData(_fleetData.GetDefaultJson());
                     }
+                    else if (_dataFilename == ConfigData.FleetDataFilenames[2])
+                    {
+                        _fleetData = ConfigData.GetFleetData(2);
+                        _fleetData.GetDataFile().WriteData(_fleetData.GetDefaultJson());
+                    }
+
+
                     else if (_dataFilename == ConfigData.SavedSquadsDataFilenames[0])
                     {
                         _savedSquadsData = ConfigData.GetCampaignSavedSquadsData();
@@ -622,6 +629,13 @@ namespace Assets.Scripts.Server
                         _savedSquadsData = ConfigData.GetSavedSquadsData();
                         _savedSquadsData.GetDataFile().WriteData(_savedSquadsData.GetDefaultJson());
                     }
+                    else if (_dataFilename == ConfigData.SavedSquadsDataFilenames[2])
+                    {
+                        _savedSquadsData = ConfigData.GetChallengeSavedSquadsData();
+                        _savedSquadsData.GetDataFile().WriteData(_savedSquadsData.GetDefaultJson());
+                    }
+
+
                     else if (_dataFilename == ConfigData.LevelsDataFilenames[0])
                     {
                         _levelData = ConfigData.GetCampaignLevelData();
@@ -632,6 +646,14 @@ namespace Assets.Scripts.Server
                         _levelData = ConfigData.GetLevelData();
                         _levelData.GetDataFile().WriteData(_levelData.GetDefaultJson());
                     }
+                    else if (_dataFilename == ConfigData.LevelsDataFilenames[2])
+                    {
+                        _levelData = ConfigData.GetChallengeLevelData();
+                        _levelData.GetDataFile().WriteData(_levelData.GetDefaultJson());
+                    }
+
+
+
                     else if (_dataFilename == ConfigData.UserProgressFilename)
                     {
                         _userProgressData = ConfigData.UserProgressData;

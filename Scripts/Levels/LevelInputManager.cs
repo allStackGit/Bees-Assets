@@ -329,7 +329,7 @@ namespace Assets.Scripts.Levels
                     });
                 });
                 IsFiringManually = true;
-                Cursor.SetCursor(Stage.ManualFireCursor, new Vector2(-6, 4), CursorMode.Auto);
+                Cursor.SetCursor(Stage.ManualFireCursor, Stage.CursorSpot, CursorMode.Auto);
             }
             else
             {
@@ -649,7 +649,8 @@ namespace Assets.Scripts.Levels
         public bool HasPauseInput()
         {
             // No locally declared variables.
-            return Input.GetKey(KeyCode.P);
+            return false; // [alert] turned off for wide release beta
+            //return Input.GetKey(KeyCode.P);
         }
 
         /// <summary>
@@ -815,6 +816,7 @@ namespace Assets.Scripts.Levels
             });
             _selectingGuardTarget = false;
             Cursor.SetCursor(null, Vector2.zero, CursorMode.Auto);
+
         }
         // ===========================================================
         // Fields for CheckForSelectingSquad()

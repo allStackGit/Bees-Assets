@@ -36,6 +36,7 @@ namespace Assets.Scripts.Data
                 if (ConfigData.CurrentShips != null)
                 {
                     FleetShip fleetShip = ConfigData.CurrentShips.GetFleetShip(FleetId);
+
                     if (fleetShip != null)
                     {
                         _fleetShip = fleetShip;
@@ -65,12 +66,21 @@ namespace Assets.Scripts.Data
                         }
                         else
                         {
-                            if (FleetId >= 0)
+                            fleetShip = ConfigData.GetFleetData(2).GetFleetShip(FleetId); // [data-file]
+                            if (fleetShip != null)
                             {
-                                Debug.LogError($"A null fleetship ({ShipType}) was asked for with id #{FleetId}. This was probably because the fleet data hasn't loaded yet.");
+                                _fleetShip = fleetShip;
+                            }
+                            else
+                            {
+                                if (FleetId >= 0)
+                                {
+                                    Debug.LogError($"A null fleetship ({ShipType}) was asked for with id #{FleetId}. This was probably because the fleet data hasn't loaded yet.");
+                                }
+
+                                _fleetShip = new FleetShip(FleetId, ShipType, false, false, 0, 0, 0, 0, 0, 0, 0);
                             }
 
-                            _fleetShip = new FleetShip(FleetId, ShipType, false, false, 0, 0, 0, 0, 0, 0, 0);
                         }
 
                     }
@@ -89,7 +99,7 @@ namespace Assets.Scripts.Data
         public Vector2 GetOffsetInScreenPixels(Camera camera)
         {
             //Debug.Log($"Getting the offset for {GetFleetShip().Name}. In world units, the offset is {Offset}. In Screen units the offset is {camera.WorldToScreenPoint(Offset)}");
-            return camera.WorldToScreenPoint(Offset);
+            return camera.WorldToScreenPoint(Offset+ConfigData.StartingPositionOffset);
             //return Utilities.WorldUnitsToScreenPixels(Offset, camera);
         }
         public Vector2 GetTopSide()

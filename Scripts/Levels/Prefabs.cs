@@ -30,8 +30,7 @@ namespace Assets.Scripts.Levels
         /// <summary>
         /// UI Prefabs
         /// </summary>
-        public GameObject MovementMarkerPrefab, TargetingMarkerPrefab, 
-    SquadBoxPrefab;
+        public GameObject MovementMarkerPrefab, TargetingMarkerPrefab, SquadBoxPrefab, TargetingSquadPrefab;
         /// <summary>
         /// Obstacle prefabs for each set of obstacles
         /// </summary>

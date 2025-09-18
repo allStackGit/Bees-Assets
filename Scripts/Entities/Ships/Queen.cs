@@ -96,6 +96,7 @@ namespace Assets.Scripts.Entities.Ships
             MinionSquads.Add(squad);
             MinionSquadsCount++;
             squad.IsGrowingSquad = true;
+            squad.AddToCommandList();
             return squad;
         }
         private IEnumerator SpawnMinion(int shipIndex, Vector2 squadGatheringPoint)

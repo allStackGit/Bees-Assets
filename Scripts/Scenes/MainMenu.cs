@@ -19,8 +19,8 @@ namespace Assets.Scripts.Scenes
         public GameObject HumanChallengeModeButton, HumanTrainingRoomButton, BeeFreePlayButton, HumanCampaignModeButton, CommanderNameDialogue, ResetCampaignButton, ResetChallengeModeButton;
         public TMP_InputField NameInput;
         public Codex CodexManager;
-        public Dialogue ResetConfirmation;
-        public bool IsResettingCampaign;
+        public Dialogue ResetConfirmation, ResetChallengeConfirmation;
+        public bool IsResettingCampaign, IsResettingChallenge;
         new void Start()
         {
             Name = "Main Menu";
@@ -53,6 +53,8 @@ namespace Assets.Scripts.Scenes
             }
             CodexManager.SetupCodex();
 
+
+             // Campaign
             int currentLevel = ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.HumanSide, ConfigData.GameModes.Campaign);
             Debug.Log($"Current Level: {currentLevel} Total Levels: {ConfigData.Configuration.TotalLevels}");
             if (currentLevel >= ConfigData.Configuration.TotalLevels)
@@ -61,22 +63,53 @@ namespace Assets.Scripts.Scenes
                 HumanCampaignModeButton.GetComponent<Button>().enabled = false;
             }
 
-            if (ConfigData.UserProgressData.PlayerName == "")
-            {
-                CommanderNameDialogue.SetActive(true);
-            }
             if (currentLevel > 1 && !IsResettingCampaign)
             {
                 ResetCampaignButton.SetActive(true);
                 ResetConfirmation = new Dialogue(DialoguePrefab, ConfigData.Configuration.AreYouSure, "This will set you back to the beginning of the campaign.",
                 new List<string>() { ConfigData.Configuration.Yes, ConfigData.Configuration.No }, new List<UnityAction>() { ResetCampaign });
             }
+
             if (IsResettingCampaign)
             {
                 ConfigData.CampaignShips = new Ships(ConfigData.GetFleetData(0), ConfigData.GetCampaignSavedSquadsData());
                 HumanCampaignModeButton.transform.GetChild(0).GetComponent<TMP_Text>().text = "Play Campaign";
                 HumanCampaignModeButton.GetComponent<Button>().enabled = true;
                 IsResettingCampaign = false;
+            }
+
+
+            // Challenge Mode
+            currentLevel = ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.HumanSide, ConfigData.GameModes.Challenge);
+            int challengeLevels = ConfigData.GetChallengeLevelData().GetLevels().Count;
+
+            Debug.Log($"Current Challenge Level: {currentLevel}, Total Levels: {challengeLevels}");
+            if (currentLevel >= challengeLevels)
+            {
+                HumanChallengeModeButton.transform.GetChild(0).GetComponent<TMP_Text>().text = "Challenge Mode Completed!";
+                HumanChallengeModeButton.GetComponent<Button>().enabled = false;
+            }
+
+
+            if (currentLevel > 0 && !IsResettingChallenge)
+            {
+                ResetChallengeModeButton.SetActive(true);
+                ResetChallengeConfirmation = new Dialogue(DialoguePrefab, ConfigData.Configuration.AreYouSure, "This will set you back to the beginning of the challenge mode.",
+                new List<string>() { ConfigData.Configuration.Yes, ConfigData.Configuration.No }, new List<UnityAction>() { ResetChallenge });
+            }
+
+            if (IsResettingChallenge)
+            {
+                ConfigData.ChallengeModeShips = new Ships(ConfigData.GetFleetData(2), ConfigData.GetChallengeSavedSquadsData());
+                HumanChallengeModeButton.transform.GetChild(0).GetComponent<TMP_Text>().text = "Play Challenge Mode";
+                HumanChallengeModeButton.GetComponent<Button>().enabled = true;
+                IsResettingChallenge = false;
+            }
+
+
+            if (ConfigData.UserProgressData.PlayerName == "")
+            {
+                CommanderNameDialogue.SetActive(true);
             }
         }
         public void SubmitName()
@@ -150,6 +183,11 @@ namespace Assets.Scripts.Scenes
         {
             ResetConfirmation.Show();
         }
+        public void ConfirmResetChallenge()
+        {
+            ResetChallengeConfirmation.Show();
+        }
+
         public void ResetCampaign()
         {
 
@@ -184,12 +222,54 @@ namespace Assets.Scripts.Scenes
 
             ResetCampaignButton.SetActive(false);
         }
+
+        public void ResetChallenge()
+        {
+
+            Dictionary<ConfigData.ShipTypes, int> allChallengeStartingShips = new Dictionary<ConfigData.ShipTypes, int>();
+            ConfigData.StartingSettings.HumanChallengeStartingShips.ToList().ForEach((s) => allChallengeStartingShips.Add(s.Key, s.Value));
+            ConfigData.StartingSettings.BeeChallengeStartingShips.ToList().ForEach((s) => allChallengeStartingShips.Add(s.Key, s.Value));
+
+            ConfigData.UserProgressData.HumanChallengeWins = 0;
+            ConfigData.UserProgressData.BeeChallengeWins = 0;
+            ConfigData.UserProgressData.CurrentHumanChallengeLevel = 0;
+            ConfigData.UserProgressData.HumanChallengeSavedSquadNumber = 0;
+            ConfigData.UserProgressData.BeeChallengeSavedSquadNumber = 0;
+
+
+            ConfigData.IsSavedSquadsDataLoaded[2] = false;
+            ConfigData.IsFleetDataLoaded[2] = false;
+            ConfigData.IsLoadingUserData = true;
+            IsFinalized = false;
+            IsResettingChallenge = true;
+
+            ConfigData.SetupChallengeFleetData(false, allChallengeStartingShips);
+            ConfigData.SetupChallengeSavedSquadsData(false);
+            ConfigData.UserProgressData.Save(); // Save this after the others so changes to fleet and squad ID are saved
+
+
+            ResetChallengeModeButton.SetActive(false);
+        }
         public void PlayChallengeMode(string side)
         {
+            if (ConfigData.Configuration.UserSide != ConfigData.Configuration.HumanSide)
+            {
+                ConfigData.SwapSides();
+            }
             DeselectButton();
             ConfigData.CurrentGameMode = ConfigData.GameModes.Challenge;
             ConfigData.CurrentShips = ConfigData.ChallengeModeShips;
-            SetupSquadMaker(side);
+            //Debug.Log($"Current Ships: {ConfigData.CurrentShips.ShipListType}");
+            //SetupSquadMaker(side);
+
+            if (ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide) == 0)
+            {
+                SceneManager.LoadSceneAsync("Level Intro", LoadSceneMode.Single);
+            }
+            else
+            {
+                SetupSquadMaker(side);
+            }
         }
 
         public void SetupSquadMaker(string side)

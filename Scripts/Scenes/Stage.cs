@@ -339,6 +339,7 @@ public class Stage : Scene
     public Texture2D ManualFireCursor;
     public Texture2D PatrolCursor;
     public Texture2D GuardCursor;
+    public Vector2 CursorSpot = Vector2.zero;
 
 
 

@@ -381,7 +381,7 @@ namespace Assets.Scripts.Levels
                                                             TMP_Text tooltipText =  attackOnSightTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>();
                                                             attackOnSightTooltip.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(150, 200);
                                                             attackOnSightTooltip.GetComponent<RectTransform>().localPosition = new Vector2(0, -150);
-                                                            tooltipText.text = "When you're ready to engage the Honeybee, click \"Attack on Sight\" to disable the Cease Fire. Once the Gunship is within range it will automatically fire upon the Honeybee.";
+                                                            tooltipText.text = "When you're ready to engage the Honeybee, click \"Attack on Sight\" to disable the Cease Fire. Once the Gunship is within range it will automatically fire upon the Honeybee. To chase after an enemy ship, right click on it.";
 
                                                             NextTriggers.Add(new Trigger(() =>
                                                                 {
@@ -1680,7 +1680,7 @@ namespace Assets.Scripts.Levels
 
 
                     // Set dialogue triggers
-
+                    SelectedCarrierTrigger();
                     // spotting bumblebee
                     Ship bumblebee = State.GetBeeShips().Where((s) => s.ShipType == ConfigData.ShipTypes.Bumblebee).First();
                     NextTriggers.Add(new Trigger(() =>
@@ -1751,6 +1751,19 @@ namespace Assets.Scripts.Levels
 
             
         }
+        public void SelectedCarrierTrigger()
+        {
+            NextTriggers.Add(new Trigger(() =>
+                {
+                    return State.GetSelectedSquads().Any((squad) => squad.IsCarrierSquad || squad.GetShips().Any((ship) => ship.ShipType == ConfigData.ShipTypes.Carrier)); // If the user has selected a carrier, drone squad, or striker squad
+                },
+               () =>
+               {
+                   Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.SelectedCarrierSquad);
+               },
+               "Level 6-8 Carrier Squads Selected")
+            );
+        }
         public void Level7Triggers()
         {
 
@@ -1810,6 +1823,7 @@ namespace Assets.Scripts.Levels
             ScaledTimer hideTooltips = new ScaledTimer(20f, () =>
             {
                 Destroy(endMissionTooltip);
+                SelectedCarrierTrigger();
             });
             AddTimer(hideTooltips);
 
@@ -2139,6 +2153,7 @@ namespace Assets.Scripts.Levels
             AddTimer(reinforcements);
 
             // dialogue triggers
+            SelectedCarrierTrigger();
             NextTriggers.Add(new Trigger(() =>
                 {
                     return bargeSquad.GetShips().Count < 3;
@@ -2214,11 +2229,11 @@ namespace Assets.Scripts.Levels
 
             // Starting Dreadnought squad #8
             SavedSquad squad = CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Dreadnought, 2);
-            squad.StartingPosition = ConfigData.StartingPositionOffset + new Vector2(0, -10);
+            //squad.StartingPosition = ConfigData.StartingPositionOffset + new Vector2(0, -10);
 
             // Starting Frigate squad #9
             squad = CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Frigate, 4);
-            squad.StartingPosition = ConfigData.StartingPositionOffset;
+            //squad.StartingPosition = ConfigData.StartingPositionOffset;
 
             // Starting Honeybee squad #10
             CurrentShips.BuildNewSquad($"Squadron #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Honeybee, 1);

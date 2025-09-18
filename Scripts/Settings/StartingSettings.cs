@@ -14,6 +14,8 @@ namespace Assets.Scripts.Settings
         public Dictionary<ConfigData.ShipTypes, int> BeeStartingShips;
         public Dictionary<ConfigData.ShipTypes, int> HumanCampaignStartingShips;
         public Dictionary<ConfigData.ShipTypes, int> BeeCampaignStartingShips;
+        public Dictionary<ConfigData.ShipTypes, int> HumanChallengeStartingShips;
+        public Dictionary<ConfigData.ShipTypes, int> BeeChallengeStartingShips;
         public List<int> SupplyCapacity; 
         public List<ConfigData.ShipTypes> HumanShipTypes => HumanStartingShips.Keys.ToList(); // Barge, Carrier, Cruiser, Dreadnought, Drone, Factory, Fire Barge, Frigate, Gunship, Scout, Striker, Warp Gate
         public List<ConfigData.ShipTypes> BeeShipTypes => BeeStartingShips.Keys.ToList(); // Beehive, Bumblebee, Carpenter Bee, Honeybee, Hornet, Leafcutter, Queen, Wasp, Yellow Jacket
@@ -32,6 +34,9 @@ namespace Assets.Scripts.Settings
 
             HumanCampaignStartingShips = Utilities.JArrayToShipTypeDictionary(so.HumanCampaignStartingShips);
             BeeCampaignStartingShips = Utilities.JArrayToShipTypeDictionary(so.BeeCampaignStartingShips);
+
+            HumanChallengeStartingShips = Utilities.JArrayToShipTypeDictionary(so.HumanChallengeStartingShips);
+            BeeChallengeStartingShips = Utilities.JArrayToShipTypeDictionary(so.BeeChallengeStartingShips);
         }
     }
 }

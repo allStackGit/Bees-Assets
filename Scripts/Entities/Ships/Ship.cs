@@ -1501,7 +1501,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         {
             if (!IsUserControlled && mouseButton == LevelInputManager.RightClick) // when this ship has been right clicked on and this ship *is not* user controlled
             {
-                //Debug.Log($"Targeted squad #{Squad.SquadNumber}");
+                Debug.Log($"Targeted squad #{Squad.SquadNumber}");
                 Level.State.GetSelectedSquads().ForEach((selectedSquad) =>
                 {
                     //selectedSquad.UserTargetSquad(squad);

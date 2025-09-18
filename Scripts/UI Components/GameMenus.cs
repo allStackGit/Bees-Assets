@@ -43,7 +43,7 @@ namespace Assets.Scripts.UIComponents
                 Codex.SetupCodex();
                 //Settings.SetupSettings(Stage);
                 
-                if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
+                if (ConfigData.CurrentGameMode != ConfigData.GameModes.FreePlay)
                 {
                     ToggleFogOfWarButton.SetActive(false);
                     RestartLevelButton.SetActive(false);
@@ -261,14 +261,22 @@ namespace Assets.Scripts.UIComponents
                 capacity = 0;
             }
 
-            Debug.Log($"LevelData: {Utilities.ListToString(CurrentLevel.ObstacleMap.Obstacles)}");
             LevelOptions level = (LevelOptions)CurrentLevel.SaveLevelOptions.Clone();
-            level.ObstacleList = CurrentLevel.ObstacleMap.Obstacles.Select((obstacle) =>
+            if (CurrentLevel.HasObstacles)
             {
-                Debug.Log($"Making obstacle list for saved level");
-                return ((Vector2) obstacle.transform.localPosition, (Vector2) obstacle.transform.localScale);
-            }).ToList();
-            level.Name = LevelNameInput.text;
+                Debug.Log($"LevelData: {Utilities.ListToString(CurrentLevel.ObstacleMap.Obstacles)}");
+                level.ObstacleList = GameObject.FindGameObjectsWithTag("Obstacle").Select((obstacle) =>
+                {
+                    Debug.Log($"Making obstacle list for saved level");
+                    return ((Vector2)obstacle.transform.localPosition, (Vector2)obstacle.transform.localScale);
+                }).ToList();
+            }
+            else
+            {
+                level.ObstacleList = new List<(Vector2, Vector2)>();
+            }
+
+                level.Name = LevelNameInput.text;
             level.SupplyCapacity = capacity;
             ConfigData.GetLevelData().AddLevel(level);
             ConfigData.GetLevelData().Save();

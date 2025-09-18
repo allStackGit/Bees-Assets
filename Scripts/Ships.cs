@@ -19,10 +19,12 @@ namespace Assets.Scripts
     {
         private FleetData _fleetData;
         private SavedSquadsData _savedSquadsData;
+        public string ShipListType;
 
         public Ships(FleetData fleetData, SavedSquadsData savedSquadsData) { 
             _fleetData = fleetData;
             _savedSquadsData = savedSquadsData;
+            ShipListType = _fleetData.GetDataFile().Name;
         }
 
         // get fleet methods
@@ -306,6 +308,7 @@ namespace Assets.Scripts
                     }
                     squad.RemoveShipFromSquad(squadShip);
                     squad.AddShipToSquad(new SquadShip(replacement.Id, squadShip.ShipType, squadShip.Offset));
+                    squad.OrientSquad();
                     Debug.Log($"Replaced dead {squadShip.GetFleetShip()} with {replacement}");
                     replaced = true;
                 }

@@ -80,7 +80,7 @@ namespace Assets.Scripts.Data
             dynamic json = SetupFile(shouldFileExist, ConfigData.UserProgressFilename, (json) =>
             {
                 ConfigData.IsUserProgressDataLoaded = true;
-                Debug.Log($"User progress data is loaded");
+                //Debug.Log($"User progress data is loaded");
                 //Debug.Log("Updated config file");
                 //Debug.Log($"JSON from DataFile: {json}");
                 CurrentHumanCampaignLevel = json.CurrentHumanCampaignLevel;
@@ -261,16 +261,35 @@ namespace Assets.Scripts.Data
         }
         public void AdvanceToNextLevel()
         {
-            if (ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide)
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
             {
-                Debug.Log($"Advancing from {CurrentHumanCampaignLevel} to {CurrentHumanCampaignLevel+1} in the human campaign");
-                SetCurrentLevel(CurrentHumanCampaignLevel + 1);
+                if (ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide)
+                {
+
+                    Debug.Log($"Advancing from {CurrentHumanCampaignLevel} to {CurrentHumanCampaignLevel + 1} in the human campaign");
+                    SetCurrentLevel(CurrentHumanCampaignLevel + 1);
+                }
+                else
+                {
+                    Debug.Log($"Advancing from {CurrentBeeCampaignLevel} to {CurrentBeeCampaignLevel + 1} in the bee campaign");
+                    SetCurrentLevel(CurrentBeeCampaignLevel + 1);
+                }
             }
-            else
+            else if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge)
             {
-                Debug.Log($"Advancing from {CurrentBeeCampaignLevel} to {CurrentBeeCampaignLevel + 1} in the bee campaign");
-                SetCurrentLevel(CurrentBeeCampaignLevel + 1);
+                if (ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide)
+                {
+
+                    Debug.Log($"Advancing from {CurrentHumanChallengeLevel} to {CurrentHumanChallengeLevel + 1} in the human challenge mode");
+                    SetCurrentLevel(CurrentHumanChallengeLevel + 1);
+                }
+                else
+                {
+                    Debug.Log($"Advancing from {CurrentBeeChallengeLevel} to {CurrentBeeChallengeLevel + 1} in the bee challenge mode");
+                    SetCurrentLevel(CurrentBeeChallengeLevel + 1);
+                }
             }
+
             
         }
         /// <summary>

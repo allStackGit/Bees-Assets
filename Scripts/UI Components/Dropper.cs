@@ -186,7 +186,7 @@ namespace Assets.Scripts.UIComponents
                     Color squadColor = _scene.GetSquadColor();
                     Vector2 position = _currentDragIcon.Position;
                     FleetShip fleetShip = _currentDragIcon.GetFleetShip();
-                    Vector2 worldPointPosition = _scene.Camera.ScreenToWorldPoint(position);
+                    Vector2 worldPointPosition = (Vector2) _scene.Camera.ScreenToWorldPoint(position) - ConfigData.StartingPositionOffset;
 
                     //Debug.Log($"World point position of dropped ship: {worldPointPosition}");
 
@@ -277,7 +277,7 @@ namespace Assets.Scripts.UIComponents
             for (int ships = 0; ships < maxWidth && ships < dragIcons.Count; ships++)
             {
                 // for each drag icon, determine its position based off of its place in the order
-                DragIcon dragIcon = dragIcons.GetRange(ships, 1).First();
+                DragIcon dragIcon = dragIcons.GetRange(ships, 1).First(); // Why is this written like this?
 
                 //Vector2 screenPoint = Camera.WorldToScreenPoint(ConfigData.ShipOffset);
                 //Vector2 change = new Vector2(Mathf.Abs(BaseWorldPoint.x - screenPoint.x), Mathf.Abs(BaseWorldPoint.y - screenPoint.y));
@@ -552,7 +552,7 @@ namespace Assets.Scripts.UIComponents
                     }
                     else
                     {
-                        //Debug.Log($"Too close to other ships");
+                        Debug.Log($"Too close to other ships");
                         return false; // got to the squad box but too close to other ships
                     }
                 }
@@ -563,7 +563,7 @@ namespace Assets.Scripts.UIComponents
             }
             else
             {
-                //Debug.Log("Didn't hit the squad drop box -----------------------------");
+                Debug.Log("Didn't hit the squad drop box -----------------------------");
                 return false; // didn't drag over the squad maker box
             }
         }

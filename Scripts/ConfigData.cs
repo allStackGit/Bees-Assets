@@ -59,21 +59,20 @@ namespace Assets.Scripts
         public const int Version = 5; // [alert] should be increased when released
         public const string BaseFolder = "SaveData";
         public const string CacheFolder = "SpriteCache";
-        public const string PortraitFolder = "Sprites/People";
 
-        // constant filenames
+        // constant filenames // [data-file]
         public const string UserProgressFilename = "user_progress";
-        public static string[] FleetDataFilenames = new string[] { "campaign_fleet_data", "fleet_data" };
-        public static string[] SavedSquadsDataFilenames = new string[] { "campaign_saved_squads_data", "saved_squads_data" };
+        public static string[] FleetDataFilenames = new string[] { "campaign_fleet_data", "fleet_data", "challenge_fleet_data" };
+        public static string[] SavedSquadsDataFilenames = new string[] { "campaign_saved_squads_data", "saved_squads_data", "challenge_saved_Squads_data" };
         public const string UserSettingsFilename = "user_settings_data";
-        public static string[] LevelsDataFilenames = new string[] {"campaign_levels_data", "levels_data" };
+        public static string[] LevelsDataFilenames = new string[] {"campaign_levels_data", "levels_data", "challenge_levels_data" };
 
 
-        // data loaded booleans
+        // data loaded booleans // [data-file]
         public static bool IsUserProgressDataLoaded, IsUserSettingsDataLoaded;
-        public static bool[] IsLevelsDataLoaded = new bool[] { false, false };
-        public static bool[] IsSavedSquadsDataLoaded = new bool[] { false, false };
-        public static bool[] IsFleetDataLoaded = new bool[] { false, false };
+        public static bool[] IsLevelsDataLoaded = new bool[] { false, false, false };
+        public static bool[] IsSavedSquadsDataLoaded = new bool[] { false, false, false };
+        public static bool[] IsFleetDataLoaded = new bool[] { false, false, false };
 
         public enum SceneTypes
         {
@@ -899,7 +898,7 @@ namespace Assets.Scripts
 
         public static bool AreAllSettingsLoaded => (ShipInfo != null && ShipInfo.IsLoaded) && (Configuration != null && Configuration.IsLoaded)
             && (StartingSettings != null && StartingSettings.IsLoaded);
-        public static bool IsAllUserDataLoaded => IsUserProgressDataLoaded && IsFleetDataLoaded[0] && IsFleetDataLoaded[1] && IsSavedSquadsDataLoaded[0] && IsSavedSquadsDataLoaded[1] && IsUserSettingsDataLoaded && IsLevelsDataLoaded[0] && IsLevelsDataLoaded[1];
+        public static bool IsAllUserDataLoaded => IsUserProgressDataLoaded && IsFleetDataLoaded[0] && IsFleetDataLoaded[1] && IsFleetDataLoaded[2] && IsSavedSquadsDataLoaded[0] && IsSavedSquadsDataLoaded[1] && IsSavedSquadsDataLoaded[2] && IsUserSettingsDataLoaded && IsLevelsDataLoaded[0] && IsLevelsDataLoaded[1] && IsLevelsDataLoaded[2]; // [data-file]
         public static System.Diagnostics.Stopwatch Stopwatch;
         public static UIAudioController UIAudioController = null;
 
@@ -916,14 +915,17 @@ namespace Assets.Scripts
         // private variables
         private static int _userId = -1; // [alert] should be set to actual userId and linked to Steam or other account Id
         public static UserProgressData UserProgressData = null;
-        private static FleetData _fleetData = null;
-        private static SavedSquadsData _savedSquadsData = null;
         private static UserSettingsData _userSettingsData = null;
-        private static LevelData _levelData = null;
 
+        private static LevelData _levelData = null;
         private static LevelData _campaignLevelData = null;
+        private static LevelData _challengeLevelData = null;
+        private static FleetData _fleetData = null;
         private static FleetData _campaignFleetData = null;
+        private static FleetData _challengeFleetData = null;
+        private static SavedSquadsData _savedSquadsData = null;
         private static SavedSquadsData _campaignSavedSquadsData = null;
+        private static SavedSquadsData _challengeSavedSquadsData = null;
 
 
         public static bool HasSocketManager()
@@ -975,7 +977,7 @@ namespace Assets.Scripts
                 return Colors.GetValueOrDefault("error");
             }
         }
-        public static void SetupUserData()
+        public static void SetupUserData() // [data-file]
         {
             if (AreAllSettingsLoaded && !IsAllUserDataLoaded && !IsLoadingUserData)
             {
@@ -991,12 +993,21 @@ namespace Assets.Scripts
                 StartingSettings.HumanCampaignStartingShips.ToList().ForEach((s) => allCampaignStartingShips.Add(s.Key, s.Value));
                 StartingSettings.BeeCampaignStartingShips.ToList().ForEach((s) => allCampaignStartingShips.Add(s.Key, s.Value));
 
+                Dictionary<ConfigData.ShipTypes, int> allChallengeStartingShips = new Dictionary<ConfigData.ShipTypes, int>();
+                StartingSettings.HumanChallengeStartingShips.ToList().ForEach((s) => allChallengeStartingShips.Add(s.Key, s.Value));
+                StartingSettings.BeeChallengeStartingShips.ToList().ForEach((s) => allChallengeStartingShips.Add(s.Key, s.Value));
+
 
                 SetupUserProgressData(!FirstTimePlaying);
+
                 SetupFleetData(!FirstTimePlaying, allStartingShips);
                 SetupCampaignFleetData(!FirstTimePlaying, allCampaignStartingShips);
+                SetupChallengeFleetData(!FirstTimePlaying, allChallengeStartingShips);
+
                 SetupSavedSquadsData(!FirstTimePlaying);
                 SetupCampaignSavedSquadsData(!FirstTimePlaying);
+                SetupChallengeSavedSquadsData(!FirstTimePlaying);
+
                 SetupUserSettingsData(!FirstTimePlaying);
                 SetupLevelData(!FirstTimePlaying);
                 //Debug.Log($"Current Level after loading user data: {GetLevel()}");
@@ -1032,7 +1043,7 @@ namespace Assets.Scripts
         {
             return ShipSizeFactor.GetValueOrDefault(shipType);
         }
-        public static void CheckDataFiles()
+        public static void CheckDataFiles() // [data-file]
         {
             if (!IsAllUserDataLoaded)
             {
@@ -1042,14 +1053,17 @@ namespace Assets.Scripts
                 //Debug.Log($"Waiting for Fleet Data");
                 GetFleetData(1).WaitForData();
                 GetFleetData(0).WaitForData();
+                GetFleetData(2).WaitForData();
                 //Debug.Log($"Waiting for Saved Squads Data");
                 GetSavedSquadsData().WaitForData();
                 GetCampaignSavedSquadsData().WaitForData();
+                GetChallengeSavedSquadsData().WaitForData();
                 //Debug.Log($"Waiting for User Settings Data");
                 GetUserSettingsData().WaitForData();
                 //Debug.Log($"Waiting for Level Data");
                 GetLevelData().WaitForData();
                 GetCampaignLevelData().WaitForData();
+                GetChallengeLevelData().WaitForData();
 
             }
         }
@@ -1123,7 +1137,7 @@ namespace Assets.Scripts
 
             // Starting Scout Squad
             SavedSquad squad = CurrentShips.BuildNewSquad($"Squadron #{UserProgressData.HumanCampaignSavedSquadNumber++}", Configuration.HumanSide, ShipTypes.Scout, 1);
-            squad.StartingPosition = ConfigData.StartingPositionOffset;
+            //squad.StartingPosition = ConfigData.StartingPositionOffset;
             //Debug.Log($"Starting position for {squad} is {squad.StartingPosition}");
 
 
@@ -1131,7 +1145,7 @@ namespace Assets.Scripts
             squad = CurrentShips.BuildNewSquad($"Squadron #{UserProgressData.HumanCampaignSavedSquadNumber++}", Configuration.HumanSide, ShipTypes.Gunship, 1);
             squad.GetSquadShips().Find((s) => s.ShipType == ShipTypes.Gunship).GetFleetShip().Name = "Gunship D-4";
             squad.Stats.Commander = "Tom";
-            squad.StartingPosition = ConfigData.StartingPositionOffset;
+            //squad.StartingPosition = ConfigData.StartingPositionOffset;
             //Debug.Log($"Starting position for {squad} is {squad.StartingPosition}");
 
 
@@ -1241,19 +1255,28 @@ namespace Assets.Scripts
         {
             return _userSettingsData;
         }
-        public static void SetupLevelData(bool shouldFileExist)
+        public static void SetupLevelData(bool shouldFileExist) // [data-file]
         {
             _levelData = new LevelData(shouldFileExist, 1);
             _campaignLevelData = new LevelData(shouldFileExist, 0);
+            _challengeLevelData = new LevelData(shouldFileExist, 2);
         }
 
-        public static LevelData GetLevelData()
+        public static LevelData GetLevelData() // [data-file]
         {
             return _levelData;
         }
         public static LevelData GetCampaignLevelData()
         {
             return _campaignLevelData;
+        }
+        public static LevelData GetChallengeLevelData()
+        {
+            return _challengeLevelData;
+        }
+        public static void SetupChallengeFleetData(bool shouldFileExist, Dictionary<ShipTypes, int> startingShips) // [data-file]
+        {
+            _challengeFleetData = new FleetData(shouldFileExist, startingShips, 2);
         }
         public static void SetupCampaignFleetData(bool shouldFileExist, Dictionary<ShipTypes, int> startingShips)
         {
@@ -1274,12 +1297,16 @@ namespace Assets.Scripts
             {
                 return _fleetData;
             }
+            else if (type == 2)
+            {
+                return _challengeFleetData;
+            }
             else
             {
                 throw new Exception($"Invalid fleet type given! {type}");
             }
         }
-        public static void SetupSavedSquadsData(bool shouldFileExist)
+        public static void SetupSavedSquadsData(bool shouldFileExist) // [data-file]
         {
             _savedSquadsData = new SavedSquadsData(shouldFileExist, 1);
         }
@@ -1287,13 +1314,21 @@ namespace Assets.Scripts
         {
             _campaignSavedSquadsData = new SavedSquadsData(shouldFileExist, 0);
         }
+        public static void SetupChallengeSavedSquadsData(bool shouldFileExist)
+        {
+            _challengeSavedSquadsData = new SavedSquadsData(shouldFileExist, 2);
+        }
         public static SavedSquadsData GetSavedSquadsData()
         {
             return _savedSquadsData;
         }
-        public static SavedSquadsData GetCampaignSavedSquadsData()
+        public static SavedSquadsData GetCampaignSavedSquadsData() // [data-file]
         {
             return _campaignSavedSquadsData;
+        }
+        public static SavedSquadsData GetChallengeSavedSquadsData()
+        {
+            return _challengeSavedSquadsData;
         }
 
     }

@@ -12,6 +12,7 @@ using System.Linq;
 using TMPro;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Events;
 using UnityEngine.EventSystems;
 using UnityEngine.Playables;
 using UnityEngine.Rendering;
@@ -366,7 +367,7 @@ namespace Assets.Scripts.Levels
                 {
                     GameObject obstacleBackground = Instantiate(Stage.Prefabs.ObstacleBackgroundPrefab, Map.transform);
                     SpriteRenderer sr = obstacleBackground.GetComponent<SpriteRenderer>();
-                    sr.sprite = Map.SpriteRenderer.sprite;
+                    //sr.sprite = Map.SpriteRenderer.sprite;
                     sr.size = Map.SpriteRenderer.size;
 
                     ObstacleMap.Obstacles = CurrentLevelOptions.ObstacleList.Select((vectorPair) =>
@@ -376,6 +377,10 @@ namespace Assets.Scripts.Levels
 
                         obstacle.transform.localPosition = vectorPair.Item1;
                         obstacle.transform.localScale = vectorPair.Item2;
+
+                        obstacle.Collider.enabled = false;
+                        obstacle.Collider.enabled = true;
+
                         Debug.Log($"Spawning saved obstacle of size {obstacle.transform.localScale} at {obstacle.transform.localPosition}");
                         return obstacle;
                     }).ToList();
@@ -403,6 +408,12 @@ namespace Assets.Scripts.Levels
                 {
                     Stage.CurrentAsteroidMaxSpawnRate /= 2;
                     Stage.CurrentAsteroidMinimumSpawnRate /= 2;
+                }
+                else if (CurrentLevelOptions.AsteroidOption == 3)
+                {
+                    Stage.CurrentAsteroidMaxSpawnRate /= 2;
+                    Stage.CurrentAsteroidMinimumSpawnRate /= 2;
+                    Stage.AsteroidMinimumSpawnRate = 1;
                 }
 
                 // [debug]
@@ -1269,6 +1280,9 @@ namespace Assets.Scripts.Levels
             {
                 vision.Kill(0, true);
             });
+
+            State.TargetingSquadMarkers.ToList().ForEach((target) => { target.Kill();  });
+
             // Should probably remove this
             //if (IsRestarting)
             //{
@@ -1344,6 +1358,28 @@ namespace Assets.Scripts.Levels
             {
                 if (Stage.DoesUserHaveController && !IsRestarting)
                 {
+                    if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge && WinningSide == ConfigData.Configuration.UserSide){
+                        ConfigData.UserProgressData.AdvanceToNextLevel();
+
+                        int challengeLevels = ConfigData.GetChallengeLevelData().GetLevels().Count;
+                        if (ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide) >= challengeLevels) // Just beat the last level in the challenge mode
+                        {
+                            ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Queen);
+                            ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Queen);
+                            ConfigData.UserProgressData.SetShipTypes();
+
+                            Stage.Menus.CampaignCompletedDialogue = new Dialogue(Stage.DialoguePrefab, "Challenge Mode Completed!", "Congratulations! You've finished the Challenge Mode!", new List<string>() { "Exit to Main Menu" }, new List<UnityAction>() { Stage.Menus.ExitToMainMenu });
+                            Stage.Menus.CampaignCompletedDialogue.SetTextBoxHeight(120);
+                            Stage.Menus.CampaignCompletedDialogue.SetButtonWidth(0, 180);
+
+                            ConfigData.UserProgressData.Save();
+
+                            Stage.Menus.CampaignCompletedDialogue.Show();
+                            return;
+                        }
+
+                        ConfigData.UserProgressData.Save();
+                    }
                     _levelEndedDialogueTimer.Reuse(1, LevelEndedDialogue);
                     AddTimer(_levelEndedDialogueTimer);
 
@@ -1365,13 +1401,18 @@ namespace Assets.Scripts.Levels
 
             if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
             {
+                Stage.Menus.TryNewSquadsButtonText.text = "Play Next Level";
+                Stage.Menus.KeepGoingButton.SetActive(false);
+            }
+            else if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge)
+            {
                 if (WinningSide == ConfigData.Configuration.UserSide)
                 {
-                    Stage.Menus.TryNewSquadsButtonText.text = "Play next level";
+                    Stage.Menus.TryNewSquadsButtonText.text = "Play Next Level";
                 }
                 else
                 {
-                    Stage.Menus.TryNewSquadsButtonText.text = "Try again";
+                    Stage.Menus.TryNewSquadsButtonText.text = "Try Again";
                 }
                 Stage.Menus.KeepGoingButton.SetActive(false);
             }

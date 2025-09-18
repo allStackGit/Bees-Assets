@@ -12,7 +12,7 @@ public class CutsceneManager : MonoBehaviour
     public DialogueManager DialogueManager;
     public GameObject CutsceneCanvas;
     public Stage Stage;
-    public List<DialogueLine> PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLines_BluerPastures, PlutoToNeptune, Neptune_SeizeTheMeans, Neptune_OfProduction, Neptune_PressingForward, NeptuneToUranus, Uranus_OnTheOffensive, Uranus_OnTheDefensive, Uranus_ANewThreat, LostCampaign;
+    public List<DialogueLine> PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLines_BluerPastures, PlutoToNeptune, Neptune_SeizeTheMeans, Neptune_OfProduction, Neptune_PressingForward, NeptuneToUranus, Uranus_OnTheOffensive, Uranus_OnTheDefensive, Uranus_ANewThreat, LostCampaign, StartedChallengeMode, SelectedCarrierSquad;
     public bool PlutoLines_Anomaly_Completed = false;
     public bool HitDialogueBreak = false;
     public Action EndDialogueAction;
@@ -45,6 +45,7 @@ public class CutsceneManager : MonoBehaviour
         Portraits["Fritz"] = Resources.LoadAll<Sprite>("Sprites/Portraits/fritz_chat");
         Portraits["Marge"] = Resources.LoadAll<Sprite>("Sprites/Portraits/marge_chat");
         Portraits["Barge Pilot"] = Resources.LoadAll<Sprite>("Sprites/Portraits/barge_pilot_chat");
+        Portraits["AMI"] = Resources.LoadAll<Sprite>("Sprites/Portraits/ami_chat");
 
         PlutoLines_Anomaly = new List<DialogueLine>
         {
@@ -492,6 +493,23 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Who need ships?! I'll fight them with my bare hands!"),
             new DialogueLine("Marco", Portraits["Marco"], "Others will continue the fight. When we're stronger, we'll join them again."),
         };
+
+        StartedChallengeMode = new List<DialogueLine>
+        {
+            new DialogueLine("AMI", Portraits["AMI"], "Welcome to Challenge Mode!"),
+            new DialogueLine("AMI", Portraits["AMI"], "Challenge Mode works a little differently from Campaign Mode. First of all, you start out with a set amount of ships that decreases as you lose them."),
+            new DialogueLine("AMI", Portraits["AMI"], "Secondly, you only advance onto the next level when you beat the current level. If you fail, you lose your ships, but the Bees are as strong as before."),
+            new DialogueLine("AMI", Portraits["AMI"], $"The goal is to make it as far as possible before you run out of ships. Good luck Commander {ConfigData.UserProgressData.PlayerName}!"),
+        };
+
+        SelectedCarrierSquad = new List<DialogueLine>
+        {
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "We have here your carrier squads: The carriers, the strikers, and the drones. The carriers don't fight but they resupply the strikers with bombs and they produce new strikers and drones between battles."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Strikers are beautiful creatures, and deadly assassins! They don't have guns but if you send them after a squad they'll chase them down and drop powerful bombs right on their heads!"),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Strikers are beautiful creatures, and deadly assassins! They don't have guns but if you send them after a squad they'll chase them down and drop powerful bombs right on their heads!"),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Be careful with them though, they can take a lot of hits going in to drop their bombs and returning to the carriers to reload. Drones make a good escort for them."),
+             new DialogueLine("Alejandra", Portraits["Alejandra"], "Drones are the fastest ships in the fleet so they're also good at chasing down enemies or escorting unprotected ships, like the carrier."),
+        };
         /*
          * 
          *  new DialogueLine("Samuel", Portraits["Samuel"], ""),
@@ -504,6 +522,7 @@ public class CutsceneManager : MonoBehaviour
          *  new DialogueLine("Emilia", Portraits["Emilia"], ""),
          *  new DialogueLine("Fritz", Portraits["Fritz"], ""),
          *  new DialogueLine("Marge", Portraits["Marge"], ""),
+         *  new DialogueLine("AMI", Portraits["AMI"], ""),
          *  
          * */
 

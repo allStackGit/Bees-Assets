@@ -97,6 +97,7 @@ namespace Assets.Scripts.Scenes
             {
                 ConfigData.FreePlayShips = new Ships(ConfigData.GetFleetData(1), ConfigData.GetSavedSquadsData());
                 ConfigData.CampaignShips = new Ships(ConfigData.GetFleetData(0), ConfigData.GetCampaignSavedSquadsData());
+                ConfigData.ChallengeModeShips = new Ships(ConfigData.GetFleetData(2), ConfigData.GetChallengeSavedSquadsData());
                 ConfigData.CurrentShips = ConfigData.FreePlayShips;
 
             }

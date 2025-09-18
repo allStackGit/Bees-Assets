@@ -150,7 +150,7 @@ namespace Assets.Scripts.Levels.Commands
                         {
                             ship.FleetShip.MineralsMinedThisLevel += _amountPerShip;
                             ship.Tsv += _amountPerShip;
-                            //Debug.Log($"Just added {_amountPerShip} to {ship.Name}:{ship.FleetShip.Id} TSV. It's now at {ship.Tsv}");
+                            Debug.Log($"Just added {_amountPerShip} to {ship.Name}:{ship.FleetShip.Id} TSV. It's now at {ship.Tsv}");
                         }
 
                     });

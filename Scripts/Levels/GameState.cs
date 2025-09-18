@@ -36,6 +36,7 @@ namespace Assets.Scripts.Levels
         public List<CollisionAsteroid> AsteroidsToRelease = new List<CollisionAsteroid>();
         public List<MiningAsteroid> MiningAsteroidsToRelease = new List<MiningAsteroid>();
         public List<FogOfWarVision> FogOfWarVisions = new List<FogOfWarVision>();
+        public List<TargetingSquadMarker> TargetingSquadMarkers = new List<TargetingSquadMarker>();
 
         public int UserCommands, AICommands;
         public bool IsPaused;
@@ -107,6 +108,7 @@ namespace Assets.Scripts.Levels
             AsteroidPiecesToRelease.Clear();
             MiningAsteroidsToRelease.Clear();
             Projectiles.Clear();
+            TargetingSquadMarkers.Clear();
 
         }
 

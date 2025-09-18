@@ -1096,6 +1096,18 @@ namespace Assets.Scripts.Levels
                 }
                 MakeUserCommand(ConfigData.CommandTypes.Aggressive, enemy);
                 ((Aggressive)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0);
+
+                if (IsUserControlled)
+                {
+                    enemy.GetShips().ForEach((enemyShip) =>
+                    {
+                        GameObject targetingMarker = Instantiate(Stage.Prefabs.TargetingSquadPrefab, enemyShip.transform);
+                        targetingMarker.transform.localPosition = Vector2.zero;
+                        targetingMarker.GetComponent<TargetingSquadMarker>().Setup(enemyShip);
+
+                    });
+                }
+
             }
 
 

@@ -17484,6 +17484,7 @@ MonoBehaviour:
   MovementMarkerPrefab: {fileID: 2507697582912947509, guid: d5ee77a24c7f6a6499324a8a600b4943, type: 3}
   TargetingMarkerPrefab: {fileID: 2507697582912947509, guid: 60a6013777594eb47842724022e04add, type: 3}
   SquadBoxPrefab: {fileID: 4393128050314196725, guid: 606f56cf5efd9f84d9e877d10187ad8b, type: 3}
+  TargetingSquadPrefab: {fileID: 8018177562542987422, guid: 2ca0d8a4844f11d49af91b2980d7c7b3, type: 3}
   EmptyObstacleList: []
   MazePrefabs:
   - {fileID: 8059139168506411835, guid: e857b359fbc486d4185cba8d6b937759, type: 3}

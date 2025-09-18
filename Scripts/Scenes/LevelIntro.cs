@@ -4,6 +4,8 @@ using Assets.Scripts;
 using System;
 using System.Collections;
 using UnityEngine;
+using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 
 namespace UIComponents
 {
@@ -11,6 +13,7 @@ namespace UIComponents
     {
         public CutsceneManager CutsceneManager;
         public GameObject ContinueButton, SkipButton;
+        public Button ContinueButtonAction;
         public int LevelNumber;
 
         protected override void FinalizeSceneWithUserData()
@@ -23,11 +26,31 @@ namespace UIComponents
             {
                 ShowContinueButton();
             });
+
+
+
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge && LevelNumber == 0)
+            {
+                StartCoroutine(DelayStart(3, () =>
+                {
+                    CutsceneManager.PlayDialogueSection(CutsceneManager.StartedChallengeMode, true);
+                }));
+                
+                ContinueButtonAction.onClick.AddListener(() =>
+                {
+                    SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
+                });
+                return;
+            }
+
             if (ConfigData.CurrentShips.GetAliveFleetShipsBySide(ConfigData.Configuration.UserSide).Count == 0)
             {
                 CutsceneManager.PlayDialogueSection(CutsceneManager.LostCampaign, true);
                 return;
             }
+
+            ContinueButtonAction.onClick.AddListener(Continue);
+
 
             switch (LevelNumber)
             {

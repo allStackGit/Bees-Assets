@@ -44,10 +44,14 @@ namespace Assets.Scripts.Data
             }
             if (!shouldFileExist || json == null || file.GetContents() == "")
             {
-                Debug.Log($"Datafile {filename} doesn't exist or is blank, writing default data");
-                json = this.file.WriteData(defaultJsonData);
+                //Debug.Log($"Datafile {filename} doesn't exist or is blank, writing default data");
+                json = this.file.WriteData(GetDefaultJson());
             }
-            
+            //else
+            //{
+            //    Debug.LogError($"shouldFileExist {shouldFileExist}, json {json}, file.GetContents() {file.GetContents()}");
+            //}
+
             return json;
         }
         public DataFile GetDataFile()
@@ -60,13 +64,16 @@ namespace Assets.Scripts.Data
         }
         public void WaitForData()
         {
-            //Debug.Log("UserData is waiting for data");
+            if (!IsDataLoaded())
+            {
+                //Debug.Log($"UserData is waiting for data for {filename}");
+            }
             if (IsDataLoaded() && !_hasCalledAction)
             {
                 _hasCalledAction = true;
                 if (_onceDataIsLoaded != null)
                 {
-                    Debug.Log($"Loaded data for {this.filename}");
+                    //Debug.Log($"Loaded data for {this.filename}");
                     _onceDataIsLoaded(GetDataFile().GetJsonObject());
                 }
             }
