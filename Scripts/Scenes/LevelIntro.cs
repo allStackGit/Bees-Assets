@@ -46,6 +46,10 @@ namespace UIComponents
             if (ConfigData.CurrentShips.GetAliveFleetShipsBySide(ConfigData.Configuration.UserSide).Count == 0)
             {
                 CutsceneManager.PlayDialogueSection(CutsceneManager.LostCampaign, true);
+                ContinueButtonAction.onClick.AddListener(() =>
+                {
+                    SceneManager.LoadSceneAsync("Main Menu", LoadSceneMode.Single);
+                });
                 return;
             }
 

@@ -353,7 +353,7 @@ namespace Assets.Scripts.Levels
         {
 
             // Load the obstacles
-            Debug.Log($"Loading obstacles:  Obstacles/{CurrentLevelOptions.Obstacles}");
+            //Debug.Log($"Loading obstacles:  Obstacles/{CurrentLevelOptions.Obstacles}");
             ObstacleMap = new ObstacleMap(1);
             if (CurrentLevelOptions.Obstacles != "No")
             {
@@ -399,7 +399,7 @@ namespace Assets.Scripts.Levels
                 obstacle.gameObject.SetActive(true);
             });
 
-            Debug.Log($"LevelData: {Utilities.ListToString(ObstacleMap.Obstacles)}");
+            //Debug.Log($"LevelData: {Utilities.ListToString(ObstacleMap.Obstacles)}");
 
             if (ActivateCollisionAsteroids) 
             {
@@ -1195,6 +1195,7 @@ namespace Assets.Scripts.Levels
                 }
 
             }
+
         }
         /// <summary>
         /// Resets the level for Hivemind training

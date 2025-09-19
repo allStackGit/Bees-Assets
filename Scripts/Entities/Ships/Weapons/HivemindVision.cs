@@ -71,7 +71,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                         Ship.MotherSquad.GetCommand().Tsv += (int)Mathf.Clamp(_shipEnter.Tsv * ConfigData.TsvMultiplierForVision, ConfigData.MinimumTsvValueForSeeingAShip, ConfigData.MaximumTsvValueForSeeingAShip);
                         Ship.Level.State.HivemindShips[Ship.Side - 1][Ship.Id].Add(_shipEnter);
 
-                        if (Ship.MotherSquad.GetCommand().CommandType == ConfigData.CommandTypes.Scouting)
+                        if (!Ship.MotherSquad.IsDead && Ship.MotherSquad.GetCommand().CommandType == ConfigData.CommandTypes.Scouting)
                         {
                             ((Scouting)Ship.MotherSquad.GetCommand()).FoundNewShips();
                         }

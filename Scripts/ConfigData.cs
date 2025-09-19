@@ -280,6 +280,7 @@ namespace Assets.Scripts
             Guard,
             Chase,
             Hold,
+            LockOn,
         }
         public enum ObstacleTypes
         {

@@ -1,14 +1,15 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using Assets.Scripts.Data;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Levels.Commands;
 using Assets.Scripts.Server;
 using Assets.Scripts.UI_Components;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
 using UnityEngine;
+using static UnityEngine.EventSystems.EventTrigger;
 
 namespace Assets.Scripts.Levels
 {
@@ -80,6 +81,10 @@ namespace Assets.Scripts.Levels
         /// If this is false, the squad will not respond to user input. Only important for user squads. Usually used with the command queue
         /// </summary>
         public bool CanAcceptUserInput;
+        /// <summary>
+        /// Whether or not a squad is locked onto their targets. If a squad is locked on they will attack their targets until they or their targets are dead even if the player tries to move them away.
+        /// </summary>
+        public bool IsLockedOn;
 
         private List<Ship> _ships = new List<Ship>();
         private bool _isInBounds;
@@ -1097,26 +1102,31 @@ namespace Assets.Scripts.Levels
                 MakeUserCommand(ConfigData.CommandTypes.Aggressive, enemy);
                 ((Aggressive)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0);
 
-                if (IsUserControlled)
-                {
-                    enemy.GetShips().ForEach((enemyShip) =>
-                    {
-                        GameObject targetingMarker = Instantiate(Stage.Prefabs.TargetingSquadPrefab, enemyShip.transform);
-                        targetingMarker.transform.localPosition = Vector2.zero;
-                        targetingMarker.GetComponent<TargetingSquadMarker>().Setup(enemyShip);
-
-                    });
-                }
+                MarkTargets(enemy);
 
             }
 
 
+        }
+        public void MarkTargets(Squad enemy)
+        {
+            if (IsUserControlled)
+            {
+                enemy.GetShips().ForEach((enemyShip) =>
+                {
+                    GameObject targetingMarker = Instantiate(Stage.Prefabs.TargetingSquadPrefab, enemyShip.transform);
+                    targetingMarker.transform.localPosition = Vector2.zero;
+                    targetingMarker.GetComponent<TargetingSquadMarker>().Setup(enemyShip);
+
+                });
+            }
         }
         public void UserBombingRun(Squad enemy)
         {
             //Debug.Log($"Creating \"Bombing Run\" command for {Name} against {enemy.Name}");
             MakeUserCommand(ConfigData.CommandTypes.BombingRun, enemy);
             ((BombingRun)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0);
+            MarkTargets(enemy);
 
         }
         public void MakeUserCommand(ConfigData.CommandTypes command, Squad enemy)
@@ -1253,7 +1263,7 @@ namespace Assets.Scripts.Levels
         // Utility methods
         public override string ToString()
         {
-            return $"Squad {Name} with {_ships.Count} ships (#{ItemId})";
+            return $"Squad {Name} (#{ItemId}) with {_ships.Count} ships ({(IsDead ? "D" : "A")})";
         }
 
         public override bool Equals(System.Object obj)

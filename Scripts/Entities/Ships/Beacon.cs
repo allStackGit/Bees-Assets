@@ -12,7 +12,7 @@ namespace Assets.Scripts.Entities.Ships
 
         public void LookForShips()
         {
-            if (!Stage.IsTraining && IsUserControlled)
+            if (IsUserControlled)
             {
                 _beaconStatusTimer.Reuse(ConfigData.BeaconUpdateFrequency, SetBeaconStatus, true);
                 Level.AddTimer(_beaconStatusTimer);

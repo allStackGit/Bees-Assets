@@ -19,7 +19,7 @@ namespace Assets.Scripts.UIComponents
 {
     public class SquadActionBox : MonoBehaviour
     {
-        public GameObject MatchSpeedButton, CeaseFireButton, AttackOnSightButton, PatrolButton, GuardButton, ChaseButton, HoldButton, DetonateButton, ChargeButton, 
+        public GameObject MatchSpeedButton, CeaseFireButton, AttackOnSightButton, PatrolButton, GuardButton, ChaseButton, HoldButton, DetonateButton, ChargeButton, LockOnButton, 
             DropBeaconButton, TypeSelector, ActionTitle, ActionExplanation;
         public TMP_Text ActionExplanationText;
         private EventSystem _eventSystem;
@@ -43,6 +43,7 @@ namespace Assets.Scripts.UIComponents
             Destroy(HoldButton);
             Destroy(DetonateButton);
             Destroy(ChargeButton);
+            Destroy(LockOnButton);
             Destroy(DropBeaconButton);
             SetDropdownOptions();
             
@@ -244,6 +245,14 @@ namespace Assets.Scripts.UIComponents
                 {
                     ResetButton(HoldButton);
                 }
+                if (IsAction(ConfigData.SquadActions.LockOn))
+                {
+                    HighlightButton(LockOnButton);
+                }
+                else
+                {
+                    ResetButton(LockOnButton);
+                }
             }
 
             ConfigData.ShootingStrategyTypes shootingStrategy = GetShootingStrategy();
@@ -289,6 +298,7 @@ namespace Assets.Scripts.UIComponents
                             return !currentSquad.CeaseFire;
                         case ConfigData.SquadActions.Chase:
                             return currentSquad.IsSetToChase;
+
                     }
                 }
             }
@@ -312,6 +322,8 @@ namespace Assets.Scripts.UIComponents
                         return selectedSquads.All((s) => s.ShouldChase());
                     case ConfigData.SquadActions.Hold:
                         return selectedSquads.All((s) => s.Holding);
+                    case ConfigData.SquadActions.LockOn:
+                        return selectedSquads.All((s) => s.IsLockedOn);
                 }
             }
             return false;
@@ -445,6 +457,9 @@ namespace Assets.Scripts.UIComponents
 
                     case "Cease Fire":
                         ActionExplanationText.text = $"{beginningActionText} not fire on anyone under any circumstances.";
+                        break;
+                    case "Lock On":
+                        ActionExplanationText.text = $"{beginningActionText} chase and attack the currently targeted squad until they or it are destroyed. They'll ignore all other commands until this is canceled.";
                         break;
 
 
@@ -619,6 +634,7 @@ namespace Assets.Scripts.UIComponents
                         case "Hold":
                             Hold();
                             break;
+
                         case "Detonate":
                             Detonate();
                             return;
@@ -641,6 +657,10 @@ namespace Assets.Scripts.UIComponents
 
                         case "Cease Fire":
                             CeaseFire();
+                            break;
+
+                        case "Lock On":
+                            LockOn();
                             break;
                     }
                 }
@@ -762,6 +782,28 @@ namespace Assets.Scripts.UIComponents
                     if (!squad.HasCommand || squad.GetCommand().CommandType != ConfigData.CommandTypes.Heal)
                     {
                         squad.SetSquadCeaseFire(false);
+                    }
+                });
+                HighlightSelectedButtons();
+            }
+
+        }
+        public void LockOn()
+        {
+            if (HasSquad())
+            {
+                bool onOrOff = !Level.State.GetSelectedSquads().All((squad) => squad.IsLockedOn);
+                Debug.Log($"onOrOff: {onOrOff}");
+                Level.State.GetSelectedSquads().ForEach((squad) =>
+                {
+                    Debug.Log(squad);
+                    Debug.Log(squad.HasCommand);
+                    Debug.Log(squad.GetCommand()?.HasEnemy);
+                    if (squad.HasCommand && squad.GetCommand().HasEnemy)
+                    {
+                        Debug.Log($"Setting is locked on: {onOrOff}");
+                        squad.IsLockedOn = onOrOff;
+                        squad.GetShips().ForEach((s) =>  s.CannotChangeMovementOrders = onOrOff);
                     }
                 });
                 HighlightSelectedButtons();

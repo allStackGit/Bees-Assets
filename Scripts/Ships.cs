@@ -364,7 +364,7 @@ namespace Assets.Scripts
                 FleetShip ship = CurrentShips.GetFirstAvailableShipOfType(shipType);
                 if (ship != null)
                 {
-                    savedSquad.AddShipToSquad(new SquadShip(ship.Id, ship.Type, offsets[i] * 2f));
+                    savedSquad.AddShipToSquad(new SquadShip(ship.Id, ship.Type, offsets[i] * new Vector2(2f, 1.5f)));
                 }
                 else
                 {

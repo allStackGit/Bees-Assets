@@ -50,6 +50,7 @@ namespace Assets.Scripts.Levels.Commands
 
                 CommandTimer.Reuse(CommandFrequency, Timer, true, true);
                 Level.AddTimer(CommandTimer);
+                //Debug.Log($"Adding guard timer for {this}");
                 if (IsHiveMindCommand)
                 {
                     TimeoutTimer.Reuse(ConfigData.Configuration.AISquadGuardTime, FinishGuardingCommand);

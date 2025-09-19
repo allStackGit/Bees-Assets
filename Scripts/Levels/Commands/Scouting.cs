@@ -32,6 +32,7 @@ namespace Assets.Scripts.Levels.Commands
 
             TimeoutTimer.Reuse(300, EndCommand);
             Level.AddTimer(TimeoutTimer);
+            //Debug.Log($"Added {TimeoutTimer}");
 
 
             if (GetSquad().Side == ConfigData.Configuration.HumanSide)
@@ -105,8 +106,11 @@ namespace Assets.Scripts.Levels.Commands
             {
                 _foundShips = true;
                 Level.CancelTimer(TimeoutTimer);
+                //Debug.Log($"Canceled {TimeoutTimer}");
                 _endCommandTimer.Reuse(5, EndCommand);
                 Level.AddTimer(_endCommandTimer);
+                //Debug.Log($"Added {_endCommandTimer}");
+
             }
         }
 
@@ -114,19 +118,21 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (_foundShips)
             {
-                Debug.Log($"Ending scouting command for {GetSquad()} because we found ships");
+                //Debug.Log($"Ending scouting command for {GetSquad()} because we found ships");
                 SetFinalize("Found ships");
             }
             else
             {
                 SetFinalize("Ran out of time");
-                Debug.Log($"Ending scouting command for {GetSquad()} because we ran out of time");
+                //Debug.Log($"Ending scouting command for {GetSquad()} because we ran out of time");
             }
         }
 
         public override void SetFinalize(string cause)
         {
-            Debug.Log($"Setting finalize ({cause}) for Scout command with {GetSquad()}");
+            //Debug.Log($"Setting finalize ({cause}) for Scout command with {GetSquad()}");
+            Debug.Log($"Canceled {_endCommandTimer}");
+
             Level.CancelTimer(_dropBeaconsTimer);
             Level.CancelTimer(_endCommandTimer);
             base.SetFinalize(cause);

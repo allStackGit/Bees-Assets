@@ -367,7 +367,7 @@ namespace Assets.Scripts.Levels
                                                 {
                                                     tooltipRectTransformSize.sizeDelta = new Vector2(150, 150);
                                                     tooltipRectTransformPosition.localPosition = new Vector2(-500, 0);
-                                                    tooltipText.text = "You'll want to familiarize yourself with the controls to your bottom left. They aren't usually required but they are helpful.";
+                                                    tooltipText.text = "You'll want to familiarize yourself with the controls to your bottom left. They aren't usually required, but they are helpful.";
 
                                                     NextTriggers.Add(new Trigger(() =>
                                                         {
@@ -379,8 +379,8 @@ namespace Assets.Scripts.Levels
                                                             attackOnSightTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
                                                             attackOnSightTooltip.SetActive(true);
                                                             TMP_Text tooltipText =  attackOnSightTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>();
-                                                            attackOnSightTooltip.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(150, 200);
-                                                            attackOnSightTooltip.GetComponent<RectTransform>().localPosition = new Vector2(0, -150);
+                                                            attackOnSightTooltip.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(150, 250);
+                                                            attackOnSightTooltip.GetComponent<RectTransform>().localPosition = new Vector2(0, -100);
                                                             tooltipText.text = "When you're ready to engage the Honeybee, click \"Attack on Sight\" to disable the Cease Fire. Once the Gunship is within range it will automatically fire upon the Honeybee. To chase after an enemy ship, right click on it.";
 
                                                             NextTriggers.Add(new Trigger(() =>
@@ -620,7 +620,7 @@ namespace Assets.Scripts.Levels
                                 {
                                     tooltipText.text = "Here are different settings for your ship.You can determine your squad’s flight pattern and shooting strategies here. Take some time to familiarize yourself with these options.";
                                     tooltipRectTransformSize.sizeDelta = new Vector2(150, 225);
-                                    tooltipRectTransformPosition.localPosition = new Vector2(-225, -150);
+                                    tooltipRectTransformPosition.localPosition = new Vector2(-175, -150);
                                     basicTooltip.SetActive(true);
 
 
@@ -632,7 +632,7 @@ namespace Assets.Scripts.Levels
 
                                     GameObject pointerB = Instantiate(Stage.Menus.PointerArrow, Stage.Menus.UIOverlay.transform);
                                     rectTransform = pointerB.GetComponent<RectTransform>();
-                                    rectTransform.localPosition = new Vector2(-380, -340);
+                                    rectTransform.localPosition = new Vector2(-330, -340);
                                     rectTransform.eulerAngles = new Vector3(0, 0, 90);
                                     rectTransform.localScale = new Vector2(0.25f, 0.5f);
                                     pointerB.SetActive(true);
@@ -677,9 +677,11 @@ namespace Assets.Scripts.Levels
                                             gunshipSquad.CanAcceptUserInput = true;
                                             dreadnoughtSquad.CanAcceptUserInput = true;
 
+                                            float startTime = Time.realtimeSinceStartup;
+
                                             NextTriggers.Add(new Trigger(() =>
                                                 {
-                                                    return frigateSquad.IsSelected || gunshipSquad.IsSelected || dreadnoughtSquad.IsSelected;
+                                                    return (frigateSquad.IsSelected || gunshipSquad.IsSelected || dreadnoughtSquad.IsSelected) && Time.realtimeSinceStartup - startTime > 10;
                                                 },
                                                 () =>
                                                 {
@@ -732,7 +734,7 @@ namespace Assets.Scripts.Levels
                                                                 ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 1),
                                                                 ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 3, true),
                                                                 ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 2, true),
-                                                            }, new Vector2(0, 316), new Vector2(0, 225), true);
+                                                            }, new Vector2(0, 316), StartingPositions[ConfigData.Configuration.AISide - 1], true);
 
                                                             Stage.ActivateHiveMind = true;
                                                             SetupHivemind();
@@ -1266,7 +1268,7 @@ namespace Assets.Scripts.Levels
                             GameObject basicTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
                             basicTooltip.SetActive(true);
                              basicTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "To mine, first select your factory ships, then right click on ore-rich asteroids. Once the factory ship arrives, it will automatically begin collecting materials."; ;
-                            basicTooltip.GetComponent<RectTransform>().localPosition = new Vector2(0, 0);
+                            basicTooltip.GetComponent<RectTransform>().localPosition = Vector2.zero;
                             basicTooltip.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(150, 200);
 
 
@@ -1550,7 +1552,6 @@ namespace Assets.Scripts.Levels
                 ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 2, true, true),
                 ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true),
             }, CurrentLevelOptions.AIStartingPosition - new Vector2(-100, 0), CurrentLevelOptions.AIStartingPosition);
-            AddReinforcementsToHivemindCommandQueue();
 
             Stage.EnablePlayerControl();
             // Spawn the exit zone
@@ -1673,6 +1674,15 @@ namespace Assets.Scripts.Levels
 
                         Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_OnTheOffensive.GetRange(6, 6));
 
+                        NextTriggers.Add(new Trigger(() =>
+                            {
+                                return Stage.CutsceneManager.HitDialogueBreak;
+                            },
+                            () =>
+                            {
+                                SelectedCarrierTrigger();
+                            }, "Level 6 Carrier trigger")
+                        );
 
                     });
                     AddTimer(cruiserTimer);
@@ -1680,7 +1690,6 @@ namespace Assets.Scripts.Levels
 
 
                     // Set dialogue triggers
-                    SelectedCarrierTrigger();
                     // spotting bumblebee
                     Ship bumblebee = State.GetBeeShips().Where((s) => s.ShipType == ConfigData.ShipTypes.Bumblebee).First();
                     NextTriggers.Add(new Trigger(() =>
@@ -1707,7 +1716,7 @@ namespace Assets.Scripts.Levels
                             // Kiling bumblebee
                             NextTriggers.Add(new Trigger(() =>
                                 {
-                                    return bumblebee.IsDead;
+                                    return bumblebee.IsDead && !(State.IsSideKilled(ConfigData.Configuration.UserSide) || State.IsSideKilled(ConfigData.Configuration.AISide));
                                 },
                                 () =>
                                 {
@@ -1753,16 +1762,46 @@ namespace Assets.Scripts.Levels
         }
         public void SelectedCarrierTrigger()
         {
+            GameObject basicTooltip = null;
             NextTriggers.Add(new Trigger(() =>
                 {
                     return State.GetSelectedSquads().Any((squad) => squad.IsCarrierSquad || squad.GetShips().Any((ship) => ship.ShipType == ConfigData.ShipTypes.Carrier)); // If the user has selected a carrier, drone squad, or striker squad
                 },
-               () =>
-               {
-                   Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.SelectedCarrierSquad);
-               },
-               "Level 6-8 Carrier Squads Selected")
+                () =>
+                {
+                    //Debug.LogError("Selected carrier squad");
+                    Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.SelectedCarrierSquad);
+
+                    NextTriggers.Add(new Trigger(() =>
+                        {
+                            return Stage.CutsceneManager.HitDialogueBreak;
+                        },
+                        () =>
+                        {
+                            basicTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
+                            basicTooltip.SetActive(true);
+                            basicTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "To use the strikers, simply right click on a target squad. The strikers will fly towards their targets, drop their bombs, and return to the carrier to reload. Right click anywhere else to move them and cancel the bombing run.<br><br>(Hold Space to continue)";
+                            basicTooltip.GetComponent<RectTransform>().localPosition = Vector2.zero;
+                            basicTooltip.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(150, 300);
+                        },
+                        "Level 6-8 Carrier Squad Tooltip")
+                    );
+                    NextTriggers.Add(new Trigger(() =>
+                        {
+                            return Input.GetKey(KeyCode.Space);
+                        },
+                        () =>
+                        {
+                            Destroy(basicTooltip);
+                            ConfigData.UserProgressData.HasSeenCarrierIntro = true;
+                        },
+                        "Level 6-8 Carrier Squads Selected End")
+                    );
+                },
+                "Level 6-8 Carrier Squads Selected")
             );
+
+
         }
         public void Level7Triggers()
         {
@@ -2182,8 +2221,9 @@ namespace Assets.Scripts.Levels
                 },
                () =>
                {
+                   bool isBargeSquadDead = bargeSquad.IsDead;
                    CloseLevel();
-                   if (bargeSquad.IsDead) // Bees Won
+                   if (isBargeSquadDead) // Bees Won
                    {
                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_ANewThreat.GetRange(30, 12), true);
                    }

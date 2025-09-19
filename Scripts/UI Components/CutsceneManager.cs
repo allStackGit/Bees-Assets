@@ -504,9 +504,10 @@ public class CutsceneManager : MonoBehaviour
 
         SelectedCarrierSquad = new List<DialogueLine>
         {
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "We have here your carrier squads: The carriers, the strikers, and the drones. The carriers don't fight but they resupply the strikers with bombs and they produce new strikers and drones between battles."),
-            new DialogueLine("Emilia", Portraits["Emilia"], "Strikers are beautiful creatures, and deadly assassins! They don't have guns but if you send them after a squad they'll chase them down and drop powerful bombs right on their heads!"),
-            new DialogueLine("Emilia", Portraits["Emilia"], "Strikers are beautiful creatures, and deadly assassins! They don't have guns but if you send them after a squad they'll chase them down and drop powerful bombs right on their heads!"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "We have here your carrier squads: The carriers, the strikers, and the drones."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "The carriers don't fight but they resupply the strikers with bombs and they produce new strikers and drones between battles."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Strikers are beautiful creatures, and deadly assassins!"),
+            new DialogueLine("Emilia", Portraits["Emilia"], "They don't have guns but if you send them after a squad they'll chase them down and drop powerful bombs right on their heads!"),
             new DialogueLine("Emilia", Portraits["Emilia"], "Be careful with them though, they can take a lot of hits going in to drop their bombs and returning to the carriers to reload. Drones make a good escort for them."),
              new DialogueLine("Alejandra", Portraits["Alejandra"], "Drones are the fastest ships in the fleet so they're also good at chasing down enemies or escorting unprotected ships, like the carrier."),
         };
