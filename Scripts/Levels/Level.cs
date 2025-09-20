@@ -1241,7 +1241,7 @@ namespace Assets.Scripts.Levels
                         continue;
                     }
 
-                    Debug.Log($"Logging stats for sqauds battles fought for {_save_savedSquad}");
+                    //Debug.Log($"Logging stats for sqauds battles fought for {_save_savedSquad}");
                     _save_savedSquad.Stats.BattlesFought++;
 
                     if (_save_savedSquad.Side == WinningSide)

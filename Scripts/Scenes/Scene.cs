@@ -95,9 +95,9 @@ namespace Assets.Scripts.Scenes
 
             if (IsMainScene && ConfigData.CurrentShips == null)
             {
-                ConfigData.FreePlayShips = new Ships(ConfigData.GetFleetData(1), ConfigData.GetSavedSquadsData());
-                ConfigData.CampaignShips = new Ships(ConfigData.GetFleetData(0), ConfigData.GetCampaignSavedSquadsData());
-                ConfigData.ChallengeModeShips = new Ships(ConfigData.GetFleetData(2), ConfigData.GetChallengeSavedSquadsData());
+                ConfigData.FreePlayShips = new Ships(ConfigData.GetFleetData(), ConfigData.GetSavedSquadsData());
+                ConfigData.CampaignShips = new Ships(ConfigData.GetCampaignFleetData(), ConfigData.GetCampaignSavedSquadsData());
+                ConfigData.ChallengeModeShips = new Ships(ConfigData.GetChallengeFleetData(), ConfigData.GetChallengeSavedSquadsData());
                 ConfigData.CurrentShips = ConfigData.FreePlayShips;
 
             }

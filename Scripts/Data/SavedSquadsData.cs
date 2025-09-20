@@ -93,14 +93,7 @@ namespace Assets.Scripts.Data
         }
         public void RemoveSquadFromList(SavedSquad squad)
         {
-            foreach (SavedSquad savedSquad in _savedSquadsList)
-            {
-                if (savedSquad.Equals(squad))
-                {
-                    _savedSquadsList.Remove(savedSquad);
-                    return;
-                }
-            }
+            _savedSquadsList.Remove(squad);
         }
         public bool HasSquad(SavedSquad squad)
         {

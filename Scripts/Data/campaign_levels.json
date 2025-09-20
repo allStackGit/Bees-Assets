@@ -5,7 +5,8 @@
       "Side": 1,
       "Name": "Anomaly",
       "MapIndex": 0,
-      "Obstacles": null,
+      "Obstacles": "No",
+      "ObstacleList": [],
       "AsteroidOption": 0,
       "FogOfWar": 1,
       "Mining": 0,
@@ -19,7 +20,6 @@
 
       ],
       "EnemyExistingSquads": [
-        2 // Honeybee
       ],
       "EnemyReport": "",
       "UserStartingPosition": {
@@ -36,7 +36,8 @@
       "Side": 1,
       "Name": "Reinforcements",
       "MapIndex": 0,
-      "Obstacles": null,
+      "Obstacles": "No",
+      "ObstacleList": [],
       "AsteroidOption": 0,
       "FogOfWar": 1,
       "Mining": 0,
@@ -59,7 +60,7 @@
       },
       "AIStartingPosition": {
         "x": 0,
-        "y": 300
+        "y": 230
       }
     },
     {
@@ -68,6 +69,7 @@
       "Name": "Bluer Pastures",
       "MapIndex": 0,
       "Obstacles": "Bluer Pastures",
+      "ObstacleList": [],
       "AsteroidOption": 0,
       "FogOfWar": 0,
       "Mining": 0,
@@ -98,7 +100,8 @@
       "Side": 1,
       "Name": "Seize the Means",
       "MapIndex": 1,
-      "Obstacles": null,
+      "Obstacles": "No",
+      "ObstacleList": [],
       "AsteroidOption": 0,
       "FogOfWar": 1,
       "Mining": 1,
@@ -129,7 +132,8 @@
       "Side": 1,
       "Name": "Of Production!",
       "MapIndex": 1,
-      "Obstacles": null,
+      "Obstacles": "No",
+      "ObstacleList": [],
       "AsteroidOption": 0,
       "FogOfWar": 0,
       "Mining": 1,
@@ -161,8 +165,9 @@
       "Name": "Pressing Forward",
       "MapIndex": 1,
       "Obstacles": "Pressing Forward",
+      "ObstacleList": [],
       "AsteroidOption": 0,
-      "FogOfWar": 1,
+      "FogOfWar": 0,
       "Mining": 0,
       "HasPreLevelIntro": true,
       "HasSquadActionBox": true,
@@ -192,6 +197,7 @@
       "Name": "On the Offensive",
       "MapIndex": 2,
       "Obstacles": "On the Offensive",
+      "ObstacleList": [],
       "AsteroidOption": 0,
       "FogOfWar": 1,
       "Mining": 0,
@@ -223,6 +229,7 @@
       "Name": "On the Defensive",
       "MapIndex": 2,
       "Obstacles": "On the Defensive",
+      "ObstacleList": [],
       "AsteroidOption": 0,
       "FogOfWar": 0,
       "Mining": 1,
@@ -253,7 +260,8 @@
       "Side": 1,
       "Name": "A New Threat",
       "MapIndex": 2,
-      "Obstacles": null,
+      "Obstacles": "No",
+      "ObstacleList": [],
       "AsteroidOption": 0,
       "FogOfWar": 0,
       "Mining": 0,

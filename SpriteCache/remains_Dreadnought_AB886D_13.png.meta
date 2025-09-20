@@ -1,0 +1,429 @@
+fileFormatVersion: 2
+guid: 3641cfa5062e5a74d925ba609b3fe298
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: 7021890911989745621
+    second: remains_Dreadnought_AB886D_13_0
+  - first:
+      213: -6023154143968729314
+    second: remains_Dreadnought_AB886D_13_1
+  - first:
+      213: -7340560439560026762
+    second: remains_Dreadnought_AB886D_13_2
+  - first:
+      213: -594631575954190061
+    second: remains_Dreadnought_AB886D_13_3
+  - first:
+      213: 1874539461252930732
+    second: remains_Dreadnought_AB886D_13_4
+  - first:
+      213: 7051350605309734444
+    second: remains_Dreadnought_AB886D_13_5
+  - first:
+      213: -309462395783876838
+    second: remains_Dreadnought_AB886D_13_6
+  - first:
+      213: 2199640125078721393
+    second: remains_Dreadnought_AB886D_13_7
+  - first:
+      213: 5127799931359264084
+    second: remains_Dreadnought_AB886D_13_8
+  - first:
+      213: 3961645902198451427
+    second: remains_Dreadnought_AB886D_13_9
+  - first:
+      213: -6835787211089924892
+    second: remains_Dreadnought_AB886D_13_10
+  - first:
+      213: -753596921886648828
+    second: remains_Dreadnought_AB886D_13_11
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 100
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: remains_Dreadnought_AB886D_13_0
+      rect:
+        serializedVersion: 2
+        x: 19
+        y: 104
+        width: 26
+        height: 25
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 5d741b4b494c27160800000000000000
+      internalID: 7021890911989745621
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Dreadnought_AB886D_13_1
+      rect:
+        serializedVersion: 2
+        x: 36
+        y: 87
+        width: 37
+        height: 28
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e176255d735796ca0800000000000000
+      internalID: -6023154143968729314
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Dreadnought_AB886D_13_2
+      rect:
+        serializedVersion: 2
+        x: 90
+        y: 98
+        width: 37
+        height: 25
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 6754db31c27112a90800000000000000
+      internalID: -7340560439560026762
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Dreadnought_AB886D_13_3
+      rect:
+        serializedVersion: 2
+        x: 13
+        y: 62
+        width: 47
+        height: 28
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 311150f6bb17fb7f0800000000000000
+      internalID: -594631575954190061
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Dreadnought_AB886D_13_4
+      rect:
+        serializedVersion: 2
+        x: 29
+        y: 79
+        width: 10
+        height: 15
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: cacde6155b3b30a10800000000000000
+      internalID: 1874539461252930732
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Dreadnought_AB886D_13_5
+      rect:
+        serializedVersion: 2
+        x: 95
+        y: 83
+        width: 14
+        height: 15
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: c2ee830140e6bd160800000000000000
+      internalID: 7051350605309734444
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Dreadnought_AB886D_13_6
+      rect:
+        serializedVersion: 2
+        x: 8
+        y: 29
+        width: 31
+        height: 23
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: a1fe5f3379194bbf0800000000000000
+      internalID: -309462395783876838
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Dreadnought_AB886D_13_7
+      rect:
+        serializedVersion: 2
+        x: 65
+        y: 46
+        width: 32
+        height: 30
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 17353012a01b68e10800000000000000
+      internalID: 2199640125078721393
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Dreadnought_AB886D_13_8
+      rect:
+        serializedVersion: 2
+        x: 87
+        y: 12
+        width: 36
+        height: 45
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 45df0fb8eda992740800000000000000
+      internalID: 5127799931359264084
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Dreadnought_AB886D_13_9
+      rect:
+        serializedVersion: 2
+        x: 7
+        y: 17
+        width: 23
+        height: 14
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 3ecab6655f79af630800000000000000
+      internalID: 3961645902198451427
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Dreadnought_AB886D_13_10
+      rect:
+        serializedVersion: 2
+        x: 45
+        y: 23
+        width: 12
+        height: 17
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 4eca3d2cfb76221a0800000000000000
+      internalID: -6835787211089924892
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Dreadnought_AB886D_13_11
+      rect:
+        serializedVersion: 2
+        x: 43
+        y: 5
+        width: 26
+        height: 15
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 4065e1f979faa85f0800000000000000
+      internalID: -753596921886648828
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
+    nameFileIdTable:
+      remains_Dreadnought_AB886D_13_0: 7021890911989745621
+      remains_Dreadnought_AB886D_13_1: -6023154143968729314
+      remains_Dreadnought_AB886D_13_10: -6835787211089924892
+      remains_Dreadnought_AB886D_13_11: -753596921886648828
+      remains_Dreadnought_AB886D_13_2: -7340560439560026762
+      remains_Dreadnought_AB886D_13_3: -594631575954190061
+      remains_Dreadnought_AB886D_13_4: 1874539461252930732
+      remains_Dreadnought_AB886D_13_5: 7051350605309734444
+      remains_Dreadnought_AB886D_13_6: -309462395783876838
+      remains_Dreadnought_AB886D_13_7: 2199640125078721393
+      remains_Dreadnought_AB886D_13_8: 5127799931359264084
+      remains_Dreadnought_AB886D_13_9: 3961645902198451427
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

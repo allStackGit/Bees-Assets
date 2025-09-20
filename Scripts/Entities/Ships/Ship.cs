@@ -23,7 +23,6 @@ using System.Threading;
 using UnityEngine.Pool;
 using static UnityEngine.GraphicsBuffer;
 using UnityEngine.Rendering;
-using UnityEditorInternal;
 
 namespace Assets.Scripts.Entities.Ships
 {
@@ -878,7 +877,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                         }
                         else
                         {
-                            Debug.Log($"{Name} is already pathfinding on {PathfindingThread} so it can't pathfind right now");
+                            //Debug.Log($"{Name} is already pathfinding on {PathfindingThread} so it can't pathfind right now");
                         }
                         return;
                     }
@@ -912,7 +911,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                                 }
                                 else
                                 {
-                                    Debug.Log($"{Name} is already pathfinding on {PathfindingThread} so it can't pathfind right now");
+                                    //Debug.Log($"{Name} is already pathfinding on {PathfindingThread} so it can't pathfind right now");
                                 }
                                 return;
                             }

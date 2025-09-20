@@ -1026,13 +1026,17 @@ namespace Assets.Scripts.Scenes
                 squadIconImage.sprite = Utilities.SetImageColor(savedSquad.Color, squadIconImage.sprite, changeablePixels);
             }
 
-            if (savedSquad.HasDeadShips)
+            if (!savedSquad.HasAliveShips)
             {
                 //Debug.Log($"{squad.Name} still has dead ships");
                 //Debug.Log(GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}"));
                 //Debug.Log(GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>());
                 //Debug.Log(GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>().color);
                 GameObject.Find($"Saved Squad - {savedSquad.Name} #{savedSquad.Id}").GetComponent<UnityEngine.UI.Image>().color = ConfigData.GetUIColor("bad");
+            }
+            else if (savedSquad.HasDeadShips)
+            {
+                GameObject.Find($"Saved Squad - {savedSquad.Name} #{savedSquad.Id}").GetComponent<UnityEngine.UI.Image>().color = ConfigData.GetUIColor("medium");
             }
             else
             {

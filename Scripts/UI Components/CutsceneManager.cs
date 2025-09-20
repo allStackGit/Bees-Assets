@@ -12,7 +12,7 @@ public class CutsceneManager : MonoBehaviour
     public DialogueManager DialogueManager;
     public GameObject CutsceneCanvas;
     public Stage Stage;
-    public List<DialogueLine> PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLines_BluerPastures, PlutoToNeptune, Neptune_SeizeTheMeans, Neptune_OfProduction, Neptune_PressingForward, NeptuneToUranus, Uranus_OnTheOffensive, Uranus_OnTheDefensive, Uranus_ANewThreat, LostCampaign, StartedChallengeMode, SelectedCarrierSquad;
+    public List<DialogueLine> PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLines_BluerPastures, PlutoToNeptune, Neptune_SeizeTheMeans, Neptune_OfProduction, Neptune_PressingForward, NeptuneToUranus, Uranus_OnTheOffensive, Uranus_OnTheDefensive, Uranus_ANewThreat, LostCampaign, StartedChallengeMode, SelectedCarrierSquad, EasterEggLines;
     public bool PlutoLines_Anomaly_Completed = false;
     public bool HitDialogueBreak = false;
     public Action EndDialogueAction;
@@ -496,10 +496,10 @@ public class CutsceneManager : MonoBehaviour
 
         StartedChallengeMode = new List<DialogueLine>
         {
-            new DialogueLine("AMI", Portraits["AMI"], "Welcome to Challenge Mode!"),
-            new DialogueLine("AMI", Portraits["AMI"], "Challenge Mode works a little differently from Campaign Mode. First of all, you start out with a set amount of ships that decreases as you lose them."),
-            new DialogueLine("AMI", Portraits["AMI"], "Secondly, you only advance onto the next level when you beat the current level. If you fail, you lose your ships, but the Bees are as strong as before."),
-            new DialogueLine("AMI", Portraits["AMI"], $"The goal is to make it as far as possible before you run out of ships. Good luck Commander {ConfigData.UserProgressData.PlayerName}!"),
+            new DialogueLine("A.M.I.", Portraits["AMI"], "Welcome to Challenge Mode!"),
+            new DialogueLine("A.M.I.", Portraits["AMI"], "Challenge Mode works a little differently from Campaign Mode. First of all, you start out with a set amount of ships that decreases as you lose them."),
+            new DialogueLine("A.M.I.", Portraits["AMI"], "Secondly, you only advance onto the next level when you beat the current level. If you fail, you lose your ships, but the Bees are as strong as before."),
+            new DialogueLine("A.M.I.", Portraits["AMI"], $"The goal is to make it as far as possible before you run out of ships. Good luck Commander {ConfigData.UserProgressData.PlayerName}!"),
         };
 
         SelectedCarrierSquad = new List<DialogueLine>
@@ -510,6 +510,16 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Emilia", Portraits["Emilia"], "They don't have guns but if you send them after a squad they'll chase them down and drop powerful bombs right on their heads!"),
             new DialogueLine("Emilia", Portraits["Emilia"], "Be careful with them though, they can take a lot of hits going in to drop their bombs and returning to the carriers to reload. Drones make a good escort for them."),
              new DialogueLine("Alejandra", Portraits["Alejandra"], "Drones are the fastest ships in the fleet so they're also good at chasing down enemies or escorting unprotected ships, like the carrier."),
+        };
+
+        EasterEggLines = new List<DialogueLine>
+        {
+            new DialogueLine("Wesley", Portraits["Wesley"], "You really should be playing Pikmin 2 instead."),
+            new DialogueLine("Marco", Portraits["Marco"], "I'm just hoping that this gets Richard Hammond to notice me."),
+            new DialogueLine("Fritz", Portraits["Fritz"], "Jeremy has nothing on Dee when it comes to the social game game which is really the crux of the show, but in season four thousand six hundred and twenty, the meta <i>really</i> changed..."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Have you heard of my new game? It's called The Ranch and there's an eclectic assortment of haunted animals from all over Montana."),
+            new DialogueLine("A.M.I.", Portraits["AMI"], "I've never actually played a video game in my life, I just really like Bees."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Si este juego no está completamente traducido al español, ahogaré a mi esposo en su propio batido."),
         };
         /*
          * 
@@ -523,7 +533,7 @@ public class CutsceneManager : MonoBehaviour
          *  new DialogueLine("Emilia", Portraits["Emilia"], ""),
          *  new DialogueLine("Fritz", Portraits["Fritz"], ""),
          *  new DialogueLine("Marge", Portraits["Marge"], ""),
-         *  new DialogueLine("AMI", Portraits["AMI"], ""),
+         *  new DialogueLine("A.M.I.", Portraits["AMI"], ""),
          *  
          * */
 

@@ -36,7 +36,7 @@ namespace Assets.Scripts.UI_Components
         }
         public void PauseMusic()
         {
-            Debug.Log($"Stopping the menu music");
+            //Debug.Log($"Stopping the menu music");
             MenuMusic.Pause();
         }
     }

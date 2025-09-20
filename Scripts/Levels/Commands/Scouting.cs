@@ -131,7 +131,7 @@ namespace Assets.Scripts.Levels.Commands
         public override void SetFinalize(string cause)
         {
             //Debug.Log($"Setting finalize ({cause}) for Scout command with {GetSquad()}");
-            Debug.Log($"Canceled {_endCommandTimer}");
+            //Debug.Log($"Canceled {_endCommandTimer}");
 
             Level.CancelTimer(_dropBeaconsTimer);
             Level.CancelTimer(_endCommandTimer);

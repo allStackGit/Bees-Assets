@@ -94,7 +94,7 @@ namespace Assets.Scripts.Data
 
             dynamic json = SetupFile(shouldFileExist, ConfigData.UserSettingsFilename, (json) =>
             {
-                Debug.Log($"Loaded data for {ConfigData.UserSettingsFilename}");
+                //Debug.Log($"Loaded data for {ConfigData.UserSettingsFilename}");
                 ConfigData.IsUserSettingsDataLoaded = true;
                 //Debug.Log("Updated config file");
                 //Debug.Log($"JSON from DataFile: {json}");

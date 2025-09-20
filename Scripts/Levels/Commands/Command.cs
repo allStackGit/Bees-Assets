@@ -423,7 +423,7 @@ namespace Assets.Scripts.Levels.Commands
             if (!IsDead)
             {
 
-                Debug.Log($"Finalizing Command {this} because of {cause}");
+                //Debug.Log($"Finalizing Command {this} because of {cause}");
                 if (cause == "")
                 {
                     Debug.LogError($"Trying to finalize Command without cause");

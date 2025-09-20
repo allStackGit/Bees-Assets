@@ -15,12 +15,12 @@ namespace Assets.Scripts.Scenes
 {
     public class MainMenu : Scene
     {
-        public GameObject MenuPanel, MenuPanelBacker;
-        public GameObject HumanChallengeModeButton, HumanTrainingRoomButton, BeeFreePlayButton, HumanCampaignModeButton, CommanderNameDialogue, ResetCampaignButton, ResetChallengeModeButton;
+        public GameObject MenuPanel, MenuPanelBacker, CampaignRow, ChallengeRow, TrainingRoomRow, BeesTrainingRoomRow;
+        public GameObject HumanChallengeModeButton, HumanTrainingRoomButton, BeeFreePlayButton, HumanCampaignModeButton, CommanderNameDialogue, ResetCampaignButton, ResetChallengeModeButton, ResetTrainingRoomButton, ResetBeesTrainingRoomButton;
         public TMP_InputField NameInput;
         public Codex CodexManager;
-        public Dialogue ResetConfirmation, ResetChallengeConfirmation;
-        public bool IsResettingCampaign, IsResettingChallenge;
+        public Dialogue ResetConfirmation;
+        public bool IsResettingCampaign, IsResettingChallenge, IsResettingTrainingRoom, IsResettingBeesTrainingRoom;
         new void Start()
         {
             Name = "Main Menu";
@@ -42,37 +42,43 @@ namespace Assets.Scripts.Scenes
             {
                 HumanChallengeModeButton.SetActive(false);
                 ResetChallengeModeButton.SetActive(false);
+                ChallengeRow.SetActive(false);
             }
             if (!ConfigData.UserProgressData.IsHumanFreePlayUnlocked)
             {
                 HumanTrainingRoomButton.SetActive(false);
+                ResetTrainingRoomButton.SetActive(false);
+                TrainingRoomRow.SetActive(false);
             }
             if (!ConfigData.UserProgressData.IsBeeFreePlayUnlocked)
             {
                 BeeFreePlayButton.SetActive(false);
+                ResetBeesTrainingRoomButton.SetActive(false);
+                BeesTrainingRoomRow.SetActive(false);
             }
             CodexManager.SetupCodex();
-
+            int currentLevel;
 
              // Campaign
-            int currentLevel = ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.HumanSide, ConfigData.GameModes.Campaign);
-            Debug.Log($"Current Level: {currentLevel} Total Levels: {ConfigData.Configuration.TotalLevels}");
+            currentLevel = ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.HumanSide, ConfigData.GameModes.Campaign);
+            //Debug.Log($"Current Level: {currentLevel} Total Levels: {ConfigData.Configuration.TotalLevels}");
+
             if (currentLevel >= ConfigData.Configuration.TotalLevels)
             {
                 HumanCampaignModeButton.transform.GetChild(0).GetComponent<TMP_Text>().text = "Beta Campaign Completed!";
                 HumanCampaignModeButton.GetComponent<Button>().enabled = false;
             }
 
-            if (currentLevel > 1 && !IsResettingCampaign)
+            if (!IsResettingCampaign)
             {
                 ResetCampaignButton.SetActive(true);
                 ResetConfirmation = new Dialogue(DialoguePrefab, ConfigData.Configuration.AreYouSure, "This will set you back to the beginning of the campaign.",
                 new List<string>() { ConfigData.Configuration.Yes, ConfigData.Configuration.No }, new List<UnityAction>() { ResetCampaign });
             }
 
-            if (IsResettingCampaign)
+            else if (IsResettingCampaign)
             {
-                ConfigData.CampaignShips = new Ships(ConfigData.GetFleetData(0), ConfigData.GetCampaignSavedSquadsData());
+                ConfigData.CampaignShips = new Ships(ConfigData.GetCampaignFleetData(), ConfigData.GetCampaignSavedSquadsData());
                 HumanCampaignModeButton.transform.GetChild(0).GetComponent<TMP_Text>().text = "Play Campaign";
                 HumanCampaignModeButton.GetComponent<Button>().enabled = true;
                 IsResettingCampaign = false;
@@ -82,8 +88,8 @@ namespace Assets.Scripts.Scenes
             // Challenge Mode
             currentLevel = ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.HumanSide, ConfigData.GameModes.Challenge);
             int challengeLevels = ConfigData.GetChallengeLevelData().GetLevels().Count;
+            //Debug.Log($"Current Challenge Level: {currentLevel}, Total Levels: {challengeLevels}");
 
-            Debug.Log($"Current Challenge Level: {currentLevel}, Total Levels: {challengeLevels}");
             if (currentLevel >= challengeLevels)
             {
                 HumanChallengeModeButton.transform.GetChild(0).GetComponent<TMP_Text>().text = "Challenge Mode Completed!";
@@ -91,19 +97,31 @@ namespace Assets.Scripts.Scenes
             }
 
 
-            if (currentLevel > 0 && !IsResettingChallenge)
+            if (!IsResettingChallenge)
             {
                 ResetChallengeModeButton.SetActive(true);
-                ResetChallengeConfirmation = new Dialogue(DialoguePrefab, ConfigData.Configuration.AreYouSure, "This will set you back to the beginning of the challenge mode.",
-                new List<string>() { ConfigData.Configuration.Yes, ConfigData.Configuration.No }, new List<UnityAction>() { ResetChallenge });
             }
 
-            if (IsResettingChallenge)
+            else if (IsResettingChallenge)
             {
-                ConfigData.ChallengeModeShips = new Ships(ConfigData.GetFleetData(2), ConfigData.GetChallengeSavedSquadsData());
+                ConfigData.ChallengeModeShips = new Ships(ConfigData.GetChallengeFleetData(), ConfigData.GetChallengeSavedSquadsData());
                 HumanChallengeModeButton.transform.GetChild(0).GetComponent<TMP_Text>().text = "Play Challenge Mode";
                 HumanChallengeModeButton.GetComponent<Button>().enabled = true;
                 IsResettingChallenge = false;
+            }
+
+            // Training room
+
+            if (ConfigData.UserProgressData.IsHumanFreePlayUnlocked && !IsResettingTrainingRoom)
+            {
+                ResetTrainingRoomButton.SetActive(true);
+            }
+
+            // Bees Training room
+
+            if (ConfigData.UserProgressData.IsBeeFreePlayUnlocked && !IsResettingBeesTrainingRoom)
+            {
+                ResetBeesTrainingRoomButton.SetActive(true);
             }
 
 
@@ -111,6 +129,7 @@ namespace Assets.Scripts.Scenes
             {
                 CommanderNameDialogue.SetActive(true);
             }
+
         }
         public void SubmitName()
         {
@@ -181,11 +200,28 @@ namespace Assets.Scripts.Scenes
         }
         public void ConfirmResetCampaign()
         {
+            ResetConfirmation.SetExplanation("This will set you back to the beginning of the campaign.");
+            ResetConfirmation.ChangeButton(0, ConfigData.Configuration.Yes, ResetCampaign);
             ResetConfirmation.Show();
         }
         public void ConfirmResetChallenge()
         {
-            ResetChallengeConfirmation.Show();
+            ResetConfirmation.SetExplanation("This will set you back to the beginning of the challenge mode.");
+            ResetConfirmation.ChangeButton(0, ConfigData.Configuration.Yes, ResetChallenge);
+            ResetConfirmation.Show();
+        }
+        public void ConfirmResetTrainingRoom()
+        {
+            ResetConfirmation.SetExplanation("This will reset all of your ships and squads for the training room.");
+            ResetConfirmation.ChangeButton(0, ConfigData.Configuration.Yes, ResetTrainingRoom);
+            ResetConfirmation.Show();
+        }
+
+        public void ConfirmResetBeesTrainingRoom()
+        {
+            ResetConfirmation.SetExplanation("This will reset all of your ships and squads for the Bees training room.");
+            ResetConfirmation.ChangeButton(0, ConfigData.Configuration.Yes, ResetBeesTrainingRoom);
+            ResetConfirmation.Show();
         }
 
         public void ResetCampaign()
@@ -249,6 +285,79 @@ namespace Assets.Scripts.Scenes
 
 
             ResetChallengeModeButton.SetActive(false);
+        }
+        public void ResetTrainingRoom()
+        {
+            ConfigData.UserProgressData.HumanFreePlayWins = 0;
+            ConfigData.UserProgressData.BeeFreePlayWins = 0;
+            ConfigData.UserProgressData.HumanFreePlaySavedSquadNumber = 0;
+            ConfigData.UserProgressData.BeeFreePlaySavedSquadNumber = 0;
+
+
+            ConfigData.GetSavedSquadsData().GetSquads().ToList().ForEach((squad) => {
+                if (squad.Side == ConfigData.Configuration.HumanSide)
+                {
+                    squad.GetSquadShips().ToList().ForEach((ship) =>
+                    {
+                        squad.RemoveShipFromSquad(ship);
+                    });
+                    ConfigData.GetSavedSquadsData().RemoveSquadFromList(squad);
+                }
+            });
+
+            List<FleetShip> shipList = ConfigData.GetFleetData().GetShips();
+            for (int i = 0; i < shipList.Count; i++)
+            {
+                if (shipList[i].Side == ConfigData.Configuration.HumanSide)
+                {
+                    shipList[i] = new FleetShip(ConfigData.UserProgressData.GetNextFleetId(), shipList[i].Type, false, false, 0, 0, 0, 0, 0, 0, 0);
+                }
+            }
+
+
+            ConfigData.GetFleetData().Save();
+            ConfigData.GetSavedSquadsData().Save();
+            ConfigData.UserProgressData.Save(); // Save this after the others so changes to fleet and squad ID are saved
+
+            ConfigData.FreePlayShips = new Ships(ConfigData.GetFleetData(), ConfigData.GetSavedSquadsData());
+
+        }
+        public void ResetBeesTrainingRoom()
+        {
+            ConfigData.UserProgressData.HumanFreePlayWins = 0;
+            ConfigData.UserProgressData.BeeFreePlayWins = 0;
+            ConfigData.UserProgressData.HumanFreePlaySavedSquadNumber = 0;
+            ConfigData.UserProgressData.BeeFreePlaySavedSquadNumber = 0;
+
+
+            ConfigData.GetSavedSquadsData().GetSquads().ToList().ForEach((squad) => {
+                if (squad.Side == ConfigData.Configuration.BeeSide)
+                {
+                    squad.GetSquadShips().ToList().ForEach((ship) =>
+                    {
+                        squad.RemoveShipFromSquad(ship);
+                    });
+                    ConfigData.GetSavedSquadsData().RemoveSquadFromList(squad);
+                }
+            });
+            
+            List<FleetShip> shipList = ConfigData.GetFleetData().GetShips();
+            for (int i = 0; i < shipList.Count; i++)
+            {
+                if (shipList[i].Side == ConfigData.Configuration.BeeSide)
+                {
+                    shipList[i] = new FleetShip(ConfigData.UserProgressData.GetNextFleetId(), shipList[i].Type, false, false, 0, 0, 0, 0, 0, 0, 0);
+                }   
+            }
+
+
+
+            ConfigData.GetFleetData().Save();
+            ConfigData.GetSavedSquadsData().Save();
+            ConfigData.UserProgressData.Save(); // Save this after the others so changes to fleet and squad ID are saved
+
+            ConfigData.FreePlayShips = new Ships(ConfigData.GetFleetData(), ConfigData.GetSavedSquadsData());
+
         }
         public void PlayChallengeMode(string side)
         {

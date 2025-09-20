@@ -576,7 +576,7 @@ namespace Assets.Scripts.Levels
 
                 if (HasCommand)
                 {
-                    Debug.Log($"Squad got killed {this}");
+                    //Debug.Log($"Squad got killed {this}");
                     GetCommand().SquadKilled();
                 }
 

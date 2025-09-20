@@ -15,6 +15,7 @@ namespace Assets.Scripts.UI_Components
         private GameObject _dialogue, _titleBox, _explanationBox, _buttonsContainer, _buttonPrefab;
         private List<GameObject> _buttons = new List<GameObject>();
         private float _buttonPrefabHeight;
+        private TMP_Text _explanationText, _titleText;
 
 
         public bool IsOpen => _dialogue != null && _dialogue.activeSelf;
@@ -29,9 +30,11 @@ namespace Assets.Scripts.UI_Components
             _buttonPrefab = _buttonsContainer.transform.Find($"Button Prefab").gameObject;
             _buttonPrefabHeight = _buttonPrefab.GetComponent<RectTransform>().sizeDelta.y;
 
+            _titleText = _titleBox.GetComponent<TMP_Text>();
+            _explanationText = _explanationBox.GetComponent<TMP_Text>();
 
-            _titleBox.GetComponent<TMP_Text>().text = title;
-            _explanationBox.GetComponent<TMP_Text>().text = explanation;
+            SetTitle(title);
+            SetExplanation(explanation);
 
             if (buttonLabels.Count == buttonActions.Count || buttonLabels.Count - buttonActions.Count == 1)
             {
@@ -46,17 +49,19 @@ namespace Assets.Scripts.UI_Components
                     {
                         action = Hide;
                     }
-                    MakeButton(buttonLabels[i], action);
+                    //Debug.Log($"Adding button #{i}");
+                    _buttons.Add(MakeButton(buttonLabels[i], action));
                 }
             }
             else
             {
                 Debug.LogError($"{buttonLabels.Count} button labels given and {buttonActions.Count} button actions were given while making a new dialogue box");
             }
-            GameObject.Destroy(_buttonPrefab);
+            //GameObject.Destroy(_buttonPrefab);
+            _buttonPrefab.SetActive(false);
             Hide();
         }
-        private void MakeButton(string label, UnityAction action)
+        private GameObject MakeButton(string label, UnityAction action)
         {
             //Debug.Log($"Making button {label}");
             GameObject buttonObject = GameObject.Instantiate(_buttonPrefab);
@@ -70,7 +75,8 @@ namespace Assets.Scripts.UI_Components
                 action();
                 Hide();
             });
-            _buttons.Add(buttonObject);
+            buttonObject.SetActive(true);
+            return buttonObject;
 
         }
         public void Show()
@@ -91,6 +97,20 @@ namespace Assets.Scripts.UI_Components
             RectTransform transform = box.GetComponent<RectTransform>();
             Vector2 size = transform.sizeDelta;
             transform.sizeDelta = new Vector2(size.x, height);
+        }
+        public void SetTitle(string title)
+        {
+            _titleText.text = title;
+        }
+        public void SetExplanation(string explanation)
+        {
+            _explanationText.text = explanation;
+        }
+        public void ChangeButton(int index, string label, UnityAction action)
+        {
+            GameObject.Destroy(_buttons[index]);
+            _buttons[index] = MakeButton(label, action);
+
         }
     }
 }

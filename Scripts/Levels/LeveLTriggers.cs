@@ -5,6 +5,7 @@ using Assets.Scripts.Levels.Commands;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Rendering.Universal;
@@ -18,6 +19,7 @@ namespace Assets.Scripts.Levels
     public partial class Level : MonoBehaviour
     {
         private ScaledTimer _dialogueTimer = new ScaledTimer();
+        private ScaledTimer _egg = new ScaledTimer();
 
         /// <summary>
         /// This represents an amount of value that the player has accomplished for a given level like rescuing personnel that in turn translates to reinforcements or some other bonus
@@ -919,7 +921,7 @@ namespace Assets.Scripts.Levels
                                 },
                                 () =>
                                 {
-                                    float endTime = Time.time + 300; // 5 minutes to complete the level
+                                    float endTime = Time.time + 305; // 5 minutes to complete the level
                                     float timeLeft = endTime - Time.time;
 
                                     int minutesLeft;
@@ -1082,7 +1084,7 @@ namespace Assets.Scripts.Levels
 
                                     NextTriggers.Add(new Trigger(() =>
                                     {
-                                        return State.GetAllEnemyShips(ConfigData.Configuration.HumanSide).Any((s) => s.ShipType == ConfigData.ShipTypes.YellowJacket && s.IsDead && ((YellowJacket)s).ContactedShip != null);
+                                        return State.GetAllEnemyShips(ConfigData.Configuration.HumanSide).Any((s) => s.ShipType == ConfigData.ShipTypes.YellowJacket && s.IsDead && ((YellowJacket)s).ContactedShip != null) && !(timeLeft <= 0 || personnelLost >= 15);
                                     },
                                         () =>
                                         {
@@ -1103,7 +1105,7 @@ namespace Assets.Scripts.Levels
         }
         public void Level3Triggers()
         {
-
+            EasterEggTriggers();
             //Stage.EnablePlayerControl();
             HasContinuousTriggers = true;
 
@@ -1209,6 +1211,7 @@ namespace Assets.Scripts.Levels
         }
         public void Level4Triggers()
         {
+            EasterEggTriggers();
             HasContinuousTriggers = true;
 
             Stage.CutsceneManager.Setup(() =>
@@ -1530,6 +1533,7 @@ namespace Assets.Scripts.Levels
         }
         public void Level5Triggers()
         {
+            EasterEggTriggers();
             HasContinuousTriggers = true;
 
             Stage.CutsceneManager.Setup(() =>
@@ -1596,6 +1600,7 @@ namespace Assets.Scripts.Levels
         }
         public void Level6Triggers()
         {
+            EasterEggTriggers();
             HasContinuousTriggers = true;
             Stage.ActivateHiveMind = false;
 
@@ -1803,9 +1808,22 @@ namespace Assets.Scripts.Levels
 
 
         }
+        public void EasterEggTriggers()
+        {
+            _egg.Reuse(30f, () =>
+            {
+                if (Utilities.RandomInt(1000) == 36 && Stage.CutsceneManager.HitDialogueBreak)
+                {
+                    Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.EasterEggLines[Utilities.RandomInt(Stage.CutsceneManager.EasterEggLines.Count)]);
+                }
+                
+            }, true);
+
+            AddTimer(_egg);
+        }
         public void Level7Triggers()
         {
-
+            EasterEggTriggers();
             // Add 3 squads of 2 Bumblebees
             for (int i = 0; i < 3; i++)
             {
@@ -2124,7 +2142,7 @@ namespace Assets.Scripts.Levels
         }
         public void Level8Triggers()
         {
-
+            EasterEggTriggers();
             Stage.EnablePlayerControl();
             HasContinuousTriggers = true;
 
@@ -2195,7 +2213,7 @@ namespace Assets.Scripts.Levels
             SelectedCarrierTrigger();
             NextTriggers.Add(new Trigger(() =>
                 {
-                    return bargeSquad.GetShips().Count < 3;
+                    return bargeSquad.GetShips().Count < 3 && !(State.IsSideKilled(ConfigData.Configuration.UserSide) || State.IsSideKilled(ConfigData.Configuration.AISide));
                 },
                () =>
                {
@@ -2205,7 +2223,7 @@ namespace Assets.Scripts.Levels
             );
             NextTriggers.Add(new Trigger(() =>
                 {
-                    return bargeSquad.GetShips().Any((s) => ((Barge)s).HasStartedCharging);
+                    return bargeSquad.GetShips().Any((s) => ((Barge)s).HasStartedCharging) && !(State.IsSideKilled(ConfigData.Configuration.UserSide) || State.IsSideKilled(ConfigData.Configuration.AISide));
                 },
                () =>
                {
@@ -2240,6 +2258,7 @@ namespace Assets.Scripts.Levels
         public void CloseLevel()
         {
             Pause();
+            CancelTimer(_egg);
             Map.FogOfWar.SetActive(true); // Fade to black 
             State.GetShips().ToList().ForEach((ship) =>
             {

@@ -52,21 +52,21 @@ namespace Assets.Scripts.Data
                 }
                 else
                 {
-                    FleetShip fleetShip = ConfigData.GetFleetData(0).GetFleetShip(FleetId);
+                    FleetShip fleetShip = ConfigData.GetFleetData().GetFleetShip(FleetId);
                     if (fleetShip != null)
                     {
                         _fleetShip = fleetShip;
                     }
                     else
                     {
-                        fleetShip = ConfigData.GetFleetData(1).GetFleetShip(FleetId);
+                        fleetShip = ConfigData.GetCampaignFleetData().GetFleetShip(FleetId);
                         if (fleetShip != null)
                         {
                             _fleetShip = fleetShip;
                         }
                         else
                         {
-                            fleetShip = ConfigData.GetFleetData(2).GetFleetShip(FleetId); // [data-file]
+                            fleetShip = ConfigData.GetChallengeFleetData().GetFleetShip(FleetId); // [data-file]
                             if (fleetShip != null)
                             {
                                 _fleetShip = fleetShip;
