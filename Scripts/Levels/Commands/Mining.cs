@@ -107,7 +107,7 @@ namespace Assets.Scripts.Levels.Commands
                 }
                 if (ShipsCurrentlyMining.Count == 1)
                 {
-                    _miningTimer.Reuse(3, Mine, true);
+                    _miningTimer.Reuse(5, Mine, true);
                     Level.AddTimer(_miningTimer);
                     //InvokeRepeating(nameof(Mine), 0, 3);
                 }

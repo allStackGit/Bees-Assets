@@ -706,10 +706,9 @@ namespace Assets.Scripts
         /// </summary>
         public static Vector2 StartingPositionOffset = new Vector2(-33, -2);
         /// <summary>
-        /// This is how fast the the ships mine the asteroids. The Mine() method is called every 3 seconds so the the ships gather TSV (and destroy the asteroid) at a
-        /// rate of MiningRate / 3 per second [TSV]
+        /// This is how fast the the ships mine the asteroids. The Mine() method is called every 5 seconds so the the ships gather TSV (and destroy the asteroid) at a rate of MiningRate / 5 per second [TSV]
         /// </summary>
-        public const int MiningRate = 6;
+        public const int MiningRate = 5;
         public static float ShipTurningRadius; 
         public static List<Scenes.Scene> Scenes = new List<Scenes.Scene>();
         public static Scenes.Scene SocketManager;
@@ -1142,13 +1141,13 @@ namespace Assets.Scripts
             // Setup first squad #0
 
             // Starting Scout Squad
-            SavedSquad squad = CurrentShips.BuildNewSquad($"Squadron #{UserProgressData.HumanCampaignSavedSquadNumber++}", Configuration.HumanSide, ShipTypes.Scout, 1);
+            SavedSquad squad = CurrentShips.BuildNewSquad($"Squad #{UserProgressData.HumanCampaignSavedSquadNumber++}", Configuration.HumanSide, ShipTypes.Scout, 1);
             //squad.StartingPosition = ConfigData.StartingPositionOffset;
             //Debug.Log($"Starting position for {squad} is {squad.StartingPosition}");
 
 
             // Starting gunship squad #1
-            squad = CurrentShips.BuildNewSquad($"Squadron #{UserProgressData.HumanCampaignSavedSquadNumber++}", Configuration.HumanSide, ShipTypes.Gunship, 1);
+            squad = CurrentShips.BuildNewSquad($"Squad #{UserProgressData.HumanCampaignSavedSquadNumber++}", Configuration.HumanSide, ShipTypes.Gunship, 1);
             squad.GetSquadShips().Find((s) => s.ShipType == ShipTypes.Gunship).GetFleetShip().Name = "Gunship D-4";
             squad.Stats.Commander = "Tom";
             //squad.StartingPosition = ConfigData.StartingPositionOffset;
@@ -1156,7 +1155,7 @@ namespace Assets.Scripts
 
 
             // Starting Honeybee squad #2
-            CurrentShips.BuildNewSquad($"Squadron #{UserProgressData.BeeCampaignSavedSquadNumber++}", Configuration.BeeSide, ShipTypes.Honeybee, 1);
+            CurrentShips.BuildNewSquad($"Squad #{UserProgressData.BeeCampaignSavedSquadNumber++}", Configuration.BeeSide, ShipTypes.Honeybee, 1);
 
             UserProgressData.HasStartedHumanCampaign = true;
 
@@ -1165,13 +1164,13 @@ namespace Assets.Scripts
             // Starting Hornet squads #3, #4, #5
             for (int j = 0; j < 3; j++) // three hornet squads
             {
-                CurrentShips.BuildNewSquad($"Squadron #{UserProgressData.BeeCampaignSavedSquadNumber++}", Configuration.BeeSide, ShipTypes.Hornet, 3);
+                CurrentShips.BuildNewSquad($"Squad #{UserProgressData.BeeCampaignSavedSquadNumber++}", Configuration.BeeSide, ShipTypes.Hornet, 3);
             }
 
             // Starting Wasp squads #6, #7
             for (int j = 0; j < 2; j++)
             {
-                CurrentShips.BuildNewSquad($"Squadron #{UserProgressData.BeeCampaignSavedSquadNumber++}", Configuration.BeeSide, ShipTypes.Wasp, 2);
+                CurrentShips.BuildNewSquad($"Squad #{UserProgressData.BeeCampaignSavedSquadNumber++}", Configuration.BeeSide, ShipTypes.Wasp, 2);
             }
 
 

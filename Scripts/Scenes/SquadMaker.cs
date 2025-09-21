@@ -184,7 +184,15 @@ namespace Assets.Scripts.Scenes
             SetupFleetList();
             SetupSavedSquadsList();
 
-            // turn squad labels red for all squads that still have dead ships
+            ColorSavedSquadsByShipsAlive();
+            //Debug.Log("Finalized the page");
+        }
+
+        /// <summary>
+        /// Turn all the squad labels yellow for squads that have dead ships and turn them red for squads that only have dead ships
+        /// </summary>
+        private void ColorSavedSquadsByShipsAlive()
+        {
             ConfigData.CurrentShips.GetSavedSquadsBySide(Side).ForEach((squad) =>
             {
                 if (!squad.HasAliveShips)
@@ -200,7 +208,6 @@ namespace Assets.Scripts.Scenes
                     GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>().color = ConfigData.GetUIColor("medium");
                 }
             });
-            //Debug.Log("Finalized the page");
         }
         private void Setup()
         {
@@ -1345,7 +1352,7 @@ namespace Assets.Scripts.Scenes
             _currentSquad.Id = ConfigData.UserProgressData.GetNextSavedSquadId();
             if (_currentSquad.Name == "")
             {
-                _currentSquad.Name = $"Squadron #{ConfigData.UserProgressData.GetNextSavedSquadNumber()}";
+                _currentSquad.Name = $"Squad #{ConfigData.UserProgressData.GetNextSavedSquadNumber()}";
             }
             ConfigData.CurrentShips.AddSquad(_currentSquad);
             AddSavedSquadToList(ConfigData.CurrentShips.GetSavedSquads().Last());
@@ -1597,6 +1604,9 @@ namespace Assets.Scripts.Scenes
                         ConfigData.CurrentShips.AddShipsToFleet(key, shipCount);
 
                         GameObject.Find($"{Utilities.ConvertShipTypeToName[key]} Build Ship").transform.Find("Ship Count").GetComponent<TMP_Text>().text = "(0)";
+
+                        ConfigData.CurrentShips.ReplaceDeadSquadShips(ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign);
+                        ColorSavedSquadsByShipsAlive();
 
                         UpdateShipCounter(key);
 

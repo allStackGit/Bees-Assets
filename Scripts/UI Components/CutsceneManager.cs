@@ -383,7 +383,7 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Oviya", Portraits["Oviya"], "Scouts are on the way to see what can be salvaged from the surface."),
             new DialogueLine("Samuel", Portraits["Samuel"], "Let’s get our new… friend? Let’s get them on board."),
             new DialogueLine("Fritz", Portraits["Fritz"], "H-hi! Other humans! Wait-"),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Please stop touching touch my face."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Please stop touching my face."),
             new DialogueLine("Fritz", Portraits["Fritz"], " Real! You’re real! You hear that, NATALIE?! Why can’t you be like him?!"),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Fritz? What were you doing here?"),
             new DialogueLine("Fritz", Portraits["Fritz"], "Another memory… or a ghost- ow!"),

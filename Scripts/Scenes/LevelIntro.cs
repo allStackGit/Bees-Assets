@@ -20,6 +20,7 @@ namespace UIComponents
         {
             base.FinalizeSceneWithUserData();
             //ConfigData.CurrentGameMode = ConfigData.GameModes.Campaign; // [alert] Temporary, for testing purposes only
+            //ConfigData.CurrentGameMode = ConfigData.GameModes.Campaign; // [debug]
             LevelNumber = ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide);
 
             CutsceneManager.Setup(() =>
@@ -27,7 +28,7 @@ namespace UIComponents
                 ShowContinueButton();
             });
 
-
+            //LevelNumber = 1;
 
             if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge && LevelNumber == 0)
             {

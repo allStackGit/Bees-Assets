@@ -103,7 +103,7 @@
       "Obstacles": "No",
       "ObstacleList": [],
       "AsteroidOption": 0,
-      "FogOfWar": 1,
+      "FogOfWar": 0,
       "Mining": 1,
       "HasPreLevelIntro": true,
       "HasSquadActionBox": true,

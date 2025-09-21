@@ -409,13 +409,13 @@ namespace Assets.Scripts.UIComponents
                 {
                     side = "Human ships";
                 }
-                string beginningActionText = "The selected squadron(s) will";
-                string beginningStrategyText = $"When there are multiple {side} within range, the ships of the selected squadron(s) will prioritize shooting at the";
+                string beginningActionText = "The selected squad(s) will";
+                string beginningStrategyText = $"When there are multiple {side} within range, the ships of the selected squad(s) will prioritize shooting at the";
 
                 if (HasSquadMaker)
                 {
-                    beginningActionText = "This squadron will";
-                    beginningStrategyText = $"When there are multiple {side} within range, the ships of this squadron will prioritize shooting at the";
+                    beginningActionText = "This squad will";
+                    beginningStrategyText = $"When there are multiple {side} within range, the ships of this squad will prioritize shooting at the";
                 }
                 switch (button)
                 {
@@ -424,7 +424,7 @@ namespace Assets.Scripts.UIComponents
                         break;
 
                     case "Guard":
-                        ActionExplanationText.text = $"{beginningActionText} guard the squadron you select (by right clicking on it) by flying nearby and following it.";
+                        ActionExplanationText.text = $"{beginningActionText} guard the squad you select (by right clicking on it) by flying nearby and following it.";
                         break;
 
                     case "Chase":
@@ -436,15 +436,15 @@ namespace Assets.Scripts.UIComponents
                         break;
 
                     case "Detonate":
-                        ActionExplanationText.text = $"The Fire Barge(s) of the selected squadron(s) will detonate their nuclear cargo, severely damaging or destroying all ships around them.";
+                        ActionExplanationText.text = $"The Fire Barge(s) of the selected squad(s) will detonate their nuclear cargo, severely damaging or destroying all ships around them.";
                         break;
 
                     case "Charge":
-                        ActionExplanationText.text = $"The Barge(s) of the selected squadron(s) will build up power and then charge forward, ramming ships in front of them and taking damage.";
+                        ActionExplanationText.text = $"The Barge(s) of the selected squad(s) will build up power and then charge forward, ramming ships in front of them and taking damage.";
                         break;
 
                     case "Drop Beacon":
-                        ActionExplanationText.text = $"The Scouts(s) of the selected squadron(s) will drop a beacon, clearing away the fog of war in a small area until destroyed.";
+                        ActionExplanationText.text = $"The Scouts(s) of the selected squad(s) will drop a beacon, clearing away the fog of war in a small area until destroyed.";
                         break;
 
                     case "Match Speed":
@@ -468,10 +468,10 @@ namespace Assets.Scripts.UIComponents
                         ActionExplanationText.text = $"{beginningStrategyText} {side} they see first.";
                         break;
                     case "Random":
-                        ActionExplanationText.text = $"The ships of the selected squadron(s) will shoot randomly at any {side} they see.";
+                        ActionExplanationText.text = $"The ships of the selected squad(s) will shoot randomly at any {side} they see.";
                         if (HasSquadMaker)
                         {
-                            ActionExplanationText.text = $"The ships of this squadron will shoot randomly at any {side} they see.";
+                            ActionExplanationText.text = $"The ships of this squad will shoot randomly at any {side} they see.";
                         }
                         break;
 
