@@ -15,10 +15,10 @@ namespace Assets.Scripts.Settings
          */
         public string Name;
         public bool IsLoaded;
-        public int UserId = 0;
+        public ulong UserId = 0;
         private SettingsRequest _request = null;
 
-        public ServerSettings(string name, int userId)
+        public ServerSettings(string name, ulong userId)
         {
             Name = name;
             UserId = userId;

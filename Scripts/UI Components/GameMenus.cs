@@ -43,7 +43,7 @@ namespace Assets.Scripts.UIComponents
                 Codex.SetupCodex();
                 //Settings.SetupSettings(Stage);
                 
-                if (ConfigData.CurrentGameMode != ConfigData.GameModes.FreePlay)
+                if (ConfigData.CurrentGameMode != ConfigData.GameModes.FreePlay && ConfigData.CurrentGameMode != ConfigData.GameModes.FishTank)
                 {
                     ToggleFogOfWarButton.SetActive(false);
                     RestartLevelButton.SetActive(false);
@@ -79,9 +79,17 @@ namespace Assets.Scripts.UIComponents
         }
         public void ConfirmExitGame()
         {
-            Debug.Log("Asking for confirmation");
-            DeselectButton();
-            ExitConfirmationDialogue.Show();
+            if (ConfigData.CurrentGameMode != ConfigData.GameModes.FishTank)
+            {
+                Debug.Log("Asking for confirmation");
+                DeselectButton();
+                ExitConfirmationDialogue.Show();
+            }
+            else
+            {
+                ExitToMainMenu();
+            }
+
         }
         public void ShowLevelContinueDialogue()
         {
@@ -307,6 +315,14 @@ namespace Assets.Scripts.UIComponents
 
 
             ShipInfoBox.SetActive(true);
+        }
+        public void GoToFishTank()
+        {
+            DeselectButton();
+            ConfigData.CurrentGameMode = ConfigData.GameModes.FishTank;
+            ConfigData.CurrentShips = ConfigData.FreePlayShips;
+            CloseDialogue();
+            SceneManager.LoadSceneAsync("Hivemind Training", LoadSceneMode.Single);
         }
 
 

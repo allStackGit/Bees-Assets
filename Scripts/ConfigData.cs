@@ -13,7 +13,8 @@ using System.Threading;
 using UnityEngine;
 using UnityEngine.Pool;
 using UnityEngine.SceneManagement;
-using UnityEngine.UI;            
+using UnityEngine.UI;
+using Steamworks;
 
 namespace Assets.Scripts
 {
@@ -303,6 +304,7 @@ namespace Assets.Scripts
             Campaign,
             FreePlay,
             Challenge,
+            FishTank,
         }
 
         public enum MatchupStrategyTypes
@@ -913,7 +915,7 @@ namespace Assets.Scripts
 
 
         // private variables
-        private static int _userId = -1; // [alert] should be set to actual userId and linked to Steam or other account Id
+        private static ulong _userId = 0; // [alert] should be set to actual userId and linked to Steam or other account Id
         public static UserProgressData UserProgressData = null;
         private static UserSettingsData _userSettingsData = null;
 
@@ -1233,19 +1235,32 @@ namespace Assets.Scripts
 
             // Go to the intro scene if there is one, otherwise go straight to the battle scene
         }
-        public static int GetUserId()
+        public static ulong GetUserId()
         {
-            if (_userId == -1 && !PlayerPrefs.HasKey("userId"))
+            if (!SteamAPI.Init())
             {
-                _userId = Utilities.RandomInt();
-                PlayerPrefs.SetInt("userId", _userId);
+                Debug.LogError("Steam API failed to initialize!");
+                return 0;
             }
-            else
+            else if (_userId == 0)
             {
-                _userId = PlayerPrefs.GetInt("userId");
-                FirstTimePlaying = false;
+                // Get the Steam ID
+                CSteamID steamID = SteamUser.GetSteamID();
+                _userId = steamID.m_SteamID;
+                FirstTimePlaying = HasPlayedBefore();
             }
             return _userId;
+
+        }
+        public static bool HasPlayedBefore()
+        {
+            if (!SteamAPI.IsSteamRunning()) return false;
+
+            // Check if user has any recorded stats
+            int totalPlaytime;
+            bool hasStats = SteamUserStats.GetStat("total_playtime", out totalPlaytime);
+            Debug.Log($"totalPlaytime {totalPlaytime}");
+            return hasStats && totalPlaytime > 0;
         }
         public static void SetupUserProgressData(bool shouldFileExist)
         {

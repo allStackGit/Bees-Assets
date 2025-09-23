@@ -17,7 +17,8 @@ namespace Assets.Scripts.Levels
     {
         public Level Level;
         public Stage Stage;
-        public int Side, SquadNumber, OpponentId;
+        public int Side, SquadNumber;
+        public ulong OpponentId;
         public long Id;
         /// <summary>
         /// The Id of this squad relative to the stage. Guarenteed unique for this stage. Not the same as the saved squad Id

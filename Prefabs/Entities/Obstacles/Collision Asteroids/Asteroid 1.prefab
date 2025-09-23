@@ -206,20 +206,21 @@ MonoBehaviour:
   ProximityCollider: {fileID: 6330246999587551277}
   ClearanceMappingCollider: {fileID: 4327743194160671326}
   SpriteRenderer: {fileID: 1846929101835880065}
+  SpriteMask: {fileID: 0}
   Body: {fileID: 2812687852296569020}
   Speed: 0
   SizeClass: 3
   LastHitAsteroid: {fileID: 0}
-  ExplosionAnimation: {fileID: 5579092777274668033, guid: 603572b9c21ddf145804c5a2bc86068c, type: 3}
+  ExplosionAnimation: {fileID: 5579092777274668033, guid: 23bf9532df0d0204c99da55886fb4ac2, type: 3}
   AsteroidExplosionAnimation: {fileID: 0}
   HasCollisionAnimation: 1
   HasCrackedSprite: 1
   HasDroppedDestructionAnimation: 0
-  IsImmune: 0
   HasTouchedMapBorder: 0
   HasEnteredMap: 0
   OriginalSprite: {fileID: 21300000, guid: fe2502e46d7c54b4b9590f7e0e3c398c, type: 3}
   CrackedSprite: {fileID: 21300000, guid: 19aa99bca630af545998efe1e82aa2b9, type: 3}
+  IsDelayKilled: 0
 --- !u!1 &5206769835850001811
 GameObject:
   m_ObjectHideFlags: 0
@@ -432,8 +433,8 @@ Transform:
   m_GameObject: {fileID: 9002243330495971919}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -2.55, y: 3.26, z: -0}
-  m_LocalScale: {x: 42, y: 42, z: 0}
+  m_LocalPosition: {x: -1.18, y: 2.64, z: -0}
+  m_LocalScale: {x: 0.45, y: 0.45, z: 0}
   m_ConstrainProportionsScale: 1
   m_Children: []
   m_Father: {fileID: 7230324313551516543}
@@ -482,7 +483,7 @@ SpriteRenderer:
   m_SortingLayerID: -709313037
   m_SortingLayer: 30
   m_SortingOrder: -1
-  m_Sprite: {fileID: -1571012651542167539, guid: 215687feeab0b7445b4a1cd86c82c2e1, type: 3}
+  m_Sprite: {fileID: 21300000, guid: a93d0549dc3222f41b95e65aca9fd14e, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0

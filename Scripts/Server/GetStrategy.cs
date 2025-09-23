@@ -9,11 +9,11 @@ namespace Assets.Scripts.Server
     {
         public readonly string Matchup;
         public readonly int Side;
-        public readonly int OpponentId;
+        public readonly ulong OpponentId;
         public readonly string[] BannedStrats;
         public string Type;
         public long Hash;
-        public GetStrategy(string matchup, int opponentId, string[] bannedStrats)
+        public GetStrategy(string matchup, ulong opponentId, string[] bannedStrats)
         {
             Matchup = matchup;
             OpponentId = opponentId;

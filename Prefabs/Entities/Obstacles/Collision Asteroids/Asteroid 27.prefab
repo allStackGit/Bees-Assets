@@ -59,7 +59,7 @@ PrefabInstance:
     - target: {fileID: 2520248311329120408, guid: c56c01c11c9ad6a4aa3c7694969bdc5b, type: 3}
       propertyPath: ExplosionAnimation
       value: 
-      objectReference: {fileID: 5579092777274668033, guid: 00265052860af3d42b5daab02dd91637, type: 3}
+      objectReference: {fileID: 4783404888080357955, guid: 024c6f35b67439a45a761ce5feae4d66, type: 3}
     - target: {fileID: 2520248311329120408, guid: c56c01c11c9ad6a4aa3c7694969bdc5b, type: 3}
       propertyPath: HasCollisionAnimation
       value: 1
@@ -2374,11 +2374,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8425480138423980886, guid: c56c01c11c9ad6a4aa3c7694969bdc5b, type: 3}
       propertyPath: m_LocalScale.x
-      value: 64
+      value: 0.75
       objectReference: {fileID: 0}
     - target: {fileID: 8425480138423980886, guid: c56c01c11c9ad6a4aa3c7694969bdc5b, type: 3}
       propertyPath: m_LocalScale.y
-      value: 64
+      value: 0.75
       objectReference: {fileID: 0}
     - target: {fileID: 8425480138423980886, guid: c56c01c11c9ad6a4aa3c7694969bdc5b, type: 3}
       propertyPath: m_LocalPosition.x

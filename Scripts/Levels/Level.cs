@@ -416,6 +416,7 @@ namespace Assets.Scripts.Levels
                     Stage.AsteroidMinimumSpawnRate = 1;
                 }
 
+
                 // [debug]
                 //Stage.CurrentAsteroidMaxSpawnRate /= 2;
                 //Stage.CurrentAsteroidMinimumSpawnRate /= 2;
@@ -623,18 +624,28 @@ namespace Assets.Scripts.Levels
                 if (State.IsSideKilled(ConfigData.Configuration.BeeSide) && !State.IsSideKilled(ConfigData.Configuration.HumanSide))
                 {
                     WinningSide = ConfigData.Configuration.HumanSide;
-                    if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
+                    if (ConfigData.CurrentGameMode == ConfigData.GameModes.FreePlay)
                     {
                         ConfigData.UserProgressData.HumanFreePlayWins++;
+                        ConfigData.UserProgressData.Save();
+                    }
+                    else if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge)
+                    {
+                        ConfigData.UserProgressData.HumanChallengeWins++;
                         ConfigData.UserProgressData.Save();
                     }
                 }
                 else if (State.IsSideKilled(ConfigData.Configuration.HumanSide) && !State.IsSideKilled(ConfigData.Configuration.BeeSide))
                 {
                     WinningSide = ConfigData.Configuration.BeeSide;
-                    if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
+                    if (ConfigData.CurrentGameMode != ConfigData.GameModes.FreePlay)
                     {
                         ConfigData.UserProgressData.BeeFreePlayWins++;
+                        ConfigData.UserProgressData.Save();
+                    }
+                    else if (ConfigData.CurrentGameMode != ConfigData.GameModes.Challenge)
+                    {
+                        ConfigData.UserProgressData.BeeChallengeWins++;
                         ConfigData.UserProgressData.Save();
                     }
                 }
@@ -948,6 +959,7 @@ namespace Assets.Scripts.Levels
             {
                 //PostSetupTest();
                 SelectFirstSquad();
+                EasterEggTriggers();
             }
 
 
@@ -1194,6 +1206,11 @@ namespace Assets.Scripts.Levels
                     Pathfinder = new Pathfinder(this);
                 }
 
+            }
+
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.FishTank)
+            {
+                Stage.Camera.orthographicSize = Map.MaxZoom;
             }
 
         }

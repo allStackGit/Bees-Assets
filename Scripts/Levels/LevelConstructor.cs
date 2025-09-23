@@ -22,7 +22,7 @@ namespace Assets.Scripts.Levels
         public void RequestServerSetup()
         {
             Level.IsLevelSetupOnServer = false;
-            ConfigData.Socket.SendRequest(new SetupLevelRequest(new SetupLevel(ConfigData.CurrentGameMode == ConfigData.GameModes.FreePlay ? -1 : ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide), ConfigData.GetUserId()),
+            ConfigData.Socket.SendRequest(new SetupLevelRequest(new SetupLevel(ConfigData.CurrentGameMode == ConfigData.GameModes.FreePlay || ConfigData.CurrentGameMode == ConfigData.GameModes.FishTank ? -1 : ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide), ConfigData.GetUserId()),
                 ConfigData.StandardMaxTimeOnQueue, Level));
         }
         public void SetCarrierShipFleetships(List<Squad> squads)

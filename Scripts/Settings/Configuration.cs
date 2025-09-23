@@ -73,7 +73,7 @@ namespace Assets.Scripts.Settings
         public bool MirrorLocalStorageToServer => UseLocalStorage && MirrorStorage;
         public bool MirrorServerStorageToLocal => !UseLocalStorage && MirrorStorage;
 
-        public Configuration(int userId) : base("configuration", userId)
+        public Configuration(ulong userId) : base("configuration", userId)
         {
         }
         protected override void ProcessData(string contents)

@@ -10,12 +10,12 @@ namespace Assets.Scripts.Server
         /// The Id of the Game connection on the server
         /// </summary>
         public long GameId;
-        public int UserId;
+        public ulong UserId;
         public float Version;
         public string Type;
         public long Hash;
 
-        public SetupLevel(int levelId, int userId, long gameId = 0)
+        public SetupLevel(int levelId, ulong userId, long gameId = 0)
         {
             this.LevelId = levelId;    
             this.UserId = userId;

@@ -8,7 +8,7 @@ namespace Assets.Scripts.Server
     {
         public readonly float Version;
         public ServerSettings Settings;
-        public GetUserSettingsData(int userId, string name, float version) : base(userId, name)
+        public GetUserSettingsData(ulong userId, string name, float version) : base(userId, name)
         {
             Version = version;
         }

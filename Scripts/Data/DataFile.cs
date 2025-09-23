@@ -19,7 +19,7 @@ namespace Assets.Scripts.Data
         private object _jsonObject;
         private DataFileRequest _request = null;
         private bool _isDataLoaded = false;
-        private int _userId;
+        private ulong _userId;
 
         public DataFile(string name)
         {

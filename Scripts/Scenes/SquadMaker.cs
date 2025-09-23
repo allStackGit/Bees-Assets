@@ -207,6 +207,10 @@ namespace Assets.Scripts.Scenes
                     //Debug.Log(GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>().color);
                     GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>().color = ConfigData.GetUIColor("medium");
                 }
+                else
+                {
+                    GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>().color = ConfigData.GetUIColor("saved-squad-label-default-color");
+                }
             });
         }
         private void Setup()
@@ -679,7 +683,7 @@ namespace Assets.Scripts.Scenes
                 List<FleetShip> visibleShips = ConfigData.CurrentShips.GetAliveShipsOfType(type);
 
                 // if ship type has any visible ships
-                if (visibleShips.Any() && ConfigData.UserProgressData.VisibleShipTypes.Contains(type))
+                if (ConfigData.UserProgressData.VisibleShipTypes.Contains(type))
                 {
                     //Debug.Log($"Setting the ship count for {type}");
                     // get the count of the ship type and update the label

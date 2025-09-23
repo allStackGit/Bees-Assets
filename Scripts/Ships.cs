@@ -368,7 +368,7 @@ namespace Assets.Scripts
                 }
                 else
                 {
-                    Debug.LogError($"Could not fully create {name} because there were only {i}/{shipCount} ships of {shipType}");
+                    Debug.LogWarning($"Could not fully create {name} because there were only {i}/{shipCount} ships of {shipType}");
                     Debug.Log(Utilities.ListToString(CurrentShips.GetFleetShips().Where((fs) => fs.Type == shipType).ToList()));
                 }
             }

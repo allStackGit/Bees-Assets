@@ -45,10 +45,6 @@ PrefabInstance:
       value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 2520248311329120408, guid: c56c01c11c9ad6a4aa3c7694969bdc5b, type: 3}
-      propertyPath: ExplosionAnimation
-      value: 
-      objectReference: {fileID: 5579092777274668033, guid: 603572b9c21ddf145804c5a2bc86068c, type: 3}
-    - target: {fileID: 2520248311329120408, guid: c56c01c11c9ad6a4aa3c7694969bdc5b, type: 3}
       propertyPath: HasCollisionAnimation
       value: 1
       objectReference: {fileID: 0}
@@ -1274,11 +1270,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8425480138423980886, guid: c56c01c11c9ad6a4aa3c7694969bdc5b, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -1.57
+      value: 0.86
       objectReference: {fileID: 0}
     - target: {fileID: 8425480138423980886, guid: c56c01c11c9ad6a4aa3c7694969bdc5b, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 4.19
+      value: 1.99
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []

@@ -16,7 +16,7 @@ namespace Assets.Scripts.Scenes
     public class MainMenu : Scene
     {
         public GameObject MenuPanel, MenuPanelBacker, CampaignRow, ChallengeRow, TrainingRoomRow, BeesTrainingRoomRow;
-        public GameObject HumanChallengeModeButton, HumanTrainingRoomButton, BeeFreePlayButton, HumanCampaignModeButton, CommanderNameDialogue, ResetCampaignButton, ResetChallengeModeButton, ResetTrainingRoomButton, ResetBeesTrainingRoomButton;
+        public GameObject HumanChallengeModeButton, HumanTrainingRoomButton, BeeFreePlayButton, HumanCampaignModeButton, CommanderNameDialogue, ResetCampaignButton, ResetChallengeModeButton, ResetTrainingRoomButton, ResetBeesTrainingRoomButton, FishTankButton;
         public TMP_InputField NameInput;
         public Codex CodexManager;
         public Dialogue ResetConfirmation;
@@ -55,6 +55,10 @@ namespace Assets.Scripts.Scenes
                 BeeFreePlayButton.SetActive(false);
                 ResetBeesTrainingRoomButton.SetActive(false);
                 BeesTrainingRoomRow.SetActive(false);
+            }
+            if (!ConfigData.UserProgressData.IsFishTankUnlocked)
+            {
+                FishTankButton.SetActive(false);
             }
             CodexManager.SetupCodex();
             int currentLevel;
@@ -165,6 +169,14 @@ namespace Assets.Scripts.Scenes
             SetupSquadMaker(side);
         }
 
+
+        public void GoToFishTank()
+        {
+            DeselectButton();
+            ConfigData.CurrentGameMode = ConfigData.GameModes.FishTank;
+            ConfigData.CurrentShips = ConfigData.FreePlayShips;
+            SceneManager.LoadSceneAsync("Hivemind Training", LoadSceneMode.Single);
+        }
         public void NewGame()
         {
             // [alert] should give the user an alert saying that this will reset their previous progress, if they've already started a game
@@ -177,6 +189,7 @@ namespace Assets.Scripts.Scenes
        
         public void PlayCampaign(string side)
         {
+            HumanCampaignModeButton.GetComponent<Button>().enabled = false;
             if (ConfigData.Configuration.UserSide != ConfigData.Configuration.HumanSide)
             {
                 ConfigData.SwapSides();

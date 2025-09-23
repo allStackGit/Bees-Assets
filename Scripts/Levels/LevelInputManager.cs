@@ -955,8 +955,14 @@ namespace Assets.Scripts.Levels
         {
             // No local variables need extraction here.
             Level.State.GetSelectedSquads().ForEach((squad) =>
-            {
-                squad.UserMining(asteroid);
+            {   if (squad.GetShips().Any((s) => s.ShipType == ConfigData.ShipTypes.Factory))
+                {
+                    squad.UserMining(asteroid);
+                }
+                else
+                {
+                    squad.Move(Input.mousePosition);
+                }
             });
         }
 
@@ -1255,7 +1261,7 @@ namespace Assets.Scripts.Levels
         public void MaintainScrollBoundary()
         {
             // No local variables declared here.
-            if (Level.HasPlayer && !Stage.UnlockCamera)
+            if (!Stage.UnlockCamera)
             {
                 MaintainHorizontalScrollBoundary(Stage.Camera);
                 MaintainVerticalScrollBoundary(Stage.Camera);
@@ -1270,6 +1276,7 @@ namespace Assets.Scripts.Levels
             _maintainHorizontal_position = camera.transform.position;
             _maintainHorizontal_camVertExtent = camera.orthographicSize;
             _maintainHorizontal_camHorzExtent = camera.aspect * _maintainHorizontal_camVertExtent;
+            //Debug.Log($"{Level}, {Level?.Map}, {Level?.Map?.SpriteRenderer}, {Level?.Map?.SpriteRenderer?.bounds}");
             _maintainHorizontal_mapBounds = Level.Map.SpriteRenderer.bounds;
 
             _maintainHorizontal_leftBound = _maintainHorizontal_mapBounds.min.x + _maintainHorizontal_camHorzExtent;

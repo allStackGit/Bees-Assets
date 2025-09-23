@@ -2086,6 +2086,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Restart Button
       objectReference: {fileID: 0}
+    - target: {fileID: 8675139255330635851, guid: 2c69add7043f0224698172081a967d71, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -2487,7 +2491,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5483838851917909403, guid: 345c20c960a3f414f84b139929890c50, type: 3}
       propertyPath: m_IsActive
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 5483838851917909403, guid: 345c20c960a3f414f84b139929890c50, type: 3}
       propertyPath: m_TagString
@@ -7532,6 +7536,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Choose New Squads Button
       objectReference: {fileID: 0}
+    - target: {fileID: 8675139255330635851, guid: 2c69add7043f0224698172081a967d71, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -8987,7 +8995,7 @@ PrefabInstance:
       objectReference: {fileID: 2108627698}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: UnlockCamera
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 3122851651496333546, guid: ad9ac243d0f53f54f8821ad60814c467, type: 3}
       propertyPath: ActivateAudio
@@ -10007,6 +10015,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Surrender Button
       objectReference: {fileID: 0}
+    - target: {fileID: 8675139255330635851, guid: 2c69add7043f0224698172081a967d71, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -10296,7 +10308,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 1917256456456610199, guid: 8f7d76eeb7e124348a1a4e884ddafec8, type: 3}
       propertyPath: m_IsActive
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 2661054541886678236, guid: 8f7d76eeb7e124348a1a4e884ddafec8, type: 3}
       propertyPath: m_LocalScale.x
@@ -11799,6 +11811,10 @@ PrefabInstance:
     - target: {fileID: 8675139255330635851, guid: 2c69add7043f0224698172081a967d71, type: 3}
       propertyPath: m_Name
       value: Switch Sides Button
+      objectReference: {fileID: 0}
+    - target: {fileID: 8675139255330635851, guid: 2c69add7043f0224698172081a967d71, type: 3}
+      propertyPath: m_IsActive
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -17904,7 +17920,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8675139255330635851, guid: 2c69add7043f0224698172081a967d71, type: 3}
       propertyPath: m_IsActive
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -18559,7 +18575,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 2944892714679254333, guid: e154edb1d8fb554428cdc7380556de19, type: 3}
       propertyPath: orthographic size
-      value: 550
+      value: 140
       objectReference: {fileID: 0}
     - target: {fileID: 2944892714679254333, guid: e154edb1d8fb554428cdc7380556de19, type: 3}
       propertyPath: m_CullingMask.m_Bits

@@ -478,7 +478,6 @@ public class Stage : Scene
             _finalize_localizedPosition = DefaultCameraPosition + PrimaryLevel.GetPosition();
             Camera.transform.position = new Vector3(_finalize_localizedPosition.x, _finalize_localizedPosition.y, -10);
 
-            InputManager.MaintainScrollBoundary();
         }
 
         SetupLevels();
@@ -486,6 +485,11 @@ public class Stage : Scene
         if (HasAsteroids)
         {
             Pool.FillAsteroidPool();
+        }
+
+        if (!IsTraining && !UnlockCamera)
+        {
+            InputManager.MaintainScrollBoundary();
         }
 
         _finalize_end = (Time.realtimeSinceStartup - StartTime) * 1000; // seconds to milliseconds

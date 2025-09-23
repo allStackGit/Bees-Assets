@@ -153,8 +153,8 @@ TextureImporter:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 60
-        height: 60
+        width: 12
+        height: 12
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -173,10 +173,10 @@ TextureImporter:
       name: shooting_strategies_1
       rect:
         serializedVersion: 2
-        x: 60
+        x: 12
         y: 0
-        width: 60
-        height: 60
+        width: 12
+        height: 12
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -195,10 +195,10 @@ TextureImporter:
       name: shooting_strategies_2
       rect:
         serializedVersion: 2
-        x: 120
+        x: 24
         y: 0
-        width: 60
-        height: 60
+        width: 12
+        height: 12
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -217,10 +217,10 @@ TextureImporter:
       name: shooting_strategies_3
       rect:
         serializedVersion: 2
-        x: 180
+        x: 36
         y: 0
-        width: 60
-        height: 60
+        width: 12
+        height: 12
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -239,10 +239,10 @@ TextureImporter:
       name: shooting_strategies_4
       rect:
         serializedVersion: 2
-        x: 240
+        x: 48
         y: 0
-        width: 60
-        height: 60
+        width: 12
+        height: 12
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -261,10 +261,10 @@ TextureImporter:
       name: shooting_strategies_5
       rect:
         serializedVersion: 2
-        x: 300
+        x: 60
         y: 0
-        width: 60
-        height: 60
+        width: 12
+        height: 12
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -283,10 +283,10 @@ TextureImporter:
       name: shooting_strategies_6
       rect:
         serializedVersion: 2
-        x: 360
+        x: 72
         y: 0
-        width: 60
-        height: 60
+        width: 12
+        height: 12
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -305,10 +305,10 @@ TextureImporter:
       name: shooting_strategies_7
       rect:
         serializedVersion: 2
-        x: 420
+        x: 84
         y: 0
-        width: 60
-        height: 60
+        width: 12
+        height: 12
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -327,10 +327,10 @@ TextureImporter:
       name: shooting_strategies_8
       rect:
         serializedVersion: 2
-        x: 480
+        x: 96
         y: 0
-        width: 60
-        height: 60
+        width: 12
+        height: 12
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -349,10 +349,10 @@ TextureImporter:
       name: shooting_strategies_9
       rect:
         serializedVersion: 2
-        x: 540
+        x: 108
         y: 0
-        width: 60
-        height: 60
+        width: 12
+        height: 12
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -371,10 +371,10 @@ TextureImporter:
       name: shooting_strategies_10
       rect:
         serializedVersion: 2
-        x: 600
+        x: 120
         y: 0
-        width: 60
-        height: 60
+        width: 12
+        height: 12
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -393,10 +393,10 @@ TextureImporter:
       name: shooting_strategies_11
       rect:
         serializedVersion: 2
-        x: 660
+        x: 132
         y: 0
-        width: 60
-        height: 60
+        width: 12
+        height: 12
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -415,10 +415,10 @@ TextureImporter:
       name: shooting_strategies_12
       rect:
         serializedVersion: 2
-        x: 720
+        x: 144
         y: 0
-        width: 60
-        height: 60
+        width: 12
+        height: 12
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -437,10 +437,10 @@ TextureImporter:
       name: shooting_strategies_13
       rect:
         serializedVersion: 2
-        x: 780
+        x: 156
         y: 0
-        width: 60
-        height: 60
+        width: 12
+        height: 12
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -459,10 +459,10 @@ TextureImporter:
       name: shooting_strategies_14
       rect:
         serializedVersion: 2
-        x: 840
+        x: 168
         y: 0
-        width: 60
-        height: 60
+        width: 12
+        height: 12
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -481,10 +481,10 @@ TextureImporter:
       name: shooting_strategies_15
       rect:
         serializedVersion: 2
-        x: 900
+        x: 180
         y: 0
-        width: 60
-        height: 60
+        width: 12
+        height: 12
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -503,10 +503,10 @@ TextureImporter:
       name: shooting_strategies_16
       rect:
         serializedVersion: 2
-        x: 960
+        x: 192
         y: 0
-        width: 60
-        height: 60
+        width: 12
+        height: 12
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -525,10 +525,10 @@ TextureImporter:
       name: shooting_strategies_17
       rect:
         serializedVersion: 2
-        x: 1020
+        x: 204
         y: 0
-        width: 60
-        height: 60
+        width: 12
+        height: 12
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -547,10 +547,10 @@ TextureImporter:
       name: shooting_strategies_18
       rect:
         serializedVersion: 2
-        x: 1080
+        x: 216
         y: 0
-        width: 60
-        height: 60
+        width: 12
+        height: 12
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -569,10 +569,10 @@ TextureImporter:
       name: shooting_strategies_19
       rect:
         serializedVersion: 2
-        x: 1140
+        x: 228
         y: 0
-        width: 60
-        height: 60
+        width: 12
+        height: 12
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -591,10 +591,10 @@ TextureImporter:
       name: shooting_strategies_20
       rect:
         serializedVersion: 2
-        x: 1200
+        x: 240
         y: 0
-        width: 60
-        height: 60
+        width: 12
+        height: 12
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -613,10 +613,10 @@ TextureImporter:
       name: shooting_strategies_21
       rect:
         serializedVersion: 2
-        x: 1260
+        x: 252
         y: 0
-        width: 60
-        height: 60
+        width: 12
+        height: 12
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -635,10 +635,10 @@ TextureImporter:
       name: shooting_strategies_22
       rect:
         serializedVersion: 2
-        x: 1320
+        x: 264
         y: 0
-        width: 60
-        height: 60
+        width: 12
+        height: 12
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -657,10 +657,10 @@ TextureImporter:
       name: shooting_strategies_23
       rect:
         serializedVersion: 2
-        x: 1380
+        x: 276
         y: 0
-        width: 60
-        height: 60
+        width: 12
+        height: 12
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -679,10 +679,10 @@ TextureImporter:
       name: shooting_strategies_24
       rect:
         serializedVersion: 2
-        x: 1440
+        x: 288
         y: 0
-        width: 60
-        height: 60
+        width: 12
+        height: 12
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -701,10 +701,10 @@ TextureImporter:
       name: shooting_strategies_25
       rect:
         serializedVersion: 2
-        x: 1500
+        x: 300
         y: 0
-        width: 60
-        height: 60
+        width: 12
+        height: 12
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -733,7 +733,7 @@ TextureImporter:
     spriteCustomMetadata:
       entries:
       - key: SpriteEditor.SliceSettings
-        value: '{"sliceOnImport":false,"gridCellCount":{"x":26.0,"y":1.0},"gridSpriteSize":{"x":60.0,"y":60.0},"gridSpriteOffset":{"x":0.0,"y":0.0},"gridSpritePadding":{"x":0.0,"y":0.0},"pivot":{"x":0.0,"y":0.0},"autoSlicingMethod":0,"spriteAlignment":0,"slicingType":2,"keepEmptyRects":false,"isAlternate":false}'
+        value: '{"sliceOnImport":false,"gridCellCount":{"x":26.0,"y":1.0},"gridSpriteSize":{"x":12.0,"y":12.0},"gridSpriteOffset":{"x":0.0,"y":0.0},"gridSpritePadding":{"x":0.0,"y":0.0},"pivot":{"x":0.0,"y":0.0},"autoSlicingMethod":0,"spriteAlignment":0,"slicingType":2,"keepEmptyRects":false,"isAlternate":false}'
     nameFileIdTable:
       shooting_strategies_0: -1069112786288604967
       shooting_strategies_1: 9064427221094264089
