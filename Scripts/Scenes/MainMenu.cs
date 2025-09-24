@@ -75,7 +75,6 @@ namespace Assets.Scripts.Scenes
 
             if (!IsResettingCampaign)
             {
-                ResetCampaignButton.SetActive(true);
                 ResetConfirmation = new Dialogue(DialoguePrefab, ConfigData.Configuration.AreYouSure, "This will set you back to the beginning of the campaign.",
                 new List<string>() { ConfigData.Configuration.Yes, ConfigData.Configuration.No }, new List<UnityAction>() { ResetCampaign });
             }
@@ -173,6 +172,7 @@ namespace Assets.Scripts.Scenes
         public void GoToFishTank()
         {
             DeselectButton();
+            ConfigData.LevelOptions = null;
             ConfigData.CurrentGameMode = ConfigData.GameModes.FishTank;
             ConfigData.CurrentShips = ConfigData.FreePlayShips;
             SceneManager.LoadSceneAsync("Hivemind Training", LoadSceneMode.Single);
@@ -255,8 +255,8 @@ namespace Assets.Scripts.Scenes
             ConfigData.UserProgressData.MinedTSV = 0;
 
 
-            ConfigData.IsSavedSquadsDataLoaded[0] = false;
-            ConfigData.IsFleetDataLoaded[0] = false;
+            ConfigData.IsSavedSquadsDataLoaded[1] = false;
+            ConfigData.IsFleetDataLoaded[1] = false;
             ConfigData.IsLoadingUserData = true;
             IsFinalized = false;
             IsResettingCampaign = true;
@@ -269,7 +269,6 @@ namespace Assets.Scripts.Scenes
             ConfigData.UserProgressData.Save(); // Save this after the others so changes to fleet and squad ID are saved
 
 
-            ResetCampaignButton.SetActive(false);
         }
 
         public void ResetChallenge()
@@ -417,7 +416,6 @@ namespace Assets.Scripts.Scenes
 
         public void DeselectButton()
         {
-            UIAudioController.Instance.PlayButtonSound();
             EventSystem.GetComponent<UnityEngine.EventSystems.EventSystem>().SetSelectedGameObject(null);
         }
 

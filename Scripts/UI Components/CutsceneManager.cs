@@ -60,10 +60,9 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Samuel", Portraits["Samuel"], "It isn’t responding, sir."),
             new DialogueLine("Samuel", Portraits["Samuel"], 1),
             new DialogueLine("Samuel", Portraits["Samuel"], "Understood, sir. We’ll send Lieutenant Tom out immediately."),
-            new DialogueLine(),
 
             new DialogueLine("Tom", Portraits["Tom"], $"This is Gunship D-4 reporting to command. I’m approaching the unidentified vessel now."),
-            new DialogueLine(),
+
             new DialogueLine("Tom", Portraits["Tom"], "Unidentified vessel, you are in United Earth military airspace. Identify yourself now."),
             new DialogueLine("Samuel", Portraits["Samuel"], 1),
             new DialogueLine("Samuel", Portraits["Samuel"], "Still nothing, even on local communications?"),
@@ -73,16 +72,16 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Samuel", Portraits["Samuel"], "Shoot it down? We don’t even know what it is! Who even reported this?"),
             new DialogueLine("High Command", Portraits["High Command"], "Those are your orders, Commander."),
             new DialogueLine("Samuel", Portraits["Samuel"], "But- oh, they disconnected. Looks like we have to attack, sir."),
-            new DialogueLine(),
+
             new DialogueLine("Tom", Portraits["Tom"], "What are your orders, Commander?"),
             new DialogueLine("Samuel", Portraits["Samuel"], "In order to attack, he’ll need to get in range. Once he's in range, he can attack the ship."),
-            new DialogueLine(),
+
             new DialogueLine("Tom", Portraits["Tom"], "Well, that was hardly a fight."),
             new DialogueLine("Samuel", Portraits["Samuel"], "I hope it wasn’t an innocent civilian. Why would High Command even order that?"),
-            new DialogueLine(),
+
             new DialogueLine("Tom", Portraits["Tom"], "Uh, Commander? Are you picking this up?"),
             new DialogueLine("Samuel", Portraits["Samuel"], "You need to get out of there, now!"),
-            new DialogueLine(),
+
             new DialogueLine("Samuel", Portraits["Samuel"], "Their fleet is huge! We need to contact High Command immediately!"),
             new DialogueLine("Samuel", Portraits["Samuel"], "Dial-up noises", 2),
             new DialogueLine("Samuel", Portraits["Samuel"], "Communications are down, sir. What should we do?"),
@@ -572,18 +571,18 @@ public class CutsceneManager : MonoBehaviour
     {
         DialogueManager.gameObject.SetActive(true);
     }
-    public void PlaySingleDialogueLine(DialogueLine line, bool isLastDialogue = false)
+    public void PlaySingleDialogueLine(DialogueLine line, bool isLastDialogue = false, bool hasContinueButton = true)
     {
         HitDialogueBreak = false;
         PlayDialogueSection(new List<DialogueLine> { line }, isLastDialogue);
     }
-    public void PlayDialogueSection(List<DialogueLine> lines, bool isLastDialogue = false)
+    public void PlayDialogueSection(List<DialogueLine> lines, bool isLastDialogue = false, bool hasContinueButton = true)
     {
         HitDialogueBreak = false;
         ShowDialogue();
         DialogueManager.Setup(this);
         DialogueManager.SetPortrait(lines[0].PortraitA);
-        DialogueManager.StartDialogue(lines, false, isLastDialogue);
+        DialogueManager.StartDialogue(lines, hasContinueButton, isLastDialogue);
     }
     public void StartDialogue(DialogueManager.Dialogues dialogueType)
     {

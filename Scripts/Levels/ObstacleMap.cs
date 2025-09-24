@@ -6,7 +6,8 @@ using UnityEngine;
 public class ObstacleMap
 {
     public int Id;
-    public List<Obstacle> Obstacles = new List<Obstacle>();
+    public GameObject ObstacleBackground;
+    public List<StaticObstacle> Obstacles = new List<StaticObstacle>();
     public ObstacleMap(int id)
     {
         Id = id;

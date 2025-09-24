@@ -527,6 +527,26 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 705573305224493726, guid: 496655638f6b03a44b39f7e8dcb590ee, type: 3}
+      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.size
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 705573305224493726, guid: 496655638f6b03a44b39f7e8dcb590ee, type: 3}
+      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[2].m_Mode
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 705573305224493726, guid: 496655638f6b03a44b39f7e8dcb590ee, type: 3}
+      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[2].m_Target
+      value: 
+      objectReference: {fileID: 1692785598}
+    - target: {fileID: 705573305224493726, guid: 496655638f6b03a44b39f7e8dcb590ee, type: 3}
+      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[2].m_CallState
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 705573305224493726, guid: 496655638f6b03a44b39f7e8dcb590ee, type: 3}
+      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[2].m_TargetAssemblyTypeName
+      value: DialogueManager, Assembly-CSharp
+      objectReference: {fileID: 0}
     - target: {fileID: 6850395113328377477, guid: 496655638f6b03a44b39f7e8dcb590ee, type: 3}
       propertyPath: m_Name
       value: DialogueBox
@@ -534,6 +554,14 @@ PrefabInstance:
     - target: {fileID: 6850395113328377477, guid: 496655638f6b03a44b39f7e8dcb590ee, type: 3}
       propertyPath: m_IsActive
       value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7682796294812296223, guid: 496655638f6b03a44b39f7e8dcb590ee, type: 3}
+      propertyPath: EventSystem
+      value: 
+      objectReference: {fileID: 1925502628}
+    - target: {fileID: 7682796294812296223, guid: 496655638f6b03a44b39f7e8dcb590ee, type: 3}
+      propertyPath: ContinuePrompt
+      value: 
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -691,6 +719,11 @@ CanvasRenderer:
 GameObject:
   m_CorrespondingSourceObject: {fileID: 8675139255330635851, guid: 2c69add7043f0224698172081a967d71, type: 3}
   m_PrefabInstance: {fileID: 324102227}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1 &1692785598 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 4833548521616464996, guid: 124f1e3baaa060646a94843023174eb2, type: 3}
+  m_PrefabInstance: {fileID: 1925502627}
   m_PrefabAsset: {fileID: 0}
 --- !u!1001 &1844308278
 PrefabInstance:
@@ -933,7 +966,7 @@ MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 6052429405826095389, guid: 124f1e3baaa060646a94843023174eb2, type: 3}
   m_PrefabInstance: {fileID: 1925502627}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
+  m_GameObject: {fileID: 1692785598}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 76c392e42b5098c458856cdf6ecaaaa1, type: 3}

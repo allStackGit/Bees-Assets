@@ -4,6 +4,7 @@ using System.Collections;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 
@@ -12,13 +13,15 @@ public class DialogueManager : MonoBehaviour
     public CutsceneManager CutsceneManager;
     public GameObject DialogueBox;
     public TMP_Text DialogueText;
-    public TMP_Text ContinuePrompt;
+    public GameObject ContinueButton;
     public TMP_Text SpeakerName;
     public Image PortraitImage;
     public Dialogues CurrentDialogue;
+    public EventSystem EventSystem;
 
     private Queue<DialogueLine> dialogueLines = new Queue<DialogueLine>();
-    private bool _hasContinuePrompt, _isLastDialogue;
+    private DialogueLine _currentLine;
+    private bool _hasContinueButton, _isLastDialogue;
 
     public enum Dialogues
     {
@@ -39,6 +42,13 @@ public class DialogueManager : MonoBehaviour
     {
         CurrentDialogue = dialogueType;
     }
+    public void Update()
+    {
+        if (_currentLine.IsOver && Input.GetKey(KeyCode.Space))
+        {
+            DisplayNextLineWithDelay(.5f);
+        }
+    }
 
     public void StartDialogue(List<DialogueLine> lines, bool hasContinueButton, bool isLastDialogue)
     {
@@ -53,14 +63,15 @@ public class DialogueManager : MonoBehaviour
 
 
         DialogueBox.SetActive(true);
-        _hasContinuePrompt = hasContinueButton;
+        _hasContinueButton = hasContinueButton;
+        ContinueButton.SetActive(hasContinueButton);
         ToggleContinuePrompt(false);
         DisplayNextLine();
     }
 
     public void DisplayNextLine()
     {
-        //Debug.Log("Displaying next line in dialogue manager.");
+        //Debug.Log("Displaying next line in dialogue manager.");A
         if (dialogueLines.Count == 0)
         {
             if (_isLastDialogue)
@@ -73,12 +84,15 @@ public class DialogueManager : MonoBehaviour
             }
             return;
         }
-
-        DialogueLine line = dialogueLines.Dequeue();
+        if (_currentLine != null)
+        {
+            _currentLine.IsOver = false;
+        }
+        _currentLine = dialogueLines.Dequeue();
         StopAllCoroutines();
-        SpeakerName.text = line.SpeakerName;
-        SetPortrait(line.PortraitA);
-        StartCoroutine(TypeLine(line));
+        SpeakerName.text = _currentLine.SpeakerName;
+        SetPortrait(_currentLine.PortraitA);
+        StartCoroutine(TypeLine(_currentLine));
     }
 
     public void DisplayNextLineWithDelay(float delaySeconds = 2f)
@@ -130,7 +144,7 @@ public class DialogueManager : MonoBehaviour
                     }
                     line.IsSkipped = true;
                     SetPortrait(line.PortraitA);
-                    yield return new WaitForSeconds(0.02f);
+                    yield return new WaitForSeconds(0.5f);
                     ToggleContinuePrompt(true);
                     break;
                 }
@@ -172,6 +186,7 @@ public class DialogueManager : MonoBehaviour
 
                 yield return new WaitForSeconds(0.02f);
             }
+            line.IsOver = true;
             if (line.PauseDuration > 0)
             {
                 if (Input.GetKey(KeyCode.Space))
@@ -183,13 +198,14 @@ public class DialogueManager : MonoBehaviour
                 else
                 {
                     yield return new WaitForSeconds(line.PauseDuration);
+                    DisplayNextLineWithDelay(2f);
                 }
             }
 
 
             if (!line.IsSkipped)
             {
-                ToggleContinuePrompt(true);
+                ToggleContinuePrompt(line.PauseDuration <= 0);
             }
         }
         
@@ -197,20 +213,36 @@ public class DialogueManager : MonoBehaviour
 
     public void ToggleContinuePrompt(bool showOrHide)
     {
-        if (_hasContinuePrompt)
+        if (showOrHide && Input.GetKey(KeyCode.Space))
         {
-            ContinuePrompt.gameObject.SetActive(showOrHide);
+            Debug.Log($"Space held, going to next line");
+            DisplayNextLine();
         }
-        else if (showOrHide)
+        else
         {
-            DisplayNextLineWithDelay(2f); // 2f
+            if (_hasContinueButton)
+            {
+                ContinueButton.SetActive(showOrHide);
+            }
+            else if (showOrHide)
+            {
+                DisplayNextLineWithDelay(2f); // 2f
+            }
         }
+
     }
 
     void EndDialogue()
     {
         Debug.Log("Dialogue ended.");
         CutsceneManager.EndDialogue(CurrentDialogue);
+    }
+    public void GoToNextLine()
+    {
+        Debug.Log($"Go to next line");
+        EventSystem.GetComponent<UnityEngine.EventSystems.EventSystem>().SetSelectedGameObject(null);
+        DisplayNextLine();
+
     }
 
 }

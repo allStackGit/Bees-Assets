@@ -386,35 +386,35 @@ public class Pool : MonoBehaviour
             case 0:
                 Stage.Prefabs.EmptyObstacleList.ForEach((prefab) =>
                 {
-                    _spawn_obstacleMap.Obstacles.Add(Instantiate(prefab).GetComponent<Obstacle>());
+                    _spawn_obstacleMap.Obstacles.Add(Instantiate(prefab).GetComponent<StaticObstacle>());
                 });
                 break;
 
             case 1:
                 Stage.Prefabs.MazePrefabs.ForEach((prefab) =>
                 {
-                    _spawn_obstacleMap.Obstacles.Add(Instantiate(prefab).GetComponent<Obstacle>());
+                    _spawn_obstacleMap.Obstacles.Add(Instantiate(prefab).GetComponent<StaticObstacle>());
                 });
                 break;
 
             case 2:
                 Stage.Prefabs.ThreePathsPrefabs.ForEach((prefab) =>
                 {
-                    _spawn_obstacleMap.Obstacles.Add(Instantiate(prefab).GetComponent<Obstacle>());
+                    _spawn_obstacleMap.Obstacles.Add(Instantiate(prefab).GetComponent<StaticObstacle>());
                 });
                 break;
 
             case 3:
                 Stage.Prefabs.ForestPrefabs.ForEach((prefab) =>
                 {
-                    _spawn_obstacleMap.Obstacles.Add(Instantiate(prefab).GetComponent<Obstacle>());
+                    _spawn_obstacleMap.Obstacles.Add(Instantiate(prefab).GetComponent<StaticObstacle>());
                 });
                 break;
 
             case 4:
                 Stage.Prefabs.TheWallPrefabs.ForEach((prefab) =>
                 {
-                    _spawn_obstacleMap.Obstacles.Add(Instantiate(prefab).GetComponent<Obstacle>());
+                    _spawn_obstacleMap.Obstacles.Add(Instantiate(prefab).GetComponent<StaticObstacle>());
                 });
                 break;
             default:

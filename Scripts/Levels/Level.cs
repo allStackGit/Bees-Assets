@@ -318,18 +318,19 @@ namespace Assets.Scripts.Levels
                 _clearance_Ships = _clearance_Ships.Where((s) => s.ShipType != _clearance_Ships[0].ShipType).ToList();
             }
         }
-        private List<Obstacle> GenerateRandomObstacles()
+        private List<StaticObstacle> GenerateRandomObstacles()
         {
-            List<Obstacle> obstacles = new List<Obstacle>();
+            List<StaticObstacle> obstacles = new List<StaticObstacle>();
             Vector2 maxSpawnDistance = new Vector2(MaxX - 150, MaxY - 150);
             GameObject obstacleBackground = Instantiate(Stage.Prefabs.ObstacleBackgroundPrefab, Map.transform);
-            SpriteRenderer sr = obstacleBackground.GetComponent<SpriteRenderer>();
+            ObstacleMap.ObstacleBackground = obstacleBackground;
+            //SpriteRenderer sr = obstacleBackground.GetComponent<SpriteRenderer>();
             //sr.sprite = Map.SpriteRenderer.sprite;
-            sr.size = Map.SpriteRenderer.size;
+            //sr.size = Map.SpriteRenderer.size;
             for (int i = 0; i < Utilities.RandomInt(10) + 1; i++)
             {
                 GameObject obstacleObject = Instantiate(Stage.Prefabs.ObstaclePrefab, Map.transform);
-                Obstacle obstacle = obstacleObject.GetComponent<Obstacle>();
+                StaticObstacle obstacle = obstacleObject.GetComponent<StaticObstacle>();
                 if (Utilities.CoinToss())
                 {
                     obstacle.transform.localScale = new Vector2(Utilities.RandomInt(150) + 20, Utilities.RandomInt(50) + 20); // wider rather than taller
@@ -366,14 +367,15 @@ namespace Assets.Scripts.Levels
                 else if (CurrentLevelOptions.ObstacleList.Count > 0)
                 {
                     GameObject obstacleBackground = Instantiate(Stage.Prefabs.ObstacleBackgroundPrefab, Map.transform);
-                    SpriteRenderer sr = obstacleBackground.GetComponent<SpriteRenderer>();
+                    ObstacleMap.ObstacleBackground = obstacleBackground;
+                    //SpriteRenderer sr = obstacleBackground.GetComponent<SpriteRenderer>();
                     //sr.sprite = Map.SpriteRenderer.sprite;
-                    sr.size = Map.SpriteRenderer.size;
+                    //sr.size = Map.SpriteRenderer.size;
 
                     ObstacleMap.Obstacles = CurrentLevelOptions.ObstacleList.Select((vectorPair) =>
                     {
                         GameObject obstacleObject = Instantiate(Stage.Prefabs.ObstaclePrefab, Map.transform);
-                        Obstacle obstacle = obstacleObject.GetComponent<Obstacle>();
+                        StaticObstacle obstacle = obstacleObject.GetComponent<StaticObstacle>();
 
                         obstacle.transform.localPosition = vectorPair.Item1;
                         obstacle.transform.localScale = vectorPair.Item2;
@@ -388,7 +390,7 @@ namespace Assets.Scripts.Levels
                 else
                 {
                     GameObject obstacleContainer = Instantiate(Resources.Load<GameObject>($"Obstacles/{CurrentLevelOptions.Obstacles}"), Map.transform);
-                    List<Obstacle> obstacles = obstacleContainer.GetComponentsInChildren<Obstacle>().ToList();
+                    List<StaticObstacle> obstacles = obstacleContainer.GetComponentsInChildren<StaticObstacle>().ToList();
 
                     ObstacleMap.Obstacles = obstacles;
                 }
@@ -952,7 +954,7 @@ namespace Assets.Scripts.Levels
             if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
             {
                 SetTriggers();
-                _checkTriggersTimer.Reuse(5, CheckTriggers, true);
+                _checkTriggersTimer.Reuse(2, CheckTriggers, true);
                 AddTimer(_checkTriggersTimer);
             }
             else
@@ -1312,8 +1314,14 @@ namespace Assets.Scripts.Levels
             if (HasObstacles)
             {
                 //Stage.Pool.ReturnObstacleMapToPool(ObstacleMap, CurrentLevelOptions.Obstacles);
+
+                ObstacleMap.Obstacles.ToList().ForEach((obstacle) =>
+                {
+                    Destroy(obstacle.gameObject);
+                });
+                Destroy(ObstacleMap.ObstacleBackground);
             }
-            if (State.Obstacles.Count > 0) // Level can have obstacles from asteroids, obstacles, and mining asteroids
+            if (State.Obstacles.Count > 0) // Level can have obstacles from asteroids, obstacles, and mining asteroids. Does not include static obstacles
             {
                 
 

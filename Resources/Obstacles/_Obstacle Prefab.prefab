@@ -9,9 +9,9 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1221964066464149321}
-  - component: {fileID: 5458106752762569533}
   - component: {fileID: 6529877359733435797}
   - component: {fileID: 1620906452355374873}
+  - component: {fileID: 3811005468986347685}
   m_Layer: 19
   m_Name: _Obstacle Prefab
   m_TagString: Obstacle
@@ -34,32 +34,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &5458106752762569533
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2254396663677463879}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b193967b34ee82745a91937153b61fce, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  Health: 1000
-  OriginalHealth: 0
-  Id: 0
-  MapPointsIndex: 0
-  Name: Obstacle
-  IsDead: 0
-  Level: {fileID: 0}
-  Stage: {fileID: 0}
-  ObstacleType: 0
-  Collider: {fileID: 1620906452355374873}
-  ProximityCollider: {fileID: 0}
-  ClearanceMappingCollider: {fileID: 0}
-  SpriteRenderer: {fileID: 0}
-  SpriteMask: {fileID: 0}
 --- !u!331 &6529877359733435797
 SpriteMask:
   m_ObjectHideFlags: 0
@@ -161,3 +135,29 @@ BoxCollider2D:
   m_AutoTiling: 0
   m_Size: {x: 1, y: 1}
   m_EdgeRadius: 0
+--- !u!114 &3811005468986347685
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2254396663677463879}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fcbace8163939e342a70fc25d4be63c8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Health: 1000
+  OriginalHealth: 0
+  Id: 0
+  MapPointsIndex: 0
+  Name: Static Obstacle
+  IsDead: 0
+  Level: {fileID: 0}
+  Stage: {fileID: 0}
+  ObstacleType: 0
+  Collider: {fileID: 1620906452355374873}
+  ProximityCollider: {fileID: 0}
+  ClearanceMappingCollider: {fileID: 0}
+  SpriteRenderer: {fileID: 0}
+  SpriteMask: {fileID: 0}

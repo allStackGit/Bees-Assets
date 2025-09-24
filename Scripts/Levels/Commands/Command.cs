@@ -477,6 +477,11 @@ namespace Assets.Scripts.Levels.Commands
                     {
                         GetSquad().RunCommandQueue();
                     }
+                    if (GetSquad().IsUserControlled && GetSquad().IsLockedOn)
+                    {
+                        GetSquad().IsLockedOn = false;
+                        //GetSquad().GetShips().ForEach((s) => s.CannotChangeMovementOrders = false);
+                    }
                 }
 
                 // If this is a hivemind command with an outcomeId then find the past command in the state, update the TSV, and finalize it

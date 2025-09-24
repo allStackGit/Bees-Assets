@@ -796,14 +796,14 @@ namespace Assets.Scripts.UIComponents
                 Debug.Log($"onOrOff: {onOrOff}");
                 Level.State.GetSelectedSquads().ForEach((squad) =>
                 {
-                    Debug.Log(squad);
-                    Debug.Log(squad.HasCommand);
-                    Debug.Log(squad.GetCommand()?.HasEnemy);
+                    //Debug.Log(squad);
+                    //Debug.Log(squad.HasCommand);
+                    //Debug.Log(squad.GetCommand()?.HasEnemy);
                     if (squad.HasCommand && squad.GetCommand().HasEnemy)
                     {
-                        Debug.Log($"Setting is locked on: {onOrOff}");
+                        //Debug.Log($"Setting is locked on: {onOrOff}");
                         squad.IsLockedOn = onOrOff;
-                        squad.GetShips().ForEach((s) =>  s.CannotChangeMovementOrders = onOrOff);
+                        //squad.GetShips().ForEach((s) =>  s.CannotChangeMovementOrders = onOrOff);
                     }
                 });
                 HighlightSelectedButtons();

@@ -1156,24 +1156,155 @@ namespace Assets.Scripts
             //Debug.Log($"Starting position for {squad} is {squad.StartingPosition}");
 
 
-            // Starting Honeybee squad #2
-            CurrentShips.BuildNewSquad($"Squad #{UserProgressData.BeeCampaignSavedSquadNumber++}", Configuration.BeeSide, ShipTypes.Honeybee, 1);
 
-            UserProgressData.HasStartedHumanCampaign = true;
+            // BUILD THE BEE FLEET
 
-            
 
-            // Starting Hornet squads #3, #4, #5
-            for (int j = 0; j < 3; j++) // three hornet squads
+            // HONEYBEES
+
+            // 2 Honeybee Squads of 1
+            for (int i = 0; i < 2; i++)
             {
-                CurrentShips.BuildNewSquad($"Squad #{UserProgressData.BeeCampaignSavedSquadNumber++}", Configuration.BeeSide, ShipTypes.Hornet, 3);
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Honeybee, 1);
             }
 
-            // Starting Wasp squads #6, #7
-            for (int j = 0; j < 2; j++)
+            // 14 Honeybee squads of 2
+            for (int i = 0; i < 14; i++)
             {
-                CurrentShips.BuildNewSquad($"Squad #{UserProgressData.BeeCampaignSavedSquadNumber++}", Configuration.BeeSide, ShipTypes.Wasp, 2);
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Honeybee, 2);
             }
+
+
+            // HORNETS
+
+            // 13 Hornet squads of 4
+            for (int i = 0; i < 13; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 4);
+            }
+
+            // 3 Hornet squads of 2
+            for (int i = 0; i < 3; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 2);
+            }
+
+            // 3 Hornet squads of 3
+            for (int i = 0; i < 3; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 3);
+            }
+
+            // 2 Hornet squads of 1
+            for (int i = 0; i < 2; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 1);
+            }
+
+            // 2 Hornet squads of 6
+            for (int i = 0; i < 2; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 6);
+            }
+
+            // 8 Hornet squads of 8
+            for (int i = 0; i < 8; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 8);
+            }
+
+
+
+            // WASPS
+
+            // 6 Wasp squads of 2
+            for (int i = 0; i < 6; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 2);
+            }
+
+            // 1 Wasp squad of 3
+            CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 3);
+
+            // 8 Wasp sqauds of 4
+            for (int i = 0; i < 8; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 4);
+            }
+
+            // 10 Wasp sqauds of 6
+            for (int i = 0; i < 10; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 6);
+            }
+
+
+
+            // YELLOW JACKETS
+
+            // 20 Yellow Jacket squads of 4
+            for (int i = 0; i < 20; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.YellowJacket, 4);
+            }
+
+
+
+            // LEAFCUTTERS
+
+            // 3 Leafcutter squads of 2
+            for (int i = 0; i < 3; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Leafcutter, 2);
+            }
+
+            // 2 Leafcutter squads of 4
+            for (int i = 0; i < 2; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Leafcutter, 4);
+            }
+
+            // 8 Leafcutter squads of 6
+            for (int i = 0; i < 8; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Leafcutter, 6);
+            }
+
+            // 2 Leafcutter squads of 1
+            for (int i = 0; i < 2; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Leafcutter, 1);
+            }
+
+
+
+            // CARPENTER BEES
+
+
+            // 4 Carpenter Bee squads of 1
+            for (int i = 0; i < 4; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.CarpenterBee, 1);
+            }
+
+            // 1 Carpenter Bee squad of 2
+            CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.CarpenterBee, 2);
+
+
+
+            // BUMBLEBEES
+
+            // 1 Bumblebee squad of 1
+            CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Bumblebee, 1);
+
+            // 3 Bumblebee squads of 2
+            for (int i = 0; i < 3; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Bumblebee, 2);
+            }
+
+
+            // DONE BUILDING THE BEE FLEET     
 
 
             UserProgressData.HasStartedHumanCampaign = true;

@@ -8,7 +8,7 @@ public class DialogueLine
     public Sprite PortraitA, PortraitB;
     public string Text;
     public float PauseDuration = 0f;
-    public bool IsSkipped;
+    public bool IsSkipped, IsOver;
     public DialogueType Type;
 
     public enum DialogueType

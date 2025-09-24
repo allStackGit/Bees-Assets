@@ -961,7 +961,7 @@ namespace Assets.Scripts.Levels
                 }
                 else
                 {
-                    squad.Move(Input.mousePosition);
+                    squad.Move(Stage.Camera.ScreenToWorldPoint(Input.mousePosition));
                 }
             });
         }

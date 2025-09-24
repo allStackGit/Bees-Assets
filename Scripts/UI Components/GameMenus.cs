@@ -21,7 +21,7 @@ namespace Assets.Scripts.UIComponents
         public SquadActionBox ActionBox;
         public Level CurrentLevel;
         public Stage Stage;
-        public Dialogue ExitConfirmationDialogue, CampaignLevelEndedDialogue, CampaignCompletedDialogue;
+        public Dialogue ExitConfirmationDialogue, CampaignLevelEndedDialogue, CampaignCompletedDialogue, ConfirmSurrenderDialogue;
         public TMP_Text ShipInfoBoxTitle, ShipInfoBoxStats, TryNewSquadsButtonText;
         public TMP_InputField LevelNameInput, SupplyCapacityInput;
         public Codex Codex;
@@ -71,6 +71,8 @@ namespace Assets.Scripts.UIComponents
             CampaignCompletedDialogue.SetButtonWidth(0, 180);
             //Debug.Log($"ActionBox:{ActionBox}");
             //Debug.Log($"EventSystem:{EventSystem}");
+
+            ConfirmSurrenderDialogue = new Dialogue(Stage.DialoguePrefab, "Are you sure?", "This will destroy all your ships on this level permanently and end the level.", new List<string>() { ConfigData.Configuration.Yes, ConfigData.Configuration.No }, new List<UnityAction>() { Surrender });
         }
         public void OpenMenu()
         {
@@ -168,6 +170,10 @@ namespace Assets.Scripts.UIComponents
                 CurrentLevel.GetType().GetMethod($"Level{ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide)}Ending").Invoke(CurrentLevel, null);
             }
 
+        }
+        public void ConfirmSurrender()
+        {
+            ConfirmSurrenderDialogue.Show();
         }
         public void TryNewLevel()
         {
