@@ -22,7 +22,10 @@ namespace Assets.Scripts.Entities.Projectiles
             transform.parent = ContactedShip.transform;
             _killSequenceTimer.Reuse(1.5f, KillSequence);
             Level.AddTimer(_killSequenceTimer);
-            BombReleaseSound.Play();
+            if (Stage.ActivateAudio)
+            {
+                BombReleaseSound.Play();
+            }
             //Invoke(nameof(KillSequence), 1.5f);
         }
 
@@ -36,7 +39,10 @@ namespace Assets.Scripts.Entities.Projectiles
                     Explosion.transform.parent = ContactedShip.transform;
                     Explosion.transform.localPosition = GetPosition();
                     Explosion.SetActive(true);
-                    BombExplosionSound.Play();
+                    if (Stage.ActivateAudio)
+                    {
+                        BombExplosionSound.Play();
+                    }
                 }
 
                 _damageTimer.Reuse(.5f, Damage);

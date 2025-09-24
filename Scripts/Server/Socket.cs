@@ -149,7 +149,7 @@ namespace Assets.Scripts.Server
                 Debug.Log("Connection re-opened!");
                 OpenLevels.ForEach((level) =>
                 {
-                    ConfigData.Socket.SendRequest(new ReconnectLevelRequest(new SetupLevel(ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide), ConfigData.GetUserId(), level.ServerGameId),
+                    ConfigData.Socket.SendRequest(new ReconnectLevelRequest(new SetupLevel(ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide, ConfigData.CurrentGameMode), ConfigData.GetUserId(), level.ServerGameId),
                     ConfigData.StandardMaxTimeOnQueue,level));
                     Debug.Log($"Trying to reconnect {level.Name} to the server");
                 });
@@ -169,9 +169,9 @@ namespace Assets.Scripts.Server
             if (reason != null)
             {
                 Debug.LogWarning($"Network Error:{reason}");
-                //StandingRequests.ToList().ForEach((sr) =>
+                //StandingRequests.ToList().ForEach((sr) => 
                 //{
-                //    sr.Status = -1;
+                //    sr.Status = -1; 
                 //});
             }
             OpenLevels.ForEach((level) =>

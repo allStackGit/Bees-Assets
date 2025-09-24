@@ -21,6 +21,7 @@ using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.UI;
 using WebSocketSharp;
+using static UnityEngine.GraphicsBuffer;
 using static UnityEngine.RuleTile.TilingRuleOutput;
 using Random = System.Random;
 
@@ -1561,7 +1562,7 @@ namespace Assets.Scripts
         public static int CalculateTsv(Ship ship)
         {
             //Debug.Log($"Calculating TSV for {ship.Name}");
-            return (int) (GetMaxTsv(ship.ShipType) * CalculateHealthFactor(ship));
+            return (int) (GetMaxTsv(ship.ShipType) * CalculateHealthFactor(ship)) + (ship.Health > 0 ? ship.FleetShip.MineralsMinedThisLevel : 0);
             //return CalculateTsv(ship.Speed, ship.Firepower, ship.Health, ship.Sight);
         }
         /// <summary>

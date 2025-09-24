@@ -149,7 +149,7 @@ namespace Assets.Scripts.Levels.Commands
                         if (!ship.IsDead)
                         {
                             ship.FleetShip.MineralsMinedThisLevel += _amountPerShip;
-                            ship.Tsv += _amountPerShip;
+                            ship.Tsv = Utilities.CalculateTsv(ship);
                             Debug.Log($"Just added {_amountPerShip} to {ship.Name}:{ship.FleetShip.Id} TSV. It's now at {ship.Tsv}");
                         }
 
