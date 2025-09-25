@@ -1011,8 +1011,8 @@ namespace Assets.Scripts
                 SetupChallengeSavedSquadsData(!FirstTimePlaying);
 
                 SetupLevelData(!FirstTimePlaying);
-                SetupCampaignLevelData(!FirstTimePlaying);
-                SetupChallengeLevelData(!FirstTimePlaying);
+                SetupCampaignLevelData();
+                SetupChallengeLevelData();
 
                 SetupUserSettingsData(!FirstTimePlaying);
 
@@ -1371,7 +1371,13 @@ namespace Assets.Scripts
             if (!SteamAPI.Init())
             {
                 Debug.LogError("Steam API failed to initialize!");
-                return 0;
+                _userId = (ulong) PlayerPrefs.GetInt("user_id");
+                if (_userId == 0)
+                {
+                    _userId = (ulong)Utilities.RandomInt();
+                    PlayerPrefs.SetInt("user_id", (int) _userId);
+                }
+                return _userId;
             }
             else if (_userId == 0)
             {
@@ -1409,13 +1415,13 @@ namespace Assets.Scripts
         {
             _levelData = new LevelData(shouldFileExist, 0);
         }
-        public static void SetupCampaignLevelData(bool shouldFileExist)
+        public static void SetupCampaignLevelData()
         {
-            _campaignLevelData = new LevelData(shouldFileExist, 1);
+            _campaignLevelData = new LevelData(true, 1);
         }
-        public static void SetupChallengeLevelData(bool shouldFileExist)
+        public static void SetupChallengeLevelData()
         {
-            _challengeLevelData = new LevelData(shouldFileExist, 2);
+            _challengeLevelData = new LevelData(true, 2);
         }
 
         public static LevelData GetLevelData() // [data-file]

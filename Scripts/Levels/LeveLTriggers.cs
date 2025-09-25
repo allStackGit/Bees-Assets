@@ -2500,10 +2500,14 @@ namespace Assets.Scripts.Levels
                 trainingRoomAlert.SetButtonWidth(0, 250);
                 trainingRoomAlert.Show();
             }
-            //ConfigData.UserProgressData.IsBeeFreePlayUnlocked = true;
+            else
+            {
+                Level2EndingDialogue();
+            }
+                //ConfigData.UserProgressData.IsBeeFreePlayUnlocked = true;
 
-            // Add Leafcutter, and Yellow Jacket to codex and add Carpenter Bee to visibility
-            ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Leafcutter);
+                // Add Leafcutter, and Yellow Jacket to codex and add Carpenter Bee to visibility
+                ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Leafcutter);
             ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.YellowJacket);
 
             ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.CarpenterBee);
@@ -2602,7 +2606,7 @@ namespace Assets.Scripts.Levels
                 {
                     _save_fleetship = ship.GetFleetShip();
 
-                    Debug.Log($"{_save_fleetship.Name} has mined {_save_fleetship.MineralsMined} minerals in its lifetime. It has mined {_save_fleetship.MineralsMinedThisLevel} minerals this level");
+                    //Debug.Log($"{_save_fleetship.Name} has mined {_save_fleetship.MineralsMined} minerals in its lifetime. It has mined {_save_fleetship.MineralsMinedThisLevel} minerals this level");
                     _save_fleetship.MineralsMined += _save_fleetship.MineralsMinedThisLevel;
                     ConfigData.UserProgressData.MinedTSV += _save_fleetship.MineralsMinedThisLevel;
                     _save_fleetship.MineralsMinedThisLevel = 0;

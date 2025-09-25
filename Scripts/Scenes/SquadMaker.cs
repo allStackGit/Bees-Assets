@@ -195,22 +195,28 @@ namespace Assets.Scripts.Scenes
         {
             ConfigData.CurrentShips.GetSavedSquadsBySide(Side).ForEach((squad) =>
             {
-                if (!squad.HasAliveShips)
+                Debug.Log($"Looking for Saved Squad - {squad.Name} #{squad.Id} label");
+                GameObject label = GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}");
+                if (label != null)
                 {
-                    GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>().color = ConfigData.GetUIColor("bad");
+                    if (!squad.HasAliveShips)
+                    {
+                        GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>().color = ConfigData.GetUIColor("bad");
+                    }
+                    else if (squad.HasDeadShips)
+                    {
+                        //Debug.Log($"{squad.Name} still has dead ships");
+                        //Debug.Log(GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}"));
+                        //Debug.Log(GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>());
+                        //Debug.Log(GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>().color);
+                        GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>().color = ConfigData.GetUIColor("medium");
+                    }
+                    else
+                    {
+                        GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>().color = ConfigData.GetUIColor("saved-squad-label-default-color");
+                    }
                 }
-                else if (squad.HasDeadShips)
-                {
-                    //Debug.Log($"{squad.Name} still has dead ships");
-                    //Debug.Log(GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}"));
-                    //Debug.Log(GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>());
-                    //Debug.Log(GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>().color);
-                    GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>().color = ConfigData.GetUIColor("medium");
-                }
-                else
-                {
-                    GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}").GetComponent<UnityEngine.UI.Image>().color = ConfigData.GetUIColor("saved-squad-label-default-color");
-                }
+
             });
         }
         private void Setup()
@@ -1675,7 +1681,7 @@ namespace Assets.Scripts.Scenes
                     $"Power: {shipInfo.PrintPower()}\n" +
                     $"Rate of Fire: {shipInfo.PrintRateOfFire()}\n" +
                     $"Speed: {shipInfo.Speed}\n" +
-                    $"Capacity: {(shipType != ConfigData.ShipTypes.Drone && shipType != ConfigData.ShipTypes.Striker && shipType != ConfigData.ShipTypes.Beacon ? ConfigData.CurrentShips.GetShipsOfType(shipType).First().GetCapacity().ToString("N0") : "N/A")}";
+                    $"Capacity: {(shipType != ConfigData.ShipTypes.Drone && shipType != ConfigData.ShipTypes.Striker && shipType != ConfigData.ShipTypes.Beacon ? Utilities.GetMaxTsv(shipType).ToString("N0") : "N/A")}";
 
                 UnityEngine.UI.Image image = ShipInfoBoxIcon.GetComponent<UnityEngine.UI.Image>();
                 image.sprite = _spriteTypes.GetValueOrDefault(shipType);
