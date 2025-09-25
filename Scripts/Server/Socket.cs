@@ -149,7 +149,7 @@ namespace Assets.Scripts.Server
                 Debug.Log("Connection re-opened!");
                 OpenLevels.ForEach((level) =>
                 {
-                    ConfigData.Socket.SendRequest(new ReconnectLevelRequest(new SetupLevel(ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide, ConfigData.CurrentGameMode), ConfigData.GetUserId(), level.ServerGameId),
+                    ConfigData.Socket.SendRequest(new ReconnectLevelRequest(new SetupLevel(ConfigData.CurrentGameMode == ConfigData.GameModes.FreePlay || ConfigData.CurrentGameMode == ConfigData.GameModes.FishTank ? -1 : ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide), ConfigData.GetUserId(), level.ServerGameId),
                     ConfigData.StandardMaxTimeOnQueue,level));
                     Debug.Log($"Trying to reconnect {level.Name} to the server");
                 });

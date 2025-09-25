@@ -235,7 +235,7 @@
       "Mining": 1,
       "HasPreLevelIntro": true,
       "HasSquadActionBox": true,
-      "SupplyCapacity": 1500,
+      "SupplyCapacity": 2000,
       "EnemyReinforcementsOption": 0,
       "EnemyReinforcementDelay": 0,
       "EnemyReinforcements": [],

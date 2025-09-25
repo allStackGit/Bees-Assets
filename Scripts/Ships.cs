@@ -395,8 +395,8 @@ namespace Assets.Scripts
 
                     Debug.Log($"Squads: {GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel)}");
 
-                    Debug.LogError($"No squad found with {shipCount} ships of type {shipType}");
                     Debug.Log($"Squads: {Utilities.ListToString(GetSavedSquadsBySide(Utilities.ConvertShipTypeToSide[shipType]))}");
+                    Debug.LogError($"No squad found with {shipCount} ships of type {shipType}");
                 }
                 else if (canHaveFewerShips)
                 {

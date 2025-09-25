@@ -2815,7 +2815,7 @@ namespace Assets.Scripts.Levels
                 if (squads[i].IsLoadedIntoLevel)
                 {
                     //Debug.Log($"{squads[i]} has already been spawned onto the level, getting a new squad with the same composition");
-                    squads[i] = CurrentShips.GetSquadByComposition(this, squads[i].GetSquadShips()[0].ShipType, squads[i].GetSquadShips().Count);
+                    squads[i] = CurrentShips.GetSquadByComposition(this, squads[i].GetSquadShips()[0].ShipType, squads[i].GetSquadShips().Count, true, true);
                 }
                 if (squads[i] != null)
                 {

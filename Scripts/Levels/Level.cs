@@ -629,12 +629,14 @@ namespace Assets.Scripts.Levels
                     if (ConfigData.CurrentGameMode == ConfigData.GameModes.FreePlay)
                     {
                         ConfigData.UserProgressData.HumanFreePlayWins++;
-                        ConfigData.UserProgressData.Save();
                     }
                     else if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge)
                     {
                         ConfigData.UserProgressData.HumanChallengeWins++;
-                        ConfigData.UserProgressData.Save();
+                    }
+                    else if (ConfigData.CurrentGameMode == ConfigData.GameModes.FishTank)
+                    {
+                        ConfigData.UserProgressData.HumanFishTankWins++;
                     }
                 }
                 else if (State.IsSideKilled(ConfigData.Configuration.HumanSide) && !State.IsSideKilled(ConfigData.Configuration.BeeSide))
@@ -643,12 +645,14 @@ namespace Assets.Scripts.Levels
                     if (ConfigData.CurrentGameMode != ConfigData.GameModes.FreePlay)
                     {
                         ConfigData.UserProgressData.BeeFreePlayWins++;
-                        ConfigData.UserProgressData.Save();
                     }
                     else if (ConfigData.CurrentGameMode != ConfigData.GameModes.Challenge)
                     {
                         ConfigData.UserProgressData.BeeChallengeWins++;
-                        ConfigData.UserProgressData.Save();
+                    }
+                    else if (ConfigData.CurrentGameMode == ConfigData.GameModes.FishTank)
+                    {
+                        ConfigData.UserProgressData.BeeFishTankWins++;
                     }
                 }
                 else if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
@@ -682,7 +686,8 @@ namespace Assets.Scripts.Levels
                     DidUserWin = false;
                 }
 
-                    UnPause();
+                ConfigData.UserProgressData.Save();
+                UnPause();
             }
 
             if (ActivateCollisionAsteroids)
