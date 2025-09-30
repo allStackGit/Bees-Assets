@@ -155,6 +155,7 @@ namespace Assets.Scripts.Scenes
         private Dictionary<int, LevelOptions> _levelOptionIndexesToLevels = new Dictionary<int, LevelOptions>();
         private int _squadListOriginalScrollHeight, _squadListOptionsScrollHeight, _squadListLevelScrollHeight;
         int _capacity;
+        private HashSet<ConfigData.ShipTypes> _availableShipTypes;
 
 
         public bool HasActionBox => ActionBox != null;
@@ -181,6 +182,14 @@ namespace Assets.Scripts.Scenes
 
 
             ConfigData.CurrentShips.ReplaceDeadSquadShips(ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign);
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
+            {
+                _availableShipTypes = ConfigData.UserProgressData.UnlockedCampaignShips;
+            }
+            else
+            {
+                _availableShipTypes = ConfigData.UserProgressData.VisibleShipTypes;
+            }
             SetupFleetList();
             SetupSavedSquadsList();
 
@@ -689,7 +698,7 @@ namespace Assets.Scripts.Scenes
                 List<FleetShip> visibleShips = ConfigData.CurrentShips.GetAliveShipsOfType(type);
 
                 // if ship type has any visible ships
-                if (ConfigData.UserProgressData.VisibleShipTypes.Contains(type))
+                if (_availableShipTypes.Contains(type))
                 {
                     //Debug.Log($"Setting the ship count for {type}");
                     // get the count of the ship type and update the label

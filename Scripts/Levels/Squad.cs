@@ -435,6 +435,7 @@ namespace Assets.Scripts.Levels
         }
         public void Move(Vector2 destination)
         {
+            Debug.Log($"{this} is moving to {destination}");
             //if (IsAttacking)
             //{
             //    GetShips().ForEach((Ship ship) =>
@@ -468,6 +469,7 @@ namespace Assets.Scripts.Levels
                 //float y = Mathf.Clamp((destination.y + ship.OffsetFromCenter.y), Level.MinY, Level.MaxY);
                 if (ship.IsMobile)
                 {
+                    Debug.Log($"Moving {ship} in {this} to {destination} with offset: {ship.OffsetFromCenter}");
                     ship.MoveToPoint(destination + ship.OffsetFromCenter);
                 }
                 

@@ -12,7 +12,7 @@ GameObject:
   - component: {fileID: 8637692631591286298}
   - component: {fileID: 6610865759102504746}
   - component: {fileID: 7435338211797604007}
-  m_Layer: 19
+  m_Layer: 30
   m_Name: Mining Asteroid
   m_TagString: Mining Asteroid
   m_Icon: {fileID: 0}

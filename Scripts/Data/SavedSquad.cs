@@ -73,9 +73,13 @@ namespace Assets.Scripts.Data
             {
                 shipCount = UnityEngine.Random.Range(1, 4);
             }
-            else if ((new List<ConfigData.ShipTypes> { ConfigData.ShipTypes.Leafcutter, ConfigData.ShipTypes.Wasp, ConfigData.ShipTypes.Cruiser, ConfigData.ShipTypes.Dreadnought, ConfigData.ShipTypes.Frigate, ConfigData.ShipTypes.Gunship }).Contains(squadType))
+            else if ((new List<ConfigData.ShipTypes> { ConfigData.ShipTypes.Wasp, ConfigData.ShipTypes.Frigate, ConfigData.ShipTypes.Gunship }).Contains(squadType))
             {
                 shipCount = UnityEngine.Random.Range(2, 8);
+            }
+            else if ((new List<ConfigData.ShipTypes> { ConfigData.ShipTypes.Leafcutter, ConfigData.ShipTypes.Cruiser, ConfigData.ShipTypes.Dreadnought }).Contains(squadType))
+            {
+                shipCount = UnityEngine.Random.Range(1, 6);
             }
             else if ((new List<ConfigData.ShipTypes> { ConfigData.ShipTypes.Hornet, ConfigData.ShipTypes.YellowJacket }).Contains(squadType))
             {

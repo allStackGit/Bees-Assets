@@ -537,6 +537,7 @@ namespace Assets.Scripts.Levels
                 squad.SetOffsets();
                 if (moveToPoint != Vector2.zero)
                 {
+                    Debug.Log($"Starting position set for {squad}. Heading to first position: {moveToPoint}");
                     squad.Move(moveToPoint);
                 }
             });

@@ -1934,7 +1934,7 @@ namespace Assets.Scripts.Levels
                             // 1 Squad of 2 Wasps
                             // 2 Squads of 4 Hornets
 
-                            ScaledTimer wave1 = new ScaledTimer(12f, () =>
+                            ScaledTimer wave1 = new ScaledTimer(120f, () =>
                             {
                                 Debug.Log($"Spawning Bee reinforcements wave 1");
 
@@ -1958,7 +1958,7 @@ namespace Assets.Scripts.Levels
                             // 1 Squad of 2 Wasps
                             // 2 Squads of 4 Hornets
 
-                            ScaledTimer wave2 = new ScaledTimer(24f, () =>
+                            ScaledTimer wave2 = new ScaledTimer(240f, () =>
                             {
                                 Debug.Log($"Spawning Bee reinforcements wave 2");
 
@@ -1983,7 +1983,7 @@ namespace Assets.Scripts.Levels
                             // 1 Squad of 4 Wasps
                             // 1 Squad of 4 Hornets
 
-                            ScaledTimer wave3 = new ScaledTimer(36, () =>
+                            ScaledTimer wave3 = new ScaledTimer(360, () =>
                             {
                                 Debug.Log($"Spawning Bee reinforcements wave 3");
 
@@ -2007,7 +2007,7 @@ namespace Assets.Scripts.Levels
                             // 2 Squads of 4 Wasps
                             // 1 Squad of 4 Leafcutters
 
-                            ScaledTimer wave4 = new ScaledTimer(48, () =>
+                            ScaledTimer wave4 = new ScaledTimer(480, () =>
                             {
                                 Debug.Log($"Spawning Bee reinforcements wave 4");
 
@@ -2040,7 +2040,7 @@ namespace Assets.Scripts.Levels
                             // 2 Squads of 4 Leafcutters
                             // 1 Squad of 2 Bumblebees
                             // All squads not previously killed
-                            ScaledTimer wave5 = new ScaledTimer(54, () =>
+                            ScaledTimer wave5 = new ScaledTimer(540, () =>
                             {
                                 Debug.Log($"Spawning Bee reinforcements wave 5");
 
@@ -2081,7 +2081,7 @@ namespace Assets.Scripts.Levels
                             // 1 Squad of 4 Yellow Jackets
                             // 2 Squads of 4 Leafcutters
                             // 2 Squads of 2 Bumblebees
-                            ScaledTimer wave6 = new ScaledTimer(60, () =>
+                            ScaledTimer wave6 = new ScaledTimer(600, () =>
                             {
                                 Debug.Log($"Spawning Bee reinforcements wave 6");
 

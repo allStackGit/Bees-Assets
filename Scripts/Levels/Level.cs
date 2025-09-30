@@ -625,6 +625,7 @@ namespace Assets.Scripts.Levels
 
                 if (State.IsSideKilled(ConfigData.Configuration.BeeSide) && !State.IsSideKilled(ConfigData.Configuration.HumanSide))
                 {
+                    //Debug.Log($"Humans won!");
                     WinningSide = ConfigData.Configuration.HumanSide;
                     if (ConfigData.CurrentGameMode == ConfigData.GameModes.FreePlay)
                     {
@@ -636,22 +637,25 @@ namespace Assets.Scripts.Levels
                     }
                     else if (ConfigData.CurrentGameMode == ConfigData.GameModes.FishTank)
                     {
+                        //Debug.Log($"Fish tank human wins: {ConfigData.UserProgressData.HumanFishTankWins}");
                         ConfigData.UserProgressData.HumanFishTankWins++;
                     }
                 }
                 else if (State.IsSideKilled(ConfigData.Configuration.HumanSide) && !State.IsSideKilled(ConfigData.Configuration.BeeSide))
                 {
+                    //Debug.Log($"Bees won!");
                     WinningSide = ConfigData.Configuration.BeeSide;
-                    if (ConfigData.CurrentGameMode != ConfigData.GameModes.FreePlay)
+                    if (ConfigData.CurrentGameMode == ConfigData.GameModes.FreePlay)
                     {
                         ConfigData.UserProgressData.BeeFreePlayWins++;
                     }
-                    else if (ConfigData.CurrentGameMode != ConfigData.GameModes.Challenge)
+                    else if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge)
                     {
                         ConfigData.UserProgressData.BeeChallengeWins++;
                     }
                     else if (ConfigData.CurrentGameMode == ConfigData.GameModes.FishTank)
                     {
+                        //Debug.Log($"Fish tank bee wins: {ConfigData.UserProgressData.BeeFishTankWins}");
                         ConfigData.UserProgressData.BeeFishTankWins++;
                     }
                 }
@@ -675,6 +679,10 @@ namespace Assets.Scripts.Levels
                 else if (!Stage.IsTraining && ConfigData.CurrentGameMode == ConfigData.GameModes.FreePlay)
                 {
                     Stage.Menus.UpdateScore(ConfigData.UserProgressData.HumanFreePlayWins, ConfigData.UserProgressData.BeeFreePlayWins);
+                }
+                else if (!Stage.IsTraining && ConfigData.CurrentGameMode == ConfigData.GameModes.FishTank)
+                {
+                    Stage.Menus.UpdateScore(ConfigData.UserProgressData.HumanFishTankWins, ConfigData.UserProgressData.BeeFishTankWins);
                 }
 
                 if (WinningSide == ConfigData.Configuration.UserSide)
@@ -1520,9 +1528,12 @@ namespace Assets.Scripts.Levels
                         {
                             _hive_squad.MakeMatchupStrat();
                         }
-                        else
+                        else 
                         {
-                            _hive_squad.Move(StartingPositions[_hive_squad.Side - 1]);
+                            if (!_hive_squad.HasDestination)
+                            {
+                                _hive_squad.Move(StartingPositions[_hive_squad.Side - 1]);
+                            }
                             outOfBoundsHiveSquads.Add(_hive_squad);
                         }
                         //Debug.Log("Giving command");

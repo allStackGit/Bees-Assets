@@ -516,7 +516,7 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Wesley", Portraits["Wesley"], "You really should be playing Pikmin 2 instead."),
             new DialogueLine("Marco", Portraits["Marco"], "I'm just hoping that this gets Richard Hammond to notice me."),
             new DialogueLine("Fritz", Portraits["Fritz"], "Jeremy has nothing on Dee when it comes to the social game game which is really the crux of the show, but in season four thousand six hundred and twenty, the meta <i>really</i> changed..."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Have you heard of my new game? It's called The Ranch and there's an eclectic assortment of haunted animals from all over Montana."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Have you heard of my new game? It's called The Folk and there's an eclectic assortment of mysteriously transformed animals from all over Montana."),
             new DialogueLine("A.M.I.", Portraits["AMI"], "I've never actually played a video game in my life, I just really like Bees."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Si este juego no está completamente traducido al español, ahogaré a mi esposo en su propio batido."),
         };

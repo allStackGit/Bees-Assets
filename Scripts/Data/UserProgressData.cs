@@ -62,11 +62,9 @@ namespace Assets.Scripts.Data
         public HashSet<ConfigData.ShipTypes> VisibleCodexBeeShipTypes;
         public HashSet<ConfigData.ShipTypes> VisibleCodexHumanShipTypes;
         public HashSet<ConfigData.ShipTypes> VisibleCodexShipTypes;
-        public HashSet<ConfigData.ShipTypes> InvisibleBeeShipTypes;
-        public HashSet<ConfigData.ShipTypes> InvisibleHumanShipTypes;
         public HashSet<ConfigData.ShipTypes> VisibleShipTypes;
-        public HashSet<ConfigData.ShipTypes> InvisibleShipTypes;
         public HashSet<ConfigData.ShipTypes> AllShipTypes;
+        public HashSet<ConfigData.ShipTypes> UnlockedCampaignShips;
 
         public string PlayerName;
 
@@ -76,7 +74,7 @@ namespace Assets.Scripts.Data
         public UserProgressData(bool shouldFileExist): base()
         {
             defaultJsonData = "{" +
-                "\"CurrentHumanCampaignLevel\": 0, \"CurrentBeeCampaignLevel\": 0, \"CurrentHumanChallengeLevel\": 0, \"CurrentBeeChallengeLevel\": 0, \"FleetId\": 1521, \"SavedSquadId\": -1, \"HumanCampaignSavedSquadNumber\": 0, \"BeeCampaignSavedSquadNumber\": 0, \"HumanChallengeSavedSquadNumber\": 0, \"BeeChallengeSavedSquadNumber\": 0, \"HumanFreePlaySavedSquadNumber\": 0, \"BeeFreePlaySavedSquadNumber\": 0, \"MinedTSV\": 0, \"HivemindMinedTSV\": 0, \"HumanCampaignWins\": 0, \"BeeCampaignWins\": 0, \"HumanChallengeWins\": 0, \"BeeChallengeWins\": 0, \"HumanFreePlayWins\": 0, \"BeeFreePlayWins\": 0, \"HumanFishTankWins\": 0, \"BeeFishTankWins\": 0, \"HasStartedHumanCampaign\": false, \"IsBeeCampaignUnlocked\": false, \"IsHumanChallengeUnlocked\": false, \"IsBeeChallengeUnlocked\": false, \"IsHumanFreePlayUnlocked\": false, \"IsBeeFreePlayUnlocked\": false, \"IsFishTankUnlocked\": false, \"HasMetAlejandraAndEmilia\": false, \"HasSeenBuildInterface\": false, \"HasSeenCarrierIntro\": false, \"VisibleBeeShipTypes\": [\"Honeybee\"], \"VisibleHumanShipTypes\": [\"Scout\", \"Gunship\"], \"InvisibleBeeShipTypes\": [], \"InvisibleHumanShipTypes\": [], \"VisibleCodexBeeShipTypes\": [], \"VisibleCodexHumanShipTypes\": [\"Scout\", \"Gunship\"], \"PlayerName\": \"\"" +
+                "\"CurrentHumanCampaignLevel\": 0, \"CurrentBeeCampaignLevel\": 0, \"CurrentHumanChallengeLevel\": 0, \"CurrentBeeChallengeLevel\": 0, \"FleetId\": 1521, \"SavedSquadId\": -1, \"HumanCampaignSavedSquadNumber\": 0, \"BeeCampaignSavedSquadNumber\": 0, \"HumanChallengeSavedSquadNumber\": 0, \"BeeChallengeSavedSquadNumber\": 0, \"HumanFreePlaySavedSquadNumber\": 0, \"BeeFreePlaySavedSquadNumber\": 0, \"MinedTSV\": 0, \"HivemindMinedTSV\": 0, \"HumanCampaignWins\": 0, \"BeeCampaignWins\": 0, \"HumanChallengeWins\": 0, \"BeeChallengeWins\": 0, \"HumanFreePlayWins\": 0, \"BeeFreePlayWins\": 0, \"HumanFishTankWins\": 0, \"BeeFishTankWins\": 0, \"HasStartedHumanCampaign\": false, \"IsBeeCampaignUnlocked\": false, \"IsHumanChallengeUnlocked\": false, \"IsBeeChallengeUnlocked\": false, \"IsHumanFreePlayUnlocked\": false, \"IsBeeFreePlayUnlocked\": false, \"IsFishTankUnlocked\": false, \"HasMetAlejandraAndEmilia\": false, \"HasSeenBuildInterface\": false, \"HasSeenCarrierIntro\": false, \"VisibleBeeShipTypes\": [\"Honeybee\"], \"VisibleHumanShipTypes\": [\"Scout\", \"Gunship\"], \"UnlockedCampaignShips\": [\"Scout\", \"Gunship\"], \"VisibleCodexBeeShipTypes\": [], \"VisibleCodexHumanShipTypes\": [\"Scout\", \"Gunship\"], \"PlayerName\": \"\"" +
             "}";
             
             dynamic json = SetupFile(shouldFileExist, ConfigData.UserProgressFilename, (json) =>
@@ -129,13 +127,13 @@ namespace Assets.Scripts.Data
                 VisibleHumanShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(json.VisibleHumanShipTypes));
                 VisibleCodexBeeShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(json.VisibleCodexBeeShipTypes));
                 VisibleCodexHumanShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(json.VisibleCodexHumanShipTypes));
-                InvisibleBeeShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(json.InvisibleBeeShipTypes));
-                InvisibleHumanShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(json.InvisibleHumanShipTypes));
+                UnlockedCampaignShips = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(json.UnlockedCampaignShips));
 
                 SetShipTypes();
-                AllShipTypes = new HashSet<ConfigData.ShipTypes>(InvisibleBeeShipTypes.Union(VisibleShipTypes).Union(InvisibleShipTypes).Union(VisibleBeeShipTypes).
-                    Union(new HashSet<ConfigData.ShipTypes>() { ConfigData.ShipTypes.Beacon, ConfigData.ShipTypes.Drone, ConfigData.ShipTypes.Striker }));
-
+                AllShipTypes = new HashSet<ConfigData.ShipTypes>(VisibleShipTypes);
+                AllShipTypes.Add(ConfigData.ShipTypes.Beacon);
+                AllShipTypes.Add(ConfigData.ShipTypes.Drone);
+                AllShipTypes.Add(ConfigData.ShipTypes.Striker);
 
 
             });
@@ -146,7 +144,6 @@ namespace Assets.Scripts.Data
         {
             VisibleShipTypes = new HashSet<ConfigData.ShipTypes>(VisibleHumanShipTypes.Union(VisibleBeeShipTypes));
             VisibleCodexShipTypes = new HashSet<ConfigData.ShipTypes>(VisibleCodexHumanShipTypes.Union(VisibleCodexBeeShipTypes));
-            InvisibleShipTypes = new HashSet<ConfigData.ShipTypes>(InvisibleHumanShipTypes.Union(InvisibleBeeShipTypes));
             ConfigData.BeeShipTypes = VisibleBeeShipTypes;
             ConfigData.HumanShipTypes = VisibleHumanShipTypes;
 
@@ -169,20 +166,6 @@ namespace Assets.Scripts.Data
                 json = json.Remove(json.Length - 2);
             }
 
-            json += "], \"InvisibleBeeShipTypes\": [";
-            if (InvisibleBeeShipTypes.Count > 0)
-            {
-                InvisibleBeeShipTypes.ToList().ForEach((s) => json += $"\"{Utilities.ConvertShipTypeToName[s]}\", ");
-                json = json.Remove(json.Length - 2);
-            }
-
-            json += "], \"InvisibleHumanShipTypes\": [";
-            if (InvisibleHumanShipTypes.Count > 0)
-            {
-                InvisibleHumanShipTypes.ToList().ForEach((s) => json += $"\"{Utilities.ConvertShipTypeToName[s]}\", ");
-                json = json.Remove(json.Length - 2);
-            }
-
             json += "], \"VisibleCodexBeeShipTypes\": [";
             if (VisibleCodexBeeShipTypes.Count > 0)
             {
@@ -197,6 +180,14 @@ namespace Assets.Scripts.Data
                 json = json.Remove(json.Length - 2);
             }
 
+            json += "], \"UnlockedCampaignShips\": [";
+            if (UnlockedCampaignShips.Count > 0)
+            {
+                UnlockedCampaignShips.ToList().ForEach((s) => json += $"\"{Utilities.ConvertShipTypeToName[s]}\", ");
+                json = json.Remove(json.Length - 2);
+            }
+
+            
 
 
             json += "]}";

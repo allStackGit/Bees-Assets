@@ -464,6 +464,10 @@ public class Stage : Scene
             {
                 Menus.UpdateScore(ConfigData.UserProgressData.HumanFreePlayWins, ConfigData.UserProgressData.BeeFreePlayWins);
             }
+            else if (ConfigData.CurrentGameMode == ConfigData.GameModes.FishTank)
+            {
+                Menus.UpdateScore(ConfigData.UserProgressData.HumanFishTankWins, ConfigData.UserProgressData.BeeFishTankWins);
+            }
 
             //TargetingMouseTexture = TargetingMouse.sprite.texture;
         }

@@ -568,6 +568,14 @@ PrefabInstance:
       propertyPath: m_Delegates.Array.data[0].callback.m_PersistentCalls.m_Calls.Array.size
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 3257465046850194243, guid: 2c69add7043f0224698172081a967d71, type: 3}
+      propertyPath: m_Type
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3257465046850194243, guid: 2c69add7043f0224698172081a967d71, type: 3}
+      propertyPath: m_Sprite
+      value: 
+      objectReference: {fileID: 791336545582589345, guid: d49b9cce26b7d70459cad58478cff783, type: 3}
     - target: {fileID: 5199550695833720106, guid: 2c69add7043f0224698172081a967d71, type: 3}
       propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.size
       value: 2
