@@ -665,6 +665,14 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 {
                     Utilities.SetUIColor(MiniMapIcon, ConfigData.GetUIColor("bee"));
                 }
+                if (ShipType == ConfigData.ShipTypes.Queen)
+                {
+                    MiniMapIcon.transform.localScale *= Level.Map.SizeMultiplier * .75f;
+                }
+                else
+                {
+                    MiniMapIcon.transform.localScale *= Level.Map.SizeMultiplier * 1.5f;
+                }
             }
 
             
@@ -853,7 +861,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         private Collider2D _obstacleCollider;
         public void MoveToPoint(Vector2 destination, bool foundObstacle = false)
         {
-            Debug.Log($"{this} is moving to {destination}");
+            //Debug.Log($"{this} is moving to {destination}");
             if (!CannotChangeMovementOrders)
             {
                 destination = CanOverrideBounds ? destination : Level.ForceBounds(destination);
@@ -893,7 +901,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                         if (_obstacleCollider != null)
                         {
                             _tempObstacle = _obstacleCollider.GetComponent<Obstacle>();
-                            Debug.Log($"{_tempObstacle.Name} is in the way of {Name}");
+                            //Debug.Log($"{_tempObstacle.Name} is in the way of {Name}");
                             if (_tempObstacle.ObstacleType != ConfigData.ObstacleTypes.CollisionAsteroid)
                             {
                                 //CollisionAsteroid asteroid = (CollisionAsteroid)obstacle;
@@ -919,10 +927,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
                             
                         }
-                        else
-                        {
-                            Debug.Log($"Direct path for {Name} to {destination}");
-                        }
+                        //else
+                        //{
+                        //    Debug.Log($"Direct path for {Name} to {destination}");
+                        //}
 
                     }
 
@@ -931,17 +939,17 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                     //Level.Pathfinder.FindPath(this, convertedStart.x, convertedStart.y, convertedDestination.x, convertedDestination.y, GetClearance());
 
                 }
-                else if (!IsInBounds())
-                {
-                    Debug.Log($"{Name} cannot pathfind because it's not in bounds");
-                }
+                //else if (!IsInBounds())
+                //{
+                //    Debug.Log($"{Name} cannot pathfind because it's not in bounds");
+                //}
                 //else
                 //{
                 //    Debug.Log($"No obstacles in the way for {Name}");
 
                 //}
                 //StopMoving("Got a new destination");
-                Debug.Log($"Got a new destination for {Name}, moving to {destination}");
+                //Debug.Log($"Got a new destination for {Name}, moving to {destination}");
                 ClearPreviousDesintation();
                 IsFollowingPath = false;
                 SetTargetCoordinates(destination);
@@ -1441,7 +1449,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             if (IsMobile)
             {
                 //__LastStopReason = $"{Name} stopped at {GetPosition()} on the way to {TargetCoordinates} because of {reason} at {Age} ticks.";
-                Debug.Log($"{Name} stopped at {GetPosition()} on the way to {TargetCoordinates} because of {reason}");
+                //Debug.Log($"{Name} stopped at {GetPosition()} on the way to {TargetCoordinates} because of {reason}");
                 SetTargetCoordinates(Vector2.zero);
                 FinalDestination = Vector2.zero;
                 Body.linearVelocity = Vector2.zero;

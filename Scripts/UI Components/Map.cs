@@ -15,6 +15,7 @@ namespace Assets.Scripts.UI_Components
         public int Index;
         public ImageSpinner RingSparkle;
         public Transform Transform;
+        public Vector2 SizeMultiplier = Vector2.zero;
         /// <summary>
         /// The Id of this map relative to the stage. Guarenteed unique for this stage.
         /// </summary>
@@ -27,6 +28,10 @@ namespace Assets.Scripts.UI_Components
             Name = name;
             UserStartingPosition = userStartingPosition;
             AIStartingPosition = aiStartingPosition;
+
+            SizeMultiplier = new Vector2(SpriteRenderer.size.x / 512, SpriteRenderer.size.y / 512);
+            Debug.Log($"Size multiplier for {Name} is {SizeMultiplier}");
+
             if (stage.IsTraining)
             {
                 Destroy(FogOfWar);

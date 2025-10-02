@@ -271,7 +271,7 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Samuel", Portraits["Samuel"], "Commander, get ready for another fight. We have bees incoming."),
 
             new DialogueLine("Samuel", Portraits["Samuel"], "The commander is calling a retreat. Regroup for our next battle!"),
-            new DialogueLine("Samuel", Portraits["Samuel"], "We’ve lost all the ships we sent out, commander. It’s time to regroup."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "We've lost the last ships we sent out, commander. It’s time to regroup."),
             new DialogueLine("Samuel", Portraits["Samuel"], "That's everyone commander, we made it out."),
         };
 
@@ -426,7 +426,7 @@ public class CutsceneManager : MonoBehaviour
 
             new DialogueLine("Samuel", Portraits["Samuel"], "Fleet, it’s time to regroup and head out! Return to the commander’s position immediately."),
 
-            new DialogueLine("Samuel", Portraits["Samuel"], "We’ve lost all the ships we sent out, commander. It’s time to regroup."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "We've lost the last ship we sent out, commander. It’s time to regroup."),
 
             new DialogueLine("Oviya", Portraits["Oviya"], "Hold on, we have more bees on our radar! They’re… not coming towards us?"),
             new DialogueLine("Marco", Portraits["Marco"], "No rest for the weary…"),
@@ -584,36 +584,36 @@ public class CutsceneManager : MonoBehaviour
         DialogueManager.SetPortrait(lines[0].PortraitA);
         DialogueManager.StartDialogue(lines, hasContinueButton, isLastDialogue);
     }
-    public void StartDialogue(DialogueManager.Dialogues dialogueType)
-    {
-        ShowDialogue();
-        switch (dialogueType)
-        {
-            case DialogueManager.Dialogues.Pluto_Anomaly:
-                DialogueManager.Setup(this, DialogueManager.Dialogues.Pluto_Anomaly);
-                DialogueManager.SetPortrait(PlutoLines_Anomaly[0].PortraitA);
-                DialogueManager.StartDialogue(PlutoLines_Anomaly, false, false);
-                break;
-        }
+    //public void StartDialogue(DialogueManager.Dialogues dialogueType)
+    //{
+    //    ShowDialogue();
+    //    switch (dialogueType)
+    //    {
+    //        case DialogueManager.Dialogues.Pluto_Anomaly:
+    //            DialogueManager.Setup(this, DialogueManager.Dialogues.Pluto_Anomaly);
+    //            DialogueManager.SetPortrait(PlutoLines_Anomaly[0].PortraitA);
+    //            DialogueManager.StartDialogue(PlutoLines_Anomaly, false, false);
+    //            break;
+    //    }
 
-    }
+    //}
     private ScaledTimer _retryDialogue = new ScaledTimer();
-    public void ContinueDialogue()
-    {
-        if (HitDialogueBreak)
-        {
-            //Debug.Log("Continuing dialogue in cutscene manager.");
-            ShowDialogue();
-            HitDialogueBreak = false;
-            DialogueManager.DisplayNextLine();
-        }
-        else
-        {
-            _retryDialogue.Reuse(1, ContinueDialogue, false);
-            Stage.PrimaryLevel.AddTimer(_retryDialogue);
-        }
+    //public void ContinueDialogue()
+    //{
+    //    if (HitDialogueBreak)
+    //    {
+    //        //Debug.Log("Continuing dialogue in cutscene manager.");
+    //        ShowDialogue();
+    //        HitDialogueBreak = false;
+    //        DialogueManager.DisplayNextLine();
+    //    }
+    //    else
+    //    {
+    //        _retryDialogue.Reuse(1, ContinueDialogue, false);
+    //        Stage.PrimaryLevel.AddTimer(_retryDialogue);
+    //    }
 
-    }
+    //}
     public void BreakDialogue()
     {
         //Debug.Log("Breaking dialogue in cutscene manager.");

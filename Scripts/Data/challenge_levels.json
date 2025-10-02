@@ -1069,1422 +1069,8 @@
     {
       "Id": 3,
       "Side": 1,
-      "Name": "Parallel Play",
-      "MapIndex": 1,
-      "Obstacles": "",
-      "AsteroidOption": 0,
-      "FogOfWar": 0,
-      "Mining": 0,
-      "HasPreLevelIntro": "False",
-      "HasSquadActionBox": "True",
-      "SupplyCapacity": 500,
-      "EnemyReinforcementsOption": 0,
-      "EnemyReinforcementDelay": 60,
-      "UserStartingPosition": {
-        "x": 0,
-        "y": 0
-      },
-      "AIStartingPosition": {
-        "x": 0,
-        "y": 0
-      },
-      "EnemyReinforcements": [
-        {
-          "Id": -7127455278039321,
-          "Side": 1,
-          "Name": "1 Honeybee",
-          "Color": {
-            "r": 0,
-            "g": 0,
-            "b": 0,
-            "a": 0
-          },
-          "StartingPosition": {
-            "x": -57.73572,
-            "y": -3.710835
-          },
-          "CeaseFire": false,
-          "IsMatchingSpeed": false,
-          "ChosenShootingStrategy": "First Seen",
-          "Stats": {
-            "Commander": "Sine Pave",
-            "BattlesFought": 0,
-            "BattlesWon": 0,
-            "ShipsLost": 0,
-            "DamageDone": 0,
-            "DamageReceived": 0,
-            "Kills": 0
-          },
-          "Ships": [
-            {
-              "FleetId": -7127455278041286,
-              "ShipType": "Honeybee",
-              "Offset": {
-                "x": 33,
-                "y": 1.999999
-              }
-            }
-          ]
-        },
-        {
-          "Id": -7127455278039325,
-          "Side": 1,
-          "Name": "1 Honeybee",
-          "Color": {
-            "r": 0,
-            "g": 0,
-            "b": 0,
-            "a": 0
-          },
-          "StartingPosition": {
-            "x": -57.73572,
-            "y": -3.710835
-          },
-          "CeaseFire": false,
-          "IsMatchingSpeed": false,
-          "ChosenShootingStrategy": "First Seen",
-          "Stats": {
-            "Commander": "Shaluju De",
-            "BattlesFought": 0,
-            "BattlesWon": 0,
-            "ShipsLost": 0,
-            "DamageDone": 0,
-            "DamageReceived": 0,
-            "Kills": 0
-          },
-          "Ships": [
-            {
-              "FleetId": -7127455278041290,
-              "ShipType": "Honeybee",
-              "Offset": {
-                "x": 33,
-                "y": 1.999999
-              }
-            }
-          ]
-        },
-        {
-          "Id": -7127455278039329,
-          "Side": 1,
-          "Name": "1 Honeybee",
-          "Color": {
-            "r": 0,
-            "g": 0,
-            "b": 0,
-            "a": 0
-          },
-          "StartingPosition": {
-            "x": -57.73572,
-            "y": -3.710835
-          },
-          "CeaseFire": false,
-          "IsMatchingSpeed": false,
-          "ChosenShootingStrategy": "First Seen",
-          "Stats": {
-            "Commander": "Xi Lidi",
-            "BattlesFought": 0,
-            "BattlesWon": 0,
-            "ShipsLost": 0,
-            "DamageDone": 0,
-            "DamageReceived": 0,
-            "Kills": 0
-          },
-          "Ships": [
-            {
-              "FleetId": -7127455278041294,
-              "ShipType": "Honeybee",
-              "Offset": {
-                "x": 33,
-                "y": 1.999999
-              }
-            }
-          ]
-        },
-        {
-          "Id": -7127455278039333,
-          "Side": 1,
-          "Name": "1 Honeybee",
-          "Color": {
-            "r": 0,
-            "g": 0,
-            "b": 0,
-            "a": 0
-          },
-          "StartingPosition": {
-            "x": -57.73572,
-            "y": -3.710835
-          },
-          "CeaseFire": false,
-          "IsMatchingSpeed": false,
-          "ChosenShootingStrategy": "First Seen",
-          "Stats": {
-            "Commander": "Cae Xoshuly",
-            "BattlesFought": 0,
-            "BattlesWon": 0,
-            "ShipsLost": 0,
-            "DamageDone": 0,
-            "DamageReceived": 0,
-            "Kills": 0
-          },
-          "Ships": [
-            {
-              "FleetId": -7127455278041298,
-              "ShipType": "Honeybee",
-              "Offset": {
-                "x": 33,
-                "y": 1.999999
-              }
-            }
-          ]
-        },
-        {
-          "Id": -7127455278039346,
-          "Side": 1,
-          "Name": "10 Hornets",
-          "Color": {
-            "r": 0,
-            "g": 0,
-            "b": 0,
-            "a": 0
-          },
-          "StartingPosition": {
-            "x": -65.61073,
-            "y": -19.46083
-          },
-          "CeaseFire": false,
-          "IsMatchingSpeed": false,
-          "ChosenShootingStrategy": "First Seen",
-          "Stats": {
-            "Commander": "Ve Qapae",
-            "BattlesFought": 0,
-            "BattlesWon": 0,
-            "ShipsLost": 0,
-            "DamageDone": 0,
-            "DamageReceived": 0,
-            "Kills": 0
-          },
-          "Ships": [
-            {
-              "FleetId": -7127455278041311,
-              "ShipType": "Hornet",
-              "Offset": {
-                "x": 40.87502,
-                "y": 17.74999
-              }
-            },
-            {
-              "FleetId": -7127455278041312,
-              "ShipType": "Hornet",
-              "Offset": {
-                "x": 25.12502,
-                "y": 17.74999
-              }
-            },
-            {
-              "FleetId": -7127455278041313,
-              "ShipType": "Hornet",
-              "Offset": {
-                "x": 56.62502,
-                "y": 17.74999
-              }
-            },
-            {
-              "FleetId": -7127455278041314,
-              "ShipType": "Hornet",
-              "Offset": {
-                "x": 9.375015,
-                "y": 17.74999
-              }
-            },
-            {
-              "FleetId": -7127455278041315,
-              "ShipType": "Hornet",
-              "Offset": {
-                "x": 40.87502,
-                "y": 2
-              }
-            },
-            {
-              "FleetId": -7127455278041316,
-              "ShipType": "Hornet",
-              "Offset": {
-                "x": 25.12499,
-                "y": 2
-              }
-            },
-            {
-              "FleetId": -7127455278041317,
-              "ShipType": "Hornet",
-              "Offset": {
-                "x": 56.62502,
-                "y": 2
-              }
-            },
-            {
-              "FleetId": -7127455278041318,
-              "ShipType": "Hornet",
-              "Offset": {
-                "x": 9.374992,
-                "y": 2
-              }
-            },
-            {
-              "FleetId": -7127455278041319,
-              "ShipType": "Hornet",
-              "Offset": {
-                "x": 40.87502,
-                "y": -13.74999
-              }
-            },
-            {
-              "FleetId": -7127455278041320,
-              "ShipType": "Hornet",
-              "Offset": {
-                "x": 25.12499,
-                "y": -13.74999
-              }
-            }
-          ]
-        },
-        {
-          "Id": -7127455278039364,
-          "Side": 1,
-          "Name": "6 Wasps",
-          "Color": {
-            "r": 0,
-            "g": 0,
-            "b": 0,
-            "a": 0
-          },
-          "StartingPosition": {
-            "x": -57.73572,
-            "y": -11.58583
-          },
-          "CeaseFire": false,
-          "IsMatchingSpeed": false,
-          "ChosenShootingStrategy": "First Seen",
-          "Stats": {
-            "Commander": "Lelo Qi",
-            "BattlesFought": 0,
-            "BattlesWon": 0,
-            "ShipsLost": 0,
-            "DamageDone": 0,
-            "DamageReceived": 0,
-            "Kills": 0
-          },
-          "Ships": [
-            {
-              "FleetId": -7127455278041329,
-              "ShipType": "Wasp",
-              "Offset": {
-                "x": 33,
-                "y": 9.874995
-              }
-            },
-            {
-              "FleetId": -7127455278041330,
-              "ShipType": "Wasp",
-              "Offset": {
-                "x": 17.25,
-                "y": 9.874995
-              }
-            },
-            {
-              "FleetId": -7127455278041331,
-              "ShipType": "Wasp",
-              "Offset": {
-                "x": 48.75,
-                "y": 9.874995
-              }
-            },
-            {
-              "FleetId": -7127455278041332,
-              "ShipType": "Wasp",
-              "Offset": {
-                "x": 33,
-                "y": -5.874996
-              }
-            },
-            {
-              "FleetId": -7127455278041333,
-              "ShipType": "Wasp",
-              "Offset": {
-                "x": 17.25,
-                "y": -5.874996
-              }
-            },
-            {
-              "FleetId": -7127455278041334,
-              "ShipType": "Wasp",
-              "Offset": {
-                "x": 48.75,
-                "y": -5.874996
-              }
-            }
-          ]
-        },
-        {
-          "Id": -7127455278039376,
-          "Side": 1,
-          "Name": "4 Yellow Jackets",
-          "Color": {
-            "r": 0,
-            "g": 0,
-            "b": 0,
-            "a": 0
-          },
-          "StartingPosition": {
-            "x": -65.61072,
-            "y": -11.58583
-          },
-          "CeaseFire": false,
-          "IsMatchingSpeed": false,
-          "ChosenShootingStrategy": "First Seen",
-          "Stats": {
-            "Commander": "Sujagu Ju",
-            "BattlesFought": 0,
-            "BattlesWon": 0,
-            "ShipsLost": 0,
-            "DamageDone": 0,
-            "DamageReceived": 0,
-            "Kills": 0
-          },
-          "Ships": [
-            {
-              "FleetId": -7127455278041341,
-              "ShipType": "Yellow Jacket",
-              "Offset": {
-                "x": 40.875,
-                "y": 9.874995
-              }
-            },
-            {
-              "FleetId": -7127455278041342,
-              "ShipType": "Yellow Jacket",
-              "Offset": {
-                "x": 25.125,
-                "y": 9.874995
-              }
-            },
-            {
-              "FleetId": -7127455278041343,
-              "ShipType": "Yellow Jacket",
-              "Offset": {
-                "x": 40.875,
-                "y": -5.874996
-              }
-            },
-            {
-              "FleetId": -7127455278041344,
-              "ShipType": "Yellow Jacket",
-              "Offset": {
-                "x": 25.125,
-                "y": -5.874996
-              }
-            }
-          ]
-        },
-        {
-          "Id": -7127455278039383,
-          "Side": 1,
-          "Name": "1 Bumblebee",
-          "Color": {
-            "r": 0,
-            "g": 0,
-            "b": 0,
-            "a": 0
-          },
-          "StartingPosition": {
-            "x": -57.73572,
-            "y": -3.710835
-          },
-          "CeaseFire": false,
-          "IsMatchingSpeed": false,
-          "ChosenShootingStrategy": "First Seen",
-          "Stats": {
-            "Commander": "Pekiko Ga",
-            "BattlesFought": 0,
-            "BattlesWon": 0,
-            "ShipsLost": 0,
-            "DamageDone": 0,
-            "DamageReceived": 0,
-            "Kills": 0
-          },
-          "Ships": [
-            {
-              "FleetId": -7127455278041348,
-              "ShipType": "Bumblebee",
-              "Offset": {
-                "x": 33,
-                "y": 1.999999
-              }
-            }
-          ]
-        },
-        {
-          "Id": -7127455278039392,
-          "Side": 1,
-          "Name": "6 Wasps",
-          "Color": {
-            "r": 0,
-            "g": 0,
-            "b": 0,
-            "a": 0
-          },
-          "StartingPosition": {
-            "x": -57.73572,
-            "y": -11.58583
-          },
-          "CeaseFire": false,
-          "IsMatchingSpeed": false,
-          "ChosenShootingStrategy": "First Seen",
-          "Stats": {
-            "Commander": "Ny Tu",
-            "BattlesFought": 0,
-            "BattlesWon": 0,
-            "ShipsLost": 0,
-            "DamageDone": 0,
-            "DamageReceived": 0,
-            "Kills": 0
-          },
-          "Ships": [
-            {
-              "FleetId": -7127455278041357,
-              "ShipType": "Wasp",
-              "Offset": {
-                "x": 33,
-                "y": 9.874994
-              }
-            },
-            {
-              "FleetId": -7127455278041358,
-              "ShipType": "Wasp",
-              "Offset": {
-                "x": 17.25,
-                "y": 9.874994
-              }
-            },
-            {
-              "FleetId": -7127455278041359,
-              "ShipType": "Wasp",
-              "Offset": {
-                "x": 48.75,
-                "y": 9.874994
-              }
-            },
-            {
-              "FleetId": -7127455278041360,
-              "ShipType": "Wasp",
-              "Offset": {
-                "x": 33,
-                "y": -5.874997
-              }
-            },
-            {
-              "FleetId": -7127455278041361,
-              "ShipType": "Wasp",
-              "Offset": {
-                "x": 17.25,
-                "y": -5.874997
-              }
-            },
-            {
-              "FleetId": -7127455278041362,
-              "ShipType": "Wasp",
-              "Offset": {
-                "x": 48.75,
-                "y": -5.874997
-              }
-            }
-          ]
-        },
-        {
-          "Id": -7127455278039404,
-          "Side": 1,
-          "Name": "4 Yellow Jackets",
-          "Color": {
-            "r": 0,
-            "g": 0,
-            "b": 0,
-            "a": 0
-          },
-          "StartingPosition": {
-            "x": -65.61072,
-            "y": -11.58583
-          },
-          "CeaseFire": false,
-          "IsMatchingSpeed": false,
-          "ChosenShootingStrategy": "First Seen",
-          "Stats": {
-            "Commander": "Xine Detaqo",
-            "BattlesFought": 0,
-            "BattlesWon": 0,
-            "ShipsLost": 0,
-            "DamageDone": 0,
-            "DamageReceived": 0,
-            "Kills": 0
-          },
-          "Ships": [
-            {
-              "FleetId": -7127455278041369,
-              "ShipType": "Yellow Jacket",
-              "Offset": {
-                "x": 40.875,
-                "y": 9.874994
-              }
-            },
-            {
-              "FleetId": -7127455278041370,
-              "ShipType": "Yellow Jacket",
-              "Offset": {
-                "x": 25.125,
-                "y": 9.874994
-              }
-            },
-            {
-              "FleetId": -7127455278041371,
-              "ShipType": "Yellow Jacket",
-              "Offset": {
-                "x": 40.875,
-                "y": -5.874997
-              }
-            },
-            {
-              "FleetId": -7127455278041372,
-              "ShipType": "Yellow Jacket",
-              "Offset": {
-                "x": 25.125,
-                "y": -5.874997
-              }
-            }
-          ]
-        },
-        {
-          "Id": -7127455278039416,
-          "Side": 1,
-          "Name": "6 Leafcutters",
-          "Color": {
-            "r": 0,
-            "g": 0,
-            "b": 0,
-            "a": 0
-          },
-          "StartingPosition": {
-            "x": -57.73573,
-            "y": -11.58583
-          },
-          "CeaseFire": false,
-          "IsMatchingSpeed": false,
-          "ChosenShootingStrategy": "First Seen",
-          "Stats": {
-            "Commander": "Tyxo Kaedaere",
-            "BattlesFought": 0,
-            "BattlesWon": 0,
-            "ShipsLost": 0,
-            "DamageDone": 0,
-            "DamageReceived": 0,
-            "Kills": 0
-          },
-          "Ships": [
-            {
-              "FleetId": -7127455278041381,
-              "ShipType": "Leafcutter",
-              "Offset": {
-                "x": 33.00001,
-                "y": 9.874995
-              }
-            },
-            {
-              "FleetId": -7127455278041382,
-              "ShipType": "Leafcutter",
-              "Offset": {
-                "x": 17.25001,
-                "y": 9.874995
-              }
-            },
-            {
-              "FleetId": -7127455278041383,
-              "ShipType": "Leafcutter",
-              "Offset": {
-                "x": 48.75001,
-                "y": 9.874995
-              }
-            },
-            {
-              "FleetId": -7127455278041384,
-              "ShipType": "Leafcutter",
-              "Offset": {
-                "x": 33.00001,
-                "y": -5.874996
-              }
-            },
-            {
-              "FleetId": -7127455278041385,
-              "ShipType": "Leafcutter",
-              "Offset": {
-                "x": 17.25,
-                "y": -5.874996
-              }
-            },
-            {
-              "FleetId": -7127455278041386,
-              "ShipType": "Leafcutter",
-              "Offset": {
-                "x": 48.75001,
-                "y": -5.874996
-              }
-            }
-          ]
-        }
-      ],
-      "EnemySquads": [
-        {
-          "Id": -7127455278039319,
-          "Side": 1,
-          "Name": "1 Honeybee",
-          "Color": {
-            "r": 0,
-            "g": 0,
-            "b": 0,
-            "a": 0
-          },
-          "StartingPosition": {
-            "x": -57.73572,
-            "y": -3.710835
-          },
-          "CeaseFire": false,
-          "IsMatchingSpeed": false,
-          "ChosenShootingStrategy": "First Seen",
-          "Stats": {
-            "Commander": "Caebaecu By",
-            "BattlesFought": 0,
-            "BattlesWon": 0,
-            "ShipsLost": 0,
-            "DamageDone": 0,
-            "DamageReceived": 0,
-            "Kills": 0
-          },
-          "Ships": [
-            {
-              "FleetId": -7127455278041284,
-              "ShipType": "Honeybee",
-              "Offset": {
-                "x": 33,
-                "y": 1.999999
-              }
-            }
-          ]
-        },
-        {
-          "Id": -7127455278039323,
-          "Side": 1,
-          "Name": "1 Honeybee",
-          "Color": {
-            "r": 0,
-            "g": 0,
-            "b": 0,
-            "a": 0
-          },
-          "StartingPosition": {
-            "x": -57.73572,
-            "y": -3.710835
-          },
-          "CeaseFire": false,
-          "IsMatchingSpeed": false,
-          "ChosenShootingStrategy": "First Seen",
-          "Stats": {
-            "Commander": "Laqise Qyso",
-            "BattlesFought": 0,
-            "BattlesWon": 0,
-            "ShipsLost": 0,
-            "DamageDone": 0,
-            "DamageReceived": 0,
-            "Kills": 0
-          },
-          "Ships": [
-            {
-              "FleetId": -7127455278041288,
-              "ShipType": "Honeybee",
-              "Offset": {
-                "x": 33,
-                "y": 1.999999
-              }
-            }
-          ]
-        },
-        {
-          "Id": -7127455278039327,
-          "Side": 1,
-          "Name": "1 Honeybee",
-          "Color": {
-            "r": 0,
-            "g": 0,
-            "b": 0,
-            "a": 0
-          },
-          "StartingPosition": {
-            "x": -57.73572,
-            "y": -3.710835
-          },
-          "CeaseFire": false,
-          "IsMatchingSpeed": false,
-          "ChosenShootingStrategy": "First Seen",
-          "Stats": {
-            "Commander": "Bufa Cony",
-            "BattlesFought": 0,
-            "BattlesWon": 0,
-            "ShipsLost": 0,
-            "DamageDone": 0,
-            "DamageReceived": 0,
-            "Kills": 0
-          },
-          "Ships": [
-            {
-              "FleetId": -7127455278041292,
-              "ShipType": "Honeybee",
-              "Offset": {
-                "x": 33,
-                "y": 1.999999
-              }
-            }
-          ]
-        },
-        {
-          "Id": -7127455278039331,
-          "Side": 1,
-          "Name": "1 Honeybee",
-          "Color": {
-            "r": 0,
-            "g": 0,
-            "b": 0,
-            "a": 0
-          },
-          "StartingPosition": {
-            "x": -57.73572,
-            "y": -3.710835
-          },
-          "CeaseFire": false,
-          "IsMatchingSpeed": false,
-          "ChosenShootingStrategy": "First Seen",
-          "Stats": {
-            "Commander": "Cu Sunu",
-            "BattlesFought": 0,
-            "BattlesWon": 0,
-            "ShipsLost": 0,
-            "DamageDone": 0,
-            "DamageReceived": 0,
-            "Kills": 0
-          },
-          "Ships": [
-            {
-              "FleetId": -7127455278041296,
-              "ShipType": "Honeybee",
-              "Offset": {
-                "x": 33,
-                "y": 1.999999
-              }
-            }
-          ]
-        },
-        {
-          "Id": -7127455278039335,
-          "Side": 1,
-          "Name": "10 Hornets",
-          "Color": {
-            "r": 0,
-            "g": 0,
-            "b": 0,
-            "a": 0
-          },
-          "StartingPosition": {
-            "x": -65.61073,
-            "y": -19.46083
-          },
-          "CeaseFire": false,
-          "IsMatchingSpeed": false,
-          "ChosenShootingStrategy": "First Seen",
-          "Stats": {
-            "Commander": "Vabe Bu",
-            "BattlesFought": 0,
-            "BattlesWon": 0,
-            "ShipsLost": 0,
-            "DamageDone": 0,
-            "DamageReceived": 0,
-            "Kills": 0
-          },
-          "Ships": [
-            {
-              "FleetId": -7127455278041300,
-              "ShipType": "Hornet",
-              "Offset": {
-                "x": 40.87502,
-                "y": 17.74999
-              }
-            },
-            {
-              "FleetId": -7127455278041301,
-              "ShipType": "Hornet",
-              "Offset": {
-                "x": 25.12502,
-                "y": 17.74999
-              }
-            },
-            {
-              "FleetId": -7127455278041302,
-              "ShipType": "Hornet",
-              "Offset": {
-                "x": 56.62502,
-                "y": 17.74999
-              }
-            },
-            {
-              "FleetId": -7127455278041303,
-              "ShipType": "Hornet",
-              "Offset": {
-                "x": 9.375015,
-                "y": 17.74999
-              }
-            },
-            {
-              "FleetId": -7127455278041304,
-              "ShipType": "Hornet",
-              "Offset": {
-                "x": 40.87502,
-                "y": 2
-              }
-            },
-            {
-              "FleetId": -7127455278041305,
-              "ShipType": "Hornet",
-              "Offset": {
-                "x": 25.12499,
-                "y": 2
-              }
-            },
-            {
-              "FleetId": -7127455278041306,
-              "ShipType": "Hornet",
-              "Offset": {
-                "x": 56.62502,
-                "y": 2
-              }
-            },
-            {
-              "FleetId": -7127455278041307,
-              "ShipType": "Hornet",
-              "Offset": {
-                "x": 9.374992,
-                "y": 2
-              }
-            },
-            {
-              "FleetId": -7127455278041308,
-              "ShipType": "Hornet",
-              "Offset": {
-                "x": 40.87502,
-                "y": -13.74999
-              }
-            },
-            {
-              "FleetId": -7127455278041309,
-              "ShipType": "Hornet",
-              "Offset": {
-                "x": 25.12499,
-                "y": -13.74999
-              }
-            }
-          ]
-        },
-        {
-          "Id": -7127455278039357,
-          "Side": 1,
-          "Name": "6 Wasps",
-          "Color": {
-            "r": 0,
-            "g": 0,
-            "b": 0,
-            "a": 0
-          },
-          "StartingPosition": {
-            "x": -57.73572,
-            "y": -11.58583
-          },
-          "CeaseFire": false,
-          "IsMatchingSpeed": false,
-          "ChosenShootingStrategy": "First Seen",
-          "Stats": {
-            "Commander": "Ly Ky",
-            "BattlesFought": 0,
-            "BattlesWon": 0,
-            "ShipsLost": 0,
-            "DamageDone": 0,
-            "DamageReceived": 0,
-            "Kills": 0
-          },
-          "Ships": [
-            {
-              "FleetId": -7127455278041322,
-              "ShipType": "Wasp",
-              "Offset": {
-                "x": 33,
-                "y": 9.874995
-              }
-            },
-            {
-              "FleetId": -7127455278041323,
-              "ShipType": "Wasp",
-              "Offset": {
-                "x": 17.25,
-                "y": 9.874995
-              }
-            },
-            {
-              "FleetId": -7127455278041324,
-              "ShipType": "Wasp",
-              "Offset": {
-                "x": 48.75,
-                "y": 9.874995
-              }
-            },
-            {
-              "FleetId": -7127455278041325,
-              "ShipType": "Wasp",
-              "Offset": {
-                "x": 33,
-                "y": -5.874996
-              }
-            },
-            {
-              "FleetId": -7127455278041326,
-              "ShipType": "Wasp",
-              "Offset": {
-                "x": 17.25,
-                "y": -5.874996
-              }
-            },
-            {
-              "FleetId": -7127455278041327,
-              "ShipType": "Wasp",
-              "Offset": {
-                "x": 48.75,
-                "y": -5.874996
-              }
-            }
-          ]
-        },
-        {
-          "Id": -7127455278039371,
-          "Side": 1,
-          "Name": "4 Yellow Jackets",
-          "Color": {
-            "r": 0,
-            "g": 0,
-            "b": 0,
-            "a": 0
-          },
-          "StartingPosition": {
-            "x": -65.61072,
-            "y": -11.58583
-          },
-          "CeaseFire": false,
-          "IsMatchingSpeed": false,
-          "ChosenShootingStrategy": "First Seen",
-          "Stats": {
-            "Commander": "Cylae By",
-            "BattlesFought": 0,
-            "BattlesWon": 0,
-            "ShipsLost": 0,
-            "DamageDone": 0,
-            "DamageReceived": 0,
-            "Kills": 0
-          },
-          "Ships": [
-            {
-              "FleetId": -7127455278041336,
-              "ShipType": "Yellow Jacket",
-              "Offset": {
-                "x": 40.875,
-                "y": 9.874995
-              }
-            },
-            {
-              "FleetId": -7127455278041337,
-              "ShipType": "Yellow Jacket",
-              "Offset": {
-                "x": 25.125,
-                "y": 9.874995
-              }
-            },
-            {
-              "FleetId": -7127455278041338,
-              "ShipType": "Yellow Jacket",
-              "Offset": {
-                "x": 40.875,
-                "y": -5.874996
-              }
-            },
-            {
-              "FleetId": -7127455278041339,
-              "ShipType": "Yellow Jacket",
-              "Offset": {
-                "x": 25.125,
-                "y": -5.874996
-              }
-            }
-          ]
-        },
-        {
-          "Id": -7127455278039381,
-          "Side": 1,
-          "Name": "1 Bumblebee",
-          "Color": {
-            "r": 0,
-            "g": 0,
-            "b": 0,
-            "a": 0
-          },
-          "StartingPosition": {
-            "x": -57.73572,
-            "y": -3.710835
-          },
-          "CeaseFire": false,
-          "IsMatchingSpeed": false,
-          "ChosenShootingStrategy": "First Seen",
-          "Stats": {
-            "Commander": "Bube Wae",
-            "BattlesFought": 0,
-            "BattlesWon": 0,
-            "ShipsLost": 0,
-            "DamageDone": 0,
-            "DamageReceived": 0,
-            "Kills": 0
-          },
-          "Ships": [
-            {
-              "FleetId": -7127455278041346,
-              "ShipType": "Bumblebee",
-              "Offset": {
-                "x": 33,
-                "y": 1.999999
-              }
-            }
-          ]
-        },
-        {
-          "Id": -7127455278039385,
-          "Side": 1,
-          "Name": "6 Wasps",
-          "Color": {
-            "r": 0,
-            "g": 0,
-            "b": 0,
-            "a": 0
-          },
-          "StartingPosition": {
-            "x": -57.73572,
-            "y": -11.58583
-          },
-          "CeaseFire": false,
-          "IsMatchingSpeed": false,
-          "ChosenShootingStrategy": "First Seen",
-          "Stats": {
-            "Commander": "Capynu Fu",
-            "BattlesFought": 0,
-            "BattlesWon": 0,
-            "ShipsLost": 0,
-            "DamageDone": 0,
-            "DamageReceived": 0,
-            "Kills": 0
-          },
-          "Ships": [
-            {
-              "FleetId": -7127455278041350,
-              "ShipType": "Wasp",
-              "Offset": {
-                "x": 33,
-                "y": 9.874994
-              }
-            },
-            {
-              "FleetId": -7127455278041351,
-              "ShipType": "Wasp",
-              "Offset": {
-                "x": 17.25,
-                "y": 9.874994
-              }
-            },
-            {
-              "FleetId": -7127455278041352,
-              "ShipType": "Wasp",
-              "Offset": {
-                "x": 48.75,
-                "y": 9.874994
-              }
-            },
-            {
-              "FleetId": -7127455278041353,
-              "ShipType": "Wasp",
-              "Offset": {
-                "x": 33,
-                "y": -5.874997
-              }
-            },
-            {
-              "FleetId": -7127455278041354,
-              "ShipType": "Wasp",
-              "Offset": {
-                "x": 17.25,
-                "y": -5.874997
-              }
-            },
-            {
-              "FleetId": -7127455278041355,
-              "ShipType": "Wasp",
-              "Offset": {
-                "x": 48.75,
-                "y": -5.874997
-              }
-            }
-          ]
-        },
-        {
-          "Id": -7127455278039399,
-          "Side": 1,
-          "Name": "4 Yellow Jackets",
-          "Color": {
-            "r": 0,
-            "g": 0,
-            "b": 0,
-            "a": 0
-          },
-          "StartingPosition": {
-            "x": -65.61072,
-            "y": -11.58583
-          },
-          "CeaseFire": false,
-          "IsMatchingSpeed": false,
-          "ChosenShootingStrategy": "First Seen",
-          "Stats": {
-            "Commander": "Wi Saeva",
-            "BattlesFought": 0,
-            "BattlesWon": 0,
-            "ShipsLost": 0,
-            "DamageDone": 0,
-            "DamageReceived": 0,
-            "Kills": 0
-          },
-          "Ships": [
-            {
-              "FleetId": -7127455278041364,
-              "ShipType": "Yellow Jacket",
-              "Offset": {
-                "x": 40.875,
-                "y": 9.874994
-              }
-            },
-            {
-              "FleetId": -7127455278041365,
-              "ShipType": "Yellow Jacket",
-              "Offset": {
-                "x": 25.125,
-                "y": 9.874994
-              }
-            },
-            {
-              "FleetId": -7127455278041366,
-              "ShipType": "Yellow Jacket",
-              "Offset": {
-                "x": 40.875,
-                "y": -5.874997
-              }
-            },
-            {
-              "FleetId": -7127455278041367,
-              "ShipType": "Yellow Jacket",
-              "Offset": {
-                "x": 25.125,
-                "y": -5.874997
-              }
-            }
-          ]
-        },
-        {
-          "Id": -7127455278039409,
-          "Side": 1,
-          "Name": "6 Leafcutters",
-          "Color": {
-            "r": 0,
-            "g": 0,
-            "b": 0,
-            "a": 0
-          },
-          "StartingPosition": {
-            "x": -57.73573,
-            "y": -11.58583
-          },
-          "CeaseFire": false,
-          "IsMatchingSpeed": false,
-          "ChosenShootingStrategy": "First Seen",
-          "Stats": {
-            "Commander": "So Cyfa",
-            "BattlesFought": 0,
-            "BattlesWon": 0,
-            "ShipsLost": 0,
-            "DamageDone": 0,
-            "DamageReceived": 0,
-            "Kills": 0
-          },
-          "Ships": [
-            {
-              "FleetId": -7127455278041374,
-              "ShipType": "Leafcutter",
-              "Offset": {
-                "x": 33.00001,
-                "y": 9.874995
-              }
-            },
-            {
-              "FleetId": -7127455278041375,
-              "ShipType": "Leafcutter",
-              "Offset": {
-                "x": 17.25001,
-                "y": 9.874995
-              }
-            },
-            {
-              "FleetId": -7127455278041376,
-              "ShipType": "Leafcutter",
-              "Offset": {
-                "x": 48.75001,
-                "y": 9.874995
-              }
-            },
-            {
-              "FleetId": -7127455278041377,
-              "ShipType": "Leafcutter",
-              "Offset": {
-                "x": 33.00001,
-                "y": -5.874996
-              }
-            },
-            {
-              "FleetId": -7127455278041378,
-              "ShipType": "Leafcutter",
-              "Offset": {
-                "x": 17.25,
-                "y": -5.874996
-              }
-            },
-            {
-              "FleetId": -7127455278041379,
-              "ShipType": "Leafcutter",
-              "Offset": {
-                "x": 48.75001,
-                "y": -5.874996
-              }
-            }
-          ]
-        }
-      ],
-      "EnemyExistingSquads": [],
-      "ObstacleList": [
-        {
-          "Position": {
-            "x": -524,
-            "y": 0
-          },
-          "Scale": {
-            "x": 24,
-            "y": 1120
-          }
-        },
-        {
-          "Position": {
-            "x": 0,
-            "y": -524
-          },
-          "Scale": {
-            "x": 1120,
-            "y": 24
-          }
-        },
-        {
-          "Position": {
-            "x": 524,
-            "y": 0
-          },
-          "Scale": {
-            "x": 24,
-            "y": 1120
-          }
-        },
-        {
-          "Position": {
-            "x": 0,
-            "y": 524
-          },
-          "Scale": {
-            "x": 1120,
-            "y": 24
-          }
-        },
-        {
-          "Position": {
-            "x": -400,
-            "y": 0
-          },
-          "Scale": {
-            "x": 50,
-            "y": 800
-          }
-        },
-        {
-          "Position": {
-            "x": -200,
-            "y": 0
-          },
-          "Scale": {
-            "x": 50,
-            "y": 800
-          }
-        },
-        {
-          "Position": {
-            "x": 0,
-            "y": 0
-          },
-          "Scale": {
-            "x": 50,
-            "y": 800
-          }
-        },
-        {
-          "Position": {
-            "x": 200,
-            "y": 0
-          },
-          "Scale": {
-            "x": 50,
-            "y": 800
-          }
-        },
-        {
-          "Position": {
-            "x": 400,
-            "y": 0
-          },
-          "Scale": {
-            "x": 50,
-            "y": 800
-          }
-        }
-      ]
-    },
-    {
-      "Id": 4,
-      "Side": 1,
       "Name": "80s Space Rock",
-      "MapIndex": 1,
+      "MapIndex": 0,
       "Obstacles": "No",
       "AsteroidOption": 1,
       "FogOfWar": 1,
@@ -3961,6 +2547,1421 @@
       "EnemyExistingSquads": [],
       "ObstacleList": []
     },
+    {
+      "Id": 4,
+      "Side": 1,
+      "Name": "Parallel Play",
+      "MapIndex": 1,
+      "Obstacles": "",
+      "AsteroidOption": 0,
+      "FogOfWar": 0,
+      "Mining": 0,
+      "HasPreLevelIntro": "False",
+      "HasSquadActionBox": "True",
+      "SupplyCapacity": 500,
+      "EnemyReinforcementsOption": 0,
+      "EnemyReinforcementDelay": 60,
+      "UserStartingPosition": {
+        "x": 0,
+        "y": 0
+      },
+      "AIStartingPosition": {
+        "x": 0,
+        "y": 0
+      },
+      "EnemyReinforcements": [
+        {
+          "Id": -7127455278039321,
+          "Side": 1,
+          "Name": "1 Honeybee",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -57.73572,
+            "y": -3.710835
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "Sine Pave",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -7127455278041286,
+              "ShipType": "Honeybee",
+              "Offset": {
+                "x": 33,
+                "y": 1.999999
+              }
+            }
+          ]
+        },
+        {
+          "Id": -7127455278039325,
+          "Side": 1,
+          "Name": "1 Honeybee",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -57.73572,
+            "y": -3.710835
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "Shaluju De",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -7127455278041290,
+              "ShipType": "Honeybee",
+              "Offset": {
+                "x": 33,
+                "y": 1.999999
+              }
+            }
+          ]
+        },
+        {
+          "Id": -7127455278039329,
+          "Side": 1,
+          "Name": "1 Honeybee",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -57.73572,
+            "y": -3.710835
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "Xi Lidi",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -7127455278041294,
+              "ShipType": "Honeybee",
+              "Offset": {
+                "x": 33,
+                "y": 1.999999
+              }
+            }
+          ]
+        },
+        {
+          "Id": -7127455278039333,
+          "Side": 1,
+          "Name": "1 Honeybee",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -57.73572,
+            "y": -3.710835
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "Cae Xoshuly",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -7127455278041298,
+              "ShipType": "Honeybee",
+              "Offset": {
+                "x": 33,
+                "y": 1.999999
+              }
+            }
+          ]
+        },
+        {
+          "Id": -7127455278039346,
+          "Side": 1,
+          "Name": "10 Hornets",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -65.61073,
+            "y": -19.46083
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "Ve Qapae",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -7127455278041311,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": 40.87502,
+                "y": 17.74999
+              }
+            },
+            {
+              "FleetId": -7127455278041312,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": 25.12502,
+                "y": 17.74999
+              }
+            },
+            {
+              "FleetId": -7127455278041313,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": 56.62502,
+                "y": 17.74999
+              }
+            },
+            {
+              "FleetId": -7127455278041314,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": 9.375015,
+                "y": 17.74999
+              }
+            },
+            {
+              "FleetId": -7127455278041315,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": 40.87502,
+                "y": 2
+              }
+            },
+            {
+              "FleetId": -7127455278041316,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": 25.12499,
+                "y": 2
+              }
+            },
+            {
+              "FleetId": -7127455278041317,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": 56.62502,
+                "y": 2
+              }
+            },
+            {
+              "FleetId": -7127455278041318,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": 9.374992,
+                "y": 2
+              }
+            },
+            {
+              "FleetId": -7127455278041319,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": 40.87502,
+                "y": -13.74999
+              }
+            },
+            {
+              "FleetId": -7127455278041320,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": 25.12499,
+                "y": -13.74999
+              }
+            }
+          ]
+        },
+        {
+          "Id": -7127455278039364,
+          "Side": 1,
+          "Name": "6 Wasps",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -57.73572,
+            "y": -11.58583
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "Lelo Qi",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -7127455278041329,
+              "ShipType": "Wasp",
+              "Offset": {
+                "x": 33,
+                "y": 9.874995
+              }
+            },
+            {
+              "FleetId": -7127455278041330,
+              "ShipType": "Wasp",
+              "Offset": {
+                "x": 17.25,
+                "y": 9.874995
+              }
+            },
+            {
+              "FleetId": -7127455278041331,
+              "ShipType": "Wasp",
+              "Offset": {
+                "x": 48.75,
+                "y": 9.874995
+              }
+            },
+            {
+              "FleetId": -7127455278041332,
+              "ShipType": "Wasp",
+              "Offset": {
+                "x": 33,
+                "y": -5.874996
+              }
+            },
+            {
+              "FleetId": -7127455278041333,
+              "ShipType": "Wasp",
+              "Offset": {
+                "x": 17.25,
+                "y": -5.874996
+              }
+            },
+            {
+              "FleetId": -7127455278041334,
+              "ShipType": "Wasp",
+              "Offset": {
+                "x": 48.75,
+                "y": -5.874996
+              }
+            }
+          ]
+        },
+        {
+          "Id": -7127455278039376,
+          "Side": 1,
+          "Name": "4 Yellow Jackets",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -65.61072,
+            "y": -11.58583
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "Sujagu Ju",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -7127455278041341,
+              "ShipType": "Yellow Jacket",
+              "Offset": {
+                "x": 40.875,
+                "y": 9.874995
+              }
+            },
+            {
+              "FleetId": -7127455278041342,
+              "ShipType": "Yellow Jacket",
+              "Offset": {
+                "x": 25.125,
+                "y": 9.874995
+              }
+            },
+            {
+              "FleetId": -7127455278041343,
+              "ShipType": "Yellow Jacket",
+              "Offset": {
+                "x": 40.875,
+                "y": -5.874996
+              }
+            },
+            {
+              "FleetId": -7127455278041344,
+              "ShipType": "Yellow Jacket",
+              "Offset": {
+                "x": 25.125,
+                "y": -5.874996
+              }
+            }
+          ]
+        },
+        {
+          "Id": -7127455278039383,
+          "Side": 1,
+          "Name": "1 Bumblebee",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -57.73572,
+            "y": -3.710835
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "Pekiko Ga",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -7127455278041348,
+              "ShipType": "Bumblebee",
+              "Offset": {
+                "x": 33,
+                "y": 1.999999
+              }
+            }
+          ]
+        },
+        {
+          "Id": -7127455278039392,
+          "Side": 1,
+          "Name": "6 Wasps",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -57.73572,
+            "y": -11.58583
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "Ny Tu",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -7127455278041357,
+              "ShipType": "Wasp",
+              "Offset": {
+                "x": 33,
+                "y": 9.874994
+              }
+            },
+            {
+              "FleetId": -7127455278041358,
+              "ShipType": "Wasp",
+              "Offset": {
+                "x": 17.25,
+                "y": 9.874994
+              }
+            },
+            {
+              "FleetId": -7127455278041359,
+              "ShipType": "Wasp",
+              "Offset": {
+                "x": 48.75,
+                "y": 9.874994
+              }
+            },
+            {
+              "FleetId": -7127455278041360,
+              "ShipType": "Wasp",
+              "Offset": {
+                "x": 33,
+                "y": -5.874997
+              }
+            },
+            {
+              "FleetId": -7127455278041361,
+              "ShipType": "Wasp",
+              "Offset": {
+                "x": 17.25,
+                "y": -5.874997
+              }
+            },
+            {
+              "FleetId": -7127455278041362,
+              "ShipType": "Wasp",
+              "Offset": {
+                "x": 48.75,
+                "y": -5.874997
+              }
+            }
+          ]
+        },
+        {
+          "Id": -7127455278039404,
+          "Side": 1,
+          "Name": "4 Yellow Jackets",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -65.61072,
+            "y": -11.58583
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "Xine Detaqo",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -7127455278041369,
+              "ShipType": "Yellow Jacket",
+              "Offset": {
+                "x": 40.875,
+                "y": 9.874994
+              }
+            },
+            {
+              "FleetId": -7127455278041370,
+              "ShipType": "Yellow Jacket",
+              "Offset": {
+                "x": 25.125,
+                "y": 9.874994
+              }
+            },
+            {
+              "FleetId": -7127455278041371,
+              "ShipType": "Yellow Jacket",
+              "Offset": {
+                "x": 40.875,
+                "y": -5.874997
+              }
+            },
+            {
+              "FleetId": -7127455278041372,
+              "ShipType": "Yellow Jacket",
+              "Offset": {
+                "x": 25.125,
+                "y": -5.874997
+              }
+            }
+          ]
+        },
+        {
+          "Id": -7127455278039416,
+          "Side": 1,
+          "Name": "6 Leafcutters",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -57.73573,
+            "y": -11.58583
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "Tyxo Kaedaere",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -7127455278041381,
+              "ShipType": "Leafcutter",
+              "Offset": {
+                "x": 33.00001,
+                "y": 9.874995
+              }
+            },
+            {
+              "FleetId": -7127455278041382,
+              "ShipType": "Leafcutter",
+              "Offset": {
+                "x": 17.25001,
+                "y": 9.874995
+              }
+            },
+            {
+              "FleetId": -7127455278041383,
+              "ShipType": "Leafcutter",
+              "Offset": {
+                "x": 48.75001,
+                "y": 9.874995
+              }
+            },
+            {
+              "FleetId": -7127455278041384,
+              "ShipType": "Leafcutter",
+              "Offset": {
+                "x": 33.00001,
+                "y": -5.874996
+              }
+            },
+            {
+              "FleetId": -7127455278041385,
+              "ShipType": "Leafcutter",
+              "Offset": {
+                "x": 17.25,
+                "y": -5.874996
+              }
+            },
+            {
+              "FleetId": -7127455278041386,
+              "ShipType": "Leafcutter",
+              "Offset": {
+                "x": 48.75001,
+                "y": -5.874996
+              }
+            }
+          ]
+        }
+      ],
+      "EnemySquads": [
+        {
+          "Id": -7127455278039319,
+          "Side": 1,
+          "Name": "1 Honeybee",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -57.73572,
+            "y": -3.710835
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "Caebaecu By",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -7127455278041284,
+              "ShipType": "Honeybee",
+              "Offset": {
+                "x": 33,
+                "y": 1.999999
+              }
+            }
+          ]
+        },
+        {
+          "Id": -7127455278039323,
+          "Side": 1,
+          "Name": "1 Honeybee",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -57.73572,
+            "y": -3.710835
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "Laqise Qyso",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -7127455278041288,
+              "ShipType": "Honeybee",
+              "Offset": {
+                "x": 33,
+                "y": 1.999999
+              }
+            }
+          ]
+        },
+        {
+          "Id": -7127455278039327,
+          "Side": 1,
+          "Name": "1 Honeybee",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -57.73572,
+            "y": -3.710835
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "Bufa Cony",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -7127455278041292,
+              "ShipType": "Honeybee",
+              "Offset": {
+                "x": 33,
+                "y": 1.999999
+              }
+            }
+          ]
+        },
+        {
+          "Id": -7127455278039331,
+          "Side": 1,
+          "Name": "1 Honeybee",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -57.73572,
+            "y": -3.710835
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "Cu Sunu",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -7127455278041296,
+              "ShipType": "Honeybee",
+              "Offset": {
+                "x": 33,
+                "y": 1.999999
+              }
+            }
+          ]
+        },
+        {
+          "Id": -7127455278039335,
+          "Side": 1,
+          "Name": "10 Hornets",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -65.61073,
+            "y": -19.46083
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "Vabe Bu",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -7127455278041300,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": 40.87502,
+                "y": 17.74999
+              }
+            },
+            {
+              "FleetId": -7127455278041301,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": 25.12502,
+                "y": 17.74999
+              }
+            },
+            {
+              "FleetId": -7127455278041302,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": 56.62502,
+                "y": 17.74999
+              }
+            },
+            {
+              "FleetId": -7127455278041303,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": 9.375015,
+                "y": 17.74999
+              }
+            },
+            {
+              "FleetId": -7127455278041304,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": 40.87502,
+                "y": 2
+              }
+            },
+            {
+              "FleetId": -7127455278041305,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": 25.12499,
+                "y": 2
+              }
+            },
+            {
+              "FleetId": -7127455278041306,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": 56.62502,
+                "y": 2
+              }
+            },
+            {
+              "FleetId": -7127455278041307,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": 9.374992,
+                "y": 2
+              }
+            },
+            {
+              "FleetId": -7127455278041308,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": 40.87502,
+                "y": -13.74999
+              }
+            },
+            {
+              "FleetId": -7127455278041309,
+              "ShipType": "Hornet",
+              "Offset": {
+                "x": 25.12499,
+                "y": -13.74999
+              }
+            }
+          ]
+        },
+        {
+          "Id": -7127455278039357,
+          "Side": 1,
+          "Name": "6 Wasps",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -57.73572,
+            "y": -11.58583
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "Ly Ky",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -7127455278041322,
+              "ShipType": "Wasp",
+              "Offset": {
+                "x": 33,
+                "y": 9.874995
+              }
+            },
+            {
+              "FleetId": -7127455278041323,
+              "ShipType": "Wasp",
+              "Offset": {
+                "x": 17.25,
+                "y": 9.874995
+              }
+            },
+            {
+              "FleetId": -7127455278041324,
+              "ShipType": "Wasp",
+              "Offset": {
+                "x": 48.75,
+                "y": 9.874995
+              }
+            },
+            {
+              "FleetId": -7127455278041325,
+              "ShipType": "Wasp",
+              "Offset": {
+                "x": 33,
+                "y": -5.874996
+              }
+            },
+            {
+              "FleetId": -7127455278041326,
+              "ShipType": "Wasp",
+              "Offset": {
+                "x": 17.25,
+                "y": -5.874996
+              }
+            },
+            {
+              "FleetId": -7127455278041327,
+              "ShipType": "Wasp",
+              "Offset": {
+                "x": 48.75,
+                "y": -5.874996
+              }
+            }
+          ]
+        },
+        {
+          "Id": -7127455278039371,
+          "Side": 1,
+          "Name": "4 Yellow Jackets",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -65.61072,
+            "y": -11.58583
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "Cylae By",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -7127455278041336,
+              "ShipType": "Yellow Jacket",
+              "Offset": {
+                "x": 40.875,
+                "y": 9.874995
+              }
+            },
+            {
+              "FleetId": -7127455278041337,
+              "ShipType": "Yellow Jacket",
+              "Offset": {
+                "x": 25.125,
+                "y": 9.874995
+              }
+            },
+            {
+              "FleetId": -7127455278041338,
+              "ShipType": "Yellow Jacket",
+              "Offset": {
+                "x": 40.875,
+                "y": -5.874996
+              }
+            },
+            {
+              "FleetId": -7127455278041339,
+              "ShipType": "Yellow Jacket",
+              "Offset": {
+                "x": 25.125,
+                "y": -5.874996
+              }
+            }
+          ]
+        },
+        {
+          "Id": -7127455278039381,
+          "Side": 1,
+          "Name": "1 Bumblebee",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -57.73572,
+            "y": -3.710835
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "Bube Wae",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -7127455278041346,
+              "ShipType": "Bumblebee",
+              "Offset": {
+                "x": 33,
+                "y": 1.999999
+              }
+            }
+          ]
+        },
+        {
+          "Id": -7127455278039385,
+          "Side": 1,
+          "Name": "6 Wasps",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -57.73572,
+            "y": -11.58583
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "Capynu Fu",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -7127455278041350,
+              "ShipType": "Wasp",
+              "Offset": {
+                "x": 33,
+                "y": 9.874994
+              }
+            },
+            {
+              "FleetId": -7127455278041351,
+              "ShipType": "Wasp",
+              "Offset": {
+                "x": 17.25,
+                "y": 9.874994
+              }
+            },
+            {
+              "FleetId": -7127455278041352,
+              "ShipType": "Wasp",
+              "Offset": {
+                "x": 48.75,
+                "y": 9.874994
+              }
+            },
+            {
+              "FleetId": -7127455278041353,
+              "ShipType": "Wasp",
+              "Offset": {
+                "x": 33,
+                "y": -5.874997
+              }
+            },
+            {
+              "FleetId": -7127455278041354,
+              "ShipType": "Wasp",
+              "Offset": {
+                "x": 17.25,
+                "y": -5.874997
+              }
+            },
+            {
+              "FleetId": -7127455278041355,
+              "ShipType": "Wasp",
+              "Offset": {
+                "x": 48.75,
+                "y": -5.874997
+              }
+            }
+          ]
+        },
+        {
+          "Id": -7127455278039399,
+          "Side": 1,
+          "Name": "4 Yellow Jackets",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -65.61072,
+            "y": -11.58583
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "Wi Saeva",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -7127455278041364,
+              "ShipType": "Yellow Jacket",
+              "Offset": {
+                "x": 40.875,
+                "y": 9.874994
+              }
+            },
+            {
+              "FleetId": -7127455278041365,
+              "ShipType": "Yellow Jacket",
+              "Offset": {
+                "x": 25.125,
+                "y": 9.874994
+              }
+            },
+            {
+              "FleetId": -7127455278041366,
+              "ShipType": "Yellow Jacket",
+              "Offset": {
+                "x": 40.875,
+                "y": -5.874997
+              }
+            },
+            {
+              "FleetId": -7127455278041367,
+              "ShipType": "Yellow Jacket",
+              "Offset": {
+                "x": 25.125,
+                "y": -5.874997
+              }
+            }
+          ]
+        },
+        {
+          "Id": -7127455278039409,
+          "Side": 1,
+          "Name": "6 Leafcutters",
+          "Color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "StartingPosition": {
+            "x": -57.73573,
+            "y": -11.58583
+          },
+          "CeaseFire": false,
+          "IsMatchingSpeed": false,
+          "ChosenShootingStrategy": "First Seen",
+          "Stats": {
+            "Commander": "So Cyfa",
+            "BattlesFought": 0,
+            "BattlesWon": 0,
+            "ShipsLost": 0,
+            "DamageDone": 0,
+            "DamageReceived": 0,
+            "Kills": 0
+          },
+          "Ships": [
+            {
+              "FleetId": -7127455278041374,
+              "ShipType": "Leafcutter",
+              "Offset": {
+                "x": 33.00001,
+                "y": 9.874995
+              }
+            },
+            {
+              "FleetId": -7127455278041375,
+              "ShipType": "Leafcutter",
+              "Offset": {
+                "x": 17.25001,
+                "y": 9.874995
+              }
+            },
+            {
+              "FleetId": -7127455278041376,
+              "ShipType": "Leafcutter",
+              "Offset": {
+                "x": 48.75001,
+                "y": 9.874995
+              }
+            },
+            {
+              "FleetId": -7127455278041377,
+              "ShipType": "Leafcutter",
+              "Offset": {
+                "x": 33.00001,
+                "y": -5.874996
+              }
+            },
+            {
+              "FleetId": -7127455278041378,
+              "ShipType": "Leafcutter",
+              "Offset": {
+                "x": 17.25,
+                "y": -5.874996
+              }
+            },
+            {
+              "FleetId": -7127455278041379,
+              "ShipType": "Leafcutter",
+              "Offset": {
+                "x": 48.75001,
+                "y": -5.874996
+              }
+            }
+          ]
+        }
+      ],
+      "EnemyExistingSquads": [],
+      "ObstacleList": [
+        {
+          "Position": {
+            "x": -524,
+            "y": 0
+          },
+          "Scale": {
+            "x": 24,
+            "y": 1120
+          }
+        },
+        {
+          "Position": {
+            "x": 0,
+            "y": -524
+          },
+          "Scale": {
+            "x": 1120,
+            "y": 24
+          }
+        },
+        {
+          "Position": {
+            "x": 524,
+            "y": 0
+          },
+          "Scale": {
+            "x": 24,
+            "y": 1120
+          }
+        },
+        {
+          "Position": {
+            "x": 0,
+            "y": 524
+          },
+          "Scale": {
+            "x": 1120,
+            "y": 24
+          }
+        },
+        {
+          "Position": {
+            "x": -400,
+            "y": 0
+          },
+          "Scale": {
+            "x": 50,
+            "y": 800
+          }
+        },
+        {
+          "Position": {
+            "x": -200,
+            "y": 0
+          },
+          "Scale": {
+            "x": 50,
+            "y": 800
+          }
+        },
+        {
+          "Position": {
+            "x": 0,
+            "y": 0
+          },
+          "Scale": {
+            "x": 50,
+            "y": 800
+          }
+        },
+        {
+          "Position": {
+            "x": 200,
+            "y": 0
+          },
+          "Scale": {
+            "x": 50,
+            "y": 800
+          }
+        },
+        {
+          "Position": {
+            "x": 400,
+            "y": 0
+          },
+          "Scale": {
+            "x": 50,
+            "y": 800
+          }
+        }
+      ]
+    },
+
     {
       "Id": 5,
       "Side": 1,
@@ -10165,7 +10166,6 @@
                 "y": -13.43487
               }
             }
-
           ]
         }
       ],

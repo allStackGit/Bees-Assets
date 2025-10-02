@@ -215,7 +215,7 @@ public class DialogueManager : MonoBehaviour
     {
         if (showOrHide && Input.GetKey(KeyCode.Space))
         {
-            Debug.Log($"Space held, going to next line");
+            //Debug.Log($"Space held, going to next line"); 
             DisplayNextLine();
         }
         else

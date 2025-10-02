@@ -1,0 +1,403 @@
+fileFormatVersion: 2
+guid: d98c1ed285c6ef844b661fa0e59e2e8d
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: -799465653775809520
+    second: remains_Flagship_4A52C6_14_0
+  - first:
+      213: 799392952414978562
+    second: remains_Flagship_4A52C6_14_1
+  - first:
+      213: -315532119264190317
+    second: remains_Flagship_4A52C6_14_2
+  - first:
+      213: -6453905607047000238
+    second: remains_Flagship_4A52C6_14_3
+  - first:
+      213: -2520118877086275199
+    second: remains_Flagship_4A52C6_14_4
+  - first:
+      213: 3564852091424081156
+    second: remains_Flagship_4A52C6_14_5
+  - first:
+      213: -5837797314691167017
+    second: remains_Flagship_4A52C6_14_6
+  - first:
+      213: 1681882176550934239
+    second: remains_Flagship_4A52C6_14_7
+  - first:
+      213: -2069930085416310018
+    second: remains_Flagship_4A52C6_14_8
+  - first:
+      213: -3315525206559897459
+    second: remains_Flagship_4A52C6_14_9
+  - first:
+      213: 8419285304467124208
+    second: remains_Flagship_4A52C6_14_10
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 100
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: remains_Flagship_4A52C6_14_0
+      rect:
+        serializedVersion: 2
+        x: 23
+        y: 118
+        width: 59
+        height: 96
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 0144190493ab7e4f0800000000000000
+      internalID: -799465653775809520
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Flagship_4A52C6_14_1
+      rect:
+        serializedVersion: 2
+        x: 64
+        y: 77
+        width: 79
+        height: 98
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 20245a4a7a3081b00800000000000000
+      internalID: 799392952414978562
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Flagship_4A52C6_14_2
+      rect:
+        serializedVersion: 2
+        x: 128
+        y: 122
+        width: 31
+        height: 99
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 390280495310f9bf0800000000000000
+      internalID: -315532119264190317
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Flagship_4A52C6_14_3
+      rect:
+        serializedVersion: 2
+        x: 158
+        y: 149
+        width: 13
+        height: 20
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 25fcf0e6b0f1f66a0800000000000000
+      internalID: -6453905607047000238
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Flagship_4A52C6_14_4
+      rect:
+        serializedVersion: 2
+        x: 16
+        y: 71
+        width: 38
+        height: 39
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 1892483cb3db60dd0800000000000000
+      internalID: -2520118877086275199
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Flagship_4A52C6_14_5
+      rect:
+        serializedVersion: 2
+        x: 157
+        y: 76
+        width: 33
+        height: 35
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 405042af616e87130800000000000000
+      internalID: 3564852091424081156
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Flagship_4A52C6_14_6
+      rect:
+        serializedVersion: 2
+        x: 91
+        y: 53
+        width: 28
+        height: 15
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 7dc8a13b54afbfea0800000000000000
+      internalID: -5837797314691167017
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Flagship_4A52C6_14_7
+      rect:
+        serializedVersion: 2
+        x: 139
+        y: 14
+        width: 21
+        height: 55
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: fd61167bdee375710800000000000000
+      internalID: 1681882176550934239
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Flagship_4A52C6_14_8
+      rect:
+        serializedVersion: 2
+        x: 43
+        y: 19
+        width: 20
+        height: 30
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: efaedd4ed812643e0800000000000000
+      internalID: -2069930085416310018
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Flagship_4A52C6_14_9
+      rect:
+        serializedVersion: 2
+        x: 78
+        y: 29
+        width: 22
+        height: 16
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: d88c42b1463ecf1d0800000000000000
+      internalID: -3315525206559897459
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: remains_Flagship_4A52C6_14_10
+      rect:
+        serializedVersion: 2
+        x: 168
+        y: 17
+        width: 13
+        height: 25
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 0ffed6b806f47d470800000000000000
+      internalID: 8419285304467124208
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
+    nameFileIdTable:
+      remains_Flagship_4A52C6_14_0: -799465653775809520
+      remains_Flagship_4A52C6_14_1: 799392952414978562
+      remains_Flagship_4A52C6_14_10: 8419285304467124208
+      remains_Flagship_4A52C6_14_2: -315532119264190317
+      remains_Flagship_4A52C6_14_3: -6453905607047000238
+      remains_Flagship_4A52C6_14_4: -2520118877086275199
+      remains_Flagship_4A52C6_14_5: 3564852091424081156
+      remains_Flagship_4A52C6_14_6: -5837797314691167017
+      remains_Flagship_4A52C6_14_7: 1681882176550934239
+      remains_Flagship_4A52C6_14_8: -2069930085416310018
+      remains_Flagship_4A52C6_14_9: -3315525206559897459
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

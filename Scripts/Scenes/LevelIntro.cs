@@ -31,7 +31,7 @@ namespace UIComponents
 
             if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge && LevelNumber == 0)
             {
-                StartCoroutine(DelayStart(2, () =>
+                StartCoroutine(DelayStart(1, () =>
                 {
                     CutsceneManager.PlayDialogueSection(CutsceneManager.StartedChallengeMode, true);
                 }));

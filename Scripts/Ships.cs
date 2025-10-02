@@ -73,6 +73,15 @@ namespace Assets.Scripts
         {
             return GetAliveShips().Where((ship) => ship.Type == type).ToList();
         }
+        /// <summary>
+        /// Whether there is at least one alive ship of the given type in the fleet
+        /// </summary>
+        /// <param name="type"></param>
+        /// <returns></returns>
+        public bool HasShipsOfType(ConfigData.ShipTypes type)
+        {
+            return GetAliveShips().Find((ship) => ship.Type == type) != null;
+        }
         public int GetShipRanking(FleetShip ship, string statType) {
             List<FleetShip> rankings = new List<FleetShip>();
             int ranking = 0;
@@ -410,7 +419,18 @@ namespace Assets.Scripts
                 {
                     savedSquad = GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetSquadShips().Count >= shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType) && squad.GetAliveSquadShips().Count > 0);
 
-                }                
+                }
+                if (savedSquad == null)
+                {
+                    Debug.Log($"Squads: {GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetSquadShips().Count == shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType))}");
+
+                    Debug.Log($"Squads: {GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetSquadShips().Count == shipCount)}");
+
+                    Debug.Log($"Squads: {GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel)}");
+
+                    Debug.Log($"Squads: {Utilities.ListToString(GetSavedSquadsBySide(Utilities.ConvertShipTypeToSide[shipType]))}");
+                    Debug.LogWarning($"No squad found with {(canHaveFewerShips ? "<=" : "")}{shipCount}{(canHaveMoreShips ? ">=" : "")} ships of type {shipType}");
+                }
             }
             return savedSquad;
 

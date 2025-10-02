@@ -73,12 +73,14 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
             if (!IsAimedAtTarget)
             {
-                LaserBuilderAnimation.SetActive(false);
+                //LaserBuilderAnimation.SetActive(false);
+                Animator.speed = 0;
                 //_chargingSound.Stop();
             }
             else
             {
                 LaserBuilderAnimation.SetActive(true);
+                Animator.speed = 1;
                 //if (!_chargingSound.isPlaying)
                 //{
                 //    _chargingSound.Play();

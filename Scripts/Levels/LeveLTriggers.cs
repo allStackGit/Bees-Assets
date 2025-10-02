@@ -28,7 +28,8 @@ namespace Assets.Scripts.Levels
         /// This represents an amount of value that the player has accomplished for a given level like rescuing personnel that in turn translates to reinforcements or some other bonus
         /// </summary>
         private int _questPoints;
-        private bool _someShipsHaveRetreated;
+        //private bool _someShipsHaveRetreated;
+        private bool _lastShipRetreated;
         /// <summary>
         /// Sets all the triggers for events in the level. Triggers are checked every 5 seconds so this currently has a maximum precision of 5 seconds
         /// </summary>
@@ -152,15 +153,18 @@ namespace Assets.Scripts.Levels
             Stage.Menus.ToggleMiniMapDisplay();
             Stage.Menus.MiniMapOpenButton.SetActive(false);
 
+            Stage.Menus.SetMissionStatus("Scout and explore");
+
             Triggers.AddRange(new List<Trigger>(){
                 new Trigger(() =>
                 {
-                    Debug.Log($"Looking for {firstHoneybee}");
+                    //Debug.Log($"Looking for {firstHoneybee}");
                     return firstScout.ProximityCollider.NearbyEnemyShips.Contains(firstHoneybee);
                 },
                 () =>
                 {
                     Debug.Log("Scout spotted the honeybee!");
+                    Stage.Menus.MissionStatus.SetActive(false);
 
                     State.SelectSquads(new List<Squad>());
                     firstScout.Squad.StopMoving();
@@ -351,6 +355,8 @@ namespace Assets.Scripts.Levels
                                         },
                                         () =>
                                         {
+                                            Stage.Menus.MissionStatus.SetActive(true);
+                                            Stage.Menus.SetMissionStatus("Find and destroy the enemy ship");
                                             firstGunship.Squad.CanAcceptUserInput = true;
                                             firstGunship.Squad.HasCommandQueue = false;
                                             Stage.IsFollowingShip = false;
@@ -432,6 +438,7 @@ namespace Assets.Scripts.Levels
                                                 () =>
                                                 {
                                                     Debug.Log("Honeybee has been defeated");
+                                                    Stage.Menus.SetMissionStatus("Keep a look out for other ships");
                                                     Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Anomaly.GetRange(23, 2));
                                                     State.GetSquadsBySide(ConfigData.Configuration.AISide).ForEach((squad) =>
                                                     {
@@ -462,6 +469,7 @@ namespace Assets.Scripts.Levels
                                                         },
                                                         () =>
                                                         {
+                                                            Stage.Menus.SetMissionStatus("Fly down to safety!");
                                                             Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Anomaly.GetRange(25, 2)); // Gunship Sees bees
 
                                                             flydownTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
@@ -546,6 +554,7 @@ namespace Assets.Scripts.Levels
         }
         public void Level1Triggers()
         {
+            Stage.Menus.MissionStatus.SetActive(false);
             // Hide the surrender button
             Stage.SurrenderButton.SetActive(false);
             FishTankTrigger();
@@ -597,6 +606,8 @@ namespace Assets.Scripts.Levels
                 },
                 () =>
                 {
+                    Stage.Menus.MissionStatus.SetActive(true);
+                    Stage.Menus.SetMissionStatus("Use the scout");
                     basicTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
                     basicTooltip.SetActive(true);
                     TMP_Text tooltipText = basicTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>();
@@ -660,6 +671,8 @@ namespace Assets.Scripts.Levels
                                             Destroy(pointerA);
                                             Destroy(pointerB);
                                             Destroy(spaceBarMessage);
+
+                                            Stage.Menus.SetMissionStatus("Try out the different squads");
 
                                             GameObject squadNumberHighlight = Instantiate(Stage.Menus.UIHighlightTooltipPrefab, Stage.Menus.UIOverlay.transform);
                                             squadNumberHighlight.SetActive(true);
@@ -738,6 +751,8 @@ namespace Assets.Scripts.Levels
                                                                 },
                                                                 "Level 1 Showing Joey Frigate Dialogue")
                                                             );
+
+                                                            Stage.Menus.SetMissionStatus("Find and destroy the enemy ships!");
 
                                                             // Create bee starting squads. One squad of 1 honeybee, one Squads of 3 hornets, one squad of 2 wasps
                                                             LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() {
@@ -825,7 +840,7 @@ namespace Assets.Scripts.Levels
             ScaledTimer clock = new ScaledTimer();
 
 
-            // Every time the trigger is checked, 1 person is evacuated. If 15 people are lost then the level ends. If 15 people aren't lost then the level ends after 5 minutes and roughly 60 people are evacuated. The ship will have a ton of health and no weapons but in theory should still be physical so that projectiles can hit it and explode and when it loses health, personnel are lost. It should have sufficient TSV so that it's a very valuable target for the Bees even if they only do a tiny bit of damage relative to its significant health.
+            // Every time the trigger is checked, 1 person is evacuated. If 15 people are lost then the level ends. If 15 people aren't lost then the level ends after 5 minutes and roughly 60 people are evacuated. The "ship" will have a ton of health and no weapons but in theory should still be physical so that projectiles can hit it and explode and when it loses health, personnel are lost. It should have sufficient TSV so that it's a very valuable target for the Bees even if they only do a tiny bit of damage relative to its significant health.
 
             // Prevent the Hivemind from giving commands
             Stage.ActivateHiveMind = false;
@@ -841,6 +856,8 @@ namespace Assets.Scripts.Levels
                 Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_BluerPastures.GetRange(1, 4));
             });
             AddTimer(_dialogueTimer);
+
+            Stage.Menus.SetMissionStatus("Survive and defend Pluto!");
 
             NextTriggers.Add(new Trigger(() =>
                 {
@@ -1121,6 +1138,7 @@ namespace Assets.Scripts.Levels
         }
         public void Level3Triggers()
         {
+            Stage.Menus.SetMissionStatus("Find and destroy all the bees!");
             //Stage.EnablePlayerControl();
             HasContinuousTriggers = true;
 
@@ -1224,6 +1242,7 @@ namespace Assets.Scripts.Levels
         }
         public void Level4Triggers()
         {
+            Stage.Menus.SetMissionStatus("Survive and mine as many minerals as you can");
             HasContinuousTriggers = true;
 
             Stage.CutsceneManager.Setup(() =>
@@ -1485,7 +1504,7 @@ namespace Assets.Scripts.Levels
                                     // Set dialogue triggers
                                     NextTriggers.Add(new Trigger(() =>
                                         {
-                                            return State.IsSideKilled(ConfigData.Configuration.UserSide) && !_someShipsHaveRetreated;
+                                            return State.IsSideKilled(ConfigData.Configuration.UserSide) && !_lastShipRetreated;
                                         },
                                         () =>
                                         {
@@ -1498,7 +1517,7 @@ namespace Assets.Scripts.Levels
 
                                     NextTriggers.Add(new Trigger(() =>
                                         {
-                                            return State.IsSideKilled(ConfigData.Configuration.UserSide) && _someShipsHaveRetreated;
+                                            return State.IsSideKilled(ConfigData.Configuration.UserSide) && _lastShipRetreated;
                                         },
                                        () =>
                                        {
@@ -1543,13 +1562,14 @@ namespace Assets.Scripts.Levels
             {
                 if (ship.Side == ConfigData.Configuration.UserSide)
                 {
-                    _someShipsHaveRetreated = true;
+                    _lastShipRetreated = State.GetShips(ship.Side).Where((s) => s.IsMobile).Count() == 1;
                     ship.EndKill();
                 }
             };
         }
         public void Level5Triggers()
         {
+            Stage.Menus.SetMissionStatus("Destroy all the bees to break through the blockade");
             HasContinuousTriggers = true;
 
             Stage.CutsceneManager.Setup(() =>
@@ -1607,7 +1627,7 @@ namespace Assets.Scripts.Levels
                     else
                     {
                         CloseLevel();
-                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Neptune_PressingForward.GetRange(5, ConfigData.CurrentShips.GetAliveShipsOfType(ConfigData.ShipTypes.Factory) != null ?  7 : 2), true);
+                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Neptune_PressingForward.GetRange(5, ConfigData.CurrentShips.HasShipsOfType(ConfigData.ShipTypes.Factory) ?  7 : 2), true);
                     }
                 },
                 "Level 5 Ending dialogue")
@@ -1616,6 +1636,7 @@ namespace Assets.Scripts.Levels
         }
         public void Level6Triggers()
         {
+            Stage.Menus.SetMissionStatus("Find and destroy all the bees");
             HasContinuousTriggers = true;
             Stage.ActivateHiveMind = false;
 
@@ -1761,7 +1782,7 @@ namespace Assets.Scripts.Levels
                             CloseLevel();
                             if (WinningSide == ConfigData.Configuration.UserSide) // Player won
                             {
-                                Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_OnTheOffensive.GetRange(18, ConfigData.CurrentShips.GetAliveShipsOfType(ConfigData.ShipTypes.Factory) != null ? 20 : 17), true);
+                                Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_OnTheOffensive.GetRange(18, ConfigData.CurrentShips.HasShipsOfType(ConfigData.ShipTypes.Factory) ? 20 : 17), true);
                             }
                             else
                             {
@@ -1886,7 +1907,7 @@ namespace Assets.Scripts.Levels
             // Set the dialogue list for reinforcements
             List<DialogueLine> dialogueLines = Stage.CutsceneManager.Uranus_OnTheDefensive.GetRange(2, 6);
 
-            if (ConfigData.CurrentShips.GetAliveShipsOfType(ConfigData.ShipTypes.Cruiser) != null)
+            if (ConfigData.CurrentShips.HasShipsOfType(ConfigData.ShipTypes.Cruiser))
             {
                 dialogueLines.Add(Stage.CutsceneManager.Uranus_OnTheDefensive[9]);
             }
@@ -1907,6 +1928,7 @@ namespace Assets.Scripts.Levels
             Stage.Menus.RetreatButton.SetActive(true);
             Stage.Menus.RetreatButton.GetComponent<Button>().onClick.AddListener(SetRetreatForLevel7);
 
+            Stage.Menus.SetMissionStatus("Survive and mine as many minerals as you can");
 
             NextTriggers.Add(new Trigger(() =>
                 {
@@ -2148,7 +2170,7 @@ namespace Assets.Scripts.Levels
                                     CloseLevel();
                                     if (WinningSide == ConfigData.Configuration.AISide) // Player lost or retreated
                                     {
-                                        if (!_someShipsHaveRetreated)
+                                        if (!_lastShipRetreated)
                                         {
                                             Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Uranus_OnTheDefensive[13]);
                                         }
@@ -2213,13 +2235,14 @@ namespace Assets.Scripts.Levels
             {
                 if (ship.Side == ConfigData.Configuration.UserSide)
                 {
-                    _someShipsHaveRetreated = true;
+                    _lastShipRetreated = State.GetShips(ship.Side).Where((s) => s.IsMobile).Count() == 1;
                     ship.EndKill();
                 }
             };
         }
         public void Level8Triggers()
         {
+            Stage.Menus.SetMissionStatus("Rescue the barges and destroy all the bees!");
             Stage.EnablePlayerControl();
             HasContinuousTriggers = true;
 
@@ -2255,6 +2278,18 @@ namespace Assets.Scripts.Levels
                 ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6, true, true),
                 ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true),
             }, new Vector2(250, 250), Vector2.zero);
+
+
+            if (State.GetSquadsBySide(ConfigData.Configuration.AISide).Count == 0) // If all the bee squads were killed in the last level, add a hornet squad to ensure the player has something to fight
+            {
+                CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Hornet, 2);
+
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 2);
+
+                AddReinforcementSquads(new List<SavedSquad>() {
+                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 2, true, true),
+                }, new Vector2(250, 250), Vector2.zero);
+            }
             AddReinforcementsToHivemindCommandQueue();
 
 
@@ -2492,8 +2527,8 @@ namespace Assets.Scripts.Levels
             {
                 ConfigData.UserProgressData.IsHumanFreePlayUnlocked = true;
                 Dialogue trainingRoomAlert = null;
-                trainingRoomAlert = new Dialogue(Stage.DialoguePrefab, "Congratulations!", "You've unlocked the Training Room!",
-                    new List<string>() { "I am the best, after all" }, new List<UnityAction>() {  () => {
+                trainingRoomAlert = new Dialogue(Stage.DialoguePrefab, "New Game Mode!", "You've unlocked the Training Room!",
+                    new List<string>() { "Ok" }, new List<UnityAction>() {  () => {
                     trainingRoomAlert.Hide();
                     Level2EndingDialogue();
                 } });
@@ -2507,7 +2542,7 @@ namespace Assets.Scripts.Levels
                 //ConfigData.UserProgressData.IsBeeFreePlayUnlocked = true;
 
                 // Add Leafcutter, and Yellow Jacket to codex and add Carpenter Bee to visibility
-                ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Leafcutter);
+            ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Leafcutter);
             ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.YellowJacket);
 
             ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.CarpenterBee);
@@ -2606,7 +2641,7 @@ namespace Assets.Scripts.Levels
                 {
                     _save_fleetship = ship.GetFleetShip();
 
-                    //Debug.Log($"{_save_fleetship.Name} has mined {_save_fleetship.MineralsMined} minerals in its lifetime. It has mined {_save_fleetship.MineralsMinedThisLevel} minerals this level");
+                    Debug.Log($"{_save_fleetship.Name} has mined {_save_fleetship.MineralsMined} minerals in its lifetime. It has mined {_save_fleetship.MineralsMinedThisLevel} minerals this level");
                     _save_fleetship.MineralsMined += _save_fleetship.MineralsMinedThisLevel;
                     ConfigData.UserProgressData.MinedTSV += _save_fleetship.MineralsMinedThisLevel;
                     _save_fleetship.MineralsMinedThisLevel = 0;
@@ -2675,7 +2710,7 @@ namespace Assets.Scripts.Levels
             //return;
 
             // Skip next level if the player doesn't have factories or if they lost this level
-            if (WinningSide == ConfigData.Configuration.AISide || ConfigData.CurrentShips.GetAliveShipsOfType(ConfigData.ShipTypes.Factory) == null)
+            if (WinningSide == ConfigData.Configuration.AISide || !ConfigData.CurrentShips.HasShipsOfType(ConfigData.ShipTypes.Factory))
             {
                 ConfigData.UserProgressData.AdvanceToNextLevel();
             }
@@ -2703,6 +2738,23 @@ namespace Assets.Scripts.Levels
         {
             Debug.Log("Level 7 complete");
 
+            for (_save_i = 0; _save_i < AllSquads.Count; _save_i++)
+            {
+                _save_savedSquad = AllSquads[_save_i];
+
+                _save_savedSquad.GetSquadShips().ForEach((ship) =>
+                {
+                    _save_fleetship = ship.GetFleetShip();
+
+                    Debug.Log($"{_save_fleetship.Name} has mined {_save_fleetship.MineralsMined} minerals in its lifetime. It has mined {_save_fleetship.MineralsMinedThisLevel} minerals this level");
+                    _save_fleetship.MineralsMined += _save_fleetship.MineralsMinedThisLevel;
+                    ConfigData.UserProgressData.MinedTSV += _save_fleetship.MineralsMinedThisLevel;
+                    _save_fleetship.MineralsMinedThisLevel = 0;
+
+                });
+
+            }
+
             // Advance to next level in campaign
             ConfigData.UserProgressData.AdvanceToNextLevel();
 
@@ -2718,6 +2770,7 @@ namespace Assets.Scripts.Levels
         {
             Debug.Log("Level 8 complete");
 
+            ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Barge);
             ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Barge);
             ConfigData.UserProgressData.SetShipTypes();
 
@@ -2819,7 +2872,7 @@ namespace Assets.Scripts.Levels
                 }
                 if (squads[i] != null)
                 {
-                    //Debug.Log($"Spawning squad onto level: {squads[i]}");
+                    Debug.Log($"Spawning squad onto level: {squads[i]}");
                     LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() { squads[i] }, startingPosition, nextPosition, true);
                 }
 

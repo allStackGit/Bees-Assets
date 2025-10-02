@@ -140,6 +140,8 @@ namespace Assets.Scripts.Levels.Commands
                     _amountMined = math.min(_miningRate, TargetAstroid.Health); // [TSV] The health of the mining asteroids should be adjusted if the TSV is adjusted
 
                     Tsv += _amountMined;
+                    Level.State.PlayerMineralsMined += _amountPerShip;
+                    Stage.Menus.UpdateMineralsMined(Level.State.PlayerMineralsMined, Level.MaxMinerals);
                     TargetAstroid.Health -= _amountMined;
                     //Debug.Log($"{GetSquad().Name} mined {_amountMined} from {TargetAstroid.Name}. It has {TargetAstroid.Health} health left");
 
@@ -150,7 +152,7 @@ namespace Assets.Scripts.Levels.Commands
                         {
                             ship.FleetShip.MineralsMinedThisLevel += _amountPerShip;
                             ship.Tsv = Utilities.CalculateTsv(ship);
-                            Debug.Log($"Just added {_amountPerShip} to {ship.Name}:{ship.FleetShip.Id} TSV. It's now at {ship.Tsv}");
+                            //Debug.Log($"Just added {_amountPerShip} to {ship.Name}:{ship.FleetShip.Id} TSV. It's now at {ship.Tsv}");
                         }
 
                     });

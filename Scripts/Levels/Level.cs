@@ -87,6 +87,10 @@ namespace Assets.Scripts.Levels
         /// The Id of the Game connection on the server
         /// </summary>
         public long ServerGameId;
+        /// <summary>
+        /// The sum of all the minerals in asteroids on the map at the start of the level
+        /// </summary>
+        public int MaxMinerals;
 
 
         public List<string> __BeeHivemindShips, __HumanHivemindShips, __PastCommands, __PathfindingThreads, __CustomLevels, __Timers, __TimerIds;
@@ -439,7 +443,14 @@ namespace Assets.Scripts.Levels
             {
                 _spawn_miningAsteroid = Stage.Pool.GetMiningAsteroidFromPool();
                 _spawn_miningAsteroid.Setup(this);
+                MaxMinerals += _spawn_miningAsteroid.OriginalHealth;
             }
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
+            {
+                Stage.Menus.MineralsMinedStatus.SetActive(true);
+                Stage.Menus.UpdateMineralsMined(State.PlayerMineralsMined, MaxMinerals);
+            }
+
         }
         private ScaledTimer _asteroidSpawnTimer = new ScaledTimer();
         private void SpawnAsteroid()
@@ -966,6 +977,7 @@ namespace Assets.Scripts.Levels
             //CancelTimer(_checkTriggersTimer);
             if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
             {
+                Stage.Menus.MissionStatus.SetActive(true);
                 SetTriggers();
                 _checkTriggersTimer.Reuse(2, CheckTriggers, true);
                 AddTimer(_checkTriggersTimer);

@@ -11,18 +11,19 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 using static UnityEngine.GraphicsBuffer;
 
 namespace Assets.Scripts.UIComponents
 {
     public class GameMenus : MonoBehaviour
     {
-        public GameObject MenuContainer, LevelEndedDialogue, SaveLevelDialogue, NoAliveShipsAlert, SquadActionBoxUI, VictoryLabel, DefeatLabel, MiniMapCloseButton, MiniMapOpenButton, MiniMapTopBorder, MiniMapLeftBorder, MiniMapCameraCollider, MiniMapOutput, HumanScore, BeeScore, ShipInfoBox, KeepGoingButton, ToggleFogOfWarButton, RestartLevelButton, ChooseNewSquadsButton, SwitchSidesButton, SaveAsLevelButton, ExitToMainMenuButton, Scoreboard, TooltipPrefab, WASDTooltip, UIOverlay, HighlightTooltipPrefab, UIHighlightTooltipPrefab, PointerArrow, PlutoCircle, Clock, Counter, RetreatButton;
+        public GameObject MenuContainer, LevelEndedDialogue, SaveLevelDialogue, NoAliveShipsAlert, SquadActionBoxUI, VictoryLabel, DefeatLabel, MiniMapCloseButton, MiniMapOpenButton, MiniMapTopBorder, MiniMapLeftBorder, MiniMapCameraCollider, MiniMapOutput, HumanScore, BeeScore, ShipInfoBox, KeepGoingButton, ToggleFogOfWarButton, RestartLevelButton, ChooseNewSquadsButton, SwitchSidesButton, SaveAsLevelButton, ExitToMainMenuButton, Scoreboard, TooltipPrefab, WASDTooltip, UIOverlay, HighlightTooltipPrefab, UIHighlightTooltipPrefab, PointerArrow, PlutoCircle, Clock, Counter, RetreatButton, MineralsMinedStatus, MineralsMinedFiller, MissionStatus;
         public SquadActionBox ActionBox;
         public Level CurrentLevel;
         public Stage Stage;
         public Dialogue ExitConfirmationDialogue, CampaignLevelEndedDialogue, CampaignCompletedDialogue, ConfirmSurrenderDialogue;
-        public TMP_Text ShipInfoBoxTitle, ShipInfoBoxStats, TryNewSquadsButtonText;
+        public TMP_Text ShipInfoBoxTitle, ShipInfoBoxStats, TryNewSquadsButtonText, MineralsMinedCount, MissionStatusText;
         public TMP_InputField LevelNameInput, SupplyCapacityInput;
         public Codex Codex;
         public SettingsMenu Settings;
@@ -73,6 +74,15 @@ namespace Assets.Scripts.UIComponents
             //Debug.Log($"EventSystem:{EventSystem}");
 
             ConfirmSurrenderDialogue = new Dialogue(Stage.DialoguePrefab, "Are you sure?", "This will destroy all your ships on this level permanently and end the level.", new List<string>() { ConfigData.Configuration.Yes, ConfigData.Configuration.No }, new List<UnityAction>() { Surrender });
+        }
+        public void SetMissionStatus(string status)
+        {
+            MissionStatusText.text = status;
+        }
+        public void UpdateMineralsMined(int mined, int max)
+        {
+            MineralsMinedCount.text = $"{mined}/{max}";
+            MineralsMinedFiller.transform.localScale = new Vector2(max == 0 ? 0 : ((float)mined / max) * 475, 1);
         }
         public void OpenMenu()
         {

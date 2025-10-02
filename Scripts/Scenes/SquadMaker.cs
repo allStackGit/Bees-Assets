@@ -348,7 +348,7 @@ namespace Assets.Scripts.Scenes
 
             LoadLevel(ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide));
 
-            if (ConfigData.UserProgressData.MinedTSV > 0 && ConfigData.CurrentShips.GetAliveShipsOfType(ConfigData.ShipTypes.Factory).Count > 0)
+            if (ConfigData.UserProgressData.MinedTSV > 0 && ConfigData.CurrentShips.HasShipsOfType(ConfigData.ShipTypes.Factory))
             {
                 BuildButton.SetActive(true);
                 SetupBuildInterface();
@@ -373,7 +373,7 @@ namespace Assets.Scripts.Scenes
 
             LoadLevel(ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide));
 
-            if (ConfigData.UserProgressData.MinedTSV > 0 && ConfigData.CurrentShips.GetAliveShipsOfType(ConfigData.ShipTypes.Factory).Count > 0)
+            if (ConfigData.UserProgressData.MinedTSV > 0 && ConfigData.CurrentShips.HasShipsOfType(ConfigData.ShipTypes.Factory))
             {
                 BuildButton.SetActive(true);
                 SetupBuildInterface();

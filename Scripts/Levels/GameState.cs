@@ -62,6 +62,7 @@ namespace Assets.Scripts.Levels
         public bool HasWarpGates, HasSelectedSquads, HasBeehives;
         public List<ShipDamageStatus>[] ShipDamageStatuses = new List<ShipDamageStatus>[] {new List<ShipDamageStatus>(), new List<ShipDamageStatus>() };
         public Dictionary<long, int> OutcomeIdToPastCommandIndex = new Dictionary<long, int>();
+        public int PlayerMineralsMined;
         //public bool[] HasMiningShips = new bool[2];
 
         public List<string> __Squads, __SquadsAwaitingCommands, __PastCommands, __Obstacles;
@@ -109,6 +110,7 @@ namespace Assets.Scripts.Levels
             MiningAsteroidsToRelease.Clear();
             Projectiles.Clear();
             TargetingSquadMarkers.Clear();
+            PlayerMineralsMined = 0;
 
         }
 
@@ -159,7 +161,7 @@ namespace Assets.Scripts.Levels
             // Debug.Log($"{ship.name} has been added to the state");
             if (ship.FleetShip.IsLoadedIntoLevel)
             {
-                Debug.LogError($"Trying to add {ship.Name} with fleet ship {ship.FleetShip} when that fleetship already exists in the level"); // [debug]
+                Debug.LogWarning($"Trying to add {ship.Name} with fleet ship {ship.FleetShip} when that fleetship already exists in the level"); // [debug]
             }
             ship.FleetShip.IsLoadedIntoLevel = true;
             Ships.Add(ship);
@@ -170,7 +172,7 @@ namespace Assets.Scripts.Levels
             //Debug.Log($"Adding {squad.SavedSquad} to level");
             if (squad.SavedSquad.IsLoadedIntoLevel && !squad.IsMinionSquad)
             {
-                Debug.LogError($"Trying to add {squad.SavedSquad} when that saved squad already exists in the level"); // [debug]
+                Debug.LogWarning($"Trying to add {squad.SavedSquad} when that saved squad already exists in the level"); // [debug]
             }
             squad.SavedSquad.IsLoadedIntoLevel = true;
             Squads.Add(squad);
