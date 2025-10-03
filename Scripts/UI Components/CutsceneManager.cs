@@ -557,7 +557,7 @@ public class CutsceneManager : MonoBehaviour
     {
         CutsceneCanvas.SetActive(false);
         //DialogueCanvas.SetActive(false);
-        Stage.EnablePlayerControl();
+        //Stage.EnablePlayerControl();
     }
 
     public void StartCutScene()

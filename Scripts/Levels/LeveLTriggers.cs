@@ -145,6 +145,8 @@ namespace Assets.Scripts.Levels
                 Level0Ending(firstGunship.Squad.SavedSquad);
             });
             Stage.CutsceneManager.StartCutScene();
+            Stage.EnablePlayerControl();
+            State.SelectSquads(new List<Squad>());
 
             //Stage.CutsceneManager.ShowDialogue();
             //Stage.CutsceneManager.StartDialogue();
@@ -216,7 +218,7 @@ namespace Assets.Scripts.Levels
                     Debug.Log($"Waiting for user to control Scout");
                     checksForUserControl++;
                     hasBeenUserControlled = firstScout.DistanceToPoint(StartingPositions[firstScout.Side - 1]) > 3;
-                    return hasBeenUserControlled || checksForUserControl >= 3; // Max of 15s / 3 checks
+                    return hasBeenUserControlled || checksForUserControl >= 5; // Max of 10s / 5 checks
                 },
                 () =>
                 {
@@ -225,7 +227,7 @@ namespace Assets.Scripts.Levels
                         Debug.Log("Showing tooltip for controlling Scout");
                         moveScoutTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
                         moveScoutTooltip.SetActive(true);
-                        moveScoutTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "You can select the ship by left clicking on it. You can move the ship by right clicking somewhere in space.";
+                        moveScoutTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "You can select the ship by left clicking on it. You can then move the ship by right clicking somewhere in space.";
                         moveScoutTooltip.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(150, 150);
                     }
                     else
@@ -239,7 +241,7 @@ namespace Assets.Scripts.Levels
                 {
                     Debug.Log($"Waiting to hide tooltip");
                     hasBeenUserControlled = firstScout.DistanceToPoint(StartingPositions[firstScout.Side - 1]) > 3;
-                    return hasBeenUserControlled; // Max of 15s / 3 checks
+                    return hasBeenUserControlled; 
                 },
                 () =>
                 {
@@ -284,6 +286,9 @@ namespace Assets.Scripts.Levels
                     firstGunship.Squad.CanAcceptUserInput = false;
                     firstGunship.Squad.FinalizeUserCommand();
                     firstGunship.Squad.SetSquadCeaseFire(true);
+                    Stage.CameraShip = firstGunship;
+                    Stage.IsFollowingShip = true;
+
 
 
                     firstGunship.Squad.HasCommandQueue = true;
@@ -321,8 +326,6 @@ namespace Assets.Scripts.Levels
                     firstGunship.Squad.CommandQueue.Enqueue(aggressive);
 
                     firstGunship.Squad.RunCommandQueue();
-                    Stage.CameraShip = firstGunship;
-                    Stage.IsFollowingShip = true;
 
                     NextTriggers.Add(new Trigger(() =>
                         {
@@ -921,7 +924,7 @@ namespace Assets.Scripts.Levels
                                         () =>
                                         {
                                             // Show the 3rd message
-                                            tooltipText.text = "Play strategically to preserve as much of your own fleet while whittling down the Bees numbers. Good luck, Commander. <br><br>(Hold Space to continue)";
+                                            tooltipText.text = "In this mission, the more personnel you evacuate, the more ships you'll have for your fleet. Play strategically to preserve as much of your own fleet while whittling down the Bees numbers. Good luck, Commander. <br><br>(Hold Space to continue)";
                                             tooltipRectTransformSize.sizeDelta = new Vector2(150, 200);
                                             NextTriggers.Add(new Trigger(() =>
                                                 {
@@ -2388,6 +2391,10 @@ namespace Assets.Scripts.Levels
             CancelTimer(_fishTank);
             Map.FogOfWar.SetActive(true); // Fade to black 
             Stage.Menus.MissionStatus.SetActive(false);
+            //if (Stage.Menus.IsMiniMapOpen)
+            //{
+            //    Stage.Menus.ToggleMiniMapDisplay();
+            //}
             State.GetShips().ToList().ForEach((ship) =>
             {
                 if (ship.HasUserFogOfWarVision)

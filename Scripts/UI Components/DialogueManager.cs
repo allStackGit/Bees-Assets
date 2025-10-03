@@ -148,7 +148,7 @@ public class DialogueManager : MonoBehaviour
                 {
                     if (line.Type == DialogueLine.DialogueType.Action)
                     {
-                        DialogueText.text = $"<i>{line.Text}</i>";
+                        DialogueText.text = $"*<i>{line.Text}</i>*";
                     }
                     else
                     {
@@ -165,7 +165,7 @@ public class DialogueManager : MonoBehaviour
                 {
                     if (characterIndex == 0)
                     {
-                        DialogueText.text += "<i>";
+                        DialogueText.text += "*<i>";
                     }
                 }
 
@@ -175,7 +175,7 @@ public class DialogueManager : MonoBehaviour
                 {
                     if (characterIndex == line.Text.Length - 1)
                     {
-                        DialogueText.text += "</i>";
+                        DialogueText.text += "</i>*";
                     }
                 }
                 characterIndex++;

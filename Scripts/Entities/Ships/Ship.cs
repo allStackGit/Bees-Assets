@@ -226,6 +226,7 @@ namespace Assets.Scripts.Entities.Ships
         private int _tempIndex;
         private Obstacle _tempObstacle;
         private Vector2 _tempVelocity;
+        private Vector2 _originalMiniMapIconScale;
         private GameObject _tempCollidingThing;
 
         //private ShipDamageStatus _tempShipDamageStatus;
@@ -419,6 +420,7 @@ namespace Assets.Scripts.Entities.Ships
                     }
                     
                 }
+                _originalMiniMapIconScale = MiniMapIcon.transform.localScale;
             }
             else
             {
@@ -667,11 +669,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 }
                 if (ShipType == ConfigData.ShipTypes.Queen)
                 {
-                    MiniMapIcon.transform.localScale *= Level.Map.SizeMultiplier * .75f;
+                    MiniMapIcon.transform.localScale = _originalMiniMapIconScale * Level.Map.SizeMultiplier * .75f;
                 }
                 else
                 {
-                    MiniMapIcon.transform.localScale *= Level.Map.SizeMultiplier * 1.5f;
+                    MiniMapIcon.transform.localScale = _originalMiniMapIconScale * Level.Map.SizeMultiplier * 1.5f;
                 }
             }
 

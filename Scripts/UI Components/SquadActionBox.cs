@@ -25,7 +25,7 @@ namespace Assets.Scripts.UIComponents
         private EventSystem _eventSystem;
         private SquadMaker _squadMaker = null;
         private Level Level = null;
-        private string _blankShipType = "——————";
+        private string _blankShipType = "—————";
         private bool _autoSetDropdownValue = false;
         private int Side;
 
@@ -54,7 +54,6 @@ namespace Assets.Scripts.UIComponents
             _eventSystem = eventSystem;
             Side = side;
             SetDropdownOptions();
-            ActionExplanationText.fontSize = 14;
         }
         public void Hide()
         {
@@ -440,7 +439,7 @@ namespace Assets.Scripts.UIComponents
                         break;
 
                     case "Charge":
-                        ActionExplanationText.text = $"The Barge(s) of the selected squad(s) will build up power and then charge forward, ramming ships in front of them and taking damage.";
+                        ActionExplanationText.text = $"The Barge(s) of the selected squad(s) will build up power and then charge forward, ramming the ships in front of them and both taking and giving damage.";
                         break;
 
                     case "Drop Beacon":
