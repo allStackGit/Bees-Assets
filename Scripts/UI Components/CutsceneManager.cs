@@ -53,7 +53,7 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Samuel", Portraits["Samuel"], 1),
             new DialogueLine("Samuel", Portraits["Samuel"], "I agree, it doesn't taste as good as Earth coffee. Or even Mars coffee. It's alright, we'll both get out of Pluto soon enough."),
             new DialogueLine("Samuel", Portraits["Samuel"], "Samuel gets a notification of some kind.", 2),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Oh, that's odd. A scout is reporting an unidentified vessel approaching military airspace. What should we do?"),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Oh, that's odd. A Scout is reporting an unidentified vessel approaching military airspace. What should we do?"),
             new DialogueLine("Samuel", Portraits["Samuel"], 1),
             new DialogueLine("Samuel", Portraits["Samuel"], "Right away, sir. Contacting the vessel."),
             new DialogueLine("Samuel", Portraits["Samuel"], 1),
@@ -96,7 +96,7 @@ public class CutsceneManager : MonoBehaviour
 
             new DialogueLine("Samuel", Portraits["Samuel"], "Okay, commander, it's up to you to lead us to victory."),
 
-            new DialogueLine("Oviya", Portraits["Oviya"], "This is a scout! They're the fastest ship around, and- oh, right! I'm Oviya, your scout commander. Sorry, Commander! Anyway, use the scout to… well, scout the battlefield."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "This is a Scout! They're the fastest ship around, and- oh, right! I'm Oviya, your Scout commander. Sorry, Commander! Anyway, use the Scout to… well, scout the battlefield."),
 
             new DialogueLine("Oviya", Portraits["Oviya"], "They get around fast, so as long as you keep giving orders, they probably won't get hit by enemy fire. Oh, but they don't have any guns, so don't try fighting with them."),
 
@@ -104,7 +104,7 @@ public class CutsceneManager : MonoBehaviour
 
             new DialogueLine("Oviya", Portraits["Oviya"], "Scouts also come loaded up with five beacons! You can drop them anywhere and they'll detect enemies that enter their field of vision."),
 
-            new DialogueLine("Samuel", Portraits["Samuel"], "You should try to find out where the enemy is with your scouts, then form a plan of attack."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "You should try to find out where the enemy is with your Scouts, then form a plan of attack."),
 
             new DialogueLine("Marco", Portraits["Marco"], "I'll be commanding your gunships. They're fast-flying dogfighting specialists. Use their speed to your advantage if you can."),
             new DialogueLine("Marco", Portraits["Marco"], "Even if they can't fly as well as me, they'll still be good at dodging fire."),
@@ -190,10 +190,10 @@ public class CutsceneManager : MonoBehaviour
         Neptune_SeizeTheMeans = new List<DialogueLine>
         {
             new DialogueLine("Samuel", Portraits["Samuel"], "We’re approaching Neptune to see if we can gather any allies there."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "The scout team has reported movement, but were unable to determine if it’s friendly or not. We’ll just have to find out."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "The scout team has reported movement, but we're unable to determine if it’s friendly or not. We’ll just have to find out."),
 
             new DialogueLine("Samuel", Portraits["Samuel"], "Sir, we’re getting an emergency signal from somewhere on Neptune."),
-            new DialogueLine("Wesley", Portraits["Wesley"], "-day, Mayd- this is an emerg- enem- facility dest- need evac-"),
+            new DialogueLine("???", Portraits["Wesley"], "-day, Mayd- this is an emerg- enem- facility dest- need evac-", true),
             new DialogueLine("Samuel", Portraits["Samuel"], "It’s very faint, but it’s clear we need to go help."),
             new DialogueLine("Oviya", Portraits["Oviya"], "It looks like the bees are gathered around ore-rich asteroids around the planet. Scouts are reporting the mining facility on the surface is flattened."),
             new DialogueLine("Joey", Portraits["Joey"], "There’s an underground bunker beneath the facility. I’m darn sure that’s where your signal’s coming from."),
@@ -581,7 +581,7 @@ public class CutsceneManager : MonoBehaviour
         HitDialogueBreak = false;
         ShowDialogue();
         DialogueManager.Setup(this);
-        DialogueManager.SetPortrait(lines[0].PortraitA);
+        //DialogueManager.SetPortrait(lines[0].PortraitA);
         DialogueManager.StartDialogue(lines, hasContinueButton, isLastDialogue);
     }
     //public void StartDialogue(DialogueManager.Dialogues dialogueType)

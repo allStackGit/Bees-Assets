@@ -8,7 +8,7 @@ public class DialogueLine
     public Sprite PortraitA, PortraitB;
     public string Text;
     public float PauseDuration = 0f;
-    public bool IsSkipped, IsOver;
+    public bool IsSkipped, IsOver, IsUnknown;
     public DialogueType Type;
 
     public enum DialogueType
@@ -18,13 +18,14 @@ public class DialogueLine
         Action,
         Break
     }
-    public DialogueLine(string name, Sprite[] portraits, string dialogueText)
+    public DialogueLine(string name, Sprite[] portraits, string dialogueText, bool isUnknown = false)
     {
         SpeakerName = name;
         PortraitA = portraits[0];
         PortraitB = portraits[1];
         Text = dialogueText;
         Type = DialogueType.Speaking;
+        IsUnknown = isUnknown;
     }
     public DialogueLine(string name, Sprite[] portraits, float pauseDuration)
     {

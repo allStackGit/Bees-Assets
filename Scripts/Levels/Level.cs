@@ -445,7 +445,7 @@ namespace Assets.Scripts.Levels
                 _spawn_miningAsteroid.Setup(this);
                 MaxMinerals += _spawn_miningAsteroid.OriginalHealth;
             }
-            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign && State.GetShips(ConfigData.Configuration.UserSide).Find((s) => s.ShipType == ConfigData.ShipTypes.Factory) != null)
             {
                 Stage.Menus.MineralsMinedStatus.SetActive(true);
                 Stage.Menus.UpdateMineralsMined(State.PlayerMineralsMined, MaxMinerals);

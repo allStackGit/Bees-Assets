@@ -89,10 +89,14 @@ public class DialogueManager : MonoBehaviour
             _currentLine.IsOver = false;
         }
         _currentLine = dialogueLines.Dequeue();
-        StopAllCoroutines();
-        SpeakerName.text = _currentLine.SpeakerName;
-        SetPortrait(_currentLine.PortraitA);
-        StartCoroutine(TypeLine(_currentLine));
+        if (_currentLine != null)
+        {
+            StopAllCoroutines();
+            SpeakerName.text = _currentLine.SpeakerName;
+            SetPortrait(_currentLine.PortraitA);
+            StartCoroutine(TypeLine(_currentLine));
+        }
+
     }
 
     public void DisplayNextLineWithDelay(float delaySeconds = 2f)
@@ -108,6 +112,14 @@ public class DialogueManager : MonoBehaviour
 
     public void SetPortrait(Sprite sprite)
     {
+        if (_currentLine.IsUnknown)
+        {
+            PortraitImage.color = Color.black;
+        }
+        else
+        {
+            PortraitImage.color = Color.white;
+        }
         PortraitImage.sprite = sprite;
     }
 

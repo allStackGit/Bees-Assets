@@ -1662,12 +1662,12 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 target.Health -= math.min(power, target.Health);
                 target.Tsv = Utilities.CalculateTsv(target);
 
-                if (target.FleetShip.MineralsMinedThisLevel > 0)
-                {
-                    Debug.Log($"{target.Name} had {_targetOldTSV} TSV and {target.FleetShip.MineralsMinedThisLevel} minerals and now has (TSV with minerals) {target.Tsv} minus (TSV without minerals) {Utilities.CalculateTsv(target) - target.FleetShip.MineralsMinedThisLevel} TSV and {target.FleetShip.MineralsMinedThisLevel} minerals");
-                    Debug.Log($"{target.Name} went from {_targetOldHealth} health to {target.Health} health after being hit by {attacker}");
+                //if (target.FleetShip.MineralsMinedThisLevel > 0)
+                //{
+                //    Debug.Log($"{target.Name} had {_targetOldTSV} TSV and {target.FleetShip.MineralsMinedThisLevel} minerals and now has (TSV with minerals) {target.Tsv} minus (TSV without minerals) {Utilities.CalculateTsv(target) - target.FleetShip.MineralsMinedThisLevel} TSV and {target.FleetShip.MineralsMinedThisLevel} minerals");
+                //    Debug.Log($"{target.Name} went from {_targetOldHealth} health to {target.Health} health after being hit by {attacker}");
 
-                }
+                //}
 
                 if (_targetOldHealth <= target.Health) // [debug]
                 {

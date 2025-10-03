@@ -225,8 +225,8 @@ namespace Assets.Scripts.Levels
                         Debug.Log("Showing tooltip for controlling Scout");
                         moveScoutTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
                         moveScoutTooltip.SetActive(true);
-                        moveScoutTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "You can move the ship by right clicking somewhere in space.";
-                        moveScoutTooltip.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(150, 100);
+                        moveScoutTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "You can select the ship by left clicking on it. You can move the ship by right clicking somewhere in space.";
+                        moveScoutTooltip.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(150, 150);
                     }
                     else
                     {
@@ -477,7 +477,7 @@ namespace Assets.Scripts.Levels
                                                             flydownTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "Fly down to safety!";
                                                                     
                                                             // Wait a few seconds and then the bees stop ceasefire, and pursue the gunship with aggressive command
-                                                            _beesPursuitTimer.Reuse(5, () =>
+                                                            _beesPursuitTimer.Reuse(10, () =>
                                                                 {
                                                                     State.GetSquadsBySide(ConfigData.Configuration.AISide).ForEach((squad) =>
                                                                     {
@@ -559,7 +559,6 @@ namespace Assets.Scripts.Levels
             Stage.SurrenderButton.SetActive(false);
             FishTankTrigger();
             Debug.Log("Setting triggers for level 1");
-            Stage.EnablePlayerControl();
             HasContinuousTriggers = true;
             GameObject basicTooltip = null;
             GameObject highlightTooltip = null;
@@ -607,14 +606,15 @@ namespace Assets.Scripts.Levels
                 () =>
                 {
                     Stage.Menus.MissionStatus.SetActive(true);
-                    Stage.Menus.SetMissionStatus("Use the scout");
+                    Stage.Menus.SetMissionStatus("Use the Scout");
+                    Stage.EnablePlayerControl();
                     basicTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
                     basicTooltip.SetActive(true);
                     TMP_Text tooltipText = basicTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>();
                     RectTransform tooltipRectTransformPosition = basicTooltip.GetComponent<RectTransform>();
                     RectTransform tooltipRectTransformSize = basicTooltip.transform.GetChild(0).GetComponent<RectTransform>();
 
-                    tooltipText.text = "Select the scout squad with the left mouse button.";
+                    tooltipText.text = "Select the Scout squad with the left mouse button.";
                     tooltipRectTransformPosition.localPosition = new Vector2(200, 0);
                     tooltipRectTransformSize.sizeDelta = new Vector2(150, 50);
 
@@ -2387,6 +2387,7 @@ namespace Assets.Scripts.Levels
             CancelTimer(_egg);
             CancelTimer(_fishTank);
             Map.FogOfWar.SetActive(true); // Fade to black 
+            Stage.Menus.MissionStatus.SetActive(false);
             State.GetShips().ToList().ForEach((ship) =>
             {
                 if (ship.HasUserFogOfWarVision)
