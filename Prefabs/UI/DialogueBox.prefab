@@ -308,6 +308,9 @@ MonoBehaviour:
   DialogueBox: {fileID: 6850395113328377477}
   DialogueText: {fileID: 5011003095580919906}
   ContinueButton: {fileID: 4145134447461478399}
+  SpacebarImage: {fileID: 7842710692354024695}
+  UnpressedSpacebar: {fileID: 791336545582589345, guid: d49b9cce26b7d70459cad58478cff783, type: 3}
+  PressedSpacebar: {fileID: -6875433093473928017, guid: d49b9cce26b7d70459cad58478cff783, type: 3}
   SpeakerName: {fileID: 8608959858055663208}
   PortraitImage: {fileID: 8339394055255799429}
   CurrentDialogue: 0
@@ -647,3 +650,14 @@ RectTransform:
   m_CorrespondingSourceObject: {fileID: 2322509817334310926, guid: 2c69add7043f0224698172081a967d71, type: 3}
   m_PrefabInstance: {fileID: 4747410704224137140}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &7842710692354024695 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 3257465046850194243, guid: 2c69add7043f0224698172081a967d71, type: 3}
+  m_PrefabInstance: {fileID: 4747410704224137140}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4145134447461478399}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 

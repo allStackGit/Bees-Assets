@@ -783,10 +783,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 PathfindingThreadComplete = false;
             }
             Move();
-            if (Stage.DebugLogger.IsDebugging || ShowDebug) // [alert] [debug] remove this for release
-            {
-                UpdateDebugProperties();
-            }
+            //if (Stage.DebugLogger.IsDebugging || ShowDebug) // [alert] [debug] remove this for release
+            //{
+            //    UpdateDebugProperties();
+            //}
         }
         private Color[] _colors;
         private Sprite _prefabSprite, _loadedSprite, _shipIcon, _recolored;
@@ -1394,6 +1394,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 //    SetCurrentSpeed(Squad.GetCommand().Enemy.MaxSpeed);
                 //}
                 //EndDestination($"A target ship is within our range");
+                //Debug.Log($"A target ship is within our range");
                 SetCurrentSpeed(TargetEnemyShipToFollow.CurrentSpeed);
                 if (Level.Stage.FixedUpdates % 10 == 0 && DistanceTo(TargetEnemyShipToFollow) < HalfMaxRange)
                 {
@@ -1643,7 +1644,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
         }
         private static int _targetOldTSV, _targetTSVChange;
-        private static int _targetOldHealth; // [debug]
+        //private static int _targetOldHealth; // [debug]
         private static ShipDamageStatus _shipDamageStatus;
         /// <summary>
         /// Logs damage to a ship from being attacked by another ship. See LogDamage() for non-attacking damage
@@ -1660,7 +1661,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
                 attacker.ShipsHit.Add(target);
                 _targetOldTSV = target.Tsv;
-                _targetOldHealth = target.Health;  // [debug]
+                //_targetOldHealth = target.Health;  // [debug]
                 target.Health -= math.min(power, target.Health);
                 target.Tsv = Utilities.CalculateTsv(target);
 
@@ -1671,10 +1672,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
                 //}
 
-                if (_targetOldHealth <= target.Health) // [debug]
-                {
-                    Debug.LogError($"Target {target.Name} old health {_targetOldHealth} is less than or equal to new health {target.Health} after taking {power} damage from attacker {attacker.Name}");
-                }
+                //if (_targetOldHealth <= target.Health) // [debug]
+                //{
+                //    Debug.LogError($"Target {target.Name} old health {_targetOldHealth} is less than or equal to new health {target.Health} after taking {power} damage from attacker {attacker.Name}");
+                //}
 
                 _targetTSVChange = target.Tsv - _targetOldTSV; // this is a negative number since being hit by a projectile should induce a loss of TSV
                 LogHitStats(attacker, attackerFleetShip, attackerSavedSquad, target, target.Squad, -_targetTSVChange);

@@ -682,8 +682,7 @@ namespace Assets.Scripts
 
         public const bool UseWebSocketSharp = true; // Whether to use the "WebSocketSharp" implementation of WebSockets or use the "NativeWebSocket" implmentation
         public static Socket Socket = Test ? new Socket(TestPort, TestServerHostname, UseWebSocketSharp) : new Socket(DevelopmentPort, DevelopmentServerHostname, UseWebSocketSharp);
-        public static readonly List<int> InitialVisibleShips = Enumerable.Range(0, 3400).ToList(); // // [alert] [server] Starting ships should be pulled from server
-        public static bool FirstTimePlaying = true; // [alert] should be linked to whether a user has actually played before   
+        public static bool FirstTimePlaying;   
         public const float CloseEnoughCoordinateVariance = 1.5f; // world units
 
         public const int FireBargeExplosionSize = 64;
@@ -915,7 +914,7 @@ namespace Assets.Scripts
 
 
         // private variables
-        private static ulong _userId = 0; // [alert] should be set to actual userId and linked to Steam or other account Id
+        private static ulong _userId = 0;
         public static UserProgressData UserProgressData = null;
         private static UserSettingsData _userSettingsData = null;
 
@@ -1138,7 +1137,6 @@ namespace Assets.Scripts
         {
 
             Debug.Log($"Setting up first time playing human campaign data");
-            // Do something to show a prompt to the user that they are playing for the first time and need to choose their name [alert]
 
             // Setup first squad #0
 

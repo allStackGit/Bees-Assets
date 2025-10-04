@@ -139,7 +139,7 @@ namespace Assets.Scripts.Entities.Ships
                 //Debug.Log($"Moving minion {ship.Name} to gathering point: {squadGatheringPoint + offset + new Vector2(0, -10)}");
                 ship.MoveToPoint(squadGatheringPoint + offset + new Vector2(0, -10));
             }
-            ship.SetSquadName();
+            //ship.SetSquadName();
 
         }
 

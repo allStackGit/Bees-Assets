@@ -25,7 +25,7 @@ namespace Assets.Scripts.Entities
         /// The rotation of the entity, in degrees
         /// </summary>
         public float OriginalRotation, Rotation;
-        //protected virtual void Update() // [alert] [training] Should probably just remove this during training
+        //protected virtual void Update() // [debug] [training] Should probably just remove this during training
         //{
         //    if (!Level.IsTraining && !Level.IsPaused)
         //    {

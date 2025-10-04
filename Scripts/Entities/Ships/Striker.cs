@@ -207,10 +207,10 @@ namespace Assets.Scripts.Entities.Ships
                 }
                 else
                 {
-                    if (Level._currentTimerIDs.Contains(_damageTimer.Id)) // [debug]
-                    {
-                        Debug.LogError($"Tried to add {_damageTimer} but it already exists in Timers.");
-                    }
+                    //if (Level._currentTimerIDs.Contains(_damageTimer.Id)) // [debug]
+                    //{
+                    //    Debug.LogError($"Tried to add {_damageTimer} but it already exists in Timers.");
+                    //}
                     //else
                     //{
                     //    Debug.Log($"Adding {_damageTimer} to Timers.");

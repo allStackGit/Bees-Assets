@@ -839,16 +839,16 @@ namespace Assets.Scripts.Levels
 
         public void MakeMatchupAndGetCommand(Squad enemy = null)
         {
-            if (Level.Stage.OverrideStrats.Count > 0) // [debug]
-            {
-                BannedStrats.UnionWith(ConfigData.TypesOfCommands);
-                BannedStrats = BannedStrats.Except(Level.Stage.OverrideStrats).ToHashSet();
+            //if (Level.Stage.OverrideStrats.Count > 0) // [debug]
+            //{
+            //    BannedStrats.UnionWith(ConfigData.TypesOfCommands);
+            //    BannedStrats = BannedStrats.Except(Level.Stage.OverrideStrats).ToHashSet();
 
-                if (Level.Stage.OverrideStrats.Contains(ConfigData.CommandTypes.Scouting) && Level.State.GetShipsVisibleToHiveMind(Side).Count > 0 && Level.Stage.OverrideStrats.Count > 1 && !IsDefenseless)
-                {
-                    BannedStrats.Add(ConfigData.CommandTypes.Scouting);
-                }
-            }
+            //    if (Level.Stage.OverrideStrats.Contains(ConfigData.CommandTypes.Scouting) && Level.State.GetShipsVisibleToHiveMind(Side).Count > 0 && Level.Stage.OverrideStrats.Count > 1 && !IsDefenseless)
+            //    {
+            //        BannedStrats.Add(ConfigData.CommandTypes.Scouting);
+            //    }
+            //}
             _bannedStrats = BannedStrats.ToHashSet(); // the ToHashSet is important to prevent modification of the original set
 
             _sb = _sb.Clear();

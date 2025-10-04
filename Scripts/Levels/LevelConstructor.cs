@@ -289,7 +289,6 @@ namespace Assets.Scripts.Levels
 
                     // loop through the squadships in each saved squad 
 
-                    // .Where((s) => !s.GetFleetShip().IsDead).ToList() [alert] use this to remove dead ships
                     ships.ForEach((squadShip) =>
                     {
                         //Debug.Log($"This ship is {squadShip.ShipType}");
@@ -419,12 +418,12 @@ namespace Assets.Scripts.Levels
             squads.ForEach((squad) =>
             {
                 squad.SetStartingPosition(startingPosition);
-                squad.NameSquadShips();
+                //squad.NameSquadShips(); [debug]
             });
-            if (Stage.IsTrainingNueralNetwork)
-            {
-                return; // [alert] [rl-training] only do this for rl learning
-            }
+            //if (Stage.IsTrainingNueralNetwork)
+            //{
+            //    return; // [alert] [rl-training] only do this for rl learning
+            //}
             squads.ForEach((squad) =>
             {
                 if (squad.GetShips().Count == 0)
@@ -537,7 +536,7 @@ namespace Assets.Scripts.Levels
                 squad.SetOffsets();
                 if (moveToPoint != Vector2.zero)
                 {
-                    Debug.Log($"Starting position set for {squad}. Heading to first position: {moveToPoint}");
+                    //Debug.Log($"Starting position set for {squad}. Heading to first position: {moveToPoint}");
                     squad.Move(moveToPoint);
                 }
             });

@@ -177,15 +177,6 @@ namespace Assets.Scripts.Scenes
             ConfigData.CurrentShips = ConfigData.FreePlayShips;
             SceneManager.LoadSceneAsync("Hivemind Training", LoadSceneMode.Single);
         }
-        public void NewGame()
-        {
-            // [alert] should give the user an alert saying that this will reset their previous progress, if they've already started a game
-            // [alert] should reset user progress data
-            ConfigData.UserProgressData.SetCurrentLevel(1);
-            SceneManager.LoadSceneAsync("Level Intro", LoadSceneMode.Single);
-            DeselectButton();
-            Debug.Log("New Game!"); 
-        }
        
         public void PlayCampaign(string side)
         {

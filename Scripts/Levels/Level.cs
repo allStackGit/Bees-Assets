@@ -108,7 +108,7 @@ namespace Assets.Scripts.Levels
                 __PathfindingThreads = Pathfinder.IsThreadActive.Select((s, i) => $"#{i} - {(s ? Pathfinder.Ships[i].Name : s)}").ToList();
             }
             __Timers = Timers.Select((t) => t.ToString()).ToList();
-            __TimerIds = _currentTimerIDs.Select((t) => t.ToString()).ToList(); 
+            //__TimerIds = _currentTimerIDs.Select((t) => t.ToString()).ToList(); 
 
             //string path = $"{ConfigData.GetBasePath()}/debug/minimap_{Utilities.Hash()}.png";
             //Texture2D dest = new Texture2D(MiniMapTexture.width, MiniMapTexture.height, TextureFormat.RGB24, false);
@@ -493,7 +493,7 @@ namespace Assets.Scripts.Levels
             }
         }
         private int _updateIndex;
-        public HashSet<long> _currentTimerIDs = new HashSet<long>(); // [debug]
+        //public HashSet<long> _currentTimerIDs = new HashSet<long>(); // [debug]
         //private int _removeIndex;
         public void CancelTimer(ScaledTimer scaledTimer)
         {
@@ -507,23 +507,23 @@ namespace Assets.Scripts.Levels
             //    Timers.RemoveAt(_removeIndex);
             //}
             Timers.Remove(scaledTimer);
-            _currentTimerIDs.Remove(scaledTimer.Id);
+            //_currentTimerIDs.Remove(scaledTimer.Id);
             scaledTimer.IsCanceled = true;
             //Debug.Log($"Canceled {scaledTimer}");
         }
         public void AddTimer(ScaledTimer scaledTimer)
         {
             //Debug.Log($"Adding {scaledTimer}");
-            if (_currentTimerIDs.Contains(scaledTimer.Id)) // [debug]
-            {
-                Debug.LogWarning($"Tried to add {scaledTimer} but it already exists in Timers. Adding anyways");
-            }
+            //if (_currentTimerIDs.Contains(scaledTimer.Id)) // [debug]
+            //{
+            //    Debug.LogWarning($"Tried to add {scaledTimer} but it already exists in Timers. Adding anyways");
+            //}
             //else
             //{
             //    Debug.Log($"Adding fresh {scaledTimer} to timers");
             //}
             Timers.Add(scaledTimer);
-            _currentTimerIDs.Add(scaledTimer.Id);
+            //_currentTimerIDs.Add(scaledTimer.Id); // [debug]
         }
         private ScaledTimer[] _loopTimers;
         void Update()
@@ -979,7 +979,7 @@ namespace Assets.Scripts.Levels
             {
                 Stage.Menus.MissionStatus.SetActive(true);
                 SetTriggers();
-                _checkTriggersTimer.Reuse(2, CheckTriggers, true);
+                _checkTriggersTimer.Reuse(.5f, CheckTriggers, true);
                 AddTimer(_checkTriggersTimer);
             }
             else

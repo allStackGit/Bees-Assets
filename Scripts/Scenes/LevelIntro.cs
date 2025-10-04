@@ -31,11 +31,8 @@ namespace UIComponents
 
             if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge && LevelNumber == 0)
             {
-                StartCoroutine(DelayStart(1, () =>
-                {
-                    CutsceneManager.PlayDialogueSection(CutsceneManager.StartedChallengeMode, true);
-                }));
-                
+                CutsceneManager.PlayDialogueSection(CutsceneManager.StartedChallengeMode, true);
+
                 ContinueButtonAction.onClick.AddListener(() =>
                 {
                     SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
@@ -60,81 +57,51 @@ namespace UIComponents
             {
                 case 1:
                     ConfigData.HasSeenIntermission = true;
-                    StartCoroutine(DelayStart(3, () =>
-                    {
-                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.PlutoLines_Reinforcements[0], true);
-                    }));
+                    CutsceneManager.PlaySingleDialogueLine(CutsceneManager.PlutoLines_Reinforcements[0], true);
                     break;
                 case 2:
                     ConfigData.HasSeenIntermission = true;
-                    StartCoroutine(DelayStart(3, () =>
-                    {
-                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.PlutoLines_BluerPastures[0], true);
-                    }));
+                    CutsceneManager.PlaySingleDialogueLine(CutsceneManager.PlutoLines_BluerPastures[0], true);
                     break;
                 case 3:
 
                     if (ConfigData.HasSeenIntermission)
                     {
-                        StartCoroutine(DelayStart(3, () =>
-                        {
-                            CutsceneManager.PlayDialogueSection(CutsceneManager.Neptune_SeizeTheMeans.GetRange(0, 2), true);
-                        }));
+                        CutsceneManager.PlayDialogueSection(CutsceneManager.Neptune_SeizeTheMeans.GetRange(0, 2), true);
                     }
                     else
                     {
                         SkipButton.SetActive(true);
-                        StartCoroutine(DelayStart(3, () =>
-                        {
-                            CutsceneManager.PlayDialogueSection(CutsceneManager.PlutoToNeptune, true);
-                        }));
+                        CutsceneManager.PlayDialogueSection(CutsceneManager.PlutoToNeptune, true);
                     }
                     break;
                 case 4:
                     ConfigData.HasSeenIntermission = true;
-                    StartCoroutine(DelayStart(3, () =>
-                    {
-                        CutsceneManager.PlayDialogueSection(CutsceneManager.Neptune_OfProduction.GetRange(0, 2), true);
-                    }));
+                    CutsceneManager.PlayDialogueSection(CutsceneManager.Neptune_OfProduction.GetRange(0, 2), true);
                     break;
                 case 5:
                     ConfigData.HasSeenIntermission = true;
-                    StartCoroutine(DelayStart(3, () =>
-                    {
-                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Neptune_PressingForward[0], true);
-                    }));
+                    CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Neptune_PressingForward[0], true);
                     break;
                 case 6:
 
                     if (ConfigData.HasSeenIntermission)
                     {
-                        StartCoroutine(DelayStart(3, () =>
-                        {
-                            CutsceneManager.PlayDialogueSection(CutsceneManager.Uranus_OnTheOffensive.GetRange(0, 2), true);
-                        }));
+                        CutsceneManager.PlayDialogueSection(CutsceneManager.Uranus_OnTheOffensive.GetRange(0, 2), true);
                     }
                     else
                     {
                         SkipButton.SetActive(true);
-                        StartCoroutine(DelayStart(3, () =>
-                        {
-                            CutsceneManager.PlayDialogueSection(CutsceneManager.NeptuneToUranus, true);
-                        }));
+                        CutsceneManager.PlayDialogueSection(CutsceneManager.NeptuneToUranus, true);
                     }
                     break;
                 case 7:
                     ConfigData.HasSeenIntermission = true;
-                    StartCoroutine(DelayStart(3, () =>
-                    {
-                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Uranus_OnTheDefensive[0], true);
-                    }));
+                    CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Uranus_OnTheDefensive[0], true);
                     break;
                 case 8:
                     ConfigData.HasSeenIntermission = true;
-                    StartCoroutine(DelayStart(3, () =>
-                    {
-                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Uranus_ANewThreat[0], true);
-                    }));
+                    CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Uranus_ANewThreat[0], true);
                     break;
             }
         }
@@ -167,6 +134,11 @@ namespace UIComponents
         {
             yield return new WaitForSeconds(delaySeconds);
             action();
+        }
+
+        public void Back()
+        {
+            SceneManager.LoadSceneAsync("Main Menu", LoadSceneMode.Single);
         }
 
     }

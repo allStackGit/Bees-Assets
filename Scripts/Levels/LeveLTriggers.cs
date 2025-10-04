@@ -29,7 +29,7 @@ namespace Assets.Scripts.Levels
         /// </summary>
         private int _questPoints;
         //private bool _someShipsHaveRetreated;
-        private bool _lastShipRetreated;
+        private bool _lastShipRetreated, _hasSeenCarrierIntroIfNeeded;
         /// <summary>
         /// Sets all the triggers for events in the level. Triggers are checked every 5 seconds so this currently has a maximum precision of 5 seconds
         /// </summary>
@@ -85,7 +85,6 @@ namespace Assets.Scripts.Levels
             Honeybee firstHoneybee = (Honeybee)State.GetBeeShips().First();
 
             Gunship firstGunship = null;
-            int checksForUserControl = 0;
             int passes = 0;
             bool hasBeenUserControlled = false;
             bool gunshipHasReachedCenterPosition = false;
@@ -96,7 +95,6 @@ namespace Assets.Scripts.Levels
             GameObject controlGunshipTooltip = null;
             GameObject attackOnSightTooltip = null;
             GameObject flydownTooltip = null;
-            Vector2 initialCameraPosition = Stage.Camera.transform.position;
 
 
             // Setup proximity collider for the scout
@@ -139,7 +137,6 @@ namespace Assets.Scripts.Levels
 
             firstHoneybee.Squad.RunCommandQueue();
 
-            // [alert] maybe this should be for all levels
             Stage.CutsceneManager.Setup(() =>
             {
                 Level0Ending(firstGunship.Squad.SavedSquad);
@@ -155,7 +152,9 @@ namespace Assets.Scripts.Levels
             Stage.Menus.ToggleMiniMapDisplay();
             Stage.Menus.MiniMapOpenButton.SetActive(false);
 
-            Stage.Menus.SetMissionStatus("Scout and explore");
+            Stage.Menus.SetMissionStatus("Scout and explore around Pluto");
+
+            float startTime = Time.realtimeSinceStartup;
 
             Triggers.AddRange(new List<Trigger>(){
                 new Trigger(() =>
@@ -215,10 +214,9 @@ namespace Assets.Scripts.Levels
 
                 new Trigger(() =>
                 {
-                    Debug.Log($"Waiting for user to control Scout");
-                    checksForUserControl++;
+                    //Debug.Log($"Waiting for user to control Scout");
                     hasBeenUserControlled = firstScout.DistanceToPoint(StartingPositions[firstScout.Side - 1]) > 3;
-                    return hasBeenUserControlled || checksForUserControl >= 5; // Max of 10s / 5 checks
+                    return hasBeenUserControlled || Time.realtimeSinceStartup - startTime > 10; // Max of 10s 
                 },
                 () =>
                 {
@@ -239,7 +237,7 @@ namespace Assets.Scripts.Levels
                 "Level 0 Waiting for user to control Scout Trigger"),
                 new Trigger(() =>
                 {
-                    Debug.Log($"Waiting to hide tooltip");
+                    //Debug.Log($"Waiting to hide tooltip");
                     hasBeenUserControlled = firstScout.DistanceToPoint(StartingPositions[firstScout.Side - 1]) > 3;
                     return hasBeenUserControlled; 
                 },
@@ -253,10 +251,12 @@ namespace Assets.Scripts.Levels
                             Destroy(moveScoutTooltip);
                         }
                         Stage.Menus.WASDTooltip.SetActive(true);
+                        Vector2 initialCameraPosition = Stage.Camera.transform.position;
+
 
                         NextTriggers.Add(new Trigger(() =>
                             {
-                                Debug.Log($"Waiting to hide WASD tooltip");
+                                //Debug.Log($"Waiting to hide WASD tooltip");
                                 return Vector2.Distance(Stage.Camera.transform.position, initialCameraPosition) > 10;
                             },
                             () =>
@@ -925,7 +925,7 @@ namespace Assets.Scripts.Levels
                                         {
                                             // Show the 3rd message
                                             tooltipText.text = "In this mission, the more personnel you evacuate, the more ships you'll have for your fleet. Play strategically to preserve as much of your own fleet while whittling down the Bees numbers. Good luck, Commander. <br><br>(Hold Space to continue)";
-                                            tooltipRectTransformSize.sizeDelta = new Vector2(150, 200);
+                                            tooltipRectTransformSize.sizeDelta = new Vector2(150, 300);
                                             NextTriggers.Add(new Trigger(() =>
                                                 {
                                                     return Input.GetKey(KeyCode.Space);
@@ -963,6 +963,7 @@ namespace Assets.Scripts.Levels
 
                                     Stage.Menus.Clock.SetActive(true);
                                     Stage.Menus.Counter.SetActive(true);
+                                    Stage.Menus.PlutoShield.SetActive(true);
 
                                     // Create target on pluto
                                     HumanTarget humanTarget = CreateHumanTarget(new Vector2(68, -28));
@@ -975,6 +976,10 @@ namespace Assets.Scripts.Levels
                                         secondsLeft = Mathf.FloorToInt(timeLeft % 60f);
 
                                         personnelLost = (humanTarget.MaxHealth - humanTarget.Health) / 200;
+
+                                        Debug.Log($"personnel Lost: {personnelLost}, shield: {((float)(15 - personnelLost) / 15)}");
+
+                                        Stage.Menus.PlutoShieldHealthBar.transform.localScale = new Vector2(((float)(15 - personnelLost) / 15) * 150, 1);
 
                                         if (timeLeft <= 0 || personnelLost >= 15)
                                         {
@@ -1303,7 +1308,7 @@ namespace Assets.Scripts.Levels
                             // Show the mining tooltips
                             GameObject basicTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
                             basicTooltip.SetActive(true);
-                             basicTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "To mine, first select your factory ships, then right click on ore-rich asteroids. Once the factory ship arrives, it will automatically begin collecting materials."; ;
+                             basicTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "To mine, first select your Factory ships, then right click on ore-rich asteroids. Once the Factory arrives, it will automatically begin collecting materials."; ;
                             basicTooltip.GetComponent<RectTransform>().localPosition = Vector2.zero;
                             basicTooltip.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(150, 200);
 
@@ -1639,7 +1644,7 @@ namespace Assets.Scripts.Levels
         }
         public void Level6Triggers()
         {
-            Stage.Menus.SetMissionStatus("Find and destroy all the bees");
+            Stage.Menus.SetMissionStatus("Find and destroy all the Bees");
             HasContinuousTriggers = true;
             Stage.ActivateHiveMind = false;
 
@@ -1698,9 +1703,16 @@ namespace Assets.Scripts.Levels
                 },
                 () =>
                 {
-                    Stage.ActivateHiveMind = true;
-                    SetupHivemind();
-                    Stage.EnablePlayerControl();
+                    SelectedCarrierTrigger();
+                }, "Level 6 Carrier trigger")
+            );
+
+            NextTriggers.Add(new Trigger(() =>
+                {
+                    return _hasSeenCarrierIntroIfNeeded;
+                },
+                () =>
+                {
 
                     // Spawn the cruiser after a little bit and show dialogue. Have hornets or something attacking it
                     ScaledTimer cruiserTimer = new ScaledTimer(5f, () =>
@@ -1718,15 +1730,7 @@ namespace Assets.Scripts.Levels
 
                         Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_OnTheOffensive.GetRange(6, 6));
 
-                        NextTriggers.Add(new Trigger(() =>
-                            {
-                                return Stage.CutsceneManager.HitDialogueBreak;
-                            },
-                            () =>
-                            {
-                                SelectedCarrierTrigger();
-                            }, "Level 6 Carrier trigger")
-                        );
+                        
 
                     });
                     AddTimer(cruiserTimer);
@@ -1738,7 +1742,7 @@ namespace Assets.Scripts.Levels
                     Ship bumblebee = State.GetBeeShips().Where((s) => s.ShipType == ConfigData.ShipTypes.Bumblebee).First();
                     NextTriggers.Add(new Trigger(() =>
                         {
-                            return State.GetShips(ConfigData.Configuration.UserSide).Any((s) => s.ShipsWithinRange.Contains(bumblebee) || s.HasProximityCollider && s.ProximityCollider.NearbyEnemyShips.Contains(bumblebee)) && ConfigData.UserProgressData.HasSeenCarrierIntro;
+                            return State.GetShips(ConfigData.Configuration.UserSide).Any((s) => s.ShipsWithinRange.Contains(bumblebee) || s.HasProximityCollider && s.ProximityCollider.NearbyEnemyShips.Contains(bumblebee));
                         },
                         () =>
                         {
@@ -1804,46 +1808,66 @@ namespace Assets.Scripts.Levels
         }
         public void SelectedCarrierTrigger()
         {
-            if (!ConfigData.UserProgressData.HasSeenCarrierIntro)
+            if (!ConfigData.UserProgressData.HasSeenCarrierIntro && State.GetHumanShipTypes().Contains(ConfigData.ShipTypes.Carrier))
             {
+                State.SelectSquads(State.GetSquadsBySide(ConfigData.Configuration.UserSide).Where((squad) => squad.IsCarrierSquad).ToList());
+                Stage.IsPlayerControlling = false;
                 GameObject basicTooltip = null;
+                //Debug.LogError("Selected carrier squad");
+                Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.SelectedCarrierSquad);
+
                 NextTriggers.Add(new Trigger(() =>
                 {
-                    return State.GetSelectedSquads().Any((squad) => squad.IsCarrierSquad || squad.GetShips().Any((ship) => ship.ShipType == ConfigData.ShipTypes.Carrier)); // If the user has selected a carrier, drone squad, or striker squad
+                    return Stage.CutsceneManager.HitDialogueBreak;
                 },
                     () =>
                     {
-                        //Debug.LogError("Selected carrier squad");
-                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.SelectedCarrierSquad);
+                        basicTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
+                        basicTooltip.SetActive(true);
+                        basicTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "To use the Strikers, simply right click on a target squad. The Strikers will fly towards their targets, drop their bombs, and return to the Carrier to reload. Right click anywhere else to move them and cancel the bombing run.<br><br>(Hold Space to continue)";
+                        basicTooltip.GetComponent<RectTransform>().localPosition = Vector2.zero;
+                        basicTooltip.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(150, 300);
 
                         NextTriggers.Add(new Trigger(() =>
-                        {
-                            return Stage.CutsceneManager.HitDialogueBreak;
-                        },
-                            () =>
                             {
-                                basicTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
-                                basicTooltip.SetActive(true);
-                                basicTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "To use the strikers, simply right click on a target squad. The strikers will fly towards their targets, drop their bombs, and return to the carrier to reload. Right click anywhere else to move them and cancel the bombing run.<br><br>(Hold Space to continue)";
-                                basicTooltip.GetComponent<RectTransform>().localPosition = Vector2.zero;
-                                basicTooltip.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(150, 300);
+                                return Input.GetKey(KeyCode.Space);
                             },
-                            "Level 6-8 Carrier Squad Tooltip")
-                        );
-                        NextTriggers.Add(new Trigger(() =>
-                        {
-                            return Input.GetKey(KeyCode.Space);
-                        },
                             () =>
                             {
                                 Destroy(basicTooltip);
                                 ConfigData.UserProgressData.HasSeenCarrierIntro = true;
+                                _hasSeenCarrierIntroIfNeeded = true;
+
+                                if (!Stage.ActivateHiveMind)
+                                {
+                                    Stage.ActivateHiveMind = true;
+                                    SetupHivemind();
+                                }
+                                if (!Stage.IsPlayerControlling)
+                                {
+                                    Stage.IsPlayerControlling = true;
+                                }
                             },
                             "Level 6-8 Carrier Squads Selected End")
                         );
                     },
-                    "Level 6-8 Carrier Squads Selected")
+                    "Level 6-8 Carrier Squad Tooltip")
                 );
+                
+
+            }
+            else
+            {
+                if (!Stage.ActivateHiveMind)
+                {
+                    Stage.ActivateHiveMind = true;
+                    SetupHivemind();
+                }
+                if (!Stage.IsPlayerControlling)
+                {
+                    Stage.IsPlayerControlling = true;
+                }
+                _hasSeenCarrierIntroIfNeeded = true;
             }
            
 
@@ -1885,7 +1909,7 @@ namespace Assets.Scripts.Levels
         }
         public void Level7Triggers()
         {
-
+            Stage.ActivateHiveMind = false;
             HasContinuousTriggers = true;
 
             Stage.CutsceneManager.Setup(() =>
@@ -1940,13 +1964,12 @@ namespace Assets.Scripts.Levels
                 () =>
                 {
                     Destroy(endMissionTooltip);
-                    Stage.EnablePlayerControl();
                     SelectedCarrierTrigger();
 
 
                     NextTriggers.Add(new Trigger(() =>
                         {
-                            return ConfigData.UserProgressData.HasSeenCarrierIntro;
+                            return _hasSeenCarrierIntroIfNeeded;
                         },
                         () =>
                         {
@@ -2245,8 +2268,8 @@ namespace Assets.Scripts.Levels
         }
         public void Level8Triggers()
         {
-            Stage.Menus.SetMissionStatus("Rescue the barges and destroy all the bees!");
-            Stage.EnablePlayerControl();
+            Stage.Menus.SetMissionStatus("Rescue the Barges and destroy all the Bees!");
+            Stage.ActivateHiveMind = false;
             HasContinuousTriggers = true;
 
             Stage.CutsceneManager.Setup(() =>
@@ -2273,8 +2296,6 @@ namespace Assets.Scripts.Levels
             moveToPoint.Setup(bargeSquad, false, null, null, Vector2.zero); // Center of Map
             bargeSquad.CommandQueue.Enqueue(moveToPoint);
 
-            bargeSquad.RunCommandQueue();
-
 
             // Add hornets attacking barges
             AddReinforcementSquads(new List<SavedSquad>() {
@@ -2293,36 +2314,11 @@ namespace Assets.Scripts.Levels
                     ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 2, true, true),
                 }, new Vector2(250, 250), Vector2.zero);
             }
-            AddReinforcementsToHivemindCommandQueue();
 
 
             //intial dialogue
             Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_ANewThreat.GetRange(1, 5));
 
-            // Spawn bee reinforcements
-            // Wave 1 @ 2 Minutes
-            // 1 Squad of 2 Honeybees
-            // 1 Squad of 2 Wasps
-            // 1 Squad of 4 Hornets
-            // 2 Squads of 4 Yellow Jackets
-
-            ScaledTimer reinforcements = new ScaledTimer(60f, () =>
-            {
-                Debug.Log($"Spawning Bee reinforcements wave 1");
-
-                AddReinforcementSquads(new List<SavedSquad>() {
-                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
-                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 2, true, true),
-                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4, true, true),
-                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4, true, true),
-                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4, true, true)
-                }, spawnPositions[0], spawnPositions[1]);
-                AddReinforcementsToHivemindCommandQueue();
-
-                Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_ANewThreat.GetRange(7, 2));
-            });
-
-            AddTimer(reinforcements);
 
             
 
@@ -2340,48 +2336,88 @@ namespace Assets.Scripts.Levels
             );
 
             NextTriggers.Add(new Trigger(() =>
+            {
+                return _hasSeenCarrierIntroIfNeeded;
+            },
+                () =>
                 {
-                    return bargeSquad.GetShips().Count < 3 && !(State.IsSideKilled(ConfigData.Configuration.UserSide) || State.IsSideKilled(ConfigData.Configuration.AISide)) && ConfigData.UserProgressData.HasSeenCarrierIntro;
+                    bargeSquad.RunCommandQueue();
+
+
+                    // Spawn bee reinforcements
+                    // Wave 1 @ 2 Minutes
+                    // 1 Squad of 2 Honeybees
+                    // 1 Squad of 2 Wasps
+                    // 1 Squad of 4 Hornets
+                    // 2 Squads of 4 Yellow Jackets
+
+                    ScaledTimer reinforcements = new ScaledTimer(60f, () =>
+                    {
+                        Debug.Log($"Spawning Bee reinforcements wave 1");
+
+                        AddReinforcementSquads(new List<SavedSquad>() {
+                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
+                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 2, true, true),
+                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4, true, true),
+                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4, true, true),
+                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4, true, true)
+                        }, spawnPositions[0], spawnPositions[1]);
+                        AddReinforcementsToHivemindCommandQueue();
+
+                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_ANewThreat.GetRange(7, 2));
+                    });
+
+                    AddTimer(reinforcements);
+
+                    NextTriggers.Add(new Trigger(() =>
+                        {
+                            return bargeSquad.GetShips().Count < 3 && !(State.IsSideKilled(ConfigData.Configuration.UserSide) || State.IsSideKilled(ConfigData.Configuration.AISide));
+                        },
+                       () =>
+                       {
+                           Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Uranus_ANewThreat[6]);
+                       },
+                       "Level 8 Barge Killed")
+                    );
+
+                    NextTriggers.Add(new Trigger(() =>
+                        {
+                            return bargeSquad.GetShips().Any((s) => ((Barge)s).HasStartedCharging) && !(State.IsSideKilled(ConfigData.Configuration.UserSide) || State.IsSideKilled(ConfigData.Configuration.AISide));
+                        },
+                       () =>
+                       {
+                           Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Uranus_ANewThreat[9]);
+                       },
+                       "Level 8 Barge Charge")
+                    );
+
+                    // ending condition
+                    NextTriggers.Add(new Trigger(() =>
+                        {
+                            return State.IsSideKilled(ConfigData.Configuration.UserSide) || State.IsSideKilled(ConfigData.Configuration.AISide);
+                        },
+                       () =>
+                       {
+                           bool isBargeSquadDead = bargeSquad.IsDead;
+                           CloseLevel();
+                           if (isBargeSquadDead) // Bees Won
+                           {
+                               Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_ANewThreat.GetRange(30, 12), true);
+                           }
+                           else
+                           {
+                               Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_ANewThreat.GetRange(10, 20), true);
+                               CancelTimer(reinforcements);
+                           }
+                       },
+                       "Level 8 Ending")
+                   );
+
                 },
-               () =>
-               {
-                   Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Uranus_ANewThreat[6]);
-               },
-               "Level 8 Barge Killed")
+                "Level 8 Starting")
             );
 
-            NextTriggers.Add(new Trigger(() =>
-                {
-                    return bargeSquad.GetShips().Any((s) => ((Barge)s).HasStartedCharging) && !(State.IsSideKilled(ConfigData.Configuration.UserSide) || State.IsSideKilled(ConfigData.Configuration.AISide)) && ConfigData.UserProgressData.HasSeenCarrierIntro;
-                },
-               () =>
-               {
-                   Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Uranus_ANewThreat[9]);
-               },
-               "Level 8 Barge Charge")
-            );
-
-            // ending condition
-            NextTriggers.Add(new Trigger(() =>
-                {
-                    return State.IsSideKilled(ConfigData.Configuration.UserSide) || State.IsSideKilled(ConfigData.Configuration.AISide);
-                },
-               () =>
-               {
-                   bool isBargeSquadDead = bargeSquad.IsDead;
-                   CloseLevel();
-                   if (isBargeSquadDead) // Bees Won
-                   {
-                       Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_ANewThreat.GetRange(30, 12), true);
-                   }
-                   else
-                   {
-                       Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_ANewThreat.GetRange(10, 20), true);
-                       CancelTimer(reinforcements);
-                   }
-               },
-               "Level 8 Ending")
-           );
+            
         }
 
         public void CloseLevel()
@@ -2439,6 +2475,8 @@ namespace Assets.Scripts.Levels
             ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Wasp);
             ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Frigate);
             ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Dreadnought);
+            ConfigData.UserProgressData.UnlockedCampaignShips.Add(ConfigData.ShipTypes.Frigate);
+            ConfigData.UserProgressData.UnlockedCampaignShips.Add(ConfigData.ShipTypes.Dreadnought);
 
             ConfigData.UserProgressData.SetShipTypes();
 
@@ -2540,7 +2578,6 @@ namespace Assets.Scripts.Levels
                     trainingRoomAlert.Hide();
                     Level2EndingDialogue();
                 } });
-                trainingRoomAlert.SetButtonWidth(0, 250);
                 trainingRoomAlert.Show();
             }
             else
@@ -2585,6 +2622,7 @@ namespace Assets.Scripts.Levels
                 ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Factory, 5); // 5 Factories
                 ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Factory);
                 ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Factory);
+                ConfigData.UserProgressData.UnlockedCampaignShips.Add(ConfigData.ShipTypes.Factory);
             }
             else
             {
@@ -2694,6 +2732,7 @@ namespace Assets.Scripts.Levels
 
             ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Bumblebee);
             ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Carrier);
+            ConfigData.UserProgressData.UnlockedCampaignShips.Add(ConfigData.ShipTypes.Carrier);
             ConfigData.UserProgressData.SetShipTypes();
 
             ConfigData.HasSeenPreLevelIntro = false;
@@ -2725,6 +2764,7 @@ namespace Assets.Scripts.Levels
 
             ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Cruiser);
             ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Cruiser);
+            ConfigData.UserProgressData.UnlockedCampaignShips.Add(ConfigData.ShipTypes.Cruiser);
             ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Bumblebee);
 
 
@@ -2779,6 +2819,7 @@ namespace Assets.Scripts.Levels
             Debug.Log("Level 8 complete");
 
             ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Barge);
+            ConfigData.UserProgressData.UnlockedCampaignShips.Add(ConfigData.ShipTypes.Barge);
             ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Barge);
             ConfigData.UserProgressData.SetShipTypes();
 
@@ -2786,7 +2827,9 @@ namespace Assets.Scripts.Levels
             ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Flagship);
             ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.FireBarge);
             ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Carrier);
+            ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Factory);
             ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.WarpGate);
+
 
             //ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Queen);
             ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Beehive);
@@ -2794,7 +2837,13 @@ namespace Assets.Scripts.Levels
             ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Flagship);
             ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.FireBarge);
             ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Carrier);
+            ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Factory);
             ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.WarpGate);
+
+            ConfigData.UserProgressData.UnlockedCampaignShips.Add(ConfigData.ShipTypes.Flagship);
+            ConfigData.UserProgressData.UnlockedCampaignShips.Add(ConfigData.ShipTypes.FireBarge);
+            ConfigData.UserProgressData.UnlockedCampaignShips.Add(ConfigData.ShipTypes.Carrier);
+            ConfigData.UserProgressData.UnlockedCampaignShips.Add(ConfigData.ShipTypes.WarpGate);
 
             //ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Queen);
             ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Beehive);
@@ -2880,7 +2929,7 @@ namespace Assets.Scripts.Levels
                 }
                 if (squads[i] != null)
                 {
-                    Debug.Log($"Spawning squad onto level: {squads[i]}");
+                    //Debug.Log($"Spawning squad onto level: {squads[i]}");
                     LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() { squads[i] }, startingPosition, nextPosition, true);
                 }
 

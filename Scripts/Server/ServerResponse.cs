@@ -9,8 +9,8 @@ namespace Assets.Scripts.Server
         public int Status;
         public long Hash;
         public float ServerLatency;
-        public int ProcessingTime; // [debug]
-        public long SendTime; // [debug]
+        //public int ProcessingTime; // [debug]
+        //public long SendTime; // [debug]
 
         public ServerResponse(string type, int status, long hash, float serverLatency)
         {

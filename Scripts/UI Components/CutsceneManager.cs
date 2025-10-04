@@ -49,7 +49,7 @@ public class CutsceneManager : MonoBehaviour
 
         PlutoLines_Anomaly = new List<DialogueLine>
         {
-            new DialogueLine("Samuel", Portraits["Samuel"], $"Good morning, Commander {ConfigData.UserProgressData.PlayerName}! I brought your coffee."),
+            new DialogueLine("Samuel", Portraits["Samuel"], $"Good morning, Commander {ConfigData.UserProgressData.PlayerName}! I brought your coffee.", "[Press Space to Continue]"),
             new DialogueLine("Samuel", Portraits["Samuel"], 1),
             new DialogueLine("Samuel", Portraits["Samuel"], "I agree, it doesn't taste as good as Earth coffee. Or even Mars coffee. It's alright, we'll both get out of Pluto soon enough."),
             new DialogueLine("Samuel", Portraits["Samuel"], "Samuel gets a notification of some kind.", 2),
@@ -106,13 +106,13 @@ public class CutsceneManager : MonoBehaviour
 
             new DialogueLine("Samuel", Portraits["Samuel"], "You should try to find out where the enemy is with your Scouts, then form a plan of attack."),
 
-            new DialogueLine("Marco", Portraits["Marco"], "I'll be commanding your gunships. They're fast-flying dogfighting specialists. Use their speed to your advantage if you can."),
+            new DialogueLine("Marco", Portraits["Marco"], "I'll be commanding your Gunships. They're fast-flying dogfighting specialists. Use their speed to your advantage if you can."),
             new DialogueLine("Marco", Portraits["Marco"], "Even if they can't fly as well as me, they'll still be good at dodging fire."),
 
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Alright! It's been a while since we've had a good fight. I'm your dreadnought commander."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Alright! It's been a while since we've had a good fight. I'm your Dreadnought commander."),
             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "These babies are made to brawl. They can take a lotta hits and dish it right back! Keep ‘em out front and watch ‘em tear it up. Woohoo!"),
 
-            new DialogueLine("Joey", Portraits["Joey"], "Alrighty, Commander, I'm commanding yer frigates. They're yer explosives experts. They can't shoot far, but they sure pack a wallop."),
+            new DialogueLine("Joey", Portraits["Joey"], "Alrighty, Commander, I'm commanding yer Frigates. They're yer explosives experts. They can't shoot far, but they sure pack a wallop."),
             new DialogueLine("Joey", Portraits["Joey"], "Those rockets will do some serious damage, and they can even hit multiple targets inside the blast radius."),
 
             new DialogueLine("Samuel", Portraits["Samuel"], "Great work, commander. We’ve kept them at bay for now."),
@@ -229,7 +229,7 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Wesley", Portraits["Wesley"], "Regional head of the accounting department."),
             new DialogueLine("Marco", Portraits["Marco"], "..."),
             new DialogueLine("Marco", Portraits["Marco"], "We have that and a bunch of miners, then? This isn’t really helping our chances."),
-            new DialogueLine("Wesley", Portraits["Wesley"], "Well, um, we do have a line of prototype factory ships, capable of mining ore-rich asteroids, as well as personnel trained to man them."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "Well, um, we do have a line of prototype Factory ships, capable of mining ore-rich asteroids, as well as personnel trained to man them."),
             new DialogueLine("Joey", Portraits["Joey"], "And plenty of those asteroids nearby. Well, I’ll be, Wesley, this really is helpful"),
             new DialogueLine("Wesley", Portraits["Wesley"], "They are property of Jensen Corporation, and all personnel including myself are on their payroll. I’m sure we can reach some sort of agreement for their use, perhaps a loan."),
             new DialogueLine("Wesley", Portraits["Wesley"], "But of course, these ships are the intellectual property of Jensen, so I can’t have any of you stealing these plans."),
@@ -239,7 +239,7 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Joey", Portraits["Joey"], "I dunno, you’ll have to just try until he quiets down."),
             new DialogueLine("Wesley", Portraits["Wesley"], "N-nw, now, I’m sure w-we don’t have to resort to such… b-barbaric means! We’re all adults here!"),
             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "I'm thinking at least a dozen. Six to the nose and six to the stomach."),
-            new DialogueLine("Wesley", Portraits["Wesley"], "Ahh! Please don’t engage in a physical altercation, it’s far from necessary! Please, use the factory ships however you please! We can negotiate fair compensation once we’ve made contact with my superiors."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "Ahh! Please don’t engage in a physical altercation, it’s far from necessary! Please, use the Factories however you please! We can negotiate fair compensation once we’ve made contact with my superiors."),
             new DialogueLine("Joey", Portraits["Joey"], "There ya go, commander. Factory ships at your disposal."),
             new DialogueLine("Samuel", Portraits["Samuel"], "Thank you, Wesley."),
             new DialogueLine("Wesley", Portraits["Wesley"], "Yes, of course, just leave my nose intact, please. It’s my best feature."),
@@ -250,13 +250,13 @@ public class CutsceneManager : MonoBehaviour
         Neptune_OfProduction = new List<DialogueLine>
         {
             new DialogueLine("Samuel", Portraits["Samuel"], "Scouts are reporting the bee forces on all sides. Their fleet from Pluto is catching up, and they’ve already established a blockade between here and Uranus."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Now that we have factory ships, we can gather resources from the same asteroids the bees were defending. That’ll give us a fighting chance against the blockade, but we need to be quick."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Now that we have Factories, we can gather resources from the same asteroids the bees were defending. That’ll give us a fighting chance against the blockade, but we need to be quick."),
 
             new DialogueLine("Oviya", Portraits["Oviya"], "The mining asteroids can be found at these locations."),
-            new DialogueLine("Wesley", Portraits["Wesley"], "Our factory ships should be quite capable of increasing your prof- erm, resources in order to further bolster your fleet. Simply direct them to a mining location."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "Our Factory ships should be quite capable of increasing your prof- erm, resources in order to further bolster your fleet. Simply direct them to a mining location."),
             new DialogueLine("Samuel", Portraits["Samuel"], "Collect these ores as long as you can, commander, but don’t risk too many lives."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "If a factory ship goes down, it’ll lose all the resources it collected. It won’t be worth it in the end."),
-            new DialogueLine("Wesley", Portraits["Wesley"], "Be careful with those factories! They’re not built for combat or maneuverability."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "If a Factory goes down, it’ll lose all the resources it collected. It won’t be worth it in the end."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "Be careful with those Factories! They’re not built for combat or maneuverability."),
             new DialogueLine("Oviya", Portraits["Oviya"], "In that case, you’ll have to plan your retreat carefully."),
 
 
@@ -286,7 +286,7 @@ public class CutsceneManager : MonoBehaviour
 
             new DialogueLine("Samuel", Portraits["Samuel"], "Commander, we’ve lost contact with all our forces. What do we do now? The bees from Pluto are catching up."),
             new DialogueLine("Oviya", Portraits["Oviya"], "The fight diverted forces from elsewhere in the blockade. We can escape if we move quickly!"),
-            new DialogueLine("Marco", Portraits["Marco"], "Those factories are slow and defenseless. Leave them behind."),
+            new DialogueLine("Marco", Portraits["Marco"], "Those Factories are slow and defenseless. Leave them behind."),
             new DialogueLine("Wesley", Portraits["Wesley"], "Now hold on a second! Those ships have already proven lots of shareholder val-"),
             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "He’s right, Wes, if they can’t fight and they can’t move they won’t make it!"),
             new DialogueLine("Oviya", Portraits["Oviya"], "Agreed. Now move!"),
@@ -416,7 +416,7 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Joey", Portraits["Joey"], "More bees? What in tarnation? Where are they coming from? "),
             new DialogueLine("Oviya", Portraits["Oviya"], "We've found more bee ships, inbound to our location."),
             new DialogueLine("Samuel", Portraits["Samuel"], "Another wave of ships!"),
-            new DialogueLine("Wesley", Portraits["Wesley"], "More of those… bees? Don’t risk our profit margins. You’ll receive a bill from Jensen if you lose any factory ships."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "More of those… bees? Don’t risk our profit margins. You’ll receive a bill from Jensen if you lose any Factories."),
 
             new DialogueLine("Oviya", Portraits["Oviya"], "We're seeing more reinforcements from a different direction, now. It could be their main fleet. Things are going to get tough from here."),
 
@@ -447,7 +447,7 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Marge", Portraits["Marge"], "No!!! They’re gonna pay for that!"),
 
             new DialogueLine("Marge", Portraits["Marge"], "There’s more coming! "),
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Those are yellow jackets! Don’t let them hit those Barges!"),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Those are Yellow Jackets! Don’t let them hit those Barges!"),
 
             new DialogueLine("Marge", Portraits["Marge"], "Just cuz I don’t have guns don't mean I can’t fight! Take this!"),
 
@@ -503,12 +503,12 @@ public class CutsceneManager : MonoBehaviour
 
         SelectedCarrierSquad = new List<DialogueLine>
         {
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "We have here your carrier squads: The carriers, the strikers, and the drones."),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "The carriers don't fight but they resupply the strikers with bombs and they produce new strikers and drones between battles."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "We have here your Carrier squads: The Carriers, the Strikers, and the Drones."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "The Carriers don't fight but they resupply the Strikers with bombs and they produce new Strikers and Drones between battles."),
             new DialogueLine("Emilia", Portraits["Emilia"], "Strikers are beautiful creatures, and deadly assassins!"),
             new DialogueLine("Emilia", Portraits["Emilia"], "They don't have guns but if you send them after a squad they'll chase them down and drop powerful bombs right on their heads!"),
-            new DialogueLine("Emilia", Portraits["Emilia"], "Be careful with them though, they can take a lot of hits going in to drop their bombs and returning to the carriers to reload. Drones make a good escort for them."),
-             new DialogueLine("Alejandra", Portraits["Alejandra"], "Drones are the fastest ships in the fleet so they're also good at chasing down enemies or escorting unprotected ships, like the carrier."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Be careful with them though, they can take a lot of hits going in to drop their bombs and returning to the Carriers to reload. Drones make a good escort for them."),
+             new DialogueLine("Alejandra", Portraits["Alejandra"], "Drones are the fastest ships in the fleet so they're also good at chasing down enemies or escorting unprotected ships, like the Carrier."),
         };
 
         EasterEggLines = new List<DialogueLine>
@@ -545,19 +545,10 @@ public class CutsceneManager : MonoBehaviour
 
          */
     }
-    public void HideIntroMessage()
-    {
-        CutsceneCanvas.SetActive(false);
-    }
+
     public void HideDialogue()
     {
         DialogueManager.gameObject.SetActive(false);
-    }
-    public void EndCutscene()
-    {
-        CutsceneCanvas.SetActive(false);
-        //DialogueCanvas.SetActive(false);
-        //Stage.EnablePlayerControl();
     }
 
     public void StartCutScene()
@@ -571,56 +562,27 @@ public class CutsceneManager : MonoBehaviour
     {
         DialogueManager.gameObject.SetActive(true);
     }
-    public void PlaySingleDialogueLine(DialogueLine line, bool isLastDialogue = false, bool hasContinueButton = true)
+    public void PlaySingleDialogueLine(DialogueLine line, bool isLastDialogue = false)
     {
         HitDialogueBreak = false;
         PlayDialogueSection(new List<DialogueLine> { line }, isLastDialogue);
     }
-    public void PlayDialogueSection(List<DialogueLine> lines, bool isLastDialogue = false, bool hasContinueButton = true)
+    public void PlayDialogueSection(List<DialogueLine> lines, bool isLastDialogue = false)
     {
         HitDialogueBreak = false;
         ShowDialogue();
         DialogueManager.Setup(this);
         //DialogueManager.SetPortrait(lines[0].PortraitA);
-        DialogueManager.StartDialogue(lines, hasContinueButton, isLastDialogue);
+        DialogueManager.StartDialogue(lines, isLastDialogue);
     }
-    //public void StartDialogue(DialogueManager.Dialogues dialogueType)
-    //{
-    //    ShowDialogue();
-    //    switch (dialogueType)
-    //    {
-    //        case DialogueManager.Dialogues.Pluto_Anomaly:
-    //            DialogueManager.Setup(this, DialogueManager.Dialogues.Pluto_Anomaly);
-    //            DialogueManager.SetPortrait(PlutoLines_Anomaly[0].PortraitA);
-    //            DialogueManager.StartDialogue(PlutoLines_Anomaly, false, false);
-    //            break;
-    //    }
 
-    //}
-    private ScaledTimer _retryDialogue = new ScaledTimer();
-    //public void ContinueDialogue()
-    //{
-    //    if (HitDialogueBreak)
-    //    {
-    //        //Debug.Log("Continuing dialogue in cutscene manager.");
-    //        ShowDialogue();
-    //        HitDialogueBreak = false;
-    //        DialogueManager.DisplayNextLine();
-    //    }
-    //    else
-    //    {
-    //        _retryDialogue.Reuse(1, ContinueDialogue, false);
-    //        Stage.PrimaryLevel.AddTimer(_retryDialogue);
-    //    }
-
-    //}
     public void BreakDialogue()
     {
         //Debug.Log("Breaking dialogue in cutscene manager.");
         HitDialogueBreak = true;
         DialogueManager.gameObject.SetActive(false);
     }
-    public void EndDialogue(DialogueManager.Dialogues dialogueType)
+    public void EndDialogue()
     {
         DialogueManager.gameObject.SetActive(false);
         if (HasEndDialogueAction)

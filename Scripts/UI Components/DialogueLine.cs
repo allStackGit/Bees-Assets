@@ -6,17 +6,16 @@ public class DialogueLine
 {
     public string SpeakerName;
     public Sprite PortraitA, PortraitB;
-    public string Text;
+    public string Text, InstructionText;
     public float PauseDuration = 0f;
-    public bool IsSkipped, IsOver, IsUnknown;
+    public bool IsSkipped, IsOver, IsUnknown, HasInstructionText;
     public DialogueType Type;
 
     public enum DialogueType
     {
         Speaking,
         Pause,
-        Action,
-        Break
+        Action
     }
     public DialogueLine(string name, Sprite[] portraits, string dialogueText, bool isUnknown = false)
     {
@@ -26,6 +25,16 @@ public class DialogueLine
         Text = dialogueText;
         Type = DialogueType.Speaking;
         IsUnknown = isUnknown;
+    }
+    public DialogueLine(string name, Sprite[] portraits, string dialogueText, string instructionText)
+    {
+        SpeakerName = name;
+        PortraitA = portraits[0];
+        PortraitB = portraits[1];
+        Text = dialogueText;
+        Type = DialogueType.Speaking;
+        InstructionText = instructionText;
+        HasInstructionText = true;
     }
     public DialogueLine(string name, Sprite[] portraits, float pauseDuration)
     {
@@ -45,10 +54,6 @@ public class DialogueLine
         PauseDuration = pauseDuration;
         Text = actionText;
         Type = DialogueType.Action;
-    }
-    public DialogueLine()
-    {
-        Type = DialogueType.Break;
     }
 
 }

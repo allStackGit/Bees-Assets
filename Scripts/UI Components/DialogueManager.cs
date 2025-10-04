@@ -14,43 +14,33 @@ public class DialogueManager : MonoBehaviour
     public GameObject DialogueBox;
     public TMP_Text DialogueText;
     public GameObject ContinueButton;
+    public Image SpacebarImage;
+    public Sprite UnpressedSpacebar;
+    public Sprite PressedSpacebar;
     public TMP_Text SpeakerName;
     public Image PortraitImage;
-    public Dialogues CurrentDialogue;
     public EventSystem EventSystem;
 
     private Queue<DialogueLine> dialogueLines = new Queue<DialogueLine>();
     private DialogueLine _currentLine;
-    private bool _hasContinueButton, _isLastDialogue;
+    private bool _isLastDialogue;
 
-    public enum Dialogues
-    {
-        Pluto_Anomaly,
-    }
 
-    public void Setup(CutsceneManager cutsceneManager, Dialogues dialogueType)
-    {
-        CutsceneManager = cutsceneManager;
-        CurrentDialogue = dialogueType;
-    }
     public void Setup(CutsceneManager cutsceneManager)
     {
         CutsceneManager = cutsceneManager;
     }
 
-    public void SwitchDialogue(Dialogues dialogueType)
-    {
-        CurrentDialogue = dialogueType;
-    }
     public void Update()
     {
         if (_currentLine.IsOver && Input.GetKey(KeyCode.Space))
         {
+            SpacebarImage.sprite = PressedSpacebar;
             DisplayNextLineWithDelay(.5f);
         }
     }
 
-    public void StartDialogue(List<DialogueLine> lines, bool hasContinueButton, bool isLastDialogue)
+    public void StartDialogue(List<DialogueLine> lines, bool isLastDialogue)
     {
         _isLastDialogue = isLastDialogue;
         //Debug.Log("Starting dialogue in dialogue manager.");
@@ -63,8 +53,7 @@ public class DialogueManager : MonoBehaviour
 
 
         DialogueBox.SetActive(true);
-        _hasContinueButton = hasContinueButton;
-        ContinueButton.SetActive(hasContinueButton);
+        ContinueButton.SetActive(true);
         ToggleContinuePrompt(false);
         DisplayNextLine();
     }
@@ -125,102 +114,99 @@ public class DialogueManager : MonoBehaviour
 
     IEnumerator TypeLine(DialogueLine line)
     {
-        if (line.Type == DialogueLine.DialogueType.Break)
-        {
-            DialogueText.text = "";
-            DialogueLine nextLine = dialogueLines.Peek();
-            SpeakerName.text = nextLine.SpeakerName;
-            SetPortrait(nextLine.PortraitA);
-            CutsceneManager.BreakDialogue();
-        }
-        else
-        {
-            DialogueText.text = "";
-            int characterIndex = 0;
-            bool aOrB = false;
-            ToggleContinuePrompt(false);
+        SpacebarImage.sprite = UnpressedSpacebar;
+        DialogueText.text = "";
+        int characterIndex = 0;
+        bool aOrB = false;
+        ToggleContinuePrompt(false);
 
-            //Debug.Log($"Typing line: {line.Text}, Type: {line.Type}");
+        //Debug.Log($"Typing line: {line.Text}, Type: {line.Type}");
 
-            foreach (char c in line.Text)
+        foreach (char c in line.Text)
+        {
+            if (Input.GetKey(KeyCode.Space))
             {
-                if (Input.GetKey(KeyCode.Space))
-                {
-                    if (line.Type == DialogueLine.DialogueType.Action)
-                    {
-                        DialogueText.text = $"*<i>{line.Text}</i>*";
-                    }
-                    else
-                    {
-                        DialogueText.text = line.Text;
-                    }
-                    line.IsSkipped = true;
-                    SetPortrait(line.PortraitA);
-                    yield return new WaitForSeconds(0.5f);
-                    ToggleContinuePrompt(true);
-                    break;
-                }
-
                 if (line.Type == DialogueLine.DialogueType.Action)
                 {
-                    if (characterIndex == 0)
-                    {
-                        DialogueText.text += "*<i>";
-                    }
-                }
-
-                DialogueText.text += c;
-
-                if (line.Type == DialogueLine.DialogueType.Action)
-                {
-                    if (characterIndex == line.Text.Length - 1)
-                    {
-                        DialogueText.text += "</i>*";
-                    }
-                }
-                characterIndex++;
-                if (characterIndex == line.Text.Length || line.Type != DialogueLine.DialogueType.Speaking)
-                {
-                    SetPortrait(line.PortraitA);
-                }
-                else if (characterIndex % 6 == 0)
-                {
-                    if (aOrB)
-                    {
-                        SetPortrait(line.PortraitA);
-                    }
-                    else
-                    {
-                        SetPortrait(line.PortraitB);
-                    }
-                    aOrB = !aOrB;
-                }
-
-                yield return new WaitForSeconds(0.02f);
-            }
-            line.IsOver = true;
-            if (line.PauseDuration > 0)
-            {
-                if (Input.GetKey(KeyCode.Space))
-                {
-                    line.IsSkipped = true;
-                    yield return new WaitForSeconds(0.02f); // .02f
-                    DisplayNextLine();
+                    DialogueText.text = $"*<i>{line.Text}</i>*";
                 }
                 else
                 {
-                    yield return new WaitForSeconds(line.PauseDuration);
-                    DisplayNextLineWithDelay(2f);
+                    DialogueText.text = line.Text;
+                }
+                line.IsSkipped = true;
+                SetPortrait(line.PortraitA);
+                yield return new WaitForSeconds(0.5f);
+                ToggleContinuePrompt(true);
+                break;
+            }
+
+            if (line.Type == DialogueLine.DialogueType.Action)
+            {
+                if (characterIndex == 0)
+                {
+                    DialogueText.text += "*<i>";
                 }
             }
 
+            DialogueText.text += c;
 
-            if (!line.IsSkipped)
+            if (line.Type == DialogueLine.DialogueType.Action)
             {
-                ToggleContinuePrompt(line.PauseDuration <= 0);
+                if (characterIndex == line.Text.Length - 1)
+                {
+                    DialogueText.text += "</i>*";
+                }
+            }
+            characterIndex++;
+            if (characterIndex == line.Text.Length || line.Type != DialogueLine.DialogueType.Speaking)
+            {
+                SetPortrait(line.PortraitA);
+            }
+            else if (characterIndex % 6 == 0)
+            {
+                if (aOrB)
+                {
+                    SetPortrait(line.PortraitA);
+                }
+                else
+                {
+                    SetPortrait(line.PortraitB);
+                }
+                aOrB = !aOrB;
+            }
+
+            yield return new WaitForSeconds(0.02f);
+        }
+        line.IsOver = true;
+
+        if (line.HasInstructionText)
+        {
+            yield return new WaitForSeconds(0.5f);
+            DialogueText.text += $"<br><br>{line.InstructionText}";
+        }
+
+        if (line.Type == DialogueLine.DialogueType.Pause)
+        {
+            if (Input.GetKey(KeyCode.Space))
+            {
+                line.IsSkipped = true;
+                yield return new WaitForSeconds(0.02f); // .02f
+                DisplayNextLine();
+            }
+            else
+            {
+                yield return new WaitForSeconds(line.PauseDuration);
+                DisplayNextLineWithDelay(2f);
             }
         }
-        
+
+
+        if (!line.IsSkipped)
+        {
+            ToggleContinuePrompt(line.Type != DialogueLine.DialogueType.Pause);
+        }
+
     }
 
     public void ToggleContinuePrompt(bool showOrHide)
@@ -232,14 +218,7 @@ public class DialogueManager : MonoBehaviour
         }
         else
         {
-            if (_hasContinueButton)
-            {
-                ContinueButton.SetActive(showOrHide);
-            }
-            else if (showOrHide)
-            {
-                DisplayNextLineWithDelay(2f); // 2f
-            }
+            ContinueButton.SetActive(showOrHide);
         }
 
     }
@@ -247,13 +226,14 @@ public class DialogueManager : MonoBehaviour
     void EndDialogue()
     {
         Debug.Log("Dialogue ended.");
-        CutsceneManager.EndDialogue(CurrentDialogue);
+        CutsceneManager.EndDialogue();
     }
     public void GoToNextLine()
     {
+        SpacebarImage.sprite = PressedSpacebar;
         Debug.Log($"Go to next line");
         EventSystem.GetComponent<UnityEngine.EventSystems.EventSystem>().SetSelectedGameObject(null);
-        DisplayNextLine();
+        DisplayNextLineWithDelay(.5f);
 
     }
 

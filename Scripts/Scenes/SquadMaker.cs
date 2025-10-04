@@ -1642,6 +1642,25 @@ namespace Assets.Scripts.Scenes
 
             }
         }
+        public void CloseBuilder()
+        {
+            TotalBuildCost = 0;
+            TotalBuildCostText.text = $"Total Cost: {TotalBuildCost.ToString("N0")}";
+            TotalBuildCostText.color = Color.white;
+
+            ShipsBeingBuilt.Keys.ToList().ForEach(ship => {
+                if (ShipsBeingBuilt[ship] > 0)
+                {
+                    ShipsBeingBuilt[ship] = 0;
+                    string shipString = Utilities.ConvertShipTypeToName[ship];
+                    GameObject.Find($"{shipString} Build Ship").transform.Find("Ship Count").GetComponent<TMP_Text>().text = $"({ShipsBeingBuilt[ship]})";
+
+
+                }
+            });
+
+            BuildPopup.SetActive(false);
+        }
         public void AddShip(string shipString)
         {
             ConfigData.ShipTypes ship = Utilities.ConvertShipNameToShipType[shipString];
@@ -2090,7 +2109,6 @@ namespace Assets.Scripts.Scenes
             //ConfigData.SquadsChosenForLevel.ForEach((s) => Debug.Log(s.ToString()));
             _nextScene = "Space";
             Invoke(nameof(LoadScene), .5f);
-            //SceneManager.LoadSceneAsync("Training Room One Screen", LoadSceneMode.Single); // [alert] this should go to the actual level based on the level number
             //SceneManager.LoadSceneAsync("RL Tiny Box", LoadSceneMode.Single); // [alert] [rl-training]
         }
         private void SetLevelOptions(){

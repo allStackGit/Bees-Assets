@@ -64,7 +64,7 @@ namespace Assets.Scripts.Settings
         public string CannotDuplicateSquadAlert;
 
 
-        public int AISide; // [alert]  // depends on whether the user is playing as the humans or the bees
+        public int AISide;
         public int UserSide;
         public int SquadMakerFirstSide;
         public int SquadMakerSecondSide;

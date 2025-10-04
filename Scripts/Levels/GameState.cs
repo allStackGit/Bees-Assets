@@ -159,10 +159,10 @@ namespace Assets.Scripts.Levels
         public void AddShip(Ship ship)
         {
             // Debug.Log($"{ship.name} has been added to the state");
-            if (ship.FleetShip.IsLoadedIntoLevel)
-            {
-                Debug.LogWarning($"Trying to add {ship.Name} with fleet ship {ship.FleetShip} when that fleetship already exists in the level"); // [debug]
-            }
+            //if (ship.FleetShip.IsLoadedIntoLevel)
+            //{
+            //    Debug.LogWarning($"Trying to add {ship.Name} with fleet ship {ship.FleetShip} when that fleetship already exists in the level"); // [debug]
+            //}
             ship.FleetShip.IsLoadedIntoLevel = true;
             Ships.Add(ship);
             ShipsById.Add(ship.Id, ship);
@@ -170,10 +170,10 @@ namespace Assets.Scripts.Levels
         public void AddSquad(Squad squad)
         {
             //Debug.Log($"Adding {squad.SavedSquad} to level");
-            if (squad.SavedSquad.IsLoadedIntoLevel && !squad.IsMinionSquad)
-            {
-                Debug.LogWarning($"Trying to add {squad.SavedSquad} when that saved squad already exists in the level"); // [debug]
-            }
+            //if (squad.SavedSquad.IsLoadedIntoLevel && !squad.IsMinionSquad)
+            //{
+            //    Debug.LogWarning($"Trying to add {squad.SavedSquad} when that saved squad already exists in the level"); // [debug]
+            //}
             squad.SavedSquad.IsLoadedIntoLevel = true;
             Squads.Add(squad);
             OriginalSquadCounts[squad.Side - 1]++;

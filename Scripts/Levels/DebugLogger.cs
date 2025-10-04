@@ -66,10 +66,10 @@ public class DebugLogger : MonoBehaviour
         if (ConfigData.__PastServerRequests.Count > 0)
         {
             __UsedHashes = ConfigData.UsedHashes.ToList();
-            __PastServerRequests = ConfigData.__PastServerRequests.Select((r) => $"Request #{r.Hash} ({r.Type}) on queue for {r.TimeOnQueue}ms").ToList();
-            __AverageRequestTime = (ConfigData.__PastServerRequests.Sum((r) => r.TimeOnQueue) / ConfigData.__PastServerRequests.Count);
+            //__PastServerRequests = ConfigData.__PastServerRequests.Select((r) => $"Request #{r.Hash} ({r.Type}) on queue for {r.TimeOnQueue}ms").ToList();
+            //__AverageRequestTime = (ConfigData.__PastServerRequests.Sum((r) => r.TimeOnQueue) / ConfigData.__PastServerRequests.Count);
             __SocketLevels = ConfigData.Socket.OpenLevels.Select(s => s.Name).ToList();
-            __StandingRequests = ConfigData.Socket.StandingRequests.Select((r) => $"Request #{r.Hash} ({r.Type}) on queue since {r.StartTime}").ToList();
+            //__StandingRequests = ConfigData.Socket.StandingRequests.Select((r) => $"Request #{r.Hash} ({r.Type}) on queue since {r.StartTime}").ToList();
             //__Updates = Time.frameCount;
         }
     }

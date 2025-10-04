@@ -145,7 +145,7 @@ namespace Assets.Scripts.Levels.Commands
 
                     if (GetSquad().IsUserControlled && ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
                     {
-                        Level.State.PlayerMineralsMined += _amountPerShip;
+                        Level.State.PlayerMineralsMined += _amountMined;
                         Stage.Menus.UpdateMineralsMined(Level.State.PlayerMineralsMined, Level.MaxMinerals);
                     }
                     //Debug.Log($"{GetSquad().Name} mined {_amountMined} from {TargetAstroid.Name}. It has {TargetAstroid.Health} health left");

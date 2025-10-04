@@ -92,9 +92,9 @@ namespace Assets.Scripts.Levels.Commands
                             //InvokeRepeating(nameof(Timer), CommandFrequency, CommandFrequency);
                         }
                     }
-                    else if (GetSquad().MaxRange >= 45 && GetSquad().AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
+                    else if ((GetSquad().MaxRange >= 45 && GetSquad().AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad)) || (GetSquad().AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad) && EnemySquad.IsDefenseless))
                     {
-                        //Debug.Log($"All ships are comfortably within range, we don't need to move.");
+                        //Debug.Log($"All ships are comfortably within range, we don't need to move."); 
                         if (!HasTakenPosition)
                         {
                             SetAndMove(GetSquad().GetPosition());

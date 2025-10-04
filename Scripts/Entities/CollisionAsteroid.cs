@@ -435,7 +435,7 @@ namespace Assets.Scripts.Entities
                 _asteroidShard.HasEnteredMap = true;
                 _asteroidShard.HasTouchedMapBorder = true;
 
-                _asteroidShard.Name = $"{_asteroidShard.Name}  - Shard"; // [debug]
+                //_asteroidShard.Name = $"{_asteroidShard.Name}  - Shard"; // [debug]
                 _shardFamily.Add(_asteroidShard);
             }
 
