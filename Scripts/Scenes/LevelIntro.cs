@@ -15,6 +15,7 @@ namespace UIComponents
         public GameObject ContinueButton, SkipButton;
         public Button ContinueButtonAction;
         public int LevelNumber;
+        public int StandardDelay = 1;
 
         protected override void FinalizeSceneWithUserData()
         {
@@ -57,51 +58,91 @@ namespace UIComponents
             {
                 case 1:
                     ConfigData.HasSeenIntermission = true;
-                    CutsceneManager.PlaySingleDialogueLine(CutsceneManager.PlutoLines_Reinforcements[0], true);
+                    StartCoroutine(DelayStart(StandardDelay, () =>
+                    {
+                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.PlutoLines_Reinforcements[0], true);
+                    }));
+                    
                     break;
                 case 2:
                     ConfigData.HasSeenIntermission = true;
-                    CutsceneManager.PlaySingleDialogueLine(CutsceneManager.PlutoLines_BluerPastures[0], true);
+                    StartCoroutine(DelayStart(StandardDelay, () =>
+                    {
+                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.PlutoLines_BluerPastures[0], true);
+                    }));
+                    
                     break;
                 case 3:
 
                     if (ConfigData.HasSeenIntermission)
                     {
-                        CutsceneManager.PlayDialogueSection(CutsceneManager.Neptune_SeizeTheMeans.GetRange(0, 2), true);
+                        StartCoroutine(DelayStart(StandardDelay, () =>
+                        {
+                            CutsceneManager.PlayDialogueSection(CutsceneManager.Neptune_SeizeTheMeans.GetRange(0, 2), true);
+                        }));
+                        
                     }
                     else
                     {
                         SkipButton.SetActive(true);
-                        CutsceneManager.PlayDialogueSection(CutsceneManager.PlutoToNeptune, true);
+                        StartCoroutine(DelayStart(StandardDelay, () =>
+                        {
+                            CutsceneManager.PlayDialogueSection(CutsceneManager.PlutoToNeptune, true);
+                        }));
+                        
                     }
                     break;
                 case 4:
                     ConfigData.HasSeenIntermission = true;
-                    CutsceneManager.PlayDialogueSection(CutsceneManager.Neptune_OfProduction.GetRange(0, 2), true);
+                    StartCoroutine(DelayStart(StandardDelay, () =>
+                    {
+                        CutsceneManager.PlayDialogueSection(CutsceneManager.Neptune_OfProduction.GetRange(0, 2), true);
+                    }));
+                    
                     break;
                 case 5:
                     ConfigData.HasSeenIntermission = true;
-                    CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Neptune_PressingForward[0], true);
+                    StartCoroutine(DelayStart(StandardDelay, () =>
+                    {
+                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Neptune_PressingForward[0], true);
+                    }));
+                    
                     break;
                 case 6:
 
                     if (ConfigData.HasSeenIntermission)
                     {
-                        CutsceneManager.PlayDialogueSection(CutsceneManager.Uranus_OnTheOffensive.GetRange(0, 2), true);
+                        StartCoroutine(DelayStart(StandardDelay, () =>
+                        {
+                            CutsceneManager.PlayDialogueSection(CutsceneManager.Uranus_OnTheOffensive.GetRange(0, 2), true);
+                        }));
+                        
                     }
                     else
                     {
                         SkipButton.SetActive(true);
-                        CutsceneManager.PlayDialogueSection(CutsceneManager.NeptuneToUranus, true);
+                        StartCoroutine(DelayStart(StandardDelay, () =>
+                        {
+                            CutsceneManager.PlayDialogueSection(CutsceneManager.NeptuneToUranus, true);
+                        }));
+                        
                     }
                     break;
                 case 7:
                     ConfigData.HasSeenIntermission = true;
-                    CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Uranus_OnTheDefensive[0], true);
+                    StartCoroutine(DelayStart(StandardDelay, () =>
+                    {
+                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Uranus_OnTheDefensive[0], true);
+                    }));
+                    
                     break;
                 case 8:
                     ConfigData.HasSeenIntermission = true;
-                    CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Uranus_ANewThreat[0], true);
+                    StartCoroutine(DelayStart(StandardDelay, () =>
+                    {
+                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Uranus_ANewThreat[0], true);
+                    }));
+                    
                     break;
             }
         }

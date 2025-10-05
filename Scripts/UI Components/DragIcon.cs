@@ -100,7 +100,7 @@ namespace Assets.Scripts.UIComponents
                 if (squadShip != null)
                 {
                     //Debug.Log($"Removing squad ship from {currentSquad}");
-                    currentSquad.RemoveShipFromSquad(squadShip);
+                    currentSquad.RemoveShipFromSquad(squadShip, true);
                     _scene.UpdateShipCounter(fleetShip.Type);
                 }
             }

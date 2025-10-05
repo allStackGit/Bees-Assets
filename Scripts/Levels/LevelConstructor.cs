@@ -320,6 +320,14 @@ namespace Assets.Scripts.Levels
                     {
                         squad.MatchSpeed();
                     }
+                    if (squad.CeaseFire)
+                    {
+                        squad.SetSquadCeaseFire(true);
+                    }
+                    if (squad.ShouldChase())
+                    {
+                        squad.SetChase(true);
+                    }
                     //else
                     //{
                     //    Debug.Log($"{squad} is not matching speed");

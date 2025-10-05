@@ -136,7 +136,7 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "We’ve got this, commander! Dreadnoughts standing by."),
             new DialogueLine("Marco", Portraits["Marco"], "Gunships at the ready."),
             new DialogueLine("Joey", Portraits["Joey"], "Frigates ready to go!"),
-            new DialogueLine("Oviya", Portraits["Oviya"], "I’ve got the scouts mapping an escape route."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "I’ve got the Scouts mapping an escape route."),
             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Let's take out as many as we can on our way out! That’ll show 'em!"),
             new DialogueLine("Marco", Portraits["Marco"], "Don’t be risky with our fleet’s lives, Yoshiko. Destroy enemy ships where we can <i>safely</i>. That’s the only way we’ll get through this."),
 
@@ -354,7 +354,7 @@ public class CutsceneManager : MonoBehaviour
         Uranus_OnTheOffensive = new List<DialogueLine>
         {
             new DialogueLine("Samuel", Portraits["Samuel"], "There is still fighting around Uranus, another resource-rich area. If we take the bees down, we can bolster our own fleet with resources and personnel."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Radars are jammed in the area, so we’ll need to rely on our scouts for vision."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Radars are jammed in the area, so we’ll need to rely on our Scouts for vision."),
 
 
             new DialogueLine("Oviya", Portraits["Oviya"], "Bee presence around Uranus is heavy, but not insurmountable. We’re far enough from the blockade that we aren’t expecting reinforcements now."),
@@ -488,27 +488,32 @@ public class CutsceneManager : MonoBehaviour
 
         LostCampaign = new List<DialogueLine>
         {
-            new DialogueLine("Samuel", Portraits["Samuel"], "I'm sorry to say commander, we no longer have enough ships left to continue the fight."),
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Who need ships?! I'll fight them with my bare hands!"),
-            new DialogueLine("Marco", Portraits["Marco"], "Others will continue the fight. When we're stronger, we'll join them again."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Commander! We have no ships left that can fight!"),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Who needs ships?! I'll fight them with my bare hands!"),
+            new DialogueLine("Marco", Portraits["Marco"], "It’s a death wish. Others will continue the fight, and we’re no use to them if we’re gone."),
         };
 
         StartedChallengeMode = new List<DialogueLine>
         {
-            new DialogueLine("A.M.I.", Portraits["AMI"], "Welcome to Challenge Mode!"),
-            new DialogueLine("A.M.I.", Portraits["AMI"], "Challenge Mode works a little differently from Campaign Mode. First of all, you start out with a set amount of ships that decreases as you lose them."),
+            new DialogueLine("A.M.I.", Portraits["AMI"], "Welcome to Challenge Mode, Commander!"),
+            new DialogueLine("A.M.I.", Portraits["AMI"], "This simulation works a little differently from Campaign Mode. First of all, you start out with a set amount of ships that decreases as you lose them. You won’t be able to construct additional ships for your fleet."),
             new DialogueLine("A.M.I.", Portraits["AMI"], "Secondly, you only advance onto the next level when you beat the current level. If you fail, you lose your ships, but the Bees are as strong as before."),
-            new DialogueLine("A.M.I.", Portraits["AMI"], $"The goal is to make it as far as possible before you run out of ships. Good luck Commander {ConfigData.UserProgressData.PlayerName}!"),
+            new DialogueLine("A.M.I.", Portraits["AMI"], $"The goal is to make it as far as possible before you run out of ships. As the name implies, Challenge Mode will challenge your strategic and leadership skills, so use this opportunity to sharpen your abilities. Good luck Commander {ConfigData.UserProgressData.PlayerName}!"),
         };
 
         SelectedCarrierSquad = new List<DialogueLine>
         {
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "We have here your Carrier squads: The Carriers, the Strikers, and the Drones."),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "The Carriers don't fight but they resupply the Strikers with bombs and they produce new Strikers and Drones between battles."),
-            new DialogueLine("Emilia", Portraits["Emilia"], "Strikers are beautiful creatures, and deadly assassins!"),
-            new DialogueLine("Emilia", Portraits["Emilia"], "They don't have guns but if you send them after a squad they'll chase them down and drop powerful bombs right on their heads!"),
-            new DialogueLine("Emilia", Portraits["Emilia"], "Be careful with them though, they can take a lot of hits going in to drop their bombs and returning to the Carriers to reload. Drones make a good escort for them."),
-             new DialogueLine("Alejandra", Portraits["Alejandra"], "Drones are the fastest ships in the fleet so they're also good at chasing down enemies or escorting unprotected ships, like the Carrier."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Alright, commander, let’s show you how it’s done!"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Yes, it is a complex vessel. The Carrier itself cannot engage in combat."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "But the Drone shoots stuff! And the Striker explodes stuff!"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "More or less. Drones will operate much like the other fleet types you’re used to. Strikers function a bit differently. If you- Emilia, wake up."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Ah! Right, so the strikers have to drop their bombs! Don’t worry about it being space, they’re magnetic. But the magnets only engage once they release the bombs. The mechanism behind that is really neat, because it-"),
+             new DialogueLine("Alejandra", Portraits["Alejandra"], "Emilia, stay on task."),
+             new DialogueLine("Emilia", Portraits["Emilia"], "Right, right. Anyway, your strikers will have to get to their target to drop off their payload, so keep in mind that they need a target. It’s a very simple program, so they won’t automatically attack anything."),
+             new DialogueLine("Alejandra", Portraits["Alejandra"], "Their effective range is nonexistent."),
+             new DialogueLine("Emilia", Portraits["Emilia"], "And then after that, they can’t attack anything else until they get a new payload at the Carrier."),
+             new DialogueLine("Alejandra", Portraits["Alejandra"], "The Carrier will always be ready to restock your Strikers, and they will seek a reload after dropping their payload automatically."),
+             new DialogueLine("Emilia", Portraits["Emilia"], "Now go get ‘em!"),
         };
 
         EasterEggLines = new List<DialogueLine>
@@ -540,7 +545,6 @@ public class CutsceneManager : MonoBehaviour
 
 
         /*
-
 
 
          */

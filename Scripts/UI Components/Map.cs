@@ -30,7 +30,7 @@ namespace Assets.Scripts.UI_Components
             AIStartingPosition = aiStartingPosition;
 
             SizeMultiplier = new Vector2(SpriteRenderer.size.x / 512, SpriteRenderer.size.y / 512);
-            Debug.Log($"Size multiplier for {Name} is {SizeMultiplier}");
+            //Debug.Log($"Size multiplier for {Name} is {SizeMultiplier}");
 
             if (stage.IsTraining)
             {

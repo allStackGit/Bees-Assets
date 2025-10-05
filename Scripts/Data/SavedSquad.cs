@@ -176,13 +176,15 @@ namespace Assets.Scripts.Data
         {
             _hasChanged = changed;
         }
-        public void RemoveShipFromSquad(SquadShip ship)
+        public void RemoveShipFromSquad(SquadShip ship, bool reorientSquad)
         {
             ship.GetFleetShip().DoesBelongToSavedSquad = false;
             _ships.Remove(ship);
-            if (_ships.Any())
+            if (reorientSquad && _ships.Any())
             {
+                //Debug.Log($"Before removing ship from squad {this}, center point: {StartingPosition}");
                 StartingPosition = GetCenterPoint() /*+ ConfigData.StartingPositionOffset*/;
+                //Debug.Log($"After removing ship from squad {this}, center point: {StartingPosition}");
             }
             SetChanged(true);
         }

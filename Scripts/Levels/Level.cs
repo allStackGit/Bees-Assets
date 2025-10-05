@@ -348,7 +348,7 @@ namespace Assets.Scripts.Levels
                 obstacle.Collider.enabled = false;
                 obstacle.Collider.enabled = true;
 
-                Debug.Log($"Spawning obstacle of size {obstacle.transform.localScale} at {obstacle.transform.localPosition}");
+                //Debug.Log($"Spawning obstacle of size {obstacle.transform.localScale} at {obstacle.transform.localPosition}");
                 obstacles.Add(obstacle);
             }
             return obstacles;

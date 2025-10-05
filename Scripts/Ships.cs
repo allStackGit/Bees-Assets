@@ -286,9 +286,14 @@ namespace Assets.Scripts
             bool replaced = false;
             squads.ForEach((squad) =>
             {
+                int shipCount = squad.GetSquadShips().Count;
                 if (ReplaceDeadShipsInSquad(squad))
                 {
                     replaced = true;
+                    if (squad.GetSquadShips().Count != shipCount)
+                    {
+                        squad.OrientSquad();
+                    }
                 }
             });
 
@@ -315,10 +320,10 @@ namespace Assets.Scripts
                     {
                         replacement.HasCachedSprite = true;
                     }
-                    squad.RemoveShipFromSquad(squadShip);
-                    squad.AddShipToSquad(new SquadShip(replacement.Id, squadShip.ShipType, squadShip.Offset));
-                    squad.OrientSquad();
-                    Debug.Log($"Replaced dead {squadShip.GetFleetShip()} with {replacement}");
+                    squad.RemoveShipFromSquad(squadShip, false);
+                    SquadShip newSquadShip = new SquadShip(replacement.Id, squadShip.ShipType, squadShip.Offset);
+                    squad.AddShipToSquad(newSquadShip);
+                    Debug.Log($"Replaced dead {squadShip.GetFleetShip()} with {replacement} at {squadShip.Offset}/{newSquadShip.Offset}");
                     replaced = true;
                 }
                 //else

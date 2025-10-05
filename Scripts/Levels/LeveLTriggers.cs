@@ -977,7 +977,7 @@ namespace Assets.Scripts.Levels
 
                                         personnelLost = (humanTarget.MaxHealth - humanTarget.Health) / 200;
 
-                                        Debug.Log($"personnel Lost: {personnelLost}, shield: {((float)(15 - personnelLost) / 15)}");
+                                        //Debug.Log($"personnel Lost: {personnelLost}, shield: {((float)(15 - personnelLost) / 15)}");
 
                                         Stage.Menus.PlutoShieldHealthBar.transform.localScale = new Vector2(((float)(15 - personnelLost) / 15) * 150, 1);
 
@@ -1146,7 +1146,7 @@ namespace Assets.Scripts.Levels
         }
         public void Level3Triggers()
         {
-            Stage.Menus.SetMissionStatus("Find and destroy all the bees!");
+            Stage.Menus.SetMissionStatus("Find and destroy all the Bees!");
             //Stage.EnablePlayerControl();
             HasContinuousTriggers = true;
 
@@ -1577,7 +1577,7 @@ namespace Assets.Scripts.Levels
         }
         public void Level5Triggers()
         {
-            Stage.Menus.SetMissionStatus("Destroy all the bees to break through the blockade");
+            Stage.Menus.SetMissionStatus("Destroy all the Bees to break through the blockade");
             HasContinuousTriggers = true;
 
             Stage.CutsceneManager.Setup(() =>
@@ -2426,7 +2426,10 @@ namespace Assets.Scripts.Levels
             CancelTimer(_egg);
             CancelTimer(_fishTank);
             Map.FogOfWar.SetActive(true); // Fade to black 
-            Stage.Menus.MissionStatus.SetActive(false);
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
+            {
+                Stage.Menus.MissionStatus.SetActive(false);
+            }
             //if (Stage.Menus.IsMiniMapOpen)
             //{
             //    Stage.Menus.ToggleMiniMapDisplay();
@@ -2907,7 +2910,9 @@ namespace Assets.Scripts.Levels
             HumanTarget humanTarget = (HumanTarget)State.GetHumanShips().Where((s) => s.ShipType == ConfigData.ShipTypes.HumanTarget).FirstOrDefault();
 
             humanTarget.Squad.CanAcceptUserInput = false;
-            Destroy(humanTarget.Squad.SquadTab);
+            //Debug.Log($"squad tab: {humanTarget.Squad.SquadTab}");
+            Destroy(humanTarget.Squad.SquadTab.gameObject);
+            humanTarget.Squad.HasSquadTab = false;
             if (humanTarget.HasUserFogOfWarVision)
             {
                 Destroy(humanTarget.FogOfWarVision.gameObject);

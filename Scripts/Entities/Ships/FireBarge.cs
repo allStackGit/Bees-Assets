@@ -48,7 +48,10 @@ namespace Assets.Scripts.Entities.Ships
                     ExplosionSound = Explosion.GetComponent<AudioSource>();
                     ShipExplosion = Explosion.gameObject;
                     DropExplosionAnimation();
-                    ExplosionSound.Play();
+                    if (Level.Stage.ActivateAudio)
+                    {
+                        ExplosionSound.Play();
+                    }
                     Explosion.Setup(Level, Bomb, this, null, GetPosition(), 0, 0, Bomb.Power);
                     Level.State.FireBargeExplosions.Add(Explosion);
                     ProjectilesInFlight.Add(Explosion);

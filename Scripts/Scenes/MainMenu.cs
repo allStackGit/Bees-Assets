@@ -244,6 +244,7 @@ namespace Assets.Scripts.Scenes
             ConfigData.UserProgressData.HasMetAlejandraAndEmilia = false;
             ConfigData.UserProgressData.HasSeenBuildInterface = false;
             ConfigData.UserProgressData.MinedTSV = 0;
+            ConfigData.UserProgressData.UnlockedCampaignShips = new HashSet<ConfigData.ShipTypes> {ConfigData.ShipTypes.Scout, ConfigData.ShipTypes.Gunship };
 
 
             ConfigData.IsSavedSquadsDataLoaded[1] = false;
@@ -302,7 +303,7 @@ namespace Assets.Scripts.Scenes
                 {
                     squad.GetSquadShips().ToList().ForEach((ship) =>
                     {
-                        squad.RemoveShipFromSquad(ship);
+                        squad.RemoveShipFromSquad(ship, false);
                     });
                     ConfigData.GetSavedSquadsData().RemoveSquadFromList(squad);
                 }
@@ -338,7 +339,7 @@ namespace Assets.Scripts.Scenes
                 {
                     squad.GetSquadShips().ToList().ForEach((ship) =>
                     {
-                        squad.RemoveShipFromSquad(ship);
+                        squad.RemoveShipFromSquad(ship, false);
                     });
                     ConfigData.GetSavedSquadsData().RemoveSquadFromList(squad);
                 }

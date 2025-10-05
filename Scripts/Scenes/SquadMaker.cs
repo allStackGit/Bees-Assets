@@ -204,7 +204,7 @@ namespace Assets.Scripts.Scenes
         {
             ConfigData.CurrentShips.GetSavedSquadsBySide(Side).ForEach((squad) =>
             {
-                Debug.Log($"Looking for Saved Squad - {squad.Name} #{squad.Id} label");
+                //Debug.Log($"Looking for Saved Squad - {squad.Name} #{squad.Id} label");
                 GameObject label = GameObject.Find($"Saved Squad - {squad.Name} #{squad.Id}");
                 if (label != null)
                 {
@@ -1552,7 +1552,7 @@ namespace Assets.Scripts.Scenes
                 if (HasCurrentSquad)
                 {
                     SquadShip squadShip = _currentSquad.GetShip(ship.Id);
-                    _currentSquad.RemoveShipFromSquad(squadShip);
+                    _currentSquad.RemoveShipFromSquad(squadShip, true);
                     dropper.SetupActiveDragging(Input.mousePosition, false);
                 }
             }

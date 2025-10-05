@@ -1149,7 +1149,7 @@ namespace Assets.Scripts
             // Starting gunship squad #1
             squad = CurrentShips.BuildNewSquad($"Squad #{UserProgressData.HumanCampaignSavedSquadNumber++}", Configuration.HumanSide, ShipTypes.Gunship, 1);
             squad.GetSquadShips().Find((s) => s.ShipType == ShipTypes.Gunship).GetFleetShip().Name = "Gunship D-4";
-            squad.Stats.Commander = "Tom";
+            squad.Stats.Commander = "Tom Pepper";
             //squad.StartingPosition = ConfigData.StartingPositionOffset;
             //Debug.Log($"Starting position for {squad} is {squad.StartingPosition}");
 

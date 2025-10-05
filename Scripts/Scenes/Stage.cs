@@ -612,7 +612,7 @@ public class Stage : Scene
             if (ConfigData.Configuration.AISide == ConfigData.Configuration.BeeSide)
             {
                 BeeShipTypes = new List<ConfigData.ShipTypes>() { BeeShipTypes[PrimaryLevel.CurrentLevelOptions.EnemyShipTypeOption - 1] };
-                Debug.Log($"The user has selected enemy ship type: {BeeShipTypes[0]}");
+                //Debug.Log($"The user has selected enemy ship type: {BeeShipTypes[0]}");
             }
             else
             {
