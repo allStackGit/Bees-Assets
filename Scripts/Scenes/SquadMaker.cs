@@ -1584,11 +1584,9 @@ namespace Assets.Scripts.Scenes
         }
         public void SetupBuildInterface()
         {
-            List <ConfigData.ShipTypes> list = ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide ? ConfigData.UserProgressData.VisibleHumanShipTypes.ToList() : ConfigData.UserProgressData.VisibleBeeShipTypes.ToList();
-
-            List<ConfigData.ShipTypes> hideList = ShipsBeingBuilt.Keys.ToHashSet().Except(list).ToList();
+            List<ConfigData.ShipTypes> hideList = ShipsBeingBuilt.Keys.ToHashSet().Except(ConfigData.UserProgressData.UnlockedCampaignShips).ToList();
             BuildPopup.SetActive(true);
-            list.ToList().ForEach((shipType) =>
+            ConfigData.UserProgressData.UnlockedCampaignShips.ToList().ForEach((shipType) =>
             {
                 GameObject shipLabel = GameObject.Find($"{Utilities.ConvertShipTypeToName[shipType]} Build Ship");
                 shipLabel.transform.Find("Ship Cost").GetComponent<TMP_Text>().text = $"Cost: {ConfigData.GetShipInfo(shipType).Tsv}";

@@ -12,7 +12,7 @@ GameObject:
   - component: {fileID: 8399561278673802351}
   - component: {fileID: 4463492914527787709}
   - component: {fileID: 1060281272481202289}
-  m_Layer: 8
+  m_Layer: 31
   m_Name: Exit Zone
   m_TagString: UI
   m_Icon: {fileID: 0}

@@ -690,7 +690,7 @@ Canvas:
   m_AdditionalShaderChannelsFlag: 25
   m_UpdateRectTransformForStandalone: 0
   m_SortingLayerID: 0
-  m_SortingOrder: 1
+  m_SortingOrder: 2
   m_TargetDisplay: 0
 --- !u!1001 &103303339
 PrefabInstance:
@@ -4152,7 +4152,7 @@ Canvas:
   m_AdditionalShaderChannelsFlag: 25
   m_UpdateRectTransformForStandalone: 0
   m_SortingLayerID: 0
-  m_SortingOrder: 1
+  m_SortingOrder: 0
   m_TargetDisplay: 0
 --- !u!224 &671516573
 RectTransform:
@@ -4243,12 +4243,19 @@ MonoBehaviour:
   Clock: {fileID: 1330455768}
   Counter: {fileID: 1117799022}
   RetreatButton: {fileID: 881651664}
+  MineralsMinedStatus: {fileID: 0}
+  MineralsMinedFiller: {fileID: 0}
+  MissionStatus: {fileID: 0}
+  PlutoShield: {fileID: 0}
+  PlutoShieldHealthBar: {fileID: 0}
   ActionBox: {fileID: 0}
   CurrentLevel: {fileID: 0}
   Stage: {fileID: 0}
   ShipInfoBoxTitle: {fileID: 19937036}
   ShipInfoBoxStats: {fileID: 1251602842}
   TryNewSquadsButtonText: {fileID: 4719854873348479655}
+  MineralsMinedCount: {fileID: 0}
+  MissionStatusText: {fileID: 0}
   LevelNameInput: {fileID: 420468311}
   SupplyCapacityInput: {fileID: 821296918}
   Codex: {fileID: 768080947}
@@ -17544,6 +17551,8 @@ MonoBehaviour:
   - {fileID: 7879729711353278377, guid: 3834dda5c834aa449bc5195a6e2d6c11, type: 3}
   - {fileID: 7879729711353278377, guid: 43696f10417afb1439a06a95be1a8122, type: 3}
   - {fileID: 7879729711353278377, guid: 1516477eccab4ff4b9abdc7e7999689a, type: 3}
+  - {fileID: 7879729711353278377, guid: 975c25c1299d8834dbc2c88dc08b3575, type: 3}
+  - {fileID: 7879729711353278377, guid: bf88dc77139029d46a9d06fa790eb308, type: 3}
   CollisionAsteroidPrefabs:
   - {fileID: 226534545502904114, guid: c56c01c11c9ad6a4aa3c7694969bdc5b, type: 3}
   - {fileID: 439529657869320101, guid: fd259f1b80ec2cb4ab265509be0d9310, type: 3}
@@ -18879,7 +18888,7 @@ Canvas:
   m_AdditionalShaderChannelsFlag: 25
   m_UpdateRectTransformForStandalone: 0
   m_SortingLayerID: 0
-  m_SortingOrder: 1
+  m_SortingOrder: 2
   m_TargetDisplay: 0
 --- !u!114 &3973405590710143748
 MonoBehaviour:
@@ -20191,7 +20200,7 @@ Canvas:
   m_AdditionalShaderChannelsFlag: 25
   m_UpdateRectTransformForStandalone: 0
   m_SortingLayerID: 0
-  m_SortingOrder: 0
+  m_SortingOrder: 1
   m_TargetDisplay: 0
 --- !u!1 &7644198586849771246
 GameObject:

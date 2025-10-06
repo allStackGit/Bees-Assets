@@ -55,11 +55,11 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Samuel", Portraits["Samuel"], "Samuel gets a notification of some kind.", 2),
             new DialogueLine("Samuel", Portraits["Samuel"], "Oh, that's odd. A Scout is reporting an unidentified vessel approaching military airspace. What should we do?"),
             new DialogueLine("Samuel", Portraits["Samuel"], 1),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Right away, sir. Contacting the vessel."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Right away. Contacting the vessel."),
             new DialogueLine("Samuel", Portraits["Samuel"], 1),
-            new DialogueLine("Samuel", Portraits["Samuel"], "It isn’t responding, sir."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "It isn’t responding, commander."),
             new DialogueLine("Samuel", Portraits["Samuel"], 1),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Understood, sir. We’ll send Lieutenant Tom out immediately."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Understood, commander. We’ll send Lieutenant Tom out immediately."),
 
             new DialogueLine("Tom", Portraits["Tom"], $"This is Gunship D-4 reporting to command. I’m approaching the unidentified vessel now."),
 
@@ -71,7 +71,7 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("High Command", Portraits["High Command"], $"Commander {ConfigData.UserProgressData.PlayerName}, we have received reports of an alien vessel in Pluto airspace. We cannot allow it to infiltrate our territory. Shoot it down."),
             new DialogueLine("Samuel", Portraits["Samuel"], "Shoot it down? We don’t even know what it is! Who even reported this?"),
             new DialogueLine("High Command", Portraits["High Command"], "Those are your orders, Commander."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "But- oh, they disconnected. Looks like we have to attack, sir."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "But- oh, they disconnected. Looks like we have to attack, commander."),
 
             new DialogueLine("Tom", Portraits["Tom"], "What are your orders, Commander?"),
             new DialogueLine("Samuel", Portraits["Samuel"], "In order to attack, he’ll need to get in range. Once he's in range, he can attack the ship."),
@@ -84,9 +84,9 @@ public class CutsceneManager : MonoBehaviour
 
             new DialogueLine("Samuel", Portraits["Samuel"], "Their fleet is huge! We need to contact High Command immediately!"),
             new DialogueLine("Samuel", Portraits["Samuel"], "Dial-up noises", 2),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Communications are down, sir. What should we do?"),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Communications are down. What should we do?"),
             new DialogueLine("Samuel", Portraits["Samuel"], 1),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Understood. Preparing our fleet to deploy, sir."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Understood. Preparing our fleet to deploy, commander."),
 
         };
 
@@ -190,9 +190,9 @@ public class CutsceneManager : MonoBehaviour
         Neptune_SeizeTheMeans = new List<DialogueLine>
         {
             new DialogueLine("Samuel", Portraits["Samuel"], "We’re approaching Neptune to see if we can gather any allies there."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "The scout team has reported movement, but we're unable to determine if it’s friendly or not. We’ll just have to find out."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "The Scout team has reported movement, but we're unable to determine if it’s friendly or not. We’ll just have to find out."),
 
-            new DialogueLine("Samuel", Portraits["Samuel"], "Sir, we’re getting an emergency signal from somewhere on Neptune."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Commander, we’re getting an emergency signal from somewhere on Neptune."),
             new DialogueLine("???", Portraits["Wesley"], "-day, Mayd- this is an emerg- enem- facility dest- need evac-", true),
             new DialogueLine("Samuel", Portraits["Samuel"], "It’s very faint, but it’s clear we need to go help."),
             new DialogueLine("Oviya", Portraits["Oviya"], "It looks like the bees are gathered around ore-rich asteroids around the planet. Scouts are reporting the mining facility on the surface is flattened."),
@@ -219,7 +219,7 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Joey", Portraits["Joey"], "Howdy. Where’s Derek, then?"),
             new DialogueLine("Wesley", Portraits["Wesley"], "Derek is no longer with us. He didn’t make it to the bunker in time. I’ve been the de facto leader for the remaining Jensen personnel."),
             new DialogueLine("Samuel", Portraits["Samuel"], "Then why did you say-"),
-            new DialogueLine("Joey", Portraits["Joey"], "Don’t bother. Wesley, tell us what we need to know for this war against the bees."),
+            new DialogueLine("Joey", Portraits["Joey"], "Don’t bother. Wesley, tell us what we need to know for this war against the Bees."),
             new DialogueLine("Wesley", Portraits["Wesley"], "Bees? Is that what’s attacking us? I was not aware they had the biology to survive in space. They’re hardly surviving on Earth any longer, due to-"),
             new DialogueLine("Marco", Portraits["Marco"], "They’re not bees."),
             new DialogueLine("Joey", Portraits["Joey"], "They just look like ‘em. Easier to call ‘em that."),
@@ -230,7 +230,7 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Marco", Portraits["Marco"], "..."),
             new DialogueLine("Marco", Portraits["Marco"], "We have that and a bunch of miners, then? This isn’t really helping our chances."),
             new DialogueLine("Wesley", Portraits["Wesley"], "Well, um, we do have a line of prototype Factory ships, capable of mining ore-rich asteroids, as well as personnel trained to man them."),
-            new DialogueLine("Joey", Portraits["Joey"], "And plenty of those asteroids nearby. Well, I’ll be, Wesley, this really is helpful"),
+            new DialogueLine("Joey", Portraits["Joey"], "And plenty of those asteroids nearby. Well, I’ll be, Wesley, this really is helpful."),
             new DialogueLine("Wesley", Portraits["Wesley"], "They are property of Jensen Corporation, and all personnel including myself are on their payroll. I’m sure we can reach some sort of agreement for their use, perhaps a loan."),
             new DialogueLine("Wesley", Portraits["Wesley"], "But of course, these ships are the intellectual property of Jensen, so I can’t have any of you stealing these plans."),
             new DialogueLine("Samuel", Portraits["Samuel"], "We don’t have any way to contact Jensen Corporation, Wesley."),

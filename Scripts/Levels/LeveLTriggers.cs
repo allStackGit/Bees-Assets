@@ -650,7 +650,7 @@ namespace Assets.Scripts.Levels
 
                                     GameObject pointerA = Instantiate(Stage.Menus.PointerArrow, Stage.Menus.UIOverlay.transform);
                                     rectTransform = pointerA.GetComponent<RectTransform>();
-                                    rectTransform.localPosition = new Vector2(-482, -255);
+                                    rectTransform.localPosition = new Vector2(-447, -238);
                                     rectTransform.eulerAngles = new Vector3(0, 0, 170);
                                     pointerA.SetActive(true);
 
@@ -924,8 +924,7 @@ namespace Assets.Scripts.Levels
                                         () =>
                                         {
                                             // Show the 3rd message
-                                            tooltipText.text = "In this mission, the more personnel you evacuate, the more ships you'll have for your fleet. Play strategically to preserve as much of your own fleet while whittling down the Bees numbers. Good luck, Commander. <br><br>(Hold Space to continue)";
-                                            tooltipRectTransformSize.sizeDelta = new Vector2(150, 300);
+                                            tooltipText.text = "In this mission, the more personnel you evacuate, the more ships you'll have for your fleet. Play strategically to preserve as much of your own fleet while whittling down the Bees' numbers. Good luck, Commander. <br><br>(Hold Space to continue)";
                                             NextTriggers.Add(new Trigger(() =>
                                                 {
                                                     return Input.GetKey(KeyCode.Space);
