@@ -661,7 +661,7 @@ namespace Assets.Scripts.Levels
         private void CheckActions()
         {
             // No local variables declared except for the following float:
-            _checkActions_mouseScrollSpeed = Stage.ScrollSpeed * 5 * Time.deltaTime;
+            _checkActions_mouseScrollSpeed = Stage.ScrollSpeed * 10 * Time.deltaTime;
 
             foreach (HotKey hotKey in _hotKeys)
             {

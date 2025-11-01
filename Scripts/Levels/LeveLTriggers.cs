@@ -1149,6 +1149,9 @@ namespace Assets.Scripts.Levels
             //Stage.EnablePlayerControl();
             HasContinuousTriggers = true;
 
+            // Move the Game Speed Button
+            Stage.Menus.GameSpeedButton.GetComponent<RectTransform>().anchoredPosition = new Vector2(-125, -15);
+
             // Prevent the Hivemind from giving commands
             Stage.ActivateHiveMind = false;
 
