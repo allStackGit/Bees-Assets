@@ -87,6 +87,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void OpenMenu()
         {
+            //Debug.Log("Opening menu");
             CurrentLevel.Pause();
             MenuContainer.SetActive(true);
         }
@@ -106,6 +107,9 @@ namespace Assets.Scripts.UIComponents
         }
         public void ShowLevelContinueDialogue()
         {
+            Stage.TimeScale = 1f;
+            Time.timeScale = Stage.TimeScale;
+            GameSpeedButtonText.text = $"{Stage.TimeScale}x";
             if (ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide) >= ConfigData.Configuration.TotalLevels)
             {
                 CampaignCompletedDialogue.Show();
@@ -145,7 +149,7 @@ namespace Assets.Scripts.UIComponents
         }
         public void CloseDialogue()
         {
-            //Debug.Log("Deciding not to exit");
+            //Debug.Log("Closing dialogue");
             DeselectButton();
             LevelEndedDialogue.SetActive(false);
             SaveLevelDialogue.SetActive(false);

@@ -97,7 +97,7 @@ namespace Assets.Scripts.Levels
 
         public bool CheckInputRelease()
         {
-            if (_hasContinuousInput && Time.realtimeSinceStartup - _lastInputTime > .05f)
+            if (_hasContinuousInput && Time.realtimeSinceStartup - _lastInputTime > .02f)
             {
                 _lastInputTime = Time.realtimeSinceStartup;
                 _hasInputRelease = true;

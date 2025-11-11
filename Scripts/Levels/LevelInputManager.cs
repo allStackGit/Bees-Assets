@@ -185,10 +185,28 @@ namespace Assets.Scripts.Levels
                         });
                         break;
                     case "Open Menu":
+                        ScaledTimer _resetKeyTimer = new ScaledTimer();
                         hotKey.SetAction(() =>
                         {
-                            Stage.Menus.OpenMenu();
-                            hotKey.ManuallySetInputRelease(true);
+                            if (!Stage.Menus.MenuContainer.activeSelf)
+                            {
+                                Stage.Menus.OpenMenu();
+                            }
+                            else
+                            {
+                                Stage.Menus.CloseDialogue();
+                            }
+
+                            if (_resetKeyTimer.IsCanceled)
+                            {
+                                _resetKeyTimer.Reuse(.5f, () =>
+                                {
+
+                                    hotKey.ManuallySetInputRelease(true);
+                                });
+                                Level.AddTimer(_resetKeyTimer);
+                            }
+
                         });
                         break;
                     case "Show Ranges":
@@ -661,7 +679,7 @@ namespace Assets.Scripts.Levels
         private void CheckActions()
         {
             // No local variables declared except for the following float:
-            _checkActions_mouseScrollSpeed = Stage.ScrollSpeed * 10 * Time.deltaTime;
+            _checkActions_mouseScrollSpeed = Stage.ScrollSpeed * 20 * Time.deltaTime;
 
             foreach (HotKey hotKey in _hotKeys)
             {
