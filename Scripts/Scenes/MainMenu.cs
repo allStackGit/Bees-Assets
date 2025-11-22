@@ -137,6 +137,7 @@ namespace Assets.Scripts.Scenes
         public void SubmitName()
         {
             string name = NameInput.text;
+            name = Utilities.ValidateInputString(name);
             Debug.Log($"Name: {name}");
             if (name.Trim().Length > 0)
             {

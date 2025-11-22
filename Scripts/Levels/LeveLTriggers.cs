@@ -91,16 +91,17 @@ namespace Assets.Scripts.Levels
             HasContinuousTriggers = true;
             ScaledTimer _beesPursuitTimer = new ScaledTimer();
             Zone exitZone = null;
-            GameObject moveScoutTooltip = null;
-            GameObject controlGunshipTooltip = null;
-            GameObject attackOnSightTooltip = null;
-            GameObject flydownTooltip = null;
+            Tooltip moveScoutTooltip = null;
 
 
             // Setup proximity collider for the scout
             firstScout.ProximityCollider = Instantiate(Stage.Prefabs.HumanProximityColliderPrefab, Vector3.zero, Quaternion.identity, firstScout.transform).GetComponent<ProximityCollider>();
             firstScout.HasProximityCollider = true;
+
+            int originalSight = firstScout.Sight;
+            firstScout.Sight = 60; // reduce sight for proximity collider
             firstScout.ProximityCollider.Create(firstScout);
+            firstScout.Sight = originalSight; // Restore original sight value
             firstScout.ProximityCollider.transform.localPosition = Vector3.zero;
             firstScout.ProximityCollider.Activate();
 
@@ -223,10 +224,10 @@ namespace Assets.Scripts.Levels
                     if (!hasBeenUserControlled)
                     {
                         Debug.Log("Showing tooltip for controlling Scout");
-                        moveScoutTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
-                        moveScoutTooltip.SetActive(true);
-                        moveScoutTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "You can select the ship by left clicking on it. You can then move the ship by right clicking somewhere in space.";
-                        moveScoutTooltip.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(150, 150);
+
+                        Tooltip moveScoutTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
+                        moveScoutTooltip.Show("You can select the ship by left clicking on it. You can then move the ship by right clicking somewhere in space.", true);
+                        moveScoutTooltip.Place(Vector2.zero, new Vector2(150, 150));
                     }
                     else
                     {
@@ -248,7 +249,7 @@ namespace Assets.Scripts.Levels
 
                         if (moveScoutTooltip != null)
                         {
-                            Destroy(moveScoutTooltip);
+                            Destroy(moveScoutTooltip.gameObject);
                         }
                         Stage.Menus.WASDTooltip.SetActive(true);
                         Vector2 initialCameraPosition = Stage.Camera.transform.position;
@@ -365,14 +366,11 @@ namespace Assets.Scripts.Levels
                                             Stage.IsFollowingShip = false;
                                             aggressive.SetFinalize("Honeybee reached by gunship, ceding to user control");
 
-                                            controlGunshipTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
-                                            controlGunshipTooltip.SetActive(true);
-                                            TMP_Text tooltipText =  controlGunshipTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>();
-                                            RectTransform tooltipRectTransformPosition = controlGunshipTooltip.GetComponent<RectTransform>();
-                                            RectTransform tooltipRectTransformSize = controlGunshipTooltip.transform.GetChild(0).GetComponent<RectTransform>();
 
-                                            tooltipRectTransformSize.sizeDelta = new Vector2(150, 150);
-                                            tooltipText.text = "You can select the ship by left clicking on it or by left clicking and dragging a selection box around it.";
+                                            Tooltip controlGunshipTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
+                                            controlGunshipTooltip.Show("You can select the ship by left clicking on it or by left clicking and dragging a selection box around it.", true);
+                                            controlGunshipTooltip.Place(Vector2.zero, new Vector2(150, 150));
+
 
                                             NextTriggers.Add(new Trigger(() =>
                                                 {
@@ -380,9 +378,10 @@ namespace Assets.Scripts.Levels
                                                 },
                                                 () =>
                                                 {
-                                                    tooltipRectTransformSize.sizeDelta = new Vector2(150, 150);
-                                                    tooltipRectTransformPosition.localPosition = new Vector2(-500, 0);
-                                                    tooltipText.text = "You'll want to familiarize yourself with the controls to your bottom left. They aren't usually required, but they are helpful.";
+
+                                                    controlGunshipTooltip.Show("You'll want to familiarize yourself with the controls to your bottom left. They aren't usually required, but they are helpful.", true);
+                                                    controlGunshipTooltip.Place(new Vector2(-500, 0), new Vector2(150, 150));
+
 
                                                     NextTriggers.Add(new Trigger(() =>
                                                         {
@@ -391,25 +390,23 @@ namespace Assets.Scripts.Levels
                                                         },
                                                         () =>
                                                         {
-                                                            attackOnSightTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
-                                                            attackOnSightTooltip.SetActive(true);
-                                                            TMP_Text tooltipText =  attackOnSightTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>();
-                                                            attackOnSightTooltip.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(150, 300);
-                                                            attackOnSightTooltip.GetComponent<RectTransform>().localPosition = new Vector2(0, -50);
-                                                            tooltipText.text = "When you're ready to engage the Honeybee, click \"Attack on Sight\" (the red exclamation point) to disable the Cease Fire. Once the Gunship is within range it will automatically fire upon the Honeybee. To chase after an enemy ship, right click on it.";
+                                                            Tooltip attackOnSightTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
+                                                            attackOnSightTooltip.Show("When you're ready to engage the Honeybee, click \"Attack on Sight\" (the red exclamation point) to disable the Cease Fire. Once the Gunship is within range it will automatically fire upon the Honeybee. To chase after an enemy ship, right click on it.", true);
+                                                            attackOnSightTooltip.Place(new Vector2(0, -50), new Vector2(150, 300));
 
-                                                            NextTriggers.Add(new Trigger(() =>
-                                                                {
-                                                                    return firstGunship.Squad.CeaseFire == false;
-                                                                },
-                                                                () =>
-                                                                {
-                                                                    Destroy(attackOnSightTooltip);
-                                                                    Destroy(controlGunshipTooltip);
 
-                                                                },
-                                                                "Level 0 Removing Gunship Tooltips")
-                                                            );
+                                                            //NextTriggers.Add(new Trigger(() =>
+                                                            //    {
+                                                            //        return firstGunship.Squad.CeaseFire == false;
+                                                            //    },
+                                                            //    () =>
+                                                            //    {
+                                                            //        Destroy(attackOnSightTooltip);
+                                                            //        Destroy(controlGunshipTooltip);
+
+                                                            //    },
+                                                            //    "Level 0 Removing Gunship Tooltips")
+                                                            //);
 
                                                         },
                                                         "Level 0 Showing Attack on Sight tooltip prompt")
@@ -441,44 +438,46 @@ namespace Assets.Scripts.Levels
                                                 () =>
                                                 {
                                                     Debug.Log("Honeybee has been defeated");
-                                                    Stage.Menus.SetMissionStatus("Keep a look out for other ships");
+                                                    Stage.Menus.TogglePausePanel();
+                                                    //Stage.Menus.SetMissionStatus("Keep a look out for other ships");
                                                     Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Anomaly.GetRange(23, 2));
-                                                    State.GetSquadsBySide(ConfigData.Configuration.AISide).ForEach((squad) =>
-                                                    {
-                                                        squad.SetSquadCeaseFire(true); // Cease fire for all bee squads
+                                                    //State.GetSquadsBySide(ConfigData.Configuration.AISide).ForEach((squad) =>
+                                                    //{
+                                                    //    squad.SetSquadCeaseFire(true); // Cease fire for all bee squads
 
-                                                        // Move to point where gun ship is
+                                                    //    // Move to point where gun ship is
 
-                                                        squad.HasCommandQueue = true;
-                                                        squad.CommandQueueEmptyAction = () => {
-                                                            //Debug.Log($"{squad} has finished command against gunship");
+                                                    //    squad.HasCommandQueue = true;
+                                                    //    squad.CommandQueueEmptyAction = () => {
+                                                    //        //Debug.Log($"{squad} has finished command against gunship");
 
-                                                            MoveToPoint moveToPoint = (MoveToPoint)Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.MoveToPoint);
-                                                            moveToPoint.Setup(squad, false, null, null, firstGunship.GetPosition() - new Vector2(30, 30)); // Go near gunship
-                                                            squad.CommandQueue.Enqueue(moveToPoint);
+                                                    //        MoveToPoint moveToPoint = (MoveToPoint)Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.MoveToPoint);
+                                                    //        moveToPoint.Setup(squad, false, null, null, firstGunship.GetPosition() - new Vector2(30, 30)); // Go near gunship
+                                                    //        squad.CommandQueue.Enqueue(moveToPoint);
 
-                                                            squad.RunCommandQueue();
+                                                    //        squad.RunCommandQueue();
 
-                                                        };
+                                                    //    };
 
-                                                        squad.RunCommandQueue();
+                                                    //    squad.RunCommandQueue();
 
 
-                                                    });
+                                                    //});
 
                                                     NextTriggers.Add(new Trigger(() =>
                                                         {
-                                                            return firstGunship.Weapons.First().GetEnemyShipsWithinRange().Count > 0;
+                                                            return Stage.CutsceneManager.HitDialogueBreak;
                                                         },
                                                         () =>
                                                         {
+                                                            Stage.Menus.TogglePausePanel();
+                                                            Stage.Menus.ToggleFogOfWar();
                                                             Stage.Menus.SetMissionStatus("Fly down to safety!");
                                                             Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Anomaly.GetRange(25, 2)); // Gunship Sees bees
 
-                                                            flydownTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
-                                                            flydownTooltip.SetActive(true);
-                                                            flydownTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "Fly down to safety!";
-                                                                    
+                                                            Tooltip flydownTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
+                                                            flydownTooltip.Show("Fly down to safety!", true);
+
                                                             // Wait a few seconds and then the bees stop ceasefire, and pursue the gunship with aggressive command
                                                             _beesPursuitTimer.Reuse(10, () =>
                                                                 {
@@ -563,8 +562,8 @@ namespace Assets.Scripts.Levels
             FishTankTrigger();
             Debug.Log("Setting triggers for level 1");
             HasContinuousTriggers = true;
-            GameObject basicTooltip = null;
-            GameObject highlightTooltip = null;
+            Tooltip basicTooltip = null;
+            GameObject highlightTooltipObject = null;
 
 
             LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() {
@@ -595,8 +594,10 @@ namespace Assets.Scripts.Levels
             {
                 Level1Ending();
             });
+            Stage.Menus.TogglePausePanel();
 
-            _dialogueTimer.Reuse(3, () =>
+
+            _dialogueTimer.Reuse(1.5f, () =>
             {
                 Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.PlutoLines_Reinforcements[1]);
             });
@@ -608,23 +609,27 @@ namespace Assets.Scripts.Levels
                 },
                 () =>
                 {
+                    Stage.Menus.TogglePausePanel();
                     Stage.Menus.MissionStatus.SetActive(true);
                     Stage.Menus.SetMissionStatus("Use the Scout");
                     Stage.EnablePlayerControl();
-                    basicTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
-                    basicTooltip.SetActive(true);
-                    TMP_Text tooltipText = basicTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>();
-                    RectTransform tooltipRectTransformPosition = basicTooltip.GetComponent<RectTransform>();
-                    RectTransform tooltipRectTransformSize = basicTooltip.transform.GetChild(0).GetComponent<RectTransform>();
+                    basicTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
+                    
+                    basicTooltip.Show("Select the Scout squad with the left mouse button.", true);
+                    basicTooltip.Place(new Vector2(200, 0), new Vector2(150, 100));
 
-                    tooltipText.text = "Select the Scout squad with the left mouse button.";
-                    tooltipRectTransformPosition.localPosition = new Vector2(200, 0);
-                    tooltipRectTransformSize.sizeDelta = new Vector2(150, 50);
+                    //TMP_Text tooltipText = basicTooltipObject.transform.Find("Vertical/Message").GetComponent<TMP_Text>();
+                    //RectTransform tooltipRectTransformPosition = basicTooltipObject.GetComponent<RectTransform>();
+                    //RectTransform tooltipRectTransformSize = basicTooltipObject.transform.GetChild(0).GetComponent<RectTransform>();
 
-                    highlightTooltip = Instantiate(Stage.Menus.HighlightTooltipPrefab, Map.transform);
-                    highlightTooltip.SetActive(true);
-                    highlightTooltip.transform.position = scoutSquad.GetPosition();
-                    highlightTooltip.transform.localScale = new Vector2(scoutSquad.GetWidth() + 2, scoutSquad.GetHeight() + 2);
+                    //tooltipText.text = "Select the Scout squad with the left mouse button.";
+                    //tooltipRectTransformPosition.localPosition = new Vector2(200, 0);
+                    //tooltipRectTransformSize.sizeDelta = new Vector2(150, 50);
+
+                    highlightTooltipObject = Instantiate(Stage.Menus.HighlightTooltipPrefab, Map.transform);
+                    highlightTooltipObject.SetActive(true);
+                    highlightTooltipObject.transform.position = scoutSquad.GetPosition();
+                    highlightTooltipObject.transform.localScale = new Vector2(scoutSquad.GetWidth() + 2, scoutSquad.GetHeight() + 2);
 
                     NextTriggers.Add(new Trigger(() =>
                         {
@@ -632,20 +637,19 @@ namespace Assets.Scripts.Levels
                         },
                         () =>
                         {
-                            highlightTooltip.SetActive(false);
-                            basicTooltip.SetActive(false);
+                            highlightTooltipObject.SetActive(false);
                             Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(2, 4));
+                            Stage.Menus.TogglePausePanel();
 
                             NextTriggers.Add(new Trigger(() =>
                                 {
-                                    return Stage.CutsceneManager.HitDialogueBreak;
+                                    return Stage.CutsceneManager.HitDialogueBreak && scoutSquad.IsSelected;
                                 },
                                 () =>
                                 {
-                                    tooltipText.text = "Here are different settings for your ship.You can determine your squad’s flight pattern and shooting strategies here. Take some time to familiarize yourself with these options.";
-                                    tooltipRectTransformSize.sizeDelta = new Vector2(150, 225);
-                                    tooltipRectTransformPosition.localPosition = new Vector2(-175, -150);
-                                    basicTooltip.SetActive(true);
+                                    Stage.Menus.TogglePausePanel();
+                                    basicTooltip.Show("Here are different settings for your ship.You can determine your squad’s flight pattern and shooting strategies here. Take some time to familiarize yourself with these options.", true);
+                                    basicTooltip.Place(new Vector2(-175, -150), new Vector2(150, 225));
 
 
                                     GameObject pointerA = Instantiate(Stage.Menus.PointerArrow, Stage.Menus.UIOverlay.transform);
@@ -661,19 +665,14 @@ namespace Assets.Scripts.Levels
                                     rectTransform.localScale = new Vector2(0.25f, 0.5f);
                                     pointerB.SetActive(true);
 
-                                    GameObject spaceBarMessage = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
-                                    spaceBarMessage.SetActive(true);
-                                    spaceBarMessage.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "Press and hold the space bar to continue";
-
                                     NextTriggers.Add(new Trigger(() =>
                                         {
-                                            return Input.GetKey(KeyCode.Space);
+                                            return !basicTooltip.gameObject.activeSelf;
                                         },
                                         () =>
                                         {
                                             Destroy(pointerA);
                                             Destroy(pointerB);
-                                            Destroy(spaceBarMessage);
 
                                             Stage.Menus.SetMissionStatus("Try out the different squads");
 
@@ -683,9 +682,8 @@ namespace Assets.Scripts.Levels
                                             squadNumberHighlight.transform.localScale = new Vector2(150, 30);
                                             squadNumberHighlight.transform.SetAsFirstSibling();
 
-                                            tooltipText.text = "You can also select squads with the number hotkeys on your keyboard. These are displayed at the top of the screen.";
-                                            tooltipRectTransformSize.sizeDelta = new Vector2(150, 150);
-                                            tooltipRectTransformPosition.localPosition = new Vector2(-550, 300);
+                                            basicTooltip.Show("You can also select squads with the number hotkeys on your keyboard. These are displayed at the top of the screen.", true);
+                                            basicTooltip.Place(new Vector2(-550, 300), new Vector2(150, 150));
 
                                             GameObject multiSelectMessage = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
                                             multiSelectMessage.SetActive(true);
@@ -711,7 +709,6 @@ namespace Assets.Scripts.Levels
                                                 },
                                                 () =>
                                                 {
-                                                    basicTooltip.SetActive(false);
                                                     Destroy(squadNumberHighlight);
                                                     Destroy(multiSelectMessage);
                                                     Destroy(rangeMessage);
@@ -848,13 +845,16 @@ namespace Assets.Scripts.Levels
             // Prevent the Hivemind from giving commands
             Stage.ActivateHiveMind = false;
 
+            // Move the button for the game speed over
+            Stage.Menus.GameSpeedButton.GetComponent<RectTransform>().anchoredPosition = new Vector2(-290, -15);
+
             // Start the dialogue
             Stage.CutsceneManager.Setup(() =>
             {
                 Level2Ending();
             });
-
-            _dialogueTimer.Reuse(3, () =>
+            Stage.Menus.TogglePausePanel();
+            _dialogueTimer.Reuse(1.5f, () =>
             {
                 Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_BluerPastures.GetRange(1, 4));
             });
@@ -899,40 +899,36 @@ namespace Assets.Scripts.Levels
                             bool hasSeenFleetMessages = false;
 
 
-                            GameObject basicTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
-                            basicTooltip.SetActive(true);
-                            TMP_Text tooltipText = basicTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>();
-                            RectTransform tooltipRectTransformPosition = basicTooltip.GetComponent<RectTransform>();
-                            RectTransform tooltipRectTransformSize = basicTooltip.transform.GetChild(0).GetComponent<RectTransform>();
-
-                            tooltipText.text = "As the war campaign progresses, you may lose ships that you bring into battles. These ships are gone forever. Your fleet will still find a way forward, even if you lose all the ships you brought into battle. But if you lose all of the ships in your fleet, the campaign will end. <br><br>(Hold Space to continue)";
-                            tooltipRectTransformSize.sizeDelta = new Vector2(150, 350);
+                            Tooltip basicTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
+                            basicTooltip.Show("As the war campaign progresses, you may lose ships that you bring into battles. These ships are gone forever. Your fleet will still find a way forward, even if you lose all the ships you brought into battle. But if you lose all of the ships in your fleet, the campaign will end.", true);
+                            basicTooltip.Place(Vector2.zero, new Vector2(150, 350));
 
                             NextTriggers.Add(new Trigger(() =>
                                 {
-                                    return Input.GetKey(KeyCode.Space);
+                                    return !basicTooltip.gameObject.activeSelf;
                                 },
                                 () =>
                                 {
                                     // Show the second message
-                                    tooltipText.text = "Similarly, the Bees have a finite number of resources. The more enemy ships you destroy in each mission, the less the Bee threat will have for their entire invasion. But the same is true in reverse: if you don’t destroy many ships, they can come back to haunt you later on. <br><br>(Hold Space to continue)";
+                                    basicTooltip.Show("Similarly, the Bees have a finite number of resources. The more enemy ships you destroy in each mission, the less the Bee threat will have for their entire invasion. But the same is true in reverse: if you don’t destroy many ships, they can come back to haunt you later on.", true);
 
                                     NextTriggers.Add(new Trigger(() =>
                                         {
-                                            return Input.GetKey(KeyCode.Space);
+                                            return !basicTooltip.gameObject.activeSelf;
                                         },
                                         () =>
                                         {
                                             // Show the 3rd message
-                                            tooltipText.text = "In this mission, the more personnel you evacuate, the more ships you'll have for your fleet. Play strategically to preserve as much of your own fleet while whittling down the Bees' numbers. Good luck, Commander. <br><br>(Hold Space to continue)";
+                                            basicTooltip.Show("In this mission, the more personnel you evacuate, the more ships you'll have for your fleet. Play strategically to preserve as much of your own fleet while whittling down the Bees' numbers. Good luck, Commander.", true);
                                             NextTriggers.Add(new Trigger(() =>
                                                 {
-                                                    return Input.GetKey(KeyCode.Space);
+                                                    return !basicTooltip.gameObject.activeSelf;
                                                 },
                                                 () =>
                                                 {
+                                                    Stage.Menus.TogglePausePanel();
                                                     hasSeenFleetMessages = true;
-                                                    Destroy(basicTooltip);
+                                                    Destroy(basicTooltip.gameObject);
                                                 },
                                                 "Level 2 Hiding the 3rd message")
                                             );
@@ -1149,9 +1145,6 @@ namespace Assets.Scripts.Levels
             //Stage.EnablePlayerControl();
             HasContinuousTriggers = true;
 
-            // Move the Game Speed Button
-            Stage.Menus.GameSpeedButton.GetComponent<RectTransform>().anchoredPosition = new Vector2(-125, -15);
-
             // Prevent the Hivemind from giving commands
             Stage.ActivateHiveMind = false;
 
@@ -1180,8 +1173,10 @@ namespace Assets.Scripts.Levels
 
             AddReinforcementSquads(new List<SavedSquad>() { ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.CarpenterBee, 1), ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 2, true, true) }, miningAsteroids[4].transform.localPosition, Vector2.zero);
 
+
+            Stage.Menus.TogglePausePanel();
             // Start the dialogue
-            _dialogueTimer.Reuse(3, () =>
+            _dialogueTimer.Reuse(1.5f, () =>
             {
                 Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Neptune_SeizeTheMeans.GetRange(2, 6));
             });
@@ -1193,23 +1188,23 @@ namespace Assets.Scripts.Levels
                 },
                 () =>
                 {
-
+                    Stage.Menus.TogglePausePanel();
                     // Enable player control and hive mind
                     Stage.EnablePlayerControl();
                     Stage.ActivateHiveMind = true;
                     SetupHivemind();
 
                     // Set the dialogue trigger
-                    NextTriggers.Add(new Trigger(() =>
-                        {
-                            return State.GetBeeShips().Any((s) => s.ShipType == ConfigData.ShipTypes.CarpenterBee && s.Health < s.MaxHealth && ((CarpenterBee)s).ShipAnimation.activeSelf);
-                        },
-                        () =>
-                        {
-                            Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Neptune_SeizeTheMeans.GetRange(8, 4));
-                        },
-                        "Level 3 Carpenter Bee Dialogue")
-                    );
+                    //NextTriggers.Add(new Trigger(() =>
+                    //    {
+                    //        return State.GetBeeShips().Any((s) => s.ShipType == ConfigData.ShipTypes.CarpenterBee && s.Health < s.MaxHealth && ((CarpenterBee)s).ShipAnimation.activeSelf);
+                    //    },
+                    //    () =>
+                    //    {
+                    //        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Neptune_SeizeTheMeans.GetRange(8, 4));
+                    //    },
+                    //    "Level 3 Carpenter Bee Dialogue")
+                    //);
 
                     // Set level end trigger
                     NextTriggers.Add(new Trigger(() =>
@@ -1270,7 +1265,8 @@ namespace Assets.Scripts.Levels
             miningAsteroids[4].transform.localPosition = new Vector2(155, -120);
 
             // Start the dialogue
-            _dialogueTimer.Reuse(3, () =>
+            Stage.Menus.TogglePausePanel();
+            _dialogueTimer.Reuse(1.5f, () =>
             {
                 Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Neptune_OfProduction[2]);
             });
@@ -1307,34 +1303,46 @@ namespace Assets.Scripts.Levels
                                 Destroy(minimapIcons[i]);
                             }
 
+
+
+
                             // Show the mining tooltips
-                            GameObject basicTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
-                            basicTooltip.SetActive(true);
-                             basicTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "To mine, first select your Factory ships, then right click on ore-rich asteroids. Once the Factory arrives, it will automatically begin collecting materials."; ;
-                            basicTooltip.GetComponent<RectTransform>().localPosition = Vector2.zero;
-                            basicTooltip.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(150, 200);
+
+                            Tooltip basicTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
+                            basicTooltip.Show("To mine, first select your Factory ships, then right click on ore-rich asteroids. Once the Factory arrives, it will automatically begin collecting materials.", true);
+                            basicTooltip.Place(Vector2.zero, new Vector2(150, 200));
 
 
-                            GameObject endMissionTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
-                            endMissionTooltip.SetActive(true);
-                            endMissionTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "You can retreat from the mission at any time. Click on the Retreat button in the top right corner and an area will appear on the left side of the map where your ships can retreat to safety. <br><br>(Hold Space to continue)";
-                            endMissionTooltip.GetComponent<RectTransform>().localPosition = new Vector2(-400, 0);
-                            endMissionTooltip.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(150, 250);
+                            Tooltip endMissionTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
+                            endMissionTooltip.Show("You can retreat from the mission at any time. Just send your ships to the green zone on the left side of the map where they can retreat to safety.", true);
+                            endMissionTooltip.Place(new Vector2(-400, 0), new Vector2(150, 200));
 
 
-                            // Show button to end mission
-                            Stage.Menus.RetreatButton.SetActive(true);
-                            Stage.Menus.RetreatButton.GetComponent<Button>().onClick.AddListener(SetRetreatForLevel4);
+                            // Green exit zone at left of the screen lights up
+                            GameObject exitBox = Instantiate(Stage.Prefabs.ExitZonePrefab, Map.transform);
+                            exitBox.transform.localPosition = new Vector2(-512, 0);
+                            exitBox.transform.localScale = new Vector2(50, 256);
+                            Zone exitZone = exitBox.GetComponent<Zone>();
+
+                            exitZone.OnShipEnter = (ship) =>
+                            {
+                                if (ship.Side == ConfigData.Configuration.UserSide)
+                                {
+                                    _lastShipRetreated = State.GetShips(ship.Side).Where((s) => s.IsMobile).Count() == 1;
+                                    ship.EndKill();
+                                }
+                            };
 
                             NextTriggers.Add(new Trigger(() =>
                                 {
-                                    return Input.GetKey(KeyCode.Space);
+                                    return !basicTooltip.gameObject.activeSelf && !endMissionTooltip.gameObject.activeSelf;
                                 },
                                 () =>
                                 {
                                     Destroy(basicTooltip);
                                     Destroy(endMissionTooltip);
 
+                                    Stage.Menus.TogglePausePanel();
                                     Stage.EnablePlayerControl();
 
                                     // Set timers for Bee waves
@@ -1693,7 +1701,8 @@ namespace Assets.Scripts.Levels
             });
 
             // Start the dialogue
-            _dialogueTimer.Reuse(3, () =>
+            Stage.Menus.TogglePausePanel();
+            _dialogueTimer.Reuse(1.5f, () =>
             {
                 Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_OnTheOffensive.GetRange(2, 4));
             });
@@ -1715,7 +1724,7 @@ namespace Assets.Scripts.Levels
                 },
                 () =>
                 {
-
+                    Stage.Menus.TogglePausePanel();
                     // Spawn the cruiser after a little bit and show dialogue. Have hornets or something attacking it
                     ScaledTimer cruiserTimer = new ScaledTimer(5f, () =>
                     {
@@ -1814,7 +1823,7 @@ namespace Assets.Scripts.Levels
             {
                 State.SelectSquads(State.GetSquadsBySide(ConfigData.Configuration.UserSide).Where((squad) => squad.IsCarrierSquad).ToList());
                 Stage.IsPlayerControlling = false;
-                GameObject basicTooltip = null;
+                Tooltip basicTooltip = null;
                 //Debug.LogError("Selected carrier squad");
                 Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.SelectedCarrierSquad);
 
@@ -1824,15 +1833,14 @@ namespace Assets.Scripts.Levels
                 },
                     () =>
                     {
-                        basicTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
-                        basicTooltip.SetActive(true);
-                        basicTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "To use the Strikers, simply right click on a target squad. The Strikers will fly towards their targets, drop their bombs, and return to the Carrier to reload. Right click anywhere else to move them and cancel the bombing run.<br><br>(Hold Space to continue)";
-                        basicTooltip.GetComponent<RectTransform>().localPosition = Vector2.zero;
-                        basicTooltip.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(150, 300);
+                        basicTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
+                        basicTooltip.Show("To use the Strikers, simply right click on a target squad. The Strikers will fly towards their targets, drop their bombs, and return to the Carrier to reload. Right click anywhere else to move them and cancel the bombing run.", true);
+                        basicTooltip.Place(Vector2.zero, new Vector2(150, 300));
+
 
                         NextTriggers.Add(new Trigger(() =>
                             {
-                                return Input.GetKey(KeyCode.Space);
+                                return !basicTooltip.gameObject.activeSelf;
                             },
                             () =>
                             {
@@ -1945,23 +1953,33 @@ namespace Assets.Scripts.Levels
                 dialogueLines.AddRange(Stage.CutsceneManager.Uranus_OnTheDefensive.GetRange(10, 2));
             }
 
-            // Show the mining tooltips
-            GameObject endMissionTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
-            endMissionTooltip.SetActive(true);
-            endMissionTooltip.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "You can retreat from the mission at any time. Click on the Retreat button in the top right corner and an area will appear on the left side of the map where your ships can retreat to safety.<br><br>(Hold Space to continue)";
-            endMissionTooltip.GetComponent<RectTransform>().localPosition = new Vector2(-400, 0);
-            endMissionTooltip.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(150, 250);
+            Stage.Menus.TogglePausePanel(); 
+
+            Tooltip endMissionTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
+            endMissionTooltip.Show("You can retreat from the mission at any time. Just send your ships to the green zone on the left side of the map where they can retreat to safety.", true);
+            endMissionTooltip.Place(new Vector2(-400, 0), new Vector2(150, 250));
 
 
-            // Show button to end mission
-            Stage.Menus.RetreatButton.SetActive(true);
-            Stage.Menus.RetreatButton.GetComponent<Button>().onClick.AddListener(SetRetreatForLevel7);
+            // Green exit zone at left of the screen lights up
+            GameObject exitBox = Instantiate(Stage.Prefabs.ExitZonePrefab, Map.transform);
+            exitBox.transform.localPosition = new Vector2(-512, 0);
+            exitBox.transform.localScale = new Vector2(50, 256);
+            Zone exitZone = exitBox.GetComponent<Zone>();
+
+            exitZone.OnShipEnter = (ship) =>
+            {
+                if (ship.Side == ConfigData.Configuration.UserSide)
+                {
+                    _lastShipRetreated = State.GetShips(ship.Side).Where((s) => s.IsMobile).Count() == 1;
+                    ship.EndKill();
+                }
+            };
 
             Stage.Menus.SetMissionStatus("Survive and mine as many minerals as you can");
 
             NextTriggers.Add(new Trigger(() =>
                 {
-                    return Input.GetKey(KeyCode.Space);
+                    return !endMissionTooltip.gameObject.activeSelf;
                 },
                 () =>
                 {
@@ -1975,7 +1993,7 @@ namespace Assets.Scripts.Levels
                         },
                         () =>
                         {
-
+                            Stage.Menus.TogglePausePanel();
                             // Set timers for Bee waves
 
                             // Wave 1 @ 2 Minutes
@@ -2319,10 +2337,14 @@ namespace Assets.Scripts.Levels
 
 
             //intial dialogue
-            Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_ANewThreat.GetRange(1, 5));
 
+            Stage.Menus.TogglePausePanel();
+            _dialogueTimer.Reuse(1.5f, () =>
+            {
+                Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_ANewThreat.GetRange(1, 5));
+            });
+            AddTimer(_dialogueTimer);
 
-            
 
             // dialogue triggers
 
@@ -2343,6 +2365,7 @@ namespace Assets.Scripts.Levels
             },
                 () =>
                 {
+                    Stage.Menus.TogglePausePanel();
                     bargeSquad.RunCommandQueue();
 
 

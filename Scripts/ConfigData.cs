@@ -1317,6 +1317,7 @@ namespace Assets.Scripts
         /// </summary>
         public static void LoadLevel()
         {
+            HasSeenPreLevelIntro = true; // [test]
             UserProgressData.GetCurrentLevelOptions(); // sets up the level options for the current level
             LevelOptions = (LevelOptions)UserProgressData.CurrentLevel.Clone(); // Sets the level options for the battle field
 
@@ -1368,7 +1369,7 @@ namespace Assets.Scripts
         {
             if (!SteamAPI.Init())
             {
-                Debug.LogError("Steam API failed to initialize!");
+                Debug.LogWarning("Steam API failed to initialize!");
                 _userId = (ulong) PlayerPrefs.GetInt("user_id");
                 if (_userId == 0)
                 {

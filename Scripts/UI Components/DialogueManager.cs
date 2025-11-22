@@ -211,10 +211,15 @@ public class DialogueManager : MonoBehaviour
 
     public void ToggleContinuePrompt(bool showOrHide)
     {
+
         if (showOrHide && Input.GetKey(KeyCode.Space))
         {
             //Debug.Log($"Space held, going to next line"); 
             DisplayNextLine();
+        }
+        else if (showOrHide && _currentLine.Type == DialogueLine.DialogueType.Disappearing)
+        {
+            DisplayNextLineWithDelay(2f);
         }
         else
         {

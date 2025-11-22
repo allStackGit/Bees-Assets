@@ -19,7 +19,7 @@ namespace Assets.Scripts.UIComponents
 {
     public class GameMenus : MonoBehaviour
     {
-        public GameObject MenuContainer, LevelEndedDialogue, SaveLevelDialogue, NoAliveShipsAlert, SquadActionBoxUI, VictoryLabel, DefeatLabel, MiniMapCloseButton, MiniMapOpenButton, MiniMapTopBorder, MiniMapLeftBorder, MiniMapCameraCollider, MiniMapOutput, HumanScore, BeeScore, ShipInfoBox, KeepGoingButton, ToggleFogOfWarButton, RestartLevelButton, ChooseNewSquadsButton, SwitchSidesButton, SaveAsLevelButton, ExitToMainMenuButton, Scoreboard, TooltipPrefab, WASDTooltip, UIOverlay, HighlightTooltipPrefab, UIHighlightTooltipPrefab, PointerArrow, PlutoCircle, Clock, Counter, RetreatButton, MineralsMinedStatus, MineralsMinedFiller, MissionStatus, PlutoShield, PlutoShieldHealthBar, GameSpeedButton;
+        public GameObject MenuContainer, LevelEndedDialogue, SaveLevelDialogue, NoAliveShipsAlert, SquadActionBoxUI, VictoryLabel, DefeatLabel, MiniMapCloseButton, MiniMapOpenButton, MiniMapTopBorder, MiniMapLeftBorder, MiniMapCameraCollider, MiniMapOutput, HumanScore, BeeScore, ShipInfoBox, KeepGoingButton, ToggleFogOfWarButton, RestartLevelButton, ChooseNewSquadsButton, SwitchSidesButton, SaveAsLevelButton, ExitToMainMenuButton, Scoreboard, TooltipPrefab, WASDTooltip, UIOverlay, HighlightTooltipPrefab, UIHighlightTooltipPrefab, PointerArrow, PlutoCircle, Clock, Counter, RetreatButton, MineralsMinedStatus, MineralsMinedFiller, MissionStatus, PlutoShield, PlutoShieldHealthBar, GameSpeedButton, PausePanel;
         public SquadActionBox ActionBox;
         public Level CurrentLevel;
         public Stage Stage;
@@ -84,6 +84,10 @@ namespace Assets.Scripts.UIComponents
         {
             MineralsMinedCount.text = $"{mined}/{max}";
             MineralsMinedFiller.transform.localScale = new Vector2(max == 0 ? 0 : ((float)mined / max) * 425, 1);
+        }
+        public void TogglePausePanel()
+        {
+            PausePanel.SetActive(!PausePanel.activeSelf);
         }
         public void OpenMenu()
         {

@@ -14,6 +14,7 @@ public class DialogueLine
     public enum DialogueType
     {
         Speaking,
+        Disappearing,
         Pause,
         Action
     }
@@ -24,6 +25,15 @@ public class DialogueLine
         PortraitB = portraits[1];
         Text = dialogueText;
         Type = DialogueType.Speaking;
+        IsUnknown = isUnknown;
+    }
+    public DialogueLine(string name, Sprite[] portraits, string dialogueText, DialogueType otherType, bool isUnknown = false)
+    {
+        SpeakerName = name;
+        PortraitA = portraits[0];
+        PortraitB = portraits[1];
+        Text = dialogueText;
+        Type = otherType;
         IsUnknown = isUnknown;
     }
     public DialogueLine(string name, Sprite[] portraits, string dialogueText, string instructionText)

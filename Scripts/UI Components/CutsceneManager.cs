@@ -362,21 +362,21 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Samuel", Portraits["Samuel"], "We aren’t receiving any human signals, but it does look like there’s fighting ahead."),
             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Let’s get in there! And fast!"),
 
-            new DialogueLine("Oviya", Portraits["Oviya"], "Commander, a survivor! "),
-            new DialogueLine("Marco", Portraits["Marco"], "They’re outnumbered, move quick."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "We’ve established comms with the ship."),
-            new DialogueLine("Fritz", Portraits["Fritz"], "Ahahahaha! Die! See the light and DIE!"),
-            new DialogueLine("Samuel", Portraits["Samuel"], "They’re… colorful."),
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "I like them!"),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Commander, a survivor! ", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Marco", Portraits["Marco"], "They’re outnumbered, move quick.", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Samuel", Portraits["Samuel"], "We’ve established comms with the ship.", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Fritz", Portraits["Fritz"], "Ahahahaha! Die! See the light and DIE!", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Samuel", Portraits["Samuel"], "They’re… colorful.", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "I like them!", DialogueLine.DialogueType.Disappearing),
 
-            new DialogueLine("Oviya", Portraits["Oviya"], "Commander! This is a bee ship we haven’t seen before. Be careful; we don’t know what it can do."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Commander! This is a bee ship we haven’t seen before. Be careful; we don’t know what it can do.", DialogueLine.DialogueType.Disappearing),
 
-            new DialogueLine("Samuel", Portraits["Samuel"], "We just took massive damage from the unknown ship, commander!"),
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Find a way to take it out!"),
-            new DialogueLine("Joey", Portraits["Joey"], "That’s not gonna be so easy. Its weapon range is huge from what I can tell."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "We just took massive damage from the unknown ship, commander!", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Find a way to take it out!", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Joey", Portraits["Joey"], "That’s not gonna be so easy. Its weapon range is huge from what I can tell.", DialogueLine.DialogueType.Disappearing),
 
-            new DialogueLine("Samuel", Portraits["Samuel"], "Good work, commander. That was scary."),
-            new DialogueLine("Marco", Portraits["Marco"], "I’m sure there will be more later…"),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Good work, commander. That was scary.", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Marco", Portraits["Marco"], "I’m sure there will be more later…", DialogueLine.DialogueType.Disappearing),
 
             new DialogueLine("Samuel", Portraits["Samuel"], "We did it, commander!"),
             new DialogueLine("Oviya", Portraits["Oviya"], "Scouts are on the way to see what can be salvaged from the surface."),
@@ -409,14 +409,14 @@ public class CutsceneManager : MonoBehaviour
         {
             new DialogueLine("Samuel", Portraits["Samuel"], "Our success has bought us some time to collect resources around Uranus. There will likely be reinforcements called on from the bees we just fought, though. Take care."),
 
-            new DialogueLine("Oviya", Portraits["Oviya"], "Reinforcements from the remnants of the blockade are incoming."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Reinforcements from the remnants of the blockade are incoming.", DialogueLine.DialogueType.Disappearing),
 
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "More bees! Let’s give ‘em hell!"),
-            new DialogueLine("Marco", Portraits["Marco"], "Even more ships. Commander, I trust you’ll know when to exit."),
-            new DialogueLine("Joey", Portraits["Joey"], "More bees? What in tarnation? Where are they coming from? "),
-            new DialogueLine("Oviya", Portraits["Oviya"], "We've found more bee ships, inbound to our location."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Another wave of ships!"),
-            new DialogueLine("Wesley", Portraits["Wesley"], "More of those… bees? Don’t risk our profit margins. You’ll receive a bill from Jensen if you lose any Factories."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "More bees! Let’s give ‘em hell!", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Marco", Portraits["Marco"], "Even more ships. Commander, I trust you’ll know when to exit.", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Joey", Portraits["Joey"], "More bees? What in tarnation? Where are they coming from? ", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Oviya", Portraits["Oviya"], "We've found more bee ships, inbound to our location.", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Another wave of ships!", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Wesley", Portraits["Wesley"], "More of those… bees? Don’t risk our profit margins. You’ll receive a bill from Jensen if you lose any Factories.", DialogueLine.DialogueType.Disappearing),
 
             new DialogueLine("Oviya", Portraits["Oviya"], "We're seeing more reinforcements from a different direction, now. It could be their main fleet. Things are going to get tough from here."),
 
@@ -444,12 +444,12 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Samuel", Portraits["Samuel"], "Hello? Identify yourself."),
             new DialogueLine("Marge", Portraits["Marge"], "Oh, thank the stars! Are you UF? Come help us, quick! We’re surrounded over here!"),
 
-            new DialogueLine("Marge", Portraits["Marge"], "No!!! They’re gonna pay for that!"),
+            new DialogueLine("Marge", Portraits["Marge"], "No!!! They’re gonna pay for that!", DialogueLine.DialogueType.Disappearing),
 
-            new DialogueLine("Marge", Portraits["Marge"], "There’s more coming! "),
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Those are Yellow Jackets! Don’t let them hit those Barges!"),
+            new DialogueLine("Marge", Portraits["Marge"], "There’s more coming! ", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Those are Yellow Jackets! Don’t let them hit those Barges!", DialogueLine.DialogueType.Disappearing),
 
-            new DialogueLine("Marge", Portraits["Marge"], "Just cuz I don’t have guns don't mean I can’t fight! Take this!"),
+            new DialogueLine("Marge", Portraits["Marge"], "Just cuz I don’t have guns don't mean I can’t fight! Take this!", DialogueLine.DialogueType.Disappearing),
 
             new DialogueLine("Marge", Portraits["Marge"], "I thought we were goners. I can’t thank you enough for risking yourselves."),
             new DialogueLine("Marco", Portraits["Marco"], "We're getting pretty used to these rescue missions, don’t sweat it."),
