@@ -90,6 +90,7 @@ namespace Assets.Scripts.Levels
             bool gunshipHasReachedCenterPosition = false;
             HasContinuousTriggers = true;
             ScaledTimer _beesPursuitTimer = new ScaledTimer();
+            ScaledTimer _endLevelTimer = new ScaledTimer();
             Zone exitZone = null;
             Tooltip moveScoutTooltip = null;
 
@@ -441,6 +442,14 @@ namespace Assets.Scripts.Levels
                                                     Stage.Menus.TogglePausePanel();
                                                     //Stage.Menus.SetMissionStatus("Keep a look out for other ships");
                                                     Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Anomaly.GetRange(23, 2));
+
+                                                    List<Squad> beeSquads = State.GetSquadsBySide(ConfigData.Configuration.AISide);
+                                                    for (int i = 1; i < beeSquads.Count; i++)
+                                                    {
+
+                                                        beeSquads[i].SetStartingPosition(beeSquads[i].GetPosition() + new Vector2(((i % 2 == 0 ? 1 : -1) * 25 * i), 0));
+                                                    }
+
                                                     //State.GetSquadsBySide(ConfigData.Configuration.AISide).ForEach((squad) =>
                                                     //{
                                                     //    squad.SetSquadCeaseFire(true); // Cease fire for all bee squads
@@ -475,59 +484,70 @@ namespace Assets.Scripts.Levels
                                                             Stage.Menus.SetMissionStatus("Fly down to safety!");
                                                             Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Anomaly.GetRange(25, 2)); // Gunship Sees bees
 
-                                                            Tooltip flydownTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
-                                                            flydownTooltip.Show("Fly down to safety!", true);
+                                                            //Tooltip flydownTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
+                                                            //flydownTooltip.Show("Fly down to safety!", true);
+
+                                                            Stage.Camera.transform.position = new Vector3(StartingPositions[ConfigData.Configuration.AISide - 1].x, StartingPositions[ConfigData.Configuration.AISide - 1].y, Stage.Camera.transform.position.z);
+                                                            Stage.InputManager.MaintainScrollBoundary();
+
+                                                            Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Anomaly.GetRange(27, 5), true);
+
+                                                            _endLevelTimer.Reuse(2, () =>
+                                                            {
+                                                                CloseLevel();
+                                                            });
+                                                            AddTimer(_endLevelTimer);   
 
                                                             // Wait a few seconds and then the bees stop ceasefire, and pursue the gunship with aggressive command
-                                                            _beesPursuitTimer.Reuse(10, () =>
-                                                                {
-                                                                    State.GetSquadsBySide(ConfigData.Configuration.AISide).ForEach((squad) =>
-                                                                    {
-                                                                        squad.SetSquadCeaseFire(false); // Turn on fire for all bee squads
+                                                            //_beesPursuitTimer.Reuse(10, () =>
+                                                            //    {
+                                                            //        State.GetSquadsBySide(ConfigData.Configuration.AISide).ForEach((squad) =>
+                                                            //        {
+                                                            //            squad.SetSquadCeaseFire(false); // Turn on fire for all bee squads
 
-                                                                        squad.CommandQueueEmptyAction = () => { };
+                                                            //            squad.CommandQueueEmptyAction = () => { };
 
-                                                                        squad.GetCommand().SetFinalize("Time to attack gunship"); // End whatever they were doing before
-                                                                        squad.CommandQueue.Clear(); // Clear the command queue
-                                                                        Aggressive aggressive = (Aggressive)Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Aggressive);
-                                                                        aggressive.Setup(squad, false, firstGunship.Squad, null); // Bees pursuing Gunship
-                                                                        squad.CommandQueue.Enqueue(aggressive);
+                                                            //            squad.GetCommand().SetFinalize("Time to attack gunship"); // End whatever they were doing before
+                                                            //            squad.CommandQueue.Clear(); // Clear the command queue
+                                                            //            Aggressive aggressive = (Aggressive)Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Aggressive);
+                                                            //            aggressive.Setup(squad, false, firstGunship.Squad, null); // Bees pursuing Gunship
+                                                            //            squad.CommandQueue.Enqueue(aggressive);
 
-                                                                        squad.RunCommandQueue();
-                                                                    });
+                                                            //            squad.RunCommandQueue();
+                                                            //        });
 
-                                                                    Destroy(flydownTooltip);
-                                                                }
-                                                            );
-                                                            AddTimer(_beesPursuitTimer);
+                                                            //        Destroy(flydownTooltip);
+                                                            //    }
+                                                            //);
+                                                            //AddTimer(_beesPursuitTimer);
 
 
                                                             // Green exit zone at bottom of the screen lights up
-                                                            GameObject exitBox = Instantiate(Stage.Prefabs.ExitZonePrefab, Map.transform);
-                                                            exitZone = exitBox.GetComponent<Zone>();
+                                                            //GameObject exitBox = Instantiate(Stage.Prefabs.ExitZonePrefab, Map.transform);
+                                                            //exitZone = exitBox.GetComponent<Zone>();
 
-                                                            exitZone.OnShipEnter = (ship) =>
-                                                            {
-                                                                if (ship == firstGunship)
-                                                                {
-                                                                    firstGunship.FogOfWarVision.Kill(0, true); // Remove fog of war vision immediately
-                                                                    firstGunship.EndKill();
-                                                                }
-                                                            };
+                                                            //exitZone.OnShipEnter = (ship) =>
+                                                            //{
+                                                            //    if (ship == firstGunship)
+                                                            //    {
+                                                            //        firstGunship.FogOfWarVision.Kill(0, true); // Remove fog of war vision immediately
+                                                            //        firstGunship.EndKill();
+                                                            //    }
+                                                            //};
 
 
-                                                            NextTriggers.Add(new Trigger(() =>
-                                                                {
-                                                                    return firstGunship.IsDead; // Once gunship dies or retreats
-                                                                },
-                                                                () =>
-                                                                {
-                                                                    CloseLevel();
-                                                                    Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Anomaly.GetRange(27, 5), true); // Play the rest of the dialoguew
+                                                            //NextTriggers.Add(new Trigger(() =>
+                                                            //    {
+                                                            //        return firstGunship.IsDead; // Once gunship dies or retreats
+                                                            //    },
+                                                            //    () =>
+                                                            //    {
+                                                            //        CloseLevel();
+                                                            //        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Anomaly.GetRange(27, 5), true); // Play the rest of the dialoguew
 
-                                                                },
-                                                                "Level 0 Hiding map after player dies or leaves")
-                                                            );
+                                                            //    },
+                                                            //    "Level 0 Hiding map after player dies or leaves")
+                                                            //);
 
                                                         },
                                                         "Level 0 Showing dialogue after Bees approach")
@@ -2755,6 +2775,7 @@ namespace Assets.Scripts.Levels
 
             // Add carriers to the game
             ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Carrier, 1);
+            SavedSquad carrier = CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Carrier, 1);
 
             ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Carrier);
 

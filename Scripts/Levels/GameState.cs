@@ -450,11 +450,13 @@ namespace Assets.Scripts.Levels
 
             if (SelectedSquads.Count == 0)
             {
+                Debug.Log("No more selected squads");
                 HasSelectedSquads = false;
                 if (Level.Stage.Menus.HasSquadActionBox)
                 {
                     Stage.Menus.ActionBox.Hide();
                 }
+
             }
             else if (Level.Stage.Menus.HasSquadActionBox)
             {

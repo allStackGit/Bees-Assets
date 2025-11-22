@@ -57,6 +57,8 @@ namespace Assets.Scripts.UIComponents
         }
         public void Hide()
         {
+            //Debug.Log("Deactivating Squad Action Box");
+            //Debug.Log(gameObject);
             gameObject.SetActive(false);
         }
         public void SetupForSquad()
@@ -688,15 +690,17 @@ namespace Assets.Scripts.UIComponents
             {
                 Level.State.GetSelectedSquads().ForEach((squad) =>
                 {
+                    Barge barge = null;
                     foreach (Ship ship in squad.GetShips().Where((s) => s.ShipType == ConfigData.ShipTypes.Barge))
                     {
+                        barge = ((Barge)ship);
                         if (!ship.CannotChangeMovementOrders)
                         {
-                            StartCoroutine(((Barge)ship).ChargeForward());
+                            barge.StartCoroutine(barge.ChargeForward());
                         }
                         else
                         {
-                            ((Barge)ship).WaitingForNewCharge = true;
+                            barge.WaitingForNewCharge = true;
                         }
                     }
                 });

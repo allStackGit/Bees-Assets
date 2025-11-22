@@ -206,6 +206,7 @@ namespace Assets.Scripts.Entities.Ships
 
                 if (!IsDead)
                 {
+                    Debug.Log($"{Name} is charging");
                     if (!Stage.IsTraining)
                     {
                         BargeLoadingChargeAnimation.SetActive(false);

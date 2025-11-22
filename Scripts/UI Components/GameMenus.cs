@@ -27,6 +27,7 @@ namespace Assets.Scripts.UIComponents
         public TMP_Text ShipInfoBoxTitle, ShipInfoBoxStats, TryNewSquadsButtonText, MineralsMinedCount, MissionStatusText, GameSpeedButtonText;
         public TMP_InputField LevelNameInput, SupplyCapacityInput;
         public Codex Codex;
+        public Controls Controls;
         public SettingsMenu Settings;
         public bool IsMiniMapOpen;
 
