@@ -583,6 +583,8 @@ namespace Assets.Scripts.Levels
             Debug.Log("Setting triggers for level 1");
             HasContinuousTriggers = true;
             Tooltip basicTooltip = null;
+            Tooltip selectMultiple = null;
+            Tooltip rangeTooltip = null;
             GameObject highlightTooltipObject = null;
 
 
@@ -705,17 +707,26 @@ namespace Assets.Scripts.Levels
                                             basicTooltip.Show("You can also select squads with the number hotkeys on your keyboard. These are displayed at the top of the screen.", true);
                                             basicTooltip.Place(new Vector2(-550, 300), new Vector2(150, 150));
 
-                                            GameObject multiSelectMessage = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
-                                            multiSelectMessage.SetActive(true);
-                                            multiSelectMessage.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "If you need to select multiple squads, click and drag the mouse over the squads.";
-                                            multiSelectMessage.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(150, 100);
-                                            multiSelectMessage.transform.GetComponent<RectTransform>().localPosition = new Vector2(-200, 0);
+                                            selectMultiple = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
+                                            selectMultiple.Show("If you need to select multiple squads, click and drag the mouse over the squads.", true);
+                                            selectMultiple.Place(new Vector2(-200, 0) ,new Vector2(150, 100));
 
-                                            GameObject rangeMessage = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
-                                            rangeMessage.SetActive(true);
-                                            rangeMessage.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "Your ships with weapons will automatically shoot at any enemies in range. You can view your selected ships’ range at any time by holding <b>R</b>.You can also manually fire towards your cursor with any selected ships by pressing <b>F</b>";
-                                            rangeMessage.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(150, 200);
-                                            rangeMessage.transform.GetComponent<RectTransform>().localPosition = new Vector2(200, 0);
+                                            //GameObject multiSelectMessage = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
+                                            //multiSelectMessage.SetActive(true);
+                                            //multiSelectMessage.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "If you need to select multiple squads, click and drag the mouse over the squads.";
+                                            //multiSelectMessage.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(150, 100);
+                                            //multiSelectMessage.transform.GetComponent<RectTransform>().localPosition = new Vector2(-200, 0);
+
+
+                                            rangeTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
+                                            rangeTooltip.Show("Your ships with weapons will automatically shoot at any enemies in range. You can view your selected ships’ range at any time by holding <b>R</b>.You can also manually fire towards your cursor with any selected ships by pressing <b>F</b>", true);
+                                            rangeTooltip.Place(new Vector2(200, 0), new Vector2(150, 280));
+
+                                            //GameObject rangeMessage = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
+                                            //rangeMessage.SetActive(true);
+                                            //rangeMessage.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "Your ships with weapons will automatically shoot at any enemies in range. You can view your selected ships’ range at any time by holding <b>R</b>.You can also manually fire towards your cursor with any selected ships by pressing <b>F</b>";
+                                            //rangeMessage.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(150, 250);
+                                            //rangeMessage.transform.GetComponent<RectTransform>().localPosition = new Vector2(200, 0);
 
                                             frigateSquad.CanAcceptUserInput = true;
                                             gunshipSquad.CanAcceptUserInput = true;
@@ -729,9 +740,13 @@ namespace Assets.Scripts.Levels
                                                 },
                                                 () =>
                                                 {
-                                                    Destroy(squadNumberHighlight);
-                                                    Destroy(multiSelectMessage);
-                                                    Destroy(rangeMessage);
+                                                    basicTooltip.Hide();
+                                                    selectMultiple.Hide();
+                                                    rangeTooltip.Hide();
+
+                                                    //Destroy(squadNumberHighlight);
+                                                    //Destroy(multiSelectMessage);
+                                                    //Destroy(rangeMessage);
 
                                                     Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.PlutoLines_Reinforcements[6]);
 
@@ -2496,7 +2511,9 @@ namespace Assets.Scripts.Levels
             // Add new human ships to the game
             ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Gunship, 1); 
             ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 4); 
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Dreadnought, 2); 
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Dreadnought, 2);
+
+            State.PlayerNewShipsReceived += 7;
 
 
             // Add new ships to the human's available ships
@@ -2539,7 +2556,7 @@ namespace Assets.Scripts.Levels
 
             State.GameOver = true;
             Debug.Log("Did Standard level complete, showing dialogue");
-            Stage.Menus.ShowLevelContinueDialogue();
+            Stage.Menus.ShowLevelSummary();
 
         }
         public void Level1Ending()
@@ -2550,7 +2567,9 @@ namespace Assets.Scripts.Levels
             ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Scout, 10);
             ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Gunship, 2); 
             ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 1); 
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Dreadnought, 1); 
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Dreadnought, 1);
+
+            State.PlayerNewShipsReceived += 15;
 
 
             // Add Hornet and Wasp to codex and add leafcutter and yellow jacket to visibility
@@ -2573,7 +2592,7 @@ namespace Assets.Scripts.Levels
 
             State.GameOver = true;
             Debug.Log("Did Standard level complete, showing dialogue");
-            Stage.Menus.ShowLevelContinueDialogue();
+            Stage.Menus.ShowLevelSummary();
 
         }
         public void Level2Ending()
@@ -2587,7 +2606,8 @@ namespace Assets.Scripts.Levels
                     ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Scout, 5); 
                     ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Gunship, 8); 
                     ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 4);
-                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Dreadnought, 2); 
+                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Dreadnought, 2);
+                    State.PlayerNewShipsReceived += 19;
                     break;
                 case > 50:
                     // Player gets 5 Scouts, 6 Gunships, 2 Frigates, and 2 Dreadnoughts
@@ -2595,22 +2615,26 @@ namespace Assets.Scripts.Levels
                     ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Gunship, 6); 
                     ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 2); 
                     ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Dreadnought, 2);
+                    State.PlayerNewShipsReceived += 15;
                     break;
                 case > 35:
                     // Player gets 5 Scouts, 4 Gunships, 2 Frigates
                     ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Scout, 5); 
                     ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Gunship, 4); 
-                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 2); 
+                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 2);
+                    State.PlayerNewShipsReceived += 11;
                     break;
                 case > 15:
                     // Player gets 5 Scouts, 4 Gunships
                     ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Scout, 5); 
-                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Gunship, 4); 
+                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Gunship, 4);
+                    State.PlayerNewShipsReceived += 9;
                     break;
                 default:
                     // Player Gets 5 Scouts, 1 Gunship
                     ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Scout, 5); 
-                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Gunship, 1); 
+                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Gunship, 1);
+                    State.PlayerNewShipsReceived += 6;
                     break;
             }
             ConfigData.HasSeenPreLevelIntro = false;
@@ -2658,7 +2682,7 @@ namespace Assets.Scripts.Levels
         public void Level2EndingDialogue()
         {
             State.GameOver = true;
-            Stage.Menus.ShowLevelContinueDialogue();
+            Stage.Menus.ShowLevelSummary();
         }
         public void Level3Ending()
         {
@@ -2671,6 +2695,8 @@ namespace Assets.Scripts.Levels
                 ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Factory);
                 ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Factory);
                 ConfigData.UserProgressData.UnlockedCampaignShips.Add(ConfigData.ShipTypes.Factory);
+
+                State.PlayerNewShipsReceived += 5;
             }
             else
             {
@@ -2721,7 +2747,7 @@ namespace Assets.Scripts.Levels
 
 
             State.GameOver = true;
-            Stage.Menus.ShowLevelContinueDialogue();
+            Stage.Menus.ShowLevelSummary();
         }
         public void Level4Ending()
         {
@@ -2738,6 +2764,7 @@ namespace Assets.Scripts.Levels
                     Debug.Log($"{_save_fleetship.Name} has mined {_save_fleetship.MineralsMined} minerals in its lifetime. It has mined {_save_fleetship.MineralsMinedThisLevel} minerals this level");
                     _save_fleetship.MineralsMined += _save_fleetship.MineralsMinedThisLevel;
                     ConfigData.UserProgressData.MinedTSV += _save_fleetship.MineralsMinedThisLevel;
+                    State.PlayerMineralsReceived += _save_fleetship.MineralsMinedThisLevel;
                     _save_fleetship.MineralsMinedThisLevel = 0;
 
                 });
@@ -2753,7 +2780,7 @@ namespace Assets.Scripts.Levels
 
 
             State.GameOver = true;
-            Stage.Menus.ShowLevelContinueDialogue();
+            Stage.Menus.ShowLevelSummary();
         }
         public void Level5Ending()
         {
@@ -2776,6 +2803,7 @@ namespace Assets.Scripts.Levels
             // Add carriers to the game
             ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Carrier, 1);
             SavedSquad carrier = CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Carrier, 1);
+            State.PlayerNewShipsReceived += 1;
 
             ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Carrier);
 
@@ -2798,7 +2826,7 @@ namespace Assets.Scripts.Levels
 
 
             State.GameOver = true;
-            Stage.Menus.ShowLevelContinueDialogue();
+            Stage.Menus.ShowLevelSummary();
         }
         public void Level6Ending()
         {
@@ -2829,7 +2857,7 @@ namespace Assets.Scripts.Levels
 
 
             State.GameOver = true;
-            Stage.Menus.ShowLevelContinueDialogue();
+            Stage.Menus.ShowLevelSummary();
         }
         public void Level7Ending()
         {
@@ -2846,6 +2874,7 @@ namespace Assets.Scripts.Levels
                     Debug.Log($"{_save_fleetship.Name} has mined {_save_fleetship.MineralsMined} minerals in its lifetime. It has mined {_save_fleetship.MineralsMinedThisLevel} minerals this level");
                     _save_fleetship.MineralsMined += _save_fleetship.MineralsMinedThisLevel;
                     ConfigData.UserProgressData.MinedTSV += _save_fleetship.MineralsMinedThisLevel;
+                    State.PlayerMineralsReceived += _save_fleetship.MineralsMinedThisLevel;
                     _save_fleetship.MineralsMinedThisLevel = 0;
 
                 });
@@ -2861,7 +2890,7 @@ namespace Assets.Scripts.Levels
 
 
             State.GameOver = true;
-            Stage.Menus.ShowLevelContinueDialogue();
+            Stage.Menus.ShowLevelSummary();
         }
         public void Level8Ending()
         {
@@ -2913,7 +2942,7 @@ namespace Assets.Scripts.Levels
 
 
             State.GameOver = true;
-            Stage.Menus.ShowLevelContinueDialogue();
+            Stage.Menus.ShowLevelSummary();
         }
 
         public void AddReinforcementsToHivemindCommandQueue()

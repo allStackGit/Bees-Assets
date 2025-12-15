@@ -19,12 +19,12 @@ namespace Assets.Scripts.UIComponents
 {
     public class GameMenus : MonoBehaviour
     {
-        public GameObject MenuContainer, LevelEndedDialogue, SaveLevelDialogue, NoAliveShipsAlert, SquadActionBoxUI, VictoryLabel, DefeatLabel, MiniMapCloseButton, MiniMapOpenButton, MiniMapTopBorder, MiniMapLeftBorder, MiniMapCameraCollider, MiniMapOutput, HumanScore, BeeScore, ShipInfoBox, KeepGoingButton, ToggleFogOfWarButton, RestartLevelButton, ChooseNewSquadsButton, SwitchSidesButton, SaveAsLevelButton, ExitToMainMenuButton, Scoreboard, TooltipPrefab, WASDTooltip, UIOverlay, HighlightTooltipPrefab, UIHighlightTooltipPrefab, PointerArrow, PlutoCircle, Clock, Counter, RetreatButton, MineralsMinedStatus, MineralsMinedFiller, MissionStatus, PlutoShield, PlutoShieldHealthBar, GameSpeedButton, PausePanel;
+        public GameObject MenuContainer, LevelEndedDialogue, SaveLevelDialogue, NoAliveShipsAlert, SquadActionBoxUI, VictoryLabel, DefeatLabel, MiniMapCloseButton, MiniMapOpenButton, MiniMapTopBorder, MiniMapLeftBorder, MiniMapCameraCollider, MiniMapOutput, HumanScore, BeeScore, ShipInfoBox, KeepGoingButton, ToggleFogOfWarButton, RestartLevelButton, ChooseNewSquadsButton, SwitchSidesButton, SaveAsLevelButton, ExitToMainMenuButton, Scoreboard, TooltipPrefab, WASDTooltip, UIOverlay, HighlightTooltipPrefab, UIHighlightTooltipPrefab, PointerArrow, PlutoCircle, Clock, Counter, RetreatButton, MineralsMinedStatus, MineralsMinedFiller, MissionStatus, PlutoShield, PlutoShieldHealthBar, GameSpeedButton, PausePanel, SummaryPanel;
         public SquadActionBox ActionBox;
         public Level CurrentLevel;
         public Stage Stage;
         public Dialogue ExitConfirmationDialogue, CampaignLevelEndedDialogue, CampaignCompletedDialogue, ConfirmSurrenderDialogue;
-        public TMP_Text ShipInfoBoxTitle, ShipInfoBoxStats, TryNewSquadsButtonText, MineralsMinedCount, MissionStatusText, GameSpeedButtonText;
+        public TMP_Text ShipInfoBoxTitle, ShipInfoBoxStats, TryNewSquadsButtonText, MineralsMinedCount, MissionStatusText, GameSpeedButtonText, ShipsDestroyedText, ShipsReturnedText, ShipsLostText, NewShipsReceivedText, ScoreText, MineralsReceivedText;
         public TMP_InputField LevelNameInput, SupplyCapacityInput;
         public Codex Codex;
         public Controls Controls;
@@ -77,6 +77,11 @@ namespace Assets.Scripts.UIComponents
 
             ConfirmSurrenderDialogue = new Dialogue(Stage.DialoguePrefab, "Are you sure?", "This will destroy all your ships on this level permanently and end the level.", new List<string>() { ConfigData.Configuration.Yes, ConfigData.Configuration.No }, new List<UnityAction>() { Surrender });
         }
+        public void HideMissionSummary()
+        {
+            SummaryPanel.SetActive(false);
+            ShowLevelEndedDialogue();
+        }
         public void SetMissionStatus(string status)
         {
             MissionStatusText.text = status;
@@ -110,7 +115,17 @@ namespace Assets.Scripts.UIComponents
             }
 
         }
-        public void ShowLevelContinueDialogue()
+        public void ShowLevelSummary()
+        {
+            SummaryPanel.SetActive(true);
+            ShipsDestroyedText.text = $"Ships Destroyed: {Stage.PrimaryLevel.State.EnemyShipsDestroyedByPlayer}";
+            ShipsReturnedText.text = $"Ships Returned: {Stage.PrimaryLevel.State.PlayerShipsReturned}";
+            ShipsLostText.text = $"Ships Lost: {Stage.PrimaryLevel.State.PlayerShipsLost}";
+            NewShipsReceivedText.text = $"New Ships Received: {Stage.PrimaryLevel.State.PlayerNewShipsReceived}";
+            ScoreText.text = $"Score: {Stage.PrimaryLevel.State.PlayerScore}";
+            MineralsReceivedText.text = $"Minerals Received: {Stage.PrimaryLevel.State.PlayerMineralsReceived}";
+        }
+        public void ShowLevelEndedDialogue()
         {
             Stage.TimeScale = 1f;
             Time.timeScale = Stage.TimeScale;
@@ -124,6 +139,7 @@ namespace Assets.Scripts.UIComponents
                 CampaignLevelEndedDialogue.Show();
             }
         }
+
         public void Exit()
         {
             Debug.Log("Exiting game");

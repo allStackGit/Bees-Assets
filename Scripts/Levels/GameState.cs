@@ -62,7 +62,17 @@ namespace Assets.Scripts.Levels
         public bool HasWarpGates, HasSelectedSquads, HasBeehives;
         public List<ShipDamageStatus>[] ShipDamageStatuses = new List<ShipDamageStatus>[] {new List<ShipDamageStatus>(), new List<ShipDamageStatus>() };
         public Dictionary<long, int> OutcomeIdToPastCommandIndex = new Dictionary<long, int>();
+        /// <summary>
+        /// Used for scoreboard like meter that shows  x minerals mined  / y available minerals
+        /// </summary>
         public int PlayerMineralsMined;
+
+        public int EnemyShipsDestroyedByPlayer = 0;
+        public int PlayerShipsReturned = 0;
+        public int PlayerShipsLost = 0;
+        public int PlayerNewShipsReceived = 0;
+        public int PlayerScore = 0;
+        public int PlayerMineralsReceived = 0;
         //public bool[] HasMiningShips = new bool[2];
 
         public List<string> __Squads, __SquadsAwaitingCommands, __PastCommands, __Obstacles;
@@ -111,6 +121,13 @@ namespace Assets.Scripts.Levels
             Projectiles.Clear();
             TargetingSquadMarkers.Clear();
             PlayerMineralsMined = 0;
+            EnemyShipsDestroyedByPlayer = 0;
+            PlayerShipsReturned = 0;
+            PlayerShipsLost = 0;
+            PlayerNewShipsReceived = 0;
+            PlayerScore = 0;
+            PlayerMineralsReceived = 0;
+
 
         }
 

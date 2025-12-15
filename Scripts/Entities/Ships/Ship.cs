@@ -1732,6 +1732,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 //Debug.Log($"saved Squad {shooter.Squad.SavedSquad}");
                 //Debug.Log($"stats {shooter.Squad.SavedSquad.Stats}");
                 attackerSavedSquad.Stats.DamageDone += tsvLoss;
+                if (attacker.Side == ConfigData.Configuration.UserSide)
+                {
+                    attacker.Level.State.PlayerScore += tsvLoss;
+                }
             }
             else
             {
@@ -1742,9 +1746,15 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                     attacker.KillerFleetShip.DamageDone += tsvLoss;
                     attacker.KillerSavedSquad.Stats.DamageDone += tsvLoss;
 
+
                     if (attacker.Killer != null && attacker.Killer.Squad.HasCommand)
                     {
                         attacker.Killer.Squad.GetCommand().Tsv += tsvLoss; // add the TSV to the shooter
+
+                        if (attacker.Killer.Side == ConfigData.Configuration.UserSide)
+                        {
+                            attacker.Level.State.PlayerScore += tsvLoss;
+                        }
                     }
                 }
                
@@ -1838,6 +1848,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 weapon.ShipsWithinRange.Remove(victim.Id);
                 weapon.HasCachedChanged = true;
             });
+            
         }
         //public bool IsLastShipOnSide()
         //{
@@ -1862,8 +1873,17 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                         if (killer != null)
                         {
                             killer.KilledShip(this);
+                            if (killer.Side == ConfigData.Configuration.UserSide)
+                            {
+                                Level.State.EnemyShipsDestroyedByPlayer++;
+                            }
                         }
                         LogKillerStats(killerFleetShip, killerSavedSquad);
+                    }
+
+                    if (Side == ConfigData.Configuration.UserSide)
+                    {
+                        Level.State.PlayerShipsLost++;
                     }
 
 
@@ -1888,9 +1908,16 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                     Squad.HasMovedBox = false;
                     Squad.MoveSquadBox();
                 }
+                else
+                {
+                    if (Side == ConfigData.Configuration.UserSide)
+                    {
+                        Level.State.PlayerShipsReturned++;
+                    }
+                }
 
-                //Debug.Log($"Squad {Squad.Name} ship count before {Name} has been removed (for dying): {Squad.GetShips().Count}");
-                Level.State.RemoveShip(this);
+                    //Debug.Log($"Squad {Squad.Name} ship count before {Name} has been removed (for dying): {Squad.GetShips().Count}");
+                    Level.State.RemoveShip(this);
                 Squad.RemoveShip(this);
                 //Debug.Log($"Squad {Squad.Name} ship count after {Name} has been removed (for dying): {Squad.GetShips().Count}");
 
