@@ -60,9 +60,9 @@ namespace Assets.Scripts.Scenes
 
             SquadActionBox, DeadShipBox, DropZone, DropBox, DragStatusBox, ShipInfoBox, ShipInfoBoxTitle, ShipInfoBoxDetails, ShipInfoBoxIcon, SquadInfoBox,
             SquadInfoBoxTitle, SquadInfoBoxDetails, SquadInfoBoxIcon, ShipStatsBox, ShipStatsBoxDetails, SquadNameInput, ShipNameInput,
-            SquadShipCount, SquadShipCountLabel, SquadColorLabel, SquadColorPickerButton, NextButton, StartButton, FogOfWarLabel, FogOfWarDropdown, MiningLabel,
+            SquadShipCount, SquadShipCountLabel, SquadColorLabel, SquadColorPickerButton, NextButton, StartButton, TestButton, FogOfWarLabel, FogOfWarDropdown, MiningLabel,
             MiningDropdown, EnemyReinforcementsLabel, EnemyReinforcementsDropdown, MapLabel, MapDropdown, AsteroidsLabel, AsteroidsDropdown, ObstaclesLabel, ObstaclesDropdown,
-            OpposingForceLabel, OpposingForcePresetDropdown, ChosenEnemyShipTypeLabel, ChosenEnemyShipTypesDropdown, LevelTitleContainer, LevelDetailsContainer, ChooseLevelLabel, BuildButton, BuildPopup, Minerals, BuildCost, BuildButtonHighlight, BuildButtonMessage;
+            OpposingForceLabel, OpposingForcePresetDropdown, ChosenEnemyShipTypeLabel, ChosenEnemyShipTypesDropdown, LevelTitleContainer, LevelDetailsContainer, ChooseLevelLabel, BuildButton, BuildPopup, Minerals, BuildCost, BuildButtonHighlight, BuildButtonMessage, StartText, TestText;
 
         public Dialogue DeleteSquadConfirmation, ClearSquadConfirmation, LoadSquadConfirmation, ChooseSquadConfirmation, UnchooseSquadConfirmation, OverCapacityAlert, NoChosenSquadsAlert,
             ChoosingUnsavedSquadAlert, ChoosingDeadSquadAlert, GoBackConfirmation, SquadSavingStatus, CannotDuplicateSquad;
@@ -358,7 +358,27 @@ namespace Assets.Scripts.Scenes
                     ShowBuildButtonMessage();
                 }
             }
+
+            TestButton.SetActive(true);
         }
+
+        public void ShowStartText()
+        {
+            StartText.SetActive(true);
+        }
+        public void HideStartText()
+        {
+            StartText.SetActive(false);
+        }
+        public void ShowTestText()
+        {
+            TestText.SetActive(true);
+        }
+        public void HideTestText()
+        {
+            TestText.SetActive(false);
+        }
+
         private void SetupForChallengeMode()
         {
             //Debug.Log($"Setting up for campaign");
@@ -1970,6 +1990,14 @@ namespace Assets.Scripts.Scenes
 
 
         }
+        bool _isTestingSquads = false;
+        public void StartTest()
+        {
+            Debug.Log("Starting test level");
+            _isTestingSquads = true;
+
+            ProcessStartingLevel();
+        }
         private void ProcessStartingLevel()
         {
             //Debug.Log("On to the level!");
@@ -2001,8 +2029,23 @@ namespace Assets.Scripts.Scenes
                     //ConfigData.SelectedMiningOption = _chosenMiningOption;
                     //ConfigData.SelectedShipsLoadingMidLevelOption = _chosenMidLevelShipsOption;
                     //ConfigData.SelectedEnemyShipTypes = _chosenEnemyShipTypes;
+                    if (_isTestingSquads)
+                    {
+                        ConfigData.LevelOptions = new LevelOptions(-1, ConfigData.Configuration.UserSide, $"Random Level");
 
-                    if (_chosenLevel != null)
+                        _enemySquadGenerationCount = 4 * Utilities.RandomInt(3); // 4, 8, or 12 squads
+                        _chosenLevel = null;
+
+                        ConfigData.IsUserLoadingCustomSquads = true;
+                        _chosenSquads.ForEach((chosenSquad) =>
+                        {
+                            //Debug.Log($"Chose {chosenSquad.Name} for level");
+                            ConfigData.LevelOptions.ChosenSquads.Add((SavedSquad)chosenSquad.Clone());
+                        });
+
+                        ConfigData.LevelOptions.ChosenSquads = _chosenSquads;
+                    }
+                    else if (_chosenLevel != null)
                     {
                         ConfigData.LevelOptions = (LevelOptions)_chosenLevel.Clone();
                         Debug.Log($"ConfigData.LevelOptions is {_chosenLevel.Name}");
