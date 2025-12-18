@@ -1920,9 +1920,9 @@ namespace Assets.Scripts.Levels
         }
         public void EasterEggTriggers()
         {
-            _egg.Reuse(30f, () =>
+            _egg.Reuse(1f, () => // 30
             {
-                if (Utilities.RandomInt(1000) == 36 && Stage.CutsceneManager.HitDialogueBreak)
+                if (Utilities.RandomInt(100) == 36 && Stage.CutsceneManager.HitDialogueBreak)
                 {
                     Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.EasterEggLines[Utilities.RandomInt(Stage.CutsceneManager.EasterEggLines.Count)]);
                 }

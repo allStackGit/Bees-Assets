@@ -733,6 +733,10 @@ namespace Assets.Scripts
         //public static int SelectedShipsLoadingMidLevelOption = -1;
         //public static int SelectedEnemyShipTypes = -1;
         public static LevelOptions LevelOptions;
+        /// <summary>
+        /// If this is a testing level that means the user is testing squads in a campaign in a random level and it doesn't count but should otherwise be like a campaign level
+        /// </summary>
+        public static bool IsTestingLevel;
         public static bool ChooseRandomLevel;
         public static bool HasSeenPreLevelIntro, HasSeenIntermission;
 

@@ -248,6 +248,11 @@ namespace Assets.Scripts.UIComponents
             DeselectButton();
             CurrentLevel.Map.FogOfWar.SetActive(!CurrentLevel.Map.FogOfWar.activeSelf);
         }
+        public void ToggleFogOfWar(bool onOrOff)
+        {
+            DeselectButton();
+            CurrentLevel.Map.FogOfWar.SetActive(onOrOff);
+        }
         public void OpenLevelEndedDialogue()
         {
             CurrentLevel.Pause();

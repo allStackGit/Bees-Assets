@@ -259,7 +259,7 @@ namespace Assets.Scripts.Levels
             }
             else
             {
-                //Debug.Log($"Chosen squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.ChosenSquads)} at {Level.StartingPositions[side - 1]}");
+                Debug.Log($"Chosen squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.ChosenSquads)} at {Level.StartingPositions[side - 1]}");
                 SpawnShipsAndSquads(Level.CurrentLevelOptions.ChosenSquads, Level.StartingPositions[side - 1], Vector2.zero, false);
             }
 

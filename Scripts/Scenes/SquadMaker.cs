@@ -2032,18 +2032,39 @@ namespace Assets.Scripts.Scenes
                     if (_isTestingSquads)
                     {
                         ConfigData.LevelOptions = new LevelOptions(-1, ConfigData.Configuration.UserSide, $"Random Level");
+                        ConfigData.LevelOptions.MapIndex = _chosenLevel.MapIndex;
+                        ConfigData.LevelOptions.EnemySquadGenerationCount = 4 * Utilities.RandomInt(3); // 4, 8, or 12 squads
 
-                        _enemySquadGenerationCount = 4 * Utilities.RandomInt(3); // 4, 8, or 12 squads
                         _chosenLevel = null;
 
                         ConfigData.IsUserLoadingCustomSquads = true;
+                        ConfigData.LevelOptions.ChosenSquads.Clear();
+                        //_chosenSquads.ForEach((chosenSquad) =>
+                        //{
+                        //    //Debug.Log($"Chose {chosenSquad.Name} for level");
+                        //    SavedSquad testSquad = new SavedSquad(Utilities.GetNegativeSavedSquadId(), chosenSquad.Side, chosenSquad.Name, chosenSquad.StartingPosition, chosenSquad.CeaseFire, chosenSquad.IsMatchingSpeed, chosenSquad.ChosenShootingStrategy, chosenSquad.Color);
+
+                        //    List<SquadShip> originalSquadShips = chosenSquad.GetSquadShips().ToList();
+                        //    originalSquadShips.ForEach((squadShip) =>
+                        //    {
+                        //        chosenSquad.RemoveShipFromSquad(squadShip, false);
+                        //        FleetShip originalFleetShip = squadShip.GetFleetShip();
+                        //        FleetShip fleetShip = new FleetShip(Utilities.GetNegativeFleetshipId(), originalFleetShip.Type, originalFleetShip.HasCachedSprite, false, 0, 0, 0, 0, 0, 0, 0, originalFleetShip.Name);
+                        //        testSquad.AddShipToSquad(new SquadShip(fleetShip.Id, squadShip.ShipType, squadShip.Offset));
+                        //    });
+                        //    ConfigData.LevelOptions.ChosenSquads.Add(testSquad);
+                        //});
+
+
                         _chosenSquads.ForEach((chosenSquad) =>
                         {
                             //Debug.Log($"Chose {chosenSquad.Name} for level");
                             ConfigData.LevelOptions.ChosenSquads.Add((SavedSquad)chosenSquad.Clone());
                         });
 
-                        ConfigData.LevelOptions.ChosenSquads = _chosenSquads;
+                        //Debug.Log(Utilities.ListToString(ConfigData.LevelOptions.ChosenSquads));
+                        ConfigData.LevelOptions.HasSquadActionBox = true;
+                        ConfigData.IsTestingLevel = true;
                     }
                     else if (_chosenLevel != null)
                     {

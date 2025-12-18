@@ -178,7 +178,6 @@ namespace Assets.Scripts.Levels
             // Setup Game State
             State = gameObject.AddComponent<GameState>();
             State.Setup(this);
-
             SetupLevel();
         }
         private void RandomizeOptions()
@@ -893,17 +892,26 @@ namespace Assets.Scripts.Levels
             ResetGameData();
             if (ConfigData.LevelOptions != null)
             {
+                Debug.Log(Utilities.ListToString(ConfigData.LevelOptions.ChosenSquads));
                 ConfigData.LevelOptions.ChosenSquads.ForEach((savedSquad) =>
                 {
-                    CurrentLevelOptions.ChosenSquads.Add(ConfigData.CurrentShips.GetSavedSquad(savedSquad.Id));
+                    if (savedSquad.HasBeenSavedToStorage)
+                    {
+                        CurrentLevelOptions.ChosenSquads.Add(ConfigData.CurrentShips.GetSavedSquad(savedSquad.Id));
+                    }
+                    else
+                    {
+                        CurrentLevelOptions.ChosenSquads.Add(savedSquad);
+
+                    }
                 });
+                Debug.Log(Utilities.ListToString(CurrentLevelOptions.ChosenSquads));
             }
 
             Debug.Log($"Game mode: {ConfigData.CurrentGameMode}");
 
             if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
             {
-                Stage.IsPlayerControlling = true;
                 CurrentLevelOptions.HasSquadActionBox = true;
                 Stage.Menus.ActionBox.Setup(Stage, this, Stage.EventSystem, ConfigData.Configuration.UserSide);
 
@@ -947,7 +955,7 @@ namespace Assets.Scripts.Levels
                 HasObstacles = false;
             }
             SetupMapAndCamera();
-
+            Debug.Log(Utilities.ListToString(CurrentLevelOptions.ChosenSquads));
             SetupShips();
             if (!Stage.IsTraining)
             {
@@ -975,12 +983,19 @@ namespace Assets.Scripts.Levels
 
 
             //CancelTimer(_checkTriggersTimer);
-            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign && !ConfigData.IsTestingLevel)
             {
                 Stage.Menus.MissionStatus.SetActive(true);
+                Stage.RecordStats = false;
                 SetTriggers();
                 _checkTriggersTimer.Reuse(.5f, CheckTriggers, true);
                 AddTimer(_checkTriggersTimer);
+            }
+            else if(ConfigData.IsTestingLevel){
+                Stage.IsPlayerControlling = true;
+                Stage.Menus.ToggleFogOfWar(false);
+                SelectFirstSquad();
+                EasterEggTriggers();
             }
             else
             {
@@ -1152,7 +1167,9 @@ namespace Assets.Scripts.Levels
             //{
             //    ConfigData.SquadsChosenForLevel = ConfigData.SquadsChosenForLevel.Where((chosenSquad) => !MidLevelSquads[chosenSquad.Side - 1].Contains(chosenSquad)).ToList();
             //}
+             Debug.Log(Utilities.ListToString(CurrentLevelOptions.ChosenSquads));
             LevelConstructor.SetupShips(ConfigData.Configuration.AISide);
+             Debug.Log(Utilities.ListToString(CurrentLevelOptions.ChosenSquads));
             LevelConstructor.SetupShips(ConfigData.Configuration.UserSide);
             CalculateShipClearances();
             if (CurrentLevelOptions.EnemyReinforcementDelay == 0)
