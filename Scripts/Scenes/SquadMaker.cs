@@ -751,6 +751,7 @@ namespace Assets.Scripts.Scenes
             //Debug.Log("Setting up the list of saved squads");
             ConfigData.CurrentShips.GetSavedSquadsBySide(Side).ForEach((savedSquad) =>
             {
+                //Debug.Log($"Adding saved squad {savedSquad.Name} #{savedSquad.Id} to the list");
                 AddSavedSquadToList(savedSquad);
             });
         }
@@ -2033,34 +2034,42 @@ namespace Assets.Scripts.Scenes
                     {
                         ConfigData.LevelOptions = new LevelOptions(-1, ConfigData.Configuration.UserSide, $"Random Level");
                         ConfigData.LevelOptions.MapIndex = _chosenLevel.MapIndex;
-                        ConfigData.LevelOptions.EnemySquadGenerationCount = 4 * Utilities.RandomInt(3); // 4, 8, or 12 squads
+                        ConfigData.LevelOptions.EnemySquadGenerationCount = 4 * (Utilities.RandomInt(3)+1); // 4, 8, or 12 squads
+                        ConfigData.LevelOptions.FogOfWar = 0;
+                        ConfigData.LevelOptions.AsteroidOption = 0;
 
                         _chosenLevel = null;
 
                         ConfigData.IsUserLoadingCustomSquads = true;
                         ConfigData.LevelOptions.ChosenSquads.Clear();
-                        //_chosenSquads.ForEach((chosenSquad) =>
-                        //{
-                        //    //Debug.Log($"Chose {chosenSquad.Name} for level");
-                        //    SavedSquad testSquad = new SavedSquad(Utilities.GetNegativeSavedSquadId(), chosenSquad.Side, chosenSquad.Name, chosenSquad.StartingPosition, chosenSquad.CeaseFire, chosenSquad.IsMatchingSpeed, chosenSquad.ChosenShootingStrategy, chosenSquad.Color);
-
-                        //    List<SquadShip> originalSquadShips = chosenSquad.GetSquadShips().ToList();
-                        //    originalSquadShips.ForEach((squadShip) =>
-                        //    {
-                        //        chosenSquad.RemoveShipFromSquad(squadShip, false);
-                        //        FleetShip originalFleetShip = squadShip.GetFleetShip();
-                        //        FleetShip fleetShip = new FleetShip(Utilities.GetNegativeFleetshipId(), originalFleetShip.Type, originalFleetShip.HasCachedSprite, false, 0, 0, 0, 0, 0, 0, 0, originalFleetShip.Name);
-                        //        testSquad.AddShipToSquad(new SquadShip(fleetShip.Id, squadShip.ShipType, squadShip.Offset));
-                        //    });
-                        //    ConfigData.LevelOptions.ChosenSquads.Add(testSquad);
-                        //});
-
-
                         _chosenSquads.ForEach((chosenSquad) =>
                         {
                             //Debug.Log($"Chose {chosenSquad.Name} for level");
-                            ConfigData.LevelOptions.ChosenSquads.Add((SavedSquad)chosenSquad.Clone());
+                            SavedSquad testSquad = new SavedSquad(Utilities.GetNegativeSavedSquadId(), chosenSquad.Side, chosenSquad.Name, chosenSquad.StartingPosition, chosenSquad.CeaseFire, chosenSquad.IsMatchingSpeed, chosenSquad.ChosenShootingStrategy, chosenSquad.Color);
+
+                            List<SquadShip> originalSquadShips = chosenSquad.GetSquadShips().ToList();
+                            originalSquadShips.ForEach((originalSquadShip) =>
+                            {
+                                //chosenSquad.RemoveShipFromSquad(originalSquadShip, false);
+                                FleetShip originalFleetShip = originalSquadShip.GetFleetShip();
+                                FleetShip fleetShip = new FleetShip(Utilities.GetNegativeFleetshipId(), originalFleetShip.Type, originalFleetShip.HasCachedSprite, false, 0, 0, 0, 0, 0, 0, 0, originalFleetShip.Name);
+
+                                //Debug.Log($"original Fleetship has cached sprite? {originalFleetShip.HasCachedSprite}, new fleetship has cached sprite? {fleetShip.HasCachedSprite}");
+                                SquadShip squadShip = new SquadShip(fleetShip.Id, originalSquadShip.ShipType, originalSquadShip.Offset);
+                                testSquad.AddShipToSquad(squadShip);
+                                squadShip.CachedFleetShip.HasCachedSprite = originalFleetShip.HasCachedSprite;
+
+                            });
+                            ConfigData.LevelOptions.ChosenSquads.Add(testSquad);
+                            Debug.Log(Utilities.ListToString(ConfigData.LevelOptions.ChosenSquads));
                         });
+
+
+                        //_chosenSquads.ForEach((chosenSquad) =>
+                        //{
+                        //    //Debug.Log($"Chose {chosenSquad.Name} for level");
+                        //    ConfigData.LevelOptions.ChosenSquads.Add((SavedSquad)chosenSquad.Clone());
+                        //});
 
                         //Debug.Log(Utilities.ListToString(ConfigData.LevelOptions.ChosenSquads));
                         ConfigData.LevelOptions.HasSquadActionBox = true;

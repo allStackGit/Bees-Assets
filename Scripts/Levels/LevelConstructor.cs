@@ -49,7 +49,7 @@ namespace Assets.Scripts.Levels
         public void AddRandomSquads(int side)
         {
             _queenCount = 0;
-            //Debug.Log($"Adding random squads for side {side}");
+            Debug.Log($"Adding random squads for side {side}");
             for (int option = 0; option < (Level.ActivateLoadingShipsMidLevel ? 2 : 1); option++)
             {
                 bool hasArmedSquads = false;
@@ -93,7 +93,7 @@ namespace Assets.Scripts.Levels
                 {
                     if (side == ConfigData.Configuration.AISide)
                     {
-                        //Debug.Log($"Adding randomly generated enemy squads");
+                        Debug.Log($"Adding {squadsList.Count} / {Level.CurrentLevelOptions.EnemySquadGenerationCount} randomly generated enemy squads");
                         Level.CurrentLevelOptions.EnemySquads.AddRange(squadsList);
                     }
                     else
@@ -259,7 +259,7 @@ namespace Assets.Scripts.Levels
             }
             else
             {
-                Debug.Log($"Chosen squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.ChosenSquads)} at {Level.StartingPositions[side - 1]}");
+                //Debug.Log($"Chosen squads to spawn: {Utilities.ListToString(Level.CurrentLevelOptions.ChosenSquads)} at {Level.StartingPositions[side - 1]}");
                 SpawnShipsAndSquads(Level.CurrentLevelOptions.ChosenSquads, Level.StartingPositions[side - 1], Vector2.zero, false);
             }
 

@@ -51,7 +51,7 @@ public class CutsceneManager : MonoBehaviour
         {
             new DialogueLine("Samuel", Portraits["Samuel"], $"Good morning, Commander {ConfigData.UserProgressData.PlayerName}! I brought your coffee.", "[Press Space to Continue]"),
             new DialogueLine("Samuel", Portraits["Samuel"], 1),
-            new DialogueLine("Samuel", Portraits["Samuel"], "I agree, it doesn't taste as good as Earth coffee. Or even Mars coffee. It's alright, we'll both get out of Pluto soon enough."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "I agree, it doesn't taste as good as Earth coffee. Or even Mars coffee… But hey, coffee is coffee! And we’ll both get off of Pluto soon enough."),
             new DialogueLine("Samuel", Portraits["Samuel"], "Samuel gets a notification of some kind.", 2),
             new DialogueLine("Samuel", Portraits["Samuel"], "Oh, that's odd. A Scout is reporting an unidentified vessel approaching military airspace. What should we do?"),
             new DialogueLine("Samuel", Portraits["Samuel"], 1),

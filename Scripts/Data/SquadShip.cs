@@ -15,7 +15,7 @@ namespace Assets.Scripts.Data
         public Vector2 Offset;
 
         private Vector2 _size => ConfigData.ShipSizes.GetValueOrDefault(GetFleetShip().Type);
-        private FleetShip _fleetShip;
+        public FleetShip CachedFleetShip;
         private bool _hasCachedFleetShip = false;
 
 
@@ -33,13 +33,14 @@ namespace Assets.Scripts.Data
         {
             if (!_hasCachedFleetShip)
             {
+                //Debug.Log($"Getting fleet ship for {FleetId}, no cached fleetship");
                 if (ConfigData.CurrentShips != null)
                 {
                     FleetShip fleetShip = ConfigData.CurrentShips.GetFleetShip(FleetId);
 
                     if (fleetShip != null)
                     {
-                        _fleetShip = fleetShip;
+                        CachedFleetShip = fleetShip;
                     }
                     else
                     {
@@ -47,7 +48,7 @@ namespace Assets.Scripts.Data
                         {
                             Debug.LogError($"A null fleetship ({ShipType}) was asked for with id #{FleetId}. This was probably a randomly created fleetship.");
                         }
-                        _fleetShip = new FleetShip(FleetId, ShipType, false, false, 0, 0, 0, 0, 0, 0, 0);
+                        CachedFleetShip = new FleetShip(FleetId, ShipType, false, false, 0, 0, 0, 0, 0, 0, 0);
                     }
                 }
                 else
@@ -55,21 +56,21 @@ namespace Assets.Scripts.Data
                     FleetShip fleetShip = ConfigData.GetFleetData().GetFleetShip(FleetId);
                     if (fleetShip != null)
                     {
-                        _fleetShip = fleetShip;
+                        CachedFleetShip = fleetShip;
                     }
                     else
                     {
                         fleetShip = ConfigData.GetCampaignFleetData().GetFleetShip(FleetId);
                         if (fleetShip != null)
                         {
-                            _fleetShip = fleetShip;
+                            CachedFleetShip = fleetShip;
                         }
                         else
                         {
                             fleetShip = ConfigData.GetChallengeFleetData().GetFleetShip(FleetId); // [data-file]
                             if (fleetShip != null)
                             {
-                                _fleetShip = fleetShip;
+                                CachedFleetShip = fleetShip;
                             }
                             else
                             {
@@ -78,7 +79,7 @@ namespace Assets.Scripts.Data
                                     Debug.LogError($"A null fleetship ({ShipType}) was asked for with id #{FleetId}. This was probably because the fleet data hasn't loaded yet.");
                                 }
 
-                                _fleetShip = new FleetShip(FleetId, ShipType, false, false, 0, 0, 0, 0, 0, 0, 0);
+                                CachedFleetShip = new FleetShip(FleetId, ShipType, false, false, 0, 0, 0, 0, 0, 0, 0);
                             }
 
                         }
@@ -86,9 +87,13 @@ namespace Assets.Scripts.Data
                     }
                 }
             }
+            //else
+            //{
+            //    Debug.Log($"Getting fleet ship for {FleetId}, with cached fleetship");
+            //}
             _hasCachedFleetShip = true;
             //Debug.Log($"Returning {_fleetShip} for {this}");
-            return _fleetShip;
+            return CachedFleetShip;
 
             
         }

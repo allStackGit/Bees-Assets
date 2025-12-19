@@ -210,7 +210,7 @@ namespace Assets.Scripts.Data
         }
         public override string ToString()
         {
-            return $"#{Id} ({Type}) - {Name} ({(IsDead ? "D" : "A")}) ({(DoesBelongToSavedSquad ? "Y" : "N")})";
+            return $"#{Id} ({Type}) - {Name} ({(IsDead ? "D" : "A")}) ({(DoesBelongToSavedSquad ? "Y" : "N")}) ({(HasCachedSprite ? "Y" : "N")})";
         }
 
     }

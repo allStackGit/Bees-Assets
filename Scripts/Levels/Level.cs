@@ -885,14 +885,16 @@ namespace Assets.Scripts.Levels
             }
             if (CurrentLevelOptions.EnemySquadGenerationCount > 0)
             {
+                Debug.Log($"Generating {CurrentLevelOptions.EnemySquadGenerationCount} enemy squads for this level before randomization");
                 CurrentLevelOptions.EnemySquadGenerationCount = Utilities.RandomInt(CurrentLevelOptions.EnemySquadGenerationCount - Stage.GeneratedSquadCountMinimum) + 1 + Stage.GeneratedSquadCountMinimum;
+                Debug.Log($"Generating {CurrentLevelOptions.EnemySquadGenerationCount} enemy squads for this level");
             }
 
             // Reset any data that might have changed from a previous level
             ResetGameData();
             if (ConfigData.LevelOptions != null)
             {
-                Debug.Log(Utilities.ListToString(ConfigData.LevelOptions.ChosenSquads));
+                //Debug.Log(Utilities.ListToString(ConfigData.LevelOptions.ChosenSquads));
                 ConfigData.LevelOptions.ChosenSquads.ForEach((savedSquad) =>
                 {
                     if (savedSquad.HasBeenSavedToStorage)
@@ -924,6 +926,7 @@ namespace Assets.Scripts.Levels
             //Debug.Log($"Playing level: {CurrentLevelOptions.Name} with squads: {Utilities.ListToString(CurrentLevelOptions.ChosenSquads)}");
             // Check settings and config variables
             Stage.SetConfigOptionsAndOverrides();
+            Debug.Log($"Generating {CurrentLevelOptions.EnemySquadGenerationCount} enemy squads for this level");
 
             //Debug.Log($"The human side is {ConfigData.Configuration.HumanSide}, the Bee side is {ConfigData.Configuration.BeeSide}, the AI side is {ConfigData.Configuration.AISide}, the user side is {ConfigData.Configuration.UserSide}");
             //Debug.Log($"The AI Starting position is {AIStartingPosition}, the user starting position is {UserStartingPosition}");
@@ -955,7 +958,7 @@ namespace Assets.Scripts.Levels
                 HasObstacles = false;
             }
             SetupMapAndCamera();
-            Debug.Log(Utilities.ListToString(CurrentLevelOptions.ChosenSquads));
+            //Debug.Log(Utilities.ListToString(CurrentLevelOptions.ChosenSquads));
             SetupShips();
             if (!Stage.IsTraining)
             {
@@ -986,14 +989,13 @@ namespace Assets.Scripts.Levels
             if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign && !ConfigData.IsTestingLevel)
             {
                 Stage.Menus.MissionStatus.SetActive(true);
-                Stage.RecordStats = false;
                 SetTriggers();
                 _checkTriggersTimer.Reuse(.5f, CheckTriggers, true);
                 AddTimer(_checkTriggersTimer);
             }
             else if(ConfigData.IsTestingLevel){
+                Stage.RecordStats = false;
                 Stage.IsPlayerControlling = true;
-                Stage.Menus.ToggleFogOfWar(false);
                 SelectFirstSquad();
                 EasterEggTriggers();
             }
@@ -1167,9 +1169,9 @@ namespace Assets.Scripts.Levels
             //{
             //    ConfigData.SquadsChosenForLevel = ConfigData.SquadsChosenForLevel.Where((chosenSquad) => !MidLevelSquads[chosenSquad.Side - 1].Contains(chosenSquad)).ToList();
             //}
-             Debug.Log(Utilities.ListToString(CurrentLevelOptions.ChosenSquads));
+             //Debug.Log(Utilities.ListToString(CurrentLevelOptions.ChosenSquads));
             LevelConstructor.SetupShips(ConfigData.Configuration.AISide);
-             Debug.Log(Utilities.ListToString(CurrentLevelOptions.ChosenSquads));
+             //Debug.Log(Utilities.ListToString(CurrentLevelOptions.ChosenSquads));
             LevelConstructor.SetupShips(ConfigData.Configuration.UserSide);
             CalculateShipClearances();
             if (CurrentLevelOptions.EnemyReinforcementDelay == 0)
@@ -1422,11 +1424,12 @@ namespace Assets.Scripts.Levels
 
             //Debug.Log($"{Name} ended and cleared");
 
-            if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
+            if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign || ConfigData.IsTestingLevel)
             {
                 if (Stage.DoesUserHaveController && !IsRestarting)
                 {
                     if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge && WinningSide == ConfigData.Configuration.UserSide){
+                        ConfigData.UserProgressData.ChallengeScore += State.PlayerScore;
                         ConfigData.UserProgressData.AdvanceToNextLevel();
 
                         int challengeLevels = ConfigData.GetChallengeLevelData().GetLevels().Count;
@@ -1469,7 +1472,14 @@ namespace Assets.Scripts.Levels
 
             if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
             {
-                Stage.Menus.TryNewSquadsButtonText.text = "Play Next Level";
+                if (ConfigData.IsTestingLevel)
+                {
+                    Stage.Menus.TryNewSquadsButtonText.text = "Go Back";
+                }
+                else
+                {
+                    Stage.Menus.TryNewSquadsButtonText.text = "Play Next Level";
+                }
                 Stage.Menus.KeepGoingButton.SetActive(false);
             }
             else if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge)

@@ -91,7 +91,8 @@ namespace Assets.Scripts.Levels
             HasContinuousTriggers = true;
             ScaledTimer _beesPursuitTimer = new ScaledTimer();
             ScaledTimer _endLevelTimer = new ScaledTimer();
-            Zone exitZone = null;
+            ScaledTimer _cameraMovement = new ScaledTimer();
+            //Zone exitZone = null;
             Tooltip moveScoutTooltip = null;
 
 
@@ -240,12 +241,12 @@ namespace Assets.Scripts.Levels
                 new Trigger(() =>
                 {
                     //Debug.Log($"Waiting to hide tooltip");
-                    hasBeenUserControlled = firstScout.DistanceToPoint(StartingPositions[firstScout.Side - 1]) > 3;
+                    hasBeenUserControlled = firstScout.DistanceToPoint(StartingPositions[firstScout.Side - 1]) > 3 || !ConfigData.UserProgressData.ShowToolTips;
                     return hasBeenUserControlled; 
                 },
                 () =>
                 {
-                    if (hasBeenUserControlled)
+                    if (hasBeenUserControlled && ConfigData.UserProgressData.ShowToolTips)
                     {
 
                         if (moveScoutTooltip != null)
@@ -486,17 +487,57 @@ namespace Assets.Scripts.Levels
 
                                                             //Tooltip flydownTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
                                                             //flydownTooltip.Show("Fly down to safety!", true);
+                                                            //Vector3 oldPosition = Stage.Camera.transform.position;
+                                                            //_cameraMovement.Reuse(.1f, () =>
+                                                            //{
+                                                            //    Stage.Camera.transform.position = new Vector3(StartingPositions[ConfigData.Configuration.AISide - 1].x, Stage.Camera.transform.position.y+2, Stage.Camera.transform.position.z);
+                                                            //    Stage.InputManager.MaintainScrollBoundary();
 
-                                                            Stage.Camera.transform.position = new Vector3(StartingPositions[ConfigData.Configuration.AISide - 1].x, StartingPositions[ConfigData.Configuration.AISide - 1].y, Stage.Camera.transform.position.z);
-                                                            Stage.InputManager.MaintainScrollBoundary();
+                                                            //    float distanceToStop = Vector3.Distance(Stage.Camera.transform.position, oldPosition);
+                                                            //    oldPosition = Stage.Camera.transform.position;
+                                                            //    if (distanceToStop == 0)
+                                                            //    {
+                                                            //        Debug.Log($"Stopped moving camera!");
+                                                            //        CancelTimer(_cameraMovement);
 
-                                                            Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Anomaly.GetRange(27, 5), true);
+                                                            //        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Anomaly.GetRange(27, 5), true);
 
-                                                            _endLevelTimer.Reuse(2, () =>
+                                                            //        _endLevelTimer.Reuse(2, () =>
+                                                            //        {
+                                                            //            CloseLevel();
+                                                            //        });
+                                                            //        AddTimer(_endLevelTimer);
+                                                            //    }
+                                                            //    else
+                                                            //    {
+                                                            //        Debug.Log($"Moving camera towards exit zone, distance remaining: {distanceToStop}");
+                                                            //    }
+                                                            //}, true);
+                                                            //AddTimer(_cameraMovement);
+
+                                                            Stage.CameraTargetPosition = StartingPositions[ConfigData.Configuration.AISide - 1];
+                                                            Stage.IsCameraMovingToTarget = true;
+
+                                                             _cameraMovement.Reuse(.5f, () =>
                                                             {
-                                                                CloseLevel();
-                                                            });
-                                                            AddTimer(_endLevelTimer);   
+                                                                if (!Stage.IsCameraMovingToTarget)
+                                                                {
+                                                                    Debug.Log($"Stopped moving camera!");
+                                                                    CancelTimer(_cameraMovement);
+
+                                                                    Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Anomaly.GetRange(27, 5), true);
+
+                                                                    _endLevelTimer.Reuse(2, () =>
+                                                                    {
+                                                                        CloseLevel();
+                                                                    });
+                                                                    AddTimer(_endLevelTimer);
+                                                                }
+                                                            }, true);
+                                                            AddTimer(_cameraMovement);
+                                                            
+
+                                                            
 
                                                             // Wait a few seconds and then the bees stop ceasefire, and pursue the gunship with aggressive command
                                                             //_beesPursuitTimer.Reuse(10, () =>
@@ -2543,6 +2584,8 @@ namespace Assets.Scripts.Levels
             ConfigData.UserProgressData.UnlockedCampaignShips.Add(ConfigData.ShipTypes.Frigate);
             ConfigData.UserProgressData.UnlockedCampaignShips.Add(ConfigData.ShipTypes.Dreadnought);
 
+            ConfigData.UserProgressData.CampaignScore += State.PlayerScore;
+
             ConfigData.UserProgressData.SetShipTypes();
 
             // Advance to next level in campaign
@@ -2581,7 +2624,7 @@ namespace Assets.Scripts.Levels
 
             ConfigData.UserProgressData.SetShipTypes();
 
-
+            ConfigData.UserProgressData.CampaignScore += State.PlayerScore;
             // Advance to next level in campaign
             ConfigData.UserProgressData.AdvanceToNextLevel();
 
@@ -2664,6 +2707,8 @@ namespace Assets.Scripts.Levels
 
             ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.CarpenterBee);
 
+            ConfigData.UserProgressData.CampaignScore += State.PlayerScore;
+
             ConfigData.UserProgressData.SetShipTypes();
 
 
@@ -2736,6 +2781,8 @@ namespace Assets.Scripts.Levels
                 Debug.Log($"Bees built {bumblebees} bumblebees, {leafcutters} leafcutters, and {hornets} hornets");
             }
             ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.CarpenterBee);
+
+            ConfigData.UserProgressData.CampaignScore += State.PlayerScore;
             ConfigData.UserProgressData.SetShipTypes();
 
             // Advance to next level in campaign
@@ -2770,7 +2817,7 @@ namespace Assets.Scripts.Levels
                 });
 
             }
-
+            ConfigData.UserProgressData.CampaignScore += State.PlayerScore;
             // Advance to next level in campaign
             ConfigData.UserProgressData.AdvanceToNextLevel();
 
@@ -2817,6 +2864,7 @@ namespace Assets.Scripts.Levels
 
             ConfigData.UserProgressData.HasMetAlejandraAndEmilia = true;
 
+            ConfigData.UserProgressData.CampaignScore += State.PlayerScore;
             // Advance to next level in campaign
             ConfigData.UserProgressData.AdvanceToNextLevel();
 
@@ -2848,6 +2896,7 @@ namespace Assets.Scripts.Levels
 
             ConfigData.UserProgressData.SetShipTypes();
 
+            ConfigData.UserProgressData.CampaignScore += State.PlayerScore;
             // Advance to next level in campaign
             ConfigData.UserProgressData.AdvanceToNextLevel();
 
@@ -2881,6 +2930,7 @@ namespace Assets.Scripts.Levels
 
             }
 
+            ConfigData.UserProgressData.CampaignScore += State.PlayerScore;
             // Advance to next level in campaign
             ConfigData.UserProgressData.AdvanceToNextLevel();
 
@@ -2933,6 +2983,7 @@ namespace Assets.Scripts.Levels
             ConfigData.UserProgressData.IsFishTankUnlocked = true;
 
             //return;
+            ConfigData.UserProgressData.CampaignScore += State.PlayerScore;
             // Advance to next level in campaign
             ConfigData.UserProgressData.AdvanceToNextLevel();
 

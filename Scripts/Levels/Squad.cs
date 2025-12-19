@@ -570,7 +570,7 @@ namespace Assets.Scripts.Levels
                         DeactivateSquadBox();
                     }
 
-                    if (Level.State.IsSideKilled(Side) && ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
+                    if (Level.State.IsSideKilled(Side) && (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign || ConfigData.IsTestingLevel))
                     {
 
                         Level.State.GameOver = true;

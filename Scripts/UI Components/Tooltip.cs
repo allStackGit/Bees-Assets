@@ -1,3 +1,4 @@
+using Assets.Scripts;
 using TMPro;
 using UnityEngine;
 
@@ -16,12 +17,20 @@ public class Tooltip : MonoBehaviour
     }
     public void Show(string text, bool hasX)
     {
-        TooltipText.text = text;
-        // Implement UI logic to display the tooltip with the given text
-        Debug.Log($"Showing tooltip: {text}");
+        if (ConfigData.UserProgressData.ShowToolTips)
+        {
+            TooltipText.text = text;
+            // Implement UI logic to display the tooltip with the given text
+            Debug.Log($"Showing tooltip: {text}");
 
-        CloseButton.SetActive(hasX);
-        TooltipObject.SetActive(true);
+            CloseButton.SetActive(hasX);
+            TooltipObject.SetActive(true);
+        }
+        else
+        {
+            Hide();
+        }
+
     }
     public void Hide()
     {

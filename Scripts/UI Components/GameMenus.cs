@@ -209,7 +209,14 @@ namespace Assets.Scripts.UIComponents
         }
         public void ConfirmSurrender()
         {
-            ConfirmSurrenderDialogue.Show();
+            if (ConfigData.IsTestingLevel)
+            {
+                TryNewLevel();
+            }
+            else
+            {
+                ConfirmSurrenderDialogue.Show();
+            }
         }
         public void TryNewLevel()
         {

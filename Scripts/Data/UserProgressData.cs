@@ -37,6 +37,8 @@ namespace Assets.Scripts.Data
         /// How much TSV the AI has mined, less whatever the AI has spent
         /// </summary>
         public int HivemindMinedTSV = 0;
+        public int CampaignScore = 0;
+        public int ChallengeScore = 0;
 
         public int HumanCampaignWins, BeeCampaignWins; 
         public int HumanChallengeWins, BeeChallengeWins;
@@ -55,6 +57,8 @@ namespace Assets.Scripts.Data
         public bool HasMetAlejandraAndEmilia = false;
         public bool HasSeenBuildInterface = false;
         public bool HasSeenCarrierIntro = false;
+        public bool HasPlayedBefore = false;
+        public bool ShowToolTips = true;
 
         // Ship types that the user has unlocked and can see in the codex or in the game
         public HashSet<ConfigData.ShipTypes> VisibleBeeShipTypes;
@@ -74,7 +78,7 @@ namespace Assets.Scripts.Data
         public UserProgressData(bool shouldFileExist): base()
         {
             defaultJsonData = "{" +
-                "\"CurrentHumanCampaignLevel\": 0, \"CurrentBeeCampaignLevel\": 0, \"CurrentHumanChallengeLevel\": 0, \"CurrentBeeChallengeLevel\": 0, \"FleetId\": 1521, \"SavedSquadId\": -1, \"HumanCampaignSavedSquadNumber\": 0, \"BeeCampaignSavedSquadNumber\": 0, \"HumanChallengeSavedSquadNumber\": 0, \"BeeChallengeSavedSquadNumber\": 0, \"HumanFreePlaySavedSquadNumber\": 0, \"BeeFreePlaySavedSquadNumber\": 0, \"MinedTSV\": 0, \"HivemindMinedTSV\": 0, \"HumanCampaignWins\": 0, \"BeeCampaignWins\": 0, \"HumanChallengeWins\": 0, \"BeeChallengeWins\": 0, \"HumanFreePlayWins\": 0, \"BeeFreePlayWins\": 0, \"HumanFishTankWins\": 0, \"BeeFishTankWins\": 0, \"HasStartedHumanCampaign\": false, \"IsBeeCampaignUnlocked\": false, \"IsHumanChallengeUnlocked\": false, \"IsBeeChallengeUnlocked\": false, \"IsHumanFreePlayUnlocked\": false, \"IsBeeFreePlayUnlocked\": false, \"IsFishTankUnlocked\": false, \"HasMetAlejandraAndEmilia\": false, \"HasSeenBuildInterface\": false, \"HasSeenCarrierIntro\": false, \"VisibleBeeShipTypes\": [\"Honeybee\"], \"VisibleHumanShipTypes\": [\"Scout\", \"Gunship\"], \"UnlockedCampaignShips\": [\"Scout\", \"Gunship\"], \"VisibleCodexBeeShipTypes\": [], \"VisibleCodexHumanShipTypes\": [\"Scout\", \"Gunship\"], \"PlayerName\": \"\"" +
+                "\"CurrentHumanCampaignLevel\": 0, \"CurrentBeeCampaignLevel\": 0, \"CurrentHumanChallengeLevel\": 0, \"CurrentBeeChallengeLevel\": 0, \"FleetId\": 1521, \"SavedSquadId\": -1, \"HumanCampaignSavedSquadNumber\": 0, \"BeeCampaignSavedSquadNumber\": 0, \"HumanChallengeSavedSquadNumber\": 0, \"BeeChallengeSavedSquadNumber\": 0, \"HumanFreePlaySavedSquadNumber\": 0, \"BeeFreePlaySavedSquadNumber\": 0, \"MinedTSV\": 0, \"HivemindMinedTSV\": 0, \"CampaignScore\": 0, \"ChallengeScore\": 0, \"HumanCampaignWins\": 0, \"BeeCampaignWins\": 0, \"HumanChallengeWins\": 0, \"BeeChallengeWins\": 0, \"HumanFreePlayWins\": 0, \"BeeFreePlayWins\": 0, \"HumanFishTankWins\": 0, \"BeeFishTankWins\": 0, \"HasStartedHumanCampaign\": false, \"IsBeeCampaignUnlocked\": false, \"IsHumanChallengeUnlocked\": false, \"IsBeeChallengeUnlocked\": false, \"IsHumanFreePlayUnlocked\": false, \"IsBeeFreePlayUnlocked\": false, \"IsFishTankUnlocked\": false, \"HasMetAlejandraAndEmilia\": false, \"HasSeenBuildInterface\": false, \"HasSeenCarrierIntro\": false, \"HasPlayedBefore\": false, \"ShowToolTips\": true, \"VisibleBeeShipTypes\": [\"Honeybee\"], \"VisibleHumanShipTypes\": [\"Scout\", \"Gunship\"], \"UnlockedCampaignShips\": [\"Scout\", \"Gunship\"], \"VisibleCodexBeeShipTypes\": [], \"VisibleCodexHumanShipTypes\": [\"Scout\", \"Gunship\"], \"PlayerName\": \"\"" +
             "}";
             
             dynamic json = SetupFile(shouldFileExist, ConfigData.UserProgressFilename, (json) =>
@@ -99,6 +103,8 @@ namespace Assets.Scripts.Data
 
                 MinedTSV = json.MinedTSV;
                 HivemindMinedTSV = json.HivemindMinedTSV;
+                CampaignScore = json.CampaignScore != null ? json.CampaignScore : 0;
+                ChallengeScore = json.ChallengeScore != null ? json.ChallengeScore : 0;
 
                 HasStartedHumanCampaign = json.HasStartedHumanCampaign;
                 IsBeeCampaignUnlocked = json.IsBeeCampaignUnlocked;
@@ -111,6 +117,8 @@ namespace Assets.Scripts.Data
                 HasMetAlejandraAndEmilia = json.HasMetAlejandraAndEmilia;
                 HasSeenBuildInterface = json.HasSeenBuildInterface;
                 HasSeenCarrierIntro = json.HasSeenCarrierIntro;
+                HasPlayedBefore = json.HasPlayedBefore != null ? json.HasPlayedBefore : false;
+                ShowToolTips = json.ShowToolTips != null ? json.ShowToolTips : true;
 
                 HumanCampaignWins = json.HumanCampaignWins;
                 BeeCampaignWins = json.BeeCampaignWins;
@@ -120,6 +128,8 @@ namespace Assets.Scripts.Data
                 BeeFreePlayWins = json.BeeFreePlayWins;
                 HumanFishTankWins = json.HumanFishTankWins;
                 BeeFishTankWins = json.BeeFishTankWins;
+
+
 
                 PlayerName = json.PlayerName;
 
@@ -151,7 +161,7 @@ namespace Assets.Scripts.Data
         public override string ToJson()
         {
             string json = "{" +
-                $"\"CurrentHumanCampaignLevel\": {CurrentHumanCampaignLevel}, \"CurrentBeeCampaignLevel\": {CurrentBeeCampaignLevel}, \"CurrentHumanChallengeLevel\": {CurrentHumanChallengeLevel}, \"CurrentBeeChallengeLevel\": {CurrentBeeChallengeLevel}, \"FleetId\": {FleetId}, \"SavedSquadId\": {SavedSquadId}, \"HumanCampaignSavedSquadNumber\": {HumanCampaignSavedSquadNumber}, \"BeeCampaignSavedSquadNumber\": {BeeCampaignSavedSquadNumber}, \"HumanChallengeSavedSquadNumber\": {HumanChallengeSavedSquadNumber}, \"BeeChallengeSavedSquadNumber\": {BeeChallengeSavedSquadNumber}, \"HumanFreePlaySavedSquadNumber\": {HumanFreePlaySavedSquadNumber}, \"BeeFreePlaySavedSquadNumber\": {BeeFreePlaySavedSquadNumber}, \"MinedTSV\": {MinedTSV}, \"HivemindMinedTSV\": {HivemindMinedTSV}, \"HumanCampaignWins\": {HumanCampaignWins}, \"BeeCampaignWins\": {BeeCampaignWins}, \"HumanChallengeWins\": {HumanChallengeWins}, \"BeeChallengeWins\": {BeeChallengeWins}, \"HumanFreePlayWins\": {HumanFreePlayWins}, \"BeeFreePlayWins\": {BeeFreePlayWins}, \"HumanFishTankWins\": {HumanFishTankWins}, \"BeeFishTankWins\": {BeeFishTankWins}, \"HasStartedHumanCampaign\": \"{HasStartedHumanCampaign}\", \"IsBeeCampaignUnlocked\": \"{IsBeeCampaignUnlocked}\", \"IsHumanChallengeUnlocked\": \"{IsHumanChallengeUnlocked}\", \"IsBeeChallengeUnlocked\": \"{IsBeeChallengeUnlocked}\", \"IsHumanFreePlayUnlocked\": \"{IsHumanFreePlayUnlocked}\", \"IsBeeFreePlayUnlocked\": \"{IsBeeFreePlayUnlocked}\", \"IsFishTankUnlocked\": \"{IsFishTankUnlocked}\", \"HasMetAlejandraAndEmilia\": \"{HasMetAlejandraAndEmilia}\", \"HasSeenBuildInterface\": \"{HasSeenBuildInterface}\", \"HasSeenCarrierIntro\": \"{HasSeenCarrierIntro}\", \"PlayerName\": \"{PlayerName}\", \"VisibleBeeShipTypes\": [";
+                $"\"CurrentHumanCampaignLevel\": {CurrentHumanCampaignLevel}, \"CurrentBeeCampaignLevel\": {CurrentBeeCampaignLevel}, \"CurrentHumanChallengeLevel\": {CurrentHumanChallengeLevel}, \"CurrentBeeChallengeLevel\": {CurrentBeeChallengeLevel}, \"FleetId\": {FleetId}, \"SavedSquadId\": {SavedSquadId}, \"HumanCampaignSavedSquadNumber\": {HumanCampaignSavedSquadNumber}, \"BeeCampaignSavedSquadNumber\": {BeeCampaignSavedSquadNumber}, \"HumanChallengeSavedSquadNumber\": {HumanChallengeSavedSquadNumber}, \"BeeChallengeSavedSquadNumber\": {BeeChallengeSavedSquadNumber}, \"HumanFreePlaySavedSquadNumber\": {HumanFreePlaySavedSquadNumber}, \"BeeFreePlaySavedSquadNumber\": {BeeFreePlaySavedSquadNumber}, \"MinedTSV\": {MinedTSV}, \"HivemindMinedTSV\": {HivemindMinedTSV}, \"CampaignScore\": {CampaignScore}, \"ChallengeScore\": {ChallengeScore}, \"HumanCampaignWins\": {HumanCampaignWins}, \"BeeCampaignWins\": {BeeCampaignWins}, \"HumanChallengeWins\": {HumanChallengeWins}, \"BeeChallengeWins\": {BeeChallengeWins}, \"HumanFreePlayWins\": {HumanFreePlayWins}, \"BeeFreePlayWins\": {BeeFreePlayWins}, \"HumanFishTankWins\": {HumanFishTankWins}, \"BeeFishTankWins\": {BeeFishTankWins}, \"HasStartedHumanCampaign\": \"{HasStartedHumanCampaign}\", \"IsBeeCampaignUnlocked\": \"{IsBeeCampaignUnlocked}\", \"IsHumanChallengeUnlocked\": \"{IsHumanChallengeUnlocked}\", \"IsBeeChallengeUnlocked\": \"{IsBeeChallengeUnlocked}\", \"IsHumanFreePlayUnlocked\": \"{IsHumanFreePlayUnlocked}\", \"IsBeeFreePlayUnlocked\": \"{IsBeeFreePlayUnlocked}\", \"IsFishTankUnlocked\": \"{IsFishTankUnlocked}\", \"HasMetAlejandraAndEmilia\": \"{HasMetAlejandraAndEmilia}\", \"HasSeenBuildInterface\": \"{HasSeenBuildInterface}\", \"HasSeenCarrierIntro\": \"{HasSeenCarrierIntro}\", \"HasPlayedBefore\": \"{HasPlayedBefore}\", \"ShowToolTips\": \"{ShowToolTips}\", \"PlayerName\": \"{PlayerName}\", \"VisibleBeeShipTypes\": [";
 
             if (VisibleBeeShipTypes.Count > 0)
             {

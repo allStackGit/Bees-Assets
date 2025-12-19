@@ -12,6 +12,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
+using TMPro;
 using UnityEngine;
 using UnityEngine.Playables;
 using UnityEngine.Pool;
@@ -340,6 +341,8 @@ public class Stage : Scene
     public Texture2D PatrolCursor;
     public Texture2D GuardCursor;
     public Vector2 CursorSpot = Vector2.zero;
+    public Vector3 CameraTargetPosition;
+    public bool IsCameraMovingToTarget;
 
 
 
@@ -631,6 +634,7 @@ public class Stage : Scene
 
     // Update is called once per frame
     private Vector2 _followingShipPosition;
+    private Vector3 _oldCameraPosition;
     new void Update()
     {
         base.Update();
@@ -643,6 +647,27 @@ public class Stage : Scene
             _followingShipPosition = CameraShip.GetPosition();
             Camera.transform.position = new Vector3(_followingShipPosition.x, _followingShipPosition.y, -10);
             InputManager.MaintainScrollBoundary();
+        }
+        else if (IsCameraMovingToTarget)
+        {
+            CameraTargetPosition = new Vector3(CameraTargetPosition.x, CameraTargetPosition.y, -10);
+            Camera.transform.position = Vector3.Lerp(
+                Camera.transform.position,
+                CameraTargetPosition,
+                .5f * Time.deltaTime
+            );
+            if (Vector3.Distance(Camera.transform.position, CameraTargetPosition) < 1f || Vector3.Distance(_oldCameraPosition, Camera.transform.position) < .1f)
+            {
+                Debug.Log($"Finished moving camera to target position at {CameraTargetPosition}");
+                IsCameraMovingToTarget = false;
+            }
+            else
+            {
+                Debug.Log($"Moving camera towards target position at {CameraTargetPosition} from {Camera.transform.position}, moved {Vector3.Distance(_oldCameraPosition, Camera.transform.position)} this tick");
+            }
+            InputManager.MaintainScrollBoundary();
+            _oldCameraPosition = Camera.transform.position;
+
         }
 
         DebugLogger.LogData();

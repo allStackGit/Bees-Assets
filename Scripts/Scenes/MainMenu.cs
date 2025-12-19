@@ -16,10 +16,11 @@ namespace Assets.Scripts.Scenes
     public class MainMenu : Scene
     {
         public GameObject MenuPanel, MenuPanelBacker, CampaignRow, ChallengeRow, TrainingRoomRow, BeesTrainingRoomRow;
-        public GameObject HumanChallengeModeButton, HumanTrainingRoomButton, BeeFreePlayButton, HumanCampaignModeButton, CommanderNameDialogue, ResetCampaignButton, ResetChallengeModeButton, ResetTrainingRoomButton, ResetBeesTrainingRoomButton, FishTankButton;
+        public GameObject HumanChallengeModeButton, HumanTrainingRoomButton, BeeFreePlayButton, HumanCampaignModeButton, CommanderNameDialogue, ResetCampaignButton, ResetChallengeModeButton, ResetTrainingRoomButton, ResetBeesTrainingRoomButton, FishTankButton, CampaignScore, ChallengeScore;
         public TMP_InputField NameInput;
+        public TMP_Text CampaignScoreText, ChallengeScoreText;
         public Codex CodexManager;
-        public Dialogue ResetConfirmation;
+        public Dialogue ResetConfirmation, ViewToolTipsConfirmation;
         public bool IsResettingCampaign, IsResettingChallenge, IsResettingTrainingRoom, IsResettingBeesTrainingRoom;
         new void Start()
         {
@@ -38,11 +39,19 @@ namespace Assets.Scripts.Scenes
         protected override void FinalizeSceneWithUserData()
         { 
             base.FinalizeSceneWithUserData();
+            CampaignScoreText.text = $"Score: {ConfigData.UserProgressData.CampaignScore}";
+
+
             if (!ConfigData.UserProgressData.IsHumanChallengeUnlocked)
             {
                 HumanChallengeModeButton.SetActive(false);
                 ResetChallengeModeButton.SetActive(false);
                 ChallengeRow.SetActive(false);
+                ChallengeScore.SetActive(false);
+            }
+            else
+            {
+                ChallengeScoreText.text = $"Score: {ConfigData.UserProgressData.ChallengeScore}";
             }
             if (!ConfigData.UserProgressData.IsHumanFreePlayUnlocked)
             {
@@ -178,9 +187,33 @@ namespace Assets.Scripts.Scenes
             ConfigData.CurrentShips = ConfigData.FreePlayShips;
             SceneManager.LoadSceneAsync("Hivemind Training", LoadSceneMode.Single);
         }
-       
-        public void PlayCampaign(string side)
+
+        public void ConfirmPlayCampaign()
         {
+            if (ConfigData.UserProgressData.HasPlayedBefore && ConfigData.UserProgressData.ShowToolTips)
+            {
+                ViewToolTipsConfirmation = new Dialogue(DialoguePrefab, "This isn't your first rodeo", "It looks like you've played before. Would you like to disable tooltips?",
+                new List<string>() { ConfigData.Configuration.Yes, ConfigData.Configuration.No }, new List<UnityAction>() { DisableTooltips, PlayCampaign,  });
+                ViewToolTipsConfirmation.Show();
+            }
+            else
+            {
+                Debug.Log("Hasn't played before, or has disabled tooltips, playing Campaign");
+                PlayCampaign();
+            }
+        }
+
+        public void DisableTooltips()
+        {
+            Debug.Log("Disabling tooltips");
+            ConfigData.UserProgressData.ShowToolTips = false;
+            ConfigData.UserProgressData.Save();
+            PlayCampaign();
+        }
+       
+        public void PlayCampaign()
+        {
+            Debug.Log("Playing Campaign!");
             HumanCampaignModeButton.GetComponent<Button>().enabled = false;
             if (ConfigData.Configuration.UserSide != ConfigData.Configuration.HumanSide)
             {
@@ -245,6 +278,8 @@ namespace Assets.Scripts.Scenes
             ConfigData.UserProgressData.HasMetAlejandraAndEmilia = false;
             ConfigData.UserProgressData.HasSeenBuildInterface = false;
             ConfigData.UserProgressData.MinedTSV = 0;
+            ConfigData.UserProgressData.CampaignScore = 0;
+            ConfigData.UserProgressData.HasPlayedBefore = true;
             ConfigData.UserProgressData.UnlockedCampaignShips = new HashSet<ConfigData.ShipTypes> {ConfigData.ShipTypes.Scout, ConfigData.ShipTypes.Gunship };
 
 
@@ -276,6 +311,7 @@ namespace Assets.Scripts.Scenes
             ConfigData.UserProgressData.CurrentHumanChallengeLevel = 0;
             ConfigData.UserProgressData.HumanChallengeSavedSquadNumber = 0;
             ConfigData.UserProgressData.BeeChallengeSavedSquadNumber = 0;
+            ConfigData.UserProgressData.ChallengeScore = 0;
 
 
             ConfigData.IsSavedSquadsDataLoaded[2] = false;
