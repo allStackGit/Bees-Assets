@@ -66,6 +66,9 @@ namespace Assets.Scripts.Levels
                 case 8:
                     Level8Triggers();
                     break;
+                case 9:
+                    Level9Triggers();
+                    break;
             }
         }
 
@@ -905,6 +908,72 @@ namespace Assets.Scripts.Levels
         }
         public void Level2Triggers()
         {
+            Stage.Menus.SetMissionStatus("Level 2");
+            HasContinuousTriggers = true;
+
+            Stage.CutsceneManager.Setup(() =>
+            {
+                Level2Ending();
+            });
+
+            // Spawn the Bees
+
+            // 1 Squad of 2 Leafcutters
+            // 2 Squads of 6 Hornets
+            // 2 Squads of 2 Honeybees
+            // 1 Squad of 4 Wasps
+
+            AddReinforcementSquads(new List<SavedSquad>() {
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6, true, true),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6, true, true),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 2, true, true),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true),
+            }, CurrentLevelOptions.AIStartingPosition - new Vector2(-100, 0), CurrentLevelOptions.AIStartingPosition);
+
+            Stage.EnablePlayerControl();
+            // Spawn the exit zone
+            //GameObject exitBox = Instantiate(Stage.Prefabs.ExitZonePrefab, Map.transform);
+            //exitBox.transform.localPosition = new Vector2(512, 0);
+            //exitBox.transform.localScale = new Vector2(50, 256);
+            //Zone exitZone = exitBox.GetComponent<Zone>();
+
+            //exitZone.OnShipEnter = (ship) =>
+            //{
+            //    if (ship.Side == ConfigData.Configuration.UserSide)
+            //    {
+            //        _someShipsHaveRetreated = true;
+            //        ship.EndKill();
+            //    }
+            //};
+
+            // Set dialogue triggers
+            NextTriggers.Add(new Trigger(() =>
+            {
+                return State.IsSideKilled(ConfigData.Configuration.UserSide) || State.IsSideKilled(ConfigData.Configuration.AISide);
+            },
+                () =>
+                {
+                    WinningSide = State.IsSideKilled(ConfigData.Configuration.UserSide) ? ConfigData.Configuration.AISide : ConfigData.Configuration.UserSide;
+                    Debug.Log($"Winning Side: {WinningSide}");
+                    CloseLevel();
+                    if (WinningSide == ConfigData.Configuration.UserSide) // Player won
+                    {
+                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Neptune_PressingForward.GetRange(1, 4), true);
+
+                    }
+                    else
+                    {
+                        CloseLevel();
+                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Neptune_PressingForward.GetRange(5, ConfigData.CurrentShips.HasShipsOfType(ConfigData.ShipTypes.Factory) ? 7 : 2), true);
+                    }
+                },
+                "Level 5 Ending dialogue")
+            );
+        }
+        public void Level3Triggers()
+        {
             FishTankTrigger();
             Debug.Log("Setting triggers for level 2");
             Stage.EnablePlayerControl();
@@ -927,7 +996,7 @@ namespace Assets.Scripts.Levels
             // Start the dialogue
             Stage.CutsceneManager.Setup(() =>
             {
-                Level2Ending();
+                Level3Ending();
             });
             Stage.Menus.TogglePausePanel();
             _dialogueTimer.Reuse(1.5f, () =>
@@ -1215,7 +1284,7 @@ namespace Assets.Scripts.Levels
                 "Level 2 Showing Pluto outline and dialogue")
             );
         }
-        public void Level3Triggers()
+        public void Level4Triggers()
         {
             Stage.Menus.SetMissionStatus("Find and destroy all the Bees!");
             //Stage.EnablePlayerControl();
@@ -1226,7 +1295,7 @@ namespace Assets.Scripts.Levels
 
             Stage.CutsceneManager.Setup(() =>
             {
-                Level3Ending();
+                Level4Ending();
             });
 
             // Spawn Position mining asteroids
@@ -1321,14 +1390,14 @@ namespace Assets.Scripts.Levels
                 "Level 3 Start Level")
             );
         }
-        public void Level4Triggers()
+        public void Level5Triggers()
         {
             Stage.Menus.SetMissionStatus("Survive and mine as many minerals as you can");
             HasContinuousTriggers = true;
 
             Stage.CutsceneManager.Setup(() =>
             {
-                Level4Ending();
+                Level5Ending();
             });
 
             // Spawn Position mining asteroids
@@ -1661,14 +1730,14 @@ namespace Assets.Scripts.Levels
                 }
             };
         }
-        public void Level5Triggers()
+        public void Level6Triggers()
         {
             Stage.Menus.SetMissionStatus("Destroy all the Bees to break through the blockade");
             HasContinuousTriggers = true;
 
             Stage.CutsceneManager.Setup(() =>
             {
-                Level5Ending();
+                Level6Ending();
             });
 
             // Spawn the Bees
@@ -1728,7 +1797,7 @@ namespace Assets.Scripts.Levels
             );
 
         }
-        public void Level6Triggers()
+        public void Level7Triggers()
         {
             Stage.Menus.SetMissionStatus("Find and destroy all the Bees");
             HasContinuousTriggers = true;
@@ -1736,7 +1805,7 @@ namespace Assets.Scripts.Levels
 
             Stage.CutsceneManager.Setup(() =>
             {
-                Level6Ending();
+                Level7Ending();
             });
 
             // Spawn the Bees
@@ -1993,14 +2062,14 @@ namespace Assets.Scripts.Levels
             }
 
         }
-        public void Level7Triggers()
+        public void Level8Triggers()
         {
             Stage.ActivateHiveMind = false;
             HasContinuousTriggers = true;
 
             Stage.CutsceneManager.Setup(() =>
             {
-                Level7Ending();
+                Level8Ending();
             });
 
             Vector2[] upperPositions = new Vector2[] { CurrentLevelOptions.AIStartingPosition - new Vector2(-100, 0), CurrentLevelOptions.AIStartingPosition };
@@ -2336,7 +2405,7 @@ namespace Assets.Scripts.Levels
         /// <summary>
         /// Reveals the exit zone for level 7
         /// </summary>
-        public void SetRetreatForLevel7()
+        public void SetRetreatForLevel8()
         {
             Stage.Menus.CloseDialogue();
             Stage.Menus.RetreatButton.SetActive(false);
@@ -2362,7 +2431,7 @@ namespace Assets.Scripts.Levels
                 }
             };
         }
-        public void Level8Triggers()
+        public void Level9Triggers()
         {
             Stage.Menus.SetMissionStatus("Rescue the Barges and destroy all the Bees!");
             Stage.ActivateHiveMind = false;
@@ -2370,7 +2439,7 @@ namespace Assets.Scripts.Levels
 
             Stage.CutsceneManager.Setup(() =>
             {
-                Level8Ending();
+                Level9Ending();
             });
 
             Vector2[] spawnPositions = new Vector2[] { CurrentLevelOptions.AIStartingPosition - new Vector2(-100, 0), CurrentLevelOptions.AIStartingPosition };
@@ -2640,8 +2709,10 @@ namespace Assets.Scripts.Levels
         }
         public void Level2Ending()
         {
-            Debug.Log("Level 2 complete!");
 
+        }
+        public void Level3Ending()
+        {
             switch (_questPoints)
             {
                 case 60:
@@ -2729,7 +2800,7 @@ namespace Assets.Scripts.Levels
             State.GameOver = true;
             Stage.Menus.ShowLevelSummary();
         }
-        public void Level3Ending()
+        public void Level4Ending()
         {
             Debug.Log("Level 3 complete");
 
@@ -2796,7 +2867,7 @@ namespace Assets.Scripts.Levels
             State.GameOver = true;
             Stage.Menus.ShowLevelSummary();
         }
-        public void Level4Ending()
+        public void Level5Ending()
         {
             Debug.Log("Level 4 complete");
 
@@ -2829,7 +2900,7 @@ namespace Assets.Scripts.Levels
             State.GameOver = true;
             Stage.Menus.ShowLevelSummary();
         }
-        public void Level5Ending()
+        public void Level6Ending()
         {
             Debug.Log("Level 5 complete");
 
@@ -2876,7 +2947,7 @@ namespace Assets.Scripts.Levels
             State.GameOver = true;
             Stage.Menus.ShowLevelSummary();
         }
-        public void Level6Ending()
+        public void Level7Ending()
         {
             Debug.Log("Level 6 complete");
             //return;
@@ -2908,9 +2979,8 @@ namespace Assets.Scripts.Levels
             State.GameOver = true;
             Stage.Menus.ShowLevelSummary();
         }
-        public void Level7Ending()
+        public void Level8Ending()
         {
-            Debug.Log("Level 7 complete");
 
             for (_save_i = 0; _save_i < AllSquads.Count; _save_i++)
             {
@@ -2942,9 +3012,8 @@ namespace Assets.Scripts.Levels
             State.GameOver = true;
             Stage.Menus.ShowLevelSummary();
         }
-        public void Level8Ending()
+        public void Level9Ending()
         {
-            Debug.Log("Level 8 complete");
 
             ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Barge);
             ConfigData.UserProgressData.UnlockedCampaignShips.Add(ConfigData.ShipTypes.Barge);

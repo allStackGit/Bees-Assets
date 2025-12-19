@@ -658,12 +658,12 @@ public class Stage : Scene
             );
             if (Vector3.Distance(Camera.transform.position, CameraTargetPosition) < 1f || Vector3.Distance(_oldCameraPosition, Camera.transform.position) < .1f)
             {
-                Debug.Log($"Finished moving camera to target position at {CameraTargetPosition}");
+                //Debug.Log($"Finished moving camera to target position at {CameraTargetPosition}");
                 IsCameraMovingToTarget = false;
             }
             else
             {
-                Debug.Log($"Moving camera towards target position at {CameraTargetPosition} from {Camera.transform.position}, moved {Vector3.Distance(_oldCameraPosition, Camera.transform.position)} this tick");
+                //Debug.Log($"Moving camera towards target position at {CameraTargetPosition} from {Camera.transform.position}, moved {Vector3.Distance(_oldCameraPosition, Camera.transform.position)} this tick");
             }
             InputManager.MaintainScrollBoundary();
             _oldCameraPosition = Camera.transform.position;

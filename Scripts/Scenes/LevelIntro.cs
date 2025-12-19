@@ -73,6 +73,14 @@ namespace UIComponents
                     
                     break;
                 case 3:
+                    ConfigData.HasSeenIntermission = true;
+                    StartCoroutine(DelayStart(StandardDelay, () =>
+                    {
+                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.PlutoLines_BluerPastures[0], true);
+                    }));
+
+                    break;
+                case 4:
 
                     if (ConfigData.HasSeenIntermission)
                     {
@@ -92,7 +100,7 @@ namespace UIComponents
                         
                     }
                     break;
-                case 4:
+                case 5:
                     ConfigData.HasSeenIntermission = true;
                     StartCoroutine(DelayStart(StandardDelay, () =>
                     {
@@ -100,7 +108,7 @@ namespace UIComponents
                     }));
                     
                     break;
-                case 5:
+                case 6:
                     ConfigData.HasSeenIntermission = true;
                     StartCoroutine(DelayStart(StandardDelay, () =>
                     {
@@ -108,7 +116,7 @@ namespace UIComponents
                     }));
                     
                     break;
-                case 6:
+                case 7:
 
                     if (ConfigData.HasSeenIntermission)
                     {
@@ -128,7 +136,7 @@ namespace UIComponents
                         
                     }
                     break;
-                case 7:
+                case 8:
                     ConfigData.HasSeenIntermission = true;
                     StartCoroutine(DelayStart(StandardDelay, () =>
                     {
@@ -136,7 +144,7 @@ namespace UIComponents
                     }));
                     
                     break;
-                case 8:
+                case 9:
                     ConfigData.HasSeenIntermission = true;
                     StartCoroutine(DelayStart(StandardDelay, () =>
                     {
