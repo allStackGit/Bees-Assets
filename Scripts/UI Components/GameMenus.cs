@@ -19,16 +19,17 @@ namespace Assets.Scripts.UIComponents
 {
     public class GameMenus : MonoBehaviour
     {
-        public GameObject MenuContainer, LevelEndedDialogue, SaveLevelDialogue, NoAliveShipsAlert, SquadActionBoxUI, VictoryLabel, DefeatLabel, MiniMapCloseButton, MiniMapOpenButton, MiniMapTopBorder, MiniMapLeftBorder, MiniMapCameraCollider, MiniMapOutput, HumanScore, BeeScore, ShipInfoBox, KeepGoingButton, ToggleFogOfWarButton, RestartLevelButton, ChooseNewSquadsButton, SwitchSidesButton, SaveAsLevelButton, ExitToMainMenuButton, Scoreboard, TooltipPrefab, WASDTooltip, UIOverlay, HighlightTooltipPrefab, UIHighlightTooltipPrefab, PointerArrow, PlutoCircle, Clock, Counter, RetreatButton, MineralsMinedStatus, MineralsMinedFiller, MissionStatus, PlutoShield, PlutoShieldHealthBar, GameSpeedButton, PausePanel, SummaryPanel;
+        public GameObject MenuContainer, LevelEndedDialogue, SaveLevelDialogue, NoAliveShipsAlert, SquadActionBoxUI, VictoryLabel, DefeatLabel, MiniMapCloseButton, MiniMapOpenButton, MiniMapTopBorder, MiniMapLeftBorder, MiniMapCameraCollider, MiniMapOutput, HumanScore, BeeScore, ShipInfoBox, KeepGoingButton, ToggleFogOfWarButton, RestartLevelButton, ChooseNewSquadsButton, SwitchSidesButton, SaveAsLevelButton, ExitToMainMenuButton, Scoreboard, TooltipPrefab, WASDTooltip, UIOverlay, HighlightTooltipPrefab, UIHighlightTooltipPrefab, PointerArrow, PlutoCircle, Clock, Counter, RetreatButton, MineralsMinedStatus, MineralsMinedFiller, MissionStatus, PlutoShield, PlutoShieldHealthBar, GameSpeedButton, PausePanel, SummaryPanel, SurrenderButton;
         public SquadActionBox ActionBox;
         public Level CurrentLevel;
         public Stage Stage;
         public Dialogue ExitConfirmationDialogue, CampaignLevelEndedDialogue, CampaignCompletedDialogue, ConfirmSurrenderDialogue;
-        public TMP_Text ShipInfoBoxTitle, ShipInfoBoxStats, TryNewSquadsButtonText, MineralsMinedCount, MissionStatusText, GameSpeedButtonText, ShipsDestroyedText, ShipsReturnedText, ShipsLostText, NewShipsReceivedText, ScoreText, MineralsReceivedText;
+        public TMP_Text ShipInfoBoxTitle, ShipInfoBoxStats, TryNewSquadsButtonText, MineralsMinedCount, MissionStatusText, GameSpeedButtonText, ShipsDestroyedText, ShipsReturnedText, ShipsLostText, NewShipsReceivedText, ScoreText, MineralsReceivedText, SurrenderButtonLabel;
         public TMP_InputField LevelNameInput, SupplyCapacityInput;
         public Codex Codex;
         public Controls Controls;
         public SettingsMenu Settings;
+        public Action LevelSummaryAction;
         public bool IsMiniMapOpen;
 
         public bool HoveringOverMiniMapButton;
@@ -79,8 +80,16 @@ namespace Assets.Scripts.UIComponents
         }
         public void HideMissionSummary()
         {
+            Debug.Log("Hiding mission summary");
             SummaryPanel.SetActive(false);
-            ShowLevelEndedDialogue();
+            if (LevelSummaryAction != null)
+            {
+                LevelSummaryAction();
+            }
+            else
+            {
+                ShowLevelEndedDialogue();
+            }
         }
         public void SetMissionStatus(string status)
         {
@@ -115,7 +124,7 @@ namespace Assets.Scripts.UIComponents
             }
 
         }
-        public void ShowLevelSummary()
+        public void ShowLevelSummary(Action action = null)
         {
             SummaryPanel.SetActive(true);
             ShipsDestroyedText.text = $"Ships Destroyed: {Stage.PrimaryLevel.State.EnemyShipsDestroyedByPlayer}";
@@ -124,6 +133,8 @@ namespace Assets.Scripts.UIComponents
             NewShipsReceivedText.text = $"New Ships Received: {Stage.PrimaryLevel.State.PlayerNewShipsReceived}";
             ScoreText.text = $"Score: {Stage.PrimaryLevel.State.PlayerScore}";
             MineralsReceivedText.text = $"Minerals Received: {Stage.PrimaryLevel.State.PlayerMineralsReceived}";
+            LevelSummaryAction = action;
+            Debug.Log("Showing level summary");
         }
         public void ShowLevelEndedDialogue()
         {

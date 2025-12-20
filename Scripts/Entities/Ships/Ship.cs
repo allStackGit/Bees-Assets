@@ -1732,10 +1732,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 //Debug.Log($"saved Squad {shooter.Squad.SavedSquad}");
                 //Debug.Log($"stats {shooter.Squad.SavedSquad.Stats}");
                 attackerSavedSquad.Stats.DamageDone += tsvLoss;
-                if (attacker.Side == ConfigData.Configuration.UserSide)
-                {
-                    attacker.Level.State.PlayerScore += tsvLoss;
-                }
+                //if (attacker.Side == ConfigData.Configuration.UserSide)
+                //{
+                //    attacker.Level.State.PlayerScore += tsvLoss;
+                //}
             }
             else
             {
@@ -1751,10 +1751,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                     {
                         attacker.Killer.Squad.GetCommand().Tsv += tsvLoss; // add the TSV to the shooter
 
-                        if (attacker.Killer.Side == ConfigData.Configuration.UserSide)
-                        {
-                            attacker.Level.State.PlayerScore += tsvLoss;
-                        }
+                        //if (attacker.Killer.Side == ConfigData.Configuration.UserSide)
+                        //{
+                        //    attacker.Level.State.PlayerScore += tsvLoss;
+                        //}
                     }
                 }
                
@@ -1823,6 +1823,16 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             }
             Squad.SavedSquad.Stats.ShipsLost++;
             FleetShip.MineralsMinedThisLevel = 0;
+
+            if (Side == ConfigData.Configuration.UserSide)
+            {
+                Level.State.PlayerScore -= FleetShip.GetTsv();
+                Level.State.PlayerShipsLost++;
+            }
+            else
+            {
+                Level.State.PlayerScore += FleetShip.GetTsv();
+            }
         }
         protected virtual void OnTriggerExit2D(Collider2D collider)
         {
@@ -1881,10 +1891,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                         LogKillerStats(killerFleetShip, killerSavedSquad);
                     }
 
-                    if (Side == ConfigData.Configuration.UserSide)
-                    {
-                        Level.State.PlayerShipsLost++;
-                    }
+
 
 
                     if (ShipType != ConfigData.ShipTypes.Beacon) // Losing a beacon doesn't count as losing a ship

@@ -918,6 +918,22 @@ PrefabInstance:
       propertyPath: m_Name
       value: Scoreboard
       objectReference: {fileID: 0}
+    - target: {fileID: 4833436646975078866, guid: 13661c0a1bc63ad42ad2103a698d1a70, type: 3}
+      propertyPath: m_AnchorMax.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4833436646975078866, guid: 13661c0a1bc63ad42ad2103a698d1a70, type: 3}
+      propertyPath: m_AnchorMin.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4833436646975078866, guid: 13661c0a1bc63ad42ad2103a698d1a70, type: 3}
+      propertyPath: m_AnchoredPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4833436646975078866, guid: 13661c0a1bc63ad42ad2103a698d1a70, type: 3}
+      propertyPath: m_AnchoredPosition.y
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 5207077436913827390, guid: 13661c0a1bc63ad42ad2103a698d1a70, type: 3}
       propertyPath: m_Pivot.x
       value: 0.5
@@ -996,6 +1012,22 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5207077436913827390, guid: 13661c0a1bc63ad42ad2103a698d1a70, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8507018890312828390, guid: 13661c0a1bc63ad42ad2103a698d1a70, type: 3}
+      propertyPath: m_AnchorMax.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8507018890312828390, guid: 13661c0a1bc63ad42ad2103a698d1a70, type: 3}
+      propertyPath: m_AnchorMin.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8507018890312828390, guid: 13661c0a1bc63ad42ad2103a698d1a70, type: 3}
+      propertyPath: m_AnchoredPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8507018890312828390, guid: 13661c0a1bc63ad42ad2103a698d1a70, type: 3}
+      propertyPath: m_AnchoredPosition.y
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
@@ -5460,6 +5492,7 @@ MonoBehaviour:
   GameSpeedButton: {fileID: 1666294145}
   PausePanel: {fileID: 554993973}
   SummaryPanel: {fileID: 387967206}
+  SurrenderButton: {fileID: 1261917798}
   ActionBox: {fileID: 0}
   CurrentLevel: {fileID: 0}
   Stage: {fileID: 0}
@@ -5475,6 +5508,7 @@ MonoBehaviour:
   NewShipsReceivedText: {fileID: 1772440989}
   ScoreText: {fileID: 2064157499}
   MineralsReceivedText: {fileID: 514599408}
+  SurrenderButtonLabel: {fileID: 1261917799}
   LevelNameInput: {fileID: 420468311}
   SupplyCapacityInput: {fileID: 821296918}
   Codex: {fileID: 768080947}
@@ -11953,6 +11987,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Surrender Button
       objectReference: {fileID: 0}
+    - target: {fileID: 8675139255330635851, guid: 2c69add7043f0224698172081a967d71, type: 3}
+      propertyPath: m_IsActive
+      value: 1
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -11963,6 +12001,17 @@ GameObject:
   m_CorrespondingSourceObject: {fileID: 8675139255330635851, guid: 2c69add7043f0224698172081a967d71, type: 3}
   m_PrefabInstance: {fileID: 1261917797}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &1261917799 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 2448719649621199497, guid: 2c69add7043f0224698172081a967d71, type: 3}
+  m_PrefabInstance: {fileID: 1261917797}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &1267390194 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 1592104863624447461, guid: bbe9c7f24d2564f4bb6678276fb4b65d, type: 3}

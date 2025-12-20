@@ -782,7 +782,7 @@ namespace Assets.Scripts.Levels
                     }
                 }
 
-                if (Stage.UseMouseScrolling)
+                if (Stage.UseMouseScrolling || ConfigData.UserProgressData.UseMouseScrolling)
                 {
                     if (_mouseAtLeftEdge)
                     {

@@ -144,6 +144,11 @@ namespace Assets.Scripts.Data
             }
             return sum;
         }
+
+        /// <summary>
+        /// Returns the max Tsv of this ship tpye
+        /// </summary>
+        /// <returns></returns>
         public int GetTsv() 
         {
             return Utilities.GetMaxTsv(this.Type);

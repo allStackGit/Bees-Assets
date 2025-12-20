@@ -996,6 +996,7 @@ namespace Assets.Scripts.Levels
             else if(ConfigData.IsTestingLevel){
                 Stage.RecordStats = false;
                 Stage.IsPlayerControlling = true;
+                Stage.Menus.SurrenderButtonLabel.text = "Leave";
                 SelectFirstSquad();
                 EasterEggTriggers();
             }
@@ -1429,31 +1430,48 @@ namespace Assets.Scripts.Levels
             {
                 if (Stage.DoesUserHaveController && !IsRestarting)
                 {
-                    if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge && WinningSide == ConfigData.Configuration.UserSide){
+                    if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge)
+                    {
                         ConfigData.UserProgressData.ChallengeScore += State.PlayerScore;
-                        ConfigData.UserProgressData.AdvanceToNextLevel();
-
-                        int challengeLevels = ConfigData.GetChallengeLevelData().GetLevels().Count;
-                        if (ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide) >= challengeLevels) // Just beat the last level in the challenge mode
+                        Stage.Menus.ShowLevelSummary(() =>
                         {
-                            ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Queen);
-                            ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Queen);
-                            ConfigData.UserProgressData.SetShipTypes();
+                            Debug.Log("Showing level ended dialogue after challenge level summary");
+                            _levelEndedDialogueTimer.Reuse(1, LevelEndedDialogue);
+                            AddTimer(_levelEndedDialogueTimer);
+                        });
 
-                            Stage.Menus.CampaignCompletedDialogue = new Dialogue(Stage.DialoguePrefab, "Challenge Mode Completed!", "Congratulations! You've finished the Challenge Mode!", new List<string>() { "Exit to Main Menu" }, new List<UnityAction>() { Stage.Menus.ExitToMainMenu });
-                            Stage.Menus.CampaignCompletedDialogue.SetTextBoxHeight(120);
-                            Stage.Menus.CampaignCompletedDialogue.SetButtonWidth(0, 180);
+                        if (WinningSide == ConfigData.Configuration.UserSide)
+                        {
 
-                            ConfigData.UserProgressData.Save();
+                            ConfigData.UserProgressData.AdvanceToNextLevel();
 
-                            Stage.Menus.CampaignCompletedDialogue.Show();
-                            return;
+                            int challengeLevels = ConfigData.GetChallengeLevelData().GetLevels().Count;
+                            if (ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide) >= challengeLevels) // Just beat the last level in the challenge mode
+                            {
+                                ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Queen);
+                                ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Queen);
+                                ConfigData.UserProgressData.SetShipTypes();
+
+                                Stage.Menus.CampaignCompletedDialogue = new Dialogue(Stage.DialoguePrefab, "Challenge Mode Completed!", "Congratulations! You've finished the Challenge Mode!", new List<string>() { "Exit to Main Menu" }, new List<UnityAction>() { Stage.Menus.ExitToMainMenu });
+                                Stage.Menus.CampaignCompletedDialogue.SetTextBoxHeight(120);
+                                Stage.Menus.CampaignCompletedDialogue.SetButtonWidth(0, 180);
+
+                                ConfigData.UserProgressData.Save();
+
+                                Stage.Menus.CampaignCompletedDialogue.Show();
+                                return;
+                            }
+
                         }
-
                         ConfigData.UserProgressData.Save();
+
                     }
-                    _levelEndedDialogueTimer.Reuse(1, LevelEndedDialogue);
-                    AddTimer(_levelEndedDialogueTimer);
+                    else
+                    {
+                        _levelEndedDialogueTimer.Reuse(1, LevelEndedDialogue);
+                        AddTimer(_levelEndedDialogueTimer);
+                    }
+                    
 
                     //Invoke(nameof(LevelEndedDialogue), 1f);
                 }

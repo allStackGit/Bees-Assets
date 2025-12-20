@@ -114,7 +114,7 @@ namespace Assets.Scripts.Levels
             firstScout.ChargingBar.gameObject.SetActive(false);
 
             // Hide the surrender button
-            Stage.SurrenderButton.SetActive(false);
+            Stage.Menus.SurrenderButton.SetActive(false);
 
             // Zoom out the camera a bit
             Stage.Camera.orthographicSize += 15;
@@ -524,6 +524,7 @@ namespace Assets.Scripts.Levels
 
                                                             Stage.CameraTargetPosition = StartingPositions[ConfigData.Configuration.AISide - 1];
                                                             Stage.IsCameraMovingToTarget = true;
+                                                            Stage.IsPlayerControlling = false;
                                                             int ticks = 0;
 
                                                              _cameraMovement.Reuse(.5f, () =>
@@ -633,7 +634,7 @@ namespace Assets.Scripts.Levels
         {
             Stage.Menus.MissionStatus.SetActive(false);
             // Hide the surrender button
-            Stage.SurrenderButton.SetActive(false);
+            Stage.Menus.SurrenderButton.SetActive(false);
             FishTankTrigger();
             HasContinuousTriggers = true;
             Tooltip basicTooltip = null;
@@ -805,7 +806,6 @@ namespace Assets.Scripts.Levels
                                             ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 1),
                                             ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 3, true),
                                             ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 3, true),
-                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 2, true),
                                     }, new Vector2(0, 316), StartingPositions[ConfigData.Configuration.AISide - 1], true);
 
                                     Stage.ActivateHiveMind = true;
@@ -817,16 +817,15 @@ namespace Assets.Scripts.Levels
                                         },
                                         () =>
                                         {
-                                            CloseLevel();
                                             if (State.IsSideKilled(ConfigData.Configuration.AISide)) // Player won
                                             {
                                                 Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(5, 1), true);
-
-
+                                                CloseLevel();
                                             }
                                             else
                                             {
                                                 Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(6, 1), true);
+                                                CloseLevel();
                                             }
                                         },
                                         "")
@@ -991,7 +990,7 @@ namespace Assets.Scripts.Levels
                             Destroy(plutoCircle);
 
                             // Show tooltips
-                            bool hasSeenFleetMessages = false;
+                            bool hasSeenFleetMessages = !ConfigData.UserProgressData.ShowToolTips;
 
 
                             Tooltip basicTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
@@ -2641,7 +2640,7 @@ namespace Assets.Scripts.Levels
 
             State.GameOver = true;
             Debug.Log("Did Standard level complete, showing dialogue");
-            Stage.Menus.ShowLevelSummary();
+            Stage.Menus.ShowLevelEndedDialogue();
 
         }
         public void Level1Ending()

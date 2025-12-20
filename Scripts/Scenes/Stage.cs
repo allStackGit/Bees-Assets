@@ -255,10 +255,6 @@ public class Stage : Scene
     /// </summary>
     public GameObject UIManager;
     /// <summary>
-    /// The surrender button in the main game menu
-    /// </summary>
-    public GameObject SurrenderButton;
-    /// <summary>
     /// The box for selecting squads and patrol areas
     /// </summary>
     public GameObject SelectionBox;

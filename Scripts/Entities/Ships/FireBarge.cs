@@ -88,6 +88,8 @@ namespace Assets.Scripts.Entities.Ships
                             weapons[i].ShipsWithinRange.Remove(this.Id);
                         }
                     }
+
+                    LogKilledStats();
                 }
 
                 Level.State.RemoveShip(this);

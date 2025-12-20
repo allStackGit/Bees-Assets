@@ -192,7 +192,7 @@ namespace Assets.Scripts.Scenes
         {
             if (ConfigData.UserProgressData.HasPlayedBefore && ConfigData.UserProgressData.ShowToolTips)
             {
-                ViewToolTipsConfirmation = new Dialogue(DialoguePrefab, "This isn't your first rodeo", "It looks like you've played before. Would you like to disable tooltips?",
+                ViewToolTipsConfirmation = new Dialogue(DialoguePrefab, "This isn't your first rodeo is it, space cowboy?", "It looks like you've played before. Would you like to disable tooltips?",
                 new List<string>() { ConfigData.Configuration.Yes, ConfigData.Configuration.No }, new List<UnityAction>() { DisableTooltips, PlayCampaign,  });
                 ViewToolTipsConfirmation.Show();
             }
