@@ -177,6 +177,7 @@ namespace Assets.Scripts.Scenes
         }
         protected override void FinalizeSceneWithUserData()
         {
+            ConfigData.IsTestingLevel = false;
             base.FinalizeSceneWithUserData();
             Setup();
 

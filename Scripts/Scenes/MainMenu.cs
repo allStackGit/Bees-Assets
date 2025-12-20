@@ -39,7 +39,7 @@ namespace Assets.Scripts.Scenes
         protected override void FinalizeSceneWithUserData()
         { 
             base.FinalizeSceneWithUserData();
-            CampaignScoreText.text = $"Score: {ConfigData.UserProgressData.CampaignScore}";
+            CampaignScoreText.text = $"Campaign Score: {ConfigData.UserProgressData.CampaignScore}";
 
 
             if (!ConfigData.UserProgressData.IsHumanChallengeUnlocked)
@@ -51,7 +51,7 @@ namespace Assets.Scripts.Scenes
             }
             else
             {
-                ChallengeScoreText.text = $"Score: {ConfigData.UserProgressData.ChallengeScore}";
+                ChallengeScoreText.text = $"Challenge Score: {ConfigData.UserProgressData.ChallengeScore}";
             }
             if (!ConfigData.UserProgressData.IsHumanFreePlayUnlocked)
             {

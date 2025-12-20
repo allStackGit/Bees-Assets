@@ -1321,7 +1321,7 @@ namespace Assets.Scripts
         /// </summary>
         public static void LoadLevel()
         {
-            HasSeenPreLevelIntro = true; // [test]
+            //HasSeenPreLevelIntro = true; // [test]
             UserProgressData.GetCurrentLevelOptions(); // sets up the level options for the current level
             LevelOptions = (LevelOptions)UserProgressData.CurrentLevel.Clone(); // Sets the level options for the battle field
 
@@ -1350,6 +1350,7 @@ namespace Assets.Scripts
                 case 6:
                 case 7:
                 case 8:
+                case 9:
                     //SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
                     //return;
                     if (!HasSeenPreLevelIntro)

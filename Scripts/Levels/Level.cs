@@ -883,12 +883,12 @@ namespace Assets.Scripts.Levels
             {
                 CurrentLevelOptions.EnemySquadGenerationCount = Stage.GeneratedSquadCountOverride;
             }
-            if (CurrentLevelOptions.EnemySquadGenerationCount > 0)
-            {
-                Debug.Log($"Generating {CurrentLevelOptions.EnemySquadGenerationCount} enemy squads for this level before randomization");
-                CurrentLevelOptions.EnemySquadGenerationCount = Utilities.RandomInt(CurrentLevelOptions.EnemySquadGenerationCount - Stage.GeneratedSquadCountMinimum) + 1 + Stage.GeneratedSquadCountMinimum;
-                Debug.Log($"Generating {CurrentLevelOptions.EnemySquadGenerationCount} enemy squads for this level");
-            }
+            //if (CurrentLevelOptions.EnemySquadGenerationCount > 0)
+            //{
+            //    Debug.Log($"Generating {CurrentLevelOptions.EnemySquadGenerationCount} enemy squads for this level before randomization");
+            //    CurrentLevelOptions.EnemySquadGenerationCount = Utilities.RandomInt(CurrentLevelOptions.EnemySquadGenerationCount - Stage.GeneratedSquadCountMinimum) + 1 + Stage.GeneratedSquadCountMinimum;
+            //    Debug.Log($"Generating {CurrentLevelOptions.EnemySquadGenerationCount} enemy squads for this level");
+            //}
 
             // Reset any data that might have changed from a previous level
             ResetGameData();
@@ -1002,6 +1002,7 @@ namespace Assets.Scripts.Levels
             else
             {
                 //PostSetupTest();
+                Stage.IsPlayerControlling = true;
                 SelectFirstSquad();
                 EasterEggTriggers();
             }

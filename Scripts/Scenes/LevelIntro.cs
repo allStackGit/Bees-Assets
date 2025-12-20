@@ -68,7 +68,7 @@ namespace UIComponents
                     ConfigData.HasSeenIntermission = true;
                     StartCoroutine(DelayStart(StandardDelay, () =>
                     {
-                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.PlutoLines_BluerPastures[0], true);
+                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.PlutoLines_Pushback[0], true);
                     }));
                     
                     break;

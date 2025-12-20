@@ -12,7 +12,7 @@ public class CutsceneManager : MonoBehaviour
     public DialogueManager DialogueManager;
     public GameObject CutsceneCanvas;
     public Stage Stage;
-    public List<DialogueLine> PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLines_BluerPastures, PlutoToNeptune, Neptune_SeizeTheMeans, Neptune_OfProduction, Neptune_PressingForward, NeptuneToUranus, Uranus_OnTheOffensive, Uranus_OnTheDefensive, Uranus_ANewThreat, LostCampaign, StartedChallengeMode, SelectedCarrierSquad, EasterEggLines;
+    public List<DialogueLine> PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLines_Pushback, PlutoLines_BluerPastures, PlutoToNeptune, Neptune_SeizeTheMeans, Neptune_OfProduction, Neptune_PressingForward, NeptuneToUranus, Uranus_OnTheOffensive, Uranus_OnTheDefensive, Uranus_ANewThreat, LostCampaign, StartedChallengeMode, SelectedCarrierSquad, EasterEggLines;
     public bool PlutoLines_Anomaly_Completed = false;
     public bool HitDialogueBreak = false;
     public Action EndDialogueAction;
@@ -92,36 +92,71 @@ public class CutsceneManager : MonoBehaviour
 
         PlutoLines_Reinforcements = new List<DialogueLine>
         {
-            new DialogueLine("Samuel", Portraits["Samuel"], "The strange alien fleet has called in reinforcements. We have to rally our ships and form a defense, quickly!"),
+
+            new DialogueLine("Samuel", Portraits["Samuel"], "We’ve been caught off guard by the strange alien fleet cutting our communications. Only our patrol ships are ready for combat for the moment, but we have sent orders to the rest."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Commander, you need to engage in this fight with the patrol ships and buy time for the rest of the fleet to mobilize."),
+
 
             new DialogueLine("Samuel", Portraits["Samuel"], "Okay, commander, it's up to you to lead us to victory."),
 
-            new DialogueLine("Oviya", Portraits["Oviya"], "This is a Scout! They're the fastest ship around, and- oh, right! I'm Oviya, your Scout commander. Sorry, Commander! Anyway, use the Scout to… well, scout the battlefield."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "I recommend you try to find out where the enemy is with your scouts, then form a plan of attack. I’ll be working on restoring our local communications with the rest of the base."),
 
-            new DialogueLine("Oviya", Portraits["Oviya"], "They get around fast, so as long as you keep giving orders, they probably won't get hit by enemy fire. Oh, but they don't have any guns, so don't try fighting with them."),
+            new DialogueLine("Samuel", Portraits["Samuel"], " . . .Also, Marco wants me to remind you that we are… now at war, so all of our combat vessels are ordered to fire on sight by default."),
 
-            new DialogueLine("Oviya", Portraits["Oviya"], 1),
 
-            new DialogueLine("Oviya", Portraits["Oviya"], "Scouts also come loaded up with five beacons! You can drop them anywhere and they'll detect enemies that enter their field of vision."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Great work, commander. We’ve kept them at bay for now. Local communications are restored, and we have more of Pluto’s fleet online. Let’s prepare for the next wave."),
 
-            new DialogueLine("Samuel", Portraits["Samuel"], "You should try to find out where the enemy is with your Scouts, then form a plan of attack."),
-
-            new DialogueLine("Marco", Portraits["Marco"], "I'll be commanding your Gunships. They're fast-flying dogfighting specialists. Use their speed to your advantage if you can."),
-            new DialogueLine("Marco", Portraits["Marco"], "Even if they can't fly as well as me, they'll still be good at dodging fire."),
-
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Alright! It's been a while since we've had a good fight. I'm your Dreadnought commander."),
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "These babies are made to brawl. They can take a lotta hits and dish it right back! Keep ‘em out front and watch ‘em tear it up. Woohoo!"),
-
-            new DialogueLine("Joey", Portraits["Joey"], "Alrighty, Commander, I'm commanding yer Frigates. They're yer explosives experts. They can't shoot far, but they sure pack a wallop."),
-            new DialogueLine("Joey", Portraits["Joey"], "Those rockets will do some serious damage, and they can even hit multiple targets inside the blast radius."),
-
-            new DialogueLine("Samuel", Portraits["Samuel"], "Great work, commander. We’ve kept them at bay for now."),
-            new DialogueLine("Oviya", Portraits["Oviya"], "Some of our Scouts are already finding more fleets. We- um, how do I put this… We can’t win. Not here."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "We’ll have to send an emergency evacuation alert, then."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Commander, we may not have won that fight but we've bought enough time for local communications to be restored and more of the fleet to be brought online. Let’s prepare for the next wave."),
 
         };
 
-        PlutoLines_BluerPastures = new List<DialogueLine>
+        PlutoLines_Pushback = new List<DialogueLine>
+        {
+            new DialogueLine("Samuel", Portraits["Samuel"], "With the more of Pluto’s fleet online and the cover of some floating space junk coming our way, we’re going to try and push back the assault from these aliens."),
+
+
+            new DialogueLine("Samuel", Portraits["Samuel"], "Alright, commander, we have all of our Lieutenants online. They’ll be giving orders for each of your vessels as you direct the entire fleet."),
+
+            new DialogueLine("Oviya", Portraits["Oviya"], " I'm Oviya, your scout lieutenant. Use the scout to… well, scout the battlefield. They get around fast, so as long as you keep giving orders they probably won't get hit by enemy fire."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "They don’t have any guns, though, so please don’t leave them out to dry when they can’t fight back."),
+
+            new DialogueLine("Joey", Portraits["Joey"], "Alrighty, Commander, I'm commanding yer Frigates. They're yer explosives experts. They can't shoot far, but they sure pack a wallop."),
+            new DialogueLine("Joey", Portraits["Joey"], "Those rockets will do some serious damage, and they can even hit multiple targets inside the blast radius."),
+            new DialogueLine("Joey", Portraits["Joey"], "Use ‘em against those ships that like to group up like moths to a flame and you’ll find them <i>quite</i> effective."),
+
+            new DialogueLine("Marco", Portraits["Marco"], "I'll be commanding your Gunships. They're fast-flying dogfighting specialists. Use their speed to your advantage if you can."),
+            new DialogueLine("Marco", Portraits["Marco"], "Even if they can't fly as well as me, they'll still be good at dodging fire. As long as you’re competent."),
+
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "And I’m Yoshiko, your Dreadnought lieutenant! These babies are made to brawl. They can take a lotta hits and dish it right back! Keep ‘em out front and watch ‘em tear it up!"),
+
+            new DialogueLine("Samuel", Portraits["Samuel"], "And that’s everyone. Use all of our fleet’s strengths to win this battle, commander."),
+            new DialogueLine("Samuel", Portraits["Samuel"], " If you ever need a reminder on what any of our ships do or what we’ve discovered about the enemy’s fleet, you can always pause and view the United Fleet Codex."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "I’ll be keeping it updated for you. I believe in you!"),
+
+
+            new DialogueLine("Samuel", Portraits["Samuel"], "Great work, commander! This might not be so b-"),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Commander, I’ve had my team scouting further ahead during the battle, and… it’s not looking good. There’s… more than we can count."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Good, we didn’t get to have much of a fight yet!"),
+            new DialogueLine("Oviya", Portraits["Oviya"], "No, Yoshiko, it’s far too many for us to defeat here and now."),
+            new DialogueLine("Marco", Portraits["Marco"], "Commander, I recommend an emergency retreat. We need to regroup and assess this threat before going fully to war with it."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "I agree."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Commander?"),
+            new DialogueLine("Samuel", Portraits["Samuel"], 1),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Then it’s settled. I’ll issue the evacuation alert, and you’ll prepare the fleet to defend Pluto until we can get our people off the surface."),
+
+
+            new DialogueLine("Samuel", Portraits["Samuel"], "These aliens are much tougher than I thought…"),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Commander, I’ve had my team scouting further ahead during the battle, and… it’s not looking good. There’s… more than we can count."),
+             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Good, let’s win the next fight then!"),
+            new DialogueLine("Oviya", Portraits["Oviya"], "No, Yoshiko, it’s far too many for us to defeat here and now. Especially if that first wave was too much for us."),
+            new DialogueLine("Marco", Portraits["Marco"], "Commander, I recommend an emergency retreat. We need to regroup and assess this threat before going fully to war with it."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "I agree."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Commander?"),
+            new DialogueLine("Samuel", Portraits["Samuel"], 1),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Then it’s settled. I’ll issue the evacuation alert, and you’ll prepare the fleet to defend Pluto until we can get our people off the surface."),
+        };
+
+            PlutoLines_BluerPastures = new List<DialogueLine>
         {
             new DialogueLine("Samuel", Portraits["Samuel"], "Scouts are reporting overwhelming reinforcements from the enemy. We can’t outlast them, but we have to buy enough time for those on the planet to evacuate."),
 
@@ -260,15 +295,15 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Oviya", Portraits["Oviya"], "In that case, you’ll have to plan your retreat carefully."),
 
 
-            new DialogueLine("Oviya", Portraits["Oviya"], "It looks like there are bee scouting parties approaching. They’ll soon find out their fleet here was destroyed."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "It looks like there are bee scouting parties approaching. They’ll soon find out their fleet here was destroyed.", DialogueLine.DialogueType.Disappearing),
 
-            new DialogueLine("Oviya", Portraits["Oviya"], "More bees are en route. The longer we stay here, the more dangerous it becomes, commander."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "More bees are en route. The longer we stay here, the more dangerous it becomes, commander.", DialogueLine.DialogueType.Disappearing),
 
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Incoming ships! Get ready for a fight!"),
-            new DialogueLine("Marco", Portraits["Marco"], "More bees. Hope you know what you’re doing, commander."),
-            new DialogueLine("Joey", Portraits["Joey"], "Gracious, how many more bees are there?"),
-            new DialogueLine("Oviya", Portraits["Oviya"], "Scouts are reporting even more bees than before. Brace yourselves."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Commander, get ready for another fight. We have bees incoming."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Incoming ships! Get ready for a fight!", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Marco", Portraits["Marco"], "More bees. Hope you know what you’re doing, commander.", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Joey", Portraits["Joey"], "Gracious, how many more bees are there?", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Scouts are reporting even more bees than before. Brace yourselves.", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Commander, get ready for another fight. We have bees incoming.", DialogueLine.DialogueType.Disappearing),
 
             new DialogueLine("Samuel", Portraits["Samuel"], "The commander is calling a retreat. Regroup for our next battle!"),
             new DialogueLine("Samuel", Portraits["Samuel"], "We've lost the last ships we sent out, commander. It’s time to regroup."),
@@ -520,7 +555,7 @@ public class CutsceneManager : MonoBehaviour
         {
             new DialogueLine("Wesley", Portraits["Wesley"], "You really should be playing Pikmin 2 instead."),
             new DialogueLine("Marco", Portraits["Marco"], "I'm just hoping that this gets Richard Hammond to notice me."),
-            new DialogueLine("Fritz", Portraits["Fritz"], "Jeremy has nothing on Dee when it comes to the social game game which is really the crux of the show, but in season four thousand six hundred and twenty, the meta <i>really</i> changed..."),
+            new DialogueLine("Fritz", Portraits["Fritz"], "Jeremy has nothing on Dee when it comes to the social game which is really the crux of the show, but in season four thousand six hundred and twenty, the meta <i>really</i> changed..."),
             new DialogueLine("Samuel", Portraits["Samuel"], "Have you heard of my new game? It's called The Folk and there's an eclectic assortment of mysteriously transformed animals from all over Montana."),
             new DialogueLine("A.M.I.", Portraits["AMI"], "I've never actually played a video game in my life, I just really like Bees."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Si este juego no está completamente traducido al español, ahogaré a mi esposo en su propio batido."),

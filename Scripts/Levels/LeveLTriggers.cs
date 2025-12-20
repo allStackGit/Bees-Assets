@@ -426,11 +426,15 @@ namespace Assets.Scripts.Levels
 
                                             // Create bee reinforcement squads. One Squad of 3 hornets, one squad of 2 wasps
                                             AddReinforcementSquads(new List<SavedSquad>() {
-                                                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 3),
-                                                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 3),
-                                                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 3),
-                                                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 2),
-                                                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 2),
+                                                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 1),
+                                                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 3, true),
+                                                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 3, true),
+                                                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 2, true),
+                                                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
+                                                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4, true, true),
+                                                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6, true, true),
+                                                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true),
+                                                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true),
 
 
                                             }, StartingPositions[ConfigData.Configuration.AISide - 1] + new Vector2(0, 50), StartingPositions[ConfigData.Configuration.AISide - 1]);
@@ -485,7 +489,7 @@ namespace Assets.Scripts.Levels
                                                         {
                                                             Stage.Menus.TogglePausePanel();
                                                             Stage.Menus.ToggleFogOfWar();
-                                                            Stage.Menus.SetMissionStatus("Fly down to safety!");
+                                                            Stage.Menus.MissionStatus.SetActive(false);
                                                             Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Anomaly.GetRange(25, 2)); // Gunship Sees bees
 
                                                             //Tooltip flydownTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
@@ -520,12 +524,14 @@ namespace Assets.Scripts.Levels
 
                                                             Stage.CameraTargetPosition = StartingPositions[ConfigData.Configuration.AISide - 1];
                                                             Stage.IsCameraMovingToTarget = true;
+                                                            int ticks = 0;
 
                                                              _cameraMovement.Reuse(.5f, () =>
                                                             {
-                                                                if (!Stage.IsCameraMovingToTarget)
+                                                                if (!Stage.IsCameraMovingToTarget || ticks >= 20)
                                                                 {
                                                                     Debug.Log($"Stopped moving camera!");
+                                                                    Stage.IsCameraMovingToTarget = false;
                                                                     CancelTimer(_cameraMovement);
 
                                                                     Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Anomaly.GetRange(27, 5), true);
@@ -535,6 +541,11 @@ namespace Assets.Scripts.Levels
                                                                         CloseLevel();
                                                                     });
                                                                     AddTimer(_endLevelTimer);
+                                                                }
+                                                                else
+                                                                {
+                                                                    ticks++;
+                                                                    Debug.Log($"Moving camera towards exit zone, tick {ticks}");
                                                                 }
                                                             }, true);
                                                             AddTimer(_cameraMovement);
@@ -624,33 +635,39 @@ namespace Assets.Scripts.Levels
             // Hide the surrender button
             Stage.SurrenderButton.SetActive(false);
             FishTankTrigger();
-            Debug.Log("Setting triggers for level 1");
             HasContinuousTriggers = true;
             Tooltip basicTooltip = null;
             Tooltip selectMultiple = null;
             Tooltip rangeTooltip = null;
             GameObject highlightTooltipObject = null;
+            GameObject squadNumberHighlight = null;
 
 
             LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() {
                 ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Scout, 1),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Scout, 1),
                 ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Gunship, 2, true),
-                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Dreadnought, 2),
-                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Frigate, 4),
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Gunship, 2, true),
+                //ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Dreadnought, 2),
+                //ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Frigate, 4),
             }, StartingPositions[ConfigData.Configuration.UserSide - 1], Vector2.zero, false);
 
             Squad scoutSquad = State.GetSquadByNumber(ConfigData.Configuration.HumanSide, 1); // Scout squad that starts in the level
-            Squad gunshipSquad = State.GetSquadByNumber(ConfigData.Configuration.HumanSide, 2);
-            Squad dreadnoughtSquad = State.GetSquadByNumber(ConfigData.Configuration.HumanSide, 3);
-            Squad frigateSquad = State.GetSquadByNumber(ConfigData.Configuration.HumanSide, 4); // Frigate squad that starts in the level
+            Squad scoutSquad2 = State.GetSquadByNumber(ConfigData.Configuration.HumanSide, 2); 
+            Squad gunshipSquad = State.GetSquadByNumber(ConfigData.Configuration.HumanSide, 3);
+            Squad gunshipSquad2 = State.GetSquadByNumber(ConfigData.Configuration.HumanSide, 4);
+            //Squad dreadnoughtSquad = State.GetSquadByNumber(ConfigData.Configuration.HumanSide, 3);
+            //Squad frigateSquad = State.GetSquadByNumber(ConfigData.Configuration.HumanSide, 4); // Frigate squad that starts in the level
             RectTransform rectTransform = null;
 
 
             // Deselect all squads
             State.SelectSquads(new List<Squad>());
-            frigateSquad.CanAcceptUserInput = false;
             gunshipSquad.CanAcceptUserInput = false;
-            dreadnoughtSquad.CanAcceptUserInput = false;
+            scoutSquad.CanAcceptUserInput = false;
+            scoutSquad2.CanAcceptUserInput = false;
+            gunshipSquad2.CanAcceptUserInput = false;
+
 
             // Prevent the Hivemind from giving commands
             Stage.ActivateHiveMind = false;
@@ -665,7 +682,7 @@ namespace Assets.Scripts.Levels
 
             _dialogueTimer.Reuse(1.5f, () =>
             {
-                Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.PlutoLines_Reinforcements[1]);
+                Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(2, 1));
             });
             AddTimer(_dialogueTimer);
 
@@ -679,23 +696,22 @@ namespace Assets.Scripts.Levels
                     Stage.Menus.MissionStatus.SetActive(true);
                     Stage.Menus.SetMissionStatus("Use the Scout");
                     Stage.EnablePlayerControl();
-                    basicTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
-                    
-                    basicTooltip.Show("Select the Scout squad with the left mouse button.", true);
-                    basicTooltip.Place(new Vector2(200, 0), new Vector2(150, 100));
+                    scoutSquad.CanAcceptUserInput = true;
 
-                    //TMP_Text tooltipText = basicTooltipObject.transform.Find("Vertical/Message").GetComponent<TMP_Text>();
-                    //RectTransform tooltipRectTransformPosition = basicTooltipObject.GetComponent<RectTransform>();
-                    //RectTransform tooltipRectTransformSize = basicTooltipObject.transform.GetChild(0).GetComponent<RectTransform>();
+                    if (ConfigData.UserProgressData.ShowToolTips)
+                    {
+                        basicTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
 
-                    //tooltipText.text = "Select the Scout squad with the left mouse button.";
-                    //tooltipRectTransformPosition.localPosition = new Vector2(200, 0);
-                    //tooltipRectTransformSize.sizeDelta = new Vector2(150, 50);
+                        basicTooltip.Show("Select the Scout squad with the left mouse button.", true);
+                        basicTooltip.Place(new Vector2(200, 0), new Vector2(150, 100));
 
-                    highlightTooltipObject = Instantiate(Stage.Menus.HighlightTooltipPrefab, Map.transform);
-                    highlightTooltipObject.SetActive(true);
-                    highlightTooltipObject.transform.position = scoutSquad.GetPosition();
-                    highlightTooltipObject.transform.localScale = new Vector2(scoutSquad.GetWidth() + 2, scoutSquad.GetHeight() + 2);
+
+                        highlightTooltipObject = Instantiate(Stage.Menus.HighlightTooltipPrefab, Map.transform);
+                        highlightTooltipObject.SetActive(true);
+                        highlightTooltipObject.transform.position = scoutSquad.GetPosition();
+                        highlightTooltipObject.transform.localScale = new Vector2(scoutSquad.GetWidth() + 2, scoutSquad.GetHeight() + 2);
+                    }
+
 
                     NextTriggers.Add(new Trigger(() =>
                         {
@@ -703,213 +719,139 @@ namespace Assets.Scripts.Levels
                         },
                         () =>
                         {
-                            highlightTooltipObject.SetActive(false);
-                            Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(2, 4));
-                            Stage.Menus.TogglePausePanel();
+                            GameObject pointerA = null;
+                            GameObject pointerB = null;
+                            if (ConfigData.UserProgressData.ShowToolTips)
+                            {
+                                highlightTooltipObject.SetActive(false);
 
+                                basicTooltip.Show("Here are different settings for your ship.You can determine your squad’s flight pattern and shooting strategies here. Take some time to familiarize yourself with these options.", true);
+                                basicTooltip.Place(new Vector2(-175, -150), new Vector2(150, 225));
+
+
+                                pointerA = Instantiate(Stage.Menus.PointerArrow, Stage.Menus.UIOverlay.transform);
+                                rectTransform = pointerA.GetComponent<RectTransform>();
+                                rectTransform.localPosition = new Vector2(-447, -238);
+                                rectTransform.eulerAngles = new Vector3(0, 0, 170);
+                                pointerA.SetActive(true);
+
+                                pointerB = Instantiate(Stage.Menus.PointerArrow, Stage.Menus.UIOverlay.transform);
+                                rectTransform = pointerB.GetComponent<RectTransform>();
+                                rectTransform.localPosition = new Vector2(-330, -340);
+                                rectTransform.eulerAngles = new Vector3(0, 0, 90);
+                                rectTransform.localScale = new Vector2(0.25f, 0.5f);
+                                pointerB.SetActive(true);
+                            }
                             NextTriggers.Add(new Trigger(() =>
+                            {
+                                return !ConfigData.UserProgressData.ShowToolTips || !basicTooltip.gameObject.activeSelf;
+                            },
+                            () =>
+                            {
+                                Stage.Menus.SetMissionStatus("Try out the different squads");
+                                gunshipSquad.CanAcceptUserInput = true;
+                                scoutSquad2.CanAcceptUserInput = true;
+                                gunshipSquad2.CanAcceptUserInput = true;
+                                if (ConfigData.UserProgressData.ShowToolTips)
                                 {
-                                    return Stage.CutsceneManager.HitDialogueBreak && scoutSquad.IsSelected;
+                                    Destroy(pointerA);
+                                    Destroy(pointerB);
+
+                                    squadNumberHighlight = Instantiate(Stage.Menus.UIHighlightTooltipPrefab, Stage.Menus.UIOverlay.transform);
+                                    squadNumberHighlight.SetActive(true);
+                                    squadNumberHighlight.transform.localPosition = new Vector2(-610, 370);
+                                    squadNumberHighlight.transform.localScale = new Vector2(150, 30);
+                                    squadNumberHighlight.transform.SetAsFirstSibling();
+
+                                    basicTooltip.Show("You can also select squads with the number hotkeys on your keyboard. These are displayed at the top of the screen.", true);
+                                    basicTooltip.Place(new Vector2(-550, 300), new Vector2(150, 150));
+
+                                    selectMultiple = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
+                                    selectMultiple.Show("If you need to select multiple squads, click and drag the mouse over the squads.", true);
+                                    selectMultiple.Place(new Vector2(-200, 0), new Vector2(150, 100));
+
+                                    //GameObject multiSelectMessage = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
+                                    //multiSelectMessage.SetActive(true);
+                                    //multiSelectMessage.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "If you need to select multiple squads, click and drag the mouse over the squads.";
+                                    //multiSelectMessage.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(150, 100);
+                                    //multiSelectMessage.transform.GetComponent<RectTransform>().localPosition = new Vector2(-200, 0);
+
+
+                                    rangeTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
+                                    rangeTooltip.Show("Your ships with weapons will automatically shoot at any enemies in range. You can view your selected ships’ range at any time by holding <b>R</b>.You can also manually fire towards your cursor with any selected ships by pressing <b>F</b>", true);
+                                    rangeTooltip.Place(new Vector2(200, 0), new Vector2(150, 280));
+
+
+                                }
+                                Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(3, 2));
+                                Stage.Menus.TogglePausePanel();
+
+                                NextTriggers.Add(new Trigger(() =>
+                                {
+                                    return Stage.CutsceneManager.HitDialogueBreak;
                                 },
                                 () =>
                                 {
+                                    if (ConfigData.UserProgressData.ShowToolTips)
+                                    {
+                                        Destroy(squadNumberHighlight);
+                                    }
                                     Stage.Menus.TogglePausePanel();
-                                    basicTooltip.Show("Here are different settings for your ship.You can determine your squad’s flight pattern and shooting strategies here. Take some time to familiarize yourself with these options.", true);
-                                    basicTooltip.Place(new Vector2(-175, -150), new Vector2(150, 225));
 
+                                    Stage.Menus.SetMissionStatus("Find and destroy the enemy ships!");
 
-                                    GameObject pointerA = Instantiate(Stage.Menus.PointerArrow, Stage.Menus.UIOverlay.transform);
-                                    rectTransform = pointerA.GetComponent<RectTransform>();
-                                    rectTransform.localPosition = new Vector2(-447, -238);
-                                    rectTransform.eulerAngles = new Vector3(0, 0, 170);
-                                    pointerA.SetActive(true);
+                                    // Create bee starting squads. One squad of 1 honeybee, one Squads of 3 hornets, one squad of 2 wasps
+                                    LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() {
+                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 1),
+                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 3, true),
+                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 3, true),
+                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 2, true),
+                                    }, new Vector2(0, 316), StartingPositions[ConfigData.Configuration.AISide - 1], true);
 
-                                    GameObject pointerB = Instantiate(Stage.Menus.PointerArrow, Stage.Menus.UIOverlay.transform);
-                                    rectTransform = pointerB.GetComponent<RectTransform>();
-                                    rectTransform.localPosition = new Vector2(-330, -340);
-                                    rectTransform.eulerAngles = new Vector3(0, 0, 90);
-                                    rectTransform.localScale = new Vector2(0.25f, 0.5f);
-                                    pointerB.SetActive(true);
+                                    Stage.ActivateHiveMind = true;
+                                    SetupHivemind();
 
                                     NextTriggers.Add(new Trigger(() =>
                                         {
-                                            return !basicTooltip.gameObject.activeSelf;
+                                            return State.IsSideKilled(ConfigData.Configuration.UserSide) || State.IsSideKilled(ConfigData.Configuration.AISide);
                                         },
                                         () =>
                                         {
-                                            Destroy(pointerA);
-                                            Destroy(pointerB);
-
-                                            Stage.Menus.SetMissionStatus("Try out the different squads");
-
-                                            GameObject squadNumberHighlight = Instantiate(Stage.Menus.UIHighlightTooltipPrefab, Stage.Menus.UIOverlay.transform);
-                                            squadNumberHighlight.SetActive(true);
-                                            squadNumberHighlight.transform.localPosition = new Vector2(-610, 370);
-                                            squadNumberHighlight.transform.localScale = new Vector2(150, 30);
-                                            squadNumberHighlight.transform.SetAsFirstSibling();
-
-                                            basicTooltip.Show("You can also select squads with the number hotkeys on your keyboard. These are displayed at the top of the screen.", true);
-                                            basicTooltip.Place(new Vector2(-550, 300), new Vector2(150, 150));
-
-                                            selectMultiple = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
-                                            selectMultiple.Show("If you need to select multiple squads, click and drag the mouse over the squads.", true);
-                                            selectMultiple.Place(new Vector2(-200, 0) ,new Vector2(150, 100));
-
-                                            //GameObject multiSelectMessage = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
-                                            //multiSelectMessage.SetActive(true);
-                                            //multiSelectMessage.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "If you need to select multiple squads, click and drag the mouse over the squads.";
-                                            //multiSelectMessage.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(150, 100);
-                                            //multiSelectMessage.transform.GetComponent<RectTransform>().localPosition = new Vector2(-200, 0);
+                                            CloseLevel();
+                                            if (State.IsSideKilled(ConfigData.Configuration.AISide)) // Player won
+                                            {
+                                                Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(5, 1), true);
 
 
-                                            rangeTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
-                                            rangeTooltip.Show("Your ships with weapons will automatically shoot at any enemies in range. You can view your selected ships’ range at any time by holding <b>R</b>.You can also manually fire towards your cursor with any selected ships by pressing <b>F</b>", true);
-                                            rangeTooltip.Place(new Vector2(200, 0), new Vector2(150, 280));
-
-                                            //GameObject rangeMessage = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform);
-                                            //rangeMessage.SetActive(true);
-                                            //rangeMessage.transform.Find("Vertical/Message").GetComponent<TMP_Text>().text = "Your ships with weapons will automatically shoot at any enemies in range. You can view your selected ships’ range at any time by holding <b>R</b>.You can also manually fire towards your cursor with any selected ships by pressing <b>F</b>";
-                                            //rangeMessage.transform.GetChild(0).GetComponent<RectTransform>().sizeDelta = new Vector2(150, 250);
-                                            //rangeMessage.transform.GetComponent<RectTransform>().localPosition = new Vector2(200, 0);
-
-                                            frigateSquad.CanAcceptUserInput = true;
-                                            gunshipSquad.CanAcceptUserInput = true;
-                                            dreadnoughtSquad.CanAcceptUserInput = true;
-
-                                            float startTime = Time.realtimeSinceStartup;
-
-                                            NextTriggers.Add(new Trigger(() =>
-                                                {
-                                                    return (frigateSquad.IsSelected || gunshipSquad.IsSelected || dreadnoughtSquad.IsSelected) && Time.realtimeSinceStartup - startTime > 10;
-                                                },
-                                                () =>
-                                                {
-                                                    basicTooltip.Hide();
-                                                    selectMultiple.Hide();
-                                                    rangeTooltip.Hide();
-
-                                                    //Destroy(squadNumberHighlight);
-                                                    //Destroy(multiSelectMessage);
-                                                    //Destroy(rangeMessage);
-
-                                                    Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.PlutoLines_Reinforcements[6]);
-
-                                                    NextTriggers.Add(new Trigger(() =>
-                                                        {
-                                                            return Stage.CutsceneManager.HitDialogueBreak;
-                                                        },
-                                                        () =>
-                                                        {
-                                                            NextTriggers.Add(new Trigger(() =>
-                                                                {
-                                                                    return gunshipSquad.IsSelected && !scoutSquad.IsSelected && !frigateSquad.IsSelected && !dreadnoughtSquad.IsSelected;
-                                                                },
-                                                                () =>
-                                                                {
-                                                                    Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(7, 2));
-                                                                },
-                                                                "Level 1 Showing Marco Gunship Dialogue")
-                                                            );
-                                                            NextTriggers.Add(new Trigger(() =>
-                                                                {
-                                                                    return dreadnoughtSquad.IsSelected && !scoutSquad.IsSelected && !gunshipSquad.IsSelected && !frigateSquad.IsSelected;
-                                                                },
-                                                                () =>
-                                                                {
-                                                                    Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(9, 2));
-                                                                },
-                                                                "Level 1 Showing Yoshiko Dreadnought Dialogue")
-                                                            );
-                                                            NextTriggers.Add(new Trigger(() =>
-                                                                {
-                                                                    return frigateSquad.IsSelected && !scoutSquad.IsSelected && !gunshipSquad.IsSelected && !dreadnoughtSquad.IsSelected;
-                                                                },
-                                                                () =>
-                                                                {
-                                                                    Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(11, 2));
-                                                                },
-                                                                "Level 1 Showing Joey Frigate Dialogue")
-                                                            );
-
-                                                            Stage.Menus.SetMissionStatus("Find and destroy the enemy ships!");
-
-                                                            // Create bee starting squads. One squad of 1 honeybee, one Squads of 3 hornets, one squad of 2 wasps
-                                                            LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>() {
-                                                                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 1),
-                                                                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 3, true),
-                                                                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 2, true),
-                                                            }, new Vector2(0, 316), StartingPositions[ConfigData.Configuration.AISide - 1], true);
-
-                                                            Stage.ActivateHiveMind = true;
-                                                            SetupHivemind();
-
-                                                            float startTime = Time.time;
-                                                            NextTriggers.Add(new Trigger(() =>
-                                                                {
-                                                                    return Time.time - startTime >= 60f && !State.IsSideKilled(ConfigData.Configuration.AISide);
-                                                                },
-                                                                () =>
-                                                                {
-                                                                    Debug.Log($"Spawning Bee reinforcements");
-
-                                                                    // Create bee reinforcement squads. Two Squads of 3 hornets, one squad of 2 wasps
-                                                                    AddReinforcementSquads(new List<SavedSquad>() {
-                                                                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 3, true),
-                                                                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 3, true),
-                                                                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 2, true),
-                                                                    }, new Vector2(0, 316), new Vector2(0, 225));
-
-                                                                    AddReinforcementsToHivemindCommandQueue();
-
-                                                                    
-                                                                },
-                                                                "Level 1 Showing select scout squad tooltip")
-                                                            );
-                                                            NextTriggers.Add(new Trigger(() =>
-                                                                {
-                                                                    return State.IsSideKilled(ConfigData.Configuration.UserSide) || State.IsSideKilled(ConfigData.Configuration.AISide);
-                                                                },
-                                                                () =>
-                                                                {
-                                                                    CloseLevel();
-                                                                    if (State.IsSideKilled(ConfigData.Configuration.AISide)) // Player won
-                                                                    {
-                                                                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(13, 3), true);
-
-                                                                        
-                                                                    }
-                                                                    else
-                                                                    {
-                                                                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(14, 2), true);
-                                                                    }
-                                                                },
-                                                                "Level 1 Showing select scout squad tooltip")
-                                                            );
-                                                        },
-                                                        "Level 1 Starting full level action")
-                                                    );
-                                                },
-                                                "Level 1 Showing finalizing tutorial")
-                                            );
+                                            }
+                                            else
+                                            {
+                                                Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(6, 1), true);
+                                            }
                                         },
-                                        "Level 1 Showing select scout squad tooltip")
+                                        "")
                                     );
-                                },
-                                "Level 1 Show HUD controls")
-                            );
-                        },
-                        "Level 1 Showing Oyiva dialogue")
+
+                                }, ""));
+
+                            }, ""));
+                        }, "")
                     );
                 },
-                "Level 1 Showing select scout squad tooltip")
+                "")
             );
 
 
         }
         public void Level2Triggers()
         {
-            Stage.Menus.SetMissionStatus("Level 2");
+            Debug.Log("Setting triggers for level 2");
+            Stage.Menus.SetMissionStatus("Push back the enemy!");
             HasContinuousTriggers = true;
+
+            Stage.Menus.MissionStatus.SetActive(false);
+
+            FishTankTrigger();
 
             Stage.CutsceneManager.Setup(() =>
             {
@@ -922,55 +864,63 @@ namespace Assets.Scripts.Levels
             // 2 Squads of 6 Hornets
             // 2 Squads of 2 Honeybees
             // 1 Squad of 4 Wasps
+            Stage.ActivateHiveMind = false;
 
-            AddReinforcementSquads(new List<SavedSquad>() {
-                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
-                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
-                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6, true, true),
-                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6, true, true),
-                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 2, true, true),
-                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true),
-            }, CurrentLevelOptions.AIStartingPosition - new Vector2(-100, 0), CurrentLevelOptions.AIStartingPosition);
+            Stage.Menus.TogglePausePanel();
 
-            Stage.EnablePlayerControl();
-            // Spawn the exit zone
-            //GameObject exitBox = Instantiate(Stage.Prefabs.ExitZonePrefab, Map.transform);
-            //exitBox.transform.localPosition = new Vector2(512, 0);
-            //exitBox.transform.localScale = new Vector2(50, 256);
-            //Zone exitZone = exitBox.GetComponent<Zone>();
 
-            //exitZone.OnShipEnter = (ship) =>
-            //{
-            //    if (ship.Side == ConfigData.Configuration.UserSide)
-            //    {
-            //        _someShipsHaveRetreated = true;
-            //        ship.EndKill();
-            //    }
-            //};
-
-            // Set dialogue triggers
-            NextTriggers.Add(new Trigger(() =>
+            _dialogueTimer.Reuse(1.5f, () =>
             {
-                return State.IsSideKilled(ConfigData.Configuration.UserSide) || State.IsSideKilled(ConfigData.Configuration.AISide);
-            },
+                Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Pushback.GetRange(1, 12));
+            });
+            AddTimer(_dialogueTimer);
+
+            NextTriggers.Add(new Trigger(() =>
+                {
+                    return Stage.CutsceneManager.HitDialogueBreak;
+                },
                 () =>
                 {
-                    WinningSide = State.IsSideKilled(ConfigData.Configuration.UserSide) ? ConfigData.Configuration.AISide : ConfigData.Configuration.UserSide;
-                    Debug.Log($"Winning Side: {WinningSide}");
-                    CloseLevel();
-                    if (WinningSide == ConfigData.Configuration.UserSide) // Player won
-                    {
-                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Neptune_PressingForward.GetRange(1, 4), true);
+                    AddReinforcementSquads(new List<SavedSquad>() {
+                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
+                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4, true, true),
+                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6, true, true),
+                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true),
+                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true),
+                    }, CurrentLevelOptions.AIStartingPosition - new Vector2(-100, 0), CurrentLevelOptions.AIStartingPosition);
+                    Stage.EnablePlayerControl();
+                    Stage.Menus.TogglePausePanel();
+                    Stage.Menus.MissionStatus.SetActive(true);
+                    Stage.ActivateHiveMind = true;
+                    SetupHivemind();
 
-                    }
-                    else
+                    // Set dialogue triggers
+                    NextTriggers.Add(new Trigger(() =>
                     {
-                        CloseLevel();
-                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Neptune_PressingForward.GetRange(5, ConfigData.CurrentShips.HasShipsOfType(ConfigData.ShipTypes.Factory) ? 7 : 2), true);
-                    }
-                },
-                "Level 5 Ending dialogue")
-            );
+                        return State.IsSideKilled(ConfigData.Configuration.UserSide) || State.IsSideKilled(ConfigData.Configuration.AISide);
+                    },
+                        () =>
+                        {
+                            WinningSide = State.IsSideKilled(ConfigData.Configuration.UserSide) ? ConfigData.Configuration.AISide : ConfigData.Configuration.UserSide;
+                            Debug.Log($"Winning Side: {WinningSide}");
+                            CloseLevel();
+                            if (WinningSide == ConfigData.Configuration.UserSide) // Player won
+                            {
+                                Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Pushback.GetRange(13, 9), true);
+
+                            }
+                            else
+                            {
+                                Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Pushback.GetRange(22, 9), true);
+                            }
+                        },
+                        "Level 2 Ending dialogue")
+                    );
+
+                }, 
+            ""));
+
+            
         }
         public void Level3Triggers()
         {
@@ -1672,6 +1622,10 @@ namespace Assets.Scripts.Levels
                                         () =>
                                         {
                                             CloseLevel();
+                                            CancelTimer(wave1);
+                                            CancelTimer(wave2);
+                                            CancelTimer(wave3);
+                                            CancelTimer(wave4);
                                             CancelTimer(wave5);
                                             Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Neptune_OfProduction[16], true);
                                         },
@@ -1685,6 +1639,10 @@ namespace Assets.Scripts.Levels
                                        () =>
                                        {
                                            CloseLevel();
+                                           CancelTimer(wave1);
+                                           CancelTimer(wave2);
+                                           CancelTimer(wave3);
+                                           CancelTimer(wave4);
                                            CancelTimer(wave5);
                                            Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Neptune_OfProduction[17], true);
                                        },
@@ -2030,10 +1988,14 @@ namespace Assets.Scripts.Levels
         }
         public void EasterEggTriggers()
         {
-            _egg.Reuse(1f, () => // 30
+            Stage.CutsceneManager.Setup(() =>
             {
-                if (Utilities.RandomInt(100) == 36 && Stage.CutsceneManager.HitDialogueBreak)
+            });
+            _egg.Reuse(10f, () => // 30
+            {
+                if (Utilities.RandomInt(100) == 36)
                 {
+                    //Debug.Log($"{Stage}, {Stage?.CutsceneManager}, {Stage?.CutsceneManager?.EasterEggLines}");
                     Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.EasterEggLines[Utilities.RandomInt(Stage.CutsceneManager.EasterEggLines.Count)]);
                 }
                 
@@ -2359,6 +2321,13 @@ namespace Assets.Scripts.Levels
                                     WinningSide = ConfigData.Configuration.AISide;
                                     Debug.Log($"Winning Side: {WinningSide}");
                                     CloseLevel();
+                                    CancelTimer(wave1);
+                                    CancelTimer(wave2);
+                                    CancelTimer(wave3);
+                                    CancelTimer(wave4);
+                                    CancelTimer(wave5);
+                                    CancelTimer(wave6);
+
                                     if (WinningSide == ConfigData.Configuration.AISide) // Player lost or retreated
                                     {
                                         if (!_lastShipRetreated)
@@ -2619,11 +2588,12 @@ namespace Assets.Scripts.Levels
             Debug.Log("Level complete!");
 
             // Add new human ships to the game
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Gunship, 1); 
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 4); 
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Dreadnought, 2);
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Gunship, 3);
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Scout, 1);
+            //ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 4); 
+            //ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Dreadnought, 2);
 
-            State.PlayerNewShipsReceived += 7;
+            State.PlayerNewShipsReceived += 4;
 
 
             // Add new ships to the human's available ships
@@ -2632,26 +2602,29 @@ namespace Assets.Scripts.Levels
             gunshipSquad.AddShipToSquad(new SquadShip(gunship.Id, gunship.Type, Vector2.zero));
             gunshipSquad.AutoRepositionSquad();
 
-            // Starting Dreadnought squad #8
-            SavedSquad squad = CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Dreadnought, 2);
-            //squad.StartingPosition = ConfigData.StartingPositionOffset + new Vector2(0, -10);
+            CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Gunship, 2);
+            CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Scout, 1);
 
-            // Starting Frigate squad #9
-            squad = CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Frigate, 4);
-            //squad.StartingPosition = ConfigData.StartingPositionOffset;
+            //// Starting Dreadnought squad #8
+            //SavedSquad squad = CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Dreadnought, 2);
+            ////squad.StartingPosition = ConfigData.StartingPositionOffset + new Vector2(0, -10);
+
+            //// Starting Frigate squad #9
+            //squad = CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Frigate, 4);
+            ////squad.StartingPosition = ConfigData.StartingPositionOffset;
 
 
             // Add Honeybee, Frigate, and Dreadnought to the codex and visibility
             ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Honeybee);
-            ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Frigate);
-            ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Dreadnought);
+            //ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Frigate);
+            //ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Dreadnought);
 
             ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Hornet);
-            ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Wasp);
-            ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Frigate);
-            ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Dreadnought);
-            ConfigData.UserProgressData.UnlockedCampaignShips.Add(ConfigData.ShipTypes.Frigate);
-            ConfigData.UserProgressData.UnlockedCampaignShips.Add(ConfigData.ShipTypes.Dreadnought);
+            //ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Wasp);
+            //ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Frigate);
+            //ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Dreadnought);
+            //ConfigData.UserProgressData.UnlockedCampaignShips.Add(ConfigData.ShipTypes.Frigate);
+            //ConfigData.UserProgressData.UnlockedCampaignShips.Add(ConfigData.ShipTypes.Dreadnought);
 
             ConfigData.UserProgressData.CampaignScore += State.PlayerScore;
 
@@ -2676,19 +2649,29 @@ namespace Assets.Scripts.Levels
             Debug.Log("Level 1 complete!");
 
             // Add new human ships to the game, 10 Scouts, 2 Gunships, 2 Frigates, 1 Dreadnought
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Scout, 10);
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Gunship, 2); 
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 1); 
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Dreadnought, 1);
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Scout, 1);
+            //ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Gunship, 2); 
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 3); 
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Dreadnought, 3);
 
-            State.PlayerNewShipsReceived += 15;
+            State.PlayerNewShipsReceived += 7;
 
+            CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Dreadnought, 3);
 
+            CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Frigate, 3);
+            CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Scout, 1);
+
+            ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Frigate);
+            ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Dreadnought);
             // Add Hornet and Wasp to codex and add leafcutter and yellow jacket to visibility
             ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Hornet);
-            ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Wasp);
+            //ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Wasp);
+            ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Frigate);
+            ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Dreadnought);
+            ConfigData.UserProgressData.UnlockedCampaignShips.Add(ConfigData.ShipTypes.Frigate);
+            ConfigData.UserProgressData.UnlockedCampaignShips.Add(ConfigData.ShipTypes.Dreadnought);
 
-            ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Leafcutter);
+            ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Wasp);
             ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.YellowJacket);
 
             ConfigData.UserProgressData.SetShipTypes();
@@ -2710,6 +2693,30 @@ namespace Assets.Scripts.Levels
         public void Level2Ending()
         {
 
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 2);
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Dreadnought, 1);
+
+            State.PlayerNewShipsReceived += 3;
+
+            ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Wasp);
+
+            ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Leafcutter);
+            ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.YellowJacket);
+
+            ConfigData.UserProgressData.SetShipTypes();
+
+            ConfigData.UserProgressData.CampaignScore += State.PlayerScore;
+            // Advance to next level in campaign
+            ConfigData.UserProgressData.AdvanceToNextLevel();
+
+            ConfigData.UserProgressData.Save();
+            CurrentShips.SaveSquadData();
+            CurrentShips.SaveFleetData();
+
+
+            State.GameOver = true;
+            Debug.Log("Did Standard level complete, showing dialogue");
+            Stage.Menus.ShowLevelSummary();
         }
         public void Level3Ending()
         {
@@ -2888,7 +2895,7 @@ namespace Assets.Scripts.Levels
                 });
 
             }
-            ConfigData.UserProgressData.CampaignScore += State.PlayerScore;
+            ConfigData.UserProgressData.CampaignScore += State.PlayerScore + State.PlayerMineralsReceived;
             // Advance to next level in campaign
             ConfigData.UserProgressData.AdvanceToNextLevel();
 
@@ -3000,7 +3007,7 @@ namespace Assets.Scripts.Levels
 
             }
 
-            ConfigData.UserProgressData.CampaignScore += State.PlayerScore;
+            ConfigData.UserProgressData.CampaignScore += State.PlayerScore + State.PlayerMineralsReceived;
             // Advance to next level in campaign
             ConfigData.UserProgressData.AdvanceToNextLevel();
 
