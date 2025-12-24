@@ -48,7 +48,7 @@ TextureImporter:
   spriteMeshType: 1
   alignment: 0
   spritePivot: {x: 0.5, y: 0.5}
-  spritePixelsToUnits: 8
+  spritePixelsToUnits: 40
   spriteBorder: {x: 0, y: 0, z: 0, w: 0}
   spriteGenerateFallbackPhysicsShape: 1
   alphaUsage: 1
@@ -69,7 +69,7 @@ TextureImporter:
   platformSettings:
   - serializedVersion: 4
     buildTarget: DefaultTexturePlatform
-    maxTextureSize: 512
+    maxTextureSize: 2048
     resizeAlgorithm: 0
     textureFormat: -1
     textureCompression: 0
@@ -102,8 +102,8 @@ TextureImporter:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 32
-        height: 32
+        width: 160
+        height: 160
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -122,10 +122,10 @@ TextureImporter:
       name: Human Medium Laser Shot Impact Splash_1
       rect:
         serializedVersion: 2
-        x: 32
+        x: 160
         y: 0
-        width: 32
-        height: 32
+        width: 160
+        height: 160
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -144,10 +144,10 @@ TextureImporter:
       name: Human Medium Laser Shot Impact Splash_2
       rect:
         serializedVersion: 2
-        x: 64
+        x: 320
         y: 0
-        width: 32
-        height: 32
+        width: 160
+        height: 160
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -166,10 +166,10 @@ TextureImporter:
       name: Human Medium Laser Shot Impact Splash_3
       rect:
         serializedVersion: 2
-        x: 96
+        x: 480
         y: 0
-        width: 32
-        height: 32
+        width: 160
+        height: 160
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -188,10 +188,10 @@ TextureImporter:
       name: Human Medium Laser Shot Impact Splash_4
       rect:
         serializedVersion: 2
-        x: 128
+        x: 640
         y: 0
-        width: 32
-        height: 32
+        width: 160
+        height: 160
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -210,10 +210,10 @@ TextureImporter:
       name: Human Medium Laser Shot Impact Splash_5
       rect:
         serializedVersion: 2
-        x: 160
+        x: 800
         y: 0
-        width: 32
-        height: 32
+        width: 160
+        height: 160
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -232,10 +232,10 @@ TextureImporter:
       name: Human Medium Laser Shot Impact Splash_6
       rect:
         serializedVersion: 2
-        x: 192
+        x: 960
         y: 0
-        width: 32
-        height: 32
+        width: 160
+        height: 160
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -254,10 +254,10 @@ TextureImporter:
       name: Human Medium Laser Shot Impact Splash_7
       rect:
         serializedVersion: 2
-        x: 224
+        x: 1120
         y: 0
-        width: 32
-        height: 32
+        width: 160
+        height: 160
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -276,10 +276,10 @@ TextureImporter:
       name: Human Medium Laser Shot Impact Splash_8
       rect:
         serializedVersion: 2
-        x: 256
+        x: 1280
         y: 0
-        width: 32
-        height: 32
+        width: 160
+        height: 160
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -298,10 +298,10 @@ TextureImporter:
       name: Human Medium Laser Shot Impact Splash_9
       rect:
         serializedVersion: 2
-        x: 288
+        x: 1440
         y: 0
-        width: 32
-        height: 32
+        width: 160
+        height: 160
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -320,10 +320,10 @@ TextureImporter:
       name: Human Medium Laser Shot Impact Splash_10
       rect:
         serializedVersion: 2
-        x: 320
+        x: 1600
         y: 0
-        width: 32
-        height: 32
+        width: 160
+        height: 160
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -342,10 +342,10 @@ TextureImporter:
       name: Human Medium Laser Shot Impact Splash_11
       rect:
         serializedVersion: 2
-        x: 352
+        x: 1760
         y: 0
-        width: 32
-        height: 32
+        width: 160
+        height: 160
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -372,7 +372,9 @@ TextureImporter:
     weights: []
     secondaryTextures: []
     spriteCustomMetadata:
-      entries: []
+      entries:
+      - key: SpriteEditor.SliceSettings
+        value: '{"sliceOnImport":false,"gridCellCount":{"x":13.0,"y":1.0},"gridSpriteSize":{"x":160.0,"y":160.0},"gridSpriteOffset":{"x":0.0,"y":0.0},"gridSpritePadding":{"x":0.0,"y":0.0},"pivot":{"x":0.0,"y":0.0},"autoSlicingMethod":0,"spriteAlignment":0,"slicingType":2,"keepEmptyRects":false,"isAlternate":false}'
     nameFileIdTable:
       Human Medium Laser Shot Impact Splash_0: 1554916918
       Human Medium Laser Shot Impact Splash_1: 1761910967
