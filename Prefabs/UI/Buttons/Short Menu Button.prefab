@@ -90,7 +90,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 2448719649621199497, guid: 2c69add7043f0224698172081a967d71, type: 3}
       propertyPath: m_text
-      value: Reset
+      value: Reset\nProgress
+      objectReference: {fileID: 0}
+    - target: {fileID: 2448719649621199497, guid: 2c69add7043f0224698172081a967d71, type: 3}
+      propertyPath: m_fontStyle
+      value: 33
       objectReference: {fileID: 0}
     - target: {fileID: 3257465046850194243, guid: 2c69add7043f0224698172081a967d71, type: 3}
       propertyPath: m_Sprite
