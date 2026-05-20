@@ -25,10 +25,10 @@ namespace Assets.Scripts
         /// <summary>
         /// Test is for beta testing, non-local. Development is for development, local.
         /// </summary>
-        public const bool Test = true; // [alert] should be true for beta testing
-        public const bool Development = false;
+        public const bool Test = false; // [alert] should be true for beta testing
+        public const bool Development = true;
         public const bool Production = !Test && !Development;
-        public const string LocalServerHostname = "192.168.36.2";
+        public const string LocalServerHostname = "localhost"; // "192.168.36.2";
         public const string GlobalServerHostname = "seagrams7.softether.net";
         public const string TestServerHostname = GlobalServerHostname;
         public const string DevelopmentServerHostname = LocalServerHostname;
@@ -883,6 +883,7 @@ namespace Assets.Scripts
             {"striker-not-loaded-indicator", new Color32(236, 44, 44, 255)},
             {"squadbox-default-color", new Color(0.4761926f, 0.8207547f, 0.4979669f, 0.6941177f)},
             {"saved-squad-label-default-color", new Color(0.6527f, 0.6625f, 0.7169f, 1)},
+            {"ui-green-screen", new Color(0.1803f, 0.8078f, 0.5568f, 1)}, 
         };
 
 
@@ -1372,6 +1373,15 @@ namespace Assets.Scripts
         }
         public static ulong GetUserId()
         {
+            // Skip Steam
+            _userId = (ulong)PlayerPrefs.GetInt("user_id");
+            if (_userId == 0)
+            {
+                _userId = (ulong)Utilities.RandomInt();
+                PlayerPrefs.SetInt("user_id", (int)_userId);
+            }
+            return _userId;
+
             if (!SteamAPI.Init())
             {
                 Debug.LogWarning("Steam API failed to initialize!");

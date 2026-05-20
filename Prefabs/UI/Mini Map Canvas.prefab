@@ -31,7 +31,6 @@ RectTransform:
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 5483838851917909402}
-  m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
@@ -111,7 +110,6 @@ RectTransform:
   - {fileID: 8203375506875500013}
   - {fileID: 8203375506190216653}
   m_Father: {fileID: 0}
-  m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
@@ -135,7 +133,10 @@ Canvas:
   m_OverrideSorting: 0
   m_OverridePixelPerfect: 0
   m_SortingBucketNormalizedSize: 0
+  m_VertexColorAlwaysGammaSpace: 0
+  m_UseReflectionProbes: 0
   m_AdditionalShaderChannelsFlag: 25
+  m_UpdateRectTransformForStandalone: 0
   m_SortingLayerID: 0
   m_SortingOrder: 0
   m_TargetDisplay: 0
@@ -184,11 +185,24 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5483838851917909402}
     m_Modifications:
+    - target: {fileID: 3516569700773824028, guid: fee41e02f62c67e498e2603473439f21, type: 3}
+      propertyPath: m_Type
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3516569700773824028, guid: fee41e02f62c67e498e2603473439f21, type: 3}
+      propertyPath: m_Sprite
+      value: 
+      objectReference: {fileID: 5071271627872217748, guid: 94b7399bdcf35ae43a35fa7158b74304, type: 3}
     - target: {fileID: 4324039746242709462, guid: fee41e02f62c67e498e2603473439f21, type: 3}
       propertyPath: m_text
       value: X
+      objectReference: {fileID: 0}
+    - target: {fileID: 4324039746242709462, guid: fee41e02f62c67e498e2603473439f21, type: 3}
+      propertyPath: m_ActiveFontFeatures.Array.size
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4450327115452573009, guid: fee41e02f62c67e498e2603473439f21, type: 3}
       propertyPath: m_Pivot.x
@@ -275,6 +289,18 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 6183734201528522869, guid: fee41e02f62c67e498e2603473439f21, type: 3}
+      propertyPath: m_Transition
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 6183734201528522869, guid: fee41e02f62c67e498e2603473439f21, type: 3}
+      propertyPath: m_SpriteState.m_PressedSprite
+      value: 
+      objectReference: {fileID: 5071271627872217748, guid: 94b7399bdcf35ae43a35fa7158b74304, type: 3}
+    - target: {fileID: 6183734201528522869, guid: fee41e02f62c67e498e2603473439f21, type: 3}
+      propertyPath: m_SpriteState.m_HighlightedSprite
+      value: 
+      objectReference: {fileID: 2047920982, guid: 94b7399bdcf35ae43a35fa7158b74304, type: 3}
+    - target: {fileID: 6183734201528522869, guid: fee41e02f62c67e498e2603473439f21, type: 3}
       propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_Target
       value: 
       objectReference: {fileID: 0}
@@ -286,7 +312,15 @@ PrefabInstance:
       propertyPath: m_Name
       value: Mini Map Close Button
       objectReference: {fileID: 0}
+    - target: {fileID: 7322223532023270676, guid: fee41e02f62c67e498e2603473439f21, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects:
+    - {fileID: 2707806565432835829, guid: fee41e02f62c67e498e2603473439f21, type: 3}
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: fee41e02f62c67e498e2603473439f21, type: 3}
 --- !u!224 &8203375506875500013 stripped
 RectTransform:
@@ -298,11 +332,24 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5483838851917909402}
     m_Modifications:
+    - target: {fileID: 3516569700773824028, guid: fee41e02f62c67e498e2603473439f21, type: 3}
+      propertyPath: m_Type
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3516569700773824028, guid: fee41e02f62c67e498e2603473439f21, type: 3}
+      propertyPath: m_Sprite
+      value: 
+      objectReference: {fileID: -2470569405171011064, guid: b66f49fbf532c044db3d7fb6dc362ef2, type: 3}
     - target: {fileID: 4324039746242709462, guid: fee41e02f62c67e498e2603473439f21, type: 3}
       propertyPath: m_text
-      value: O
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 4324039746242709462, guid: fee41e02f62c67e498e2603473439f21, type: 3}
+      propertyPath: m_ActiveFontFeatures.Array.size
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4450327115452573009, guid: fee41e02f62c67e498e2603473439f21, type: 3}
       propertyPath: m_Pivot.x
@@ -389,6 +436,18 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 6183734201528522869, guid: fee41e02f62c67e498e2603473439f21, type: 3}
+      propertyPath: m_Transition
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 6183734201528522869, guid: fee41e02f62c67e498e2603473439f21, type: 3}
+      propertyPath: m_SpriteState.m_PressedSprite
+      value: 
+      objectReference: {fileID: -2470569405171011064, guid: b66f49fbf532c044db3d7fb6dc362ef2, type: 3}
+    - target: {fileID: 6183734201528522869, guid: fee41e02f62c67e498e2603473439f21, type: 3}
+      propertyPath: m_SpriteState.m_HighlightedSprite
+      value: 
+      objectReference: {fileID: -905662712, guid: b66f49fbf532c044db3d7fb6dc362ef2, type: 3}
+    - target: {fileID: 6183734201528522869, guid: fee41e02f62c67e498e2603473439f21, type: 3}
       propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_Target
       value: 
       objectReference: {fileID: 0}
@@ -402,9 +461,13 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 7322223532023270676, guid: fee41e02f62c67e498e2603473439f21, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects:
+    - {fileID: 2707806565432835829, guid: fee41e02f62c67e498e2603473439f21, type: 3}
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: fee41e02f62c67e498e2603473439f21, type: 3}
 --- !u!224 &8203375506190216653 stripped
 RectTransform:

@@ -1229,7 +1229,7 @@ namespace Assets.Scripts.Levels
 
                 Stage.SquadTabs.ForEach((tab) =>
                 {
-                    tab.Background.GetComponent<UnityEngine.UI.Image>().color = Color.white;
+                    tab.Background.GetComponent<UnityEngine.UI.Image>().color = ConfigData.GetUIColor("ui-green-screen");
                     tab.HideTab();
                 });
 
@@ -1452,9 +1452,9 @@ namespace Assets.Scripts.Levels
                                 ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Queen);
                                 ConfigData.UserProgressData.SetShipTypes();
 
-                                Stage.Menus.CampaignCompletedDialogue = new Dialogue(Stage.DialoguePrefab, "Challenge Mode Completed!", "Congratulations! You've finished the Challenge Mode!", new List<string>() { "Exit to Main Menu" }, new List<UnityAction>() { Stage.Menus.ExitToMainMenu });
+                                Stage.Menus.CampaignCompletedDialogue = new Dialogue(Stage.DialoguePrefab, "Challenge Mode Completed!", "Congratulations! You've finished the Challenge Mode!", new List<string>() { "Main Menu" }, new List<UnityAction>() { Stage.Menus.ExitToMainMenu });
                                 Stage.Menus.CampaignCompletedDialogue.SetTextBoxHeight(120);
-                                Stage.Menus.CampaignCompletedDialogue.SetButtonWidth(0, 180);
+                                Stage.Menus.CampaignCompletedDialogue.SetButtonWidth(0, 80);
 
                                 ConfigData.UserProgressData.Save();
 

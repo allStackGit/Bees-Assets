@@ -19,7 +19,7 @@ namespace Assets.Scripts.UIComponents
 {
     public class GameMenus : MonoBehaviour
     {
-        public GameObject MenuContainer, LevelEndedDialogue, SaveLevelDialogue, NoAliveShipsAlert, SquadActionBoxUI, VictoryLabel, DefeatLabel, MiniMapCloseButton, MiniMapOpenButton, MiniMapTopBorder, MiniMapLeftBorder, MiniMapCameraCollider, MiniMapOutput, HumanScore, BeeScore, ShipInfoBox, KeepGoingButton, ToggleFogOfWarButton, RestartLevelButton, ChooseNewSquadsButton, SwitchSidesButton, SaveAsLevelButton, ExitToMainMenuButton, Scoreboard, TooltipPrefab, WASDTooltip, UIOverlay, HighlightTooltipPrefab, UIHighlightTooltipPrefab, PointerArrow, PlutoCircle, Clock, Counter, RetreatButton, MineralsMinedStatus, MineralsMinedFiller, MissionStatus, PlutoShield, PlutoShieldHealthBar, GameSpeedButton, PausePanel, SummaryPanel, SurrenderButton;
+        public GameObject MenuContainer, LevelEndedDialogue, SaveLevelDialogue, NoAliveShipsAlert, SquadActionBoxUI, VictoryLabel, DefeatLabel, MiniMapCloseButton, MiniMapOpenButton, MiniMapCameraCollider, MiniMapCover, MiniMapOutput, HumanScore, BeeScore, ShipInfoBox, KeepGoingButton, ToggleFogOfWarButton, RestartLevelButton, ChooseNewSquadsButton, SwitchSidesButton, SaveAsLevelButton, ExitToMainMenuButton, Scoreboard, TooltipPrefab, WASDTooltip, UIOverlay, HighlightTooltipPrefab, UIHighlightTooltipPrefab, PointerArrow, PlutoCircle, Clock, Counter, RetreatButton, MineralsMinedStatus, MineralsMinedFiller, MissionStatus, PlutoShield, PlutoShieldHealthBar, GameSpeedButton, PausePanel, SummaryPanel, SurrenderButton;
         public SquadActionBox ActionBox;
         public Level CurrentLevel;
         public Stage Stage;
@@ -63,16 +63,16 @@ namespace Assets.Scripts.UIComponents
             ExitConfirmationDialogue = new Dialogue(Stage.DialoguePrefab, ConfigData.Configuration.AreYouSureExit, ConfigData.Configuration.LevelProgressLost, new List<string>() { ConfigData.Configuration.Yes, ConfigData.Configuration.No }, new List<UnityAction>() { ExitToMainMenu });
             ExitConfirmationDialogue.SetTextBoxHeight(200);
 
-            CampaignLevelEndedDialogue = new Dialogue(Stage.DialoguePrefab, "Level Complete", "Do you want to continue?", new List<string>() { ConfigData.Configuration.Yes, "Exit to Main Menu" }, new List<UnityAction>() { () => {
+            CampaignLevelEndedDialogue = new Dialogue(Stage.DialoguePrefab, "Level Complete", "Do you want to continue?", new List<string>() { ConfigData.Configuration.Yes, "Main Menu" }, new List<UnityAction>() { () => {
                 Debug.Log("Continue!");
                 ConfigData.LoadLevel();
             }, ExitToMainMenu });
             CampaignLevelEndedDialogue.SetTextBoxHeight(100);
-            CampaignLevelEndedDialogue.SetButtonWidth(1, 180);
+            CampaignLevelEndedDialogue.SetButtonWidth(1, 80);
 
-            CampaignCompletedDialogue = new Dialogue(Stage.DialoguePrefab, "Campaign Completed!", "Congratulations! You've finished the Beta Campaign!", new List<string>() { "Exit to Main Menu" }, new List<UnityAction>() {ExitToMainMenu });
+            CampaignCompletedDialogue = new Dialogue(Stage.DialoguePrefab, "Campaign Completed!", "Congratulations! You've finished the Beta Campaign!", new List<string>() { "Main Menu" }, new List<UnityAction>() {ExitToMainMenu });
             CampaignCompletedDialogue.SetTextBoxHeight(120);
-            CampaignCompletedDialogue.SetButtonWidth(0, 180);
+            CampaignCompletedDialogue.SetButtonWidth(0, 80);
             //Debug.Log($"ActionBox:{ActionBox}");
             //Debug.Log($"EventSystem:{EventSystem}");
 
@@ -172,10 +172,9 @@ namespace Assets.Scripts.UIComponents
             CurrentLevel.Stage.MiniMapCameraContainer.SetActive(!CurrentLevel.Stage.MiniMapCameraContainer.activeSelf);
             MiniMapCloseButton.SetActive(!MiniMapCloseButton.activeSelf);
             MiniMapOpenButton.SetActive(!MiniMapOpenButton.activeSelf);
-            MiniMapLeftBorder.SetActive(!MiniMapLeftBorder.activeSelf);
-            MiniMapTopBorder.SetActive(!MiniMapTopBorder.activeSelf);
             MiniMapCameraCollider.SetActive(!MiniMapCameraCollider.activeSelf);
             MiniMapOutput.SetActive(!MiniMapOutput.activeSelf);
+            MiniMapCover.SetActive(!MiniMapCover.activeSelf);
             IsMiniMapOpen = MiniMapCloseButton.activeSelf;
             
         }
