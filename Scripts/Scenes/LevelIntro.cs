@@ -122,36 +122,56 @@ namespace UIComponents
                     {
                         StartCoroutine(DelayStart(StandardDelay, () =>
                         {
-                            CutsceneManager.PlayDialogueSection(CutsceneManager.Uranus_OnTheOffensive.GetRange(0, 2), true);
+                            CutsceneManager.PlayDialogueSection(CutsceneManager.Titania_Minesweeper.GetRange(0, 1), true);
                         }));
-                        
+
                     }
                     else
                     {
                         SkipButton.SetActive(true);
                         StartCoroutine(DelayStart(StandardDelay, () =>
                         {
-                            CutsceneManager.PlayDialogueSection(CutsceneManager.NeptuneToUranus, true);
+                            CutsceneManager.PlayDialogueSection(CutsceneManager.NeptuneToTitania, true);
                         }));
-                        
+
                     }
                     break;
-                case 8:
-                    ConfigData.HasSeenIntermission = true;
-                    StartCoroutine(DelayStart(StandardDelay, () =>
-                    {
-                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Uranus_OnTheDefensive[0], true);
-                    }));
-                    
-                    break;
-                case 9:
-                    ConfigData.HasSeenIntermission = true;
-                    StartCoroutine(DelayStart(StandardDelay, () =>
-                    {
-                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Uranus_ANewThreat[0], true);
-                    }));
-                    
-                    break;
+                    //case 7:
+
+                    //    if (ConfigData.HasSeenIntermission)
+                    //    {
+                    //        StartCoroutine(DelayStart(StandardDelay, () =>
+                    //        {
+                    //            CutsceneManager.PlayDialogueSection(CutsceneManager.Uranus_OnTheOffensive.GetRange(0, 2), true);
+                    //        }));
+
+                    //    }
+                    //    else
+                    //    {
+                    //        SkipButton.SetActive(true);
+                    //        StartCoroutine(DelayStart(StandardDelay, () =>
+                    //        {
+                    //            CutsceneManager.PlayDialogueSection(CutsceneManager.NeptuneToUranus, true);
+                    //        }));
+
+                    //    }
+                    //    break;
+                    //case 8:
+                    //    ConfigData.HasSeenIntermission = true;
+                    //    StartCoroutine(DelayStart(StandardDelay, () =>
+                    //    {
+                    //        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Uranus_OnTheDefensive[0], true);
+                    //    }));
+
+                    //    break;
+                    //case 9:
+                    //    ConfigData.HasSeenIntermission = true;
+                    //    StartCoroutine(DelayStart(StandardDelay, () =>
+                    //    {
+                    //        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Uranus_ANewThreat[0], true);
+                    //    }));
+
+                    //    break;
             }
         }
 

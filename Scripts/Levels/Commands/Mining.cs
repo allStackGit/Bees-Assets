@@ -135,7 +135,7 @@ namespace Assets.Scripts.Levels.Commands
                 ShipsCurrentlyMining = ShipsCurrentlyMining.Where((s) => !s.IsDead).ToList();
                 if (ShipsCurrentlyMining.Count > 0)
                 {
-                    //Debug.Log($"There are {ShipsMining.Count} ships mining for {Squad.Name}");
+                    //Debug.Log($"There are {ShipsCurrentlyMining.Count} ships mining for {GetSquad().Name}");
                     _miningRate = ConfigData.MiningRate * ShipsCurrentlyMining.Count;
                     _amountMined = math.min(_miningRate, TargetAstroid.Health); // [TSV] The health of the mining asteroids should be adjusted if the TSV is adjusted
 

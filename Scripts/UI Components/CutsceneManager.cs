@@ -12,7 +12,7 @@ public class CutsceneManager : MonoBehaviour
     public DialogueManager DialogueManager;
     public GameObject CutsceneCanvas;
     public Stage Stage;
-    public List<DialogueLine> PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLines_Pushback, PlutoLines_BluerPastures, PlutoToNeptune, Neptune_SeizeTheMeans, Neptune_OfProduction, Neptune_PressingForward, NeptuneToUranus, Uranus_OnTheOffensive, Uranus_OnTheDefensive, Uranus_ANewThreat, LostCampaign, StartedChallengeMode, SelectedCarrierSquad, EasterEggLines;
+    public List<DialogueLine> PlutoLines_Anomaly, PlutoLines_Reinforcements, PlutoLines_Pushback, PlutoLines_BluerPastures, PlutoToNeptune, Neptune_SeizeTheMeans, Neptune_OfProduction, Neptune_PressingForward, NeptuneToTitania, NeptuneToUranus, Titania_Minesweeper, Titania_Beenoculars, Uranus_OnTheOffensive, Uranus_OnTheDefensive, Uranus_ANewThreat, LostCampaign, StartedChallengeMode, SelectedCarrierSquad, EasterEggLines;
     public bool PlutoLines_Anomaly_Completed = false;
     public bool HitDialogueBreak = false;
     public Action EndDialogueAction;
@@ -328,6 +328,118 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Samuel", Portraits["Samuel"], "Full speed ahead!"),
 
         };
+
+        NeptuneToTitania = new List<DialogueLine>
+        {
+            new DialogueLine("Samuel", Portraits["Samuel"], "Commander, I’ve been reviewing the colonies and bases throughout the solar system. While there is a small UF outpost on Uranus proper, there’s also a research and engineering base on one of its moons, Titania. We should be able to find allies here."),
+            new DialogueLine("Marco", Portraits["Marco"], "If there’s anyone left."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "If- yeah, if… I’m just trying to think through our options."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Titania is en route to Uranus. I’ll have some scouts look ahead and see if there’s anything worth stopping for."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "You think the nerds on Titania might have cool new weapons we can use?"),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Nerds?"),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Yeah, you said it’s a research and… whatever base. I love those nerds."),
+            new DialogueLine("Joey", Portraits["Joey"], "Ha! We could probably use some more nerds on our side. Even one other person who understands how explosives work."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Just cuz I blew up one frigate-"),
+            new DialogueLine("Marco", Portraits["Marco"], "Can we focus, please?"),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Scouts are reporting Titania base looks evacuated. No damage, but no signals either. And lots of bee patrols."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Wait a minute, we’re getting a request right now! Let me put them on…"),
+            new DialogueLine("Samuel", Portraits["Samuel"], "..."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Hello? Do you read me?"),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Loud and clear, ma’am."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Ah, good. This is Alejandra Vasquez, research and engineering wing, regional commander and research lead for United Fleet Titania."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Ohhhh, who are they?"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Emilia, please. We saw other United Fleet vessels around our base. I presume those belong to your contingent?"),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Yes, that was my scout team. We thought your base was abandoned, though."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "We need help!"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "I was getting there, Emilia."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "We can’t get off the base right now!"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "That is correct. The initial assault of these unidentified aliens targeted the surface of Uranus, primarily. They were swiftly dismantled. We sent a signal on the emergency frequency, as is protocol, but they detected us. Their attack destroyed our weapons bay and sent experimental explosive devices out into the debris. It’s keeping them from approaching at the moment, but it’s also keeping us trapped here. Someone needs to clear an evacuation route and keep it safe from the bees."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "You can help us! You have fighting ships! And we have a carrier to help too!"),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Oh, what’s a carrier?"),
+            new DialogueLine("Emilia", Portraits["Emilia"], "It’s this awesome ship my dad designed. It has a bunch of little robot controlled ships. We call ‘em drones and strikers, and they can-"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Please, Emilia, I’d love to discuss the details of Philip’s designs, but we don’t have the time right now. To abbreviate this conversation, would your fleet be able to assist in our attempt to extricate our staff and their families from this moon? The prototypal carrier is our only military vessel at the moment."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Right! We’re running out of food and batteries!"),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Of course we can help. We’re already pretty experienced bee fighters."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Bees?"),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Erm… yes, that’s what we’re calling the aliens."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Yes, I do suppose they bear some resemblance to the endangered species. Fascinating observation."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "I like that name! Stupid bees! Yeah, it feels good to say."),
+            new DialogueLine("Marco", Portraits["Marco"], "Quit wasting time."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Right. Commander, what are your orders?"),
+
+        };
+
+        Titania_Minesweeper = new List<DialogueLine>
+        {
+            new DialogueLine("Samuel", Portraits["Samuel"], "We need to clear out the debris surrounding Titania to give our new friends an exit path. Bee patrols have also been spotted around the area, trying to make sure nothing gets in or out."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Commander, that’s one of the explosives."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "You can tell it’s a bomb cuz we put a big blinky light on it!"),
+            new DialogueLine("Marco", Portraits["Marco"], "Can we please remove her from this frequency?"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "No. As I was saying, Commander, that’s one of the bombs."),
+            new DialogueLine("Joey", Portraits["Joey"], "If we detonate it, it should be able to clear out the debris and cut a path straight to the surface."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "It will also alert the bee patrols."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Your fleet’s automatic targeting systems won’t see it, so you’ll have to fire manually and precisely. Once the debris has been jettisoned, we can begin evacuating the base."),
+            new DialogueLine("Joey", Portraits["Joey"], "Should we be worried about stray debris hitting your base?"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "The explosives should be powerful enough to disintegrate any debris. Ah. Yes, don’t fly too closely."),
+            new DialogueLine("Marco", Portraits["Marco"], "They’re powerful enough to what?"),
+            new DialogueLine("Emilia", Portraits["Emilia"], "She said they were experimental!"),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Woohoo! Now this is fun!"),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Aww man, I wish I could see."),
+            new DialogueLine("Marco", Portraits["Marco"], "Stay focused. We’re still fighting out here."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Excellent work, Commander. We’ll begin the evacuation process immediately."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "This fight alerted the bees on Uranus’s surface."),
+            new DialogueLine("Marco", Portraits["Marco"], "Fantastic…"),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Looks like we need to cover their exit, commander."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Stay frosty, everyone!"),
+            new DialogueLine("Samuel", Portraits["Samuel"], "We can’t clear the bees out, commander."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "More from Uranus’s surface have been alerted to our presence as well."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "What do you propose we do, then?"),
+            new DialogueLine("Emilia", Portraits["Emilia"], "We’re gonna die…"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "None of that, Emilia."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "We can still attempt an evacuation, but it’ll be risky."),
+            new DialogueLine("Marco", Portraits["Marco"], "Too risky."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Don’t worry, ma’am, we will get you out."),
+            new DialogueLine("Marco", Portraits["Marco"], "…Don’t make promises you can’t keep, son."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Lives are at stake! Commander, what do we do?"),
+        };
+
+        Titania_Beenoculars = new List<DialogueLine>
+        {
+            new DialogueLine("Samuel", Portraits["Samuel"], "Commander, we have to defend Titania’s base long enough for all of their personnel to escape the surface."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Our personnel are preparing for evacuation. Rebooting base systems now."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "I’m gonna get A.M.I.!"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Em- ugh, she’s already run off."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Amy?"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "A.M.I. She’s a strategy AI our team was developing for military applications."),
+            new DialogueLine("Joey", Portraits["Joey"], "Sounds mighty helpful. Is there a problem with that?"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "It will consume a considerable amount of time to transfer her to a portable device. Time that I don’t surmise we have."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "We’ll do our best, ma’am."),
+            new DialogueLine("Marco", Portraits["Marco"], "If this goes sideways, make damn sure that child is ready to leave on our orders."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Affirmative. Good luck, commander."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "We’re already under heavy fire. You have your work cut out for you, but we’ll focus our efforts on an expedient evacuation."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Upload is at ten percent, commander."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "The bees are definitely starting to take notice!"),
+            new DialogueLine("Marco", Portraits["Marco"], "Keep your wits about you, team."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Upload’s at twenty four percent!"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Why would you not wait until twenty five? It’s a good fraction of one hundred."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "It’s turning into a real fight out here!"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Fifty percent, now, commander."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "You’re doing awesome! Keep it up!"),
+            new DialogueLine("Marco", Portraits["Marco"], "Don’t get too comfortable now."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Seventy fo-"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Seventy five percent."),
+            new DialogueLine("Marco", Portraits["Marco"], "Things are getting dicey out here. That AI better be worth the trouble."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Upload is at ninety percent, commander. You are doing an excellent job out there."),
+            new DialogueLine("Joey", Portraits["Joey"], "Just another day, ma’am."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Commander is calling a retreat!"),
+            new DialogueLine("Emilia", Portraits["Emilia"], "But-"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Emilia, no. We are leaving now."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Sorry…"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "We’ll join your formation shortly, commander."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "A.M.I. is fully uploaded, commander. We are engaging the ship’s liftoff now."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Let’s go! You guys are the real deal!"),
+        };
+
 
         NeptuneToUranus = new List<DialogueLine>
         {
