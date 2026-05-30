@@ -28,7 +28,7 @@ namespace Assets.Scripts
         public const bool Test = false; // [alert] should be true for beta testing
         public const bool Development = true;
         public const bool Production = !Test && !Development;
-        public const string LocalServerHostname = "localhost"; // "192.168.36.2";
+        public const string LocalServerHostname = "clashofempire.net"; // "192.168.36.2";
         public const string GlobalServerHostname = "seagrams7.softether.net";
         public const string TestServerHostname = GlobalServerHostname;
         public const string DevelopmentServerHostname = LocalServerHostname;

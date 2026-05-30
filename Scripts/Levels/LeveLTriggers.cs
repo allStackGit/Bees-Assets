@@ -40,39 +40,45 @@ namespace Assets.Scripts.Levels
             switch (CurrentLevelOptions.Id)
             {
                 case 0:
-                    Level0Triggers();
+                    Pluto1Anomaly();
                     break;
                 case 1:
-                    Level1Triggers();
+                    Pluto2Reinforcements();
                     break;
                 case 2:
-                    Level2Triggers();
+                    Pluto3Pushback();
                     break;
                 case 3:
-                    Level3Triggers();
+                    Pluto4BluerPastures();
                     break;
                 case 4:
-                    Level4Triggers();
+                    Neptune1SeizeTheMeans();
                     break;
                 case 5:
-                    Level5Triggers();
+                    Neptune2OfProduction();
                     break;
                 case 6:
-                    Level6Triggers();
+                    Neptune3PressingForward();
                     break;
                 case 7:
-                    Level7Triggers();
+                    Titania1Minesweeper();
                     break;
                 case 8:
-                    Level8Triggers();
+                    Titania2Beenoculars();
                     break;
                 case 9:
-                    Level9Triggers();
+                    Uranus1OnTheOffensive();
+                    break;
+                case 10:
+                    Uranus2OnTheDefensive();
+                    break;
+                case 11:
+                    Uranus3ANewThreat();
                     break;
             }
         }
 
-        public void Level0Triggers()
+        public void Pluto1Anomaly()
         {
             FishTankTrigger();
             Debug.Log("Setting triggers for level 0");
@@ -145,7 +151,7 @@ namespace Assets.Scripts.Levels
 
             Stage.CutsceneManager.Setup(() =>
             {
-                Level0Ending(firstGunship.Squad.SavedSquad);
+                Pluto1Ending(firstGunship.Squad.SavedSquad);
             });
             Stage.CutsceneManager.StartCutScene();
             Stage.EnablePlayerControl();
@@ -630,7 +636,7 @@ namespace Assets.Scripts.Levels
 
             });
         }
-        public void Level1Triggers()
+        public void Pluto2Reinforcements()
         {
             Stage.Menus.MissionStatus.SetActive(false);
             // Hide the surrender button
@@ -676,7 +682,7 @@ namespace Assets.Scripts.Levels
             // Start the dialogue
             Stage.CutsceneManager.Setup(() =>
             {
-                Level1Ending();
+                Pluto2Ending();
             });
             Stage.Menus.TogglePausePanel();
 
@@ -842,7 +848,7 @@ namespace Assets.Scripts.Levels
 
 
         }
-        public void Level2Triggers()
+        public void Pluto3Pushback()
         {
             Debug.Log("Setting triggers for level 2");
             Stage.Menus.SetMissionStatus("Push back the enemy!");
@@ -854,7 +860,7 @@ namespace Assets.Scripts.Levels
 
             Stage.CutsceneManager.Setup(() =>
             {
-                Level2Ending();
+                Pluto3Ending();
             });
 
             // Spawn the Bees
@@ -921,7 +927,7 @@ namespace Assets.Scripts.Levels
 
             
         }
-        public void Level3Triggers()
+        public void Pluto4BluerPastures()
         {
             FishTankTrigger();
             Debug.Log("Setting triggers for level 2");
@@ -945,7 +951,7 @@ namespace Assets.Scripts.Levels
             // Start the dialogue
             Stage.CutsceneManager.Setup(() =>
             {
-                Level3Ending();
+                Pluto4Ending();
             });
             Stage.Menus.TogglePausePanel();
             _dialogueTimer.Reuse(1.5f, () =>
@@ -1233,7 +1239,7 @@ namespace Assets.Scripts.Levels
                 "Level 2 Showing Pluto outline and dialogue")
             );
         }
-        public void Level4Triggers()
+        public void Neptune1SeizeTheMeans()
         {
             Stage.Menus.SetMissionStatus("Find and destroy all the Bees!");
             //Stage.EnablePlayerControl();
@@ -1244,7 +1250,7 @@ namespace Assets.Scripts.Levels
 
             Stage.CutsceneManager.Setup(() =>
             {
-                Level4Ending();
+                Neptune1Ending();
             });
 
             // Spawn Position mining asteroids
@@ -1339,14 +1345,14 @@ namespace Assets.Scripts.Levels
                 "Level 3 Start Level")
             );
         }
-        public void Level5Triggers()
+        public void Neptune2OfProduction()
         {
             Stage.Menus.SetMissionStatus("Survive and mine as many minerals as you can");
             HasContinuousTriggers = true;
 
             Stage.CutsceneManager.Setup(() =>
             {
-                Level5Ending();
+                Neptune2Ending();
             });
 
             // Spawn Position mining asteroids
@@ -1661,7 +1667,7 @@ namespace Assets.Scripts.Levels
         /// <summary>
         /// Reveals the exit zone for level 4
         /// </summary>
-        public void SetRetreatForLevel4()
+        public void SetRetreatForNeptune2()
         {
             Stage.Menus.CloseDialogue();
             Stage.Menus.RetreatButton.SetActive(false);
@@ -1687,14 +1693,14 @@ namespace Assets.Scripts.Levels
                 }
             };
         }
-        public void Level6Triggers()
+        public void Neptune3PressingForward()
         {
             Stage.Menus.SetMissionStatus("Destroy all the Bees to break through the blockade");
             HasContinuousTriggers = true;
 
             Stage.CutsceneManager.Setup(() =>
             {
-                Level6Ending();
+                Neptune3Ending();
             });
 
             // Spawn the Bees
@@ -1754,7 +1760,114 @@ namespace Assets.Scripts.Levels
             );
 
         }
-        public void Level7Triggers()
+        public void Titania1Minesweeper()
+        {
+            // Player squads start near the bottom center of the map. Several small bee squads
+            // are placed around the map. After a delay more bee reinforcements arrive from
+            // the bottom-right. If any player ship reaches the center area an exit zone
+            // will appear; the level ends when the player retreats through that zone or
+            // when either side is wiped out. The encounter should be avoidable.
+            Vector2 centerOfTitania = new Vector2(-32, 55);
+            HasContinuousTriggers = true;
+            Stage.Menus.SetMissionStatus("Reach the center of the map or clear the Bees");
+
+            // Spawn player's selected squads at bottom center
+            Vector2 playerStart = StartingPositions[ConfigData.Configuration.UserSide - 1];
+            // Use existing squads loaded into the level; if nothing is loaded, nothing happens
+            // (the stage will already have spawned squads before triggers are set)
+
+            // Spawn a few small bee squads around the map to give optional encounters
+            AddReinforcementSquads(new List<SavedSquad>() {
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4, true, true),
+            }, new Vector2(-150, -150), new Vector2(-150, -150));
+
+            AddReinforcementSquads(new List<SavedSquad>() {
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 3, true, true),
+            }, new Vector2(-150, 150), new Vector2(-150, 150));
+
+            AddReinforcementSquads(new List<SavedSquad>() {
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true),
+            }, new Vector2(100, 110), new Vector2(100, 110));
+
+            AddReinforcementSquads(new List<SavedSquad>() {
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4, true, true),
+            }, new Vector2(100, 110), new Vector2(100, 110));
+
+            AddReinforcementSquads(new List<SavedSquad>() {
+                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 2, true, true),
+            }, new Vector2(205, -5), new Vector2(205, -5));
+
+            // Ensure player control is enabled
+            Stage.EnablePlayerControl();
+            Stage.ActivateHiveMind = true;
+            SetupHivemind();
+
+
+            // After a delay, spawn reinforcements off the bottom-right so player can avoid
+            // the fight if desired
+            ScaledTimer reinforcements = new ScaledTimer(90f, () =>
+            {
+                AddReinforcementSquads(new List<SavedSquad>() {
+                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6, true, true),
+                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true),
+                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 2, true, true),
+                }, StartingPositions[ConfigData.Configuration.AISide - 1] + new Vector2(180, -80), StartingPositions[ConfigData.Configuration.UserSide - 1]);
+
+                AddReinforcementsToHivemindCommandQueue();
+            });
+            AddTimer(reinforcements);
+
+            // Create a trigger that reveals an exit zone when a player ship gets near center
+            bool exitZoneCreated = false;
+            NextTriggers.Add(new Trigger(() =>
+                {
+                    return !exitZoneCreated && State.GetShips(ConfigData.Configuration.UserSide).Any(s => Vector2.Distance(s.GetPosition(), centerOfTitania) < 50);
+                },
+                () =>
+                {
+                    exitZoneCreated = true;
+                    // Make exit zone at center
+                    GameObject exitBox = Instantiate(Stage.Prefabs.ExitZonePrefab, Map.transform);
+                    exitBox.transform.localPosition = centerOfTitania;
+                    exitBox.transform.localScale = new Vector2(75, 75);
+                    Zone exitZone = exitBox.GetComponent<Zone>();
+
+                    exitZone.OnShipEnter = (ship) =>
+                    {
+                        if (ship.Side == ConfigData.Configuration.UserSide)
+                        {
+                            // retreating - remove ship and check for last ship
+                            _lastShipRetreated = State.GetShips(ship.Side).Where((s) => s.IsMobile).Count() == 1;
+                            ship.EndKill();
+                        }
+                    };
+
+                },
+                "Titania 1 Create exit zone")
+            );
+
+            // End level when either side is killed
+            NextTriggers.Add(new Trigger(() =>
+                {
+                    return State.IsSideKilled(ConfigData.Configuration.UserSide) || State.IsSideKilled(ConfigData.Configuration.AISide);
+                },
+                () =>
+                {
+                    WinningSide = State.IsSideKilled(ConfigData.Configuration.UserSide) ? ConfigData.Configuration.AISide : ConfigData.Configuration.UserSide;
+                    CloseLevel();
+                    // Show a simple summary if available
+                    State.GameOver = true;
+                    Stage.Menus.ShowLevelSummary();
+                },
+                "Titania 1 Ending")
+            );
+
+        }
+        public void Titania2Beenoculars()
+        {
+
+        }
+        public void Uranus1OnTheOffensive()
         {
             Stage.Menus.SetMissionStatus("Find and destroy all the Bees");
             HasContinuousTriggers = true;
@@ -1762,7 +1875,7 @@ namespace Assets.Scripts.Levels
 
             Stage.CutsceneManager.Setup(() =>
             {
-                Level7Ending();
+                Uranus1Ending();
             });
 
             // Spawn the Bees
@@ -2023,14 +2136,14 @@ namespace Assets.Scripts.Levels
             }
 
         }
-        public void Level8Triggers()
+        public void Uranus2OnTheDefensive()
         {
             Stage.ActivateHiveMind = false;
             HasContinuousTriggers = true;
 
             Stage.CutsceneManager.Setup(() =>
             {
-                Level8Ending();
+                Uranus2Ending();
             });
 
             Vector2[] upperPositions = new Vector2[] { CurrentLevelOptions.AIStartingPosition - new Vector2(-100, 0), CurrentLevelOptions.AIStartingPosition };
@@ -2373,7 +2486,7 @@ namespace Assets.Scripts.Levels
         /// <summary>
         /// Reveals the exit zone for level 7
         /// </summary>
-        public void SetRetreatForLevel8()
+        public void SetRetreatForUranus2()
         {
             Stage.Menus.CloseDialogue();
             Stage.Menus.RetreatButton.SetActive(false);
@@ -2399,7 +2512,7 @@ namespace Assets.Scripts.Levels
                 }
             };
         }
-        public void Level9Triggers()
+        public void Uranus3ANewThreat()
         {
             Stage.Menus.SetMissionStatus("Rescue the Barges and destroy all the Bees!");
             Stage.ActivateHiveMind = false;
@@ -2407,7 +2520,7 @@ namespace Assets.Scripts.Levels
 
             Stage.CutsceneManager.Setup(() =>
             {
-                Level9Ending();
+                Uranus3Ending();
             });
 
             Vector2[] spawnPositions = new Vector2[] { CurrentLevelOptions.AIStartingPosition - new Vector2(-100, 0), CurrentLevelOptions.AIStartingPosition };
@@ -2582,7 +2695,7 @@ namespace Assets.Scripts.Levels
             });
             UnPause();
         }
-        public void Level0Ending(SavedSquad gunshipSquad)
+        public void Pluto1Ending(SavedSquad gunshipSquad)
         {
             Debug.Log("Level complete!");
 
@@ -2643,7 +2756,7 @@ namespace Assets.Scripts.Levels
             Stage.Menus.ShowLevelEndedDialogue();
 
         }
-        public void Level1Ending()
+        public void Pluto2Ending()
         {
             Debug.Log("Level 1 complete!");
 
@@ -2689,7 +2802,7 @@ namespace Assets.Scripts.Levels
             Stage.Menus.ShowLevelSummary();
 
         }
-        public void Level2Ending()
+        public void Pluto3Ending()
         {
 
             ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 2);
@@ -2717,7 +2830,7 @@ namespace Assets.Scripts.Levels
             Debug.Log("Did Standard level complete, showing dialogue");
             Stage.Menus.ShowLevelSummary();
         }
-        public void Level3Ending()
+        public void Pluto4Ending()
         {
             switch (_questPoints)
             {
@@ -2768,13 +2881,13 @@ namespace Assets.Scripts.Levels
                 trainingRoomAlert = new Dialogue(Stage.DialoguePrefab, "New Game Mode!", "You've unlocked the Training Room!",
                     new List<string>() { "Ok" }, new List<UnityAction>() {  () => {
                     trainingRoomAlert.Hide();
-                    Level2EndingDialogue();
+                    Pluto4EndingDialogue();
                 } });
                 trainingRoomAlert.Show();
             }
             else
             {
-                Level2EndingDialogue();
+                Pluto4EndingDialogue();
             }
                 //ConfigData.UserProgressData.IsBeeFreePlayUnlocked = true;
 
@@ -2801,12 +2914,12 @@ namespace Assets.Scripts.Levels
 
 
         }
-        public void Level2EndingDialogue()
+        public void Pluto4EndingDialogue()
         {
             State.GameOver = true;
             Stage.Menus.ShowLevelSummary();
         }
-        public void Level4Ending()
+        public void Neptune1Ending()
         {
             Debug.Log("Level 3 complete");
 
@@ -2873,7 +2986,7 @@ namespace Assets.Scripts.Levels
             State.GameOver = true;
             Stage.Menus.ShowLevelSummary();
         }
-        public void Level5Ending()
+        public void Neptune2Ending()
         {
             Debug.Log("Level 4 complete");
 
@@ -2906,7 +3019,7 @@ namespace Assets.Scripts.Levels
             State.GameOver = true;
             Stage.Menus.ShowLevelSummary();
         }
-        public void Level6Ending()
+        public void Neptune3Ending()
         {
             Debug.Log("Level 5 complete");
 
@@ -2953,7 +3066,15 @@ namespace Assets.Scripts.Levels
             State.GameOver = true;
             Stage.Menus.ShowLevelSummary();
         }
-        public void Level7Ending()
+        public void Titania1Ending()
+        {
+
+        }
+        public void Titania2Ending()
+        {
+
+        }
+        public void Uranus1Ending()
         {
             Debug.Log("Level 6 complete");
             //return;
@@ -2985,7 +3106,7 @@ namespace Assets.Scripts.Levels
             State.GameOver = true;
             Stage.Menus.ShowLevelSummary();
         }
-        public void Level8Ending()
+        public void Uranus2Ending()
         {
 
             for (_save_i = 0; _save_i < AllSquads.Count; _save_i++)
@@ -3018,7 +3139,7 @@ namespace Assets.Scripts.Levels
             State.GameOver = true;
             Stage.Menus.ShowLevelSummary();
         }
-        public void Level9Ending()
+        public void Uranus3Ending()
         {
 
             ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Barge);
