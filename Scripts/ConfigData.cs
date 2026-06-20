@@ -1198,8 +1198,8 @@ namespace Assets.Scripts
                 CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 3);
             }
 
-            // 2 Hornet squads of 1
-            for (int i = 0; i < 2; i++)
+            // 10 Hornet squads of 1
+            for (int i = 0; i < 10; i++)
             {
                 CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 1);
             }
@@ -1241,6 +1241,12 @@ namespace Assets.Scripts
                 CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 6);
             }
 
+            // 7 Wasp sqauds of 1
+            for (int i = 0; i < 7; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 1);
+            }
+
 
 
             // YELLOW JACKETS
@@ -1273,8 +1279,8 @@ namespace Assets.Scripts
                 CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Leafcutter, 6);
             }
 
-            // 2 Leafcutter squads of 1
-            for (int i = 0; i < 2; i++)
+            // 4 Leafcutter squads of 1
+            for (int i = 0; i < 4; i++)
             {
                 CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Leafcutter, 1);
             }
@@ -1352,6 +1358,8 @@ namespace Assets.Scripts
                 case 7:
                 case 8:
                 case 9:
+                case 10:
+                case 11:
                     //SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
                     //return;
                     if (!HasSeenPreLevelIntro)
@@ -1381,6 +1389,8 @@ namespace Assets.Scripts
                 PlayerPrefs.SetInt("user_id", (int)_userId);
             }
             return _userId;
+
+            // [alert] ONLY SKIP STEAM FOR DEVELOPMENT
 
             if (!SteamAPI.Init())
             {

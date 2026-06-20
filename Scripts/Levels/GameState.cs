@@ -37,6 +37,10 @@ namespace Assets.Scripts.Levels
         public List<MiningAsteroid> MiningAsteroidsToRelease = new List<MiningAsteroid>();
         public List<FogOfWarVision> FogOfWarVisions = new List<FogOfWarVision>();
         public List<TargetingSquadMarker> TargetingSquadMarkers = new List<TargetingSquadMarker>();
+        /// <summary>
+        /// The Map Objects that are within range of the player's ship's weapons or proximity colliders.
+        /// </summary>
+        public HashSet<MapObject> PlayerVisibleMapObjects = new HashSet<MapObject>();
 
         public int UserCommands, AICommands;
         public bool IsPaused;

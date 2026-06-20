@@ -49,6 +49,15 @@ namespace Assets.Scripts.Entities
             MapPointsIndex = 0;
             IsDead = false;
         }
+        public virtual void Kill()
+        {
+            if (Level.HasObstacles)
+            {
+                Level.Pathfinder.MarkObstacleLayerDirty();
+                Destroy(gameObject);
+            }
+            
+        }
 
         public Vector2 GetPosition()
         {

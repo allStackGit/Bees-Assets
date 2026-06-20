@@ -386,6 +386,7 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Woohoo! Now this is fun!"),
             new DialogueLine("Emilia", Portraits["Emilia"], "Aww man, I wish I could see."),
             new DialogueLine("Marco", Portraits["Marco"], "Stay focused. We’re still fighting out here."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "If the bees weren’t alerted to your presence already, they will be now. Stay vigilant."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Excellent work, Commander. We’ll begin the evacuation process immediately."),
             new DialogueLine("Oviya", Portraits["Oviya"], "This fight alerted the bees on Uranus’s surface."),
             new DialogueLine("Marco", Portraits["Marco"], "Fantastic…"),

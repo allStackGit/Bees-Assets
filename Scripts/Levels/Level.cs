@@ -395,6 +395,14 @@ namespace Assets.Scripts.Levels
                     GameObject obstacleContainer = Instantiate(Resources.Load<GameObject>($"Obstacles/{CurrentLevelOptions.Obstacles}"), Map.transform);
                     List<StaticObstacle> obstacles = obstacleContainer.GetComponentsInChildren<StaticObstacle>().ToList();
 
+                    Debug.Log($"Spawning obstacles from prefab with count {obstacles.Count}");
+                    List<MapObject> objects = obstacleContainer.GetComponentsInChildren<MapObject>().ToList();
+                    Debug.Log($"Found {objects.Count} map objects in the obstacle prefab");
+                    objects.ForEach((o) =>
+                    {
+                        o.Setup(this);
+                    });
+
                     ObstacleMap.Obstacles = obstacles;
                 }
             }

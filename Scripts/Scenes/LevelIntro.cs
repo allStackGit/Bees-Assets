@@ -136,6 +136,15 @@ namespace UIComponents
 
                     }
                     break;
+                case 8:
+
+                    ConfigData.HasSeenIntermission = true;
+                    StartCoroutine(DelayStart(StandardDelay, () =>
+                    {
+                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Titania_Beenoculars[0], true);
+                    }));
+
+                    break;
                     //case 7:
 
                     //    if (ConfigData.HasSeenIntermission)

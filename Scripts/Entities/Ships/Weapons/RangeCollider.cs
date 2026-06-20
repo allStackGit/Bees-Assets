@@ -60,6 +60,9 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 }
 
             }
+            else if (_colliderEnter.CompareTag("Object")){
+                Weapon.Ship.Level.State.PlayerVisibleMapObjects.Add(_colliderEnter.GetComponent<MapObject>());
+            }
 
         }
         private Ship _shipExit;
@@ -102,6 +105,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     //}
                     _projectileExit.Kill();
                 }
+            }
+            else if (_colliderEnter.CompareTag("Object"))
+            {
+                Weapon.Ship.Level.State.PlayerVisibleMapObjects.Remove(_colliderEnter.GetComponent<MapObject>());
             }
         }
     }

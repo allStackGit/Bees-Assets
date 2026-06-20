@@ -164,6 +164,7 @@ namespace Assets.Scripts.Entities.Ships
 
         public volatile bool PathfindingThreadComplete, IsPathfinding;
         public volatile Pathfinder.Path PathfindingValue;
+        public volatile int PathfindingRequestId;
         public volatile int PathfindingThread;
         public volatile Pathfinder.Grid DebugGrid;
         public volatile Pathfinder.MapNode[][] DebugNodes;
@@ -861,6 +862,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         Vector2Int _convertedStart, _convertedDestination;
         Vector2 _startPosition;
         private Collider2D _obstacleCollider;
+        private readonly RaycastHit2D[] _obstacleCastHits = new RaycastHit2D[8];
         public void MoveToPoint(Vector2 destination, bool foundObstacle = false)
         {
             //Debug.Log($"{this} is moving to {destination}");
@@ -902,14 +904,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                         _obstacleCollider = GetObstacleInPath(destination);
                         if (_obstacleCollider != null)
                         {
-                            _tempObstacle = _obstacleCollider.GetComponent<Obstacle>();
+                            _tempObstacle = _obstacleCollider.GetComponent<Obstacle>() ?? _obstacleCollider.GetComponentInParent<Obstacle>();
                             //Debug.Log($"{_tempObstacle.Name} is in the way of {Name}");
-                            if (_tempObstacle.ObstacleType != ConfigData.ObstacleTypes.CollisionAsteroid)
+                            if (_tempObstacle != null)
                             {
-                                //CollisionAsteroid asteroid = (CollisionAsteroid)obstacle;
-                                //if (!NearbyAsteroids.Contains(asteroid)){
-                                //    NearbyAsteroids.Add(asteroid);
-                                //}
                                 _convertedStart = Level.Pathfinder.ConvertToMapCoordinates(_startPosition);
                                 _convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
                                 //StopMoving("Got a new destination");
@@ -926,8 +924,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                                 }
                                 return;
                             }
-
-                            
                         }
                         //else
                         //{
@@ -1087,6 +1083,11 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                     //Invoke(nameof(TryToFindPathAgain), 2);
                     _retries++;
                 }
+                else if (!_tryingToFindPathAgain)
+                {
+                    _retries = 0;
+                    StopMoving("Could not find a safe path to destination");
+                }
 
             }
             IsPathfinding = false;
@@ -1186,6 +1187,12 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             //bool hitBoundaries = false;
 
             _tempVelocity = new Vector2((Speed * Mathf.Sin(_tempAngle)), (-1 * Speed * Mathf.Cos(_tempAngle)));
+
+            if (WouldHitObstacleDuringMovement(_tempVelocity))
+            {
+                StopMoving("Movement sweep hit obstacle");
+                return;
+            }
 
             //Vector2 unclamped = transform.localPosition;
 
@@ -1296,14 +1303,41 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             IsMoving = true;
             _differenceInAngleToPoint = Utilities.TimedRotationDifference(this, _rotation, RotationSpeed);
 
+            bool updatedVelocity = false;
             if (_differenceInAngleToPoint != 0 || Stage.FixedUpdates % 10 == 0 || _maxSpeed != CurrentSpeed)
             {
                 //_maxSpeed = Stage.IsDebugging ? CurrentSpeed * Stage.SpeedMultiplier : CurrentSpeed;
                 _maxSpeed = CurrentSpeed;
                 //Debug.Log($"Setting _maxSpeed to {_maxSpeed} for {Name}");
                 _tempAngle = (Rotation - 180) * Mathf.Deg2Rad;
-                Body.linearVelocity = new Vector2((_maxSpeed * Mathf.Sin(_tempAngle)), -(_maxSpeed * Mathf.Cos(_tempAngle)));
+                _tempVelocity = new Vector2((_maxSpeed * Mathf.Sin(_tempAngle)), -(_maxSpeed * Mathf.Cos(_tempAngle)));
+                updatedVelocity = true;
             }
+
+            if (!updatedVelocity && Body.linearVelocity.sqrMagnitude > 0)
+            {
+                _tempVelocity = Body.linearVelocity;
+            }
+            else if (!updatedVelocity)
+            {
+                _maxSpeed = CurrentSpeed;
+                _tempAngle = (Rotation - 180) * Mathf.Deg2Rad;
+                _tempVelocity = new Vector2((_maxSpeed * Mathf.Sin(_tempAngle)), -(_maxSpeed * Mathf.Cos(_tempAngle)));
+            }
+            if (WouldHitObstacleDuringMovement(_tempVelocity))
+            {
+                Body.linearVelocity = Vector2.zero;
+                if (HasTargetCoordinates)
+                {
+                    MoveToPoint(IsFollowingPath ? FinalDestination : TargetCoordinates, true);
+                }
+                else
+                {
+                    StopMoving("Movement sweep hit obstacle");
+                }
+                return;
+            }
+            Body.linearVelocity = _tempVelocity;
             //_tempAngle = (Rotation - 180) * Mathf.Deg2Rad;
             //Body.velocity = new Vector2((_maxSpeed * Mathf.Sin(_tempAngle)), -(_maxSpeed * Mathf.Cos(_tempAngle)));
             //if (ShipType != ConfigData.ShipTypes.Flagship)
@@ -2264,7 +2298,42 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         {
             //Debug.Log($"Angle: {GetDegreesTowardsPoint(destination)}, direction: {-DirectionToPoint(destination)}, distance: {DistanceToPoint(destination)}");
             //return BoxCastDebug(GetPosition(), GetSize()*1.2f, GetDegreesTowardsPoint(destination), -DirectionToPoint(destination), DistanceToPoint(destination), ConfigData.ObstaclesLayerMask).collider;
-            return Physics2D.BoxCast(GetPosition(), GetSize() * 1.2f, GetDegreesTowardsPoint(destination), -DirectionToPoint(destination), DistanceToPoint(destination), ConfigData.ObstaclesLayerMask).collider;
+            return GetLiveObstacleFromBoxCast(GetPosition(), GetSize() * 1.2f, GetDegreesTowardsPoint(destination), -DirectionToPoint(destination), DistanceToPoint(destination));
+        }
+        private bool WouldHitObstacleDuringMovement(Vector2 velocity)
+        {
+            if (!Level.HasObstacles || velocity.sqrMagnitude <= 0)
+            {
+                return false;
+            }
+
+            float distance = velocity.magnitude * Time.fixedDeltaTime;
+            if (distance <= 0)
+            {
+                return false;
+            }
+
+            return GetLiveObstacleFromBoxCast(GetPosition(), GetSize() * 1.1f, Rotation, velocity.normalized, distance) != null;
+        }
+        private Collider2D GetLiveObstacleFromBoxCast(Vector2 origin, Vector2 size, float angle, Vector2 direction, float distance)
+        {
+            int hitCount = Physics2D.BoxCastNonAlloc(origin, size, angle, direction, _obstacleCastHits, distance, ConfigData.ObstaclesLayerMask);
+            for (int i = 0; i < hitCount; i++)
+            {
+                Collider2D hitCollider = _obstacleCastHits[i].collider;
+                if (hitCollider == null)
+                {
+                    continue;
+                }
+
+                Obstacle obstacle = hitCollider.GetComponent<Obstacle>() ?? hitCollider.GetComponentInParent<Obstacle>();
+                if (obstacle == null || !obstacle.IsDead)
+                {
+                    return hitCollider;
+                }
+            }
+
+            return null;
         }
         public bool IsShipWithinRange(Ship ship)
         {

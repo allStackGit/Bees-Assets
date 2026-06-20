@@ -1770,32 +1770,84 @@ namespace Assets.Scripts.Levels
             Vector2 centerOfTitania = new Vector2(-32, 55);
             HasContinuousTriggers = true;
             Stage.Menus.SetMissionStatus("Reach the center of the map or clear the Bees");
+            // Start the dialogue
+            Stage.CutsceneManager.Setup(() =>
+            {
+                Titania1Ending();
+            });
 
             // Spawn player's selected squads at bottom center
-            Vector2 playerStart = StartingPositions[ConfigData.Configuration.UserSide - 1];
+            //Vector2 playerStart = StartingPositions[ConfigData.Configuration.UserSide - 1] + new Vector2(120, 0);
             // Use existing squads loaded into the level; if nothing is loaded, nothing happens
             // (the stage will already have spawned squads before triggers are set)
 
-            // Spawn a few small bee squads around the map to give optional encounters
-            AddReinforcementSquads(new List<SavedSquad>() {
-                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4, true, true),
-            }, new Vector2(-150, -150), new Vector2(-150, -150));
+            //ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Wasp, 7);
+            //ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Hornet, 8);
+            //ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Leafcutter, 2);
 
-            AddReinforcementSquads(new List<SavedSquad>() {
-                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 3, true, true),
-            }, new Vector2(-150, 150), new Vector2(-150, 150));
+            //ConfigData.UserProgressData.SetShipTypes();
 
-            AddReinforcementSquads(new List<SavedSquad>() {
-                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true),
-            }, new Vector2(100, 110), new Vector2(100, 110));
+            //// 7 Wasp sqauds of 1
+            //for (int i = 0; i < 7; i++)
+            //{
+            //    CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 1);
+            //}
 
-            AddReinforcementSquads(new List<SavedSquad>() {
-                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4, true, true),
-            }, new Vector2(100, 110), new Vector2(100, 110));
+            //// 8 Hornet squads of 1
+            //for (int i = 0; i < 8; i++)
+            //{
+            //    CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 1);
+            //}
 
-            AddReinforcementSquads(new List<SavedSquad>() {
-                ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 2, true, true),
-            }, new Vector2(205, -5), new Vector2(205, -5));
+            //// 2 Leafcutter squads of 1
+            //for (int i = 0; i < 2; i++)
+            //{
+            //    CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Leafcutter, 1);
+            //}
+
+
+            //ConfigData.UserProgressData.Save();
+            //ConfigData.CurrentShips.SaveSquadData();
+            //ConfigData.CurrentShips.SaveFleetData();
+
+
+            for (int i = 0; i < 4; i++)
+            {
+                AddReinforcementSquads(new List<SavedSquad>() {
+                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 1),
+                }, new Vector2(-150, -150), new Vector2(-150, -150));
+            }
+
+            for (int i = 0; i < 3; i++)
+            {
+                AddReinforcementSquads(new List<SavedSquad>() {
+                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 1),
+                }, new Vector2(-150, 150), new Vector2(-150, 150));
+            }
+
+            for (int i = 0; i < 4; i++)
+            {
+                AddReinforcementSquads(new List<SavedSquad>() {
+                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 1),
+                }, new Vector2(100, 110), new Vector2(100, 110));
+            }
+
+            for (int i = 0; i < 4; i++)
+            {
+                AddReinforcementSquads(new List<SavedSquad>() {
+                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 1),
+                }, new Vector2(100, 110), new Vector2(100, 110));
+            }
+
+            for (int i = 0; i < 2; i++)
+            {
+                AddReinforcementSquads(new List<SavedSquad>() {
+                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 1),
+                }, new Vector2(205, -35), new Vector2(205, -35));
+            }
+
+
+
 
             // Ensure player control is enabled
             Stage.EnablePlayerControl();
@@ -1805,13 +1857,14 @@ namespace Assets.Scripts.Levels
 
             // After a delay, spawn reinforcements off the bottom-right so player can avoid
             // the fight if desired
-            ScaledTimer reinforcements = new ScaledTimer(90f, () =>
+            ScaledTimer reinforcements = new ScaledTimer(9f, () =>
             {
+                Debug.Log("Adding reinforcements");
                 AddReinforcementSquads(new List<SavedSquad>() {
                     ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6, true, true),
                     ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true),
                     ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 2, true, true),
-                }, StartingPositions[ConfigData.Configuration.AISide - 1] + new Vector2(180, -80), StartingPositions[ConfigData.Configuration.UserSide - 1]);
+                }, StartingPositions[ConfigData.Configuration.UserSide - 1] + new Vector2(150, 0), StartingPositions[ConfigData.Configuration.UserSide - 1]);
 
                 AddReinforcementsToHivemindCommandQueue();
             });
@@ -1834,6 +1887,7 @@ namespace Assets.Scripts.Levels
 
                     exitZone.OnShipEnter = (ship) =>
                     {
+                        Debug.Log(ship + " entered exit zone");
                         if (ship.Side == ConfigData.Configuration.UserSide)
                         {
                             // retreating - remove ship and check for last ship
@@ -1853,7 +1907,16 @@ namespace Assets.Scripts.Levels
                 },
                 () =>
                 {
-                    WinningSide = State.IsSideKilled(ConfigData.Configuration.UserSide) ? ConfigData.Configuration.AISide : ConfigData.Configuration.UserSide;
+                    WinningSide = State.IsSideKilled(ConfigData.Configuration.UserSide) && !_lastShipRetreated ? ConfigData.Configuration.AISide : ConfigData.Configuration.UserSide;
+
+                    if (WinningSide == ConfigData.Configuration.UserSide)
+                    {
+                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Titania_Minesweeper.GetRange(16, 5), true);
+                    }
+                    else
+                    {
+                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Titania_Minesweeper.GetRange(21, 10), true);
+                    }
                     CloseLevel();
                     // Show a simple summary if available
                     State.GameOver = true;
@@ -1862,10 +1925,168 @@ namespace Assets.Scripts.Levels
                 "Titania 1 Ending")
             );
 
+            NextTriggers.Add(new Trigger(() =>
+            {
+                return State.PlayerVisibleMapObjects.Any();
+            },
+                () =>
+                {
+                    Debug.Log("Player has seen a map object with one of their ships");
+                    MapObject firstExplosive = State.PlayerVisibleMapObjects.FirstOrDefault();
+                    Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Titania_Minesweeper.GetRange(1, 11), false);
+
+                    NextTriggers.Add(new Trigger(() =>
+                        {
+                            return firstExplosive.IsDead;
+                        },
+                        () =>
+                        {
+                            Debug.Log("Player has destroyed the explosive");
+                            Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Titania_Minesweeper.GetRange(12, 4), false);
+
+                        },
+                        "Titania 1 destroyed first map object")
+                    );
+
+                },
+                "Titania 1 Seen first map object")
+            );
+
         }
         public void Titania2Beenoculars()
         {
+            // Player squads start at the center of the map as they try to defend Titania. Bees spawn from multiple places around the map and eventually spot the player and start to converge. This is basically modelled after Pluto 4, Bluer Pastures. The player has to survive for a certain amount of time and protect Titania as they do so. If they survive the whole time they win, if they lose all their ships or if Titania is destroyed they lose. Bee squads spawn at the beginning of the level and more squads spawn as time goes on. 
+            Vector2 centerOfTitania = new Vector2(-32, 55);
+            HasContinuousTriggers = true;
+            Stage.Menus.SetMissionStatus("Survive and defend Titania!");
+            // Start the dialogue
+            Stage.CutsceneManager.Setup(() =>
+            {
+                Titania2Ending();
+            });
 
+            // Pause and show the opening dialogue section for this level
+            Stage.Menus.TogglePausePanel();
+            _dialogueTimer.Reuse(1.5f, () =>
+            {
+                // play a short intro; if the list is short this will just play available lines
+                if (Stage.CutsceneManager.Titania_Beenoculars != null && Stage.CutsceneManager.Titania_Beenoculars.Count > 0)
+                {
+                    int count = Mathf.Min(6, Stage.CutsceneManager.Titania_Beenoculars.Count);
+                    Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Titania_Beenoculars.GetRange(0, count));
+                }
+            });
+            AddTimer(_dialogueTimer);
+
+            // After dialogue, start the level proper
+            NextTriggers.Add(new Trigger(() => Stage.CutsceneManager.HitDialogueBreak, () =>
+            {
+                Stage.Menus.TogglePausePanel();
+                Stage.EnablePlayerControl();
+
+                // Create Titania (human target) at the center
+                HumanTarget titania = CreateHumanTarget(centerOfTitania);
+                titania.MaxHealth = 20000; // big health pool for the base
+                titania.Health = titania.MaxHealth;
+
+                // Show survival clock (5 minutes)
+                TMP_Text clockText = Stage.Menus.Clock.transform.GetChild(0).GetComponent<TMP_Text>();
+                Stage.Menus.Clock.SetActive(true);
+                float endTime = Time.time + 300f; // survive for 5 minutes
+
+                ScaledTimer survivalClock = new ScaledTimer();
+                survivalClock.Reuse(1f, () =>
+                {
+                    float timeLeft = endTime - Time.time;
+                    if (timeLeft <= 0 || State.IsSideKilled(ConfigData.Configuration.AISide))
+                    {
+                        // player wins if timer expired and Titania still alive
+                        CancelTimer(survivalClock);
+                        if (!titania.IsDead && !State.IsSideKilled(ConfigData.Configuration.UserSide))
+                        {
+                            // mark win
+                            CloseLevel();
+                            Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Titania_Beenoculars.GetRange(Mathf.Min( (Stage.CutsceneManager.Titania_Beenoculars.Count-1), 6), Mathf.Min(4, Stage.CutsceneManager.Titania_Beenoculars.Count)), true);
+                        }
+                        else
+                        {
+                            // fallback end
+                            CloseLevel();
+                        }
+                    }
+                    else
+                    {
+                        int minutesLeft = Mathf.FloorToInt(timeLeft / 60f);
+                        int secondsLeft = Mathf.FloorToInt(timeLeft % 60f);
+                        clockText.text = $"{minutesLeft}:{secondsLeft:D2}";
+                    }
+
+                }, true);
+                AddTimer(survivalClock);
+
+                // Spawn initial bee squads around the map
+                AddReinforcementSquads(new List<SavedSquad>() {
+                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4, true, true),
+                }, new Vector2(340, 200), new Vector2(300, 160));
+
+                AddReinforcementSquads(new List<SavedSquad>() {
+                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true),
+                }, new Vector2(-340, 220), new Vector2(-300, 180));
+
+                AddReinforcementSquads(new List<SavedSquad>() {
+                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
+                }, new Vector2(120, -340), new Vector2(80, -300));
+
+                AddReinforcementSquads(new List<SavedSquad>() {
+                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 2, true, true),
+                }, new Vector2(-120, -360), new Vector2(-80, -320));
+
+                Stage.ActivateHiveMind = true;
+                SetupHivemind();
+
+                // Schedule reinforcement waves (in seconds)
+                ScaledTimer wave1 = new ScaledTimer(60f, () =>
+                {
+                    AddReinforcementSquads(new List<SavedSquad>() {
+                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6, true, true),
+                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true)
+                    }, new Vector2(400, 0), new Vector2(340, 20));
+                    AddReinforcementsToHivemindCommandQueue();
+                });
+                AddTimer(wave1);
+
+                ScaledTimer wave2 = new ScaledTimer(120f, () =>
+                {
+                    AddReinforcementSquads(new List<SavedSquad>() {
+                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
+                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4, true, true)
+                    }, new Vector2(-400, 0), new Vector2(-340, 20));
+                    AddReinforcementsToHivemindCommandQueue();
+                });
+                AddTimer(wave2);
+
+                ScaledTimer wave3 = new ScaledTimer(210f, () =>
+                {
+                    AddReinforcementSquads(new List<SavedSquad>() {
+                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 4, true, true),
+                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 8, true, true)
+                    }, new Vector2(0, 420), new Vector2(0, 360));
+                    AddReinforcementsToHivemindCommandQueue();
+                });
+                AddTimer(wave3);
+
+                // Losing conditions: Titania destroyed or player's side wiped
+                NextTriggers.Add(new Trigger(() => titania.IsDead || State.IsSideKilled(ConfigData.Configuration.UserSide), () =>
+                {
+                    CancelTimer(survivalClock);
+                    CancelTimer(wave1);
+                    CancelTimer(wave2);
+                    CancelTimer(wave3);
+                    CloseLevel();
+                    Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Titania_Beenoculars.GetRange(Mathf.Min( (Stage.CutsceneManager.Titania_Beenoculars.Count-1), 10), Mathf.Min(6, Stage.CutsceneManager.Titania_Beenoculars.Count)), true);
+                }, "Titania 2 Losing condition") );
+
+            }, "Titania 2 Start Level") );
         }
         public void Uranus1OnTheOffensive()
         {
@@ -3068,11 +3289,11 @@ namespace Assets.Scripts.Levels
         }
         public void Titania1Ending()
         {
-
+            Debug.Log($"Titania 1 ending!");
         }
         public void Titania2Ending()
         {
-
+            Debug.Log($"Titania 2 ending!");
         }
         public void Uranus1Ending()
         {
