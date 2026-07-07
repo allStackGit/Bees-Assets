@@ -423,7 +423,7 @@ namespace Assets.Scripts.Levels.Commands
             if (!IsDead)
             {
 
-                //Debug.Log($"Finalizing Command {this} because of {cause}");
+                Debug.Log($"Finalizing Command {this} because of {cause}");
                 if (cause == "")
                 {
                     Debug.LogError($"Trying to finalize Command without cause");
@@ -539,7 +539,7 @@ namespace Assets.Scripts.Levels.Commands
 
         public override string ToString()
         {
-            return $"Command #{(OutcomeId != 0 ? OutcomeId : "N/A")} with Strategy {CommandType} attached to " +
+            return $"Command #{(OutcomeId != 0 ? OutcomeId : "N/A")} #[{ItemId}] with Strategy {CommandType} attached to " +
                 $"Squad {GetSquad()} with Enemy Squad: {EnemySquad?.Name}"; 
                 // +$"#{OriginalSquadId} ItemId: #{ItemId} and CreationId: #{CreationId}";
         }

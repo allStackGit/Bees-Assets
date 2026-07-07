@@ -29,7 +29,7 @@ namespace Assets.Scripts.Levels.Commands
                     Utilities.RandomCoordinate(Level, _position, Vector2.one * 45, Vector2.zero) :
                     Utilities.RandomCoordinate(Level, _enemyPosition, Vector2.one * (EnemySquad.MaxRange + 45), Vector2.one * (EnemySquad.MaxRange + 10));
 
-                CommandTimer.Reuse(CommandFrequency, Timer, true, true);
+                CommandTimer.Reuse(CommandFrequency, InAndOutTimer, true, true);
                 Level.AddTimer(CommandTimer);
 
                 //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
@@ -54,100 +54,107 @@ namespace Assets.Scripts.Levels.Commands
             HasReachedReturnPoint = false;
             HasReachedEnemySquad = false;
         }
-        private void Timer()
+        private void InAndOutTimer()
         {
-            if (!GetSquad().IsDead)
+            Debug.Log($"InAndOutTimer for Command: {this} for Squad: {GetSquad()}");
+            if (!IsDead)
             {
-                if (!EnemySquad.IsDead)
+                if (!GetSquad().IsDead)
                 {
-
-                    // if you haven't reached the enemy squad yet, check if you are within range and go to them
-                    if (!HasReachedEnemySquad)
+                    if (!EnemySquad.IsDead)
                     {
-                        if (!GetSquad().AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
-                        {
-                            GetSquad().Status = $"Targeting enemy squad #{EnemySquad.SquadNumber} for In and Out";
-                            MoveTowardsEnemies();
-                        }
-                        else // if you have reached the enemy squad, retreat to the return point
-                        {
-                            HasReachedEnemySquad = true;
 
-                            //Squad.IsRetreating = true;
-                            GetSquad().Status = $"Retreating away from enemy squad #{EnemySquad.SquadNumber} for In and Out";
-                            HasReachedReturnPoint = false;
-                            SetAndMove(ReturnPoint);
-                            ReturnPoint = GetDestination();
+                        // if you haven't reached the enemy squad yet, check if you are within range and go to them
+                        if (!HasReachedEnemySquad)
+                        {
+                            if (!GetSquad().AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
+                            {
+                                GetSquad().Status = $"Targeting enemy squad #{EnemySquad.SquadNumber} for In and Out";
+                                MoveTowardsEnemies();
+                            }
+                            else // if you have reached the enemy squad, retreat to the return point
+                            {
+                                HasReachedEnemySquad = true;
+
+                                //Squad.IsRetreating = true;
+                                GetSquad().Status = $"Retreating away from enemy squad #{EnemySquad.SquadNumber} for In and Out";
+                                HasReachedReturnPoint = false;
+                                SetAndMove(ReturnPoint);
+                                ReturnPoint = GetDestination();
+                            }
                         }
+                        else if (GetSquad().HasReachedDestination) // if you have hit the return point, end the command
+                        {
+                            //CancelInvoke(nameof(Timer));
+                            SetFinalize("Returned to starting point");
+                        }
+
+
+
+                        // if you have hit the return point, end the command
+
+                        //if (!HasReachedEnemySquad && Squad.AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
+                        //{
+                        //    HasReachedEnemySquad = true;
+                        //}
+                        //else if (HasReachedEnemySquad)
+                        //{
+                        //    Squad.IsRetreating = true;
+                        //    Squad.Status = $"Retreating away from enemy squad #{EnemySquad.SquadNumber} for In and Out";
+                        //    HasReachedReturnPoint = false;
+                        //    SetAndMove(ReturnPoint);
+                        //    ReturnPoint = GetDestination();
+                        //}
+                        //else
+                        //{
+                        //    Squad.Status = $"Targeting enemy squad #{EnemySquad.SquadNumber} for In and Out";
+                        //    MoveTowardsEnemies();
+
+                        //}
+
+                        //if (HasReachedEnemySquad && !HasReachedReturnPoint && Squad.HasReachedDestination)
+                        //{
+                        //    HasReachedReturnPoint = true;
+                        //}
+                        //else if (HasReachedReturnPoint)
+                        //{
+                        //    CancelInvoke(nameof(Timer));
+                        //    SetFinalize("Returned to starting point");
+                        //}
+
+                        //if (!_hasReachedEnemySquad && !Squad.AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
+                        //{
+                        //    Squad.Status = $"Targeting enemy squad #{EnemySquad.SquadNumber} for In and Out";
+                        //    //Debug.Log($"Enemy: {Enemy.Name} IsDead: {Enemy.IsDead}");
+                        //    //SetAndMove(Enemy.GetPosition());
+                        //    MoveTowardsEnemies();
+                        //}
+                        //else if ()
+                        //else if (!Squad.HasReachedDestination)
+                        //{
+                        //    Squad.IsRetreating = true;
+                        //    Squad.Status = $"Retreating away from enemy squad #{EnemySquad.SquadNumber} for In and Out";
+                        //    _hasReachedDestination = true;
+                        //    SetAndMove(_returnPoint);
+                        //    _returnPoint = GetDestination();
+                        //}
+                        //else
+                        //{
+                        //    CancelInvoke(nameof(Timer));
+                        //    SetFinalize("Returned to starting point");
+                        //}
                     }
-                    else if (GetSquad().HasReachedDestination) // if you have hit the return point, end the command
+                    else
                     {
                         //CancelInvoke(nameof(Timer));
-                        SetFinalize("Returned to starting point");
+                        SetFinalize("The enemy squad is gone or dead");
                     }
-
-                    
-
-                    // if you have hit the return point, end the command
-
-                    //if (!HasReachedEnemySquad && Squad.AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
-                    //{
-                    //    HasReachedEnemySquad = true;
-                    //}
-                    //else if (HasReachedEnemySquad)
-                    //{
-                    //    Squad.IsRetreating = true;
-                    //    Squad.Status = $"Retreating away from enemy squad #{EnemySquad.SquadNumber} for In and Out";
-                    //    HasReachedReturnPoint = false;
-                    //    SetAndMove(ReturnPoint);
-                    //    ReturnPoint = GetDestination();
-                    //}
-                    //else
-                    //{
-                    //    Squad.Status = $"Targeting enemy squad #{EnemySquad.SquadNumber} for In and Out";
-                    //    MoveTowardsEnemies();
-
-                    //}
-                    
-                    //if (HasReachedEnemySquad && !HasReachedReturnPoint && Squad.HasReachedDestination)
-                    //{
-                    //    HasReachedReturnPoint = true;
-                    //}
-                    //else if (HasReachedReturnPoint)
-                    //{
-                    //    CancelInvoke(nameof(Timer));
-                    //    SetFinalize("Returned to starting point");
-                    //}
-
-                    //if (!_hasReachedEnemySquad && !Squad.AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
-                    //{
-                    //    Squad.Status = $"Targeting enemy squad #{EnemySquad.SquadNumber} for In and Out";
-                    //    //Debug.Log($"Enemy: {Enemy.Name} IsDead: {Enemy.IsDead}");
-                    //    //SetAndMove(Enemy.GetPosition());
-                    //    MoveTowardsEnemies();
-                    //}
-                    //else if ()
-                    //else if (!Squad.HasReachedDestination)
-                    //{
-                    //    Squad.IsRetreating = true;
-                    //    Squad.Status = $"Retreating away from enemy squad #{EnemySquad.SquadNumber} for In and Out";
-                    //    _hasReachedDestination = true;
-                    //    SetAndMove(_returnPoint);
-                    //    _returnPoint = GetDestination();
-                    //}
-                    //else
-                    //{
-                    //    CancelInvoke(nameof(Timer));
-                    //    SetFinalize("Returned to starting point");
-                    //}
-                }
-                else
-                {
-                    //CancelInvoke(nameof(Timer));
-                    SetFinalize("The enemy squad is gone or dead");
                 }
             }
-            
+            else
+            {
+                Debug.LogWarning($"SwipeSquadTimer for Command: {this} for Squad: {GetSquad()} isDead? {IsDead} and the timer was still called");
+            }
         }
     }
 }

@@ -709,7 +709,7 @@ namespace Assets.Scripts.Levels
         }
         public void SetCommand(Command command)
         {
-            //Debug.Log($"Setting {this} Command to {command}");
+            Debug.Log($"Setting {this} Command to {command}");
             _command = command;
             ResetCommandCache();
         }
@@ -722,7 +722,7 @@ namespace Assets.Scripts.Levels
         /// </summary>
         public void AddToCommandList()
         {
-            //Debug.Log($"Adding {this} to squads awaiting hive mind commands");
+            Debug.Log($"Adding {this} to squads awaiting hive mind commands");
             Level.State.AddToSquadsAwaitingHiveMindCommands(this);
         }
         /// <summary>

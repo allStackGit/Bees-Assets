@@ -15,12 +15,13 @@ namespace Assets.Scripts.Levels.Commands
         private Vector2 _swipeDestination = Vector2.zero;
         public void Execute(ConfigData.CommandTypes commandType, ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId)
         {
+            Debug.Log($"Executing command: {this} for Squad: {GetSquad()}");
             CommandType = commandType;
             base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, false);
 
             IsAttacking = true;
             PrepareDamageToSendEntries();
-            CommandTimer.Reuse(CommandFrequency, Timer, true, true);
+            CommandTimer.Reuse(CommandFrequency, SwipeSquadTimer, true, true);
             Level.AddTimer(CommandTimer);
             //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
             if (IsHiveMindCommand)
@@ -39,8 +40,9 @@ namespace Assets.Scripts.Levels.Commands
         }
         private Vector2 _enemyPosition;
         private float _angle, _distance;
-        private void Timer()
+        private void SwipeSquadTimer()
         {
+            Debug.Log($"SwipeSquadTimer for Command: {this} for Squad: {GetSquad()}");
             if (!IsDead)
             {
                 if (!EnemySquad.IsDead)
@@ -61,6 +63,7 @@ namespace Assets.Scripts.Levels.Commands
                         //return;
                         GetSquad().Status = $"Using {CommandType} against enemy squad {EnemySquad.Name} #{EnemySquad.Id}";
                         _enemyPosition = EnemySquad.GetPosition();
+                        Debug.Log($"{GetSquad().Name} is swiping against {EnemySquad.Name} and isDead? {GetSquad().IsDead} and command isDead? {IsDead} and has {GetSquad().GetShips().Count} ships");
                         _angle = GetSquad().AngleToPoint(_enemyPosition);
 
                         if (CommandType == ConfigData.CommandTypes.RightSwipe)
@@ -107,6 +110,10 @@ namespace Assets.Scripts.Levels.Commands
                     //CancelInvoke(nameof(Timer));
                     SetFinalize("The enemy squad is gone or dead");
                 }
+            }
+            else
+            {
+                Debug.LogWarning($"SwipeSquadTimer for Command: {this} for Squad: {GetSquad()} isDead? {IsDead} and the timer was still called");
             }
             
         }

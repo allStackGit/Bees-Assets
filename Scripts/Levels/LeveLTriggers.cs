@@ -1851,20 +1851,18 @@ namespace Assets.Scripts.Levels
 
             // Ensure player control is enabled
             Stage.EnablePlayerControl();
-            Stage.ActivateHiveMind = true;
-            SetupHivemind();
 
 
             // After a delay, spawn reinforcements off the bottom-right so player can avoid
             // the fight if desired
-            ScaledTimer reinforcements = new ScaledTimer(9f, () =>
+            ScaledTimer reinforcements = new ScaledTimer(90f, () =>
             {
                 Debug.Log("Adding reinforcements");
                 AddReinforcementSquads(new List<SavedSquad>() {
                     ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6, true, true),
                     ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true),
                     ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 2, true, true),
-                }, StartingPositions[ConfigData.Configuration.UserSide - 1] + new Vector2(150, 0), StartingPositions[ConfigData.Configuration.UserSide - 1]);
+                }, new Vector2(325, -225), new Vector2(200, -225));
 
                 AddReinforcementsToHivemindCommandQueue();
             });
@@ -1967,16 +1965,7 @@ namespace Assets.Scripts.Levels
 
             // Pause and show the opening dialogue section for this level
             Stage.Menus.TogglePausePanel();
-            _dialogueTimer.Reuse(1.5f, () =>
-            {
-                // play a short intro; if the list is short this will just play available lines
-                if (Stage.CutsceneManager.Titania_Beenoculars != null && Stage.CutsceneManager.Titania_Beenoculars.Count > 0)
-                {
-                    int count = Mathf.Min(6, Stage.CutsceneManager.Titania_Beenoculars.Count);
-                    Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Titania_Beenoculars.GetRange(0, count));
-                }
-            });
-            AddTimer(_dialogueTimer);
+            Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Titania_Beenoculars.GetRange(0, 10));
 
             // After dialogue, start the level proper
             NextTriggers.Add(new Trigger(() => Stage.CutsceneManager.HitDialogueBreak, () =>
@@ -1986,13 +1975,11 @@ namespace Assets.Scripts.Levels
 
                 // Create Titania (human target) at the center
                 HumanTarget titania = CreateHumanTarget(centerOfTitania);
-                titania.MaxHealth = 20000; // big health pool for the base
-                titania.Health = titania.MaxHealth;
 
                 // Show survival clock (5 minutes)
                 TMP_Text clockText = Stage.Menus.Clock.transform.GetChild(0).GetComponent<TMP_Text>();
                 Stage.Menus.Clock.SetActive(true);
-                float endTime = Time.time + 300f; // survive for 5 minutes
+                float endTime = Time.time + 450f; // survive for 7.5 minutes
 
                 ScaledTimer survivalClock = new ScaledTimer();
                 survivalClock.Reuse(1f, () =>
@@ -2005,14 +1992,14 @@ namespace Assets.Scripts.Levels
                         if (!titania.IsDead && !State.IsSideKilled(ConfigData.Configuration.UserSide))
                         {
                             // mark win
-                            CloseLevel();
-                            Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Titania_Beenoculars.GetRange(Mathf.Min( (Stage.CutsceneManager.Titania_Beenoculars.Count-1), 6), Mathf.Min(4, Stage.CutsceneManager.Titania_Beenoculars.Count)), true);
+                            Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Titania_Beenoculars.GetRange(30, 2), true);
                         }
                         else
                         {
                             // fallback end
-                            CloseLevel();
+                            Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Titania_Beenoculars.GetRange(24, 6), true);
                         }
+                        CloseLevel();
                     }
                     else
                     {
@@ -2083,7 +2070,7 @@ namespace Assets.Scripts.Levels
                     CancelTimer(wave2);
                     CancelTimer(wave3);
                     CloseLevel();
-                    Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Titania_Beenoculars.GetRange(Mathf.Min( (Stage.CutsceneManager.Titania_Beenoculars.Count-1), 10), Mathf.Min(6, Stage.CutsceneManager.Titania_Beenoculars.Count)), true);
+                    Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Titania_Beenoculars.GetRange(24, 6), true);
                 }, "Titania 2 Losing condition") );
 
             }, "Titania 2 Start Level") );
@@ -3419,6 +3406,7 @@ namespace Assets.Scripts.Levels
             {
                 if (!s.IsImmobile && !s.HasCommandQueue && !s.HasCommand)
                 {
+                    Debug.Log($"Adding squad {s} to hivemind command list");
                     s.AddToCommandList();
                 }
             });

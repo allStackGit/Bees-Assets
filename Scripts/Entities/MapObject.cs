@@ -32,7 +32,7 @@ public class MapObject : MonoBehaviour
 
         // Choose a random sprite 
         SpriteRenderer.sprite = Sprites[Utilities.RandomInt(Sprites.Length)];
-        Debug.Log($"Setup {Name}");
+        //Debug.Log($"Setup {Name}");
     }
 
     public void OnTriggerEnter2D(Collider2D collider)

@@ -753,7 +753,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             InCombat = false;
             IsDead = false;
             AreRocketFlaresOutOfSync = false;
-            HasEnteredMap = false;
+            //HasEnteredMap = false;
             DestinationQueue.Clear();
             NearbyAsteroids.Clear();
             TargetEnemyShipToFollow = null;
@@ -784,10 +784,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 PathfindingThreadComplete = false;
             }
             Move();
-            //if (Stage.DebugLogger.IsDebugging || ShowDebug) // [alert] [debug] remove this for release
-            //{
-            //    UpdateDebugProperties();
-            //}
+            if (Stage.DebugLogger.IsDebugging || ShowDebug) // [alert] [debug] remove this for release
+            {
+                UpdateDebugProperties();
+            }
         }
         private Color[] _colors;
         private Sprite _prefabSprite, _loadedSprite, _shipIcon, _recolored;
@@ -2227,6 +2227,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 //Debug.Log($"Make Targeting Queue: {Squad?.Command?.MakeTargetingQueue()}");
                 Debug.LogException(new Exception($"Hit loop limit for getTargetEnemy()"));
             }
+            //Debug.Log($"Found target enemy ship to follow: {TargetEnemyShipToFollow} for ship: {this} belonging to squad: {Squad} with command: {Squad.GetCommand()}");
             return TargetEnemyShipToFollow;
 
         }
@@ -2327,13 +2328,21 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 }
 
                 Obstacle obstacle = hitCollider.GetComponent<Obstacle>() ?? hitCollider.GetComponentInParent<Obstacle>();
-                if (obstacle == null || !obstacle.IsDead)
+                if (ShouldAvoidObstacle(obstacle))
                 {
                     return hitCollider;
                 }
             }
 
             return null;
+        }
+        private bool ShouldAvoidObstacle(Obstacle obstacle)
+        {
+            return obstacle != null &&
+                !obstacle.IsDead &&
+                (obstacle.ObstacleType == ConfigData.ObstacleTypes.StaticObstacle ||
+                 obstacle.ObstacleType == ConfigData.ObstacleTypes.CollisionAsteroid ||
+                 obstacle.ObstacleType == ConfigData.ObstacleTypes.AsteroidPiece);
         }
         public bool IsShipWithinRange(Ship ship)
         {

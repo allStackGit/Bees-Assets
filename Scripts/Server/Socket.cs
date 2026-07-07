@@ -796,6 +796,10 @@ namespace Assets.Scripts.Server
                 //Debug.Log($"{_tempSquad.Name} received command type: {_tempCommandType}");
                 if (!_handleStrategicCommandResponse_level.State.LevelEnded && _strategicStandingRequest.HasSameSquad())
                 {
+                    if (_tempSquad.IsDead)
+                    {
+                        Debug.LogError($"Squad {_tempSquad} is dead, but received a command response.");
+                    }
                     //Debug.Log("squad is not null");
                     //if (squad.BannedStrats.Contains(commandResponse.Name))
                     //{
@@ -921,7 +925,7 @@ namespace Assets.Scripts.Server
                     _tempSquad.SetCommand(_handleStrategicCommandResponse_command);
                     //_tempSquad.GetCommand().MatchupStrategy = _tempSquad.MatchupStrategy; // This is only used to store data and isn't important for functionality
 
-                    //Debug.Log($"Command response for {_tempSquad} {_handleStrategicCommandResponse_command}");
+                    Debug.Log($"Command response for {_tempSquad} {_handleStrategicCommandResponse_command}");
 
                     if (_tempCommandType == ConfigData.CommandTypes.Aggressive)
                     {

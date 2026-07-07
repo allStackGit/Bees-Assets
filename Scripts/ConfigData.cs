@@ -1360,8 +1360,8 @@ namespace Assets.Scripts
                 case 9:
                 case 10:
                 case 11:
-                    //SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
-                    //return;
+                    SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
+                    return;
                     if (!HasSeenPreLevelIntro)
                     {
                         SceneManager.LoadSceneAsync("Level Intro", LoadSceneMode.Single);

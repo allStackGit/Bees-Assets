@@ -417,6 +417,10 @@ namespace Assets.Scripts.Levels
 
                 GameObject obstacleObject = obstacles[i];
                 Obstacle obstacle = obstacleObject.GetComponent<Obstacle>();
+                if (obstacle == null)
+                {
+                    continue;
+                }
 
                 try
                 {
@@ -429,7 +433,7 @@ namespace Assets.Scripts.Levels
                     throw e;
                 }
                 obstacle.MapPointsIndex = AddObstacle(obstacle);
-                ObstaclePoints[0][obstacle.MapPointsIndex] = obstacle.ObstacleType == ConfigData.ObstacleTypes.CollisionAsteroid ? new int[][] { } : GetObstaclePoints(obstacle, 0, 0);
+                ObstaclePoints[0][obstacle.MapPointsIndex] = ShouldBakeStaticObstacle(obstacle) ? GetObstaclePoints(obstacle, 0, 0) : new int[][] { };
 
                 //Debug.Log($"The first point on {obstacle.Name} is ({ObstaclePoints[obstacle.Id][0][0]}, {ObstaclePoints[obstacle.Id][0][1]}) on the map");
 
@@ -642,9 +646,20 @@ namespace Assets.Scripts.Levels
 
             for (int i = 0; i < Level.State.Obstacles.Count; i++)
             {
-                if (Level.State.Obstacles[i] is CollisionAsteroid asteroid && asteroid != null && !asteroid.IsDead)
+                Obstacle obstacle = Level.State.Obstacles[i];
+                if (ShouldAvoidDynamicObstacle(obstacle))
                 {
-                    int[][] points = GetObstaclePoints(asteroid, asteroid.Body.linearVelocity.x, asteroid.Body.linearVelocity.y);
+                    Vector2 velocity = Vector2.zero;
+                    if (obstacle is CollisionAsteroid asteroid)
+                    {
+                        velocity = asteroid.Body.linearVelocity;
+                    }
+                    else if (obstacle is AsteroidPiece asteroidPiece)
+                    {
+                        velocity = asteroidPiece.Body.linearVelocity;
+                    }
+
+                    int[][] points = GetObstaclePoints(obstacle, velocity.x, velocity.y);
                     for (int pointIndex = 0; pointIndex < points.Length; pointIndex++)
                     {
                         int x = points[pointIndex][0];
@@ -688,13 +703,22 @@ namespace Assets.Scripts.Levels
             if (obstacle == null ||
                 obstacle.IsDead ||
                 !obstacle.gameObject.activeInHierarchy ||
-                obstacle.ObstacleType == ConfigData.ObstacleTypes.CollisionAsteroid)
+                obstacle.ObstacleType != ConfigData.ObstacleTypes.StaticObstacle)
             {
                 return false;
             }
 
             Collider2D collider = obstacle.ClearanceMappingCollider != null ? obstacle.ClearanceMappingCollider : obstacle.Collider;
             return collider != null && collider.enabled;
+        }
+
+        private bool ShouldAvoidDynamicObstacle(Obstacle obstacle)
+        {
+            return obstacle != null &&
+                !obstacle.IsDead &&
+                obstacle.gameObject.activeInHierarchy &&
+                (obstacle.ObstacleType == ConfigData.ObstacleTypes.CollisionAsteroid ||
+                 obstacle.ObstacleType == ConfigData.ObstacleTypes.AsteroidPiece);
         }
 
         private void RebuildStaticObstacleLayer(int staticSignature)
