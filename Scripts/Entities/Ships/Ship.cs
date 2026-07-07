@@ -862,7 +862,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         Vector2Int _convertedStart, _convertedDestination;
         Vector2 _startPosition;
         private Collider2D _obstacleCollider;
-        private readonly RaycastHit2D[] _obstacleCastHits = new RaycastHit2D[8];
+        private readonly RaycastHit2D[] _obstacleCastHits = new RaycastHit2D[16];
         public void MoveToPoint(Vector2 destination, bool foundObstacle = false)
         {
             //Debug.Log($"{this} is moving to {destination}");
@@ -873,25 +873,22 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 if (Level.HasObstacles && IsInBounds())
                 {
                     _startPosition = Level.ForceBounds(GetPosition());
-                    DestinationQueue.Clear();
                    
 
                     if (foundObstacle)
                     {
                         //Debug.Log($"Found obstacle in the way of {Name}");
+                        if (IsPathfinding)
+                        {
+                            PathfindingDestination = destination;
+                            return;
+                        }
                         _convertedStart = Level.Pathfinder.ConvertToMapCoordinates(_startPosition);
                         _convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
                         //StopMoving("Got a new destination");
                         ClearPreviousDesintation();
-                        if (!IsPathfinding)
-                        {
-                            Level.Pathfinder.FindPath(this, _convertedStart.x, _convertedStart.y, _convertedDestination.x, _convertedDestination.y, GetClearance());
-                            PathfindingDestination = destination;
-                        }
-                        else
-                        {
-                            //Debug.Log($"{Name} is already pathfinding on {PathfindingThread} so it can't pathfind right now");
-                        }
+                        Level.Pathfinder.FindPath(this, _convertedStart.x, _convertedStart.y, _convertedDestination.x, _convertedDestination.y, GetClearance());
+                        PathfindingDestination = destination;
                         return;
                     }
                     else
@@ -908,20 +905,18 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                             //Debug.Log($"{_tempObstacle.Name} is in the way of {Name}");
                             if (_tempObstacle != null)
                             {
+                                if (IsPathfinding)
+                                {
+                                    PathfindingDestination = destination;
+                                    return;
+                                }
                                 _convertedStart = Level.Pathfinder.ConvertToMapCoordinates(_startPosition);
                                 _convertedDestination = Level.Pathfinder.ConvertToMapCoordinates(destination);
                                 //StopMoving("Got a new destination");
                                 ClearPreviousDesintation();
 
-                                if (!IsPathfinding)
-                                {
-                                    Level.Pathfinder.FindPath(this, _convertedStart.x, _convertedStart.y, _convertedDestination.x, _convertedDestination.y, GetClearance());
-                                    PathfindingDestination = destination;
-                                }
-                                else
-                                {
-                                    //Debug.Log($"{Name} is already pathfinding on {PathfindingThread} so it can't pathfind right now");
-                                }
+                                Level.Pathfinder.FindPath(this, _convertedStart.x, _convertedStart.y, _convertedDestination.x, _convertedDestination.y, GetClearance());
+                                PathfindingDestination = destination;
                                 return;
                             }
                         }
@@ -1062,6 +1057,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 //    DestinationQueue.Enqueue(PathfindingValue.Points[i]);
                 //}
                 DestinationQueue = new Queue<Vector2>(PathfindingValue.Points);
+                SkipClosePathWaypoints();
                 FinalDestination = DestinationQueue.Last();
                 SetTargetCoordinates(DestinationQueue.Dequeue());
                 IsFollowingPath = true;
@@ -1076,7 +1072,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 //Debug.Log($"{Name} couldn't find a path to {PathfindingDestination} and so it will try again in 2 seconds");
                 if (_retries < 5 && !_tryingToFindPathAgain)
                 {
-                    EndDestination("Could not find a path to destination");
+                    StopMoving("Could not find a path to destination");
                     _tryingToFindPathAgain = true;
                     _tryToFindPathAgainTimer.Reuse(2, TryToFindPathAgain);
                     Level.AddTimer(_tryToFindPathAgainTimer);
@@ -1454,6 +1450,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         /// <param name="reason"></param>
         private void EndDestination(string reason = null)
         {
+            SkipClosePathWaypoints();
             if (DestinationQueue.Count > 0)
             {
                 SetTargetCoordinates(DestinationQueue.Dequeue());
@@ -1476,6 +1473,23 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         public virtual bool IsCloseEnoughToTargetCoordinates(float distance)
         {
             return distance < ConfigData.ShipTurningRadius;
+        }
+        private void SkipClosePathWaypoints()
+        {
+            if (!IsFollowingPath && PathfindingValue == null)
+            {
+                return;
+            }
+
+            float waypointRadius = GetPathWaypointRadius();
+            while (DestinationQueue.Count > 1 && DistanceToPoint(DestinationQueue.Peek()) < waypointRadius)
+            {
+                DestinationQueue.Dequeue();
+            }
+        }
+        private float GetPathWaypointRadius()
+        {
+            return Mathf.Max(ConfigData.ShipTurningRadius, Mathf.Min(GetHalfWidth(), GetHalfHeight()) * 0.75f);
         }
         /// <summary>
         /// Stop the ship from moving at all

@@ -1149,7 +1149,7 @@ namespace Assets.Scripts.Levels
         }
         private Path RunPathSearch(int threadIndex)
         {
-            int clearance = Clearances[threadIndex];
+            int clearance = GetEffectivePathClearance(Clearances[threadIndex]);
             int startIndex = ToIndex(StartNodes[threadIndex].x, StartNodes[threadIndex].y);
             int endIndex = ToIndex(EndNodes[threadIndex].x, EndNodes[threadIndex].y);
             int[] clearanceMap = _threadClearance[threadIndex];
@@ -1205,7 +1205,7 @@ namespace Assets.Scripts.Levels
 
                 if (currentIndex == endIndex)
                 {
-                    return MakeDestinationList(startIndex, endIndex, previousIndex);
+                    return MakeDestinationList(startIndex, endIndex, previousIndex, clearanceMap, clearance);
                 }
 
                 closedStamp[currentIndex] = searchStamp;
@@ -1245,29 +1245,115 @@ namespace Assets.Scripts.Levels
             return null;
         }
 
-        private Path MakeDestinationList(int startIndex, int endIndex, int[] previousIndex)
+        private int GetEffectivePathClearance(int shipClearance)
+        {
+            return Mathf.Max(1, shipClearance > ConfigData.MinimumClearance ? shipClearance - 1 : shipClearance - 2);
+        }
+
+        private Path MakeDestinationList(int startIndex, int endIndex, int[] previousIndex, int[] clearanceMap, int clearance)
         {
             Path path = new Path(ToX(startIndex), ToY(startIndex), ToX(endIndex), ToY(endIndex));
-            List<Vector2> points = new List<Vector2> { ConvertToLevelCoordinates(ToX(endIndex), ToY(endIndex)) };
+            List<int> indexes = new List<int> { endIndex };
             int currentIndex = endIndex;
-            Vector2Int previousSlope = Vector2Int.zero;
-            Vector2Int slope = Vector2Int.one;
 
             while (currentIndex != startIndex && previousIndex[currentIndex] >= 0)
             {
                 int previous = previousIndex[currentIndex];
-                slope = new Vector2Int(ToX(currentIndex) - ToX(previous), ToY(currentIndex) - ToY(previous));
-                if (previousSlope != slope)
-                {
-                    points.Add(ConvertToLevelCoordinates(ToX(previous), ToY(previous)));
-                }
-                previousSlope = slope;
+                indexes.Add(previous);
                 currentIndex = previous;
             }
 
-            points.Reverse();
+            indexes.Reverse();
+            if (indexes.Count > 1)
+            {
+                indexes.RemoveAt(0);
+            }
+
+            indexes = SmoothPathIndexes(indexes, clearanceMap, clearance);
+
+            List<Vector2> points = new List<Vector2>();
+            for (int i = 0; i < indexes.Count; i++)
+            {
+                points.Add(ConvertToLevelCoordinates(ToX(indexes[i]), ToY(indexes[i])));
+            }
+
             path.Points = points;
             return path;
+        }
+
+        private List<int> SmoothPathIndexes(List<int> indexes, int[] clearanceMap, int clearance)
+        {
+            if (indexes.Count <= 2)
+            {
+                return indexes;
+            }
+
+            List<int> smoothed = new List<int>();
+            int current = 0;
+            smoothed.Add(indexes[current]);
+
+            while (current < indexes.Count - 1)
+            {
+                int next = indexes.Count - 1;
+                while (next > current + 1 && !HasClearGridLine(indexes[current], indexes[next], clearanceMap, clearance))
+                {
+                    next--;
+                }
+
+                smoothed.Add(indexes[next]);
+                current = next;
+            }
+
+            return smoothed;
+        }
+
+        private bool HasClearGridLine(int startIndex, int endIndex, int[] clearanceMap, int clearance)
+        {
+            int x0 = ToX(startIndex);
+            int y0 = ToY(startIndex);
+            int x1 = ToX(endIndex);
+            int y1 = ToY(endIndex);
+            int dx = Mathf.Abs(x1 - x0);
+            int dy = Mathf.Abs(y1 - y0);
+            int sx = x0 < x1 ? 1 : -1;
+            int sy = y0 < y1 ? 1 : -1;
+            int error = dx - dy;
+
+            while (true)
+            {
+                int index = ToIndex(x0, y0);
+                if (clearanceMap[index] < clearance)
+                {
+                    return false;
+                }
+
+                if (x0 == x1 && y0 == y1)
+                {
+                    return true;
+                }
+
+                int e2 = error * 2;
+                int nextX = x0;
+                int nextY = y0;
+                if (e2 > -dy)
+                {
+                    error -= dy;
+                    nextX += sx;
+                }
+                if (e2 < dx)
+                {
+                    error += dx;
+                    nextY += sy;
+                }
+
+                if (nextX != x0 && nextY != y0 && IsDiagonalMoveBlocked(x0, y0, nextX, nextY, clearance, clearanceMap))
+                {
+                    return false;
+                }
+
+                x0 = nextX;
+                y0 = nextY;
+            }
         }
 
         private int FindNearestWalkableIndex(int startIndex, int endIndex, int minimumClearance, int threadIndex)
