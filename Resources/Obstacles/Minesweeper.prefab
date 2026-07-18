@@ -10380,7 +10380,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3177407992147023508, guid: 845265d1d495a74479b779439f4fc7b6, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -4.6
+      value: -3.66
       objectReference: {fileID: 0}
     - target: {fileID: 3177407992147023508, guid: 845265d1d495a74479b779439f4fc7b6, type: 3}
       propertyPath: m_LocalPosition.y
@@ -10421,7 +10421,7 @@ PrefabInstance:
     - target: {fileID: 5580370504203169277, guid: 845265d1d495a74479b779439f4fc7b6, type: 3}
       propertyPath: TargetObstacle
       value: 
-      objectReference: {fileID: 2674638451302202303}
+      objectReference: {fileID: 4955676817592606909}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -13062,6 +13062,17 @@ PrefabInstance:
       insertIndex: -1
       addedObject: {fileID: 7323527351598835547}
   m_SourcePrefab: {fileID: 100100000, guid: e6e906216d499064a9ce6774a36d2fa1, type: 3}
+--- !u!114 &4955676817592606909 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 3811005468986347685, guid: e6e906216d499064a9ce6774a36d2fa1, type: 3}
+  m_PrefabInstance: {fileID: 8080988833627140120}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8028872866179865951}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fcbace8163939e342a70fc25d4be63c8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!4 &6976138904657026897 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 1221964066464149321, guid: e6e906216d499064a9ce6774a36d2fa1, type: 3}

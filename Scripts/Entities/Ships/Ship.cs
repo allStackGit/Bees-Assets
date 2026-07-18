@@ -1365,6 +1365,14 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             _tempDistance = DistanceToPoint(TargetCoordinates);
             SetMovementVelocity();
 
+            // If following a pathfinded route and an obstacle blocks the current waypoint, recalculate
+            if (IsFollowingPath && Level.HasObstacles && !IsPathfinding && HasObstacleInPath(TargetCoordinates))
+            {
+                // Recalculate path from current position to final destination
+                MoveToPoint(FinalDestination, foundObstacle: true);
+                return;
+            }
+
             //try
             //{
             //    bool testTrue = HasTargetEnemyShipToFollow &&
@@ -1373,7 +1381,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             //    //TargetShips.Any((ship) => ship != null && (!HasTargetEnemy || TargetEnemy.Equals(ship)) && IsShipWithinRange(ship)) // Ship must have target ships within range and they must be the target enemy or there must not be a target enemy 
 
             //    IsShipWithinRange(TargetEnemyShipToFollow); // Ship must be in range of the enemy ship that it's following
-                
+
             //}
             //catch (Exception e)
             //{

@@ -1781,34 +1781,34 @@ namespace Assets.Scripts.Levels
             // Use existing squads loaded into the level; if nothing is loaded, nothing happens
             // (the stage will already have spawned squads before triggers are set)
 
-            //ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Wasp, 7);
-            //ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Hornet, 8);
-            //ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Leafcutter, 2);
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Wasp, 7);
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Hornet, 8);
+            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Leafcutter, 2);
 
-            //ConfigData.UserProgressData.SetShipTypes();
+            ConfigData.UserProgressData.SetShipTypes();
 
-            //// 7 Wasp sqauds of 1
-            //for (int i = 0; i < 7; i++)
-            //{
-            //    CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 1);
-            //}
+            // 7 Wasp sqauds of 1
+            for (int i = 0; i < 7; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Wasp, 1);
+            }
 
-            //// 8 Hornet squads of 1
-            //for (int i = 0; i < 8; i++)
-            //{
-            //    CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 1);
-            //}
+            // 8 Hornet squads of 1
+            for (int i = 0; i < 8; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Hornet, 1);
+            }
 
-            //// 2 Leafcutter squads of 1
-            //for (int i = 0; i < 2; i++)
-            //{
-            //    CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Leafcutter, 1);
-            //}
+            // 2 Leafcutter squads of 1
+            for (int i = 0; i < 2; i++)
+            {
+                CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.BeeCampaignSavedSquadNumber++}", ConfigData.Configuration.BeeSide, ShipTypes.Leafcutter, 1);
+            }
 
 
-            //ConfigData.UserProgressData.Save();
-            //ConfigData.CurrentShips.SaveSquadData();
-            //ConfigData.CurrentShips.SaveFleetData();
+            ConfigData.UserProgressData.Save();
+            ConfigData.CurrentShips.SaveSquadData();
+            ConfigData.CurrentShips.SaveFleetData();
 
 
             for (int i = 0; i < 4; i++)
@@ -1847,7 +1847,7 @@ namespace Assets.Scripts.Levels
             }
 
 
-
+            Debug.Log("Set enemy ships");
 
             // Ensure player control is enabled
             Stage.EnablePlayerControl();
@@ -1905,6 +1905,7 @@ namespace Assets.Scripts.Levels
                 },
                 () =>
                 {
+                    Debug.Log($"User killed? {State.IsSideKilled(ConfigData.Configuration.UserSide)} AI Side killed? {State.IsSideKilled(ConfigData.Configuration.AISide)}");
                     WinningSide = State.IsSideKilled(ConfigData.Configuration.UserSide) && !_lastShipRetreated ? ConfigData.Configuration.AISide : ConfigData.Configuration.UserSide;
 
                     if (WinningSide == ConfigData.Configuration.UserSide)
