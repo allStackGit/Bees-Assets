@@ -1248,10 +1248,6 @@ namespace Assets.Scripts.Levels
         private int GetEffectivePathClearance(int shipClearance)
         {
             return Mathf.Max(1, shipClearance > ConfigData.MinimumClearance ? shipClearance - 1 : shipClearance - 2);
-            // Account for collision detection using 1.2x multiplier. Reduce by 1-2 but apply the multiplier
-            // to ensure waypoints account for the larger collision box used during movement.
-            int adjustedClearance = Mathf.CeilToInt(shipClearance * 1.2f);
-            return Mathf.Max(1, adjustedClearance > ConfigData.MinimumClearance ? adjustedClearance - 1 : adjustedClearance - 2);
         }
 
         private Path MakeDestinationList(int startIndex, int endIndex, int[] previousIndex, int[] clearanceMap, int clearance)
