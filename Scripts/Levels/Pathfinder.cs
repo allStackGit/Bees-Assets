@@ -1,20 +1,13 @@
 ﻿using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
-using Assets.Scripts.Scenes;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using System;
-using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Threading;
 using SW = System.Diagnostics;
 using UnityEngine;
 using System.Threading.Tasks;
-using NUnit.Framework;
-using System.Runtime.InteropServices;
 
 namespace Assets.Scripts.Levels
 {
@@ -25,9 +18,8 @@ namespace Assets.Scripts.Levels
         public const int DIAGONAL_COST = 14;
         public const int HORIZONTAL_COST = 10;
         public const float TimeLimit = 5f;
-        public int DebugLoops = 0;
-        public int MaxLoopsPerFrame = 1000;
-
+        private const int PreferredClearanceBuffer = 2;
+        private const int ClearancePenaltyMultiplier = HORIZONTAL_COST;
         private Grid _grid;
         /// <summary>
         /// How much scaled down the pathfinding map is compared to the real map. Smaller size increases speed but decreases precision. Obstacles must be 
@@ -39,6 +31,7 @@ namespace Assets.Scripts.Levels
         public bool HasMovingObstacles;
         private int _totalNodes;
         private int[] _baseClearance;
+        private int[] _staticSignedClearance;
         private int[] _dynamicClearance;
         private int[][] _threadClearance;
         private int[][] _costToHere;
@@ -50,9 +43,10 @@ namespace Assets.Scripts.Levels
         private int[] _searchStamp;
         private int _nextRequestId;
         private int _dynamicLayerFrame = -1;
-        private int _staticObstacleLayerSignature;
         private bool _staticObstacleLayerDirty;
         private readonly ConcurrentQueue<PathResult> _completedPaths = new ConcurrentQueue<PathResult>();
+        private readonly List<int> _obstaclePointIndexes = new List<int>();
+        private readonly HashSet<int> _obstaclePointIndexSet = new HashSet<int>();
         private static readonly int[] NeighborX = new int[] { -1, -1, -1, 0, 0, 1, 1, 1 };
         private static readonly int[] NeighborY = new int[] { -1, 0, 1, -1, 1, -1, 0, 1 };
 
@@ -200,9 +194,8 @@ namespace Assets.Scripts.Levels
         }
 
         //int totalLoopCount = 0;
-        int minY, minX, maxY, maxX, boundsX, boundsY, x, y, yMovement, nextX = 0;
-        bool hasHitObstacle;
-        MapNode currentNode, loopNode, previousNode;
+        int x, y;
+        MapNode currentNode;
         //int loopsSaved = 0;
         public void CalculateClearance(MapNode[][] nodes, int startX, int endX, int startY, int endY, int maxClearance, bool isSubSection)
         {
@@ -472,6 +465,7 @@ namespace Assets.Scripts.Levels
                     _baseClearance[ToIndex(x, y)] = _grid.Nodes[x][y].Clearance;
                 }
             }
+            _staticSignedClearance = BuildStaticSignedClearance(_baseClearance);
             Array.Copy(_baseClearance, _dynamicClearance, _totalNodes);
 
             for (int i = 0; i < ConfigData.MaxThreads; i++)
@@ -506,14 +500,7 @@ namespace Assets.Scripts.Levels
                 }
             }
 
-            for (int i = 0; i < ConfigData.MaxThreads; i++)
-            {
-
-                // initalize list of previous asteroids
-                PreviousAsteroids[i] = new List<int>();
-
-                // The hot path derives neighbors by index now; MapNode neighbors are left lazy for debugging only.
-            }
+            // The hot path derives neighbors by index now; MapNode neighbors are left lazy for debugging only.
 
             float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
             //Debug.Log($"Initialized map in {end} ms");
@@ -612,6 +599,40 @@ namespace Assets.Scripts.Levels
 
             return false;
         }
+
+        private void FillObstaclePointIndexes(Obstacle obstacle, float xVelocity, float yVelocity, List<int> points, HashSet<int> pointSet)
+        {
+            points.Clear();
+            pointSet.Clear();
+
+            Collider2D collider = obstacle.ClearanceMappingCollider != null ? obstacle.ClearanceMappingCollider : obstacle.Collider;
+            Bounds bounds = collider.bounds;
+            float speedPaddingX = Mathf.Abs(xVelocity) * 2.5f;
+            float speedPaddingY = Mathf.Abs(yVelocity) * 2.5f;
+            bounds.Expand(new Vector3(speedPaddingX * 2f, speedPaddingY * 2f, 0));
+
+            Vector2Int min = ConvertToMapCoordinates(new Vector2(bounds.min.x, bounds.max.y));
+            Vector2Int max = ConvertToMapCoordinates(new Vector2(bounds.max.x, bounds.min.y));
+            int startX = Mathf.Clamp(Mathf.Min(min.x, max.x), 0, _grid.MaxX);
+            int endX = Mathf.Clamp(Mathf.Max(min.x, max.x), 0, _grid.MaxX);
+            int startY = Mathf.Clamp(Mathf.Min(min.y, max.y), 0, _grid.MaxY);
+            int endY = Mathf.Clamp(Mathf.Max(min.y, max.y), 0, _grid.MaxY);
+
+            for (int x = startX; x <= endX; x++)
+            {
+                for (int y = startY; y <= endY; y++)
+                {
+                    if (DoesColliderTouchNode(collider, x, y, xVelocity, yVelocity))
+                    {
+                        int index = ToIndex(x, y);
+                        if (pointSet.Add(index))
+                        {
+                            points.Add(index);
+                        }
+                    }
+                }
+            }
+        }
         public void UpdateMap(int threadIndex, Ship ship)
         {
             UpdateDynamicObstacleLayer();
@@ -620,10 +641,9 @@ namespace Assets.Scripts.Levels
 
         private void UpdateDynamicObstacleLayer()
         {
-            int staticSignature = CalculateStaticObstacleLayerSignature();
-            if (_staticObstacleLayerDirty || staticSignature != _staticObstacleLayerSignature)
+            if (_staticObstacleLayerDirty)
             {
-                RebuildStaticObstacleLayer(staticSignature);
+                RebuildStaticObstacleLayer();
             }
 
             if (!Level.ActivateCollisionAsteroids)
@@ -659,43 +679,16 @@ namespace Assets.Scripts.Levels
                         velocity = asteroidPiece.Body.linearVelocity;
                     }
 
-                    int[][] points = GetObstaclePoints(obstacle, velocity.x, velocity.y);
-                    for (int pointIndex = 0; pointIndex < points.Length; pointIndex++)
+                    FillObstaclePointIndexes(obstacle, velocity.x, velocity.y, _obstaclePointIndexes, _obstaclePointIndexSet);
+                    for (int pointIndex = 0; pointIndex < _obstaclePointIndexes.Count; pointIndex++)
                     {
-                        int x = points[pointIndex][0];
-                        int y = points[pointIndex][1];
-                        if (x >= 0 && x < Width && y >= 0 && y < Height)
-                        {
-                            _dynamicClearance[ToIndex(x, y)] = 0;
-                        }
+                        _dynamicClearance[_obstaclePointIndexes[pointIndex]] = 0;
                     }
                 }
             }
 
             CalculateClearance(_dynamicClearance, int.MaxValue);
             _dynamicLayerFrame = frame;
-        }
-
-        private int CalculateStaticObstacleLayerSignature()
-        {
-            unchecked
-            {
-                int signature = 17;
-                GameObject[] obstacles = GameObject.FindGameObjectsWithTag("Obstacle");
-                for (int i = 0; i < obstacles.Length; i++)
-                {
-                    Obstacle obstacle = obstacles[i].GetComponent<Obstacle>();
-                    if (!ShouldBakeStaticObstacle(obstacle))
-                    {
-                        continue;
-                    }
-
-                    signature = (signature * 31) + obstacle.GetInstanceID();
-                    signature = (signature * 31) + obstacle.transform.position.GetHashCode();
-                    signature = (signature * 31) + obstacle.transform.lossyScale.GetHashCode();
-                }
-                return signature;
-            }
         }
 
         private bool ShouldBakeStaticObstacle(Obstacle obstacle)
@@ -721,7 +714,7 @@ namespace Assets.Scripts.Levels
                  obstacle.ObstacleType == ConfigData.ObstacleTypes.AsteroidPiece);
         }
 
-        private void RebuildStaticObstacleLayer(int staticSignature)
+        private void RebuildStaticObstacleLayer()
         {
             if (_baseClearance == null)
             {
@@ -760,6 +753,7 @@ namespace Assets.Scripts.Levels
             }
 
             CalculateClearance(_baseClearance, int.MaxValue);
+            _staticSignedClearance = BuildStaticSignedClearance(_baseClearance);
             SyncNodeClearanceFromBase();
             Array.Copy(_baseClearance, _dynamicClearance, _totalNodes);
             for (int i = 0; i < ConfigData.MaxThreads; i++)
@@ -767,8 +761,86 @@ namespace Assets.Scripts.Levels
                 Array.Copy(_baseClearance, _threadClearance[i], _totalNodes);
             }
             _staticObstacleLayerDirty = false;
-            _staticObstacleLayerSignature = staticSignature;
             _dynamicLayerFrame = -1;
+        }
+
+        private int[] BuildStaticSignedClearance(int[] staticClearance)
+        {
+            int[] signedClearance = new int[_totalNodes];
+            const int unreachable = int.MaxValue / 4;
+            for (int i = 0; i < _totalNodes; i++)
+            {
+                signedClearance[i] = staticClearance[i] == 0 ? unreachable : 0;
+            }
+
+            for (int y = 0; y < Height; y++)
+            {
+                for (int x = 0; x < Width; x++)
+                {
+                    int index = ToIndex(x, y);
+                    if (signedClearance[index] == 0)
+                    {
+                        continue;
+                    }
+
+                    int distance = signedClearance[index];
+                    if (x > 0)
+                    {
+                        distance = Mathf.Min(distance, signedClearance[ToIndex(x - 1, y)] + 1);
+                    }
+                    if (y > 0)
+                    {
+                        distance = Mathf.Min(distance, signedClearance[ToIndex(x, y - 1)] + 1);
+                    }
+                    if (x > 0 && y > 0)
+                    {
+                        distance = Mathf.Min(distance, signedClearance[ToIndex(x - 1, y - 1)] + 1);
+                    }
+                    if (x < _grid.MaxX && y > 0)
+                    {
+                        distance = Mathf.Min(distance, signedClearance[ToIndex(x + 1, y - 1)] + 1);
+                    }
+                    signedClearance[index] = distance;
+                }
+            }
+
+            for (int y = Height - 1; y >= 0; y--)
+            {
+                for (int x = Width - 1; x >= 0; x--)
+                {
+                    int index = ToIndex(x, y);
+                    if (signedClearance[index] == 0)
+                    {
+                        continue;
+                    }
+
+                    int distance = signedClearance[index];
+                    if (x < _grid.MaxX)
+                    {
+                        distance = Mathf.Min(distance, signedClearance[ToIndex(x + 1, y)] + 1);
+                    }
+                    if (y < _grid.MaxY)
+                    {
+                        distance = Mathf.Min(distance, signedClearance[ToIndex(x, y + 1)] + 1);
+                    }
+                    if (x < _grid.MaxX && y < _grid.MaxY)
+                    {
+                        distance = Mathf.Min(distance, signedClearance[ToIndex(x + 1, y + 1)] + 1);
+                    }
+                    if (x > 0 && y < _grid.MaxY)
+                    {
+                        distance = Mathf.Min(distance, signedClearance[ToIndex(x - 1, y + 1)] + 1);
+                    }
+                    signedClearance[index] = distance;
+                }
+            }
+
+            for (int i = 0; i < _totalNodes; i++)
+            {
+                signedClearance[i] = staticClearance[i] > 0 ? staticClearance[i] : -signedClearance[i];
+            }
+
+            return signedClearance;
         }
 
         private void SyncNodeClearanceFromBase()
@@ -791,120 +863,6 @@ namespace Assets.Scripts.Levels
                 }
             }
         }
-        public MapNode FindNearestWalkablePoint(MapNode startNode, MapNode endNode, int minimumClearance, int threadIndex)
-        {
-            if (startNode.Clearance >= minimumClearance)
-            {
-                return startNode;
-            }
-
-            MapNode bestNode = MapNode.NullNode;
-            int bestCost = int.MaxValue;
-            int maxRadius = Mathf.Max(_grid.Width, _grid.Height);
-
-            for (int radius = 1; radius <= maxRadius; radius++)
-            {
-                int minX = Mathf.Max(0, startNode.x - radius);
-                int maxX = Mathf.Min(_grid.MaxX, startNode.x + radius);
-                int minY = Mathf.Max(0, startNode.y - radius);
-                int maxY = Mathf.Min(_grid.MaxY, startNode.y + radius);
-
-                for (int x = minX; x <= maxX; x++)
-                {
-                    CheckNearestWalkableCandidate(GridNodes[threadIndex][x][minY], endNode, minimumClearance, ref bestNode, ref bestCost);
-                    CheckNearestWalkableCandidate(GridNodes[threadIndex][x][maxY], endNode, minimumClearance, ref bestNode, ref bestCost);
-                }
-
-                for (int y = minY + 1; y < maxY; y++)
-                {
-                    CheckNearestWalkableCandidate(GridNodes[threadIndex][minX][y], endNode, minimumClearance, ref bestNode, ref bestCost);
-                    CheckNearestWalkableCandidate(GridNodes[threadIndex][maxX][y], endNode, minimumClearance, ref bestNode, ref bestCost);
-                }
-
-                if (bestNode != MapNode.NullNode)
-                {
-                    return bestNode;
-                }
-            }
-
-            return MapNode.NullNode;
-
-        }
-
-        private void CheckNearestWalkableCandidate(MapNode node, MapNode endNode, int minimumClearance, ref MapNode bestNode, ref int bestCost)
-        {
-            if (node.Clearance < minimumClearance)
-            {
-                return;
-            }
-
-            int cost = MapNode.CalculateDistance(node, endNode);
-            if (cost < bestCost)
-            {
-                bestCost = cost;
-                bestNode = node;
-            }
-        }
-        private void MakeDestinationList(MapNode BTEndNode, Path BTPath)
-        {
-            List<Vector2> BTDestinationList = new List<Vector2> { BTEndNode.Vector };
-            
-            MapNode BTCurrentNode = BTEndNode;
-            Vector2Int previousSlope = Vector2Int.zero;
-            Vector2Int slope = Vector2Int.one;
-
-            while (BTCurrentNode.PreviousNode != MapNode.NullNode)
-            {
-                //Debug.Log(currentNode.PreviousNode.Id);
-
-                slope = new Vector2Int(BTCurrentNode.x - BTCurrentNode.PreviousNode.x, BTCurrentNode.y - BTCurrentNode.PreviousNode.y);
-                //Debug.Log($"The slope for the point is {slope}, is is the same as the previous slope? {previousSlope == slope}");
-
-                if (previousSlope != slope)
-                {
-                    BTDestinationList.Add(BTCurrentNode.PreviousNode.Vector);
-                    BTCurrentNode.PreviousNode.IsPartOfPath = true;
-                }
-                previousSlope = slope;
-                BTCurrentNode = BTCurrentNode.PreviousNode;
-
-            }
-
-            BTDestinationList.Reverse();
-            //path.SetPoints(destinationList);
-            //Debug.Log($"There are {BTDestinationList.Count} points in the path");
-            BTPath.Points = BTDestinationList;
-        }
-        private MapNode GetCheapestNode(List<MapNode> list, MapNode previousNode)
-        {
-            MapNode cheapest = list[0];
-            for (int cheapestIterator = 1; cheapestIterator < list.Count; cheapestIterator++)
-            {
-                if (cheapest.TotalCost - previousNode.TotalCost <= 1)
-                {
-                    return cheapest;
-                }
-                if (list[cheapestIterator].TotalCost < cheapest.TotalCost)
-                {
-                    cheapest = list[cheapestIterator];
-                }
-            }
-            return cheapest;
-        }
-
-        private bool IsDiagonalMoveBlocked(MapNode currentNode, MapNode neighbor, int clearance, int threadIndex)
-        {
-            int xDistance = Mathf.Abs(currentNode.x - neighbor.x);
-            int yDistance = Mathf.Abs(currentNode.y - neighbor.y);
-            if (xDistance != 1 || yDistance != 1)
-            {
-                return false;
-            }
-
-            return GridNodes[threadIndex][currentNode.x][neighbor.y].Clearance < clearance ||
-                   GridNodes[threadIndex][neighbor.x][currentNode.y].Clearance < clearance;
-        }
-
         private bool IsDiagonalMoveBlocked(int currentX, int currentY, int neighborX, int neighborY, int clearance, int[] clearanceMap)
         {
             if (Mathf.Abs(currentX - neighborX) != 1 || Mathf.Abs(currentY - neighborY) != 1)
@@ -921,84 +879,6 @@ namespace Assets.Scripts.Levels
             int xDistance = Mathf.Abs(ToX(a) - ToX(b));
             int yDistance = Mathf.Abs(ToY(a) - ToY(b));
             return DIAGONAL_COST * Mathf.Min(xDistance, yDistance) + HORIZONTAL_COST * Mathf.Abs(xDistance - yDistance);
-        }
-
-        private class MinHeap
-        {
-            private readonly List<MapNode> _nodes = new List<MapNode>();
-
-            public int Count => _nodes.Count;
-
-            public void Push(MapNode node)
-            {
-                _nodes.Add(node);
-                int index = _nodes.Count - 1;
-
-                while (index > 0)
-                {
-                    int parentIndex = (index - 1) / 2;
-                    if (IsHigherPriority(_nodes[parentIndex], node))
-                    {
-                        break;
-                    }
-
-                    _nodes[index] = _nodes[parentIndex];
-                    index = parentIndex;
-                }
-
-                _nodes[index] = node;
-            }
-
-            public MapNode Pop()
-            {
-                MapNode result = _nodes[0];
-                MapNode last = _nodes[_nodes.Count - 1];
-                _nodes.RemoveAt(_nodes.Count - 1);
-
-                if (_nodes.Count == 0)
-                {
-                    return result;
-                }
-
-                int index = 0;
-                while (true)
-                {
-                    int leftIndex = (index * 2) + 1;
-                    if (leftIndex >= _nodes.Count)
-                    {
-                        break;
-                    }
-
-                    int rightIndex = leftIndex + 1;
-                    int childIndex = rightIndex < _nodes.Count && IsHigherPriority(_nodes[rightIndex], _nodes[leftIndex]) ? rightIndex : leftIndex;
-
-                    if (IsHigherPriority(last, _nodes[childIndex]))
-                    {
-                        break;
-                    }
-
-                    _nodes[index] = _nodes[childIndex];
-                    index = childIndex;
-                }
-
-                _nodes[index] = last;
-                return result;
-            }
-
-            private static bool IsHigherPriority(MapNode a, MapNode b)
-            {
-                if (a.TotalCost != b.TotalCost)
-                {
-                    return a.TotalCost < b.TotalCost;
-                }
-
-                if (a.HueristicCost != b.HueristicCost)
-                {
-                    return a.HueristicCost < b.HueristicCost;
-                }
-
-                return a.Id < b.Id;
-            }
         }
 
         private class IntMinHeap
@@ -1098,7 +978,6 @@ namespace Assets.Scripts.Levels
         /// </summary>
         public HashSet<Ship> ShipsToDequeue = new HashSet<Ship>();
         public bool[] IsThreadActive = new bool[ConfigData.MaxThreads];
-        public List<int>[] PreviousAsteroids = new List<int>[ConfigData.MaxThreads];
         /// <summary>
         /// A list of arrays of obstacle points. Each array of points belongs to an obstacle and each point (a two int array) is an x index and a y index on the Map array
         /// </summary>
@@ -1106,9 +985,6 @@ namespace Assets.Scripts.Levels
 
 
         public SW.Stopwatch[] Totals = new SW.Stopwatch[ConfigData.MaxThreads];
-        public SW.Stopwatch[] NeighborLoops = new SW.Stopwatch[ConfigData.MaxThreads];
-        public SW.Stopwatch[] GetNodes = new SW.Stopwatch[ConfigData.MaxThreads];
-        public SW.Stopwatch[] UpdateMapTime = new SW.Stopwatch[ConfigData.MaxThreads];
         public MapNode[] StartNodes = new MapNode[ConfigData.MaxThreads];
         public MapNode[] EndNodes = new MapNode[ConfigData.MaxThreads];
         public int[] Clearances = new int[ConfigData.MaxThreads];
@@ -1151,35 +1027,29 @@ namespace Assets.Scripts.Levels
         {
             int hardClearance = GetEffectivePathClearance(Clearances[threadIndex]);
             int preferredClearance = GetPreferredPathClearance(hardClearance);
-            int startIndex = ToIndex(StartNodes[threadIndex].x, StartNodes[threadIndex].y);
+            int originalStartIndex = ToIndex(StartNodes[threadIndex].x, StartNodes[threadIndex].y);
+            int startIndex = originalStartIndex;
             int endIndex = ToIndex(EndNodes[threadIndex].x, EndNodes[threadIndex].y);
             int[] clearanceMap = _threadClearance[threadIndex];
+            int[] staticSignedClearance = _staticSignedClearance;
+            List<int> egressIndexes = null;
 
             if (clearanceMap[endIndex] < hardClearance)
-            {
-                endIndex = FindNearestWalkableIndex(endIndex, startIndex, hardClearance, threadIndex);
-            }
-            if (endIndex < 0)
             {
                 return null;
             }
 
             if (clearanceMap[startIndex] < hardClearance)
             {
-                startIndex = FindNearestWalkableIndex(startIndex, endIndex, hardClearance, threadIndex);
-            }
-            if (startIndex < 0)
-            {
-                return null;
+                egressIndexes = FindStaticEgressPath(startIndex, hardClearance, clearanceMap, staticSignedClearance, threadIndex);
+                if (egressIndexes == null || egressIndexes.Count == 0)
+                {
+                    return null;
+                }
+                startIndex = egressIndexes[egressIndexes.Count - 1];
             }
 
-            int searchStamp = ++_searchStamp[threadIndex];
-            if (searchStamp == int.MaxValue)
-            {
-                Array.Clear(_openStamp[threadIndex], 0, _totalNodes);
-                Array.Clear(_closedStamp[threadIndex], 0, _totalNodes);
-                searchStamp = _searchStamp[threadIndex] = 1;
-            }
+            int searchStamp = BeginSearch(threadIndex);
 
             int[] costToHere = _costToHere[threadIndex];
             int[] totalCost = _totalCost[threadIndex];
@@ -1206,7 +1076,7 @@ namespace Assets.Scripts.Levels
 
                 if (currentIndex == endIndex)
                 {
-                    return MakeDestinationList(startIndex, endIndex, previousIndex, clearanceMap, hardClearance, preferredClearance);
+                    return MakeDestinationList(originalStartIndex, startIndex, endIndex, previousIndex, clearanceMap, hardClearance, preferredClearance, egressIndexes);
                 }
 
                 closedStamp[currentIndex] = searchStamp;
@@ -1246,6 +1116,119 @@ namespace Assets.Scripts.Levels
             return null;
         }
 
+        private int BeginSearch(int threadIndex)
+        {
+            int searchStamp = ++_searchStamp[threadIndex];
+            if (searchStamp == int.MaxValue)
+            {
+                Array.Clear(_openStamp[threadIndex], 0, _totalNodes);
+                Array.Clear(_closedStamp[threadIndex], 0, _totalNodes);
+                searchStamp = _searchStamp[threadIndex] = 1;
+            }
+            return searchStamp;
+        }
+
+        private List<int> FindStaticEgressPath(int startIndex, int hardClearance, int[] clearanceMap, int[] staticSignedClearance, int threadIndex)
+        {
+            if (staticSignedClearance == null || staticSignedClearance[startIndex] >= hardClearance)
+            {
+                return null;
+            }
+
+            int searchStamp = BeginSearch(threadIndex);
+            int[] costs = _costToHere[threadIndex];
+            int[] tieBreakers = _heuristicCost[threadIndex];
+            int[] previousIndex = _previousIndex[threadIndex];
+            int[] openStamp = _openStamp[threadIndex];
+            int[] closedStamp = _closedStamp[threadIndex];
+            IntMinHeap open = new IntMinHeap(costs, tieBreakers);
+
+            costs[startIndex] = 0;
+            tieBreakers[startIndex] = 0;
+            previousIndex[startIndex] = -1;
+            openStamp[startIndex] = searchStamp;
+            open.Push(startIndex);
+
+            while (open.Count > 0 && Totals[threadIndex].Elapsed.TotalSeconds < TimeLimit)
+            {
+                int currentIndex = open.Pop();
+                if (closedStamp[currentIndex] == searchStamp)
+                {
+                    continue;
+                }
+
+                if (staticSignedClearance[currentIndex] >= hardClearance && clearanceMap[currentIndex] >= hardClearance)
+                {
+                    return ReconstructIndexes(startIndex, currentIndex, previousIndex);
+                }
+
+                closedStamp[currentIndex] = searchStamp;
+                int currentX = ToX(currentIndex);
+                int currentY = ToY(currentIndex);
+                int currentSignedClearance = staticSignedClearance[currentIndex];
+                int currentCombinedClearance = clearanceMap[currentIndex];
+
+                for (int i = 0; i < NeighborX.Length; i++)
+                {
+                    int neighborX = currentX + NeighborX[i];
+                    int neighborY = currentY + NeighborY[i];
+                    if (neighborX < 0 || neighborY < 0 || neighborX >= Width || neighborY >= Height)
+                    {
+                        continue;
+                    }
+
+                    int neighborIndex = ToIndex(neighborX, neighborY);
+                    if (closedStamp[neighborIndex] == searchStamp ||
+                        staticSignedClearance[neighborIndex] < currentSignedClearance ||
+                        clearanceMap[neighborIndex] < currentCombinedClearance ||
+                        IsEgressDiagonalBlocked(currentX, currentY, neighborX, neighborY, currentSignedClearance, currentCombinedClearance, staticSignedClearance, clearanceMap))
+                    {
+                        continue;
+                    }
+
+                    int newCost = costs[currentIndex] + CalculateDistance(currentIndex, neighborIndex);
+                    if (openStamp[neighborIndex] != searchStamp || newCost < costs[neighborIndex])
+                    {
+                        costs[neighborIndex] = newCost;
+                        tieBreakers[neighborIndex] = -staticSignedClearance[neighborIndex];
+                        previousIndex[neighborIndex] = currentIndex;
+                        openStamp[neighborIndex] = searchStamp;
+                        open.Push(neighborIndex);
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private bool IsEgressDiagonalBlocked(int currentX, int currentY, int neighborX, int neighborY, int minimumSignedClearance, int minimumCombinedClearance, int[] staticSignedClearance, int[] clearanceMap)
+        {
+            if (Mathf.Abs(currentX - neighborX) != 1 || Mathf.Abs(currentY - neighborY) != 1)
+            {
+                return false;
+            }
+
+            int firstSide = ToIndex(currentX, neighborY);
+            int secondSide = ToIndex(neighborX, currentY);
+            return staticSignedClearance[firstSide] < minimumSignedClearance ||
+                   staticSignedClearance[secondSide] < minimumSignedClearance ||
+                   clearanceMap[firstSide] < minimumCombinedClearance ||
+                   clearanceMap[secondSide] < minimumCombinedClearance;
+        }
+
+        private List<int> ReconstructIndexes(int startIndex, int endIndex, int[] previousIndex)
+        {
+            List<int> indexes = new List<int> { endIndex };
+            int currentIndex = endIndex;
+            while (currentIndex != startIndex && previousIndex[currentIndex] >= 0)
+            {
+                currentIndex = previousIndex[currentIndex];
+                indexes.Add(currentIndex);
+            }
+            indexes.Reverse();
+            return indexes;
+        }
+
         private int GetEffectivePathClearance(int shipClearance)
         {
             return Mathf.Max(ConfigData.MinimumClearance, shipClearance);
@@ -1253,35 +1236,41 @@ namespace Assets.Scripts.Levels
 
         private int GetPreferredPathClearance(int hardClearance)
         {
-            return hardClearance + 2;
+            return hardClearance + PreferredClearanceBuffer;
         }
 
         private int GetClearanceCost(int nodeClearance, int preferredClearance)
         {
             int clearanceShortfall = preferredClearance - nodeClearance;
-            return clearanceShortfall > 0 ? clearanceShortfall * clearanceShortfall * HORIZONTAL_COST : 0;
+            return clearanceShortfall > 0 ? clearanceShortfall * clearanceShortfall * ClearancePenaltyMultiplier : 0;
         }
 
-        private Path MakeDestinationList(int startIndex, int endIndex, int[] previousIndex, int[] clearanceMap, int hardClearance, int preferredClearance)
+        private Path MakeDestinationList(int originalStartIndex, int startIndex, int endIndex, int[] previousIndex, int[] clearanceMap, int hardClearance, int preferredClearance, List<int> egressIndexes)
         {
-            Path path = new Path(ToX(startIndex), ToY(startIndex), ToX(endIndex), ToY(endIndex));
-            List<int> indexes = new List<int> { endIndex };
-            int currentIndex = endIndex;
+            Path path = new Path(ToX(originalStartIndex), ToY(originalStartIndex), ToX(endIndex), ToY(endIndex));
+            List<int> normalIndexes = ReconstructIndexes(startIndex, endIndex, previousIndex);
+            normalIndexes = SmoothPathIndexes(normalIndexes, clearanceMap, hardClearance, preferredClearance);
 
-            while (currentIndex != startIndex && previousIndex[currentIndex] >= 0)
+            List<int> indexes;
+            if (egressIndexes != null)
             {
-                int previous = previousIndex[currentIndex];
-                indexes.Add(previous);
-                currentIndex = previous;
+                indexes = new List<int>(egressIndexes.Count + normalIndexes.Count - 1);
+                indexes.AddRange(egressIndexes);
+                for (int i = 1; i < normalIndexes.Count; i++)
+                {
+                    indexes.Add(normalIndexes[i]);
+                }
+            }
+            else
+            {
+                indexes = normalIndexes;
             }
 
-            indexes.Reverse();
             if (indexes.Count > 1)
             {
                 indexes.RemoveAt(0);
             }
-
-            indexes = SmoothPathIndexes(indexes, clearanceMap, hardClearance, preferredClearance);
+            path.EgressPointCount = egressIndexes == null ? 0 : Mathf.Max(0, egressIndexes.Count - 1);
 
             List<Vector2> points = new List<Vector2>();
             for (int i = 0; i < indexes.Count; i++)
@@ -1335,51 +1324,62 @@ namespace Assets.Scripts.Levels
 
         private bool HasClearGridLine(int startIndex, int endIndex, int[] clearanceMap, int clearance)
         {
-            int x0 = ToX(startIndex);
-            int y0 = ToY(startIndex);
-            int x1 = ToX(endIndex);
-            int y1 = ToY(endIndex);
-            int dx = Mathf.Abs(x1 - x0);
-            int dy = Mathf.Abs(y1 - y0);
-            int sx = x0 < x1 ? 1 : -1;
-            int sy = y0 < y1 ? 1 : -1;
-            int error = dx - dy;
+            int x = ToX(startIndex);
+            int y = ToY(startIndex);
+            int endX = ToX(endIndex);
+            int endY = ToY(endIndex);
+            int dx = endX - x;
+            int dy = endY - y;
+            int stepsX = Mathf.Abs(dx);
+            int stepsY = Mathf.Abs(dy);
+            int directionX = Math.Sign(dx);
+            int directionY = Math.Sign(dy);
+            int movedX = 0;
+            int movedY = 0;
 
-            while (true)
+            if (!IsClearGridCell(x, y, clearanceMap, clearance))
             {
-                int index = ToIndex(x0, y0);
-                if (clearanceMap[index] < clearance)
-                {
-                    return false;
-                }
-
-                if (x0 == x1 && y0 == y1)
-                {
-                    return true;
-                }
-
-                int e2 = error * 2;
-                int nextX = x0;
-                int nextY = y0;
-                if (e2 > -dy)
-                {
-                    error -= dy;
-                    nextX += sx;
-                }
-                if (e2 < dx)
-                {
-                    error += dx;
-                    nextY += sy;
-                }
-
-                if (nextX != x0 && nextY != y0 && IsDiagonalMoveBlocked(x0, y0, nextX, nextY, clearance, clearanceMap))
-                {
-                    return false;
-                }
-
-                x0 = nextX;
-                y0 = nextY;
+                return false;
             }
+
+            while (movedX < stepsX || movedY < stepsY)
+            {
+                int decision = ((1 + (2 * movedX)) * stepsY) - ((1 + (2 * movedY)) * stepsX);
+                if (decision == 0)
+                {
+                    if (!IsClearGridCell(x + directionX, y, clearanceMap, clearance) ||
+                        !IsClearGridCell(x, y + directionY, clearanceMap, clearance))
+                    {
+                        return false;
+                    }
+                    x += directionX;
+                    y += directionY;
+                    movedX++;
+                    movedY++;
+                }
+                else if (decision < 0)
+                {
+                    x += directionX;
+                    movedX++;
+                }
+                else
+                {
+                    y += directionY;
+                    movedY++;
+                }
+
+                if (!IsClearGridCell(x, y, clearanceMap, clearance))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private bool IsClearGridCell(int x, int y, int[] clearanceMap, int clearance)
+        {
+            return x >= 0 && y >= 0 && x < Width && y < Height && clearanceMap[ToIndex(x, y)] >= clearance;
         }
 
         private int FindNearestWalkableIndex(int startIndex, int endIndex, int minimumClearance, int threadIndex)
@@ -1938,6 +1938,7 @@ namespace Assets.Scripts.Levels
             //public static Path NullPath = new Path(-1, -1, -1, -1);
             public List<Vector2> Points;
             public int StartX, StartY, EndX, EndY;
+            public int EgressPointCount;
             public long Id;
             public bool IsCached;
 

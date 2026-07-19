@@ -863,15 +863,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         Vector2 _startPosition;
         private Collider2D _obstacleCollider;
         private readonly RaycastHit2D[] _obstacleCastHits = new RaycastHit2D[16];
-        private readonly Collider2D[] _overlapObstacleHits = new Collider2D[16];
         private RaycastHit2D _movementObstacleHit;
-        private bool _recoveredFromObstacleSweep;
-        private int _obstacleRecoveryFrames;
-        private Vector2 _obstacleRecoveryNormal;
-        private const int ObstacleRecoveryMaxFrames = 8;
-        private const float ObstacleRecoveryBackoffSpeedFactor = 0.35f;
-        private const float ObstacleSkinWidth = 0.15f;
-        private const float MinimumClampedMovementDistance = 0.01f;
+        private const int RotationPrecisionDegrees = 3;
         public void MoveToPoint(Vector2 destination, bool foundObstacle = false)
         {
             //Debug.Log($"{this} is moving to {destination}");
@@ -1042,6 +1035,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
         public int _retries = 0;
         private bool _tryingToFindPathAgain;
+        private int _remainingEgressWaypoints;
         private void MergePathfindingPaths()
         {
             //if (PrintDebugImage)
@@ -1062,9 +1056,14 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 //    DestinationQueue.Enqueue(PathfindingValue.Points[i]);
                 //}
                 DestinationQueue = new Queue<Vector2>(PathfindingValue.Points);
+                _remainingEgressWaypoints = PathfindingValue.EgressPointCount;
                 SkipClosePathWaypoints();
                 FinalDestination = DestinationQueue.Last();
                 SetTargetCoordinates(DestinationQueue.Dequeue());
+                if (_remainingEgressWaypoints > 0)
+                {
+                    _remainingEgressWaypoints--;
+                }
                 IsFollowingPath = true;
                 HasTargetCoordinates = true;
                 PathfindingValue = null;
@@ -1189,12 +1188,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
             _tempVelocity = new Vector2((Speed * Mathf.Sin(_tempAngle)), (-1 * Speed * Mathf.Cos(_tempAngle)));
 
-            if (WouldHitObstacleDuringMovement(_tempVelocity, out _movementObstacleHit))
-            {
-                StopMoving("Movement sweep hit obstacle");
-                return;
-            }
-
             //Vector2 unclamped = transform.localPosition;
 
             // This shouldn't be necessary any more because obstacles prevent ships from moving outside of bounds, not the clamping
@@ -1285,9 +1278,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         protected float _differenceInAngleToPoint;
         public void SetMovementVelocity()
         {
-            _recoveredFromObstacleSweep = false;
-
-
             // Set the velocity of the ship
             if (HasTargetCoordinates)
             {
@@ -1303,7 +1293,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 return;
             }
             IsMoving = true;
-            _differenceInAngleToPoint = Utilities.TimedRotationDifference(this, _rotation, RotationSpeed);
+            _differenceInAngleToPoint = TryRotateTowardsMovementTarget(_rotation);
 
             bool updatedVelocity = false;
             if (_differenceInAngleToPoint != 0 || Stage.FixedUpdates % 10 == 0 || _maxSpeed != CurrentSpeed)
@@ -1327,73 +1317,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 _tempVelocity = new Vector2((_maxSpeed * Mathf.Sin(_tempAngle)), -(_maxSpeed * Mathf.Cos(_tempAngle)));
             }
 
-            if (!Level.HasObstacles)
-            {
-                _obstacleRecoveryFrames = 0;
-                Body.linearVelocity = _tempVelocity;
-                if (HasRocketFlares)
-                {
-                    SetRocketFlares();
-                }
-                return;
-            }
-
-            if (_obstacleRecoveryFrames > 0)
-            {
-                if (TryResolveObstacleOverlap())
-                {
-                    _recoveredFromObstacleSweep = true;
-                    _obstacleRecoveryFrames--;
-                    return;
-                }
-
-                if (TryGetSafeSweptVelocity(_tempVelocity, out _tempVelocity, out _movementObstacleHit))
-                {
-                    Body.linearVelocity = _tempVelocity;
-                    if (_movementObstacleHit.collider == null)
-                    {
-                        _obstacleRecoveryFrames = 0;
-                    }
-                    else
-                    {
-                        _recoveredFromObstacleSweep = true;
-                        _obstacleRecoveryFrames--;
-                    }
-                    if (HasRocketFlares)
-                    {
-                        SetRocketFlares();
-                    }
-                    return;
-                }
-
-                if (TryConstrainedObstacleMovement(_tempVelocity, _movementObstacleHit))
-                {
-                    _recoveredFromObstacleSweep = true;
-                    _obstacleRecoveryFrames--;
-                    return;
-                }
-
-                _obstacleRecoveryFrames = 0;
-            }
-
-            Vector2 desiredVelocity = _tempVelocity;
-            if (!TryGetSafeSweptVelocity(desiredVelocity, out _tempVelocity, out _movementObstacleHit))
-            {
-                Body.linearVelocity = Vector2.zero;
-                if (HasTargetCoordinates)
-                {
-                    RecoverFromObstacleSweep(desiredVelocity, _movementObstacleHit);
-                }
-                else
-                {
-                    StopMoving("Movement sweep hit obstacle");
-                }
-                return;
-            }
-            if (_movementObstacleHit.collider != null)
-            {
-                _recoveredFromObstacleSweep = true;
-            }
             Body.linearVelocity = _tempVelocity;
             //_tempAngle = (Rotation - 180) * Mathf.Deg2Rad;
             //Body.velocity = new Vector2((_maxSpeed * Mathf.Sin(_tempAngle)), -(_maxSpeed * Mathf.Cos(_tempAngle)));
@@ -1425,18 +1348,6 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
             _tempDistance = DistanceToPoint(TargetCoordinates);
             SetMovementVelocity();
-            if (_recoveredFromObstacleSweep)
-            {
-                return;
-            }
-
-            // If an obstacle blocks the current waypoint, recalculate path to destination
-            if (Level.HasObstacles && HasObstacleInPath(TargetCoordinates))
-            {
-                RecoverFromObstacleSweep(Vector2.zero, new RaycastHit2D());
-                return;
-            }
-
             //try
             //{
             //    bool testTrue = HasTargetEnemyShipToFollow &&
@@ -1526,6 +1437,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             if (DestinationQueue.Count > 0)
             {
                 SetTargetCoordinates(DestinationQueue.Dequeue());
+                if (_remainingEgressWaypoints > 0)
+                {
+                    _remainingEgressWaypoints--;
+                }
                 //Debug.Log($"There are more target coordinates, not ending movement: {TargetCoordinates}");
             }
             //else if (HasTargetEnemy)
@@ -1554,7 +1469,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             }
 
             float waypointRadius = GetPathWaypointRadius();
-            while (DestinationQueue.Count > 1 && DistanceToPoint(DestinationQueue.Peek()) < waypointRadius)
+            while (_remainingEgressWaypoints == 0 && DestinationQueue.Count > 1 && DistanceToPoint(DestinationQueue.Peek()) < waypointRadius)
             {
                 DestinationQueue.Dequeue();
             }
@@ -1563,146 +1478,29 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         {
             return Mathf.Max(ConfigData.ShipTurningRadius, Mathf.Min(GetHalfWidth(), GetHalfHeight()) * 0.75f);
         }
-        private void RecoverFromObstacleSweep(Vector2 blockedVelocity, RaycastHit2D hit)
+        private float TryRotateTowardsMovementTarget(float targetRotation)
         {
-            _recoveredFromObstacleSweep = true;
-            if (hit.collider != null && hit.normal.sqrMagnitude > 0)
+            float rotationDifference = Mathf.DeltaAngle(Rotation, targetRotation);
+            if (rotationDifference > RotationPrecisionDegrees)
             {
-                _obstacleRecoveryNormal = hit.normal.normalized;
-                _obstacleRecoveryFrames = ObstacleRecoveryMaxFrames;
+                float rotationStep = Stage.FixedDeltaTime * RotationSpeed;
+                ApplyMovementRotation(rotationStep);
+                return rotationDifference;
+            }
+            else if (rotationDifference < -RotationPrecisionDegrees)
+            {
+                float rotationStep = -Stage.FixedDeltaTime * RotationSpeed;
+                ApplyMovementRotation(rotationStep);
+                return rotationDifference;
             }
 
-            if (TryResolveObstacleOverlap())
-            {
-                return;
-            }
-
-            if (TryConstrainedObstacleMovement(blockedVelocity, hit))
-            {
-                return;
-            }
-
-            if (IsFollowingPath && DestinationQueue.Count > 0)
-            {
-                SkipClosePathWaypoints();
-                if (DestinationQueue.Count > 0)
-                {
-                    SetTargetCoordinates(DestinationQueue.Dequeue());
-                    HasTargetCoordinates = true;
-                    return;
-                }
-            }
-
-            Vector2 destination = IsFollowingPath ? FinalDestination : TargetCoordinates;
-            if (IsPathfinding)
-            {
-                PathfindingDestination = destination;
-                return;
-            }
-
-            MoveToPoint(destination, true);
+            return 0;
         }
-        private bool TryConstrainedObstacleMovement(Vector2 blockedVelocity, RaycastHit2D hit)
+        private void ApplyMovementRotation(float rotationStep)
         {
-            Vector2 normal = hit.collider != null && hit.normal.sqrMagnitude > 0 ? hit.normal.normalized : _obstacleRecoveryNormal;
-            if (blockedVelocity.sqrMagnitude <= 0 || normal.sqrMagnitude <= 0)
-            {
-                return false;
-            }
-
-            RaycastHit2D ignoredHit;
-            Vector2 intoObstacle = -normal;
-            float inwardSpeed = Vector2.Dot(blockedVelocity, intoObstacle);
-            Vector2 constrainedVelocity = inwardSpeed > 0 ? blockedVelocity - (inwardSpeed * intoObstacle) : blockedVelocity;
-
-            Vector2 safeVelocity;
-            if (constrainedVelocity.sqrMagnitude > 0.01f && TryGetSafeSweptVelocity(constrainedVelocity, out safeVelocity, out ignoredHit))
-            {
-                Body.linearVelocity = safeVelocity;
-                return true;
-            }
-
-            Vector2 backoffVelocity = normal * Mathf.Min(CurrentSpeed, Speed) * ObstacleRecoveryBackoffSpeedFactor;
-            if (backoffVelocity.sqrMagnitude > 0.01f && TryGetSafeSweptVelocity(backoffVelocity, out safeVelocity, out ignoredHit))
-            {
-                Body.linearVelocity = safeVelocity;
-                return true;
-            }
-
-            return false;
-        }
-        private bool TryResolveObstacleOverlap()
-        {
-            if (!Level.HasObstacles || Collider == null)
-            {
-                return false;
-            }
-
-            int overlapCount = Physics2D.OverlapBoxNonAlloc(GetPosition(), GetSize() * 1.0f, Rotation, _overlapObstacleHits, ConfigData.ObstaclesLayerMask);
-            for (int i = 0; i < overlapCount; i++)
-            {
-                Collider2D hitCollider = _overlapObstacleHits[i];
-                if (hitCollider == null || hitCollider == Collider)
-                {
-                    continue;
-                }
-
-                Obstacle obstacle = hitCollider.GetComponent<Obstacle>() ?? hitCollider.GetComponentInParent<Obstacle>();
-                if (!ShouldAvoidObstacle(obstacle))
-                {
-                    continue;
-                }
-
-                Vector2 pushDirection = GetPosition() - hitCollider.ClosestPoint(GetPosition());
-                if (pushDirection.sqrMagnitude <= 0.0001f)
-                {
-                    pushDirection = GetPosition() - (Vector2)hitCollider.bounds.center;
-                }
-                if (pushDirection.sqrMagnitude <= 0.0001f)
-                {
-                    pushDirection = _obstacleRecoveryNormal;
-                }
-                if (pushDirection.sqrMagnitude <= 0.0001f)
-                {
-                    continue;
-                }
-
-                Body.linearVelocity = pushDirection.normalized * Mathf.Min(CurrentSpeed, Speed) * ObstacleRecoveryBackoffSpeedFactor;
-                return true;
-            }
-
-            return false;
-        }
-        private bool TryGetSafeSweptVelocity(Vector2 desiredVelocity, out Vector2 safeVelocity, out RaycastHit2D hit)
-        {
-            safeVelocity = desiredVelocity;
-            hit = new RaycastHit2D();
-            if (!Level.HasObstacles || desiredVelocity.sqrMagnitude <= 0)
-            {
-                return desiredVelocity.sqrMagnitude > 0;
-            }
-
-            float desiredDistance = desiredVelocity.magnitude * Time.fixedDeltaTime;
-            if (desiredDistance <= 0)
-            {
-                return false;
-            }
-
-            Vector2 direction = desiredVelocity.normalized;
-            if (GetLiveObstacleFromBoxCast(GetPosition(), GetSize() * 1.0f, Rotation, direction, desiredDistance, out hit) == null)
-            {
-                return true;
-            }
-
-            float safeDistance = Mathf.Max(0, hit.distance - ObstacleSkinWidth);
-            if (safeDistance <= MinimumClampedMovementDistance)
-            {
-                safeVelocity = Vector2.zero;
-                return false;
-            }
-
-            safeVelocity = direction * (safeDistance / Time.fixedDeltaTime);
-            return true;
+            Transform.Rotate(Vector3.forward * rotationStep);
+            Rotation += rotationStep;
+            Turrets.ForEach((t) => t.Rotation += rotationStep);
         }
         /// <summary>
         /// Stop the ship from moving at all
@@ -1748,6 +1546,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             HasTargetCoordinates = false;
             HasTargetDirection = false;
             TargetDirection = 0;
+            _remainingEgressWaypoints = 0;
             if (IsFollowingPath)
             {
                 IsFollowingPath = false;
@@ -2526,27 +2325,7 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         {
             //Debug.Log($"Angle: {GetDegreesTowardsPoint(destination)}, direction: {-DirectionToPoint(destination)}, distance: {DistanceToPoint(destination)}");
             //return BoxCastDebug(GetPosition(), GetSize()*1.2f, GetDegreesTowardsPoint(destination), -DirectionToPoint(destination), DistanceToPoint(destination), ConfigData.ObstaclesLayerMask).collider;
-            return GetLiveObstacleFromBoxCast(GetPosition(), GetSize() * 1.0f, GetDegreesTowardsPoint(destination), -DirectionToPoint(destination), DistanceToPoint(destination));
-        }
-        private bool WouldHitObstacleDuringMovement(Vector2 velocity)
-        {
-            return WouldHitObstacleDuringMovement(velocity, out _movementObstacleHit);
-        }
-        private bool WouldHitObstacleDuringMovement(Vector2 velocity, out RaycastHit2D hit)
-        {
-            hit = new RaycastHit2D();
-            if (!Level.HasObstacles || velocity.sqrMagnitude <= 0)
-            {
-                return false;
-            }
-
-            float distance = velocity.magnitude * Time.fixedDeltaTime;
-            if (distance <= 0)
-            {
-                return false;
-            }
-
-            return GetLiveObstacleFromBoxCast(GetPosition(), GetSize() * 1.0f, Rotation, velocity.normalized, distance, out hit) != null;
+            return GetLiveObstacleFromBoxCast(GetPosition(), GetSize(), GetDegreesTowardsPoint(destination), -DirectionToPoint(destination), DistanceToPoint(destination));
         }
         private Collider2D GetLiveObstacleFromBoxCast(Vector2 origin, Vector2 size, float angle, Vector2 direction, float distance)
         {
@@ -2555,6 +2334,8 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         private Collider2D GetLiveObstacleFromBoxCast(Vector2 origin, Vector2 size, float angle, Vector2 direction, float distance, out RaycastHit2D liveHit)
         {
             liveHit = new RaycastHit2D();
+            Collider2D nearestCollider = null;
+            float nearestDistance = float.MaxValue;
             int hitCount = Physics2D.BoxCastNonAlloc(origin, size, angle, direction, _obstacleCastHits, distance, ConfigData.ObstaclesLayerMask);
             for (int i = 0; i < hitCount; i++)
             {
@@ -2566,14 +2347,15 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 }
 
                 Obstacle obstacle = hitCollider.GetComponent<Obstacle>() ?? hitCollider.GetComponentInParent<Obstacle>();
-                if (ShouldAvoidObstacle(obstacle))
+                if (ShouldAvoidObstacle(obstacle) && hit.distance < nearestDistance)
                 {
+                    nearestDistance = hit.distance;
                     liveHit = hit;
-                    return hitCollider;
+                    nearestCollider = hitCollider;
                 }
             }
 
-            return null;
+            return nearestCollider;
         }
         private bool ShouldAvoidObstacle(Obstacle obstacle)
         {
