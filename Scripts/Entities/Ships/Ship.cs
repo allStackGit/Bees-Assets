@@ -164,7 +164,7 @@ namespace Assets.Scripts.Entities.Ships
 
         public volatile bool PathfindingThreadComplete, IsPathfinding;
         public volatile Pathfinder.Path PathfindingValue;
-        public volatile int PathfindingRequestId;
+        public volatile int PathfindingRequestId, PathfindingCompletedRequestId;
         public volatile int PathfindingThread;
         public volatile Pathfinder.Grid DebugGrid;
         public volatile Pathfinder.MapNode[][] DebugNodes;
@@ -743,6 +743,10 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             Tsv = OriginalTsv;
             Transform.eulerAngles = new Vector3 (0, 0, OriginalRotation); // Is this needed?
             PathfindingDestination = Vector2.zero;
+            PathfindingValue = null;
+            PathfindingThreadComplete = false;
+            IsPathfinding = false;
+            _hasPendingPathfindingDestination = false;
             SetTargetCoordinates(Vector2.zero);
             HasTargetCoordinates = false;
             HasTargetDirection = false;
@@ -780,8 +784,17 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             //}
             if (Level.HasObstacles && PathfindingThreadComplete)
             {
-                MergePathfindingPaths();
                 PathfindingThreadComplete = false;
+                if (PathfindingCompletedRequestId == PathfindingRequestId)
+                {
+                    IsPathfinding = false;
+                    MergePathfindingPaths();
+                }
+                else
+                {
+                    PathfindingValue = null;
+                    HandleSupersededPathfindingRequest();
+                }
             }
             Move();
             if (Stage.DebugLogger.IsDebugging || ShowDebug) // [alert] [debug] remove this for release
@@ -865,12 +878,21 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         private readonly RaycastHit2D[] _obstacleCastHits = new RaycastHit2D[16];
         private RaycastHit2D _movementObstacleHit;
         private const int RotationPrecisionDegrees = 3;
+        private bool _hasPendingPathfindingDestination;
         public void MoveToPoint(Vector2 destination, bool foundObstacle = false)
         {
             //Debug.Log($"{this} is moving to {destination}");
             if (!CannotChangeMovementOrders)
             {
                 destination = CanOverrideBounds ? destination : Level.ForceBounds(destination);
+                PathfindingDestination = destination;
+                if (IsPathfinding)
+                {
+                    _hasPendingPathfindingDestination = true;
+                    Level.Pathfinder.InvalidatePathRequest(this);
+                    return;
+                }
+                _hasPendingPathfindingDestination = false;
 
                 if (Level.HasObstacles && IsInBounds())
                 {
@@ -1036,6 +1058,18 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         public int _retries = 0;
         private bool _tryingToFindPathAgain;
         private int _remainingEgressWaypoints;
+        public void HandleSupersededPathfindingRequest()
+        {
+            if (!_hasPendingPathfindingDestination || IsDead)
+            {
+                return;
+            }
+
+            Vector2 latestDestination = PathfindingDestination;
+            _hasPendingPathfindingDestination = false;
+            IsPathfinding = false;
+            MoveToPoint(latestDestination);
+        }
         private void MergePathfindingPaths()
         {
             //if (PrintDebugImage)
@@ -1510,6 +1544,12 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         {
             if (IsMobile)
             {
+                if (IsPathfinding)
+                {
+                    _hasPendingPathfindingDestination = false;
+                    Level.Pathfinder.InvalidatePathRequest(this);
+                    IsPathfinding = false;
+                }
                 //__LastStopReason = $"{Name} stopped at {GetPosition()} on the way to {TargetCoordinates} because of {reason} at {Age} ticks.";
                 //Debug.Log($"{Name} stopped at {GetPosition()} on the way to {TargetCoordinates} because of {reason}");
                 SetTargetCoordinates(Vector2.zero);

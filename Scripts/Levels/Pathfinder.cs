@@ -195,24 +195,10 @@ namespace Assets.Scripts.Levels
                     if (!IsThreadActive[threadIndex])
                     {
                         PathWaiting p = PathsWaiting.Dequeue();
-
-                        // if this ship has already had a more recent path worked on, remove this path
-                        while (ShipsToDequeue.Contains(p.Ship))
-                        {
-                            ShipsToDequeue.Remove(p.Ship);
-                            ShipsQueued.Remove(p.Ship);
-                            if (PathsWaiting.Count > 0)
-                            {
-                                p = PathsWaiting.Dequeue();
-                            }
-                            else
-                            {
-                                return;
-                            }
-                        }
+                        ShipsQueued.Remove(p.Ship);
                         if (p.Ship.PathfindingRequestId != p.RequestId)
                         {
-                            ShipsQueued.Remove(p.Ship);
+                            p.Ship.HandleSupersededPathfindingRequest();
                             continue;
                         }
 
@@ -238,7 +224,6 @@ namespace Assets.Scripts.Levels
 
                         //ThreadsStarted++;
                         //PathsWaitingToRemove.Add(p);
-                        ShipsQueued.Remove(p.Ship);
                         //break;
 
                     }
@@ -368,13 +353,25 @@ namespace Assets.Scripts.Levels
         {
             while (_completedPaths.TryDequeue(out PathResult result))
             {
-                IsThreadActive[result.ThreadIndex] = false;
-                if (result.Ship == null || result.Ship.PathfindingRequestId != result.RequestId)
+                if (result.Ship == null)
                 {
+                    continue;
+                }
+                bool ownsThreadSlot = Ships[result.ThreadIndex] == result.Ship &&
+                    RequestIds[result.ThreadIndex] == result.RequestId;
+                if (!ownsThreadSlot)
+                {
+                    continue;
+                }
+                IsThreadActive[result.ThreadIndex] = false;
+                if (result.Ship.PathfindingRequestId != result.RequestId)
+                {
+                    result.Ship.HandleSupersededPathfindingRequest();
                     continue;
                 }
 
                 result.Ship.PathfindingValue = result.Path;
+                result.Ship.PathfindingCompletedRequestId = result.RequestId;
                 result.Ship.PathfindingThreadComplete = true;
             }
         }
@@ -1522,38 +1519,35 @@ namespace Assets.Scripts.Levels
         }
         public async Task BTFindPath(int threadIndex)
         {
-            await Task.Run(() =>
+            Ship ship = Ships[threadIndex];
+            int requestId = RequestIds[threadIndex];
+            try
             {
-                Totals[threadIndex] = SW.Stopwatch.StartNew();
-                Path path = RunPathSearch(threadIndex);
-                _completedPaths.Enqueue(new PathResult(Ships[threadIndex], RequestIds[threadIndex], threadIndex, path));
-            }).ContinueWith((task) =>
-            {
-                //Debug.Log($"Has continued task for #{threadIndex}:{Ships[threadIndex].Name}");
-                if (task.IsFaulted)
+                await Task.Run(() =>
                 {
-                    AggregateException aggregateException = task.Exception;
-                    foreach (Exception exception in aggregateException.InnerExceptions)
+                    Totals[threadIndex] = SW.Stopwatch.StartNew();
+                    Path path;
+                    try
                     {
-                        Debug.LogException(exception);
+                        path = RunPathSearch(threadIndex);
                     }
-                    _completedPaths.Enqueue(new PathResult(Ships[threadIndex], RequestIds[threadIndex], threadIndex, null));
-                }
-                else
-                {
-                    //Debug.Log($"No exceptions for #{threadIndex}:{Ships[threadIndex].Name}");
-                }
+                    finally
+                    {
+                        Totals[threadIndex].Stop();
+                    }
+                    _completedPaths.Enqueue(new PathResult(ship, requestId, threadIndex, path));
+                });
+            }
+            catch (Exception exception)
+            {
+                Debug.LogException(exception);
+                _completedPaths.Enqueue(new PathResult(ship, requestId, threadIndex, null));
+            }
+        }
 
-                //Debug.Log($"Has continued to end of task for #{threadIndex}:{Ships[threadIndex].Name}");
-            });
-
-
-            Totals[threadIndex].Stop();
-            //_grid.DebugGridAsImage(StartNodes[threadIndex].Index, EndNodes[threadIndex].Index, GridNodes[threadIndex], 4, Ships[threadIndex]);
-            Ships[threadIndex].PathfindingThreadComplete = true;
-            IsThreadActive[threadIndex] = false; //[alert] must be uncommented when not testing
-            //Debug.Log($"Finished background finding path and destination list and thread for #{threadIndex}:{Ships[threadIndex].Name}.  Total: {(Totals[threadIndex].Elapsed.TotalMilliseconds)}ms");
-
+        public void InvalidatePathRequest(Ship ship)
+        {
+            ship.PathfindingRequestId = ++_nextRequestId;
         }
 
         public void FindPath(Ship ship, int startX, int startY, int endX, int endY, int maximumClearance)
@@ -1562,6 +1556,7 @@ namespace Assets.Scripts.Levels
             bool startedTask = false;
             int requestId = ++_nextRequestId;
             ship.PathfindingRequestId = requestId;
+            ship.IsPathfinding = true;
             startX = Mathf.Clamp(startX, 0, _grid.MaxX);
             startY = Mathf.Clamp(startY, 0, _grid.MaxY);
             endX = Mathf.Clamp(endX, 0, _grid.MaxX);
@@ -1582,7 +1577,6 @@ namespace Assets.Scripts.Levels
             {
                 if (!IsThreadActive[threadIndex])
                 {
-                    ship.IsPathfinding = true;
                     IsThreadActive[threadIndex] = true;
                     Clearances[threadIndex] = maximumClearance;
                     RequestIds[threadIndex] = requestId;
@@ -1609,10 +1603,6 @@ namespace Assets.Scripts.Levels
                     //Debug.Log($"Standard Started BT  #{threadIndex}:{Ships[threadIndex].Name} ");
                     //Debug.Log($"Standard Started #{i}");
                     startedTask = true;
-                    if (ShipsQueued.Contains(ship))
-                    {
-                        ShipsToDequeue.Add(ship);
-                    }
                     //ThreadsStarted++;
                     //PathsWaitingToRemove.Add(p);
                     break;
