@@ -690,7 +690,7 @@ namespace Assets.Scripts
         public const int MinimumDelayPerBeacon = 10;
         public const int BeaconUpdateFrequency = 5;
         public const int MaxBeaconsDroppedPerScout = 5;
-        public const int MinimumClearance = 4;
+        public const int MinimumClearance = 2;
         public const int MinimumAsteroidSpawnDistance = 100;
         public const int MinimumAsteroidSpeed = 2;
         public const int MinimumAsteroidAngularSpeedMultiplier = 5;

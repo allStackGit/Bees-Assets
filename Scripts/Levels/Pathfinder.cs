@@ -558,10 +558,10 @@ namespace Assets.Scripts.Levels
 
             Vector2Int min = ConvertToMapCoordinates(new Vector2(bounds.min.x, bounds.max.y));
             Vector2Int max = ConvertToMapCoordinates(new Vector2(bounds.max.x, bounds.min.y));
-            int startX = Mathf.Clamp(Mathf.Min(min.x, max.x) - 1, 0, _grid.MaxX);
-            int endX = Mathf.Clamp(Mathf.Max(min.x, max.x) + 1, 0, _grid.MaxX);
-            int startY = Mathf.Clamp(Mathf.Min(min.y, max.y) - 1, 0, _grid.MaxY);
-            int endY = Mathf.Clamp(Mathf.Max(min.y, max.y) + 1, 0, _grid.MaxY);
+            int startX = Mathf.Clamp(Mathf.Min(min.x, max.x), 0, _grid.MaxX);
+            int endX = Mathf.Clamp(Mathf.Max(min.x, max.x), 0, _grid.MaxX);
+            int startY = Mathf.Clamp(Mathf.Min(min.y, max.y), 0, _grid.MaxY);
+            int endY = Mathf.Clamp(Mathf.Max(min.y, max.y), 0, _grid.MaxY);
 
             HashSet<int> pointSet = new HashSet<int>();
             List<int[]> points = new List<int[]>();
@@ -1149,23 +1149,24 @@ namespace Assets.Scripts.Levels
         }
         private Path RunPathSearch(int threadIndex)
         {
-            int clearance = GetEffectivePathClearance(Clearances[threadIndex]);
+            int hardClearance = GetEffectivePathClearance(Clearances[threadIndex]);
+            int preferredClearance = GetPreferredPathClearance(hardClearance);
             int startIndex = ToIndex(StartNodes[threadIndex].x, StartNodes[threadIndex].y);
             int endIndex = ToIndex(EndNodes[threadIndex].x, EndNodes[threadIndex].y);
             int[] clearanceMap = _threadClearance[threadIndex];
 
-            if (clearanceMap[endIndex] < clearance)
+            if (clearanceMap[endIndex] < hardClearance)
             {
-                endIndex = FindNearestWalkableIndex(endIndex, startIndex, clearance, threadIndex);
+                endIndex = FindNearestWalkableIndex(endIndex, startIndex, hardClearance, threadIndex);
             }
             if (endIndex < 0)
             {
                 return null;
             }
 
-            if (clearanceMap[startIndex] < clearance)
+            if (clearanceMap[startIndex] < hardClearance)
             {
-                startIndex = FindNearestWalkableIndex(startIndex, endIndex, clearance, threadIndex);
+                startIndex = FindNearestWalkableIndex(startIndex, endIndex, hardClearance, threadIndex);
             }
             if (startIndex < 0)
             {
@@ -1205,7 +1206,7 @@ namespace Assets.Scripts.Levels
 
                 if (currentIndex == endIndex)
                 {
-                    return MakeDestinationList(startIndex, endIndex, previousIndex, clearanceMap, clearance);
+                    return MakeDestinationList(startIndex, endIndex, previousIndex, clearanceMap, hardClearance, preferredClearance);
                 }
 
                 closedStamp[currentIndex] = searchStamp;
@@ -1223,13 +1224,13 @@ namespace Assets.Scripts.Levels
 
                     int neighborIndex = ToIndex(neighborX, neighborY);
                     if (closedStamp[neighborIndex] == searchStamp ||
-                        clearanceMap[neighborIndex] < clearance ||
-                        IsDiagonalMoveBlocked(currentX, currentY, neighborX, neighborY, clearance, clearanceMap))
+                        clearanceMap[neighborIndex] < hardClearance ||
+                        IsDiagonalMoveBlocked(currentX, currentY, neighborX, neighborY, hardClearance, clearanceMap))
                     {
                         continue;
                     }
 
-                    int newCostToHere = costToHere[currentIndex] + CalculateDistance(currentIndex, neighborIndex);
+                    int newCostToHere = costToHere[currentIndex] + CalculateDistance(currentIndex, neighborIndex) + GetClearanceCost(clearanceMap[neighborIndex], preferredClearance);
                     if (openStamp[neighborIndex] != searchStamp || newCostToHere < costToHere[neighborIndex])
                     {
                         costToHere[neighborIndex] = newCostToHere;
@@ -1247,10 +1248,21 @@ namespace Assets.Scripts.Levels
 
         private int GetEffectivePathClearance(int shipClearance)
         {
-            return Mathf.Max(1, shipClearance > ConfigData.MinimumClearance ? shipClearance - 1 : shipClearance - 2);
+            return Mathf.Max(ConfigData.MinimumClearance, shipClearance);
         }
 
-        private Path MakeDestinationList(int startIndex, int endIndex, int[] previousIndex, int[] clearanceMap, int clearance)
+        private int GetPreferredPathClearance(int hardClearance)
+        {
+            return hardClearance + 2;
+        }
+
+        private int GetClearanceCost(int nodeClearance, int preferredClearance)
+        {
+            int clearanceShortfall = preferredClearance - nodeClearance;
+            return clearanceShortfall > 0 ? clearanceShortfall * clearanceShortfall * HORIZONTAL_COST : 0;
+        }
+
+        private Path MakeDestinationList(int startIndex, int endIndex, int[] previousIndex, int[] clearanceMap, int hardClearance, int preferredClearance)
         {
             Path path = new Path(ToX(startIndex), ToY(startIndex), ToX(endIndex), ToY(endIndex));
             List<int> indexes = new List<int> { endIndex };
@@ -1269,7 +1281,7 @@ namespace Assets.Scripts.Levels
                 indexes.RemoveAt(0);
             }
 
-            indexes = SmoothPathIndexes(indexes, clearanceMap, clearance);
+            indexes = SmoothPathIndexes(indexes, clearanceMap, hardClearance, preferredClearance);
 
             List<Vector2> points = new List<Vector2>();
             for (int i = 0; i < indexes.Count; i++)
@@ -1281,7 +1293,7 @@ namespace Assets.Scripts.Levels
             return path;
         }
 
-        private List<int> SmoothPathIndexes(List<int> indexes, int[] clearanceMap, int clearance)
+        private List<int> SmoothPathIndexes(List<int> indexes, int[] clearanceMap, int hardClearance, int preferredClearance)
         {
             if (indexes.Count <= 2)
             {
@@ -1295,9 +1307,23 @@ namespace Assets.Scripts.Levels
             while (current < indexes.Count - 1)
             {
                 int next = indexes.Count - 1;
-                while (next > current + 1 && !HasClearGridLine(indexes[current], indexes[next], clearanceMap, clearance))
+                while (next > current + 1 && !HasClearGridLine(indexes[current], indexes[next], clearanceMap, preferredClearance))
                 {
                     next--;
+                }
+
+                if (next == current + 1 && !HasClearGridLine(indexes[current], indexes[next], clearanceMap, preferredClearance))
+                {
+                    next = indexes.Count - 1;
+                    while (next > current + 1 && !HasClearGridLine(indexes[current], indexes[next], clearanceMap, hardClearance))
+                    {
+                        next--;
+                    }
+                }
+
+                if (!HasClearGridLine(indexes[current], indexes[next], clearanceMap, hardClearance))
+                {
+                    next = current + 1;
                 }
 
                 smoothed.Add(indexes[next]);
@@ -1440,10 +1466,10 @@ namespace Assets.Scripts.Levels
             });
 
 
-            //Totals[threadIndex].Stop();
+            Totals[threadIndex].Stop();
             //_grid.DebugGridAsImage(StartNodes[threadIndex].Index, EndNodes[threadIndex].Index, GridNodes[threadIndex], 4, Ships[threadIndex]);
-            //Ships[threadIndex].PathfindingThreadComplete = true;
-            //IsThreadActive[threadIndex] = false; //[alert] must be uncommented when not testing
+            Ships[threadIndex].PathfindingThreadComplete = true;
+            IsThreadActive[threadIndex] = false; //[alert] must be uncommented when not testing
             //Debug.Log($"Finished background finding path and destination list and thread for #{threadIndex}:{Ships[threadIndex].Name}.  Total: {(Totals[threadIndex].Elapsed.TotalMilliseconds)}ms");
 
         }

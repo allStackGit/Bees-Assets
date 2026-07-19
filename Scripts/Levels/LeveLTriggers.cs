@@ -1924,32 +1924,32 @@ namespace Assets.Scripts.Levels
                 "Titania 1 Ending")
             );
 
-            NextTriggers.Add(new Trigger(() =>
-            {
-                return State.PlayerVisibleMapObjects.Any();
-            },
-                () =>
-                {
-                    Debug.Log("Player has seen a map object with one of their ships");
-                    MapObject firstExplosive = State.PlayerVisibleMapObjects.FirstOrDefault();
-                    Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Titania_Minesweeper.GetRange(1, 11), false);
+            //NextTriggers.Add(new Trigger(() =>
+            //{
+            //    return State.PlayerVisibleMapObjects.Any();
+            //},
+            //    () =>
+            //    {
+            //        Debug.Log("Player has seen a map object with one of their ships");
+            //        MapObject firstExplosive = State.PlayerVisibleMapObjects.FirstOrDefault();
+            //        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Titania_Minesweeper.GetRange(1, 11), false);
 
-                    NextTriggers.Add(new Trigger(() =>
-                        {
-                            return firstExplosive.IsDead;
-                        },
-                        () =>
-                        {
-                            Debug.Log("Player has destroyed the explosive");
-                            Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Titania_Minesweeper.GetRange(12, 4), false);
+            //        NextTriggers.Add(new Trigger(() =>
+            //            {
+            //                return firstExplosive.IsDead;
+            //            },
+            //            () =>
+            //            {
+            //                Debug.Log("Player has destroyed the explosive");
+            //                Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Titania_Minesweeper.GetRange(12, 4), false);
 
-                        },
-                        "Titania 1 destroyed first map object")
-                    );
+            //            },
+            //            "Titania 1 destroyed first map object")
+            //        );
 
-                },
-                "Titania 1 Seen first map object")
-            );
+            //    },
+            //    "Titania 1 Seen first map object")
+            //);
 
         }
         public void Titania2Beenoculars()

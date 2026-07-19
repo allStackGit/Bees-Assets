@@ -297,7 +297,6 @@ namespace Assets.Scripts.Levels
                         _f_clearance++;
                     }
                     _f_clearance /= Pathfinder.Scale;
-                    _f_clearance += 2; // 2 for padding
                     _f_clearance = Math.Max(_f_clearance, ConfigData.MinimumClearance);
 
                     Stage.ShipClearances.Add(_clearance_Ships[0].ShipType, _f_clearance);
