@@ -863,8 +863,15 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         Vector2 _startPosition;
         private Collider2D _obstacleCollider;
         private readonly RaycastHit2D[] _obstacleCastHits = new RaycastHit2D[16];
+        private readonly Collider2D[] _overlapObstacleHits = new Collider2D[16];
         private RaycastHit2D _movementObstacleHit;
         private bool _recoveredFromObstacleSweep;
+        private int _obstacleRecoveryFrames;
+        private Vector2 _obstacleRecoveryNormal;
+        private const int ObstacleRecoveryMaxFrames = 8;
+        private const float ObstacleRecoveryBackoffSpeedFactor = 0.35f;
+        private const float ObstacleSkinWidth = 0.15f;
+        private const float MinimumClampedMovementDistance = 0.01f;
         public void MoveToPoint(Vector2 destination, bool foundObstacle = false)
         {
             //Debug.Log($"{this} is moving to {destination}");
@@ -1319,18 +1326,73 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                 _tempAngle = (Rotation - 180) * Mathf.Deg2Rad;
                 _tempVelocity = new Vector2((_maxSpeed * Mathf.Sin(_tempAngle)), -(_maxSpeed * Mathf.Cos(_tempAngle)));
             }
-            if (WouldHitObstacleDuringMovement(_tempVelocity, out _movementObstacleHit))
+
+            if (!Level.HasObstacles)
+            {
+                _obstacleRecoveryFrames = 0;
+                Body.linearVelocity = _tempVelocity;
+                if (HasRocketFlares)
+                {
+                    SetRocketFlares();
+                }
+                return;
+            }
+
+            if (_obstacleRecoveryFrames > 0)
+            {
+                if (TryResolveObstacleOverlap())
+                {
+                    _recoveredFromObstacleSweep = true;
+                    _obstacleRecoveryFrames--;
+                    return;
+                }
+
+                if (TryGetSafeSweptVelocity(_tempVelocity, out _tempVelocity, out _movementObstacleHit))
+                {
+                    Body.linearVelocity = _tempVelocity;
+                    if (_movementObstacleHit.collider == null)
+                    {
+                        _obstacleRecoveryFrames = 0;
+                    }
+                    else
+                    {
+                        _recoveredFromObstacleSweep = true;
+                        _obstacleRecoveryFrames--;
+                    }
+                    if (HasRocketFlares)
+                    {
+                        SetRocketFlares();
+                    }
+                    return;
+                }
+
+                if (TryConstrainedObstacleMovement(_tempVelocity, _movementObstacleHit))
+                {
+                    _recoveredFromObstacleSweep = true;
+                    _obstacleRecoveryFrames--;
+                    return;
+                }
+
+                _obstacleRecoveryFrames = 0;
+            }
+
+            Vector2 desiredVelocity = _tempVelocity;
+            if (!TryGetSafeSweptVelocity(desiredVelocity, out _tempVelocity, out _movementObstacleHit))
             {
                 Body.linearVelocity = Vector2.zero;
                 if (HasTargetCoordinates)
                 {
-                    RecoverFromObstacleSweep(_tempVelocity, _movementObstacleHit);
+                    RecoverFromObstacleSweep(desiredVelocity, _movementObstacleHit);
                 }
                 else
                 {
                     StopMoving("Movement sweep hit obstacle");
                 }
                 return;
+            }
+            if (_movementObstacleHit.collider != null)
+            {
+                _recoveredFromObstacleSweep = true;
             }
             Body.linearVelocity = _tempVelocity;
             //_tempAngle = (Rotation - 180) * Mathf.Deg2Rad;
@@ -1504,7 +1566,18 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
         private void RecoverFromObstacleSweep(Vector2 blockedVelocity, RaycastHit2D hit)
         {
             _recoveredFromObstacleSweep = true;
-            if (TryMoveAlongObstacle(blockedVelocity, hit))
+            if (hit.collider != null && hit.normal.sqrMagnitude > 0)
+            {
+                _obstacleRecoveryNormal = hit.normal.normalized;
+                _obstacleRecoveryFrames = ObstacleRecoveryMaxFrames;
+            }
+
+            if (TryResolveObstacleOverlap())
+            {
+                return;
+            }
+
+            if (TryConstrainedObstacleMovement(blockedVelocity, hit))
             {
                 return;
             }
@@ -1529,30 +1602,107 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
 
             MoveToPoint(destination, true);
         }
-        private bool TryMoveAlongObstacle(Vector2 blockedVelocity, RaycastHit2D hit)
+        private bool TryConstrainedObstacleMovement(Vector2 blockedVelocity, RaycastHit2D hit)
         {
-            if (blockedVelocity.sqrMagnitude <= 0 || hit.collider == null || hit.normal.sqrMagnitude <= 0)
+            Vector2 normal = hit.collider != null && hit.normal.sqrMagnitude > 0 ? hit.normal.normalized : _obstacleRecoveryNormal;
+            if (blockedVelocity.sqrMagnitude <= 0 || normal.sqrMagnitude <= 0)
             {
                 return false;
             }
 
-            Vector2 intoWall = -hit.normal;
-            Vector2 slideVelocity = blockedVelocity - Vector2.Dot(blockedVelocity, intoWall) * intoWall;
             RaycastHit2D ignoredHit;
-            if (slideVelocity.sqrMagnitude > 0.01f && !WouldHitObstacleDuringMovement(slideVelocity, out ignoredHit))
+            Vector2 intoObstacle = -normal;
+            float inwardSpeed = Vector2.Dot(blockedVelocity, intoObstacle);
+            Vector2 constrainedVelocity = inwardSpeed > 0 ? blockedVelocity - (inwardSpeed * intoObstacle) : blockedVelocity;
+
+            Vector2 safeVelocity;
+            if (constrainedVelocity.sqrMagnitude > 0.01f && TryGetSafeSweptVelocity(constrainedVelocity, out safeVelocity, out ignoredHit))
             {
-                Body.linearVelocity = slideVelocity;
+                Body.linearVelocity = safeVelocity;
                 return true;
             }
 
-            Vector2 backoffVelocity = hit.normal.normalized * Mathf.Min(CurrentSpeed, Speed);
-            if (backoffVelocity.sqrMagnitude > 0.01f && !WouldHitObstacleDuringMovement(backoffVelocity, out ignoredHit))
+            Vector2 backoffVelocity = normal * Mathf.Min(CurrentSpeed, Speed) * ObstacleRecoveryBackoffSpeedFactor;
+            if (backoffVelocity.sqrMagnitude > 0.01f && TryGetSafeSweptVelocity(backoffVelocity, out safeVelocity, out ignoredHit))
             {
-                Body.linearVelocity = backoffVelocity;
+                Body.linearVelocity = safeVelocity;
                 return true;
             }
 
             return false;
+        }
+        private bool TryResolveObstacleOverlap()
+        {
+            if (!Level.HasObstacles || Collider == null)
+            {
+                return false;
+            }
+
+            int overlapCount = Physics2D.OverlapBoxNonAlloc(GetPosition(), GetSize() * 1.0f, Rotation, _overlapObstacleHits, ConfigData.ObstaclesLayerMask);
+            for (int i = 0; i < overlapCount; i++)
+            {
+                Collider2D hitCollider = _overlapObstacleHits[i];
+                if (hitCollider == null || hitCollider == Collider)
+                {
+                    continue;
+                }
+
+                Obstacle obstacle = hitCollider.GetComponent<Obstacle>() ?? hitCollider.GetComponentInParent<Obstacle>();
+                if (!ShouldAvoidObstacle(obstacle))
+                {
+                    continue;
+                }
+
+                Vector2 pushDirection = GetPosition() - hitCollider.ClosestPoint(GetPosition());
+                if (pushDirection.sqrMagnitude <= 0.0001f)
+                {
+                    pushDirection = GetPosition() - (Vector2)hitCollider.bounds.center;
+                }
+                if (pushDirection.sqrMagnitude <= 0.0001f)
+                {
+                    pushDirection = _obstacleRecoveryNormal;
+                }
+                if (pushDirection.sqrMagnitude <= 0.0001f)
+                {
+                    continue;
+                }
+
+                Body.linearVelocity = pushDirection.normalized * Mathf.Min(CurrentSpeed, Speed) * ObstacleRecoveryBackoffSpeedFactor;
+                return true;
+            }
+
+            return false;
+        }
+        private bool TryGetSafeSweptVelocity(Vector2 desiredVelocity, out Vector2 safeVelocity, out RaycastHit2D hit)
+        {
+            safeVelocity = desiredVelocity;
+            hit = new RaycastHit2D();
+            if (!Level.HasObstacles || desiredVelocity.sqrMagnitude <= 0)
+            {
+                return desiredVelocity.sqrMagnitude > 0;
+            }
+
+            float desiredDistance = desiredVelocity.magnitude * Time.fixedDeltaTime;
+            if (desiredDistance <= 0)
+            {
+                return false;
+            }
+
+            Vector2 direction = desiredVelocity.normalized;
+            if (GetLiveObstacleFromBoxCast(GetPosition(), GetSize() * 1.0f, Rotation, direction, desiredDistance, out hit) == null)
+            {
+                return true;
+            }
+
+            float safeDistance = Mathf.Max(0, hit.distance - ObstacleSkinWidth);
+            if (safeDistance <= MinimumClampedMovementDistance)
+            {
+                safeVelocity = Vector2.zero;
+                return false;
+            }
+
+            safeVelocity = direction * (safeDistance / Time.fixedDeltaTime);
+            return true;
         }
         /// <summary>
         /// Stop the ship from moving at all
