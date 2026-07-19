@@ -420,6 +420,7 @@ namespace Assets.Scripts.Levels
 
 
         // Movement methods
+        private const int FormationCompressionSteps = 20;
         public void StopMoving()
         {
             _tempShips = GetShips();
@@ -462,22 +463,56 @@ namespace Assets.Scripts.Levels
                 Level.Stage.Menus.ActionBox.HighlightSelectedButtons();
             }
             //float start = Time.realtimeSinceStartup; 
-            _tempShips = GetShips();
+            _tempShips = GetShips().Where(ship => ship.IsMobile).ToList();
+            Vector2 formationCenter = Level.ForceBounds(destination);
+            float formationCompression = 1f;
+
+            if (Level.HasObstacles && _tempShips.Count > 0 && !TryGetFormationCompression(formationCenter, _tempShips, out formationCompression))
+            {
+                int largestClearance = _tempShips.Max(ship => ship.GetClearance());
+                if (!Level.Pathfinder.TryFindNearestValidDestination(formationCenter, largestClearance, out formationCenter) ||
+                    !TryGetFormationCompression(formationCenter, _tempShips, out formationCompression))
+                {
+                    return;
+                }
+            }
+
             foreach (Ship ship in _tempShips)
             {
-                //float x = Mathf.Clamp((destination.x + ship.OffsetFromCenter.x), Level.MinX, Level.MaxX);
-                //float y = Mathf.Clamp((destination.y + ship.OffsetFromCenter.y), Level.MinY, Level.MaxY);
-                if (ship.IsMobile)
-                {
-                    //Debug.Log($"Moving {ship} in {this} to {destination} with offset: {ship.OffsetFromCenter}");
-                    ship.MoveToPoint(destination + ship.OffsetFromCenter);
-                }
-                
+                Vector2 shipDestination = Level.ForceBounds(formationCenter + (ship.OffsetFromCenter * formationCompression));
+                ship.MoveToPoint(shipDestination);
             }
-            Destination = destination;
+            Destination = formationCenter;
             //float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
             //Debug.Log($"It took {Math.Round(end, 2)} ms to set {Name} moving. The average was {Math.Round(end / ships.Count, 2)}ms");
 
+        }
+        private bool TryGetFormationCompression(Vector2 formationCenter, List<Ship> ships, out float compression)
+        {
+            for (int step = 0; step <= FormationCompressionSteps; step++)
+            {
+                float candidateCompression = 1f - ((float)step / FormationCompressionSteps);
+                bool allDestinationsValid = true;
+                for (int shipIndex = 0; shipIndex < ships.Count; shipIndex++)
+                {
+                    Ship ship = ships[shipIndex];
+                    Vector2 candidate = Level.ForceBounds(formationCenter + (ship.OffsetFromCenter * candidateCompression));
+                    if (!Level.Pathfinder.CanOccupyDestination(candidate, ship.GetClearance()))
+                    {
+                        allDestinationsValid = false;
+                        break;
+                    }
+                }
+
+                if (allDestinationsValid)
+                {
+                    compression = candidateCompression;
+                    return true;
+                }
+            }
+
+            compression = 0f;
+            return false;
         }
         public void MatchSpeed(float speed = 0)
         {

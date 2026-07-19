@@ -82,6 +82,88 @@ namespace Assets.Scripts.Levels
         {
             return Vector2Int.RoundToInt(ConvertToLevelCoordinates(x, y));
         }
+        public bool CanOccupyDestination(Vector2 destination, int shipClearance)
+        {
+            if (!Level.HasObstacles)
+            {
+                return true;
+            }
+            if (Level.ForceBounds(destination) != destination)
+            {
+                return false;
+            }
+
+            UpdateDynamicObstacleLayer();
+            Vector2Int coordinates = ConvertToMapCoordinates(destination);
+            return _dynamicClearance[ToIndex(coordinates.x, coordinates.y)] >= GetEffectivePathClearance(shipClearance);
+        }
+        public bool TryFindNearestValidDestination(Vector2 destination, int shipClearance, out Vector2 validDestination)
+        {
+            destination = Level.ForceBounds(destination);
+            if (!Level.HasObstacles)
+            {
+                validDestination = destination;
+                return true;
+            }
+
+            UpdateDynamicObstacleLayer();
+            int minimumClearance = GetEffectivePathClearance(shipClearance);
+            Vector2Int center = ConvertToMapCoordinates(destination);
+            int maxRadius = Mathf.Max(Width, Height);
+
+            for (int radius = 0; radius <= maxRadius; radius++)
+            {
+                int minX = Mathf.Max(0, center.x - radius);
+                int maxX = Mathf.Min(_grid.MaxX, center.x + radius);
+                int minY = Mathf.Max(0, center.y - radius);
+                int maxY = Mathf.Min(_grid.MaxY, center.y + radius);
+                bool found = false;
+                float bestDistance = float.MaxValue;
+                Vector2 bestDestination = destination;
+
+                for (int x = minX; x <= maxX; x++)
+                {
+                    CheckDestinationCandidate(x, minY, destination, minimumClearance, ref found, ref bestDistance, ref bestDestination);
+                    if (maxY != minY)
+                    {
+                        CheckDestinationCandidate(x, maxY, destination, minimumClearance, ref found, ref bestDistance, ref bestDestination);
+                    }
+                }
+                for (int y = minY + 1; y < maxY; y++)
+                {
+                    CheckDestinationCandidate(minX, y, destination, minimumClearance, ref found, ref bestDistance, ref bestDestination);
+                    if (maxX != minX)
+                    {
+                        CheckDestinationCandidate(maxX, y, destination, minimumClearance, ref found, ref bestDistance, ref bestDestination);
+                    }
+                }
+
+                if (found)
+                {
+                    validDestination = bestDestination;
+                    return true;
+                }
+            }
+
+            validDestination = destination;
+            return false;
+        }
+        private void CheckDestinationCandidate(int x, int y, Vector2 requestedDestination, int minimumClearance, ref bool found, ref float bestDistance, ref Vector2 bestDestination)
+        {
+            if (_dynamicClearance[ToIndex(x, y)] < minimumClearance)
+            {
+                return;
+            }
+
+            Vector2 candidate = ConvertToLevelCoordinates(x, y);
+            float distance = (candidate - requestedDestination).sqrMagnitude;
+            if (!found || distance < bestDistance)
+            {
+                found = true;
+                bestDistance = distance;
+                bestDestination = candidate;
+            }
+        }
         public void MarkObstacleLayerDirty()
         {
             _staticObstacleLayerDirty = true;
