@@ -183,6 +183,7 @@ namespace Assets.Scripts
             {ConfigData.ProjectileTypes.StrikerBomb, 2 },
             {ConfigData.ProjectileTypes.RocketExplosion, 2 },
             {ConfigData.ProjectileTypes.FireBargeExplosion, 2 },
+            {ConfigData.ProjectileTypes.FireTankExplosion, 2 },
         };
         public static Dictionary<ConfigData.ShipTypes, string> ConvertShipTypeToName = new Dictionary<ConfigData.ShipTypes, string>
         {
@@ -590,6 +591,7 @@ namespace Assets.Scripts
             { "Striker Bomb", ConfigData.ProjectileTypes.StrikerBomb },
             { "Rocket Explosion", ConfigData.ProjectileTypes.RocketExplosion },
             { "Fire Barge Explosion", ConfigData.ProjectileTypes.FireBargeExplosion },
+            { "Fire Tank Explosion", ConfigData.ProjectileTypes.FireTankExplosion },
         };
 
         public static Dictionary<string, ConfigData.RequestTypes> ConvertNameToRequestType = new Dictionary<string, ConfigData.RequestTypes>

@@ -16234,6 +16234,7 @@ MonoBehaviour:
   StrikerBombPrefab: {fileID: 1478250756334867065, guid: e3b10f2b9d1634c4090652b476134566, type: 3}
   RocketExplosionPrefab: {fileID: 4140905405707596873, guid: 216222dccbe78114893a8e904cb41c36, type: 3}
   FireBargeExplosionPrefab: {fileID: 1876865744220396715, guid: 85fb1a91ef3a67d49b33ab6501ac618d, type: 3}
+  FireTankExplosionPrefab: {fileID: 4140905405707596873, guid: f386479f5dd04d2d9d34ed14d9fd0380, type: 3}
   BeeSmallProjectileExplosionAnimationPrefab: {fileID: 3345242948093166458, guid: 6a95d017bd6a082479c47468372db16d, type: 3}
   BeeMediumProjectileExplosionAnimationPrefab: {fileID: 3345242948093166458, guid: 8478bbbf7b61aca459a368062f5b3a8e, type: 3}
   BumblebeeShotProjectileExplosionAnimationPrefab: {fileID: 3345242948093166458, guid: 356ca648f9e412043912584134ab33dd, type: 3}

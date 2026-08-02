@@ -18,7 +18,7 @@ namespace Assets.Scripts.Levels
         /// </summary>
         public GameObject BargePrefab, BeehivePrefab, BumblebeePrefab, CarpenterBeePrefab, CarrierPrefab, CruiserPrefab, DreadnoughtPrefab, DronePrefab,FactoryPrefab, FireBargePrefab, FlagshipPrefab, FrigatePrefab, GunshipPrefab, HoneybeePrefab, HornetPrefab, LeafcutterPrefab, QueenPrefab,ScoutPrefab, StrikerPrefab, WarpGatePrefab, WaspPrefab, YellowJacketPrefab, BeaconPrefab, HumanTargetPrefab,
 
-            BeeSmallLaserShotPrefab, BeeMediumLaserShotPrefab, BumblebeeShotPrefab, FlagshipShotPrefab, RocketPrefab, HumanSmallPrefab, HumanMediumPrefab, BeamPrefab, SplitShotPrefab, QueenSmallPrefab, QueenLargePrefab, StrikerBombPrefab, RocketExplosionPrefab, FireBargeExplosionPrefab,
+            BeeSmallLaserShotPrefab, BeeMediumLaserShotPrefab, BumblebeeShotPrefab, FlagshipShotPrefab, RocketPrefab, HumanSmallPrefab, HumanMediumPrefab, BeamPrefab, SplitShotPrefab, QueenSmallPrefab, QueenLargePrefab, StrikerBombPrefab, RocketExplosionPrefab, FireBargeExplosionPrefab, FireTankExplosionPrefab,
             
             BeeSmallProjectileExplosionAnimationPrefab, BeeMediumProjectileExplosionAnimationPrefab, BumblebeeShotProjectileExplosionAnimationPrefab, FlagshipShotProjectileExplosionAnimationPrefab,HumanSmallProjectileExplosionAnimationPrefab, HumanMediumProjectileExplosionAnimationPrefab, SplitShotProjectileExplosionAnimationPrefab, QueenSmallProjectileExplosionAnimationPrefab,QueenLargeProjectileExplosionAnimationPrefab, StrikerBombProjectileExplosionAnimationPrefab,
 

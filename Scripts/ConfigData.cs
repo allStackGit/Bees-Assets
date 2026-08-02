@@ -200,7 +200,8 @@ namespace Assets.Scripts
             QueenLarge,
             StrikerBomb,
             RocketExplosion,
-            FireBargeExplosion
+            FireBargeExplosion,
+            FireTankExplosion
         }
         public enum CommandTypes
         {

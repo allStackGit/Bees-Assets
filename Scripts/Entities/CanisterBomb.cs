@@ -17,7 +17,7 @@ namespace Assets.Scripts.Entities
             if (!IsDead)
             {
                 Debug.Log("Canister bomb killed");
-                Explosion = (RocketExplosion)Level.Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.RocketExplosion);
+                Explosion = (RocketExplosion)Level.Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.FireTankExplosion);
                 Explosion.transform.parent = Level.Map.Transform;
                 Explosion.Setup(Level, LastHitProjectile.Weapon, LastHitProjectile.Shooter, null, transform.localPosition, 0, 0, Power);
                 IsDead = true;

@@ -63,6 +63,7 @@ public class Pool : MonoBehaviour
     public ObjectPool<Projectile> StrikerBombProjectilePool;
     public ObjectPool<Projectile> RocketExplosionProjectilePool;
     public ObjectPool<Projectile> FireBargeExplosionProjectilePool;
+    public ObjectPool<Projectile> FireTankExplosionProjectilePool;
 
     public ObjectPool<ObstacleMap> EmptyObstacleListObjectPool;
     public ObjectPool<ObstacleMap> MazeObstacleListObjectPool;
@@ -154,6 +155,7 @@ public class Pool : MonoBehaviour
         StrikerBombProjectilePool = new ObjectPool<Projectile>(CreatePooledStrikerBombProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
         RocketExplosionProjectilePool = new ObjectPool<Projectile>(CreatePooledRocketExplosionProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
         FireBargeExplosionProjectilePool = new ObjectPool<Projectile>(CreatePooledFireBargeExplosionProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
+        FireTankExplosionProjectilePool = new ObjectPool<Projectile>(CreatePooledFireTankExplosionProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
 
         EmptyObstacleListObjectPool = new ObjectPool<ObstacleMap>(CreatePooledEmptyObstacleList, null, null, null, true);
         MazeObstacleListObjectPool = new ObjectPool<ObstacleMap>(CreatePooledMazeObstacleList, null, null, null, true);
@@ -466,6 +468,7 @@ public class Pool : MonoBehaviour
     private Projectile _spawn_strikerBombProjectile;
     private Projectile _spawn_rocketExplosionProjectile;
     private Projectile _spawn_fireBargeExplosionProjectile;
+    private Projectile _spawn_fireTankExplosionProjectile;
 
     // Unit Creation Methods
     public Barge CreatePooledBarge()
@@ -757,6 +760,13 @@ public class Pool : MonoBehaviour
         _spawn_fireBargeExplosionProjectile = Instantiate(Stage.Prefabs.FireBargeExplosionPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         _spawn_fireBargeExplosionProjectile.Create(Stage);
         return _spawn_fireBargeExplosionProjectile;
+    }
+
+    public Projectile CreatePooledFireTankExplosionProjectile()
+    {
+        _spawn_fireTankExplosionProjectile = Instantiate(Stage.Prefabs.FireTankExplosionPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
+        _spawn_fireTankExplosionProjectile.Create(Stage);
+        return _spawn_fireTankExplosionProjectile;
     }
 
     public void OnTakeShipFromPool(Ship ship)
@@ -1126,6 +1136,9 @@ public class Pool : MonoBehaviour
             case ConfigData.ProjectileTypes.FireBargeExplosion:
                 return FireBargeExplosionProjectilePool.Get();
 
+            case ConfigData.ProjectileTypes.FireTankExplosion:
+                return FireTankExplosionProjectilePool.Get();
+
             default:
                 Debug.LogError($"Projectile type is invalid: {type}");
                 return null;
@@ -1177,6 +1190,9 @@ public class Pool : MonoBehaviour
                 break;
             case ConfigData.ProjectileTypes.FireBargeExplosion:
                 FireBargeExplosionProjectilePool.Release(projectile);
+                break;
+            case ConfigData.ProjectileTypes.FireTankExplosion:
+                FireTankExplosionProjectilePool.Release(projectile);
                 break;
             default:
                 Debug.LogError($"Projectile type is invalid: {projectile}");
@@ -1349,7 +1365,8 @@ public class Pool : MonoBehaviour
             _fillPool_spawnedProjectiles.Add(HumanMediumProjectilePool.Get());
             _fillPool_spawnedProjectiles.Add(SplitShotProjectilePool.Get());
             _fillPool_spawnedProjectiles.Add(StrikerBombProjectilePool.Get());
-             _fillPool_spawnedProjectiles.Add(RocketExplosionProjectilePool.Get());
+            _fillPool_spawnedProjectiles.Add(RocketExplosionProjectilePool.Get());
+            _fillPool_spawnedProjectiles.Add(FireTankExplosionProjectilePool.Get());
 
             _fillPool_spawnedCommands.Add(AggressiveCommandPool.Get());
             _fillPool_spawnedCommands.Add(BombingRunCommandPool.Get());

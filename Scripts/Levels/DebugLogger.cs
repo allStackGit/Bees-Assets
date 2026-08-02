@@ -32,7 +32,7 @@ public class DebugLogger : MonoBehaviour
         __QueenPoolSize, __ScoutPoolSize, __StrikerPoolSize, __WarpGatePoolSize, __WaspPoolSize, __YellowJacketPoolSize, __PlutoMapPoolSize, __NeptuneMapPoolSize, __UranusMapPoolSize, __BeeSmallProjectilePoolSize,
         __BeeMediumProjectilePoolSize, __BumblebeeShotProjectilePoolSize, __FlagshipShotProjectilePoolSize, __RocketProjectilePoolSize, __HumanSmallProjectilePoolSize, __HumanMediumProjectilePoolSize,
         __BeamProjectilePoolSize, __SplitShotProjectilePoolSize, __QueenSmallProjectilePoolSize, __QueenLargeProjectilePoolSize, __StrikerBombProjectilePoolSize, __RocketExplosionProjectilePoolSize,
-        __FireBargeExplosionProjectilePoolSize, __EmptyObstacleListObjectPoolSize, __MazeObstacleListObjectPoolSize, __ThreePathsObstacleListObjectPoolSize, __ForestObstacleListObjectPoolSize,
+        __FireBargeExplosionProjectilePoolSize, __FireTankExplosionProjectilePoolSize, __EmptyObstacleListObjectPoolSize, __MazeObstacleListObjectPoolSize, __ThreePathsObstacleListObjectPoolSize, __ForestObstacleListObjectPoolSize,
         __TheWallObstacleListObjectPoolSize, __CollisionAsteroidPoolSize, __CollisionAsteroidShardPoolSize, __AsteroidPiecePoolSize, __MiningAsteroidPoolSize, __SquadPoolSize, __CarrierSquadPoolSize, __AggressiveCommandPoolSize, __BombingRunCommandPoolSize,
         __ChargeCommandPoolSize, __CircleSquadCommandPoolSize, __ClosestFriendlyCommandPoolSize, __FullRetreatCommandPoolSize, __GuardCommandPoolSize, __InAndOutCommandPoolSize,
         __MiningCommandPoolSize, __MoveToRandomCommandPoolSize, __PatrolCommandPoolSize, __RetreatCommandPoolSize, __ScoutingCommandPoolSize, __SwipeSquadCommandPoolSize, __HoldCommandPoolSize,
@@ -127,6 +127,7 @@ public class DebugLogger : MonoBehaviour
         __StrikerBombProjectilePoolSize = Stage.Pool.StrikerBombProjectilePool.CountAll;
         __RocketExplosionProjectilePoolSize = Stage.Pool.RocketExplosionProjectilePool.CountAll;
         __FireBargeExplosionProjectilePoolSize = Stage.Pool.FireBargeExplosionProjectilePool.CountAll;
+        __FireTankExplosionProjectilePoolSize = Stage.Pool.FireTankExplosionProjectilePool.CountAll;
         __EmptyObstacleListObjectPoolSize = Stage.Pool.EmptyObstacleListObjectPool.CountAll;
         __MazeObstacleListObjectPoolSize = Stage.Pool.MazeObstacleListObjectPool.CountAll;
         __ThreePathsObstacleListObjectPoolSize = Stage.Pool.ThreePathsObstacleListObjectPool.CountAll;
