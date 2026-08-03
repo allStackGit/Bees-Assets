@@ -165,6 +165,7 @@ namespace Assets.Scripts.Entities.Ships
         public volatile bool PathfindingThreadComplete, IsPathfinding;
         public volatile Pathfinder.Path PathfindingValue;
         public volatile int PathfindingRequestId, PathfindingCompletedRequestId;
+        public volatile int PathfindingLifecycleId;
         public volatile int PathfindingThread;
         public volatile Pathfinder.Grid DebugGrid;
         public volatile Pathfinder.MapNode[][] DebugNodes;
@@ -746,6 +747,9 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
             PathfindingValue = null;
             PathfindingThreadComplete = false;
             IsPathfinding = false;
+            PathfindingLifecycleId = unchecked(PathfindingLifecycleId + 1);
+            PathfindingRequestId = 0;
+            PathfindingCompletedRequestId = 0;
             _hasPendingPathfindingDestination = false;
             SetTargetCoordinates(Vector2.zero);
             HasTargetCoordinates = false;
@@ -2007,11 +2011,12 @@ shipStats.ProjectileValues[i], WeaponPrefabs[i], shipStats.ProjectileTypes[i], F
                     if (WeaponsThatHaveUsWithinRange.Count > 0)
                     {
                         _weapons = WeaponsThatHaveUsWithinRange.ToList();
-                        for (_tempIndex = 0; _tempIndex < WeaponsThatHaveUsWithinRange.Count; _tempIndex++)
-                        {
-                            _weapons[_tempIndex].ShipsWithinRange.Remove(this.Id);
-                        }
+                    for (_tempIndex = 0; _tempIndex < WeaponsThatHaveUsWithinRange.Count; _tempIndex++)
+                    {
+                        _weapons[_tempIndex].ShipsWithinRange.Remove(this.Id);
                     }
+                    WeaponsThatHaveUsWithinRange.Clear();
+                }
                     Squad.HasMovedBox = false;
                     Squad.MoveSquadBox();
                 }

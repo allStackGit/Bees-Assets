@@ -195,7 +195,16 @@ namespace Assets.Scripts.Levels
                     if (!IsThreadActive[threadIndex])
                     {
                         PathWaiting p = PathsWaiting.Dequeue();
-                        ShipsQueued.Remove(p.Ship);
+                        ReleaseQueuedShipIfNoRemainingRequests(p.Ship);
+                        if (p.Ship == null)
+                        {
+                            continue;
+                        }
+                        if (p.Ship.PathfindingLifecycleId != p.LifecycleId)
+                        {
+                            p.Ship.HandleSupersededPathfindingRequest();
+                            continue;
+                        }
                         if (p.Ship.PathfindingRequestId != p.RequestId)
                         {
                             p.Ship.HandleSupersededPathfindingRequest();
@@ -211,6 +220,7 @@ namespace Assets.Scripts.Levels
                         EndNodes[threadIndex] = GridNodes[threadIndex][p.EndX][p.EndY];
                         Ships[threadIndex] = p.Ship;
                         RequestIds[threadIndex] = p.RequestId;
+                        LifecycleIds[threadIndex] = p.LifecycleId;
 
                         //Debug.Log($"Queued Started BT #{i}");
 
@@ -353,27 +363,53 @@ namespace Assets.Scripts.Levels
         {
             while (_completedPaths.TryDequeue(out PathResult result))
             {
-                if (result.Ship == null)
-                {
-                    continue;
-                }
-                bool ownsThreadSlot = Ships[result.ThreadIndex] == result.Ship &&
-                    RequestIds[result.ThreadIndex] == result.RequestId;
-                if (!ownsThreadSlot)
-                {
-                    continue;
-                }
-                IsThreadActive[result.ThreadIndex] = false;
-                if (result.Ship.PathfindingRequestId != result.RequestId)
-                {
-                    result.Ship.HandleSupersededPathfindingRequest();
-                    continue;
-                }
-
-                result.Ship.PathfindingValue = result.Path;
-                result.Ship.PathfindingCompletedRequestId = result.RequestId;
-                result.Ship.PathfindingThreadComplete = true;
+                ApplyCompletedPathResult(
+                    result.Ship,
+                    result.RequestId,
+                    result.LifecycleId,
+                    result.ThreadIndex,
+                    result.Path);
             }
+        }
+
+        private void ApplyCompletedPathResult(
+            Ship ship,
+            int requestId,
+            int lifecycleId,
+            int threadIndex,
+            Path path)
+        {
+            if (threadIndex < 0 || threadIndex >= IsThreadActive.Length)
+            {
+                return;
+            }
+
+            bool ownsThreadSlot = ReferenceEquals(Ships[threadIndex], ship) &&
+                RequestIds[threadIndex] == requestId &&
+                LifecycleIds[threadIndex] == lifecycleId;
+            if (!ownsThreadSlot)
+            {
+                return;
+            }
+
+            IsThreadActive[threadIndex] = false;
+            Ships[threadIndex] = null;
+            RequestIds[threadIndex] = 0;
+            LifecycleIds[threadIndex] = 0;
+
+            if (ship == null || ship.PathfindingLifecycleId != lifecycleId)
+            {
+                return;
+            }
+            if (ship.PathfindingRequestId != requestId)
+            {
+                ship.HandleSupersededPathfindingRequest();
+                return;
+            }
+
+            ship.PathfindingValue = path;
+            ship.PathfindingCompletedRequestId = requestId;
+            ship.PathfindingThreadComplete = true;
         }
         private void CalculateClearance(int[] clearanceMap, int maxClearance)
         {
@@ -1068,16 +1104,17 @@ namespace Assets.Scripts.Levels
         public MapNode[] EndNodes = new MapNode[ConfigData.MaxThreads];
         public int[] Clearances = new int[ConfigData.MaxThreads];
         public int[] RequestIds = new int[ConfigData.MaxThreads];
+        public int[] LifecycleIds = new int[ConfigData.MaxThreads];
         public Ship[] Ships = new Ship[ConfigData.MaxThreads];
         public MapNode[][][] GridNodes = new MapNode[ConfigData.MaxThreads][][];
 
         public class PathWaiting
         {
             public Ship Ship;
-            public int Clearance, StartX, StartY, EndX, EndY, RequestId;
+            public int Clearance, StartX, StartY, EndX, EndY, RequestId, LifecycleId;
             public float StartTime = Time.realtimeSinceStartup;
 
-            public PathWaiting(Ship ship, int startX, int startY, int endX, int endY, int clearance, int requestId)
+            public PathWaiting(Ship ship, int startX, int startY, int endX, int endY, int clearance, int requestId, int lifecycleId)
             {
                 Ship = ship;
                 StartX = startX;
@@ -1086,18 +1123,20 @@ namespace Assets.Scripts.Levels
                 EndY = endY;
                 Clearance = clearance;
                 RequestId = requestId;
+                LifecycleId = lifecycleId;
             }
         }
         private class PathResult
         {
             public Ship Ship;
-            public int RequestId, ThreadIndex;
+            public int RequestId, LifecycleId, ThreadIndex;
             public Path Path;
 
-            public PathResult(Ship ship, int requestId, int threadIndex, Path path)
+            public PathResult(Ship ship, int requestId, int lifecycleId, int threadIndex, Path path)
             {
                 Ship = ship;
                 RequestId = requestId;
+                LifecycleId = lifecycleId;
                 ThreadIndex = threadIndex;
                 Path = path;
             }
@@ -1521,6 +1560,7 @@ namespace Assets.Scripts.Levels
         {
             Ship ship = Ships[threadIndex];
             int requestId = RequestIds[threadIndex];
+            int lifecycleId = LifecycleIds[threadIndex];
             try
             {
                 await Task.Run(() =>
@@ -1535,13 +1575,13 @@ namespace Assets.Scripts.Levels
                     {
                         Totals[threadIndex].Stop();
                     }
-                    _completedPaths.Enqueue(new PathResult(ship, requestId, threadIndex, path));
+                    _completedPaths.Enqueue(new PathResult(ship, requestId, lifecycleId, threadIndex, path));
                 });
             }
             catch (Exception exception)
             {
                 Debug.LogException(exception);
-                _completedPaths.Enqueue(new PathResult(ship, requestId, threadIndex, null));
+                _completedPaths.Enqueue(new PathResult(ship, requestId, lifecycleId, threadIndex, null));
             }
         }
 
@@ -1555,6 +1595,7 @@ namespace Assets.Scripts.Levels
             //Debug.Log($"Starting pathfinding for {ship.Name}");
             bool startedTask = false;
             int requestId = ++_nextRequestId;
+            int lifecycleId = ship.PathfindingLifecycleId;
             ship.PathfindingRequestId = requestId;
             ship.IsPathfinding = true;
             startX = Mathf.Clamp(startX, 0, _grid.MaxX);
@@ -1580,6 +1621,7 @@ namespace Assets.Scripts.Levels
                     IsThreadActive[threadIndex] = true;
                     Clearances[threadIndex] = maximumClearance;
                     RequestIds[threadIndex] = requestId;
+                    LifecycleIds[threadIndex] = lifecycleId;
                     UpdateMap(threadIndex, ship);
                     //Debug.Log($"Pre starting Finding path for #{i} from {startNode.x}, {startNode.y} to {endNode.x}, {endNode.y}");
                     try
@@ -1618,14 +1660,27 @@ namespace Assets.Scripts.Levels
             }
             if (!startedTask)
             {
-                if (!ShipsQueued.Contains(ship))
-                {
-                    PathsWaiting.Enqueue(new PathWaiting(ship, startX, startY, endX, endY, maximumClearance, requestId));
-                    ShipsQueued.Add(ship);
-                }
+                QueuePathRequest(new PathWaiting(ship, startX, startY, endX, endY, maximumClearance, requestId, lifecycleId));
             }
 
 
+        }
+
+        private void QueuePathRequest(PathWaiting request)
+        {
+            // A pooled Ship may still have an entry from its previous lifecycle.
+            // Keep each request in the queue so the current lifecycle cannot be
+            // suppressed by stale ShipsQueued membership.
+            PathsWaiting.Enqueue(request);
+            ShipsQueued.Add(request.Ship);
+        }
+
+        private void ReleaseQueuedShipIfNoRemainingRequests(Ship ship)
+        {
+            if (!PathsWaiting.Any(request => ReferenceEquals(request.Ship, ship)))
+            {
+                ShipsQueued.Remove(ship);
+            }
         }
 
 

@@ -64,6 +64,10 @@ namespace Assets.Scripts.Entities.Projectiles
         }
         public virtual void Setup(Level level, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power)
         {
+            // Clear state from the previous pooled use before assigning values for
+            // this shot. Derived ClearData implementations may reset fields such
+            // as Angle, hit history, scale, and harmless state.
+            ClearData();
             Level = level;
             Id = Level.State.GetId();
             Weapon = weapon;
@@ -84,7 +88,6 @@ namespace Assets.Scripts.Entities.Projectiles
 
             FleetShip = shooter.FleetShip;
             SavedSquad = shooter.Squad.SavedSquad;
-            ClearData();
             Activate();
             if (HasBody)
             {
@@ -253,7 +256,11 @@ namespace Assets.Scripts.Entities.Projectiles
             //Debug.Log($"{Name} hit {ship.Name}. Contact? {(!IsFriendly(ship) || (Shooter.ShipType == ConfigData.ShipTypes.FireBarge && this != Shooter)) && !ShipsToIgnore.Contains(ship)}," +
             //    $"IsFriendly? {IsFriendly(ship)}");
             // if hit enemy projectile or Fire Barge explosion. the ships to ignore is for leafcutter split shots
-            if ((!IsFriendly(ship) || (Shooter.ShipType == ConfigData.ShipTypes.FireBarge && this != Shooter)) && !ShipsToIgnore.Contains(ship))
+            if (ProjectileDamagePolicy.CanBasicProjectileDamage(
+                Shooter.Side,
+                Shooter.ShipType,
+                ship.Side,
+                ShipsToIgnore.Contains(ship)))
             {
                 _originalPower = Power;
                 ContactTarget(ship);

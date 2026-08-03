@@ -62,6 +62,7 @@ namespace Assets.Scripts.Levels.Commands
 
         public bool IsFinalized;
         public bool IsHiveMindCommand;
+        public bool HasStoredOutcomeRecord;
         /// <summary>
         /// Keeps the Id of the original enemy squad so we can check if the enemy has died and been respawned as a new squad in between timer() calls
         /// </summary>
@@ -98,6 +99,7 @@ namespace Assets.Scripts.Levels.Commands
             TargetingQueue.Clear();
             _destinations.Clear();
             IsFinalized = false;
+            HasStoredOutcomeRecord = false;
         }
         public virtual void Setup(Squad squad, bool isHiveMindCommand, Squad enemy, string matchup)
         {
@@ -165,7 +167,7 @@ namespace Assets.Scripts.Levels.Commands
                 {
                     GetSquad().PastCommands.Add(new StoredCommand(this));
                 }
-                Level.State.AddCommand(this);
+                HasStoredOutcomeRecord = Level.State.AddCommand(this);
 
                 GetSquad().Status = $"Executing Command #{OutcomeId}";
                 //Debug.Log("Set status for command");
@@ -485,10 +487,20 @@ namespace Assets.Scripts.Levels.Commands
                 }
 
                 // If this is a hivemind command with an outcomeId then find the past command in the state, update the TSV, and finalize it
-                if (IsHiveMindCommand && OutcomeId > 0)
+                if (IsHiveMindCommand && OutcomeId > 0 && HasStoredOutcomeRecord)
                 {
-
-                    _finalize_storedCommand = Level.State.PastCommands[Level.State.OutcomeIdToPastCommandIndex[OutcomeId]];
+                    if (Level.State.OutcomeIdToPastCommandIndex.TryGetValue(OutcomeId, out int storedCommandIndex) &&
+                        storedCommandIndex >= 0 &&
+                        storedCommandIndex < Level.State.PastCommands.Count &&
+                        Level.State.PastCommands[storedCommandIndex].OutcomeId == OutcomeId)
+                    {
+                        _finalize_storedCommand = Level.State.PastCommands[storedCommandIndex];
+                    }
+                    else
+                    {
+                        _finalize_storedCommand = null;
+                        Debug.LogError($"Could not finalize command outcome #{OutcomeId}: its stored-command mapping is missing or stale.");
+                    }
                     //try
                     //{
                     //    _finalize_storedCommand = Level.State.PastCommands[Level.State.OutcomeIdToPastCommandIndex[OutcomeId]];
@@ -505,8 +517,11 @@ namespace Assets.Scripts.Levels.Commands
                     //    return;
                     //}
 
-                    _finalize_storedCommand.Tsv = Tsv;
-                    _finalize_storedCommand.IsFinalized = true;
+                    if (_finalize_storedCommand != null)
+                    {
+                        _finalize_storedCommand.Tsv = Tsv;
+                        _finalize_storedCommand.IsFinalized = true;
+                    }
 
                     if (Stage.DebugLogger.IsDebugging)
                     {

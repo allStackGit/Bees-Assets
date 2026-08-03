@@ -36,46 +36,7 @@ namespace Assets.Scripts.Levels
         private void SetTriggers()
         {
             Triggers.Clear();
-
-            switch (CurrentLevelOptions.Id)
-            {
-                case 0:
-                    Pluto1Anomaly();
-                    break;
-                case 1:
-                    Pluto2Reinforcements();
-                    break;
-                case 2:
-                    Pluto3Pushback();
-                    break;
-                case 3:
-                    Pluto4BluerPastures();
-                    break;
-                case 4:
-                    Neptune1SeizeTheMeans();
-                    break;
-                case 5:
-                    Neptune2OfProduction();
-                    break;
-                case 6:
-                    Neptune3PressingForward();
-                    break;
-                case 7:
-                    Titania1Minesweeper();
-                    break;
-                case 8:
-                    Titania2Beenoculars();
-                    break;
-                case 9:
-                    Uranus1OnTheOffensive();
-                    break;
-                case 10:
-                    Uranus2OnTheDefensive();
-                    break;
-                case 11:
-                    Uranus3ANewThreat();
-                    break;
-            }
+            CampaignMissionCatalog.Configure(this, CurrentLevelOptions.Id);
         }
 
         public void Pluto1Anomaly()
@@ -906,7 +867,11 @@ namespace Assets.Scripts.Levels
                     },
                         () =>
                         {
-                            WinningSide = State.IsSideKilled(ConfigData.Configuration.UserSide) ? ConfigData.Configuration.AISide : ConfigData.Configuration.UserSide;
+                            WinningSide = CampaignObjectiveRules.ResolveEliminationWinner(
+                                State.IsSideKilled(ConfigData.Configuration.UserSide),
+                                State.IsSideKilled(ConfigData.Configuration.AISide),
+                                ConfigData.Configuration.UserSide,
+                                ConfigData.Configuration.AISide);
                             Debug.Log($"Winning Side: {WinningSide}");
                             CloseLevel();
                             if (WinningSide == ConfigData.Configuration.UserSide) // Player won
@@ -1313,7 +1278,11 @@ namespace Assets.Scripts.Levels
                         },
                         () =>
                         {
-                            WinningSide = State.IsSideKilled(ConfigData.Configuration.UserSide) ? ConfigData.Configuration.AISide : ConfigData.Configuration.UserSide;
+                            WinningSide = CampaignObjectiveRules.ResolveEliminationWinner(
+                                State.IsSideKilled(ConfigData.Configuration.UserSide),
+                                State.IsSideKilled(ConfigData.Configuration.AISide),
+                                ConfigData.Configuration.UserSide,
+                                ConfigData.Configuration.AISide);
                             Debug.Log($"Winning Side: {WinningSide}");
                             CloseLevel();
                             if (WinningSide == ConfigData.Configuration.UserSide)
@@ -1742,7 +1711,11 @@ namespace Assets.Scripts.Levels
             },
                 () =>
                 {
-                    WinningSide = State.IsSideKilled(ConfigData.Configuration.UserSide) ? ConfigData.Configuration.AISide : ConfigData.Configuration.UserSide;
+                    WinningSide = CampaignObjectiveRules.ResolveEliminationWinner(
+                        State.IsSideKilled(ConfigData.Configuration.UserSide),
+                        State.IsSideKilled(ConfigData.Configuration.AISide),
+                        ConfigData.Configuration.UserSide,
+                        ConfigData.Configuration.AISide);
                     Debug.Log($"Winning Side: {WinningSide}");
                     CloseLevel();
                     if (WinningSide == ConfigData.Configuration.UserSide) // Player won
@@ -1993,11 +1966,13 @@ namespace Assets.Scripts.Levels
                         if (!titania.IsDead && !State.IsSideKilled(ConfigData.Configuration.UserSide))
                         {
                             // mark win
+                            WinningSide = ConfigData.Configuration.UserSide;
                             Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Titania_Beenoculars.GetRange(30, 2), true);
                         }
                         else
                         {
                             // fallback end
+                            WinningSide = ConfigData.Configuration.AISide;
                             Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Titania_Beenoculars.GetRange(24, 6), true);
                         }
                         CloseLevel();
@@ -2070,6 +2045,7 @@ namespace Assets.Scripts.Levels
                     CancelTimer(wave1);
                     CancelTimer(wave2);
                     CancelTimer(wave3);
+                    WinningSide = ConfigData.Configuration.AISide;
                     CloseLevel();
                     Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Titania_Beenoculars.GetRange(24, 6), true);
                 }, "Titania 2 Losing condition") );
@@ -3282,6 +3258,8 @@ namespace Assets.Scripts.Levels
         public void Titania2Ending()
         {
             Debug.Log($"Titania 2 ending!");
+            State.GameOver = true;
+            Stage.Menus.ShowLevelSummary();
         }
         public void Uranus1Ending()
         {

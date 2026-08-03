@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using UnityEngine;
+using Assets.Scripts.Levels;
 
 namespace Assets.Scripts.UI_Components
 {
@@ -11,6 +12,11 @@ namespace Assets.Scripts.UI_Components
 
         void Awake()
         {
+            if (CampaignScenarioIsolation.IsActive)
+            {
+                enabled = false;
+                return;
+            }
             // Implement singleton pattern
             if (Instance == null)
             {

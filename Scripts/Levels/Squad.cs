@@ -1170,6 +1170,9 @@ namespace Assets.Scripts.Levels
         public void MakeUserCommand(ConfigData.CommandTypes command, Squad enemy)
         {
             //Debug.Log($"{Name} now has command against {enemy.Name}");
+            Level.RecordSimulationInput(
+                "user-command",
+                $"{ItemId}|{command}|{(enemy == null ? -1 : enemy.ItemId)}");
             FinalizeUserCommand();
 
             switch (command)

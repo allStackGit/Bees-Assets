@@ -99,11 +99,15 @@ namespace Assets.Scripts.Levels
         public void ResetState()
         {
             Ships.Clear();
+            ShipsById.Clear();
             Squads.Clear();
             SquadsAwaitingCommands.Clear();
             PastCommands.Clear();
+            OutcomeIdToPastCommandIndex.Clear();
             SelectedSquads.Clear();
+            PlayerVisibleMapObjects.Clear();
             Obstacles.Clear();
+            FogOfWarVisions.Clear();
             SpottedShips[0].Clear();
             SpottedShips[1].Clear();
             InitialTsv = new int[] { 0, 0 };
@@ -131,8 +135,14 @@ namespace Assets.Scripts.Levels
             PlayerNewShipsReceived = 0;
             PlayerScore = 0;
             PlayerMineralsReceived = 0;
-
-
+            UserCommands = 0;
+            AICommands = 0;
+            HasSelectedSquads = false;
+            HasWarpGates = false;
+            HasBeehives = false;
+            IsPaused = false;
+            GameOver = false;
+            LevelEnded = false;
         }
 
         private List<SpottedShip> _spottedShips;
@@ -229,9 +239,15 @@ namespace Assets.Scripts.Levels
         {
             Obstacles.Remove(obstacle);
         }
-        public void AddCommand(Command command)
+        public bool AddCommand(Command command)
         {
             //_commands.Add(command);
+            if (command.OutcomeId > 0 && OutcomeIdToPastCommandIndex.ContainsKey(command.OutcomeId))
+            {
+                Debug.LogError($"Could not register duplicate command outcome #{command.OutcomeId}.");
+                return false;
+            }
+
             PastCommands.Add(new StoredCommand(command));
             if (command.OutcomeId > 0)
             {
@@ -240,38 +256,53 @@ namespace Assets.Scripts.Levels
             //Debug.Log($"Added Command {command} to past commands at index #{(PastCommands.Count - 1)}");
             AICommands++;
             Stage.DebugLogger.__HivemindCommands++;
+            return true;
         }
 
         public void Release()
         {
-            ShipsToRelease.ForEach((ship) =>
+            Ship[] ships = DrainReleaseQueue(ShipsToRelease);
+            Command[] commands = DrainReleaseQueue(CommandsToRelease);
+            Squad[] squads = DrainReleaseQueue(SquadsToRelease);
+            CollisionAsteroid[] asteroids = DrainReleaseQueue(AsteroidsToRelease);
+            AsteroidPiece[] asteroidPieces = DrainReleaseQueue(AsteroidPiecesToRelease);
+            MiningAsteroid[] miningAsteroids = DrainReleaseQueue(MiningAsteroidsToRelease);
+
+            foreach (Ship ship in ships)
             {
                 Stage.Pool.ReturnShipToPool(ship);
-            });
+            }
 
-            CommandsToRelease.ForEach((command) =>
+            foreach (Command command in commands)
             {
                 Stage.Pool.ReturnCommandToPool(command);
-            });
+            }
 
-            SquadsToRelease.ForEach((squad) =>
+            foreach (Squad squad in squads)
             {
                 Stage.Pool.ReturnSquadToPool(squad);
-            });
+            }
 
-            AsteroidsToRelease.ForEach(asteroid =>
+            foreach (CollisionAsteroid asteroid in asteroids)
             {
                 Stage.Pool.ReturnCollisionAsteroidToPool(asteroid);
-            });
-            AsteroidPiecesToRelease.ForEach(piece =>
+            }
+            foreach (AsteroidPiece piece in asteroidPieces)
             {
                 Stage.Pool.ReturnAsteroidPieceToPool(piece);
-            });
+            }
 
-            MiningAsteroidsToRelease.ForEach((miningAsteroid) =>
+            foreach (MiningAsteroid miningAsteroid in miningAsteroids)
             {
                 Stage.Pool.ReturnMiningAsteroidToPool(miningAsteroid);
-            });
+            }
+        }
+
+        private static T[] DrainReleaseQueue<T>(List<T> queue)
+        {
+            T[] items = queue.ToArray();
+            queue.Clear();
+            return items;
         }
 
         private ShipDamageStatus _shipDamageStatus;

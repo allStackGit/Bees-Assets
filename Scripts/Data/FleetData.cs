@@ -90,11 +90,8 @@ namespace Assets.Scripts.Data
         }
         public override string ToJson()
         {
-            string json = "[";
-            GetShips().ForEach((s) => json += $"{s.ToJson()}, ");
-            json = json.Remove(json.Length - 2);
-            json += "]";
-            return json;
+            return new JArray(GetShips().Select(ship => JToken.Parse(ship.ToJson())))
+                .ToString(Formatting.None);
 
         }
     }

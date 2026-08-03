@@ -34,7 +34,7 @@ namespace Assets.Scripts.Server
         }
         public bool HasSameSquad()
         {
-            return SquadId == Squad.ItemId && !Squad.IsDead;
+            return Squad != null && SquadId == Squad.ItemId && !Squad.IsDead;
         }
     }
 }

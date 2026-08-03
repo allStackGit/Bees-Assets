@@ -1,0 +1,52 @@
+using System;
+using NUnit.Framework;
+using UnityEngine;
+
+namespace Bees.Tests.EditMode
+{
+    [TestFixture]
+    [Category("BeesFoundation")]
+    public class SocketReconnectTests
+    {
+        private GameObject _levelObject;
+
+        [TearDown]
+        public void TearDown()
+        {
+            if (_levelObject != null)
+            {
+                UnityEngine.Object.DestroyImmediate(_levelObject);
+            }
+        }
+
+        [Test]
+        public void ApplyReconnectResponseUpdatesTheReconnectedLevel()
+        {
+            Type levelType = RuntimeAssembly.GetType("Assets.Scripts.Levels.Level");
+            Type responseType = RuntimeAssembly.GetType("Assets.Scripts.Server.SetupLevelResponse");
+            Type socketType = RuntimeAssembly.GetType("Assets.Scripts.Server.Socket");
+
+            _levelObject = new GameObject(nameof(SocketReconnectTests));
+            Component level = _levelObject.AddComponent(levelType);
+            object response = Activator.CreateInstance(
+                responseType,
+                new object[] { "reconnect-level", 200, 77, 0f, 9001L });
+
+            RuntimeAssembly.InvokeStatic(
+                socketType,
+                "ApplyReconnectLevelResponse",
+                level,
+                response);
+
+            Assert.That(RuntimeAssembly.GetField(level, "IsLevelConnectedToServer"), Is.True);
+            Assert.That(RuntimeAssembly.GetField(level, "ServerGameId"), Is.EqualTo(9001L));
+            object handledRequests = RuntimeAssembly.GetField(level, "HandledRequests");
+            Assert.That(RuntimeAssembly.GetCount(handledRequests), Is.EqualTo(1));
+            Assert.That(
+                (bool)handledRequests.GetType().GetMethod("Contains").Invoke(
+                    handledRequests,
+                    new object[] { 77L }),
+                Is.True);
+        }
+    }
+}

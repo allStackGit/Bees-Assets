@@ -1,6 +1,7 @@
 using Assets.Scripts;
 using Assets.Scripts.Data;
 using Assets.Scripts.Server;
+using Assets.Scripts.Levels;
 using Assets.Scripts.UI_Components;
 using System;
 using System.Collections;
@@ -37,6 +38,11 @@ namespace Assets.Scripts.Scenes
         // Start is called before the first frame update
         protected void Start()
         {
+            if (CampaignScenarioIsolation.IsActive)
+            {
+                enabled = false;
+                return;
+            }
             //Debug.Log($"Starting {Name} scene");
             ConfigData.Scenes.Add(this);
 
@@ -47,7 +53,7 @@ namespace Assets.Scripts.Scenes
                 ConfigData.SocketManager = this;
                 NetworkDisconnection = new Dialogue( DialoguePrefab, "Server disconnected!", "The game needs to be connected to the server in order to function properly.", new List<string>() { "Retry", "Exit Game" }, new List<UnityAction>() { ConfigData.RetryConnection, Exit });
                 NetworkDisconnection.SetButtonWidth(1, 100);
-                ConfigData.MaxThreads = SystemInfo.processorCount - 1;
+                ConfigData.MaxThreads = Mathf.Max(1, SystemInfo.processorCount - 1);
 
                 if (TargetFrameRate > 0)
                 {

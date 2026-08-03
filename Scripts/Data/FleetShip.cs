@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEngine;
+using Newtonsoft.Json;
 
 namespace Assets.Scripts.Data
 {
@@ -209,9 +210,21 @@ namespace Assets.Scripts.Data
         }
         public string ToJson()
         {
-            return $"{{\"i\": {Id}, \"n\": \"{Name}\", \"t\": {(int) Type}, \"d\": {(IsDead ? 1 : 0)}," +
-                $"\"s\": {(HasCachedSprite ? 1 : 0)}, \"f\": {ShotsFired}, \"dd\": {DamageDone}, \"r\": {DamageReceived}, \"k\": {Kills}, \"b\": {BattlesFought}, \"w\": {BattlesWon}, " +
-                $"\"m\": {MineralsMined}}}";
+            return JsonConvert.SerializeObject(new
+            {
+                i = Id,
+                n = Name,
+                t = (int)Type,
+                d = IsDead ? 1 : 0,
+                s = HasCachedSprite ? 1 : 0,
+                f = ShotsFired,
+                dd = DamageDone,
+                r = DamageReceived,
+                k = Kills,
+                b = BattlesFought,
+                w = BattlesWon,
+                m = MineralsMined
+            });
         }
         public override string ToString()
         {

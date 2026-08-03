@@ -6,6 +6,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Xml.Linq;
 using UnityEngine;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace Assets.Scripts.Data
 {
@@ -378,15 +380,30 @@ namespace Assets.Scripts.Data
         }
         public string ToJson()
         {
-            //Debug.Log($"Starting position for JSON {this} is {StartingPosition}");
-
-            string json = $"{{\"Id\": {Id}, \"Side\": {Side}, \"Name\": \"{Name}\", \"Color\": {{\"r\": {Color.r}, \"g\": {Color.g}, \"b\": {Color.b}, \"a\": {Color.a} }}, \"StartingPosition\":" +
-                $" {{\"x\": {StartingPosition.x}, \"y\": {StartingPosition.y} }}, \"CeaseFire\": {(CeaseFire ? "true" : "false")}, \"IsMatchingSpeed\": {(IsMatchingSpeed ? "true" : "false")}, \"ChosenShootingStrategy\":" +
-                $" \"{Utilities.ConvertShootingStrategyTypeToName[ChosenShootingStrategy]}\", \"Stats\": {Stats.ToJson()}, \"Ships\": [";
-            GetSquadShips().ForEach((s) => json += $"{s.ToJson()}, ");
-            json = json.Remove(json.Length - 2);
-            json += "]}";
-            return json;
+            JObject json = new JObject
+            {
+                ["Id"] = Id,
+                ["Side"] = Side,
+                ["Name"] = Name,
+                ["Color"] = new JObject
+                {
+                    ["r"] = Color.r,
+                    ["g"] = Color.g,
+                    ["b"] = Color.b,
+                    ["a"] = Color.a
+                },
+                ["StartingPosition"] = new JObject
+                {
+                    ["x"] = StartingPosition.x,
+                    ["y"] = StartingPosition.y
+                },
+                ["CeaseFire"] = CeaseFire,
+                ["IsMatchingSpeed"] = IsMatchingSpeed,
+                ["ChosenShootingStrategy"] = Utilities.ConvertShootingStrategyTypeToName[ChosenShootingStrategy],
+                ["Stats"] = JToken.Parse(Stats.ToJson()),
+                ["Ships"] = new JArray(GetSquadShips().Select(ship => JToken.Parse(ship.ToJson())))
+            };
+            return json.ToString(Formatting.None);
         }
         public override string ToString()
         {

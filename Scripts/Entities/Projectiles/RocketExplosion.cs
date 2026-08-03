@@ -116,21 +116,17 @@ namespace Assets.Scripts.Entities.Projectiles
         protected override void ShipCollision(Ship ship)
         {
             //Debug.Log($"Rocket explosion {Name} collided with {ship.Name}");
-            if (!ship.IsDead)
+            if (ProjectileDamagePolicy.CanExplosionDamage(
+                Shooter.Side,
+                Shooter.ShipType,
+                ship.Side,
+                Type,
+                ship.IsDead,
+                IsHarmless,
+                HasHitShip(ship)))
             {
-                bool damagesAllShips = Type == ConfigData.ProjectileTypes.FireTankExplosion;
-
-                // Fire Tank explosions are neutral hazards. Other explosions retain
-                // their normal enemy/friendly-fire rules.
-                if (damagesAllShips || !IsFriendly(ship) || (Shooter.ShipType == ConfigData.ShipTypes.FireBarge && this != Shooter))
-                {
-                    if (!IsHarmless && !HasHitShip(ship)) // if it's an explosion it should do damage but not if it's already contacted the ship
-                    {
-                        ContactTarget(ship);
-                        Ship.LogAttackingDamage(Power, Shooter, FleetShip, SavedSquad, ship);
-                    }
-
-                }
+                ContactTarget(ship);
+                Ship.LogAttackingDamage(Power, Shooter, FleetShip, SavedSquad, ship);
             }
         }
 

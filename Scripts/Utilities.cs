@@ -624,7 +624,40 @@ namespace Assets.Scripts
         // ===========================================================
         // Class-level fields for Hash methods
         // ===========================================================
-        private static readonly Random _rnd = new Random();
+        private static Random _rnd = new Random();
+
+        /// <summary>
+        /// Temporarily replaces the gameplay random stream with a seeded stream.
+        /// Dispose the returned scope to restore the previous stream. This is intended
+        /// for deterministic scenarios/replays, before simulation work begins.
+        /// </summary>
+        public static IDisposable UseDeterministicRandom(int seed)
+        {
+            Random previous = _rnd;
+            _rnd = new Random(seed);
+            return new RandomScope(previous);
+        }
+
+        private sealed class RandomScope : IDisposable
+        {
+            private Random _previous;
+
+            public RandomScope(Random previous)
+            {
+                _previous = previous;
+            }
+
+            public void Dispose()
+            {
+                if (_previous == null)
+                {
+                    return;
+                }
+
+                _rnd = _previous;
+                _previous = null;
+            }
+        }
         private static long _uniqueHash_tempHash;
 
         public static long Hash()

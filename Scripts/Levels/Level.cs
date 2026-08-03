@@ -479,15 +479,27 @@ namespace Assets.Scripts.Levels
         /// </summary>
         private void CheckTriggers()
         {
+            EvaluateCampaignTriggers();
+        }
+
+        /// <summary>
+        /// Advances the mission trigger graph once. Runtime uses the timer-backed
+        /// CheckTriggers wrapper; deterministic scenario tools use this method so
+        /// they do not need to wait for wall-clock trigger intervals.
+        /// </summary>
+        internal int EvaluateCampaignTriggers()
+        {
             //Debug.Log($"Checking triggers");
             Triggers.AddRange(NextTriggers);
             NextTriggers.Clear();
 
+            int triggeredCount = 0;
             Triggers.ForEach((trigger) =>
             {
                 if (trigger.Conditional())
                 {
                     trigger.Action();
+                    triggeredCount++;
                 }
             });
             //Triggers.AddRange(NextTriggers);
@@ -497,6 +509,7 @@ namespace Assets.Scripts.Levels
                 CancelTimer(_checkTriggersTimer);
                 //CancelInvoke(nameof(CheckTriggers));
             }
+            return triggeredCount;
         }
         private int _updateIndex;
         //public HashSet<long> _currentTimerIDs = new HashSet<long>(); // [debug]
@@ -1090,16 +1103,8 @@ namespace Assets.Scripts.Levels
             //{
             //    Debug.LogError($"Found alive projectiles at end of level");
             //} 
-            Timers.Clear();
-            _hasSetTimeoutTimer = false;
             ConfigData.CurrentShips.ReplaceDeadSquadShips(ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign);
-            State.ResetState();
-            State.GameOver = false;
-            State.LevelEnded = false;
-            Seconds = 0;
-            //Socket.StandingRequests.Clear();
-            ConfigData.Socket.HandledRequests.Except(HandledRequests);
-            HandledRequests.Clear();
+            ResetRuntimeState(ConfigData.Socket.HandledRequests);
             if (!Stage.WatchServerRequests)
             {
                 ConfigData.__PastServerRequests.Clear();
@@ -1109,8 +1114,25 @@ namespace Assets.Scripts.Levels
             {
                 Stage.Pool.ReturnMapToPool(Map);
             }
+        }
+
+        private void ResetRuntimeState(HashSet<long> allHandledRequests)
+        {
+            Timers.Clear();
+            _hasSetTimeoutTimer = false;
+            State.ResetState();
+            Seconds = 0;
+            RemoveHandledRequests(allHandledRequests, HandledRequests);
             AllSquads.Clear();
             CurrentLevelOptions.ChosenSquads.Clear();
+        }
+
+        private static void RemoveHandledRequests(
+            HashSet<long> allHandledRequests,
+            HashSet<long> levelHandledRequests)
+        {
+            allHandledRequests.ExceptWith(levelHandledRequests);
+            levelHandledRequests.Clear();
         }
         private ScaledTimer _hivemindTimer = new ScaledTimer();
         private ScaledTimer _checkTriggersTimer = new ScaledTimer();

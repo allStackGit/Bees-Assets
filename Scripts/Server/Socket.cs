@@ -248,9 +248,8 @@ namespace Assets.Scripts.Server
             //}
 
 
-            if (!HandledRequests.Contains(_message_response.Hash))
+            if (TryClaimResponse(_message_response.Hash))
             {
-                HandledRequests.Add(_message_response.Hash);
                 //Debug.Log($"Received response for request #{_message_response.Hash}");
                 switch (_message_response.RequestType)
                 {
@@ -559,6 +558,33 @@ namespace Assets.Scripts.Server
             return StandingRequests.FirstOrDefault(r => r.Hash == hash);
         }
 
+        private bool TryClaimResponse(long hash)
+        {
+            return HandledRequests.Add(hash);
+        }
+
+        private ServerRequest TakeStandingRequest(long hash, ConfigData.RequestTypes expectedType)
+        {
+            ServerRequest request = GetStandingRequest(hash);
+            if (request == null || request.Type != expectedType)
+            {
+                return null;
+            }
+
+            StandingRequests.Remove(request);
+            return request;
+        }
+
+        private static bool CanApplySquadResponse(Level level, Squad squad, int expectedItemId)
+        {
+            return level != null &&
+                level.State != null &&
+                !level.State.LevelEnded &&
+                squad != null &&
+                squad.ItemId == expectedItemId &&
+                !squad.IsDead;
+        }
+
 
         // Class-level variables for HandleUserDataResponse
         private UserDataResponse _userDataResponse; // Stores the deserialized response from the server
@@ -722,17 +748,23 @@ namespace Assets.Scripts.Server
         private void HandleMatchupResponse(string message)
         {
             _handleMatchupResponse_matchupResponse = JsonUtility.FromJson<MatchupStrategyResponse>(message);
-            _handleMatchupResponse_standingRequest = (MatchupStrategyRequest)GetStandingRequest(_handleMatchupResponse_matchupResponse.Hash);
+            _handleMatchupResponse_standingRequest = TakeStandingRequest(
+                _handleMatchupResponse_matchupResponse.Hash,
+                ConfigData.RequestTypes.GetMatchupStrategy) as MatchupStrategyRequest;
 
             if (_handleMatchupResponse_standingRequest != null)
             {
-                StandingRequests.Remove(_handleMatchupResponse_standingRequest);
                 //_handleMatchupResponse_standingRequest.TimeOnQueue = ConfigData.Stopwatch.ElapsedMilliseconds - _handleMatchupResponse_standingRequest.StartTime;
                 //ConfigData.__TotalTimeOnQueue += _handleMatchupResponse_standingRequest.TimeOnQueue;
 
                 _handleMatchupResponse_squad = _handleMatchupResponse_standingRequest.Squad;
+                _handleMatchupResponse_level = _handleMatchupResponse_standingRequest.Level;
+                _handleMatchupResponse_level.RecordSimulationInput("hivemind-matchup-response", message);
 
-                if (_handleMatchupResponse_standingRequest.HasSameSquad())
+                if (CanApplySquadResponse(
+                    _handleMatchupResponse_level,
+                    _handleMatchupResponse_squad,
+                    _handleMatchupResponse_standingRequest.SquadId))
                 {
                     _handleMatchupResponse_squad.MatchupStrategy.Setup(
                         Utilities.ConvertMatchupStrategyNameToType[_handleMatchupResponse_matchupResponse.Name],
@@ -742,7 +774,6 @@ namespace Assets.Scripts.Server
 
                     _handleMatchupResponse_targetSquad = _handleMatchupResponse_squad.MatchupStrategy.SortSquads();
 
-                    _handleMatchupResponse_level = _handleMatchupResponse_standingRequest.Level;
                     _handleMatchupResponse_level.HandledRequests.Add(_handleMatchupResponse_standingRequest.Hash);
 
                     _handleMatchupResponse_squad.MakeMatchupAndGetCommand(_handleMatchupResponse_targetSquad);
@@ -774,28 +805,33 @@ namespace Assets.Scripts.Server
         {
             //Debug.Log($"Message: {message}");
             _commandResponse = JsonUtility.FromJson<CommandResponse>(message);
-            _strategicStandingRequest = (CommandRequest)GetStandingRequest(_commandResponse.Hash);
+            _strategicStandingRequest = TakeStandingRequest(
+                _commandResponse.Hash,
+                ConfigData.RequestTypes.GetStrategy) as CommandRequest;
 
             if (_strategicStandingRequest != null)
             {
-                StandingRequests.Remove(_strategicStandingRequest);  
                 //_strategicStandingRequest.TimeOnQueue = ConfigData.Stopwatch.ElapsedMilliseconds - _strategicStandingRequest.StartTime;
                 //ConfigData.__TotalTimeOnQueue += _strategicStandingRequest.TimeOnQueue;
                 _tempSquad = _strategicStandingRequest.Squad;
                 _handleStrategicCommandResponse_level = _strategicStandingRequest.Level;
-                _handleStrategicCommandResponse_level.HandledRequests.Add(_strategicStandingRequest.Hash);
-               _tempCommandType = Utilities.ConvertCommandNameToType[_commandResponse.Name];
-
-                //Debug.Log($"strategic command response");
-                //Debug.Log(squad.damageSentToEnemyShipsBySquad);
-
-                if (_strategicStandingRequest.Request.BannedStrats.Contains(Utilities.ConvertCommandTypeToName[_tempCommandType]))
-                {
-                    Debug.LogError($"{_tempSquad.Name} received banned command type: {_tempCommandType}");
-                }
+                _handleStrategicCommandResponse_level.RecordSimulationInput("hivemind-command-response", message);
                 //Debug.Log($"{_tempSquad.Name} received command type: {_tempCommandType}");
-                if (!_handleStrategicCommandResponse_level.State.LevelEnded && _strategicStandingRequest.HasSameSquad())
+                if (CanApplySquadResponse(
+                    _handleStrategicCommandResponse_level,
+                    _tempSquad,
+                    _strategicStandingRequest.SquadId))
                 {
+                    _handleStrategicCommandResponse_level.HandledRequests.Add(_strategicStandingRequest.Hash);
+                    _tempCommandType = Utilities.ConvertCommandNameToType[_commandResponse.Name];
+
+                    //Debug.Log($"strategic command response");
+                    //Debug.Log(squad.damageSentToEnemyShipsBySquad);
+
+                    if (_strategicStandingRequest.Request.BannedStrats.Contains(Utilities.ConvertCommandTypeToName[_tempCommandType]))
+                    {
+                        Debug.LogError($"{_tempSquad.Name} received banned command type: {_tempCommandType}");
+                    }
                     if (_tempSquad.IsDead)
                     {
                         Debug.LogError($"Squad {_tempSquad} is dead, but received a command response.");
@@ -1069,9 +1105,7 @@ namespace Assets.Scripts.Server
                 // Remove from standing requests and process level
                 StandingRequests.Remove(handleReconnectLevelResponseStandingRequest);
                 handleReconnectLevelResponseLevel = handleReconnectLevelResponseStandingRequest.Level;
-                handleReconnectLevelResponseLevel.IsLevelConnectedToServer = true;
-                _setupLevel.ServerGameId = _setupLevelResponse.GameId;
-                handleReconnectLevelResponseLevel.HandledRequests.Add(_setupLevelResponse.Hash);
+                ApplyReconnectLevelResponse(handleReconnectLevelResponseLevel, _setupLevelResponse);
 
                 // Calculate time on queue and update latency
                 handleReconnectLevelResponseTimeOnQueue = ConfigData.Stopwatch.ElapsedMilliseconds - handleReconnectLevelResponseStandingRequest.StartTime;
@@ -1086,6 +1120,13 @@ namespace Assets.Scripts.Server
             {
                 Debug.LogWarning($"Couldn't find a matching request for {_setupLevelResponse.Hash}");
             }
+        }
+
+        private static void ApplyReconnectLevelResponse(Level level, SetupLevelResponse response)
+        {
+            level.IsLevelConnectedToServer = true;
+            level.ServerGameId = response.GameId;
+            level.HandledRequests.Add(response.Hash);
         }
 
         private void HandleBasicResponse(ServerResponse response)

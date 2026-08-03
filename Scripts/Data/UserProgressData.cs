@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.Remoting.Messaging;
 using UnityEngine;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace Assets.Scripts.Data
 {
@@ -162,48 +164,60 @@ namespace Assets.Scripts.Data
         }
         public override string ToJson()
         {
-            string json = "{" +
-                $"\"CurrentHumanCampaignLevel\": {CurrentHumanCampaignLevel}, \"CurrentBeeCampaignLevel\": {CurrentBeeCampaignLevel}, \"CurrentHumanChallengeLevel\": {CurrentHumanChallengeLevel}, \"CurrentBeeChallengeLevel\": {CurrentBeeChallengeLevel}, \"FleetId\": {FleetId}, \"SavedSquadId\": {SavedSquadId}, \"HumanCampaignSavedSquadNumber\": {HumanCampaignSavedSquadNumber}, \"BeeCampaignSavedSquadNumber\": {BeeCampaignSavedSquadNumber}, \"HumanChallengeSavedSquadNumber\": {HumanChallengeSavedSquadNumber}, \"BeeChallengeSavedSquadNumber\": {BeeChallengeSavedSquadNumber}, \"HumanFreePlaySavedSquadNumber\": {HumanFreePlaySavedSquadNumber}, \"BeeFreePlaySavedSquadNumber\": {BeeFreePlaySavedSquadNumber}, \"MinedTSV\": {MinedTSV}, \"HivemindMinedTSV\": {HivemindMinedTSV}, \"CampaignScore\": {CampaignScore}, \"ChallengeScore\": {ChallengeScore}, \"HumanCampaignWins\": {HumanCampaignWins}, \"BeeCampaignWins\": {BeeCampaignWins}, \"HumanChallengeWins\": {HumanChallengeWins}, \"BeeChallengeWins\": {BeeChallengeWins}, \"HumanFreePlayWins\": {HumanFreePlayWins}, \"BeeFreePlayWins\": {BeeFreePlayWins}, \"HumanFishTankWins\": {HumanFishTankWins}, \"BeeFishTankWins\": {BeeFishTankWins}, \"HasStartedHumanCampaign\": \"{HasStartedHumanCampaign}\", \"IsBeeCampaignUnlocked\": \"{IsBeeCampaignUnlocked}\", \"IsHumanChallengeUnlocked\": \"{IsHumanChallengeUnlocked}\", \"IsBeeChallengeUnlocked\": \"{IsBeeChallengeUnlocked}\", \"IsHumanFreePlayUnlocked\": \"{IsHumanFreePlayUnlocked}\", \"IsBeeFreePlayUnlocked\": \"{IsBeeFreePlayUnlocked}\", \"IsFishTankUnlocked\": \"{IsFishTankUnlocked}\", \"HasMetAlejandraAndEmilia\": \"{HasMetAlejandraAndEmilia}\", \"HasSeenBuildInterface\": \"{HasSeenBuildInterface}\", \"HasSeenCarrierIntro\": \"{HasSeenCarrierIntro}\", \"HasPlayedBefore\": \"{HasPlayedBefore}\", \"ShowToolTips\": \"{ShowToolTips}\", \"UseMouseScrolling\": \"{UseMouseScrolling}\", \"PlayerName\": \"{PlayerName}\", \"VisibleBeeShipTypes\": [";
-
-            if (VisibleBeeShipTypes.Count > 0)
+            JObject json = new JObject
             {
-                VisibleBeeShipTypes.ToList().ForEach((s) => json += $"\"{Utilities.ConvertShipTypeToName[s]}\", ");
-                json = json.Remove(json.Length - 2);
-            }
+                ["CurrentHumanCampaignLevel"] = CurrentHumanCampaignLevel,
+                ["CurrentBeeCampaignLevel"] = CurrentBeeCampaignLevel,
+                ["CurrentHumanChallengeLevel"] = CurrentHumanChallengeLevel,
+                ["CurrentBeeChallengeLevel"] = CurrentBeeChallengeLevel,
+                ["FleetId"] = FleetId,
+                ["SavedSquadId"] = SavedSquadId,
+                ["HumanCampaignSavedSquadNumber"] = HumanCampaignSavedSquadNumber,
+                ["BeeCampaignSavedSquadNumber"] = BeeCampaignSavedSquadNumber,
+                ["HumanChallengeSavedSquadNumber"] = HumanChallengeSavedSquadNumber,
+                ["BeeChallengeSavedSquadNumber"] = BeeChallengeSavedSquadNumber,
+                ["HumanFreePlaySavedSquadNumber"] = HumanFreePlaySavedSquadNumber,
+                ["BeeFreePlaySavedSquadNumber"] = BeeFreePlaySavedSquadNumber,
+                ["MinedTSV"] = MinedTSV,
+                ["HivemindMinedTSV"] = HivemindMinedTSV,
+                ["CampaignScore"] = CampaignScore,
+                ["ChallengeScore"] = ChallengeScore,
+                ["HumanCampaignWins"] = HumanCampaignWins,
+                ["BeeCampaignWins"] = BeeCampaignWins,
+                ["HumanChallengeWins"] = HumanChallengeWins,
+                ["BeeChallengeWins"] = BeeChallengeWins,
+                ["HumanFreePlayWins"] = HumanFreePlayWins,
+                ["BeeFreePlayWins"] = BeeFreePlayWins,
+                ["HumanFishTankWins"] = HumanFishTankWins,
+                ["BeeFishTankWins"] = BeeFishTankWins,
+                ["HasStartedHumanCampaign"] = HasStartedHumanCampaign,
+                ["IsBeeCampaignUnlocked"] = IsBeeCampaignUnlocked,
+                ["IsHumanChallengeUnlocked"] = IsHumanChallengeUnlocked,
+                ["IsBeeChallengeUnlocked"] = IsBeeChallengeUnlocked,
+                ["IsHumanFreePlayUnlocked"] = IsHumanFreePlayUnlocked,
+                ["IsBeeFreePlayUnlocked"] = IsBeeFreePlayUnlocked,
+                ["IsFishTankUnlocked"] = IsFishTankUnlocked,
+                ["HasMetAlejandraAndEmilia"] = HasMetAlejandraAndEmilia,
+                ["HasSeenBuildInterface"] = HasSeenBuildInterface,
+                ["HasSeenCarrierIntro"] = HasSeenCarrierIntro,
+                ["HasPlayedBefore"] = HasPlayedBefore,
+                ["ShowToolTips"] = ShowToolTips,
+                ["UseMouseScrolling"] = UseMouseScrolling,
+                ["PlayerName"] = PlayerName ?? string.Empty,
+                ["VisibleBeeShipTypes"] = ShipTypesToJson(VisibleBeeShipTypes),
+                ["VisibleHumanShipTypes"] = ShipTypesToJson(VisibleHumanShipTypes),
+                ["VisibleCodexBeeShipTypes"] = ShipTypesToJson(VisibleCodexBeeShipTypes),
+                ["VisibleCodexHumanShipTypes"] = ShipTypesToJson(VisibleCodexHumanShipTypes),
+                ["UnlockedCampaignShips"] = ShipTypesToJson(UnlockedCampaignShips),
+            };
+            return json.ToString(Formatting.None);
+        }
 
-            json += "], \"VisibleHumanShipTypes\": [";
-            if (VisibleHumanShipTypes.Count > 0)
-            {
-                VisibleHumanShipTypes.ToList().ForEach((s) => json += $"\"{Utilities.ConvertShipTypeToName[s]}\", ");
-                json = json.Remove(json.Length - 2);
-            }
-
-            json += "], \"VisibleCodexBeeShipTypes\": [";
-            if (VisibleCodexBeeShipTypes.Count > 0)
-            {
-                VisibleCodexBeeShipTypes.ToList().ForEach((s) => json += $"\"{Utilities.ConvertShipTypeToName[s]}\", ");
-                json = json.Remove(json.Length - 2);
-            }
-
-            json += "], \"VisibleCodexHumanShipTypes\": [";
-            if (VisibleCodexHumanShipTypes.Count > 0)
-            {
-                VisibleCodexHumanShipTypes.ToList().ForEach((s) => json += $"\"{Utilities.ConvertShipTypeToName[s]}\", ");
-                json = json.Remove(json.Length - 2);
-            }
-
-            json += "], \"UnlockedCampaignShips\": [";
-            if (UnlockedCampaignShips.Count > 0)
-            {
-                UnlockedCampaignShips.ToList().ForEach((s) => json += $"\"{Utilities.ConvertShipTypeToName[s]}\", ");
-                json = json.Remove(json.Length - 2);
-            }
-
-            
-
-
-            json += "]}";
-            return json;
+        private static JArray ShipTypesToJson(IEnumerable<ConfigData.ShipTypes> shipTypes)
+        {
+            return new JArray((shipTypes ?? Enumerable.Empty<ConfigData.ShipTypes>())
+                .OrderBy(shipType => (int)shipType)
+                .Select(shipType => Utilities.ConvertShipTypeToName[shipType]));
         }
         public void GetCurrentLevelOptions()
         {

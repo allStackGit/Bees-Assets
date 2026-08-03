@@ -958,6 +958,13 @@ namespace Assets.Scripts.Levels
         private void MoveSquads(Vector2 targetPosition)
         {
             _moveSquads_selectedSquads = Level.State.GetSelectedSquads().Where((s) => !s.IsLockedOn).ToList();
+            if (_moveSquads_selectedSquads.Count > 0)
+            {
+                _moveSquads_localized = targetPosition - Level.GetPosition();
+                Level.RecordSimulationInput(
+                    "user-move",
+                    $"{string.Join(",", _moveSquads_selectedSquads.Select(squad => squad.ItemId))}|{_moveSquads_localized.x:R}|{_moveSquads_localized.y:R}");
+            }
             for (_moveSquads_i = 0; _moveSquads_i < _moveSquads_selectedSquads.Count; _moveSquads_i++)
             {
                 _moveSquads_localized = targetPosition - Level.GetPosition();

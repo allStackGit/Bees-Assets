@@ -1,0 +1,9 @@
+{
+    "name": "Bees.PlayModeTests",
+    "optionalUnityReferences": [
+        "TestAssemblies"
+    ],
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ]
+}

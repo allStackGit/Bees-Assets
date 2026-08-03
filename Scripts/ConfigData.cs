@@ -682,7 +682,20 @@ namespace Assets.Scripts
         public static int SquadMakerSide;
 
         public const bool UseWebSocketSharp = true; // Whether to use the "WebSocketSharp" implementation of WebSockets or use the "NativeWebSocket" implmentation
-        public static Socket Socket = Test ? new Socket(TestPort, TestServerHostname, UseWebSocketSharp) : new Socket(DevelopmentPort, DevelopmentServerHostname, UseWebSocketSharp);
+        private static Socket _socket;
+        public static Socket Socket
+        {
+            get
+            {
+                if (_socket == null)
+                {
+                    _socket = Test ?
+                        new Socket(TestPort, TestServerHostname, UseWebSocketSharp) :
+                        new Socket(DevelopmentPort, DevelopmentServerHostname, UseWebSocketSharp);
+                }
+                return _socket;
+            }
+        }
         public static bool FirstTimePlaying;   
         public const float CloseEnoughCoordinateVariance = 1.5f; // world units
 

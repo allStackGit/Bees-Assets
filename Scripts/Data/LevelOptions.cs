@@ -5,6 +5,8 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using static UnityEngine.RuleTile.TilingRuleOutput;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace Assets.Scripts.Data
 {
@@ -177,40 +179,45 @@ namespace Assets.Scripts.Data
 
         public string ToJson()
         {
-            string json = $"{{\"Id\": {Id}, \"Side\": {Side}, \"Name\": \"{Name}\", \"MapIndex\": {MapIndex}, \"Obstacles\": \"{Obstacles}\", \"AsteroidOption\": {AsteroidOption}, " +
-                $"\"FogOfWar\": {FogOfWar}, \"Mining\": {Mining}, \"HasPreLevelIntro\": \"{HasPreLevelIntro}\", \"HasSquadActionBox\": \"{HasSquadActionBox}\", \"SupplyCapacity\": {SupplyCapacity}, \"EnemyReinforcementsOption\": {EnemyReinforcementsOption}," +
-                $" \"EnemyReinforcementDelay\": {EnemyReinforcementDelay}, \"UserStartingPosition\": {{\"x\": {UserStartingPosition.x}, \"y\": {UserStartingPosition.y}}}, \"AIStartingPosition\": {{\"x\": {AIStartingPosition.x}, \"y\": {AIStartingPosition.y}}}, \"EnemyReinforcements\": [";
-            
-            if (EnemyReinforcements.Count > 0)
+            JObject json = new JObject
             {
-                EnemyReinforcements.ForEach((s) => json += $"{s.ToJson()}, ");
-                json = json.Remove(json.Length - 2);
-            }
+                ["Id"] = Id,
+                ["Side"] = Side,
+                ["Name"] = Name,
+                ["MapIndex"] = MapIndex,
+                ["Obstacles"] = Obstacles,
+                ["AsteroidOption"] = AsteroidOption,
+                ["FogOfWar"] = FogOfWar,
+                ["Mining"] = Mining,
+                ["HasPreLevelIntro"] = HasPreLevelIntro,
+                ["HasSquadActionBox"] = HasSquadActionBox,
+                ["SupplyCapacity"] = SupplyCapacity,
+                ["EnemyReinforcementsOption"] = EnemyReinforcementsOption,
+                ["EnemyReinforcementDelay"] = EnemyReinforcementDelay,
+                ["EnemyReport"] = EnemyReport ?? string.Empty,
+                ["UserStartingPosition"] = VectorToJson(UserStartingPosition),
+                ["AIStartingPosition"] = VectorToJson(AIStartingPosition),
+                ["EnemyReinforcements"] = new JArray(
+                    EnemyReinforcements.Select(squad => JToken.Parse(squad.ToJson()))),
+                ["EnemySquads"] = new JArray(
+                    EnemySquads.Select(squad => JToken.Parse(squad.ToJson()))),
+                ["EnemyExistingSquads"] = new JArray(EnemyExistingSquads),
+                ["ObstacleList"] = new JArray(ObstacleList.Select(obstacle => new JObject
+                {
+                    ["Position"] = VectorToJson(obstacle.Item1),
+                    ["Scale"] = VectorToJson(obstacle.Item2)
+                }))
+            };
+            return json.ToString(Formatting.None);
+        }
 
-            json += "], \"EnemySquads\": [";
-            if (EnemySquads.Count > 0)
+        private static JObject VectorToJson(Vector2 vector)
+        {
+            return new JObject
             {
-                EnemySquads.ForEach((s) => json += $"{s.ToJson()}, ");
-                json = json.Remove(json.Length - 2);
-            }
-
-            json += "], \"EnemyExistingSquads\": [";
-            if (EnemyExistingSquads.Count > 0)
-            {
-                EnemyExistingSquads.ForEach((s) => json += $"{s}, ");
-                json = json.Remove(json.Length - 2);
-            }
-
-            json += "], \"ObstacleList\": [";
-            if (ObstacleList.Count > 0)
-            {
-                ObstacleList.ForEach((o) => json += $"{{Position: {{\"x\": {o.Item1.x}, \"y\": {o.Item1.y} }}, Scale: {{\"x\": {o.Item2.x}, \"y\": {o.Item2.y}}}}}, ");
-                json = json.Remove(json.Length - 2);
-            }
-
-
-            json += "]}";
-            return json;
+                ["x"] = vector.x,
+                ["y"] = vector.y
+            };
         }
         public override string ToString()
         {

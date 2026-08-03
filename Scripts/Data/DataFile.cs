@@ -4,6 +4,7 @@ using System.IO;
 using Assets.Scripts.Server;
 using Assets.Scripts.Scenes;
 using UnityEngine;
+using System;
 
 namespace Assets.Scripts.Data
 {
@@ -20,17 +21,41 @@ namespace Assets.Scripts.Data
         private DataFileRequest _request = null;
         private bool _isDataLoaded = false;
         private ulong _userId;
+        private readonly Action<string> _serverWriterOverride;
 
         public DataFile(string name)
         {
             this.Name = name;
             this.Path = ConfigData.GetBasePath();
-            this.FullPath = $"{Path}{Name}{Extension}";
+            this.FullPath = System.IO.Path.Combine(Path, Name + Extension);
             _userId = ConfigData.GetUserId();
             //Debug.Log($"Full file path is {FullPath}");
         }
+
+        /// <summary>
+        /// Test/tooling constructor that keeps storage inside an explicitly owned directory
+        /// and replaces the live socket write with a supplied transport callback.
+        /// </summary>
+        public DataFile(string name, string basePath, ulong userId, Action<string> serverWriter)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                throw new ArgumentException("A data-file name is required.", nameof(name));
+            }
+            if (string.IsNullOrWhiteSpace(basePath))
+            {
+                throw new ArgumentException("A data-file base path is required.", nameof(basePath));
+            }
+
+            Name = name;
+            Path = basePath;
+            FullPath = System.IO.Path.Combine(Path, Name + Extension);
+            _userId = userId;
+            _serverWriterOverride = serverWriter;
+        }
         private void MakeFileIfNecessary()
         {
+            Directory.CreateDirectory(Path);
             // make file if it does not exist
             if (!Exists())
             {
@@ -115,8 +140,9 @@ namespace Assets.Scripts.Data
         }
         public void SetContents(string contents)
         {
+            object jsonObject = JsonConvert.DeserializeObject(contents);
             _textContents = contents;
-            _jsonObject = JsonConvert.DeserializeObject(contents);
+            _jsonObject = jsonObject;
         }
         public object GetJsonObject()
         {
@@ -149,6 +175,11 @@ namespace Assets.Scripts.Data
         }
         public void WriteServerData(string data)
         {
+            if (_serverWriterOverride != null)
+            {
+                _serverWriterOverride(data);
+                return;
+            }
             ConfigData.Socket.SendRequest(new StoreUserDataRequest(new StoreUserData(_userId, Name, data),
                 ConfigData.StandardMaxTimeOnQueue));
         }
@@ -159,6 +190,9 @@ namespace Assets.Scripts.Data
         }
         public object WriteData(string data)
         {
+            // Validate before any local or remote side effect. A malformed replacement
+            // must not corrupt the last good file or be sent to the server.
+            object jsonObject = JsonConvert.DeserializeObject(data);
             if (ConfigData.Configuration.UseLocalStorage)
             {
                 WriteLocalData(data);
@@ -176,7 +210,7 @@ namespace Assets.Scripts.Data
                 }
             }
             _textContents = data;
-            _jsonObject = JsonConvert.DeserializeObject(data);
+            _jsonObject = jsonObject;
             _isDataLoaded = true;
             return GetJsonObject();
 
