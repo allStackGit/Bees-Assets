@@ -30,9 +30,21 @@ public class MapObject : MonoBehaviour
         gameObject.name = Name;
         Health = MaxHealth;
 
-        // Choose a random sprite 
-        SpriteRenderer.sprite = Sprites[Utilities.RandomInt(Sprites.Length)];
+        InitializeSprite();
         //Debug.Log($"Setup {Name}");
+    }
+
+    protected virtual void InitializeSprite()
+    {
+        // Choose a random sprite.
+        if (SpriteRenderer != null && Sprites != null && Sprites.Length > 0)
+        {
+            SpriteRenderer.sprite = Sprites[Utilities.RandomInt(Sprites.Length)];
+        }
+    }
+
+    protected virtual void OnHealthChanged()
+    {
     }
 
     public void OnTriggerEnter2D(Collider2D collider)
@@ -44,6 +56,7 @@ public class MapObject : MonoBehaviour
             LastHitProjectile = colliding.GetComponent<Projectile>();
             // Subtract projectile power from health
             Health -= LastHitProjectile.Power;
+            OnHealthChanged();
 
             // If health is depleted, kill the object
             if (Health <= 0)
