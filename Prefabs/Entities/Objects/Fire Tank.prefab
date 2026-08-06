@@ -84,7 +84,7 @@ SpriteRenderer:
   m_SortingLayer: 3
   m_SortingOrder: 0
   m_MaskInteraction: 0
-  m_Sprite: {fileID: 451984980, guid: a78b246aec4098444b0a7805fba02a0e, type: 3}
+  m_Sprite: {fileID: -8312774031105315045, guid: 1cb98ee3077dd474fbf8fb0c7609b3e0, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
@@ -199,8 +199,14 @@ MonoBehaviour:
   Health: 0
   SpriteRenderer: {fileID: 3874757789165557876}
   Sprites:
-  - {fileID: 3662617165915012184, guid: a78b246aec4098444b0a7805fba02a0e, type: 3}
-  - {fileID: 451984980, guid: a78b246aec4098444b0a7805fba02a0e, type: 3}
+  - {fileID: -8312774031105315045, guid: 1cb98ee3077dd474fbf8fb0c7609b3e0, type: 3}
+  - {fileID: -1964823096520927718, guid: 1cb98ee3077dd474fbf8fb0c7609b3e0, type: 3}
+  - {fileID: -1549521279, guid: 1cb98ee3077dd474fbf8fb0c7609b3e0, type: 3}
+  - {fileID: 320152928, guid: 1cb98ee3077dd474fbf8fb0c7609b3e0, type: 3}
+  - {fileID: 2181839914594474185, guid: db1420b78bbd7e24a8fcce7fae9d0f31, type: 3}
+  - {fileID: -4390468271785875154, guid: db1420b78bbd7e24a8fcce7fae9d0f31, type: 3}
+  - {fileID: 1268193550, guid: db1420b78bbd7e24a8fcce7fae9d0f31, type: 3}
+  - {fileID: 1322224710, guid: db1420b78bbd7e24a8fcce7fae9d0f31, type: 3}
   Level: {fileID: 0}
   Name: Canister Bomb
   IsDead: 0
