@@ -221,7 +221,7 @@ MonoBehaviour:
   - {fileID: -2120199445, guid: 3a7d57e3140212647bfd201455323db1, type: 3}
   - {fileID: 1501564315, guid: 3a7d57e3140212647bfd201455323db1, type: 3}
   SmokePositions:
-  - {x: -3.05, y: 1.35}
-  - {x: 0.05, y: 1.45}
-  - {x: 3.1, y: 1.25}
+  - {x: 2.25, y: -1.2}
+  - {x: -2.65, y: 1.4}
+  - {x: -5.1, y: -0.2}
   SmokeFramesPerSecond: 5
