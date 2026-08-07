@@ -10,5 +10,6 @@ This file records compact, reusable implementation knowledge that is expensive t
 - Unity sprite references in prefab YAML require both the texture GUID and each sub-sprite internal file ID. Read these from the texture `.meta` file's `nameFileIdTable`; do not use the texture's main file ID.
 - `Sprites/Objects/smoke_puff.png` contains five 8x8 frames at 8 pixels per unit. The Fire Tank drives these directly from `CanisterBomb.Update` at 5 FPS; no Animator Controller or animation clip is required.
 - Each damage stage after stage 0 enables one additional child `SpriteRenderer`. Smoke plume positions are serialized as `SmokePositions` on the Fire Tank prefab, so visual alignment can be tuned without code changes.
+- The four Fire Tank frames are 530x165 at 40 pixels per unit. To convert a damage point from sheet-local pixels into prefab-local coordinates, use `x = (pixelX - 265) / 40` and `y = (82.5 - pixelY) / 40`. Current plume order follows the accumulating artwork: lower-right rupture, upper-shell damage, then the large left-side breach.
 - Smoke children inherit the tank renderer's sorting layer and use sorting order +1. Their animation frame is offset per plume so multiple plumes do not pulse identically.
 - When modifying sprite sheets or docs inside the Unity project, ensure the corresponding `.meta` files remain committed so GUIDs stay stable.
