@@ -214,3 +214,14 @@ MonoBehaviour:
   Explosion: {fileID: 6775785947513820997, guid: f386479f5dd04d2d9d34ed14d9fd0380, type: 3}
   Power: 350
   TargetObstacle: {fileID: 0}
+  SmokeSprites:
+  - {fileID: 6773600261660187005, guid: 3a7d57e3140212647bfd201455323db1, type: 3}
+  - {fileID: -7306168531435514205, guid: 3a7d57e3140212647bfd201455323db1, type: 3}
+  - {fileID: -450320865, guid: 3a7d57e3140212647bfd201455323db1, type: 3}
+  - {fileID: -2120199445, guid: 3a7d57e3140212647bfd201455323db1, type: 3}
+  - {fileID: 1501564315, guid: 3a7d57e3140212647bfd201455323db1, type: 3}
+  SmokePositions:
+  - {x: -3.05, y: 1.35}
+  - {x: 0.05, y: 1.45}
+  - {x: 3.1, y: 1.25}
+  SmokeFramesPerSecond: 5
