@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -24,18 +25,24 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void DestroyingVisibleMapObjectRemovesItFromGameStateImmediately()
+        public void DestroyedMapObjectPreservesUnityNullSemantics()
         {
             Fixture fixture = CreateFixture();
-            object visibleObjects = RuntimeAssembly.GetField(fixture.State, "PlayerVisibleMapObjects");
+            System.Type mapObjectType = RuntimeAssembly.GetType("MapObject");
+            MethodInfo equality = mapObjectType.GetMethod(
+                "op_Equality", BindingFlags.Public | BindingFlags.Static);
+            MethodInfo inequality = mapObjectType.GetMethod(
+                "op_Inequality", BindingFlags.Public | BindingFlags.Static);
 
-            RuntimeAssembly.Invoke(fixture.Range, "OnTriggerEnter2D", fixture.MapCollider);
-            Assert.That(RuntimeAssembly.GetCount(visibleObjects), Is.EqualTo(1));
+            Assert.That(equality, Is.Not.Null);
+            Assert.That(inequality, Is.Not.Null);
 
             Object.DestroyImmediate(fixture.MapObjectGameObject);
 
-            Assert.That(RuntimeAssembly.GetCount(visibleObjects), Is.EqualTo(0),
-                "Destroying a visible MapObject must not leave a destroyed reference in player visibility.");
+            Assert.That((bool)equality.Invoke(null, new[] { fixture.MapObject, null }), Is.True,
+                "A destroyed MapObject must compare equal to null just like UnityEngine.Object.");
+            Assert.That((bool)inequality.Invoke(null, new[] { fixture.MapObject, null }), Is.False,
+                "A destroyed MapObject must not compare non-null after its native object is destroyed.");
         }
 
         [Test]
@@ -90,7 +97,7 @@ namespace Bees.Tests.EditMode
             RuntimeAssembly.SetField(mapObject, "Id", 41001);
             RuntimeAssembly.SetField(mapObject, "Level", level);
 
-            return new Fixture(state, range, mapObjectGameObject, mapCollider);
+            return new Fixture(state, range, mapObjectGameObject, mapObject, mapCollider);
         }
 
         private GameObject CreateObject(string name)
@@ -105,13 +112,15 @@ namespace Bees.Tests.EditMode
             public readonly object State;
             public readonly object Range;
             public readonly GameObject MapObjectGameObject;
+            public readonly object MapObject;
             public readonly Collider2D MapCollider;
 
-            public Fixture(object state, object range, GameObject mapObjectGameObject, Collider2D mapCollider)
+            public Fixture(object state, object range, GameObject mapObjectGameObject, object mapObject, Collider2D mapCollider)
             {
                 State = state;
                 Range = range;
                 MapObjectGameObject = mapObjectGameObject;
+                MapObject = mapObject;
                 MapCollider = mapCollider;
             }
         }
