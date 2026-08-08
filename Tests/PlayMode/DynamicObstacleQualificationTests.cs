@@ -33,6 +33,8 @@ namespace Bees.Tests.PlayMode
 
             _stageObject = new GameObject(nameof(DynamicObstacleQualificationTests) + " Stage");
             _stage = _stageObject.AddComponent(RuntimeAssembly.GetType("Stage"));
+            object pool = _stageObject.AddComponent(RuntimeAssembly.GetType("Pool"));
+            RuntimeAssembly.SetField(_stage, "Pool", pool);
             RuntimeAssembly.SetField(_stage, "IsTraining", true);
             RuntimeAssembly.SetField(_stage, "FixedUpdates", 1);
             ((Behaviour)_stage).enabled = false;
@@ -53,6 +55,7 @@ namespace Bees.Tests.PlayMode
             RuntimeAssembly.SetField(_level, "ActivateCollisionAsteroids", true);
 
             _asteroidObject = new GameObject("Qualification moving asteroid");
+            _asteroidObject.tag = "Obstacle";
             _asteroidObject.transform.localPosition = Vector2.zero;
             BoxCollider2D collider = _asteroidObject.AddComponent<BoxCollider2D>();
             collider.size = new Vector2(24f, 24f);
