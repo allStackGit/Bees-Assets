@@ -9,6 +9,7 @@ namespace Bees.Tests.EditMode
     public class RangeColliderVisibilityTests
     {
         private readonly List<GameObject> _objects = new List<GameObject>();
+        private int _nextMapObjectId = 1;
 
         [TearDown]
         public void TearDown()
@@ -21,6 +22,7 @@ namespace Bees.Tests.EditMode
                 }
             }
             _objects.Clear();
+            _nextMapObjectId = 1;
         }
 
         [Test]
@@ -68,7 +70,8 @@ namespace Bees.Tests.EditMode
             GameObject gameObject = CreateObject(name);
             gameObject.tag = "Object";
             Collider2D collider = gameObject.AddComponent<BoxCollider2D>();
-            object mapObject = gameObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Entities.MapObject"));
+            object mapObject = gameObject.AddComponent(RuntimeAssembly.GetType("MapObject"));
+            RuntimeAssembly.SetField(mapObject, "Id", _nextMapObjectId++);
             return new ObjectFixture(mapObject, collider);
         }
 
