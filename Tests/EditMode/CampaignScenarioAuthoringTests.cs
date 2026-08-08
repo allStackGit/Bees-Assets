@@ -79,7 +79,7 @@ namespace Bees.Tests.EditMode
         [TestCase(3, "Pluto4BluerPastures", "_questPoints", "personnel")]
         [TestCase(4, "Neptune1SeizeTheMeans", "Find and destroy all the Bees", "MiningAsteroid")]
         [TestCase(5, "Neptune2OfProduction", "Survive and mine as many minerals as you can", "ExitZonePrefab")]
-        [TestCase(6, "Neptune3PressingForward", "break through the blockade", "ResolveEliminationWinner")]
+        [TestCase(6, "Neptune3PressingForwardCampaign", "break through the blockade", "ResolveEliminationWinner")]
         [TestCase(7, "Titania1MinesweeperCampaign", "ExitZonePrefab", "PlayerVisibleMapObjects")]
         [TestCase(8, "Titania2BeenocularsCampaign", "HumanTarget", "450")]
         [TestCase(9, "Uranus1OnTheOffensive", "Bumblebee", "Cruiser")]
@@ -97,7 +97,7 @@ namespace Bees.Tests.EditMode
 
         [TestCase("Pluto3Pushback")]
         [TestCase("Neptune1SeizeTheMeans")]
-        [TestCase("Neptune3PressingForward")]
+        [TestCase("Neptune3PressingForwardCampaign")]
         public void EliminationScenariosEncodeBothUserAndAiOutcomes(string setupMethod)
         {
             string body = ExtractMethodBody(_triggerSource, setupMethod);
