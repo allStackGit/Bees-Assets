@@ -4,7 +4,7 @@ This file records concrete defects found while building/reviewing the expanded B
 
 ## Status
 
-All currently known Bees client defects found during this qualification pass are fixed on `agent/complete-test-qualification-suite` and await their first Unity execution. New execution failures should be added here with reproducer -> root cause -> production/test fix -> regression result.
+The first Unity execution reached the BeesFoundation EditMode suite: 78/79 tests passed and one production visibility-lifecycle defect was exposed. QA-009 is fixed on `agent/complete-test-qualification-suite` and awaits rerun. Continue treating new execution failures as evidence with reproducer -> root cause -> production/test fix -> regression result.
 
 ## Fixed test-harness defects
 
@@ -38,7 +38,7 @@ All currently known Bees client defects found during this qualification pass are
 ### QA-007 — Shared map-object visibility lacked source ownership
 - `PlayerVisibleMapObjects` is shared derived state, but each weapon range previously performed unconditional add/remove operations.
 - An object observed by multiple ranges could disappear when the first observer exited.
-- Fixed with the conflict-free `MapObjectVisibilityTracker` runtime companion plus per-range contact counts. Visibility now survives overlapping observers/contacts, releases on deactivation/final exit, removes destroyed objects, and self-heals across `GameState.ResetState`.
+- Fixed with the conflict-free `MapObjectVisibilityTracker` runtime companion plus per-range contact counts. Visibility now survives overlapping observers/contacts, releases on deactivation/final exit, and self-heals across `GameState.ResetState`.
 - Regressions: `RangeColliderVisibilityTests` and `MapObjectVisibilityTrackerTests`.
 
 ### QA-008 — Unsigned server matchup IDs were represented as signed Unity `long`
@@ -47,10 +47,16 @@ All currently known Bees client defects found during this qualification pass are
 - Fixed by storing only matchup-ID fields as exact strings; numeric temporary OutcomeIds remain unchanged.
 - Regression: `ServerMatchupIdSerializationTests` uses identifiers above signed 64-bit range.
 
+### QA-009 — Destroyed visible MapObject survived in player visibility
+- First BeesFoundation execution: `DestroyingVisibleMapObjectRemovesItFromGameStateImmediately` failed, leaving one destroyed reference in `GameState.PlayerVisibleMapObjects` after `DestroyImmediate`.
+- Root cause: tracker teardown relied on normal `HashSet.Remove(_mapObject)` while Unity had already transitioned the component into destroyed-object semantics. `MapObject` equality/hash is ID-based, so teardown-time lookup is not a safe lifecycle boundary.
+- Fix: `MapObjectVisibilityTracker.OnDestroy` preserves the existing public HashSet instance, snapshots entries by managed reference identity, clears the set, then re-adds every survivor except the exact object being destroyed. This avoids changing `MapObject.cs` and keeps the Fire Tank branch isolated.
+- Regression: existing `MapObjectVisibilityTrackerTests.DestroyingVisibleMapObjectRemovesItFromGameStateImmediately`; rerun pending.
+
 ## BeesServer
 
-The server has its own authoritative defect ledger at `BeesServer/docs/TEST_DEFECTS.md`. Do not duplicate its issue states here. The current modular server branch has fixes/regressions for database recovery, request-hash ownership, transaction connection ownership, durable command persistence, strategy-read failures, concurrent/retry persistence, deterministic `bees_test` selection, hot lookup indexes, and exact 64-bit matchup handling.
+The server has its own authoritative defect ledger at `BeesServer/docs/TEST_DEFECTS.md`. Do not duplicate its issue states here. The modular server ordinary and live `bees_test` qualification suites have passed on the project/server machines.
 
 ## Execution status
 
-No production defect has yet been discovered by executing the new qualification suites because the expanded Unity/server suites have not had their first project-machine run. The next evidence source is the user's run; any failures should be diagnosed rather than merely recorded as failing tests.
+BeesFoundation EditMode first run: 78/79 passed, exposing QA-009. QA-009 is fixed and the release gate should be rerun from BeesFoundation so subsequent categories can execute. Server ordinary and live integration qualification are green.
