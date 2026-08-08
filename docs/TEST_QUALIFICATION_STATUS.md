@@ -1,160 +1,97 @@
 # Bees test qualification status
 
-Status: expanded qualification suite awaiting first Unity run.
+Status: expanded client/server qualification suite implemented; awaiting first project-machine execution.
 
 ## Purpose
 
-The test program is a release-confidence system, not a coverage-count exercise. It is intended to prove that changes preserve:
-
-1. deterministic runtime behavior and state ownership;
-2. pooled-object and teardown lifecycle safety across repeated reuse;
-3. combat, campaign, persistence, replay, and server contracts at their real boundaries;
-4. asynchronous/pathfinding ownership under overlap and reuse;
-5. performance compatibility on supported hardware, including long-session stability.
-
-Fast correctness tests should remain cheap enough to run during development. Slow hardware/performance/soak qualification is deliberately separated so release evidence can be collected without making every edit expensive.
+The test program is a release-confidence system, not a coverage-count exercise. It is intended to prove deterministic runtime behavior and state ownership, pooled lifecycle safety, client/server/database contracts, async/pathfinding ownership, and performance compatibility over realistic workloads.
 
 ## Previously validated baseline
 
-The baseline documented before this branch is:
+Before `agent/complete-test-qualification-suite`:
 
 - `BeesFoundation` EditMode: 61/61 passing.
 - `BeesPlayModeFoundation`: 4/4 passing.
 - `BeesPerformanceQualification`: 2/2 passing.
 - `BeesSoakQualification`: 1/1 passing.
-- BeesServer `npm test`: 4/4 passing.
+- previous BeesServer suite: 4/4 passing.
 
-Those numbers do **not** include the tests introduced on `agent/complete-test-qualification-suite`; the new tests must be run before their counts are recorded as validated.
+Those counts do not include the new work below.
 
-## New coverage awaiting validation
+## New client coverage awaiting validation
 
-### Combat and range ownership — `BeesFoundation`
+### Foundation / combat / visibility
 
-`CombatScenarioQualificationTests` extends the existing single-target integration fixture with:
+- deterministic simultaneous lethal hits;
+- 24-target many-ship lethal sweep;
+- exactly-once kill/stat/release behavior;
+- final squad teardown and registry/release cardinality;
+- actual exiting map object is removed rather than stale callback state;
+- multiple weapon ranges/contact colliders retain visibility until the final source exits;
+- deactivation/destruction/reset visibility cleanup;
+- unsigned server matchup IDs are preserved as exact strings even above `long.MaxValue`.
 
-- opposing lethal hits in one deterministic simulation ordering;
-- exactly-once kill/stat/release assertions after repeated lethal callbacks;
-- a 24-target many-ship lethal sweep;
-- final empty-squad teardown and persistent loaded-state cleanup;
-- registry and release-queue cardinality checks after mass deaths.
+Production defects found by this audit are fixed on the branch and recorded in `docs/TEST_DEFECTS.md`.
 
-`RangeColliderVisibilityTests` additionally protects map-object visibility ownership:
+### Replay
 
-- an exit removes the actual exiting object rather than stale callback state;
-- an object observed by multiple weapon ranges remains globally visible until the final observing range exits.
+- production `user-command` and `user-move` parsers;
+- opaque Hive Mind response routing;
+- fail-closed unknown event handling;
+- canonical simulation checkpoints sorted by stable Squad/Ship identity;
+- health/TSV/death/path-lifecycle/transform/terminal-state checkpoint fields.
 
-The range audit found and fixed two production defects on this branch; see `docs/TEST_DEFECTS.md`.
+A complete recorded-battle playback host is still future architectural qualification work.
 
-### Replay adapters/checkpoints — `BeesFoundation`
+### Campaign
 
-`SimulationReplayQualification` and `ReplayQualificationTests` add:
+- exclusive/idempotent scenario isolation ownership;
+- rejection of non-ready mission IDs;
+- completed missions 0–6 sequentially load/unload the real `Space` scene through the isolated host;
+- real Stage/prefab/pool wiring is retained while socket/audio bootstrap is suppressed;
+- clean scene/static teardown after each mission.
 
-- parsers for the production `user-command` payload;
-- parsers for the production `user-move` payload using invariant culture;
-- opaque routing for the two Hive Mind response payloads;
-- fail-closed behavior for unknown replay event kinds;
-- canonical simulation checkpoints sorted by stable Squad/Ship IDs;
-- checkpoint coverage for health, TSV, death state, pathfinding lifecycle, position, velocity, rotation, and terminal Level state.
+This does not yet run every full mission objective path through real mission setup; that still requires explicit substitutes for fleet/user data, dialogue/UI/camera/input, command pools, and persistence.
 
-This provides the missing event-specific replay boundary and deterministic state-comparison primitive. It does not yet constitute a full recorded-battle replay host; a future host must feed parsed events back through the real command/socket application boundaries and compare checkpoints during a running simulation.
+### Pathfinding / performance / memory
 
-### Campaign scene isolation — `BeesCampaignScenario`, `BeesCampaignScene`
+- dense real tagged `Obstacle` ingestion with small/large clearances;
+- 20 asynchronous dense-grid searches;
+- real `CollisionAsteroid` dynamic-layer movement and refresh timing;
+- hardware/environment logging;
+- warmed reset-memory workload and broad leak tripwires.
 
-New tests verify:
+These are regression workloads. Minimum-spec certification still requires target-machine measurements and a rendered long-duration battle.
 
-- isolation has one exclusive owner and idempotent disposal;
-- missions 7–11 cannot acquire a ready-scenario isolation scope;
-- every completed mission ID 0–6 can sequentially load and unload the real `Space` scene through the isolated host;
-- every load retains real Stage/Prefab/Pool wiring;
-- socket and persistent audio bootstrap remain suppressed;
-- scene/static isolation is clean after every mission.
+## BeesServer status
 
-This strengthens the real-scene boundary but does **not** claim full campaign playthrough coverage. The mission setup methods still directly require fleet data, ship statistics, command pools, dialogue/cutscene state, menus/UI, camera/input, and persistence. A full objective-branch runner requires those dependencies to be isolated behind testable services or fixtures before `CampaignMissionCatalog.Configure` can safely run end to end.
+The server qualification branch is `agent/server-qualification-contracts`.
 
-### Pathfinding/performance — `BeesPerformanceQualification`
+Known production defects found during the static/test-driven audit are fixed there: database inactivity recovery, pending request-hash cleanup, same-session transaction ownership, durable `store-commands` acknowledgements, strategy-read failure propagation, retry-safe/concurrent Game persistence, deterministic test-database selection, and exact unsigned matchup handling.
 
-In addition to the existing open-grid baseline:
+`bees_test` is always selected in test mode; normal startup continues to use `ram`.
 
-- `DenseObstacleQualificationTests` constructs actual tagged `Obstacle` + `BoxCollider2D` objects and lets the production Pathfinder discover/setup them and ingest their `ClearanceMappingCollider`s;
-- 20 real asynchronous searches run through a dense 64x64 grid with alternating ship clearances 1 and 3;
-- dense setup and p95 request regression budgets are recorded;
-- `DynamicObstacleQualificationTests` registers an actual `CollisionAsteroid` after base-map creation, verifies its blocked region moves between fixed-step dynamic-layer refreshes, and times 100 real moving-obstacle refreshes.
+The server now includes idempotent schema migrations for the two hot lookup keys:
 
-These are development regression budgets. They are not a declaration of minimum supported hardware.
+- `stored_user_data(userId, filename, ID)`;
+- `settings(userId, name, version, Id)`.
 
-### Hardware/memory — `BeesHardwareQualification`
+`npm run test:live` applies those migrations to `bees_test` before running schema/data-contract and real WebSocket/MySQL integration tests. Production migration is separate and requires explicit `BEES_ALLOW_PRODUCTION_MIGRATION=1`.
 
-`HardwareQualificationTests`:
+The earlier claim that version-5 settings were missing from the supplied dump was retracted after full-file verification. The dump contains settings versions 2–7, including current version 5 and its required serialized fields.
 
-- emits CPU/core count, RAM, GPU/vendor/VRAM, graphics API, resolution, Unity version, OS, and batch-mode state into the qualification log;
-- runs a warmed 10,000-reset memory workload;
-- records managed/native before/after values;
-- uses broad leak-tripwire limits rather than hardware-specific performance thresholds;
-- synchronously tears down test-owned objects so qualification runs do not contaminate one another.
+The existing `package-lock.json` predates newly declared `mysql2`/`websocket` runtime dependencies. This environment cannot reach npm's public registry to regenerate the transitive lock graph. Run `npm install` once on the project machine before server qualification; it should regenerate the lockfile correctly.
 
-This supplies reproducible hardware context for qualification records and an initial memory-growth gate. Minimum-spec acceptance thresholds still need to be chosen from actual target-machine measurements.
+## Remaining architectural qualification after the first run
 
-## Commands for the new categories
+These are not currently known defects and should not block executing the implemented suite:
 
-Use Unity `6000.5.4f1`; close the interactive editor first.
+1. full end-to-end campaign playthrough fixtures through real mission setup;
+2. complete recorded-battle replay host with checkpoint comparison during simulation;
+3. rendered 30–60 minute representative battle certification;
+4. target minimum-spec CPU/GPU/RAM matrix and final median/p95/p99/max budgets;
+5. eventual outcome-table primary-key migration from `INT UNSIGNED` to `BIGINT UNSIGNED` before long-term training volume approaches exhaustion.
 
-### Fast EditMode correctness
+## Immediate next evidence
 
-```powershell
-& 'C:\Program Files\Unity\Hub\Editor\6000.5.4f1\Editor\Unity.exe' `
-  -batchmode -nographics -projectPath 'R:\Bees' -runTests `
-  -testPlatform EditMode -testCategory BeesFoundation `
-  -testResults 'R:\Bees\Logs\BeesFoundationEditMode.xml' `
-  -logFile 'R:\Bees\Logs\BeesFoundationEditMode.log'
-```
-
-### Campaign deterministic scenarios
-
-```powershell
-& 'C:\Program Files\Unity\Hub\Editor\6000.5.4f1\Editor\Unity.exe' `
-  -batchmode -nographics -projectPath 'R:\Bees' -runTests `
-  -testPlatform EditMode -testCategory BeesCampaignScenario `
-  -testResults 'R:\Bees\Logs\BeesCampaignScenarioEditMode.xml' `
-  -logFile 'R:\Bees\Logs\BeesCampaignScenarioEditMode.log'
-```
-
-### Campaign real-scene isolation
-
-```powershell
-& 'C:\Program Files\Unity\Hub\Editor\6000.5.4f1\Editor\Unity.exe' `
-  -batchmode -nographics -projectPath 'R:\Bees' -runTests `
-  -testPlatform PlayMode -testCategory BeesCampaignScene `
-  -testResults 'R:\Bees\Logs\BeesCampaignScenePlayMode.xml' `
-  -logFile 'R:\Bees\Logs\BeesCampaignScenePlayMode.log'
-```
-
-### Pathfinding/performance regression
-
-```powershell
-& 'C:\Program Files\Unity\Hub\Editor\6000.5.4f1\Editor\Unity.exe' `
-  -batchmode -nographics -projectPath 'R:\Bees' -runTests `
-  -testPlatform PlayMode -testCategory BeesPerformanceQualification `
-  -testResults 'R:\Bees\Logs\BeesPerformancePlayMode.xml' `
-  -logFile 'R:\Bees\Logs\BeesPerformancePlayMode.log'
-```
-
-### Hardware and memory qualification
-
-Run this category on every candidate minimum-spec machine. `-nographics` is acceptable for the memory/runtime checks, but GPU/render qualification must eventually use a rendered build/test harness.
-
-```powershell
-& 'C:\Program Files\Unity\Hub\Editor\6000.5.4f1\Editor\Unity.exe' `
-  -batchmode -nographics -projectPath 'R:\Bees' -runTests `
-  -testPlatform PlayMode -testCategory BeesHardwareQualification `
-  -testResults 'R:\Bees\Logs\BeesHardwarePlayMode.xml' `
-  -logFile 'R:\Bees\Logs\BeesHardwarePlayMode.log'
-```
-
-## Remaining architectural qualification work
-
-Two large items cannot be honestly completed by adding isolated assertions alone:
-
-1. **Full campaign playthroughs.** The real mission setup methods must first receive isolated substitutes/adapters for fleet/user data, UI/dialogue/camera/input, command-pool side effects, and persistence. Once that boundary exists, the scene host can call `CampaignMissionCatalog.Configure` and drive every real objective branch through `CampaignScenarioDriver`.
-2. **Rendered 30–60 minute battle certification.** The existing lifecycle soak plus new memory tests cover reuse/leak regressions, but a representative rendered battle needs a deterministic battle fixture/build and target-hardware budgets for fixed-update CPU, allocations, frame median/p95/p99/max, GPU/UI, and memory over time.
-
-The separate BeesServer qualification branch loads the actual production classes from `siServerDev.js` into an isolated Node `vm` without executing the final server startup. It now covers DB connection release/failure, pool recovery, HTTP/WebSocket startup, accept/reject behavior, duplicate request-hash concurrency, connection cleanup, reconnect to an existing Game, replacement-Game creation, inactive-game expiry, and `consolidateOutcomes` transaction COMMIT/ROLLBACK behavior. One MySQL inactivity-recovery production defect has a committed regression and remains open pending a safe surgical patch to the server monolith; see `docs/TEST_DEFECTS.md`.
+No currently known client/server correctness defect is intentionally left unfixed in the qualification branches. The next step is the first complete Unity + BeesServer run. Treat any failure from that run as new evidence: reproduce, determine whether it is harness or production behavior, fix it, and retain the regression.
