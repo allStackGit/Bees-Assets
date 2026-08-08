@@ -60,8 +60,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 }
 
             }
-            else if (_colliderEnter.CompareTag("Object")){
-                Weapon.Ship.Level.State.PlayerVisibleMapObjects.Add(_colliderEnter.GetComponent<MapObject>());
+            else if (_colliderEnter.CompareTag("Object"))
+            {
+                MapObject mapObject = _colliderEnter.GetComponent<MapObject>();
+                mapObject.AddPlayerVisibilitySource(this, Weapon.Ship.Level.State);
             }
 
         }
@@ -111,7 +113,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
             else if (_colliderExit.CompareTag("Object"))
             {
-                Weapon.Ship.Level.State.PlayerVisibleMapObjects.Remove(_colliderExit.GetComponent<MapObject>());
+                MapObject mapObject = _colliderExit.GetComponent<MapObject>();
+                mapObject.RemovePlayerVisibilitySource(this, Weapon.Ship.Level.State);
             }
         }
     }
