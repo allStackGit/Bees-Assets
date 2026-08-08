@@ -50,13 +50,33 @@ This file records defects discovered while building and reviewing the expanded q
 - Regression status: test and production fix are committed; execution pending.
 - Prevention: enter/exit callback tests should include at least two simultaneously tracked objects so stale callback-local state cannot accidentally satisfy the assertion.
 
+### QA-005 — Hardware qualification used deferred teardown
+
+- Type: Test harness
+- Status: Fixed, awaiting Unity run
+- Found during: Hardware/memory qualification review
+- Symptom: the memory-growth test created its own Level object but used `Object.Destroy` in `finally`, allowing the test to finish before Unity processed destruction and potentially leaking native state into the following qualification test.
+- Fix: the test now uses `Object.DestroyImmediate` for deterministic test-owned teardown.
+- Prevention: test-owned objects that do not require frame-boundary destruction semantics should be removed synchronously before the test completes.
+
 ## BeesServer
 
-No production defects have yet been confirmed during static qualification construction. New isolated production-class tests are designed to detect connection leaks, pool-recovery failures, WebSocket lifecycle defects, and duplicate-request concurrency errors when `npm test` is run.
+### QS-001 — MySQL inactivity recovery checks the wrong mysql2 error property
+
+- Type: Production
+- Status: Open; regression committed, production patch pending
+- Found during: Database failure-recovery audit
+- Reproducer: `Database.handleDisconnect rebuilds the pool after mysql2 inactivity error 4031` in `test/serverRuntime.integration.test.js`.
+- Symptom: `Database.handleDisconnect` checks `err.code === 4031`. mysql2 represents the symbolic server error in `code` and the numeric MySQL server error number in `errno`, so a normal inactivity error shaped as `{ code: "ER_CLIENT_INTERACTION_TIMEOUT", errno: 4031 }` does not enter the recovery branch.
+- Expected fix: accept `err.errno === 4031` and/or `err.code === "ER_CLIENT_INTERACTION_TIMEOUT"` in addition to `PROTOCOL_CONNECTION_LOST`.
+- Regression status: reproducer is committed on `agent/server-qualification-contracts`; expected to fail until the production branch is patched.
+- Prevention: integration tests for driver errors should use the driver's actual error-object shape rather than only synthetic scalar codes.
+
+The isolated production-class suite also covers connection release, pool recovery, WebSocket startup/accept/reject, duplicate request-hash concurrency, and connection cleanup. Reconnect/game lifecycle and consolidation transaction tests are being added on the server qualification branch.
 
 ## Production defects found during execution
 
-No execution-discovered defects are recorded yet. QA-004 was found by static test-driven audit before the suite was run. When a production failure is confirmed during execution, record:
+No execution-discovered defects are recorded yet. QA-004 and QS-001 were found by static test-driven audit before the new suites were run. When a production failure is confirmed during execution, record:
 
 1. failing/reproducing test;
 2. root cause;
