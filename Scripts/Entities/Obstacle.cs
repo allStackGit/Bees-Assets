@@ -2,7 +2,6 @@
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
-using System;
 using System.Collections;
 using UnityEngine;
 
@@ -22,7 +21,8 @@ namespace Assets.Scripts.Entities
         public ConfigData.ObstacleTypes ObstacleType;
         public Collider2D Collider, ProximityCollider, ClearanceMappingCollider;
         public SpriteRenderer SpriteRenderer;
-        public SpriteMask SpriteMask; 
+        public SpriteMask SpriteMask;
+        private bool _breakApartStarted;
 
         public virtual void Create(Stage stage)
         {
@@ -49,6 +49,7 @@ namespace Assets.Scripts.Entities
             //Debug.Log($"Clearing data for {Name}");
             MapPointsIndex = 0;
             IsDead = false;
+            _breakApartStarted = false;
         }
 
         /// <summary>
@@ -60,12 +61,12 @@ namespace Assets.Scripts.Entities
             int debrisCount, float minSpeed, float maxSpeed, float maxSpin,
             float lifetime, float damping, float minScale, float maxScale)
         {
-            if (IsDead)
+            if (_breakApartStarted || IsDead)
             {
                 return;
             }
 
-            IsDead = true;
+            _breakApartStarted = true;
 
             if (Stage != null && Stage.IsRendering && debrisSprites != null && debrisSprites.Length > 0 &&
                 debrisCount > 0 && Level != null)
