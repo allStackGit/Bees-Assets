@@ -28,7 +28,7 @@ namespace Bees.Tests.EditMode
         private static readonly string[] ExpectedSetupMethods =
         {
             "Pluto1Anomaly", "Pluto2Reinforcements", "Pluto3Pushback", "Pluto4BluerPastures",
-            "Neptune1SeizeTheMeans", "Neptune2OfProduction", "Neptune3PressingForward",
+            "Neptune1SeizeTheMeans", "Neptune2OfProduction", "Neptune3PressingForwardCampaign",
             "Titania1MinesweeperCampaign", "Titania2BeenocularsCampaign", "Uranus1OnTheOffensive",
             "Uranus2OnTheDefensive", "Uranus3ANewThreat"
         };
