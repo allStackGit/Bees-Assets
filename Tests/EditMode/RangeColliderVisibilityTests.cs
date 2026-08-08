@@ -71,6 +71,48 @@ namespace Bees.Tests.EditMode
                 "The object should be removed after its final observing range exits.");
         }
 
+        [Test]
+        public void DeactivatingOneObservingRangeDoesNotHideObjectStillSeenByAnotherRange()
+        {
+            LevelFixture level = CreateLevel();
+            object firstRange = CreateRangeCollider(level.Level, "First deactivating range");
+            object secondRange = CreateRangeCollider(level.Level, "Second deactivating range");
+            ObjectFixture target = CreateMapObject("Deactivate shared object", level.Level);
+            object visibleObjects = RuntimeAssembly.GetField(level.State, "PlayerVisibleMapObjects");
+
+            RuntimeAssembly.Invoke(firstRange, "OnTriggerEnter2D", target.Collider);
+            RuntimeAssembly.Invoke(secondRange, "OnTriggerEnter2D", target.Collider);
+
+            RuntimeAssembly.Invoke(firstRange, "Deactivate");
+            Assert.That(CollectionContains(visibleObjects, target.MapObject), Is.True,
+                "Deactivating one range must release only that range's visibility ownership.");
+
+            RuntimeAssembly.Invoke(secondRange, "Deactivate");
+            Assert.That(CollectionContains(visibleObjects, target.MapObject), Is.False,
+                "The final observing range deactivation should remove global visibility.");
+        }
+
+        [Test]
+        public void MultipleColliderContactsFromOneMapObjectRequireFinalContactExit()
+        {
+            LevelFixture level = CreateLevel();
+            object range = CreateRangeCollider(level.Level, "Multi-contact range");
+            ObjectFixture target = CreateMapObject("Multi-collider visible object", level.Level, includeSecondCollider: true);
+            object visibleObjects = RuntimeAssembly.GetField(level.State, "PlayerVisibleMapObjects");
+
+            RuntimeAssembly.Invoke(range, "OnTriggerEnter2D", target.Collider);
+            RuntimeAssembly.Invoke(range, "OnTriggerEnter2D", target.SecondCollider);
+            Assert.That(CollectionContains(visibleObjects, target.MapObject), Is.True);
+
+            RuntimeAssembly.Invoke(range, "OnTriggerExit2D", target.Collider);
+            Assert.That(CollectionContains(visibleObjects, target.MapObject), Is.True,
+                "One collider contact exiting must not remove visibility while another contact remains.");
+
+            RuntimeAssembly.Invoke(range, "OnTriggerExit2D", target.SecondCollider);
+            Assert.That(CollectionContains(visibleObjects, target.MapObject), Is.False,
+                "Visibility should be removed when the final contact from this range exits.");
+        }
+
         private LevelFixture CreateLevel()
         {
             GameObject levelObject = CreateObject("Visibility Level");
@@ -92,20 +134,24 @@ namespace Bees.Tests.EditMode
             RuntimeAssembly.SetField(weapon, "Ship", ship);
 
             GameObject rangeObject = CreateObject(name);
+            CircleCollider2D collider = rangeObject.AddComponent<CircleCollider2D>();
+            collider.isTrigger = true;
             object rangeCollider = rangeObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Entities.Ships.Weapons.RangeCollider"));
             RuntimeAssembly.SetField(rangeCollider, "Weapon", weapon);
+            RuntimeAssembly.SetField(rangeCollider, "Collider", collider);
             return rangeCollider;
         }
 
-        private ObjectFixture CreateMapObject(string name, object level)
+        private ObjectFixture CreateMapObject(string name, object level, bool includeSecondCollider = false)
         {
             GameObject gameObject = CreateObject(name);
             gameObject.tag = "Object";
             Collider2D collider = gameObject.AddComponent<BoxCollider2D>();
+            Collider2D secondCollider = includeSecondCollider ? gameObject.AddComponent<CircleCollider2D>() : null;
             object mapObject = gameObject.AddComponent(RuntimeAssembly.GetType("MapObject"));
             RuntimeAssembly.SetField(mapObject, "Id", _nextMapObjectId++);
             RuntimeAssembly.SetField(mapObject, "Level", level);
-            return new ObjectFixture(mapObject, collider);
+            return new ObjectFixture(mapObject, collider, secondCollider);
         }
 
         private GameObject CreateObject(string name)
@@ -143,11 +189,13 @@ namespace Bees.Tests.EditMode
         {
             public readonly object MapObject;
             public readonly Collider2D Collider;
+            public readonly Collider2D SecondCollider;
 
-            public ObjectFixture(object mapObject, Collider2D collider)
+            public ObjectFixture(object mapObject, Collider2D collider, Collider2D secondCollider)
             {
                 MapObject = mapObject;
                 Collider = collider;
+                SecondCollider = secondCollider;
             }
         }
     }
