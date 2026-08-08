@@ -38,13 +38,25 @@ This file records defects discovered while building and reviewing the expanded q
 - Fix: the fixture now constructs the base Pathfinder first, then registers the real `CollisionAsteroid` through `GameState.AddObstacle` and `Pathfinder.AddObstacle`, matching the production moving-obstacle lifecycle while avoiding unrelated spawn/UI dependencies.
 - Prevention: distinguish initial static-map ingestion from post-map dynamic obstacle registration.
 
+### QA-004 — Map-object range exit removed the last-entered object instead of the exited object
+
+- Type: Production
+- Status: Fixed, awaiting Unity run
+- Found during: Combat/range lifecycle audit
+- Reproducer: `RangeColliderVisibilityTests.ExitingMapObjectRemovesTheExitedObjectNotTheLastEnteredObject`
+- Symptom: the `Object` branch of `RangeCollider.OnTriggerExit2D` checked `_colliderEnter` and removed its `MapObject`, while ship/projectile branches correctly used `_colliderExit`. With multiple objects entering a weapon range, one object's exit could leave the exited object visible and remove a different object from `GameState.PlayerVisibleMapObjects`.
+- Root cause: copy/paste variable mix-up in the final `OnTriggerExit2D` branch.
+- Fix: the branch now checks `_colliderExit.CompareTag("Object")` and removes `_colliderExit.GetComponent<MapObject>()`.
+- Regression status: test and production fix are committed; execution pending.
+- Prevention: enter/exit callback tests should include at least two simultaneously tracked objects so stale callback-local state cannot accidentally satisfy the assertion.
+
 ## BeesServer
 
 No production defects have yet been confirmed during static qualification construction. New isolated production-class tests are designed to detect connection leaks, pool-recovery failures, WebSocket lifecycle defects, and duplicate-request concurrency errors when `npm test` is run.
 
 ## Production defects found during execution
 
-None recorded yet. When a production failure is confirmed, add it here with:
+No execution-discovered defects are recorded yet. QA-004 was found by static test-driven audit before the suite was run. When a production failure is confirmed during execution, record:
 
 1. failing/reproducing test;
 2. root cause;
