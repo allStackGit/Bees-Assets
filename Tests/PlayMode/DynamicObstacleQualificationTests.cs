@@ -34,7 +34,7 @@ namespace Bees.Tests.PlayMode
             _stageObject = new GameObject(nameof(DynamicObstacleQualificationTests) + " Stage");
             _stage = _stageObject.AddComponent(RuntimeAssembly.GetType("Stage"));
             RuntimeAssembly.SetField(_stage, "IsTraining", true);
-            RuntimeAssembly.SetField(_stage, "FixedUpdates", 1L);
+            RuntimeAssembly.SetField(_stage, "FixedUpdates", 1);
             ((Behaviour)_stage).enabled = false;
 
             _levelObject = new GameObject(nameof(DynamicObstacleQualificationTests) + " Level");
@@ -104,7 +104,7 @@ namespace Bees.Tests.PlayMode
 
             _asteroidObject.transform.localPosition = new Vector2(80f, 0f);
             Physics2D.SyncTransforms();
-            RuntimeAssembly.SetField(_stage, "FixedUpdates", 2L);
+            RuntimeAssembly.SetField(_stage, "FixedUpdates", 2);
             yield return null;
 
             Assert.That(RuntimeAssembly.Invoke(_pathfinder, "CanOccupyDestination", Vector2.zero, 1), Is.True,
@@ -117,7 +117,7 @@ namespace Bees.Tests.PlayMode
             {
                 _asteroidObject.transform.localPosition = new Vector2(-80f + (index % 20) * 8f, 40f);
                 Physics2D.SyncTransforms();
-                RuntimeAssembly.SetField(_stage, "FixedUpdates", 3L + index);
+                RuntimeAssembly.SetField(_stage, "FixedUpdates", 3 + index);
                 RuntimeAssembly.Invoke(_pathfinder, "CanOccupyDestination", new Vector2(0f, -40f), 1);
             }
             timer.Stop();
