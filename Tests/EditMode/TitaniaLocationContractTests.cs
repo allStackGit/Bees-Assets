@@ -6,17 +6,18 @@ using UnityEngine;
 
 namespace Bees.Tests.EditMode
 {
+    [TestFixture]
+    [Category("BeesCampaignScenario")]
     public class TitaniaLocationContractTests
     {
-        private static Assembly RuntimeAssembly => typeof(UnityEngine.Object).Assembly.GetType("Assets.Scripts.ConfigData")?.Assembly
-            ?? AppDomain.CurrentDomain.GetAssemblies()[0];
-
         [Test]
-        public void ExistingLocationEnumValuesRemainStableAndTitaniaIsAppended()
+        public void ExistingLocationEnumValuesRemainStableWhileMapOrderChanges()
         {
             Type configDataType = FindRuntimeType("Assets.Scripts.ConfigData");
             Type locationsType = configDataType.GetNestedType("Locations", BindingFlags.Public);
 
+            // Locations is a semantic serialized enum and is deliberately distinct
+            // from MapIndex. Do not renumber it when campaign map order changes.
             Assert.That(Convert.ToInt32(Enum.Parse(locationsType, "Pluto")), Is.EqualTo(0));
             Assert.That(Convert.ToInt32(Enum.Parse(locationsType, "Neptune")), Is.EqualTo(1));
             Assert.That(Convert.ToInt32(Enum.Parse(locationsType, "Uranus")), Is.EqualTo(2));
@@ -24,7 +25,7 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void MapIndicesPreservePersistedOrderAndTitaniaUsesItsOwnStartingPositions()
+        public void MapIndicesFollowCampaignOrderAndTitaniaUsesItsOwnStartingPositions()
         {
             Type configDataType = FindRuntimeType("Assets.Scripts.ConfigData");
             IList maps = (IList)configDataType.GetField("Maps", BindingFlags.Public | BindingFlags.Static).GetValue(null);
@@ -37,15 +38,51 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void TitaniaAudioControllerHasAnalyzedIntroHandoffDefault()
+        public void TitaniaSourceBuildsAnalyzedIntroAndLoopAndWiresLoopingSource()
         {
+            Type builderType = FindRuntimeType("Assets.Scripts.TitaniaMusicBuilder");
             Type audioControllerType = FindRuntimeType("Assets.Scripts.AudioController");
+
+            string resourcePath = (string)builderType.GetField("ResourcePath",
+                BindingFlags.Public | BindingFlags.Static).GetRawConstantValue();
+            float introEnd = (float)builderType.GetField("IntroEndSeconds",
+                BindingFlags.Public | BindingFlags.Static).GetRawConstantValue();
+            float loopEnd = (float)builderType.GetField("LoopEndSeconds",
+                BindingFlags.Public | BindingFlags.Static).GetRawConstantValue();
+
+            Assert.That(resourcePath, Is.EqualTo("Music/Titania/Titania Source"));
+            Assert.That(introEnd, Is.EqualTo(26.565215f).Within(0.00001f));
+            Assert.That(loopEnd, Is.EqualTo(185.461179f).Within(0.00001f));
+
+            AudioClip source = Resources.Load<AudioClip>(resourcePath);
+            Assert.That(source, Is.Not.Null, "Titania source soundtrack is not loadable from Resources.");
+            Assert.That(source.channels, Is.EqualTo(2));
+            Assert.That(source.frequency, Is.EqualTo(44100));
+            Assert.That(source.length, Is.GreaterThan(loopEnd));
+            Resources.UnloadAsset(source);
+
             GameObject gameObject = new GameObject("Titania Audio Contract");
             try
             {
                 Component controller = gameObject.AddComponent(audioControllerType);
-                float introLength = (float)audioControllerType.GetField("TitaniaIntroLength").GetValue(controller);
-                Assert.That(introLength, Is.EqualTo(26.565216f).Within(0.00001f));
+                MethodInfo ensure = audioControllerType.GetMethod("EnsureTitaniaMusicSources",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                Assert.That(ensure, Is.Not.Null);
+                ensure.Invoke(controller, null);
+
+                AudioSource intro = (AudioSource)audioControllerType.GetField("TitaniaIntro").GetValue(controller);
+                AudioSource loop = (AudioSource)audioControllerType.GetField("TitaniaLoop").GetValue(controller);
+
+                Assert.That(intro, Is.Not.Null);
+                Assert.That(loop, Is.Not.Null);
+                Assert.That(intro.clip, Is.Not.Null);
+                Assert.That(loop.clip, Is.Not.Null);
+                Assert.That(intro.loop, Is.False);
+                Assert.That(loop.loop, Is.True);
+                Assert.That(intro.clip.length, Is.EqualTo(introEnd).Within(2f / 44100f));
+                Assert.That(loop.clip.length, Is.EqualTo(loopEnd - introEnd).Within(2f / 44100f));
+                Assert.That(intro.transform.parent, Is.EqualTo(gameObject.transform));
+                Assert.That(loop.transform.parent, Is.EqualTo(gameObject.transform));
             }
             finally
             {
