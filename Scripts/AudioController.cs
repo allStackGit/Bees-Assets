@@ -29,7 +29,7 @@ namespace Assets.Scripts
         public float PlutoIntroLength;
         public float NeptuneIntroLength;
         public float UranusIntroLength;
-        public float TitaniaIntroLength;
+        public float TitaniaIntroLength = 26.565216f;
 
         public AudioSource LocationIntro;
         //public AudioSource CarpenterBeeIntro;
