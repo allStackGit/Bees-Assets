@@ -76,6 +76,26 @@ namespace Assets.Scripts.Levels
             });
             AddTimer(reinforcements);
 
+            // The scripting document establishes discovery of the first Fire Tank as the
+            // mechanic tutorial. This was temporarily disabled only to speed level testing.
+            NextTriggers.Add(new Trigger(() => State.PlayerVisibleMapObjects.Any(), () =>
+            {
+                var firstExplosive = State.PlayerVisibleMapObjects.FirstOrDefault();
+                if (firstExplosive == null)
+                {
+                    return;
+                }
+
+                Stage.CutsceneManager.PlayDialogueSection(
+                    Stage.CutsceneManager.Titania_Minesweeper.GetRange(1, 11), false);
+
+                NextTriggers.Add(new Trigger(() => firstExplosive == null || firstExplosive.IsDead, () =>
+                {
+                    Stage.CutsceneManager.PlayDialogueSection(
+                        Stage.CutsceneManager.Titania_Minesweeper.GetRange(12, 4), false);
+                }, "Titania 1 destroyed first Fire Tank"));
+            }, "Titania 1 discovered first Fire Tank"));
+
             bool exitZoneCreated = false;
             NextTriggers.Add(new Trigger(() =>
             {
@@ -111,8 +131,6 @@ namespace Assets.Scripts.Levels
                     ? ConfigData.Configuration.AISide
                     : ConfigData.Configuration.UserSide;
 
-                // Unlike the old test implementation, do not leave a delayed reinforcement
-                // callback alive while the ending dialogue/result flow is running.
                 CancelTimer(reinforcements);
                 CloseLevel();
 
@@ -127,11 +145,6 @@ namespace Assets.Scripts.Levels
                         Stage.CutsceneManager.Titania_Minesweeper.GetRange(21, 10), true);
                 }
             }, "Titania 1 Ending"));
-
-            // The Fire Tank discovery/tutorial triggers in the older implementation are
-            // intentionally still disabled for fast level testing. They should be restored
-            // when normal campaign pacing is re-enabled; the obstacle/tank mechanic itself
-            // remains part of the authored Minesweeper map.
         }
 
         /// <summary>
