@@ -29,7 +29,7 @@ namespace Bees.Tests.EditMode
         {
             "Pluto1Anomaly", "Pluto2Reinforcements", "Pluto3Pushback", "Pluto4BluerPastures",
             "Neptune1SeizeTheMeans", "Neptune2OfProduction", "Neptune3PressingForward",
-            "Titania1Minesweeper", "Titania2Beenoculars", "Uranus1OnTheOffensive",
+            "Titania1MinesweeperCampaign", "Titania2Beenoculars", "Uranus1OnTheOffensive",
             "Uranus2OnTheDefensive", "Uranus3ANewThreat"
         };
 
@@ -37,7 +37,7 @@ namespace Bees.Tests.EditMode
         {
             "Pluto1Ending", "Pluto2Ending", "Pluto3Ending", "Pluto4Ending",
             "Neptune1Ending", "Neptune2Ending", "Neptune3Ending",
-            "Titania1Minesweeper", "Titania2Ending", "Uranus1Ending",
+            "Titania1MinesweeperEnding", "Titania2Ending", "Uranus1Ending",
             "Uranus2Ending", "Uranus3Ending"
         };
 
@@ -45,7 +45,7 @@ namespace Bees.Tests.EditMode
         {
             "Pluto1Ending", "Pluto2Ending", "Pluto3Ending", "Pluto4EndingDialogue",
             "Neptune1Ending", "Neptune2Ending", "Neptune3Ending",
-            "Titania1Minesweeper", "Titania2Ending", "Uranus1Ending",
+            "Titania1MinesweeperEnding", "Titania2Ending", "Uranus1Ending",
             "Uranus2Ending", "Uranus3Ending"
         };
 
@@ -115,8 +115,7 @@ namespace Bees.Tests.EditMode
         [Test]
         public void EveryScriptedMissionTerminalPathSetsGameOver()
         {
-            string source = File.ReadAllText(Path.Combine(
-                Application.dataPath, "Scripts", "Levels", "LeveLTriggers.cs"));
+            string source = ReadCampaignTriggerSources();
 
             for (int id = 0; id < _definitions.Count; id++)
             {
@@ -161,6 +160,13 @@ namespace Bees.Tests.EditMode
             TargetInvocationException exception = Assert.Throws<TargetInvocationException>(() =>
                 RuntimeAssembly.InvokeStatic(_catalogType, "Get", 999));
             Assert.That(exception.InnerException, Is.TypeOf<ArgumentOutOfRangeException>());
+        }
+
+        private static string ReadCampaignTriggerSources()
+        {
+            string levels = Path.Combine(Application.dataPath, "Scripts", "Levels");
+            return File.ReadAllText(Path.Combine(levels, "LeveLTriggers.cs")) + "\n" +
+                   File.ReadAllText(Path.Combine(levels, "Titania1Minesweeper.cs"));
         }
 
         private static string ExtractMethodBody(string source, string methodName)
