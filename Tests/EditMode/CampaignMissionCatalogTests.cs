@@ -29,7 +29,7 @@ namespace Bees.Tests.EditMode
         {
             "Pluto1Anomaly", "Pluto2Reinforcements", "Pluto3Pushback", "Pluto4BluerPastures",
             "Neptune1SeizeTheMeans", "Neptune2OfProduction", "Neptune3PressingForward",
-            "Titania1MinesweeperCampaign", "Titania2Beenoculars", "Uranus1OnTheOffensive",
+            "Titania1MinesweeperCampaign", "Titania2BeenocularsCampaign", "Uranus1OnTheOffensive",
             "Uranus2OnTheDefensive", "Uranus3ANewThreat"
         };
 
@@ -115,7 +115,7 @@ namespace Bees.Tests.EditMode
         [Test]
         public void EveryScriptedMissionTerminalPathSetsGameOver()
         {
-            string source = ReadCampaignTriggerSources();
+            string source = ReadCampaignLevelSources();
 
             for (int id = 0; id < _definitions.Count; id++)
             {
@@ -162,11 +162,12 @@ namespace Bees.Tests.EditMode
             Assert.That(exception.InnerException, Is.TypeOf<ArgumentOutOfRangeException>());
         }
 
-        private static string ReadCampaignTriggerSources()
+        private static string ReadCampaignLevelSources()
         {
             string levels = Path.Combine(Application.dataPath, "Scripts", "Levels");
-            return File.ReadAllText(Path.Combine(levels, "LeveLTriggers.cs")) + "\n" +
-                   File.ReadAllText(Path.Combine(levels, "Titania1Minesweeper.cs"));
+            return string.Join("\n", Directory.GetFiles(levels, "*.cs", SearchOption.TopDirectoryOnly)
+                .OrderBy(path => path, StringComparer.Ordinal)
+                .Select(File.ReadAllText));
         }
 
         private static string ExtractMethodBody(string source, string methodName)
