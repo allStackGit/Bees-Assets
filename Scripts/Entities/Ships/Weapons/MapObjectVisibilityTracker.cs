@@ -7,7 +7,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
     /// <summary>
     /// Runtime companion added only while a MapObject is visible to player range sources.
     /// It owns the set of observing ranges so one range exiting cannot hide an object
-    /// still observed by another, and destruction removes the object from GameState.
+    /// still observed by another, and deactivation/destruction removes the object from GameState.
     /// </summary>
     public sealed class MapObjectVisibilityTracker : MonoBehaviour
     {
@@ -38,8 +38,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 return;
             }
 
-            // ResetState clears the authoritative public set. If this object survived
-            // that reset, stale pre-reset source ownership must not leak forward.
+            // ResetState or deactivation cleanup clears the authoritative public set.
+            // If this object survives and is observed again, stale ownership must not leak forward.
             if (!_state.PlayerVisibleMapObjects.Contains(_mapObject))
             {
                 _sources.Clear();
@@ -57,9 +57,9 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
 
             _sources.Remove(source);
-            if (_sources.Count == 0 && _state != null && _mapObject != null)
+            if (_sources.Count == 0)
             {
-                _state.PlayerVisibleMapObjects.Remove(_mapObject);
+                RemoveFromVisibleSet();
             }
         }
 
@@ -73,34 +73,50 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             _state = state;
         }
 
+        private void OnDisable()
+        {
+            // Unity invokes OnDisable as an active object/component leaves service, including
+            // normal destruction and pooling/deactivation. Visibility must be gone at that point;
+            // waiting only for OnDestroy can leave stale Unity-object references in EditMode and
+            // also misses objects that are disabled for reuse rather than destroyed.
+            RemoveFromVisibleSet();
+            _sources.Clear();
+        }
+
         private void OnDestroy()
         {
-            // Unity objects enter a special destroyed state during teardown. A normal
-            // HashSet.Remove can fail at that point because lookup depends on the object's
-            // equality/hash behavior. Preserve the public set instance, but rebuild its
-            // contents using managed reference identity so this exact object cannot survive.
-            if (_state != null && !ReferenceEquals(_mapObject, null))
-            {
-                HashSet<MapObject> visibleObjects = _state.PlayerVisibleMapObjects;
-                List<MapObject> survivors = new List<MapObject>(visibleObjects.Count);
-                foreach (MapObject candidate in visibleObjects)
-                {
-                    if (!ReferenceEquals(candidate, _mapObject))
-                    {
-                        survivors.Add(candidate);
-                    }
-                }
-
-                visibleObjects.Clear();
-                foreach (MapObject survivor in survivors)
-                {
-                    visibleObjects.Add(survivor);
-                }
-            }
-
+            // Idempotent fallback for teardown paths where OnDisable has already run.
+            RemoveFromVisibleSet();
             _sources.Clear();
             _mapObject = null;
             _state = null;
+        }
+
+        private void RemoveFromVisibleSet()
+        {
+            if (_state == null || ReferenceEquals(_mapObject, null))
+            {
+                return;
+            }
+
+            // Unity objects can enter their special destroyed state before managed teardown
+            // completes. Rebuild the same public HashSet instance by managed reference identity
+            // rather than relying on the object's equality/hash behavior during destruction.
+            HashSet<MapObject> visibleObjects = _state.PlayerVisibleMapObjects;
+            List<MapObject> survivors = new List<MapObject>(visibleObjects.Count);
+            foreach (MapObject candidate in visibleObjects)
+            {
+                if (!ReferenceEquals(candidate, _mapObject))
+                {
+                    survivors.Add(candidate);
+                }
+            }
+
+            visibleObjects.Clear();
+            foreach (MapObject survivor in survivors)
+            {
+                visibleObjects.Add(survivor);
+            }
         }
     }
 }
