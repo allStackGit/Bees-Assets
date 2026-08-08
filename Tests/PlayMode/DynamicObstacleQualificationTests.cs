@@ -33,8 +33,6 @@ namespace Bees.Tests.PlayMode
 
             _stageObject = new GameObject(nameof(DynamicObstacleQualificationTests) + " Stage");
             _stage = _stageObject.AddComponent(RuntimeAssembly.GetType("Stage"));
-            object pool = _stageObject.AddComponent(RuntimeAssembly.GetType("Pool"));
-            RuntimeAssembly.SetField(_stage, "Pool", pool);
             RuntimeAssembly.SetField(_stage, "IsTraining", true);
             RuntimeAssembly.SetField(_stage, "FixedUpdates", 1);
             ((Behaviour)_stage).enabled = false;
@@ -54,6 +52,21 @@ namespace Bees.Tests.PlayMode
             RuntimeAssembly.SetField(_level, "HasObstacles", true);
             RuntimeAssembly.SetField(_level, "ActivateCollisionAsteroids", true);
 
+            _shipObject = new GameObject(nameof(DynamicObstacleQualificationTests) + " Ship");
+            _ship = _shipObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Entities.Ships.Honeybee"));
+            ((Behaviour)_ship).enabled = false;
+            RuntimeAssembly.SetField(_ship, "Transform", _shipObject.transform);
+            RuntimeAssembly.SetField(_ship, "Level", _level);
+            RuntimeAssembly.SetField(_ship, "Stage", _stage);
+
+            // Production creates the base Pathfinder before collision asteroids are spawned.
+            _pathfinder = Activator.CreateInstance(
+                RuntimeAssembly.GetType("Assets.Scripts.Levels.Pathfinder"),
+                new[] { _level });
+            RuntimeAssembly.SetField(_level, "Pathfinder", _pathfinder);
+
+            // Mirror the registration performed by CollisionAsteroid.Setup without invoking
+            // its unrelated map-parenting/random-spawn logic in this isolated fixture.
             _asteroidObject = new GameObject("Qualification moving asteroid");
             _asteroidObject.tag = "Obstacle";
             _asteroidObject.transform.localPosition = Vector2.zero;
@@ -73,19 +86,9 @@ namespace Bees.Tests.PlayMode
             RuntimeAssembly.SetField(_asteroid, "ClearanceMappingCollider", collider);
             RuntimeAssembly.SetField(_asteroid, "Body", body);
             RuntimeAssembly.Invoke(_state, "AddObstacle", _asteroid);
-
-            _shipObject = new GameObject(nameof(DynamicObstacleQualificationTests) + " Ship");
-            _ship = _shipObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Entities.Ships.Honeybee"));
-            ((Behaviour)_ship).enabled = false;
-            RuntimeAssembly.SetField(_ship, "Transform", _shipObject.transform);
-            RuntimeAssembly.SetField(_ship, "Level", _level);
-            RuntimeAssembly.SetField(_ship, "Stage", _stage);
-
+            int mapPointsIndex = (int)RuntimeAssembly.Invoke(_pathfinder, "AddObstacle", _asteroid);
+            RuntimeAssembly.SetField(_asteroid, "MapPointsIndex", mapPointsIndex);
             Physics2D.SyncTransforms();
-            _pathfinder = Activator.CreateInstance(
-                RuntimeAssembly.GetType("Assets.Scripts.Levels.Pathfinder"),
-                new[] { _level });
-            RuntimeAssembly.SetField(_level, "Pathfinder", _pathfinder);
         }
 
         [TearDown]
