@@ -75,13 +75,29 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         private void OnDestroy()
         {
-            // Unity can make a component compare equal to null during object teardown.
-            // ReferenceEquals preserves the managed reference long enough to remove the
-            // MapObject from its ID-based HashSet deterministically.
+            // Unity objects enter a special destroyed state during teardown. A normal
+            // HashSet.Remove can fail at that point because lookup depends on the object's
+            // equality/hash behavior. Preserve the public set instance, but rebuild its
+            // contents using managed reference identity so this exact object cannot survive.
             if (_state != null && !ReferenceEquals(_mapObject, null))
             {
-                _state.PlayerVisibleMapObjects.Remove(_mapObject);
+                HashSet<MapObject> visibleObjects = _state.PlayerVisibleMapObjects;
+                List<MapObject> survivors = new List<MapObject>(visibleObjects.Count);
+                foreach (MapObject candidate in visibleObjects)
+                {
+                    if (!ReferenceEquals(candidate, _mapObject))
+                    {
+                        survivors.Add(candidate);
+                    }
+                }
+
+                visibleObjects.Clear();
+                foreach (MapObject survivor in survivors)
+                {
+                    visibleObjects.Add(survivor);
+                }
             }
+
             _sources.Clear();
             _mapObject = null;
             _state = null;
