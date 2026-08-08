@@ -1,24 +1,22 @@
 # Bees test qualification status
 
-Status: expanded client/server qualification suite implemented; awaiting first project-machine execution.
+Status: expanded Unity qualification suite is green on the project machine; BeesServer ordinary and live `bees_test` qualification are also green.
 
 ## Purpose
 
 The test program is a release-confidence system, not a coverage-count exercise. It is intended to prove deterministic runtime behavior and state ownership, pooled lifecycle safety, client/server/database contracts, async/pathfinding ownership, and performance compatibility over realistic workloads.
 
-## Previously validated baseline
+## Validated client qualification baseline
 
-Before `agent/complete-test-qualification-suite`:
+The user has completed the current release-gate run after the qualification fixes. All currently implemented Unity test layers passed:
 
-- `BeesFoundation` EditMode: 61/61 passing.
-- `BeesPlayModeFoundation`: 4/4 passing.
-- `BeesPerformanceQualification`: 2/2 passing.
-- `BeesSoakQualification`: 1/1 passing.
-- previous BeesServer suite: 4/4 passing.
+- EditMode: passed.
+- PlayMode: passed.
+- Player tests: passed.
 
-Those counts do not include the new work below.
+This supersedes the earlier pre-expansion baseline counts. Do not use the old 61/61 EditMode, 4/4 PlayMode, 2/2 performance, and 1/1 soak numbers as evidence for the current branch.
 
-## New client coverage awaiting validation
+## Validated client coverage
 
 ### Foundation / combat / visibility
 
@@ -28,7 +26,8 @@ Those counts do not include the new work below.
 - final squad teardown and registry/release cardinality;
 - actual exiting map object is removed rather than stale callback state;
 - multiple weapon ranges/contact colliders retain visibility until the final source exits;
-- deactivation/destruction/reset visibility cleanup;
+- deactivation/reset visibility ownership;
+- Unity destroyed-object null semantics preserved for `MapObject`;
 - unsigned server matchup IDs are preserved as exact strings even above `long.MaxValue`.
 
 Production defects found by this audit are fixed on the branch and recorded in `docs/TEST_DEFECTS.md`.
@@ -56,10 +55,13 @@ This does not yet run every full mission objective path through real mission set
 ### Pathfinding / performance / memory
 
 - dense real tagged `Obstacle` ingestion with small/large clearances;
-- 20 asynchronous dense-grid searches;
-- real `CollisionAsteroid` dynamic-layer movement and refresh timing;
+- asynchronous dense-grid searches through a guaranteed-valid production-clearance corridor;
+- real `CollisionAsteroid` dynamic-layer movement and refresh timing with production map bounds;
+- pathfinder worker lifecycle / stale-request rejection;
+- repeated level lifecycle kill/release/reuse/reset coverage;
 - hardware/environment logging;
-- warmed reset-memory workload and broad leak tripwires.
+- warmed reset-memory workload and broad leak tripwires;
+- Player-level qualification execution.
 
 These are regression workloads. Minimum-spec certification still requires target-machine measurements and a rendered long-duration battle.
 
@@ -67,24 +69,22 @@ These are regression workloads. Minimum-spec certification still requires target
 
 The server qualification branch is `agent/server-qualification-contracts`.
 
-Known production defects found during the static/test-driven audit are fixed there: database inactivity recovery, pending request-hash cleanup, same-session transaction ownership, durable `store-commands` acknowledgements, strategy-read failure propagation, retry-safe/concurrent Game persistence, deterministic test-database selection, and exact unsigned matchup handling.
+Both the ordinary server suite and the live `bees_test` integration suite passed on the project/server machines. The live suite covers schema/data contracts plus real WebSocket/MySQL flow through test-user read/write, setup, strategy selection, transactional command persistence, post-write reread, disconnect/reconnect, and a second user-data update.
+
+Known production defects found during the audit are fixed there: database inactivity recovery, pending request-hash cleanup, same-session transaction ownership, durable `store-commands` acknowledgements, strategy-read failure propagation, retry-safe/concurrent Game persistence, deterministic test-database selection, hot lookup indexes, and exact unsigned matchup handling.
 
 `bees_test` is always selected in test mode; normal startup continues to use `ram`.
 
-The server now includes idempotent schema migrations for the two hot lookup keys:
+The server includes idempotent schema migrations for the two hot lookup keys:
 
 - `stored_user_data(userId, filename, ID)`;
 - `settings(userId, name, version, Id)`.
 
-`npm run test:live` applies those migrations to `bees_test` before running schema/data-contract and real WebSocket/MySQL integration tests. Production migration is separate and requires explicit `BEES_ALLOW_PRODUCTION_MIGRATION=1`.
+Production migration remains separate and requires explicit `BEES_ALLOW_PRODUCTION_MIGRATION=1`.
 
-The earlier claim that version-5 settings were missing from the supplied dump was retracted after full-file verification. The dump contains settings versions 2–7, including current version 5 and its required serialized fields.
+## Remaining architectural qualification
 
-The existing `package-lock.json` predates newly declared `mysql2`/`websocket` runtime dependencies. This environment cannot reach npm's public registry to regenerate the transitive lock graph. Run `npm install` once on the project machine before server qualification; it should regenerate the lockfile correctly.
-
-## Remaining architectural qualification after the first run
-
-These are not currently known defects and should not block executing the implemented suite:
+These are not currently known defects and are outside the completed automated release-gate coverage:
 
 1. full end-to-end campaign playthrough fixtures through real mission setup;
 2. complete recorded-battle replay host with checkpoint comparison during simulation;
@@ -92,6 +92,6 @@ These are not currently known defects and should not block executing the impleme
 4. target minimum-spec CPU/GPU/RAM matrix and final median/p95/p99/max budgets;
 5. eventual outcome-table primary-key migration from `INT UNSIGNED` to `BIGINT UNSIGNED` before long-term training volume approaches exhaustion.
 
-## Immediate next evidence
+## Current evidence
 
-No currently known client/server correctness defect is intentionally left unfixed in the qualification branches. The next step is the first complete Unity + BeesServer run. Treat any failure from that run as new evidence: reproduce, determine whether it is harness or production behavior, fix it, and retain the regression.
+No currently known client/server correctness defect is intentionally left unfixed in the qualification branches. Current automated evidence is green across Unity EditMode, PlayMode, Player tests, BeesServer ordinary tests, and BeesServer live `bees_test` integration. Future failures should be treated as new evidence and added to the defect ledger only after reproducing and classifying them.
