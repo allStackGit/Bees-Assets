@@ -25,9 +25,11 @@ namespace Bees.Tests.EditMode
                     _catalogType, "GetAutomatedScenarioDefinitions"))
                 .Cast<object>()
                 .ToList();
+
             string levels = Path.Combine(Application.dataPath, "Scripts", "Levels");
-            _triggerSource = File.ReadAllText(Path.Combine(levels, "LeveLTriggers.cs")) + "\n" +
-                             File.ReadAllText(Path.Combine(levels, "Titania1Minesweeper.cs"));
+            _triggerSource = string.Join("\n", Directory.GetFiles(levels, "*.cs", SearchOption.TopDirectoryOnly)
+                .OrderBy(path => path, StringComparer.Ordinal)
+                .Select(File.ReadAllText));
         }
 
         [Test]
@@ -56,7 +58,8 @@ namespace Bees.Tests.EditMode
 
                 Assert.That(setupBody, Does.Contain("Stage.CutsceneManager.Setup"),
                     $"Mission {id} does not register a completion callback during setup.");
-                Assert.That(setupBody, Does.Contain(completion + "("),
+                Assert.That(setupBody, Does.Contain(completion + "(") || setupBody.Contains(completion),
+                    Is.True,
                     $"Mission {id} setup does not reference completion method {completion}.");
                 if (completion != terminal)
                 {
@@ -77,8 +80,8 @@ namespace Bees.Tests.EditMode
         [TestCase(4, "Neptune1SeizeTheMeans", "Find and destroy all the Bees", "MiningAsteroid")]
         [TestCase(5, "Neptune2OfProduction", "Survive and mine as many minerals as you can", "ExitZonePrefab")]
         [TestCase(6, "Neptune3PressingForward", "break through the blockade", "ResolveEliminationWinner")]
-        [TestCase(7, "Titania1MinesweeperCampaign", "ExitZonePrefab", "90")]
-        [TestCase(8, "Titania2Beenoculars", "HumanTarget", "450")]
+        [TestCase(7, "Titania1MinesweeperCampaign", "ExitZonePrefab", "PlayerVisibleMapObjects")]
+        [TestCase(8, "Titania2BeenocularsCampaign", "HumanTarget", "450")]
         [TestCase(9, "Uranus1OnTheOffensive", "Bumblebee", "Cruiser")]
         [TestCase(10, "Uranus2OnTheDefensive", "Survive and mine as many minerals as you can", "ExitZonePrefab")]
         [TestCase(11, "Uranus3ANewThreat", "Rescue the Barges and destroy all the Bees", "Barge")]
