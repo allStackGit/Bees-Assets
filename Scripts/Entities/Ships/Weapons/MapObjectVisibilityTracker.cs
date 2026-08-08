@@ -75,7 +75,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         private void OnDestroy()
         {
-            if (_state != null && _mapObject != null)
+            // Unity can make a component compare equal to null during object teardown.
+            // ReferenceEquals preserves the managed reference long enough to remove the
+            // MapObject from its ID-based HashSet deterministically.
+            if (_state != null && !ReferenceEquals(_mapObject, null))
             {
                 _state.PlayerVisibleMapObjects.Remove(_mapObject);
             }
