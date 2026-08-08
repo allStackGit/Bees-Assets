@@ -57,7 +57,7 @@ namespace Assets.Scripts.Levels
                 new MissionDefinition(3, "Bluer Pastures", nameof(Level.Pluto4BluerPastures), nameof(Level.Pluto4Ending), nameof(Level.Pluto4EndingDialogue), level => level.Pluto4BluerPastures()),
                 new MissionDefinition(4, "Seize the Means", nameof(Level.Neptune1SeizeTheMeans), nameof(Level.Neptune1Ending), nameof(Level.Neptune1Ending), level => level.Neptune1SeizeTheMeans()),
                 new MissionDefinition(5, "Of Production", nameof(Level.Neptune2OfProduction), nameof(Level.Neptune2Ending), nameof(Level.Neptune2Ending), level => level.Neptune2OfProduction()),
-                new MissionDefinition(6, "Pressing Forward", nameof(Level.Neptune3PressingForward), nameof(Level.Neptune3Ending), nameof(Level.Neptune3Ending), level => level.Neptune3PressingForward()),
+                new MissionDefinition(6, "Pressing Forward", nameof(Level.Neptune3PressingForwardCampaign), nameof(Level.Neptune3Ending), nameof(Level.Neptune3Ending), level => level.Neptune3PressingForwardCampaign()),
                 new MissionDefinition(7, "Minesweeper", nameof(Level.Titania1MinesweeperCampaign), nameof(Level.Titania1MinesweeperEnding), nameof(Level.Titania1MinesweeperEnding), level => level.Titania1MinesweeperCampaign(), true, AutomatedScenarioStatus.InDevelopment),
                 new MissionDefinition(8, "Beenoculars", nameof(Level.Titania2BeenocularsCampaign), nameof(Level.Titania2Ending), nameof(Level.Titania2Ending), level => level.Titania2BeenocularsCampaign(), true, AutomatedScenarioStatus.InDevelopment),
                 // These trigger graphs exist, but campaign_levels.json currently stops at mission 8.
