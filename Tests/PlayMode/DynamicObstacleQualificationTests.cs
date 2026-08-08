@@ -49,6 +49,10 @@ namespace Bees.Tests.PlayMode
             RuntimeAssembly.SetField(_level, "MapHeight", 256);
             RuntimeAssembly.SetField(_level, "HalfMapWidth", 128);
             RuntimeAssembly.SetField(_level, "HalfMapHeight", 128);
+            RuntimeAssembly.SetField(_level, "MinX", -128f);
+            RuntimeAssembly.SetField(_level, "MaxX", 128f);
+            RuntimeAssembly.SetField(_level, "MinY", -128f);
+            RuntimeAssembly.SetField(_level, "MaxY", 128f);
             RuntimeAssembly.SetField(_level, "HasObstacles", true);
             RuntimeAssembly.SetField(_level, "ActivateCollisionAsteroids", true);
 
@@ -106,7 +110,8 @@ namespace Bees.Tests.PlayMode
         {
             Assert.That(RuntimeAssembly.Invoke(_pathfinder, "CanOccupyDestination", Vector2.zero, 1), Is.False,
                 "The moving asteroid should initially block its occupied destination.");
-            Assert.That(RuntimeAssembly.Invoke(_pathfinder, "CanOccupyDestination", new Vector2(80f, 0f), 1), Is.True);
+            Assert.That(RuntimeAssembly.Invoke(_pathfinder, "CanOccupyDestination", new Vector2(80f, 0f), 1), Is.True,
+                "A distant in-bounds destination should be open before the asteroid moves there.");
 
             _asteroidObject.transform.localPosition = new Vector2(80f, 0f);
             Physics2D.SyncTransforms();
