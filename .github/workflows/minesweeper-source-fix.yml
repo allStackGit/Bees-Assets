@@ -1,0 +1,84 @@
+name: Minesweeper source fix
+
+on:
+  push:
+    branches:
+      - agent/titania-music
+    paths:
+      - .github/workflows/minesweeper-source-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  edit-source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/titania-music
+          fetch-depth: 0
+
+      - name: Apply Minesweeper source-only fixes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('Scripts/Levels/LeveLTriggers.cs')
+          source = path.read_text(encoding='utf-8-sig')
+
+          method_start = source.index('        public void Titania1Minesweeper()')
+          method_end = source.index('        public void Titania2Beenoculars()', method_start)
+          before = source[:method_start]
+          body = source[method_start:method_end]
+          after = source[method_end:]
+
+          test_setup_start = body.index('            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Wasp, 7);')
+          test_setup_end_marker = '            ConfigData.CurrentShips.SaveFleetData();'
+          test_setup_end = body.index(test_setup_end_marker, test_setup_start) + len(test_setup_end_marker)
+          body = body[:test_setup_start] + body[test_setup_end:]
+
+          old_end = '''                    CloseLevel();
+                    // Show a simple summary if available
+                    State.GameOver = true;
+                    Stage.Menus.ShowLevelSummary();'''
+          new_end = '''                    CancelTimer(reinforcements);
+                    CloseLevel();'''
+          if old_end not in body:
+              raise SystemExit('Minesweeper immediate-summary ending block not found')
+          body = body.replace(old_end, new_end, 1)
+
+          source = before + body + after
+
+          old_method = '''        public void Titania1Ending()
+        {
+            Debug.Log($"Titania 1 ending!");
+        }'''
+          new_method = '''        public void Titania1Ending()
+        {
+            Debug.Log($"Titania 1 ending!");
+
+            ConfigData.UserProgressData.CampaignScore += State.PlayerScore;
+            ConfigData.UserProgressData.AdvanceToNextLevel();
+
+            ConfigData.UserProgressData.Save();
+            CurrentShips.SaveSquadData();
+            CurrentShips.SaveFleetData();
+
+            State.GameOver = true;
+            Stage.Menus.ShowLevelSummary();
+        }'''
+          if old_method not in source:
+              raise SystemExit('Titania1Ending stub not found')
+          source = source.replace(old_method, new_method, 1)
+
+          path.write_text(source, encoding='utf-8')
+
+      - name: Commit source fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Scripts/Levels/LeveLTriggers.cs
+          git diff --cached --quiet && exit 0
+          git commit -m "Fix Minesweeper campaign completion"
+          git push origin HEAD:agent/titania-music
