@@ -3,7 +3,6 @@ using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Levels;
-using System.Collections.Generic;
 using UnityEngine;
 using static UnityEngine.GraphicsBuffer;
 
@@ -22,8 +21,6 @@ public class MapObject : MonoBehaviour
     public bool IsDead;
     public Projectile LastHitProjectile;
 
-    private readonly HashSet<RangeCollider> _playerVisibilitySources = new HashSet<RangeCollider>();
-
     public virtual void Setup(Level level)
     {
 
@@ -32,36 +29,10 @@ public class MapObject : MonoBehaviour
         Name = $"{Name} #{Id}";
         gameObject.name = Name;
         Health = MaxHealth;
-        _playerVisibilitySources.Clear();
 
         // Choose a random sprite 
         SpriteRenderer.sprite = Sprites[Utilities.RandomInt(Sprites.Length)];
         //Debug.Log($"Setup {Name}");
-    }
-
-    public void AddPlayerVisibilitySource(RangeCollider source, GameState state)
-    {
-        if (source == null || state == null)
-        {
-            return;
-        }
-
-        _playerVisibilitySources.Add(source);
-        state.PlayerVisibleMapObjects.Add(this);
-    }
-
-    public void RemovePlayerVisibilitySource(RangeCollider source, GameState state)
-    {
-        if (source == null || state == null)
-        {
-            return;
-        }
-
-        _playerVisibilitySources.Remove(source);
-        if (_playerVisibilitySources.Count == 0)
-        {
-            state.PlayerVisibleMapObjects.Remove(this);
-        }
     }
 
     public void OnTriggerEnter2D(Collider2D collider)
@@ -89,11 +60,6 @@ public class MapObject : MonoBehaviour
         if (!IsDead)
         {
             IsDead = true;
-            if (Level != null && Level.State != null)
-            {
-                Level.State.PlayerVisibleMapObjects.Remove(this);
-            }
-            _playerVisibilitySources.Clear();
             Destroy(gameObject);
         }
     }
