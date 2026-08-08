@@ -25,8 +25,9 @@ namespace Bees.Tests.EditMode
                     _catalogType, "GetAutomatedScenarioDefinitions"))
                 .Cast<object>()
                 .ToList();
-            _triggerSource = File.ReadAllText(Path.Combine(
-                Application.dataPath, "Scripts", "Levels", "LeveLTriggers.cs"));
+            string levels = Path.Combine(Application.dataPath, "Scripts", "Levels");
+            _triggerSource = File.ReadAllText(Path.Combine(levels, "LeveLTriggers.cs")) + "\n" +
+                             File.ReadAllText(Path.Combine(levels, "Titania1Minesweeper.cs"));
         }
 
         [Test]
@@ -76,7 +77,7 @@ namespace Bees.Tests.EditMode
         [TestCase(4, "Neptune1SeizeTheMeans", "Find and destroy all the Bees", "MiningAsteroid")]
         [TestCase(5, "Neptune2OfProduction", "Survive and mine as many minerals as you can", "ExitZonePrefab")]
         [TestCase(6, "Neptune3PressingForward", "break through the blockade", "ResolveEliminationWinner")]
-        [TestCase(7, "Titania1Minesweeper", "ExitZonePrefab", "90")]
+        [TestCase(7, "Titania1MinesweeperCampaign", "ExitZonePrefab", "90")]
         [TestCase(8, "Titania2Beenoculars", "HumanTarget", "450")]
         [TestCase(9, "Uranus1OnTheOffensive", "Bumblebee", "Cruiser")]
         [TestCase(10, "Uranus2OnTheDefensive", "Survive and mine as many minerals as you can", "ExitZonePrefab")]
