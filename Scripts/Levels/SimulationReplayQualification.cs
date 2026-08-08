@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using Assets.Scripts.Entities.Ships;
 using UnityEngine;
 
 namespace Assets.Scripts.Levels
@@ -198,7 +199,7 @@ namespace Assets.Scripts.Levels
                     .Append(squad.GetShips().Count).Append('\n');
             }
 
-            foreach (Entities.Ships.Ship ship in level.State.Ships.Where(value => value != null).OrderBy(value => value.Id))
+            foreach (Ship ship in level.State.Ships.Where(value => value != null).OrderBy(value => value.Id))
             {
                 Vector2 position = ship.GetPosition();
                 Vector2 velocity = ship.Body == null ? Vector2.zero : ship.Body.linearVelocity;
