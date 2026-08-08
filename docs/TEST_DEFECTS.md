@@ -46,7 +46,7 @@ This file records defects discovered while building and reviewing the expanded q
 - Reproducer: `RangeColliderVisibilityTests.ExitingMapObjectRemovesTheExitedObjectNotTheLastEnteredObject`
 - Symptom: the `Object` branch of `RangeCollider.OnTriggerExit2D` checked `_colliderEnter` and removed its `MapObject`, while ship/projectile branches correctly used `_colliderExit`. With multiple objects entering a weapon range, one object's exit could leave the exited object visible and remove a different object from `GameState.PlayerVisibleMapObjects`.
 - Root cause: copy/paste variable mix-up in the final `OnTriggerExit2D` branch.
-- Fix: the branch now checks `_colliderExit.CompareTag("Object")` and removes `_colliderExit.GetComponent<MapObject>()`.
+- Fix: the branch now uses the exiting collider and delegates visibility ownership to the exited `MapObject`.
 - Regression status: test and production fix are committed; execution pending.
 - Prevention: enter/exit callback tests should include at least two simultaneously tracked objects so stale callback-local state cannot accidentally satisfy the assertion.
 
@@ -58,6 +58,27 @@ This file records defects discovered while building and reviewing the expanded q
 - Symptom: the memory-growth test created its own Level object but used `Object.Destroy` in `finally`, allowing the test to finish before Unity processed destruction and potentially leaking native state into the following qualification test.
 - Fix: the test now uses `Object.DestroyImmediate` for deterministic test-owned teardown.
 - Prevention: test-owned objects that do not require frame-boundary destruction semantics should be removed synchronously before the test completes.
+
+### QA-006 — Range visibility regression fixture used the wrong MapObject type/identity
+
+- Type: Test harness
+- Status: Fixed, awaiting Unity run
+- Found during: RangeCollider regression review
+- Symptom: the first regression fixture requested `Assets.Scripts.Entities.MapObject`, but `MapObject` is in the global namespace. It also left every object at default ID 0 even though `MapObject.Equals/GetHashCode` are ID-based, causing two test objects to collapse to one HashSet entry.
+- Fix: the fixture now resolves global `MapObject` and assigns distinct IDs to every test object.
+- Prevention: reflection fixtures must verify both CLR namespace and any production equality/identity semantics before asserting collection cardinality.
+
+### QA-007 — Shared map-object visibility had no observing-source ownership
+
+- Type: Production
+- Status: Fixed, awaiting Unity run
+- Found during: Range visibility ownership audit
+- Reproducer: `RangeColliderVisibilityTests.MapObjectRemainsVisibleUntilEveryObservingWeaponRangeHasExited`
+- Symptom: every weapon range added the same `MapObject` to a global `GameState.PlayerVisibleMapObjects` HashSet, but any one range exit removed it globally. An object observed by two weapons therefore became invisible as soon as the first weapon lost range.
+- Root cause: the global visibility set stored visible objects but not which range colliders still owned visibility.
+- Fix: `MapObject` now tracks observing `RangeCollider` sources. Range enter adds its source and keeps the object globally visible; range exit removes only that source and removes global visibility only after the final source exits. MapObject setup clears source ownership and destruction clears global visibility.
+- Regression status: overlapping-range test and production fix are committed; execution pending.
+- Prevention: shared derived-state sets fed by multiple producers need explicit source ownership/reference counting rather than symmetric unconditional add/remove calls.
 
 ## BeesServer
 
@@ -72,11 +93,11 @@ This file records defects discovered while building and reviewing the expanded q
 - Regression status: reproducer is committed on `agent/server-qualification-contracts`; expected to fail until the production branch is patched.
 - Prevention: integration tests for driver errors should use the driver's actual error-object shape rather than only synthetic scalar codes.
 
-The isolated production-class suite also covers connection release, pool recovery, WebSocket startup/accept/reject, duplicate request-hash concurrency, and connection cleanup. Reconnect/game lifecycle and consolidation transaction tests are being added on the server qualification branch.
+The isolated production-class suite also covers connection release, pool recovery, WebSocket startup/accept/reject, duplicate request-hash concurrency, connection cleanup, reconnect/replacement-game behavior, inactive-game expiry, and consolidation transaction commit/rollback.
 
 ## Production defects found during execution
 
-No execution-discovered defects are recorded yet. QA-004 and QS-001 were found by static test-driven audit before the new suites were run. When a production failure is confirmed during execution, record:
+No execution-discovered defects are recorded yet. QA-004, QA-007, and QS-001 were found by static test-driven audit before the new suites were run. When a production failure is confirmed during execution, record:
 
 1. failing/reproducing test;
 2. root cause;
