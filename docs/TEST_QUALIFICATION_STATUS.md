@@ -28,7 +28,7 @@ Those numbers do **not** include the tests introduced on `agent/complete-test-qu
 
 ## New coverage awaiting validation
 
-### Combat scenarios — `BeesFoundation`
+### Combat and range ownership — `BeesFoundation`
 
 `CombatScenarioQualificationTests` extends the existing single-target integration fixture with:
 
@@ -38,7 +38,12 @@ Those numbers do **not** include the tests introduced on `agent/complete-test-qu
 - final empty-squad teardown and persistent loaded-state cleanup;
 - registry and release-queue cardinality checks after mass deaths.
 
-This closes the documented deterministic simultaneous-death/many-ship correctness gap if the tests pass.
+`RangeColliderVisibilityTests` additionally protects map-object visibility ownership:
+
+- an exit removes the actual exiting object rather than stale callback state;
+- an object observed by multiple weapon ranges remains globally visible until the final observing range exits.
+
+The range audit found and fixed two production defects on this branch; see `docs/TEST_DEFECTS.md`.
 
 ### Replay adapters/checkpoints — `BeesFoundation`
 
@@ -70,10 +75,10 @@ This strengthens the real-scene boundary but does **not** claim full campaign pl
 
 In addition to the existing open-grid baseline:
 
-- `DenseObstacleQualificationTests` constructs actual `Obstacle` + `BoxCollider2D` objects and lets the production Pathfinder ingest their `ClearanceMappingCollider`s;
+- `DenseObstacleQualificationTests` constructs actual tagged `Obstacle` + `BoxCollider2D` objects and lets the production Pathfinder discover/setup them and ingest their `ClearanceMappingCollider`s;
 - 20 real asynchronous searches run through a dense 64x64 grid with alternating ship clearances 1 and 3;
 - dense setup and p95 request regression budgets are recorded;
-- `DynamicObstacleQualificationTests` uses an actual `CollisionAsteroid` with `Rigidbody2D`, verifies its blocked region moves between fixed-step dynamic-layer refreshes, and times 100 real moving-obstacle refreshes.
+- `DynamicObstacleQualificationTests` registers an actual `CollisionAsteroid` after base-map creation, verifies its blocked region moves between fixed-step dynamic-layer refreshes, and times 100 real moving-obstacle refreshes.
 
 These are development regression budgets. They are not a declaration of minimum supported hardware.
 
@@ -84,7 +89,8 @@ These are development regression budgets. They are not a declaration of minimum 
 - emits CPU/core count, RAM, GPU/vendor/VRAM, graphics API, resolution, Unity version, OS, and batch-mode state into the qualification log;
 - runs a warmed 10,000-reset memory workload;
 - records managed/native before/after values;
-- uses broad leak-tripwire limits rather than hardware-specific performance thresholds.
+- uses broad leak-tripwire limits rather than hardware-specific performance thresholds;
+- synchronously tears down test-owned objects so qualification runs do not contaminate one another.
 
 This supplies reproducible hardware context for qualification records and an initial memory-growth gate. Minimum-spec acceptance thresholds still need to be chosen from actual target-machine measurements.
 
@@ -151,4 +157,4 @@ Two large items cannot be honestly completed by adding isolated assertions alone
 1. **Full campaign playthroughs.** The real mission setup methods must first receive isolated substitutes/adapters for fleet/user data, UI/dialogue/camera/input, command-pool side effects, and persistence. Once that boundary exists, the scene host can call `CampaignMissionCatalog.Configure` and drive every real objective branch through `CampaignScenarioDriver`.
 2. **Rendered 30–60 minute battle certification.** The existing lifecycle soak plus new memory tests cover reuse/leak regressions, but a representative rendered battle needs a deterministic battle fixture/build and target-hardware budgets for fixed-update CPU, allocations, frame median/p95/p99/max, GPU/UI, and memory over time.
 
-The separate BeesServer qualification branch adds isolated tests against the actual production `Database`, `Server`, and `SocketConnection` classes by loading `siServerDev.js` without its final startup statement. It covers DB connection release/failure, pool recovery, HTTP/WebSocket startup, accept/reject behavior, duplicate request-hash concurrency, and connection cleanup. True transaction rollback/commit tests remain blocked because the production Database class currently has no transaction API.
+The separate BeesServer qualification branch loads the actual production classes from `siServerDev.js` into an isolated Node `vm` without executing the final server startup. It now covers DB connection release/failure, pool recovery, HTTP/WebSocket startup, accept/reject behavior, duplicate request-hash concurrency, connection cleanup, reconnect to an existing Game, replacement-Game creation, inactive-game expiry, and `consolidateOutcomes` transaction COMMIT/ROLLBACK behavior. One MySQL inactivity-recovery production defect has a committed regression and remains open pending a safe surgical patch to the server monolith; see `docs/TEST_DEFECTS.md`.
