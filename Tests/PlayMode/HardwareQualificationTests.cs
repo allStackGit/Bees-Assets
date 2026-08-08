@@ -35,6 +35,9 @@ namespace Bees.Tests.PlayMode
             GameObject levelObject = new GameObject(nameof(HardwareQualificationTests) + " Level");
             object level = levelObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Levels.Level"));
             object state = levelObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Levels.GameState"));
+            // This fixture exercises GameState.ResetState only. A live Level.Update requires
+            // Stage/socket/input wiring that is deliberately absent here and must not run.
+            ((Behaviour)level).enabled = false;
             RuntimeAssembly.SetField(level, "State", state);
             RuntimeAssembly.SetField(state, "Level", level);
 
