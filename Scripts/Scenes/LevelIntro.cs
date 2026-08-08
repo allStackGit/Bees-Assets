@@ -137,50 +137,37 @@ namespace UIComponents
                     }
                     break;
                 case 8:
-
                     ConfigData.HasSeenIntermission = true;
                     StartCoroutine(DelayStart(StandardDelay, () =>
                     {
                         CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Titania_Beenoculars[0], true);
                     }));
-
                     break;
-                    //case 7:
-
-                    //    if (ConfigData.HasSeenIntermission)
-                    //    {
-                    //        StartCoroutine(DelayStart(StandardDelay, () =>
-                    //        {
-                    //            CutsceneManager.PlayDialogueSection(CutsceneManager.Uranus_OnTheOffensive.GetRange(0, 2), true);
-                    //        }));
-
-                    //    }
-                    //    else
-                    //    {
-                    //        SkipButton.SetActive(true);
-                    //        StartCoroutine(DelayStart(StandardDelay, () =>
-                    //        {
-                    //            CutsceneManager.PlayDialogueSection(CutsceneManager.NeptuneToUranus, true);
-                    //        }));
-
-                    //    }
-                    //    break;
-                    //case 8:
-                    //    ConfigData.HasSeenIntermission = true;
-                    //    StartCoroutine(DelayStart(StandardDelay, () =>
-                    //    {
-                    //        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Uranus_OnTheDefensive[0], true);
-                    //    }));
-
-                    //    break;
-                    //case 9:
-                    //    ConfigData.HasSeenIntermission = true;
-                    //    StartCoroutine(DelayStart(StandardDelay, () =>
-                    //    {
-                    //        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Uranus_ANewThreat[0], true);
-                    //    }));
-
-                    //    break;
+                case 9:
+                    // Titania was inserted before the existing Uranus arc. There is
+                    // not yet an authored Titania -> Uranus transition section, so
+                    // play the existing mission-specific intro rather than the obsolete
+                    // Neptune -> Uranus transition.
+                    ConfigData.HasSeenIntermission = true;
+                    StartCoroutine(DelayStart(StandardDelay, () =>
+                    {
+                        CutsceneManager.PlayDialogueSection(CutsceneManager.Uranus_OnTheOffensive.GetRange(0, 2), true);
+                    }));
+                    break;
+                case 10:
+                    ConfigData.HasSeenIntermission = true;
+                    StartCoroutine(DelayStart(StandardDelay, () =>
+                    {
+                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Uranus_OnTheDefensive[0], true);
+                    }));
+                    break;
+                case 11:
+                    ConfigData.HasSeenIntermission = true;
+                    StartCoroutine(DelayStart(StandardDelay, () =>
+                    {
+                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Uranus_ANewThreat[0], true);
+                    }));
+                    break;
             }
         }
 
