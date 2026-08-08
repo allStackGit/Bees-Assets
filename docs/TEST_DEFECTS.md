@@ -130,11 +130,33 @@ This file records defects discovered while building and reviewing the expanded q
 - Regression status: both reproducers are committed and expected to fail until production is refactored.
 - Prevention: persistence acknowledgements must be downstream of awaited durable writes; helper layers must not swallow failures that determine client-visible success.
 
+### QS-005 — Strategy-history read failures are silently converted into no-history fallback behavior
+
+- Type: Production
+- Status: Open; regression committed, Game query helper refactor pending
+- Found during: strategy database-read audit
+- Reproducer: `getOutcomesFromId propagates database read failures instead of treating them as no history` in `test/serverStrategyRead.integration.test.js`.
+- Symptom: `Game.getOutcomesFromId` catches a rejected `db.query`, logs it, and resolves `undefined`. Callers interpret missing outcomes as an empty/no-history matchup and can continue selecting a fallback strategy as though the database successfully reported no historical data.
+- Expected fix: remove the nested catch that consumes `db.query` errors and let failures propagate to request handling. Distinguish a successful empty result (`[]`) from an unavailable database.
+- Regression status: reproducer is committed and expected to fail until production is refactored.
+- Prevention: data-access helpers must preserve the semantic difference between “query succeeded with zero rows” and “query failed.”
+
+### QS-006 — Production runtime dependencies are absent from package metadata/lockfile
+
+- Type: Production packaging
+- Status: Open; regression committed, lockfile regeneration required
+- Found during: clean-install reproducibility audit
+- Reproducer: `test/runtimeDependencies.test.js`.
+- Symptom: `siServerDev.js` imports `mysql2` and `websocket`, but neither appears in `package.json` runtime dependencies nor as a locked `node_modules/...` package in `package-lock.json`. A clean `npm install` from the repository therefore does not guarantee the modules required to start the server.
+- Expected fix: add both runtime dependencies at known-compatible versions and regenerate `package-lock.json` with the normal npm toolchain. Do not hand-edit the lockfile.
+- Regression status: dependency/lock assertions are committed and expected to fail until package metadata is repaired. The current execution environment cannot access those packages through its configured npm registry, so lockfile regeneration is intentionally deferred.
+- Prevention: production imports must be represented in package metadata and lockfiles; syntax-only `node --check` does not validate runtime dependency availability.
+
 The isolated production-class suite also covers connection release, pool recovery, WebSocket startup/accept/reject, duplicate request-hash concurrency, connection cleanup, reconnect/replacement-game behavior, inactive-game expiry, and consolidation success/failure SQL paths.
 
 ## Production defects found during execution
 
-No execution-discovered defects are recorded yet. QA-004, QA-007, QS-001, QS-002, QS-003, and QS-004 were found by static test-driven audit before the new suites were run. When a production failure is confirmed during execution, record:
+No execution-discovered defects are recorded yet. QA-004, QA-007, QS-001 through QS-006 were found by static test-driven audit before the new suites were run. When a production failure is confirmed during execution, record:
 
 1. failing/reproducing test;
 2. root cause;
