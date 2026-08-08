@@ -21,6 +21,15 @@ namespace Assets.Scripts.Entities
         public Sprite[] SmokeSprites;
         public Vector2[] SmokePositions;
         public float SmokeFramesPerSecond = 5f;
+        public Sprite[] ObstacleDebrisSprites;
+        public int ObstacleDebrisCount = 24;
+        public float ObstacleDebrisMinSpeed = 4f;
+        public float ObstacleDebrisMaxSpeed = 11f;
+        public float ObstacleDebrisMaxSpin = 360f;
+        public float ObstacleDebrisLifetime = 1.5f;
+        public float ObstacleDebrisDamping = 1.25f;
+        public float ObstacleDebrisMinScale = 3f;
+        public float ObstacleDebrisMaxScale = 6f;
 
         protected override void InitializeSprite()
         {
@@ -133,8 +142,16 @@ namespace Assets.Scripts.Entities
                 Explosion.transform.parent = Level.Map.Transform;
                 Explosion.Setup(Level, LastHitProjectile.Weapon, LastHitProjectile.Shooter, null, transform.localPosition, 0, 0, Power);
                 IsDead = true;
+
+                if (TargetObstacle != null)
+                {
+                    TargetObstacle.BreakApart(transform.position, ObstacleDebrisSprites,
+                        ObstacleDebrisCount, ObstacleDebrisMinSpeed, ObstacleDebrisMaxSpeed,
+                        ObstacleDebrisMaxSpin, ObstacleDebrisLifetime, ObstacleDebrisDamping,
+                        ObstacleDebrisMinScale, ObstacleDebrisMaxScale);
+                }
+
                 Destroy(gameObject);
-                TargetObstacle.Kill(); 
             }
         }
     }
