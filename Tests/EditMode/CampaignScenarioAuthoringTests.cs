@@ -58,7 +58,7 @@ namespace Bees.Tests.EditMode
 
                 Assert.That(setupBody, Does.Contain("Stage.CutsceneManager.Setup"),
                     $"Mission {id} does not register a completion callback during setup.");
-                Assert.That(setupBody, Does.Contain(completion + "(") || setupBody.Contains(completion),
+                Assert.That(setupBody.Contains(completion + "(") || setupBody.Contains(completion),
                     Is.True,
                     $"Mission {id} setup does not reference completion method {completion}.");
                 if (completion != terminal)
