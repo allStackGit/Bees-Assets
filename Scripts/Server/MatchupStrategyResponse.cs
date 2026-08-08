@@ -5,12 +5,12 @@ namespace Assets.Scripts.Server
 {
     public class MatchupStrategyResponse : ServerResponse
     {
-        public string  Name, MatchupString;
+        public string Name, MatchupString, MatchupId;
         public int StrategyId;
-        public long SquadHash, MatchupId, OutcomeId, HistoricalTsv, HistoricalUses, Rng, WeightedTsv;
+        public long SquadHash, OutcomeId, HistoricalTsv, HistoricalUses, Rng, WeightedTsv;
        
         public MatchupStrategyResponse(string type, int status, int hash, float serverLatency, string name, string matchupString, int strategyId, long squadHash, 
-            long matchupId, long outcomeId, long historicalTsv, long historicalUses, long rng, long weightedTsv) : base(type, status, hash, serverLatency)
+            string matchupId, long outcomeId, long historicalTsv, long historicalUses, long rng, long weightedTsv) : base(type, status, hash, serverLatency)
         {
             this.Name = name;
             this.MatchupString = matchupString;
