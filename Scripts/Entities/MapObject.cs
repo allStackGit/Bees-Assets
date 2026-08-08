@@ -76,17 +76,25 @@ public class MapObject : MonoBehaviour
             Destroy(gameObject);
         }
     }
+
     private MapObject _mapObject;
+
     public override bool Equals(System.Object obj)
     {
-        if (obj == null)
+        if (System.Object.ReferenceEquals(this, obj))
+        {
+            return true;
+        }
+
+        // Preserve UnityEngine.Object's destroyed-object semantics. A destroyed
+        // MonoBehaviour still has a managed wrapper but must behave as null.
+        if ((UnityEngine.Object)this == null || obj == null)
         {
             return false;
         }
 
-        // If parameter cannot be cast to class return false.
         _mapObject = obj as MapObject;
-        if (_mapObject == null)
+        if ((UnityEngine.Object)_mapObject == null)
         {
             return false;
         }
@@ -96,6 +104,14 @@ public class MapObject : MonoBehaviour
 
     public bool Equals(MapObject other)
     {
+        if (System.Object.ReferenceEquals(this, other))
+        {
+            return true;
+        }
+        if ((UnityEngine.Object)this == null || (UnityEngine.Object)other == null)
+        {
+            return false;
+        }
         return Id == other.Id;
     }
 
@@ -106,16 +122,17 @@ public class MapObject : MonoBehaviour
 
     public static bool operator ==(MapObject a, MapObject b)
     {
-        // If both are null, or both are same instance, return true.
+        bool aIsUnityNull = System.Object.ReferenceEquals(a, null) || (UnityEngine.Object)a == null;
+        bool bIsUnityNull = System.Object.ReferenceEquals(b, null) || (UnityEngine.Object)b == null;
+
+        if (aIsUnityNull || bIsUnityNull)
+        {
+            return aIsUnityNull && bIsUnityNull;
+        }
+
         if (System.Object.ReferenceEquals(a, b))
         {
             return true;
-        }
-
-        // If one is null, but not both, return false.
-        if (((object)a == null) || ((object)b == null))
-        {
-            return false;
         }
 
         return a.Id == b.Id;
