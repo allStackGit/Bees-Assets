@@ -6,6 +6,7 @@ Compact repository-learning notes for campaign development. Detailed planned mis
 
 - `docs/CAMPAIGN_DESIGN_GUIDE.md` is **guiding, non-authoritative** planning information supplied by the developer. Use it to interpret unfinished work and future consequences, but never silently override current runtime code, authored maps/obstacle prefabs, dialogue, or server-backed campaign data.
 - The developer-supplied **Mission Scripting** document is the preferred dialogue/script authority when it gives a more coherent version of a currently implemented scene. Mechanics still come from runtime code/assets. In particular, its Titania arrival story and Titania-to-Uranus intermission better explain the current campaign than the older compressed/obsolete dialogue paths.
+- Future sections of Mission Scripting can themselves be stale. Its Saturn intermission introduces Fritz as a new encounter again, but the current Uranus `On the Offensive` implementation already rescues/recruits Fritz. Preserve the current Uranus continuity; rewrite that Saturn intermission when Saturn is implemented rather than introducing Fritz twice.
 - `SaveData/` is local/test user state and is never design authority.
 - Current implemented mission identity is reconstructed from `CampaignMissionCatalog`, `LevelIntro`, level data, mission triggers, exact maps/obstacle prefabs, ship mechanics, and dialogue together.
 
