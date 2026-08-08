@@ -10,7 +10,9 @@ namespace Bees.Tests.PlayMode
     /// <summary>
     /// Test-owned host for loading Space additively with production bootstrap side
     /// effects suppressed. It creates an isolated Level shell in the real scene and
-    /// attaches the production CampaignScenarioDriver.
+    /// attaches the production CampaignScenarioDriver. This host deliberately does
+    /// not execute mission Configure(), so it is safe for scripted missions whose
+    /// full setup is still coupled to persistent fleet/user data.
     /// </summary>
     internal sealed class CampaignScenarioSceneHost
     {
@@ -32,14 +34,10 @@ namespace Bees.Tests.PlayMode
         {
             Type catalog = RuntimeAssembly.GetType(
                 "Assets.Scripts.Levels.CampaignMissionCatalog");
-            object definition = catalog.GetMethod("Get", BindingFlags.Public | BindingFlags.Static)
+            // Get() is the validation boundary: any registered scripted mission may
+            // own an isolated Space scene even if full Configure() is not yet safe.
+            catalog.GetMethod("Get", BindingFlags.Public | BindingFlags.Static)
                 .Invoke(null, new object[] { missionId });
-            string status = RuntimeAssembly.GetField(definition, "ScenarioStatus").ToString();
-            if (status != "Ready")
-            {
-                throw new InvalidOperationException(
-                    $"Campaign mission {missionId} is not enabled for isolated scenes ({status}).");
-            }
             _missionId = missionId;
         }
 
