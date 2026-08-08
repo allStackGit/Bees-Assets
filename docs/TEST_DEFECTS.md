@@ -93,11 +93,33 @@ This file records defects discovered while building and reviewing the expanded q
 - Regression status: reproducer is committed on `agent/server-qualification-contracts`; expected to fail until the production branch is patched.
 - Prevention: integration tests for driver errors should use the driver's actual error-object shape rather than only synthetic scalar codes.
 
-The isolated production-class suite also covers connection release, pool recovery, WebSocket startup/accept/reject, duplicate request-hash concurrency, connection cleanup, reconnect/replacement-game behavior, inactive-game expiry, and consolidation transaction commit/rollback.
+### QS-002 — Completed unknown requests leak their pending hash
+
+- Type: Production
+- Status: Open; regression committed, production patch pending
+- Found during: request lifecycle audit
+- Reproducer: `unknown request type clears its pending hash after responding` in `test/serverLifecycle.integration.test.js`.
+- Symptom: the unknown-request branch calls `request.respond(...)` but does not delete `request.params.Hash` from `server.pendingRequests`. The completed hash therefore remains permanently pending, future duplicates are discarded, and the pending map can grow indefinitely with unsupported request types.
+- Expected fix: centralize request completion/cleanup so every terminal response path clears the hash exactly once; do not rely on every request-type branch remembering the deletion independently.
+- Regression status: reproducer is committed on `agent/server-qualification-contracts`; expected to fail until production is patched.
+- Prevention: pending-work ownership should have a single completion/finally boundary rather than distributed branch cleanup.
+
+### QS-003 — Consolidation transaction does not hold one pooled connection
+
+- Type: Production
+- Status: Open; connection-identity regression committed, production refactor pending
+- Found during: transaction-integrity audit
+- Reproducer: `consolidation transaction uses one borrowed MySQL connection from START through COMMIT` in `test/serverTransactionConnection.integration.test.js`.
+- Symptom: `Server.consolidateOutcomes` issues `START TRANSACTION`, DELETE/INSERT statements, and `COMMIT`/`ROLLBACK` through `Database.query`. `Database.query` calls `pool.getConnection()` and releases the connection for every statement, so the transaction statements can execute on different pooled MySQL sessions. SQL-order-only tests can pass while the writes are not actually protected by the intended transaction.
+- Expected fix: extract/extend `Database` with a transaction primitive that borrows one connection, executes the entire callback through that connection, commits/rolls back there, and releases only after completion. `consolidateOutcomes` should use that boundary.
+- Regression status: connection-identity reproducer is committed on `agent/server-qualification-contracts`; expected to fail until production is refactored.
+- Prevention: transaction tests must assert connection/session identity, not merely statement ordering.
+
+The isolated production-class suite also covers connection release, pool recovery, WebSocket startup/accept/reject, duplicate request-hash concurrency, connection cleanup, reconnect/replacement-game behavior, inactive-game expiry, and consolidation success/failure SQL paths.
 
 ## Production defects found during execution
 
-No execution-discovered defects are recorded yet. QA-004, QA-007, and QS-001 were found by static test-driven audit before the new suites were run. When a production failure is confirmed during execution, record:
+No execution-discovered defects are recorded yet. QA-004, QA-007, QS-001, QS-002, and QS-003 were found by static test-driven audit before the new suites were run. When a production failure is confirmed during execution, record:
 
 1. failing/reproducing test;
 2. root cause;
