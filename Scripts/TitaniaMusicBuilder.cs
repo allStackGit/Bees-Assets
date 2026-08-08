@@ -34,6 +34,14 @@ namespace Assets.Scripts
                 return false;
             }
 
+            if (source.loadState != AudioDataLoadState.Loaded && !source.LoadAudioData())
+            {
+                Debug.LogError("Could not load Titania source audio data for runtime splitting.");
+                intro = null;
+                loop = null;
+                return false;
+            }
+
             int introEnd = Mathf.Clamp(Mathf.RoundToInt(IntroEndSeconds * source.frequency), 1, source.samples);
             int loopEnd = Mathf.Clamp(Mathf.RoundToInt(LoopEndSeconds * source.frequency), introEnd + 1, source.samples);
 
