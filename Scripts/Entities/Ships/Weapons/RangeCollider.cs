@@ -4,6 +4,7 @@ using Assets.Scripts.Levels.Commands;
 using Assets.Scripts.Scenes;
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Xml.Linq;
 using UnityEngine;
 
@@ -14,6 +15,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public Weapon Weapon;
         public int Range;
         public CircleCollider2D Collider;
+
+        private readonly Dictionary<MapObject, int> _visibleMapObjectContacts = new Dictionary<MapObject, int>();
 
         public virtual void Create(Weapon weapon, int range)
         {
@@ -29,6 +32,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         }
         public void Deactivate()
         {
+            ClearVisibleMapObjects();
             Collider.enabled = false;
             enabled = false;
         }
@@ -63,7 +67,18 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             else if (_colliderEnter.CompareTag("Object"))
             {
                 MapObject mapObject = _colliderEnter.GetComponent<MapObject>();
-                mapObject.AddPlayerVisibilitySource(this, Weapon.Ship.Level.State);
+                if (mapObject != null)
+                {
+                    if (_visibleMapObjectContacts.TryGetValue(mapObject, out int contacts))
+                    {
+                        _visibleMapObjectContacts[mapObject] = contacts + 1;
+                    }
+                    else
+                    {
+                        _visibleMapObjectContacts.Add(mapObject, 1);
+                        mapObject.AddPlayerVisibilitySource(this, Weapon.Ship.Level.State);
+                    }
+                }
             }
 
         }
@@ -114,8 +129,37 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             else if (_colliderExit.CompareTag("Object"))
             {
                 MapObject mapObject = _colliderExit.GetComponent<MapObject>();
-                mapObject.RemovePlayerVisibilitySource(this, Weapon.Ship.Level.State);
+                if (mapObject != null && _visibleMapObjectContacts.TryGetValue(mapObject, out int contacts))
+                {
+                    if (contacts > 1)
+                    {
+                        _visibleMapObjectContacts[mapObject] = contacts - 1;
+                    }
+                    else
+                    {
+                        _visibleMapObjectContacts.Remove(mapObject);
+                        mapObject.RemovePlayerVisibilitySource(this, Weapon.Ship.Level.State);
+                    }
+                }
             }
+        }
+
+        private void ClearVisibleMapObjects()
+        {
+            GameState state = Weapon != null && Weapon.Ship != null && Weapon.Ship.Level != null
+                ? Weapon.Ship.Level.State
+                : null;
+            if (state != null)
+            {
+                foreach (MapObject mapObject in _visibleMapObjectContacts.Keys)
+                {
+                    if (mapObject != null)
+                    {
+                        mapObject.RemovePlayerVisibilitySource(this, state);
+                    }
+                }
+            }
+            _visibleMapObjectContacts.Clear();
         }
     }
 }
