@@ -4,7 +4,7 @@ This file records concrete defects found while building/reviewing the expanded B
 
 ## Status
 
-The first Unity execution reached the BeesFoundation EditMode suite: 78/79 tests passed and one production visibility-lifecycle defect was exposed. QA-009 is fixed on `agent/complete-test-qualification-suite` and awaits rerun. Continue treating new execution failures as evidence with reproducer -> root cause -> production/test fix -> regression result.
+The first Unity execution reached the BeesFoundation EditMode suite: 78/79 tests passed and one production visibility-lifecycle defect was exposed. QA-009 remains the only observed client failure so far; its first OnDestroy-only fix was insufficient, and the revised deactivation/destruction cleanup is now awaiting rerun. Continue treating new execution failures as evidence with reproducer -> root cause -> production/test fix -> regression result.
 
 ## Fixed test-harness defects
 
@@ -49,9 +49,10 @@ The first Unity execution reached the BeesFoundation EditMode suite: 78/79 tests
 
 ### QA-009 — Destroyed visible MapObject survived in player visibility
 - First BeesFoundation execution: `DestroyingVisibleMapObjectRemovesItFromGameStateImmediately` failed, leaving one destroyed reference in `GameState.PlayerVisibleMapObjects` after `DestroyImmediate`.
-- Root cause: tracker teardown relied on normal `HashSet.Remove(_mapObject)` while Unity had already transitioned the component into destroyed-object semantics. `MapObject` equality/hash is ID-based, so teardown-time lookup is not a safe lifecycle boundary.
-- Fix: `MapObjectVisibilityTracker.OnDestroy` preserves the existing public HashSet instance, snapshots entries by managed reference identity, clears the set, then re-adds every survivor except the exact object being destroyed. This avoids changing `MapObject.cs` and keeps the Fire Tank branch isolated.
-- Regression: existing `MapObjectVisibilityTrackerTests.DestroyingVisibleMapObjectRemovesItFromGameStateImmediately`; rerun pending.
+- The first attempted fix rebuilt the HashSet by managed reference identity in `OnDestroy`, but the same test still failed. That disproved the assumption that teardown-time HashSet lookup alone was the problem.
+- Revised lifecycle diagnosis: visibility cleanup must occur when the MapObject leaves the active state, not depend solely on the later destruction callback. This is also the correct production behavior for pooled/disabled map objects, which must not remain player-visible while inactive.
+- Revised fix: `MapObjectVisibilityTracker.OnDisable` now performs the authoritative visibility removal and clears source ownership; `OnDestroy` repeats the same operation idempotently as a fallback. Removal preserves the existing public HashSet instance and filters by managed reference identity to remain safe during Unity destroyed-object semantics.
+- Regression: existing `MapObjectVisibilityTrackerTests.DestroyingVisibleMapObjectRemovesItFromGameStateImmediately`; second rerun pending.
 
 ## BeesServer
 
@@ -59,4 +60,4 @@ The server has its own authoritative defect ledger at `BeesServer/docs/TEST_DEFE
 
 ## Execution status
 
-BeesFoundation EditMode first run: 78/79 passed, exposing QA-009. QA-009 is fixed and the release gate should be rerun from BeesFoundation so subsequent categories can execute. Server ordinary and live integration qualification are green.
+BeesFoundation EditMode: 78/79 passed on both runs so far, with only QA-009 failing. The first QA-009 fix was insufficient; the revised OnDisable + OnDestroy cleanup is awaiting execution. Server ordinary and live integration qualification are green.
