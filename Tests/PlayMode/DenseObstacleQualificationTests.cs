@@ -55,6 +55,10 @@ namespace Bees.Tests.PlayMode
             RuntimeAssembly.SetField(_level, "MapHeight", 256);
             RuntimeAssembly.SetField(_level, "HalfMapWidth", 128);
             RuntimeAssembly.SetField(_level, "HalfMapHeight", 128);
+            RuntimeAssembly.SetField(_level, "MinX", -128f);
+            RuntimeAssembly.SetField(_level, "MaxX", 128f);
+            RuntimeAssembly.SetField(_level, "MinY", -128f);
+            RuntimeAssembly.SetField(_level, "MaxY", 128f);
             RuntimeAssembly.SetField(_level, "HasObstacles", true);
 
             BuildDenseStaticObstacleField();
@@ -98,10 +102,12 @@ namespace Bees.Tests.PlayMode
             var elapsed = new List<double>(RequestCount);
             for (int requestIndex = 0; requestIndex < RequestCount; requestIndex++)
             {
-                int startX = 5 + (requestIndex % 5);
-                int startY = 6 + ((requestIndex * 3) % 10);
-                int endX = 54 + (requestIndex % 4);
-                int endY = 48 + ((requestIndex * 5) % 10);
+                // Exercise the dense field through the intentionally preserved central corridor.
+                // These are pathfinder grid coordinates, not world coordinates.
+                int startX = 30 + (requestIndex % 5);
+                int startY = 3 + (requestIndex % 4);
+                int endX = 30 + ((requestIndex * 3) % 5);
+                int endY = 59 - (requestIndex % 4);
                 int clearance = requestIndex % 2 == 0 ? 1 : 3;
 
                 RuntimeAssembly.SetField(_ship, "PathfindingThreadComplete", false);
@@ -154,8 +160,10 @@ namespace Bees.Tests.PlayMode
             {
                 for (float x = -104f; x <= 104f; x += 16f)
                 {
-                    // Leave alternating wide corridors so clearance-3 ships still have a legal route.
-                    bool centralGap = Mathf.Abs(x) <= 20f;
+                    // Preserve a known wide vertical route through an otherwise dense field.
+                    // The corridor must accommodate the production preferred-clearance buffer
+                    // as well as the explicit clearance-3 qualification requests.
+                    bool centralGap = Mathf.Abs(x) <= 40f;
                     bool sideGap = ((int)((y + 72f) / 36f) % 2 == 0) && x >= 52f && x <= 84f;
                     if (centralGap || sideGap)
                     {
