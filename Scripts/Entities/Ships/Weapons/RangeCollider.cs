@@ -109,9 +109,9 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     _projectileExit.Kill();
                 }
             }
-            else if (_colliderEnter.CompareTag("Object"))
+            else if (_colliderExit.CompareTag("Object"))
             {
-                Weapon.Ship.Level.State.PlayerVisibleMapObjects.Remove(_colliderEnter.GetComponent<MapObject>());
+                Weapon.Ship.Level.State.PlayerVisibleMapObjects.Remove(_colliderExit.GetComponent<MapObject>());
             }
         }
     }
