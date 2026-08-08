@@ -47,18 +47,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 if (!_shipEnter.IsDead)
                 {
                     Weapon.ShipsWithinRange.Add(_shipEnter.Id, _shipEnter);
-                    //try
-                    //{
-                    //    Weapon.ShipsWithinRange.Add(_shipEnter.Id, _shipEnter);
-
-                    //}
-                    //catch (Exception e)
-                    //{
-                    //    Debug.Log(Weapon);
-                    //    Debug.Log(Weapon.ShipsWithinRange);
-                    //    Debug.Log(_shipEnter);
-                    //    throw e;
-                    //}
                     _shipEnter.WeaponsThatHaveUsWithinRange.Add(Weapon);
                     Weapon.HasCachedChanged = true;
                 }
@@ -76,7 +64,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     else
                     {
                         _visibleMapObjectContacts.Add(mapObject, 1);
-                        mapObject.AddPlayerVisibilitySource(this, Weapon.Ship.Level.State);
+                        GetVisibilityTracker(mapObject)?.AddSource(this);
                     }
                 }
             }
@@ -92,19 +80,12 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 _shipExit = _colliderExit.GetComponent<Ship>();
 
-                //Debug.Log($"{ship.Name} is no longer in {Weapon.Ship.Name} range");
                 Weapon.ShipsWithinRange.Remove(_shipExit.Id);
                 Weapon.HasCachedChanged = true;
                 if (!_shipExit.IsDead)
                 {
                     _shipExit.WeaponsThatHaveUsWithinRange.Remove(Weapon);
                 }
-
-
-                //if (Weapon.Ship.IsHiveMindControlled)
-                //{
-                //    Level.State.HivemindShips[Weapon.Side - 1][Weapon.Ship.Id].Remove(ship);
-                //}
             }
             else if (_colliderExit.CompareTag("Projectile"))
             {
@@ -114,15 +95,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     && _projectileExit.Type != ConfigData.ProjectileTypes.RocketExplosion
                     && _projectileExit.Type != ConfigData.ProjectileTypes.FireTankExplosion)
                 {
-                    //Debug.Log($"{Weapon.Ship.Name}'s projectile left it's range!");
-                    //if (_projectileExit.Type == ConfigData.ProjectileTypes.Rocket)
-                    //{
-                    //    _projectileExit.KillSequence();
-                    //}
-                    //else
-                    //{
-                    //    _projectileExit.Kill();
-                    //}
                     _projectileExit.Kill();
                 }
             }
@@ -138,25 +110,29 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     else
                     {
                         _visibleMapObjectContacts.Remove(mapObject);
-                        mapObject.RemovePlayerVisibilitySource(this, Weapon.Ship.Level.State);
+                        MapObjectVisibilityTracker tracker = mapObject.GetComponent<MapObjectVisibilityTracker>();
+                        tracker?.RemoveSource(this);
                     }
                 }
             }
         }
 
-        private void ClearVisibleMapObjects()
+        private MapObjectVisibilityTracker GetVisibilityTracker(MapObject mapObject)
         {
             GameState state = Weapon != null && Weapon.Ship != null && Weapon.Ship.Level != null
                 ? Weapon.Ship.Level.State
                 : null;
-            if (state != null)
+            return MapObjectVisibilityTracker.GetOrCreate(mapObject, state);
+        }
+
+        private void ClearVisibleMapObjects()
+        {
+            foreach (MapObject mapObject in _visibleMapObjectContacts.Keys)
             {
-                foreach (MapObject mapObject in _visibleMapObjectContacts.Keys)
+                if (mapObject != null)
                 {
-                    if (mapObject != null)
-                    {
-                        mapObject.RemovePlayerVisibilitySource(this, state);
-                    }
+                    MapObjectVisibilityTracker tracker = mapObject.GetComponent<MapObjectVisibilityTracker>();
+                    tracker?.RemoveSource(this);
                 }
             }
             _visibleMapObjectContacts.Clear();
