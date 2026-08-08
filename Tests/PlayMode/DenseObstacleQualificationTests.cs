@@ -38,6 +38,8 @@ namespace Bees.Tests.PlayMode
 
             _stageObject = new GameObject(nameof(DenseObstacleQualificationTests) + " Stage");
             _stage = _stageObject.AddComponent(RuntimeAssembly.GetType("Stage"));
+            object pool = _stageObject.AddComponent(RuntimeAssembly.GetType("Pool"));
+            RuntimeAssembly.SetField(_stage, "Pool", pool);
             RuntimeAssembly.SetField(_stage, "IsTraining", true);
             ((Behaviour)_stage).enabled = false;
 
@@ -161,6 +163,7 @@ namespace Bees.Tests.PlayMode
                     }
 
                     GameObject obstacleObject = new GameObject("Dense obstacle " + id);
+                    obstacleObject.tag = "Obstacle";
                     _obstacleObjects.Add(obstacleObject);
                     obstacleObject.transform.localPosition = new Vector2(x, y);
                     BoxCollider2D collider = obstacleObject.AddComponent<BoxCollider2D>();
