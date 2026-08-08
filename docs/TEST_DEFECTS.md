@@ -4,7 +4,7 @@ This file records concrete defects found while building/reviewing the expanded B
 
 ## Status
 
-The first Unity execution reached the BeesFoundation EditMode suite: 78/79 tests passed. The repeatedly failing destruction test exposed a broader `MapObject` equality defect, but its original EditMode `DestroyImmediate` assertion was not a valid proof of runtime MonoBehaviour teardown. The equality contract is now fixed and the EditMode regression has been corrected to test that invariant directly. Continue treating new execution failures as evidence with reproducer -> root cause -> production/test fix -> regression result.
+BeesFoundation EditMode is now green. The first PlayMode execution ran 15 tests: 7 passed and 8 failed. The failures separated into one common incomplete-fixture lifecycle problem plus two pathfinding fixture defects; fixes are on `agent/complete-test-qualification-suite` and await rerun.
 
 ## Fixed test-harness defects
 
@@ -29,9 +29,21 @@ The first Unity execution reached the BeesFoundation EditMode suite: 78/79 tests
 - Fixed by resolving global `MapObject` and assigning distinct production-style IDs.
 
 ### QA-010 — Runtime destruction was asserted from an EditMode `DestroyImmediate` fixture
-- The original `DestroyingVisibleMapObjectRemovesItFromGameStateImmediately` test expected runtime MonoBehaviour teardown behavior while executing in EditMode with `DestroyImmediate`.
-- Repeated failures after changing both `OnDestroy` and `OnDisable` cleanup showed that the test was conflating Editor destruction mechanics with the production frame/lifecycle contract.
-- Fix: the EditMode regression now directly validates the actual defect discovered underneath it: a destroyed `MapObject` must preserve UnityEngine.Object null semantics. Runtime visibility-on-destruction belongs in PlayMode qualification using normal `Destroy`/frame progression rather than being inferred from this fixture.
+- The original destruction test expected runtime MonoBehaviour teardown behavior while executing in EditMode with `DestroyImmediate`.
+- Fix: the EditMode regression now validates the actual equality invariant directly; runtime destruction belongs in PlayMode with normal frame progression.
+
+### QA-011 — Hardware reset fixture allowed real `Level.Update` on an incomplete synthetic Level
+- First PlayMode run produced repeated `NullReferenceException` logs from `Level.Update` line 562 across hardware, soak, worker, performance, and harness tests.
+- Root cause: `HardwareQualificationTests` created a synthetic `Level` only to own `GameState`, but left the Behaviour enabled while intentionally omitting Stage/socket/input wiring. Its first `yield return null` allowed production `Level.Update` to execute and contaminate later tests if the log failure interrupted cleanup.
+- Fix: disable the synthetic Level immediately after creation. The test continues to exercise `GameState.ResetState` only, which is its intended scope.
+
+### QA-012 — Dynamic-obstacle fixture omitted production Level bounds
+- `CanOccupyDestination(new Vector2(80, 0), 1)` returned false before testing obstacle occupancy because `Level.MinX/MaxX/MinY/MaxY` were left at defaults.
+- Fix: initialize bounds to `[-128, 128]` consistently with the fixture's 256x256 map before creating Pathfinder.
+
+### QA-013 — Dense-obstacle qualification requested routes beside/through its own obstacle field
+- The first request completed but returned no path. The fixture's variable endpoints were not guaranteed legal once production preferred-clearance buffering was applied.
+- Fix: preserve a deliberately wide central corridor in the dense obstacle field and issue all qualification requests through known-valid grid coordinates inside that corridor, while still alternating explicit clearances 1 and 3.
 
 ## Fixed production defects
 
@@ -53,16 +65,17 @@ The first Unity execution reached the BeesFoundation EditMode suite: 78/79 tests
 - Regression: `ServerMatchupIdSerializationTests` uses identifiers above signed 64-bit range.
 
 ### QA-009 — `MapObject` custom equality broke Unity destroyed-object null semantics
-- The repeated visibility test failure prompted review of the underlying entity contract. `MapObject` defines custom `==`/`!=` operators that compared only managed null/reference plus `Id`, bypassing `UnityEngine.Object`'s native-object null check.
-- Consequence: after Unity destroys the native component, the managed `MapObject` wrapper could still report `mapObject != null`. Any lifecycle code using ordinary null checks could therefore retain or operate on destroyed map objects.
-- Fix: `MapObject.Equals` and `==`/`!=` now explicitly preserve UnityEngine.Object destroyed/null semantics before applying ID equality to live objects. ID-based hashing/equality remains intact for live map objects.
-- Regression: `MapObjectVisibilityTrackerTests.DestroyedMapObjectPreservesUnityNullSemantics` destroys the object and invokes the production equality operators, requiring `== null` true and `!= null` false.
-- The tracker retains defensive `OnDisable`/`OnDestroy` cleanup for real runtime deactivation/destruction, but the old EditMode destruction test is no longer treated as validation of those runtime callbacks.
+- `MapObject` custom `==`/`!=` bypassed `UnityEngine.Object`'s native-object null check, so destroyed wrappers could still report non-null.
+- Fix: destroyed/null semantics are preserved before applying ID equality to live objects.
+- Regression: `MapObjectVisibilityTrackerTests.DestroyedMapObjectPreservesUnityNullSemantics`.
 
 ## BeesServer
 
-The server has its own authoritative defect ledger at `BeesServer/docs/TEST_DEFECTS.md`. Do not duplicate its issue states here. The modular server ordinary and live `bees_test` qualification suites have passed on the project/server machines.
+The server has its own authoritative defect ledger at `BeesServer/docs/TEST_DEFECTS.md`. The modular server ordinary and live `bees_test` qualification suites have passed on the project/server machines.
 
 ## Execution status
 
-BeesFoundation EditMode reached 78/79 repeatedly because QA-010's invalid runtime-lifecycle assertion remained unchanged while two tracker teardown implementations were tried. QA-009 and QA-010 are now corrected at their actual layers; rerun BeesFoundation to validate the equality regression and then allow the release gate to proceed to later categories. Server ordinary and live integration qualification are green.
+- BeesFoundation EditMode: passed after QA-009/QA-010 correction.
+- First PlayMode run: 15 total, 7 passed, 8 failed.
+- Campaign scene coverage passed, including sequential missions 0-6 and scene-host rejection of missions 7-8.
+- QA-011/QA-012/QA-013 are fixed and await the next PlayMode/release-gate execution.
