@@ -1,0 +1,1235 @@
+fileFormatVersion: 2
+guid: 2a5cee9c93833d74fa1e6c0192710351
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: 1591214928098339817
+    second: scrap_bits_0
+  - first:
+      213: 4172694266455673150
+    second: scrap_bits_1
+  - first:
+      213: -7149396372218457974
+    second: scrap_bits_2
+  - first:
+      213: -27730112377530150
+    second: scrap_bits_3
+  - first:
+      213: -3421187692699863304
+    second: scrap_bits_4
+  - first:
+      213: -2268858407517853369
+    second: scrap_bits_5
+  - first:
+      213: 8028935720730511395
+    second: scrap_bits_6
+  - first:
+      213: 5568477138836020468
+    second: scrap_bits_7
+  - first:
+      213: -419564970647426540
+    second: scrap_bits_8
+  - first:
+      213: 519029484364558942
+    second: scrap_bits_9
+  - first:
+      213: -4933649832295256967
+    second: scrap_bits_10
+  - first:
+      213: -2872299729792372430
+    second: scrap_bits_11
+  - first:
+      213: 2236198138674756690
+    second: scrap_bits_12
+  - first:
+      213: -1309886087227886648
+    second: scrap_bits_13
+  - first:
+      213: -5120813562562498060
+    second: scrap_bits_14
+  - first:
+      213: -4264573002088282658
+    second: scrap_bits_15
+  - first:
+      213: -4162206695640046070
+    second: scrap_bits_16
+  - first:
+      213: -9244698592798234
+    second: scrap_bits_17
+  - first:
+      213: -4976715238821622739
+    second: scrap_bits_18
+  - first:
+      213: -3282567013652189344
+    second: scrap_bits_19
+  - first:
+      213: -4970440116905280546
+    second: scrap_bits_20
+  - first:
+      213: 1177623714041792805
+    second: scrap_bits_21
+  - first:
+      213: 2216357520795464598
+    second: scrap_bits_22
+  - first:
+      213: -1574710623679868028
+    second: scrap_bits_23
+  - first:
+      213: -5348685674528711073
+    second: scrap_bits_24
+  - first:
+      213: 6142421020445183926
+    second: scrap_bits_25
+  - first:
+      213: 7835971126603396316
+    second: scrap_bits_26
+  - first:
+      213: 7518607723265576485
+    second: scrap_bits_27
+  - first:
+      213: -6136276936401973428
+    second: scrap_bits_28
+  - first:
+      213: -5173422648453009882
+    second: scrap_bits_29
+  - first:
+      213: -280068874499552462
+    second: scrap_bits_30
+  - first:
+      213: 9032787639117431146
+    second: scrap_bits_31
+  - first:
+      213: 7567477289268794861
+    second: scrap_bits_32
+  - first:
+      213: 5383292435933636917
+    second: scrap_bits_33
+  - first:
+      213: -4935640895949422854
+    second: scrap_bits_34
+  - first:
+      213: -1684566114560010312
+    second: scrap_bits_35
+  - first:
+      213: 4865437180198400351
+    second: scrap_bits_36
+  - first:
+      213: -8985393462436958466
+    second: scrap_bits_37
+  - first:
+      213: -1976031765826637002
+    second: scrap_bits_38
+  - first:
+      213: -6655059137293894466
+    second: scrap_bits_39
+  - first:
+      213: 4709225687544211030
+    second: scrap_bits_40
+  - first:
+      213: -6107525219235847708
+    second: scrap_bits_41
+  - first:
+      213: 6718702421227462959
+    second: scrap_bits_42
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 100
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: scrap_bits_0
+      rect:
+        serializedVersion: 2
+        x: 5
+        y: 85
+        width: 22
+        height: 6
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 9eba996eb81251610800000000000000
+      internalID: 1591214928098339817
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_1
+      rect:
+        serializedVersion: 2
+        x: 35
+        y: 85
+        width: 10
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e394664d35368e930800000000000000
+      internalID: 4172694266455673150
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_2
+      rect:
+        serializedVersion: 2
+        x: 52
+        y: 85
+        width: 7
+        height: 6
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: a80d37be0ed38cc90800000000000000
+      internalID: -7149396372218457974
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_3
+      rect:
+        serializedVersion: 2
+        x: 66
+        y: 82
+        width: 13
+        height: 11
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: ad8d7261c9b7d9ff0800000000000000
+      internalID: -27730112377530150
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_4
+      rect:
+        serializedVersion: 2
+        x: 84
+        y: 83
+        width: 8
+        height: 10
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 8f6bfa27bef7580d0800000000000000
+      internalID: -3421187692699863304
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_5
+      rect:
+        serializedVersion: 2
+        x: 101
+        y: 85
+        width: 7
+        height: 6
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 7496d3e9c456380e0800000000000000
+      internalID: -2268858407517853369
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_6
+      rect:
+        serializedVersion: 2
+        x: 117
+        y: 85
+        width: 6
+        height: 6
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 3284696bf728c6f60800000000000000
+      internalID: 8028935720730511395
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_7
+      rect:
+        serializedVersion: 2
+        x: 128
+        y: 85
+        width: 16
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 4fc54386474374d40800000000000000
+      internalID: 5568477138836020468
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_8
+      rect:
+        serializedVersion: 2
+        x: 4
+        y: 53
+        width: 7
+        height: 21
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 41aec54d1e76d2af0800000000000000
+      internalID: -419564970647426540
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_9
+      rect:
+        serializedVersion: 2
+        x: 20
+        y: 68
+        width: 7
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e52f08be096f33700800000000000000
+      internalID: 519029484364558942
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_10
+      rect:
+        serializedVersion: 2
+        x: 36
+        y: 54
+        width: 8
+        height: 22
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 97c20ebfd97288bb0800000000000000
+      internalID: -4933649832295256967
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_11
+      rect:
+        serializedVersion: 2
+        x: 54
+        y: 67
+        width: 24
+        height: 11
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 23176452d9a8328d0800000000000000
+      internalID: -2872299729792372430
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_12
+      rect:
+        serializedVersion: 2
+        x: 84
+        y: 69
+        width: 7
+        height: 6
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 25c3917fb52980f10800000000000000
+      internalID: 2236198138674756690
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_13
+      rect:
+        serializedVersion: 2
+        x: 99
+        y: 67
+        width: 9
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 8c33e823b8952dde0800000000000000
+      internalID: -1309886087227886648
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_14
+      rect:
+        serializedVersion: 2
+        x: 114
+        y: 67
+        width: 13
+        height: 10
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 4f1b57232373fe8b0800000000000000
+      internalID: -5120813562562498060
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_15
+      rect:
+        serializedVersion: 2
+        x: 132
+        y: 68
+        width: 7
+        height: 8
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: ed58ec3037131d4c0800000000000000
+      internalID: -4264573002088282658
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_16
+      rect:
+        serializedVersion: 2
+        x: 19
+        y: 51
+        width: 9
+        height: 11
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: a066f98001fdc36c0800000000000000
+      internalID: -4162206695640046070
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_17
+      rect:
+        serializedVersion: 2
+        x: 53
+        y: 51
+        width: 22
+        height: 10
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 6e91250eef72fdff0800000000000000
+      internalID: -9244698592798234
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_18
+      rect:
+        serializedVersion: 2
+        x: 84
+        y: 53
+        width: 7
+        height: 6
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: d2c83c9abd72feab0800000000000000
+      internalID: -4976715238821622739
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_19
+      rect:
+        serializedVersion: 2
+        x: 101
+        y: 38
+        width: 7
+        height: 23
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 06fa8df51baf172d0800000000000000
+      internalID: -3282567013652189344
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_20
+      rect:
+        serializedVersion: 2
+        x: 117
+        y: 34
+        width: 7
+        height: 24
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: edb72865c03750bb0800000000000000
+      internalID: -4970440116905280546
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_21
+      rect:
+        serializedVersion: 2
+        x: 132
+        y: 51
+        width: 7
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 52989825782c75010800000000000000
+      internalID: 1177623714041792805
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_22
+      rect:
+        serializedVersion: 2
+        x: 5
+        y: 37
+        width: 6
+        height: 6
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 69377422c6512ce10800000000000000
+      internalID: 2216357520795464598
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_23
+      rect:
+        serializedVersion: 2
+        x: 20
+        y: 22
+        width: 9
+        height: 22
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 483178be701852ae0800000000000000
+      internalID: -1574710623679868028
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_24
+      rect:
+        serializedVersion: 2
+        x: 37
+        y: 37
+        width: 6
+        height: 6
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: f5ede72b7b6a5c5b0800000000000000
+      internalID: -5348685674528711073
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_25
+      rect:
+        serializedVersion: 2
+        x: 53
+        y: 35
+        width: 6
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 6bf0788cf534e3550800000000000000
+      internalID: 6142421020445183926
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_26
+      rect:
+        serializedVersion: 2
+        x: 68
+        y: 36
+        width: 7
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: cd4b96f0936febc60800000000000000
+      internalID: 7835971126603396316
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_27
+      rect:
+        serializedVersion: 2
+        x: 84
+        y: 35
+        width: 7
+        height: 10
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 52ec0c693e5775860800000000000000
+      internalID: 7518607723265576485
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_28
+      rect:
+        serializedVersion: 2
+        x: 133
+        y: 37
+        width: 6
+        height: 6
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: c4f865243a097daa0800000000000000
+      internalID: -6136276936401973428
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_29
+      rect:
+        serializedVersion: 2
+        x: 4
+        y: 20
+        width: 8
+        height: 8
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 62e6ffdd28f4438b0800000000000000
+      internalID: -5173422648453009882
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_30
+      rect:
+        serializedVersion: 2
+        x: 37
+        y: 21
+        width: 6
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 23b8fcea7defc1cf0800000000000000
+      internalID: -280068874499552462
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_31
+      rect:
+        serializedVersion: 2
+        x: 50
+        y: 20
+        width: 24
+        height: 8
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: a6142210088ea5d70800000000000000
+      internalID: 9032787639117431146
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_32
+      rect:
+        serializedVersion: 2
+        x: 83
+        y: 19
+        width: 9
+        height: 11
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: de5d3b81084150960800000000000000
+      internalID: 7567477289268794861
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_33
+      rect:
+        serializedVersion: 2
+        x: 101
+        y: 21
+        width: 6
+        height: 6
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 5392fd5d2fb45ba40800000000000000
+      internalID: 5383292435933636917
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_34
+      rect:
+        serializedVersion: 2
+        x: 114
+        y: 18
+        width: 12
+        height: 13
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: afe3b0a51c4118bb0800000000000000
+      internalID: -4935640895949422854
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_35
+      rect:
+        serializedVersion: 2
+        x: 131
+        y: 19
+        width: 10
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 8b79df44b083f98e0800000000000000
+      internalID: -1684566114560010312
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_36
+      rect:
+        serializedVersion: 2
+        x: 3
+        y: 4
+        width: 9
+        height: 8
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: f5134b25651858340800000000000000
+      internalID: 4865437180198400351
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_37
+      rect:
+        serializedVersion: 2
+        x: 21
+        y: 4
+        width: 6
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: efee358a0487d4380800000000000000
+      internalID: -8985393462436958466
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_38
+      rect:
+        serializedVersion: 2
+        x: 37
+        y: 5
+        width: 6
+        height: 6
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 633f3051499b394e0800000000000000
+      internalID: -1976031765826637002
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_39
+      rect:
+        serializedVersion: 2
+        x: 54
+        y: 3
+        width: 22
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: ebc316289fa74a3a0800000000000000
+      internalID: -6655059137293894466
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_40
+      rect:
+        serializedVersion: 2
+        x: 81
+        y: 4
+        width: 14
+        height: 8
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 656a731ffc78a5140800000000000000
+      internalID: 4709225687544211030
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_41
+      rect:
+        serializedVersion: 2
+        x: 101
+        y: 5
+        width: 6
+        height: 6
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 4e125b21c26bd3ba0800000000000000
+      internalID: -6107525219235847708
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: scrap_bits_42
+      rect:
+        serializedVersion: 2
+        x: 117
+        y: 4
+        width: 21
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: f21e1d04140ad3d50800000000000000
+      internalID: 6718702421227462959
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
+    nameFileIdTable:
+      scrap_bits_0: 1591214928098339817
+      scrap_bits_1: 4172694266455673150
+      scrap_bits_10: -4933649832295256967
+      scrap_bits_11: -2872299729792372430
+      scrap_bits_12: 2236198138674756690
+      scrap_bits_13: -1309886087227886648
+      scrap_bits_14: -5120813562562498060
+      scrap_bits_15: -4264573002088282658
+      scrap_bits_16: -4162206695640046070
+      scrap_bits_17: -9244698592798234
+      scrap_bits_18: -4976715238821622739
+      scrap_bits_19: -3282567013652189344
+      scrap_bits_2: -7149396372218457974
+      scrap_bits_20: -4970440116905280546
+      scrap_bits_21: 1177623714041792805
+      scrap_bits_22: 2216357520795464598
+      scrap_bits_23: -1574710623679868028
+      scrap_bits_24: -5348685674528711073
+      scrap_bits_25: 6142421020445183926
+      scrap_bits_26: 7835971126603396316
+      scrap_bits_27: 7518607723265576485
+      scrap_bits_28: -6136276936401973428
+      scrap_bits_29: -5173422648453009882
+      scrap_bits_3: -27730112377530150
+      scrap_bits_30: -280068874499552462
+      scrap_bits_31: 9032787639117431146
+      scrap_bits_32: 7567477289268794861
+      scrap_bits_33: 5383292435933636917
+      scrap_bits_34: -4935640895949422854
+      scrap_bits_35: -1684566114560010312
+      scrap_bits_36: 4865437180198400351
+      scrap_bits_37: -8985393462436958466
+      scrap_bits_38: -1976031765826637002
+      scrap_bits_39: -6655059137293894466
+      scrap_bits_4: -3421187692699863304
+      scrap_bits_40: 4709225687544211030
+      scrap_bits_41: -6107525219235847708
+      scrap_bits_42: 6718702421227462959
+      scrap_bits_5: -2268858407517853369
+      scrap_bits_6: 8028935720730511395
+      scrap_bits_7: 5568477138836020468
+      scrap_bits_8: -419564970647426540
+      scrap_bits_9: 519029484364558942
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

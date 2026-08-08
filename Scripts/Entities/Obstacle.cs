@@ -21,7 +21,8 @@ namespace Assets.Scripts.Entities
         public ConfigData.ObstacleTypes ObstacleType;
         public Collider2D Collider, ProximityCollider, ClearanceMappingCollider;
         public SpriteRenderer SpriteRenderer;
-        public SpriteMask SpriteMask; 
+        public SpriteMask SpriteMask;
+        private bool _breakApartStarted;
 
         public virtual void Create(Stage stage)
         {
@@ -48,7 +49,100 @@ namespace Assets.Scripts.Entities
             //Debug.Log($"Clearing data for {Name}");
             MapPointsIndex = 0;
             IsDead = false;
+            _breakApartStarted = false;
         }
+
+        /// <summary>
+        /// Spawns cosmetic debris across this obstacle and then removes the obstacle normally.
+        /// Debris uses isolated deterministic randomness so the visual effect does not advance
+        /// Unity's gameplay random state.
+        /// </summary>
+        public virtual void BreakApart(Vector2 explosionPosition, Sprite[] debrisSprites,
+            int debrisCount, float minSpeed, float maxSpeed, float maxSpin,
+            float lifetime, float damping, float minScale, float maxScale)
+        {
+            if (_breakApartStarted || IsDead)
+            {
+                return;
+            }
+
+            _breakApartStarted = true;
+
+            if (Stage != null && Stage.IsRendering && debrisSprites != null && debrisSprites.Length > 0 &&
+                debrisCount > 0 && Level != null)
+            {
+                Bounds bounds;
+                if (Collider != null)
+                {
+                    bounds = Collider.bounds;
+                }
+                else if (SpriteRenderer != null)
+                {
+                    bounds = SpriteRenderer.bounds;
+                }
+                else
+                {
+                    bounds = new Bounds(transform.position, Vector3.one);
+                }
+
+                int seed = unchecked((Id * 397) ^ explosionPosition.x.GetHashCode() ^ explosionPosition.y.GetHashCode());
+                System.Random random = new System.Random(seed);
+
+                for (int i = 0; i < debrisCount; i++)
+                {
+                    Sprite sprite = debrisSprites[random.Next(debrisSprites.Length)];
+                    if (sprite == null)
+                    {
+                        continue;
+                    }
+
+                    Vector2 spawnPosition = new Vector2(
+                        Mathf.Lerp(bounds.min.x, bounds.max.x, NextFloat(random)),
+                        Mathf.Lerp(bounds.min.y, bounds.max.y, NextFloat(random)));
+
+                    Vector2 direction = spawnPosition - explosionPosition;
+                    if (direction.sqrMagnitude < 0.01f)
+                    {
+                        float angle = NextFloat(random) * Mathf.PI * 2f;
+                        direction = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
+                    }
+                    else
+                    {
+                        direction.Normalize();
+                    }
+
+                    Vector2 spread = new Vector2(NextSignedFloat(random), NextSignedFloat(random)) * 0.35f;
+                    direction = (direction + spread).normalized;
+
+                    float speed = Mathf.Lerp(minSpeed, maxSpeed, NextFloat(random));
+                    float spin = Mathf.Lerp(-maxSpin, maxSpin, NextFloat(random));
+                    float pieceLifetime = lifetime * Mathf.Lerp(0.8f, 1.2f, NextFloat(random));
+                    float scale = Mathf.Lerp(minScale, maxScale, NextFloat(random));
+
+                    GameObject debrisObject = new GameObject("Obstacle Debris");
+                    debrisObject.transform.SetParent(Level.Map.Transform, true);
+                    debrisObject.transform.position = spawnPosition;
+                    debrisObject.transform.rotation = Quaternion.Euler(0f, 0f, NextFloat(random) * 360f);
+
+                    ObstacleDebrisPiece debrisPiece = debrisObject.AddComponent<ObstacleDebrisPiece>();
+                    debrisPiece.Setup(sprite, SpriteRenderer, direction * speed, spin,
+                        pieceLifetime, damping, scale);
+                }
+            }
+
+            Kill();
+        }
+
+        private static float NextFloat(System.Random random)
+        {
+            return (float)random.NextDouble();
+        }
+
+        private static float NextSignedFloat(System.Random random)
+        {
+            return NextFloat(random) * 2f - 1f;
+        }
+
         public virtual void Kill()
         {
             if (Level.HasObstacles)
