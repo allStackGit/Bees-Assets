@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Reflection;
 using NUnit.Framework;
@@ -32,8 +32,8 @@ namespace Bees.Tests.EditMode
             Assert.That(maps.Count, Is.GreaterThanOrEqualTo(4));
             AssertMap(maps[0], 0, "Pluto", new Vector2(0, -230), new Vector2(0, 230));
             AssertMap(maps[1], 1, "Neptune", new Vector2(0, -430), new Vector2(0, 430));
-            AssertMap(maps[2], 2, "Uranus", new Vector2(0, -430), new Vector2(0, 430));
-            AssertMap(maps[3], 3, "Titania", new Vector2(0, -215), new Vector2(0, 215));
+            AssertMap(maps[2], 2, "Titania", new Vector2(0, -215), new Vector2(0, 215));
+            AssertMap(maps[3], 3, "Uranus", new Vector2(0, -430), new Vector2(0, 430));
         }
 
         [Test]

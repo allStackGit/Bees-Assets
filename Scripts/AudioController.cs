@@ -154,13 +154,14 @@ namespace Assets.Scripts
                     IntroLength = UranusIntroLength;
                     break;
                 case ConfigData.Locations.Titania:
+                    EnsureTitaniaMusicSources();
                     LocationIntro = TitaniaIntro;
                     LocationLoop = TitaniaLoop;
                     // Titania currently has only a base location composition. Do not
                     // accidentally carry faction stems over from the previous location.
                     HumanLoop = null;
                     BeesLoop = null;
-                    IntroLength = TitaniaIntroLength;
+                    IntroLength = TitaniaIntro != null ? TitaniaIntro.clip.length : TitaniaIntroLength;
                     break;
             }
 
@@ -209,6 +210,43 @@ namespace Assets.Scripts
             //StartCoroutine(nameof(EndIntro), IntroLength);
             //Invoke(nameof(EndIntro), IntroLength);
             Level.AddTimer(new ScaledTimer(IntroLength, EndIntro));
+        }
+
+        private void EnsureTitaniaMusicSources()
+        {
+            if (!TitaniaMusicBuilder.TryGetClips(out AudioClip introClip, out AudioClip loopClip))
+            {
+                TitaniaIntro = null;
+                TitaniaLoop = null;
+                return;
+            }
+
+            AudioSource template = PlutoLoop != null ? PlutoLoop : PlutoIntro;
+            TitaniaIntro = EnsureMusicSource(TitaniaIntro, "Titania Intro", template);
+            TitaniaLoop = EnsureMusicSource(TitaniaLoop, "Titania Loop", template);
+            TitaniaIntro.clip = introClip;
+            TitaniaIntro.loop = false;
+            TitaniaLoop.clip = loopClip;
+            TitaniaLoop.loop = true;
+            TitaniaIntroLength = introClip.length;
+        }
+
+        private AudioSource EnsureMusicSource(AudioSource source, string sourceName, AudioSource template)
+        {
+            if (source == null)
+            {
+                source = gameObject.AddComponent<AudioSource>();
+            }
+            source.playOnAwake = false;
+            source.spatialBlend = 0f;
+            source.name = sourceName;
+            if (template != null)
+            {
+                source.outputAudioMixerGroup = template.outputAudioMixerGroup;
+                source.volume = template.volume;
+                source.priority = template.priority;
+            }
+            return source;
         }
 
         private static void AddIfPresent(List<AudioSource> sources, AudioSource source)

@@ -670,8 +670,8 @@ namespace Assets.Scripts
         public static readonly List<Data.Map> Maps = new List<Data.Map> { 
             new Data.Map(0, new Vector2(0, -230), new Vector2(0, 230), Locations.Pluto),
             new Data.Map(1, new Vector2(0, -430), new Vector2(0, 430), Locations.Neptune),
-            new Data.Map(2, new Vector2(0, -430), new Vector2(0, 430), Locations.Uranus),
-            new Data.Map(3, new Vector2(0, -215), new Vector2(0, 215), Locations.Titania),
+            new Data.Map(2, new Vector2(0, -215), new Vector2(0, 215), Locations.Titania),
+            new Data.Map(3, new Vector2(0, -430), new Vector2(0, 430), Locations.Uranus),
             
         };
         public static readonly List<Data.ObstacleMap> ObstacleMaps = new List<Data.ObstacleMap> { 
