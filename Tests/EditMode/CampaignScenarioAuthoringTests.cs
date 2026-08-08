@@ -30,14 +30,12 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void ScenarioSetContainsOnlyCompletedPlutoAndNeptuneMissions()
+        public void FullConfigureScenarioSetRemainsTheKnownSafePlutoAndNeptuneSubset()
         {
             int[] ids = _readyDefinitions
                 .Select(definition => (int)RuntimeAssembly.GetField(definition, "Id"))
                 .ToArray();
             Assert.That(ids, Is.EqualTo(new[] { 0, 1, 2, 3, 4, 5, 6 }));
-            Assert.That(ids, Has.None.EqualTo(7));
-            Assert.That(ids, Has.None.EqualTo(8));
         }
 
         [Test]
@@ -69,6 +67,28 @@ namespace Bees.Tests.EditMode
                 Assert.That(terminalBody, Does.Contain("Stage.Menus.ShowLevel"),
                     $"Mission {id} terminal method does not present a level result.");
             }
+        }
+
+        [TestCase(0, "Pluto1Anomaly", "Scout and explore around Pluto", "HumanProximityColliderPrefab")]
+        [TestCase(1, "Pluto2Reinforcements", "Find and destroy the enemy ships", "CanAcceptUserInput")]
+        [TestCase(2, "Pluto3Pushback", "Push back the enemy", "ResolveEliminationWinner")]
+        [TestCase(3, "Pluto4BluerPastures", "_questPoints", "personnel")]
+        [TestCase(4, "Neptune1SeizeTheMeans", "Find and destroy all the Bees", "MiningAsteroid")]
+        [TestCase(5, "Neptune2OfProduction", "Survive and mine as many minerals as you can", "ExitZonePrefab")]
+        [TestCase(6, "Neptune3PressingForward", "break through the blockade", "ResolveEliminationWinner")]
+        [TestCase(7, "Titania1Minesweeper", "ExitZonePrefab", "90")]
+        [TestCase(8, "Titania2Beenoculars", "HumanTarget", "450")]
+        [TestCase(9, "Uranus1OnTheOffensive", "Bumblebee", "Cruiser")]
+        [TestCase(10, "Uranus2OnTheDefensive", "Survive and mine as many minerals as you can", "ExitZonePrefab")]
+        [TestCase(11, "Uranus3ANewThreat", "Rescue the Barges and destroy all the Bees", "Barge")]
+        public void EveryScriptedMissionRetainsItsDefiningGameplayContract(
+            int missionId, string setupMethod, string firstMarker, string secondMarker)
+        {
+            string body = ExtractMethodBody(_triggerSource, setupMethod);
+            Assert.That(body, Does.Contain(firstMarker),
+                $"Mission {missionId} lost defining authoring marker '{firstMarker}'.");
+            Assert.That(body, Does.Contain(secondMarker),
+                $"Mission {missionId} lost defining authoring marker '{secondMarker}'.");
         }
 
         [TestCase("Pluto3Pushback")]
