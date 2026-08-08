@@ -86,7 +86,7 @@ namespace Bees.Tests.PlayMode
             }
             finally
             {
-                UnityEngine.Object.Destroy(levelObject);
+                UnityEngine.Object.DestroyImmediate(levelObject);
             }
         }
     }
