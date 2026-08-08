@@ -16,6 +16,7 @@ This file records compact, reusable implementation knowledge that is expensive t
 ## Obstacle destruction debris
 
 - Fire Tank obstacle destruction flows through `CanisterBomb.Kill()` -> `Obstacle.BreakApart(...)` -> normal `Obstacle.Kill()`. Keep the breakup geometry on `Obstacle`; callers provide the explosion origin, debris sprite set, and tuning values.
+- `Obstacle.BreakApart` has its own `_breakApartStarted` guard, reset by `ClearData`. Do not repurpose `Obstacle.IsDead` as the breakup guard before calling virtual kill behavior, because subclasses may use `IsDead` as part of their own teardown contract.
 - `Sprites/Obstacles/scrap_bits.png` contains 43 sliced fragment sprites. The current imported sub-sprites use lower-left pivots, so `ObstacleDebrisPiece` puts the `SpriteRenderer` on a centered child (`localPosition = -sprite.bounds.center`) and rotates the root. This avoids editing all sprite pivots and prevents visible orbiting during spin.
 - Cosmetic obstacle fragments deliberately have no collider and no `Rigidbody2D`. `ObstacleDebrisPiece` moves/rotates its transform, exponentially damps velocity, fades after 60% of its lifetime, and destroys itself. This prevents debris from affecting combat, pathfinding, or physics.
 - Debris spawn positions come from the destroyed obstacle collider bounds (renderer bounds are the fallback), so fragments appear to originate throughout the obstacle rather than from the explosion center. Launch direction is radial from the supplied explosion position with limited random spread.
