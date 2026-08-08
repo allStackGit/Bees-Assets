@@ -4,7 +4,7 @@ This file records concrete defects found while building/reviewing the expanded B
 
 ## Status
 
-BeesFoundation EditMode is now green. The first PlayMode execution ran 15 tests: 7 passed and 8 failed. The failures separated into one common incomplete-fixture lifecycle problem plus two pathfinding fixture defects; fixes are on `agent/complete-test-qualification-suite` and await rerun.
+The current Unity qualification run is green: EditMode, PlayMode, and Player tests all passed after the fixes below. No known client qualification defect remains open from this pass.
 
 ## Fixed test-harness defects
 
@@ -31,19 +31,23 @@ BeesFoundation EditMode is now green. The first PlayMode execution ran 15 tests:
 ### QA-010 — Runtime destruction was asserted from an EditMode `DestroyImmediate` fixture
 - The original destruction test expected runtime MonoBehaviour teardown behavior while executing in EditMode with `DestroyImmediate`.
 - Fix: the EditMode regression now validates the actual equality invariant directly; runtime destruction belongs in PlayMode with normal frame progression.
+- Validation: EditMode passed on the completed release-gate run.
 
 ### QA-011 — Hardware reset fixture allowed real `Level.Update` on an incomplete synthetic Level
 - First PlayMode run produced repeated `NullReferenceException` logs from `Level.Update` line 562 across hardware, soak, worker, performance, and harness tests.
 - Root cause: `HardwareQualificationTests` created a synthetic `Level` only to own `GameState`, but left the Behaviour enabled while intentionally omitting Stage/socket/input wiring. Its first `yield return null` allowed production `Level.Update` to execute and contaminate later tests if the log failure interrupted cleanup.
 - Fix: disable the synthetic Level immediately after creation. The test continues to exercise `GameState.ResetState` only, which is its intended scope.
+- Validation: PlayMode passed on the completed release-gate run.
 
 ### QA-012 — Dynamic-obstacle fixture omitted production Level bounds
 - `CanOccupyDestination(new Vector2(80, 0), 1)` returned false before testing obstacle occupancy because `Level.MinX/MaxX/MinY/MaxY` were left at defaults.
 - Fix: initialize bounds to `[-128, 128]` consistently with the fixture's 256x256 map before creating Pathfinder.
+- Validation: PlayMode passed on the completed release-gate run.
 
 ### QA-013 — Dense-obstacle qualification requested routes beside/through its own obstacle field
 - The first request completed but returned no path. The fixture's variable endpoints were not guaranteed legal once production preferred-clearance buffering was applied.
 - Fix: preserve a deliberately wide central corridor in the dense obstacle field and issue all qualification requests through known-valid grid coordinates inside that corridor, while still alternating explicit clearances 1 and 3.
+- Validation: PlayMode passed on the completed release-gate run.
 
 ## Fixed production defects
 
@@ -68,6 +72,7 @@ BeesFoundation EditMode is now green. The first PlayMode execution ran 15 tests:
 - `MapObject` custom `==`/`!=` bypassed `UnityEngine.Object`'s native-object null check, so destroyed wrappers could still report non-null.
 - Fix: destroyed/null semantics are preserved before applying ID equality to live objects.
 - Regression: `MapObjectVisibilityTrackerTests.DestroyedMapObjectPreservesUnityNullSemantics`.
+- Validation: EditMode passed on the completed release-gate run.
 
 ## BeesServer
 
@@ -75,7 +80,11 @@ The server has its own authoritative defect ledger at `BeesServer/docs/TEST_DEFE
 
 ## Execution status
 
-- BeesFoundation EditMode: passed after QA-009/QA-010 correction.
-- First PlayMode run: 15 total, 7 passed, 8 failed.
-- Campaign scene coverage passed, including sequential missions 0-6 and scene-host rejection of missions 7-8.
-- QA-011/QA-012/QA-013 are fixed and await the next PlayMode/release-gate execution.
+- BeesFoundation/EditMode: passed.
+- PlayMode: passed after QA-011/QA-012/QA-013 fixes.
+- Player tests: passed.
+- Campaign scene coverage passed, including sequential missions 0–6 and scene-host rejection of missions 7–8.
+- BeesServer ordinary suite: passed.
+- BeesServer live `bees_test` integration: passed.
+
+No known defect from this qualification pass is awaiting rerun.
