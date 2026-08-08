@@ -235,11 +235,12 @@ namespace Assets.Scripts
         {
             if (source == null)
             {
-                source = gameObject.AddComponent<AudioSource>();
+                GameObject sourceObject = new GameObject(sourceName);
+                sourceObject.transform.SetParent(transform, false);
+                source = sourceObject.AddComponent<AudioSource>();
             }
             source.playOnAwake = false;
             source.spatialBlend = 0f;
-            source.name = sourceName;
             if (template != null)
             {
                 source.outputAudioMixerGroup = template.outputAudioMixerGroup;
