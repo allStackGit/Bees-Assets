@@ -8,7 +8,12 @@ namespace Assets.Scripts.Levels
     {
         public List<Squad> GetSelectedSquads()
         {
-            return SelectedSquads.Where(squad => squad != null).ToList();
+            // This accessor is used by player input/action routing. A squad may remain in
+            // the raw selection registry while a cutscene temporarily revokes control;
+            // do not expose it as commandable until CanAcceptUserInput is restored.
+            return SelectedSquads
+                .Where(squad => squad != null && !squad.IsDead && squad.CanAcceptUserInput)
+                .ToList();
         }
 
         public void AddSelectedSquad(Squad squad)
