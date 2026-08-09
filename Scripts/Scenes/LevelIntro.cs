@@ -20,8 +20,8 @@ namespace UIComponents
         {
             base.FinalizeSceneWithUserData();
 
-            // The level-intro screen uses the ship ambience in place of menu music.
-            UIAudioController.Instance?.PauseMusic();
+            // Layer the ship ambience under the level-intro presentation. Do not change
+            // the persistent music state just to add this screen-specific background cue.
             UIAudioController.Instance?.PlayLevelIntroAmbience();
 
             LevelNumber = ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide);
