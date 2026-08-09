@@ -13,7 +13,7 @@ namespace Assets.Scripts.Entities.Ships
         private RocketExplosion Explosion;
         private AudioSource ExplosionSound;
         public Weapon Bomb;
-        private ScaledTimer _delayedKillTimer = new ScaledTimer();
+        private readonly ScaledTimer _delayedKillTimer = new ScaledTimer();
         private bool _waitingForDelayedRelease;
 
         public override void Create(Stage stage)
@@ -76,11 +76,6 @@ namespace Assets.Scripts.Entities.Ships
                     KillerSavedSquad = killer.Squad.SavedSquad;
                     LogKillerStats(KillerFleetShip, KillerSavedSquad);
                 }
-                if (Level.Stage.ReplaceDeadShips && Squad.SavedSquad.HasBeenSavedToStorage)
-                {
-                    FleetShip.IsDead = true;
-                }
-                Squad.SavedSquad.Stats.ShipsLost++;
 
                 if (HasUserFogOfWarVision)
                 {
@@ -97,6 +92,8 @@ namespace Assets.Scripts.Entities.Ships
                     WeaponsThatHaveUsWithinRange.Clear();
                 }
 
+                // Own all common death accounting here. Do not also increment ShipsLost or
+                // set FleetShip.IsDead in this special path; LogKilledStats already does it.
                 LogKilledStats();
             }
 
@@ -127,10 +124,6 @@ namespace Assets.Scripts.Entities.Ships
 
                 if (!endKill)
                 {
-                    // RemoveShip normally makes the wrapper immediately poolable. Keep
-                    // this dead Fire Barge reserved until the explosion's five-second
-                    // lifetime has completed so delayed callbacks/projectiles cannot see
-                    // a newly configured occupant of the same pooled Ship object.
                     Level.State.ShipsToRelease.Remove(this);
                     _waitingForDelayedRelease = true;
                     _delayedKillTimer.Reuse(5f, DelayedKill);
