@@ -55,21 +55,31 @@ namespace Assets.Scripts.Data
         }
         public Sprite LoadCachedSprite(int index, string type, Vector2Int size, Color squadColor)
         {
+            string path = $"{ConfigData.GetCachePath()}{type}_{Type}_{ColorUtility.ToHtmlStringRGB(squadColor)}_{index}.png";
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
             try
             {
-                string path = $"{ConfigData.GetCachePath()}{type}_{Type}_{ColorUtility.ToHtmlStringRGB(squadColor)}_{index}.png";
                 byte[] bytes = File.ReadAllBytes(path);
                 Texture2D texture = new Texture2D(size.x, size.y);
                 texture.filterMode = FilterMode.Point;
-                texture.LoadImage(bytes);
-                //Debug.Log($"Loaded cached sprites from {path} for Fleetship {Name}");
+                if (!texture.LoadImage(bytes))
+                {
+                    UnityEngine.Object.Destroy(texture);
+                    return null;
+                }
+                // Cached sprites are an optimization. Ship.SetColor() deliberately falls
+                // back to live recoloring when this returns null, which is required when a
+                // FleetShip moves to a squad color/index that has not been cached yet.
                 return Sprite.Create(texture, new Rect(0, 0, size.x, size.y), ConfigData.HalfSize, ConfigData.PixelsPerUnit);
             }
             catch (Exception e)
             {
-                Debug.LogError($"Error while trying to load cached sprites: {e}");
-                throw;
-                //return null;
+                Debug.LogWarning($"Could not load cached sprite {path}; falling back to live recoloring. {e.Message}");
+                return null;
             }
         }
 
@@ -86,9 +96,9 @@ namespace Assets.Scripts.Data
                 byte[] png = export.EncodeToPNG();
                 UnityEngine.Object.Destroy(export);
 
-                // HasCachedSprite is a readiness contract used by later load paths. Complete
-                // the small cache-file write before setting it rather than fire-and-forgetting
-                // an async write that may still be creating the file.
+                // HasCachedSprite means at least one cache entry is available for this
+                // FleetShip. Individual color/index misses remain valid and fall back to
+                // live recoloring in LoadCachedSprite/Ship.SetColor.
                 File.WriteAllBytes(path, png);
             }
             HasCachedSprite = true;
@@ -185,7 +195,7 @@ namespace Assets.Scripts.Data
 
         public bool Equals(FleetShip other)
         {
-            return Id == other.Id;
+            return other != null && Id == other.Id;
         }
 
         public override int GetHashCode()
