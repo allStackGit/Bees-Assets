@@ -16,6 +16,7 @@ namespace Bees.Tests.EditMode
         private string _squadSource;
         private string _strikerSource;
         private string _warpGateSource;
+        private string _fullRetreatSource;
         private string _healSource;
         private string _beehiveSource;
 
@@ -25,6 +26,7 @@ namespace Bees.Tests.EditMode
             _squadSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Squad.cs"));
             _strikerSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Striker.cs"));
             _warpGateSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "WarpGate.cs"));
+            _fullRetreatSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Commands", "FullRetreat.cs"));
             _healSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Commands", "Heal.cs"));
             _beehiveSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Beehive.cs"));
         }
@@ -95,6 +97,33 @@ namespace Bees.Tests.EditMode
             string method = ExtractMethodBody(_warpGateSource, "ClearData");
             Assert.That(method, Does.Contain("Stage.ActivateAudio && !IsAudioLoaded"));
             Assert.That(method, Does.Contain("IsAudioLoaded = true"));
+        }
+
+        [Test]
+        public void FullRetreatUsesPerCommandParticipantsInsteadOfGateGlobalCount()
+        {
+            string execute = ExtractMethodBody(_fullRetreatSource, "Execute");
+            string warpKill = ExtractMethodBody(_fullRetreatSource, "WarpKill");
+            string gateEnter = ExtractMethodBody(_warpGateSource, "OnTriggerEnter2D");
+
+            Assert.That(_fullRetreatSource, Does.Contain("private HashSet<long> _shipIdsWarping"));
+            Assert.That(execute, Does.Contain("_shipIdsWarping.Add(ship.Id)"));
+            Assert.That(warpKill, Does.Contain("_shipIdsWarping.Count == 0"));
+            Assert.That(warpKill, Does.Not.Contain("TargetWarpGate.ShipsWarpingHere.Count == 0"));
+            Assert.That(gateEnter, Does.Contain("QueueShipForWarp(_collidingShip)"));
+        }
+
+        [Test]
+        public void FullRetreatPrunesDeadParticipantsAndDeduplicatesWarpQueue()
+        {
+            string queue = ExtractMethodBody(_fullRetreatSource, "QueueShipForWarp");
+            string prune = ExtractMethodBody(_fullRetreatSource, "RemoveUnavailableWarpParticipants");
+            string warpKill = ExtractMethodBody(_fullRetreatSource, "WarpKill");
+
+            Assert.That(queue, Does.Contain("!ShipsWaitingToWarp.Contains(ship)"));
+            Assert.That(prune, Does.Contain("ship == null || ship.IsDead"));
+            Assert.That(prune, Does.Contain("TargetWarpGate.ShipsWarpingHere.Remove(shipId)"));
+            Assert.That(warpKill, Does.Contain("!_shipIdsWarping.Contains(ship.Id)"));
         }
 
         [Test]
