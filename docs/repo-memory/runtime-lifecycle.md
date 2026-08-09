@@ -5,6 +5,7 @@
 - Pooled objects must reset every piece of per-use state, including counters, timers, cached references, transient UI children, collision/contact state, and coroutine generations. A reset that clears the visible state but leaves scheduling state behind is incomplete.
 - Delayed callbacks/coroutines must not act on a pooled wrapper after reuse. Either keep the wrapper reserved until the delayed work finishes, capture immutable context, or invalidate callbacks with a lifecycle generation.
 - Shared prefab/configuration arrays are templates. Copy them before per-squad mutation.
+- Pooled visual recoloring must start from immutable prefab-era sprites, not the currently displayed sprite from the previous lifecycle. Components such as `Beacon` that hold alternate runtime sprite fields must reset those fields to their original sprites before applying a new squad color.
 - Unity object identity must be explicit when identity matters. Before runtime `Setup`, many `MapObject`s have production `Id == 0`; use Transform/object identity for prefab authoring checks rather than ID-based equality.
 - Capacity loops must use strict `< limit` semantics where the protocol says “at most N”; audit `<=` carefully around 64-ship Hive Mind payloads.
 - Cast before division when producing percentages/normalized AI values. Integer division previously collapsed damaged-health information to 0/1.
