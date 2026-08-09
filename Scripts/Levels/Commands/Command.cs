@@ -123,11 +123,13 @@ namespace Assets.Scripts.Levels.Commands
         }
         public void SetSquad(Squad squad)
         {
+            // Setup may happen while a command is only being prepared for a scripted queue.
+            // Active ownership begins when execution starts, not when context is attached.
             _squad = squad;
-            GetSquad().HasCommand = true;
         }
         public virtual void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
         {
+            GetSquad().HasCommand = true;
             if (noEnemy || HasEnemy)
             {
                 OutcomeId = commandOutcomeId;
