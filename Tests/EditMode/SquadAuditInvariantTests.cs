@@ -23,6 +23,7 @@ namespace Bees.Tests.EditMode
         private string _beehiveSource;
         private string _miningSource;
         private string _miningAsteroidSource;
+        private string _strikerBombSource;
 
         [SetUp]
         public void SetUp()
@@ -37,6 +38,7 @@ namespace Bees.Tests.EditMode
             _beehiveSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Beehive.cs"));
             _miningSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Commands", "Mining.cs"));
             _miningAsteroidSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "MiningAsteroid.cs"));
+            _strikerBombSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Projectiles", "StrikerBomb.cs"));
         }
 
         [Test]
@@ -206,6 +208,23 @@ namespace Bees.Tests.EditMode
             Assert.That(kill, Does.Contain("SquadsMining.ToList().ForEach"));
             Assert.That(kill, Does.Contain("CommandTypes.Mining"));
             Assert.That(kill, Does.Not.Contain("SquadsMining.ForEach"));
+        }
+
+        [Test]
+        public void StrikerBombStaysOutOfPoolUntilDelayedDamageResolves()
+        {
+            string sequence = ExtractMethodBody(_strikerBombSource, "KillSequence");
+            string delayed = ExtractMethodBody(_strikerBombSource, "DamageAndKill");
+            string kill = ExtractMethodBody(_strikerBombSource, "Kill");
+            string clear = ExtractMethodBody(_strikerBombSource, "ClearData");
+
+            Assert.That(sequence, Does.Contain("Deactivate()"));
+            Assert.That(sequence, Does.Contain("_damageTimer.Reuse(.5f, DamageAndKill)"));
+            Assert.That(sequence, Does.Not.Contain("Kill();\n            }\n            else"));
+            Assert.That(delayed, Does.Contain("Damage()"));
+            Assert.That(delayed, Does.Contain("Kill()"));
+            Assert.That(kill, Does.Contain("Level.CancelTimer(_damageTimer)"));
+            Assert.That(clear, Does.Contain("ContactedShip = null"));
         }
 
         private static string ExtractMethodBody(string source, string methodName)
