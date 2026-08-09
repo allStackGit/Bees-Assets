@@ -583,7 +583,7 @@ namespace Assets.Scripts.Levels
 
         private void MoveSquads(Vector2 targetPosition)
         {
-            _moveSquads_selectedSquads = Level.State.GetSelectedSquads().Where(s => !s.IsLockedOn).ToList();
+            _moveSquads_selectedSquads = Level.State.GetSelectedSquads().Where(s => !s.IsLockedOn && s.CanAcceptUserInput).ToList();
             if (_moveSquads_selectedSquads.Count > 0)
             {
                 _moveSquads_localized = targetPosition - Level.GetPosition();
