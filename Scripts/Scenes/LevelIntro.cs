@@ -1,4 +1,5 @@
 using Assets.Scripts;
+using Assets.Scripts.UI_Components;
 using System;
 using System.Collections;
 using UnityEngine;
@@ -18,6 +19,11 @@ namespace UIComponents
         protected override void FinalizeSceneWithUserData()
         {
             base.FinalizeSceneWithUserData();
+
+            // The level-intro screen uses the ship ambience in place of menu music.
+            UIAudioController.Instance?.PauseMusic();
+            UIAudioController.Instance?.PlayLevelIntroAmbience();
+
             LevelNumber = ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide);
 
             CutsceneManager.Setup(() =>
@@ -55,8 +61,6 @@ namespace UIComponents
                     ConfigData.HasSeenIntermission = true;
                     StartCoroutine(DelayStart(StandardDelay, () =>
                     {
-                        // Both lines belong to the pre-mission briefing. Previously only the
-                        // first was shown, leaving the actual mission order unreachable.
                         CutsceneManager.PlayDialogueSection(CutsceneManager.PlutoLines_Reinforcements.GetRange(0, 2), true);
                     }));
                     break;
@@ -142,9 +146,6 @@ namespace UIComponents
                         SkipButton.SetActive(true);
                         StartCoroutine(DelayStart(StandardDelay, () =>
                         {
-                            // The design script contains a real Titania -> Uranus intermission.
-                            // A.M.I.'s conditional subsection stays disabled until Titania 2
-                            // persists whether the upload/evacuation succeeded.
                             CutsceneManager.PlayDialogueSection(
                                 CampaignDialogueOverrides.BuildTitaniaToUranus(false), true);
                         }));
@@ -165,6 +166,11 @@ namespace UIComponents
                     }));
                     break;
             }
+        }
+
+        private void OnDestroy()
+        {
+            UIAudioController.Instance?.StopLevelIntroAmbience();
         }
 
         public void ShowContinueButton()
