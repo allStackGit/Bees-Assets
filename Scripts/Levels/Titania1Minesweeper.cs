@@ -1,4 +1,5 @@
 using Assets.Scripts.Data;
+using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.UI_Components;
 using System.Collections.Generic;
@@ -24,6 +25,11 @@ namespace Assets.Scripts.Levels
             Stage.Menus.SetMissionStatus("Reach the center of the map or clear the Bees");
 
             Stage.CutsceneManager.Setup(Titania1MinesweeperEnding);
+
+            // The authored prefab currently contains duplicated serialized target links.
+            // Preserve a correct authored layout when one exists, but repair stale links
+            // deterministically so each Fire Tank demolishes its own nearby barrier.
+            RepairMinesweeperDemolitionTargets(Map.transform);
 
             // Small patrols already present in the persistent Bee fleet are distributed
             // around the obstacle field. The encounter is intentionally avoidable.
@@ -145,6 +151,53 @@ namespace Assets.Scripts.Levels
                         Stage.CutsceneManager.Titania_Minesweeper.GetRange(21, 10), true);
                 }
             }, "Titania 1 Ending"));
+        }
+
+        private static void RepairMinesweeperDemolitionTargets(Transform root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            CanisterBomb[] fireTanks = root.GetComponentsInChildren<CanisterBomb>(true);
+            if (fireTanks.Length == 0)
+            {
+                return;
+            }
+
+            int distinctAuthoredTargets = fireTanks
+                .Where(tank => tank.TargetObstacle != null)
+                .Select(tank => tank.TargetObstacle)
+                .Distinct()
+                .Count();
+            if (distinctAuthoredTargets == fireTanks.Length)
+            {
+                return;
+            }
+
+            List<Obstacle> obstacles = root.GetComponentsInChildren<Obstacle>(true)
+                .Where(obstacle => obstacle != null)
+                .ToList();
+            HashSet<Obstacle> usedTargets = new HashSet<Obstacle>();
+
+            foreach (CanisterBomb fireTank in fireTanks)
+            {
+                Obstacle nearestUnused = obstacles
+                    .Where(obstacle => !usedTargets.Contains(obstacle))
+                    .OrderBy(obstacle =>
+                        ((Vector2)obstacle.transform.position - (Vector2)fireTank.transform.position).sqrMagnitude)
+                    .FirstOrDefault();
+
+                if (nearestUnused == null)
+                {
+                    Debug.LogError($"Could not assign a unique demolition target to {fireTank.name}.");
+                    continue;
+                }
+
+                fireTank.TargetObstacle = nearestUnused;
+                usedTargets.Add(nearestUnused);
+            }
         }
 
         /// <summary>
