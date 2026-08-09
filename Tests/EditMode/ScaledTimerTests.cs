@@ -49,6 +49,28 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void StartImmediateBeginsFreshRecurringInterval()
+        {
+            int callCount = 0;
+            object timer = Activator.CreateInstance(
+                _timerType,
+                new object[] { 10f, (Action)(() => callCount++), true, true });
+
+            RuntimeAssembly.Invoke(timer, "Update");
+
+            Assert.That(callCount, Is.EqualTo(1));
+            Assert.That((float)RuntimeAssembly.GetField(timer, "Elapsed"), Is.GreaterThanOrEqualTo(0f),
+                "Immediate execution must not subtract a full interval and push elapsed time negative.");
+
+            RuntimeAssembly.SetField(timer, "Elapsed", 10.1f);
+            bool completed = (bool)RuntimeAssembly.Invoke(timer, "Update");
+
+            Assert.That(completed, Is.True);
+            Assert.That(callCount, Is.EqualTo(2),
+                "A recurring immediate timer should fire again after one normal interval, not almost two.");
+        }
+
+        [Test]
         public void CanceledImmediateTimerDoesNotRun()
         {
             int callCount = 0;
