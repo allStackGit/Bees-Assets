@@ -57,13 +57,14 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void LevelIntroOwnsAndStopsEngineAmbience()
+        public void LevelIntroOwnsAndStopsEngineAmbienceWithoutChangingMusicState()
         {
             string source = Read("Scripts", "Scenes", "LevelIntro.cs");
 
-            Assert.That(source, Does.Contain("PauseMusic"));
             Assert.That(source, Does.Contain("PlayLevelIntroAmbience"));
             Assert.That(source, Does.Contain("StopLevelIntroAmbience"));
+            Assert.That(source, Does.Not.Contain("PauseMusic"),
+                "Engine hum is additive Level Intro ambience and should not silently replace existing music.");
         }
 
         [Test]
