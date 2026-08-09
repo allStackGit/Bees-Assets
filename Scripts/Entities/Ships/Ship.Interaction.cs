@@ -1,3 +1,4 @@
+using Assets.Scripts.Levels;
 using UnityEngine;
 
 namespace Assets.Scripts.Entities.Ships
