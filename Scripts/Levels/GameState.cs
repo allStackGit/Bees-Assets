@@ -86,6 +86,8 @@ namespace Assets.Scripts.Levels
 
         public void ResetState()
         {
+            CleanupRuntimeObjectsForReset();
+
             Ships.Clear();
             ShipsById.Clear();
             Squads.Clear();
