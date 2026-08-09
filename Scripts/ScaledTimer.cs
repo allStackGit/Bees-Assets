@@ -71,17 +71,31 @@ namespace Assets.Scripts
 
         /// <summary>
         /// Checks how much time has passed and calls the action if necessary. Must be called from outside of the method since it's not directly tied to Update()
-        /// Returns true when the action has completed. Runs in unscaled time.
+        /// Returns true when the action has completed. Runs in scaled time.
         /// </summary>
         public bool Update()
         {
-            Elapsed += Time.deltaTime;
-            if ((Elapsed > Length || StartImmediate) && !IsCanceled)
+            if (IsCanceled)
             {
-                //Debug.Log($"Running {this}");
+                return false;
+            }
+
+            Elapsed += Time.deltaTime;
+
+            if (StartImmediate)
+            {
+                // An immediate execution begins a fresh interval. Subtracting Length here
+                // would make recurring timers wait almost two full intervals before firing again.
+                StartImmediate = false;
+                Elapsed = 0;
+                Action();
+                return true;
+            }
+
+            if (Elapsed > Length)
+            {
                 Action();
                 Elapsed -= Length;
-                StartImmediate = false;
                 return true;
             }
             return false;
