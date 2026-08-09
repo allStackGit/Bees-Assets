@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -47,6 +48,21 @@ namespace Bees.Tests.EditMode
                     handledRequests,
                     new object[] { 77L }),
                 Is.True);
+        }
+
+        [Test]
+        public void SceneReconnectSupervisorKeepsRetryingWithoutResendingIntoClosedSocket()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Scenes", "Scene.cs"));
+
+            Assert.That(source, Does.Contain("AutomaticReconnectTimer = new Timer(10f, AutomaticConnectionRetry)"));
+            Assert.That(source, Does.Contain("ConfigData.Socket.KeepClosed"),
+                "Intentional socket shutdowns must not start automatic reconnect attempts.");
+            Assert.That(source, Does.Contain("_automaticReconnectAttempts++"),
+                "Unexpected disconnects should continue retrying rather than making one attempt.");
+            Assert.That(source, Does.Contain("if (ConfigData.Socket.IsOpen)\n            {\n                ResendTimer.Update();"),
+                "Standing requests must not be resent into a closed WebSocket.");
         }
     }
 }
