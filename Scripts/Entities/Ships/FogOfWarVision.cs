@@ -1,4 +1,3 @@
-﻿using System.Collections;
 using UnityEngine;
 
 namespace Assets.Scripts.Entities.Ships
@@ -10,6 +9,9 @@ namespace Assets.Scripts.Entities.Ships
         public SpriteMask FogIlluminator;
         public Transform Transform;
 
+        private ScaledTimer _shrinkVisionStartTimer = new ScaledTimer();
+        private ScaledTimer _shrinkVisionTimer = new ScaledTimer();
+
         public void Create(Ship ship)
         {
             Ship = ship;
@@ -20,22 +22,30 @@ namespace Assets.Scripts.Entities.Ships
             }
             Transform.SetParent(Ship.transform.parent);
         }
+
         public void LateUpdate()
         {
             Transform.position = Ship.GetPosition();
         }
+
         public void Activate()
         {
-            //Debug.Log($"Activating fog of war vision for {Ship.Name} with range {Range}");
-            Ship.Level.State.FogOfWarVisions.Add(this);
-            //Transform.SetParent(Ship.transform.parent);
+            // This object belongs to a pooled Ship. A death-fade from the previous
+            // use must not shrink or reposition the newly activated vision.
+            Ship.Level.CancelTimer(_shrinkVisionStartTimer);
+            Ship.Level.CancelTimer(_shrinkVisionTimer);
+            if (!Ship.Level.State.FogOfWarVisions.Contains(this))
+            {
+                Ship.Level.State.FogOfWarVisions.Add(this);
+            }
+            Transform.position = Ship.GetPosition();
             Transform.localScale = new Vector3(Range, Range, 0);
             enabled = true;
             FogIlluminator.enabled = true;
         }
+
         public void Deactivate()
         {
-            //Debug.Log($"Deactivating fog of war vision for {Ship.Name} with range {Range}");
             Ship.Level.CancelTimer(_shrinkVisionStartTimer);
             Ship.Level.CancelTimer(_shrinkVisionTimer);
             Ship.Level.State.FogOfWarVisions.Remove(this);
@@ -43,14 +53,14 @@ namespace Assets.Scripts.Entities.Ships
             FogIlluminator.enabled = false;
         }
 
-        private ScaledTimer _shrinkVisionStartTimer = new ScaledTimer();
-        private ScaledTimer _shrinkVisionTimer = new ScaledTimer();
         public void Kill(float initialDelay, bool endKill)
         {
-            //Debug.Log($"Killing fog of war vision for {Ship.Name}");
-            //Transform.SetParent(Ship.Level.Map.Transform);
             if (!endKill)
             {
+                // Freeze the death vision at the ship's final position. Ship is pooled
+                // independently and may be reused while this visual fade is still alive.
+                Transform.position = Ship.GetPosition();
+                enabled = false;
                 _shrinkVisionTimer.Reuse(.1f, ShrinkVision, true);
                 _shrinkVisionStartTimer.Reuse(initialDelay, () =>
                 {
@@ -62,8 +72,6 @@ namespace Assets.Scripts.Entities.Ships
             {
                 Deactivate();
             }
-           
-            //InvokeRepeating(nameof(ShrinkVision), initialDelay, .1f);
         }
 
         public void ShrinkVision()
@@ -72,7 +80,6 @@ namespace Assets.Scripts.Entities.Ships
             if (Transform.localScale.x < 3)
             {
                 Ship.Level.CancelTimer(_shrinkVisionTimer);
-                //CancelInvoke(nameof(ShrinkVision));
                 Deactivate();
             }
         }
