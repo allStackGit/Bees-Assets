@@ -29,16 +29,10 @@ namespace Assets.Scripts.Entities.Ships
             if (_collidingThing.CompareTag("Ship") && HealCollider.IsTouching(collider))
             {
                 _collidingShip = collider.GetComponent<Ship>();
-                if (ShipsHealingHere.Contains(_collidingShip))
+                if (ShipsHealingHere.Contains(_collidingShip) && _collidingShip.Squad.GetCommand() is Heal healCommand)
                 {
-                    _command = (Heal)_collidingShip.Squad.GetCommand();
-                    _command.ShipsHealing.Add(_collidingShip);
-                    //_command.ShipsWaitingToHeal.Remove(_collidingShip);
-
-                    if (!_command.IsHealing)
-                    {
-                        _command.StartHealingTimer();
-                    }
+                    _command = healCommand;
+                    _command.ShipReachedBeehive(_collidingShip);
                 }
             }
             else if (IsUserControlled && _collidingThing.name == "Selection Box")
@@ -60,7 +54,10 @@ namespace Assets.Scripts.Entities.Ships
             }
             ShipsHealingHere.ToList().ForEach((s) =>
             {
-                s.Kill(killer, killerFleetShip, killerSavedSquad, endKill);
+                if (s != null && s.Squad.GetCommand() is Heal healCommand && healCommand.IsShipActivelyHealing(s))
+                {
+                    s.Kill(killer, killerFleetShip, killerSavedSquad, endKill);
+                }
             });
             base.Kill(killer, killerFleetShip, killerSavedSquad, endKill);
         }
