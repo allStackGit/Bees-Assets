@@ -62,6 +62,13 @@ namespace Assets.Scripts.Levels
 
         public void RemoveShip(Ship ship)
         {
+            // Healing reservations use the ship's current runtime identity. Release them
+            // before this wrapper can enter the pool and receive a different Id.
+            if (ship.Squad != null && ship.Squad.GetCommand() is Heal healCommand)
+            {
+                healCommand.ShipBecameUnavailable(ship);
+            }
+
             ship.FleetShip.IsLoadedIntoLevel = false;
             Ships.Remove(ship);
             MiningShips.Remove(ship);
