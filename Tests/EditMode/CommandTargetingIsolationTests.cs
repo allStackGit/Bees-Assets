@@ -11,12 +11,14 @@ namespace Bees.Tests.EditMode
     {
         private string _commandSource;
         private string _weaponSource;
+        private string _matchupSource;
 
         [SetUp]
         public void SetUp()
         {
             _commandSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Commands", "Command.cs"));
             _weaponSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Weapons", "Weapon.cs"));
+            _matchupSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Commands", "MatchupStrategy.cs"));
         }
 
         [Test]
@@ -55,6 +57,23 @@ namespace Bees.Tests.EditMode
             Assert.That(method, Does.Contain("DistanceTo(a).CompareTo(DistanceTo(b))"));
             Assert.That(method, Does.Not.Contain("(int) (b.Firepower - a.Firepower)"));
             Assert.That(method, Does.Not.Contain("(int)(a.Speed - b.Speed)"));
+        }
+
+        [Test]
+        public void MatchupRandomSelectionUsesUniformIndexInsteadOfStableRandomSortKeys()
+        {
+            string method = ExtractMethodBody(_matchupSource, "SortSquads");
+            Assert.That(method, Does.Contain("_queue[Utilities.RandomInt(_queue.Count)]"));
+            Assert.That(method, Does.Not.Contain("OrderBy(s => Utilities.RandomInt(2))"));
+        }
+
+        [Test]
+        public void MatchupDistanceStrategiesDoNotTruncateComparatorDifferences()
+        {
+            string method = ExtractMethodBody(_matchupSource, "SortSquads");
+            Assert.That(method, Does.Contain("a.DistanceToPoint(_location).CompareTo(b.DistanceToPoint(_location))"));
+            Assert.That(method, Does.Contain("b.DistanceToPoint(_location).CompareTo(a.DistanceToPoint(_location))"));
+            Assert.That(method, Does.Not.Contain("(int)(a.DistanceToPoint(_location) - b.DistanceToPoint(_location))"));
         }
 
         private static string ExtractMethodBody(string source, string methodName)
