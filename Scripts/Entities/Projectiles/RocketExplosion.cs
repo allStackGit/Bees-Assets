@@ -78,10 +78,10 @@ namespace Assets.Scripts.Entities.Projectiles
 
         public override void RemoveDamageSentEntry()
         {
-            if (Target != null)
-            {
-                base.RemoveDamageSentEntry();
-            }
+            // Reservation ownership, not Target presence, determines whether there is
+            // anything to release. Rocket explosions can receive a transferred reservation
+            // while intentionally having no Target wrapper of their own.
+            base.RemoveDamageSentEntry();
         }
 
         public void SetColliderSize(int size)
