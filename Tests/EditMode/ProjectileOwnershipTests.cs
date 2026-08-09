@@ -19,12 +19,17 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void DamageReservationCleanupToleratesMissingShooter()
+        public void DamageReservationCleanupUsesCapturedReservationInsteadOfMutableTargetWrapper()
         {
             string path = Path.Combine(Application.dataPath, "Scripts", "Entities", "Projectiles", "Projectile.cs");
             string source = File.ReadAllText(path);
 
-            StringAssert.Contains("Target == null || Shooter == null", source);
+            StringAssert.Contains("private ShipDamageStatus _damageReservation", source);
+            StringAssert.Contains("_damageReservation = target != null ? Level.State.GetShipDamageStatus(shooter.Side, target) : null", source);
+            StringAssert.Contains("if (_damageReservation == null)", source);
+            StringAssert.Contains("_damageReservation.TotalDamageSentToShip -= Power", source);
+            StringAssert.Contains("_damageReservation = null", source);
+            StringAssert.DoesNotContain("Level.State.GetShipDamageStatus(Shooter.Side, Target)", source);
         }
     }
 }
