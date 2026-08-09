@@ -1,8 +1,8 @@
 ﻿using Assets.Scripts.Entities;
 using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
-using NUnit.Framework;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Data
@@ -47,7 +47,12 @@ namespace Assets.Scripts.Data
         public LevelOptions GetLevel(int levelId)
         {
             Debug.Log($"Getting level #{levelId}");
-            return _levels[levelId];
+            LevelOptions level = _levels.FirstOrDefault(candidate => candidate.Id == levelId);
+            if (level == null)
+            {
+                Debug.LogError($"Could not find persisted level with Id #{levelId}. Loaded IDs: {string.Join(", ", _levels.Select(candidate => candidate.Id))}");
+            }
+            return level;
         }
 
         public override string ToJson()
