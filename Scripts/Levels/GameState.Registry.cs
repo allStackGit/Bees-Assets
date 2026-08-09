@@ -70,14 +70,22 @@ namespace Assets.Scripts.Levels
             // These records retain the live Ship wrapper, whose runtime Id changes when
             // the object is reused from the pool. Remove them while the old identity is
             // still authoritative so stale combat/spotting state cannot attach to the
-            // next ship that occupies this wrapper.
+            // next ship that occupies this wrapper. ResetLevel temporarily clears the
+            // per-side spotted-list slots before killing the old ships, so tolerate that
+            // teardown state; ResetState recreates both lists for the next episode.
             foreach (List<ShipDamageStatus> statuses in ShipDamageStatuses)
             {
-                statuses.RemoveAll(status => status == null || status.Ship == null || status.Ship == ship);
+                if (statuses != null)
+                {
+                    statuses.RemoveAll(status => status == null || status.Ship == null || status.Ship == ship);
+                }
             }
             foreach (List<SpottedShip> spotted in SpottedShips)
             {
-                spotted.RemoveAll(entry => entry == null || entry.Ship == null || entry.Ship == ship);
+                if (spotted != null)
+                {
+                    spotted.RemoveAll(entry => entry == null || entry.Ship == null || entry.Ship == ship);
+                }
             }
 
             ship.FleetShip.IsLoadedIntoLevel = false;
