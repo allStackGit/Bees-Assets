@@ -7,15 +7,17 @@ namespace Assets.Scripts.Levels.Commands
 {
     public class Retreat : Command
     {
-        /*
-         * Method for the Defensive strategy. The squad moves away from the enemy at a faster speed than it can normally move, but it can't fire while retreating
-         */
         private Vector2 _retreatPoint, _enemyPosition, _position;
         private float _distance, _idealDistance, _angle;
         private ScaledTimer _delayedSetFinalizeTimer = new ScaledTimer();
+
         public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId)
         {
             base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, false);
+            if (IsDead)
+            {
+                return;
+            }
 
             if (!EnemySquad.IsDead)
             {
@@ -28,7 +30,9 @@ namespace Assets.Scripts.Levels.Commands
                     _angle = GetSquad().AngleToPoint(_enemyPosition);
                     GetSquad().Status = $"Retreating away from {EnemySquad.Name}";
                     _position = GetSquad().GetPosition();
-                    _retreatPoint = new Vector2((Mathf.Sin(_angle) * (_idealDistance - _distance) + _position.x), (Mathf.Cos(_angle) * (_idealDistance - _distance) + _position.y));
+                    _retreatPoint = new Vector2(
+                        (Mathf.Sin(_angle) * (_idealDistance - _distance) + _position.x),
+                        (Mathf.Cos(_angle) * (_idealDistance - _distance) + _position.y));
                     SetAndMove(_retreatPoint);
 
                     CommandTimer.Reuse(CommandFrequency, Timer, true, true);
@@ -36,9 +40,6 @@ namespace Assets.Scripts.Levels.Commands
                 }
                 else
                 {
-                    // This replaces the original Invoke(nameof(DelaySetFinalize), 3f).
-                    // ScaledTimer lengths are seconds, so 50 here left an already-complete
-                    // retreat command occupying the squad for almost a minute.
                     _delayedSetFinalizeTimer.Reuse(3f, DelaySetFinalize);
                     Level.AddTimer(_delayedSetFinalizeTimer);
                 }
@@ -48,25 +49,28 @@ namespace Assets.Scripts.Levels.Commands
                 SetFinalize("The enemy squad is gone or dead");
             }
         }
+
         public override void ClearData()
         {
             base.ClearData();
             _retreatPoint = Vector2.zero;
         }
+
         private void Timer()
         {
             if (GetSquad().HasReachedDestination)
             {
-                SetFinalize($"Retreating and got far enough away.");
+                SetFinalize("Retreating and got far enough away.");
             }
             else
             {
                 SetAndMove(_retreatPoint);
             }
         }
+
         private void DelaySetFinalize()
         {
-            SetFinalize($"Retreating and already far enough away.");
+            SetFinalize("Retreating and already far enough away.");
         }
 
         public override void SetFinalize(string cause)
