@@ -149,9 +149,9 @@ namespace Assets.Scripts.Entities
             {
                 Level.Pathfinder?.MarkObstacleLayerDirty();
 
-                // Destructible static obstacles are also registered in ObstacleMap.Obstacles.
-                // Remove the live component before destroying it so level teardown does not
-                // later dereference Unity's destroyed-object wrapper in SaveAndEnd().
+                // SaveAndEnd owns teardown of the StaticObstacle instances that remain in
+                // ObstacleMap.Obstacles. A destructible static obstacle must leave that list
+                // before Destroy(), otherwise teardown later accesses a destroyed Unity wrapper.
                 if (this is StaticObstacle staticObstacle &&
                     Level.ObstacleMap != null && Level.ObstacleMap.Obstacles != null)
                 {
