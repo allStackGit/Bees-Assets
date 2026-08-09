@@ -12,11 +12,6 @@ namespace Assets.Scripts.Levels
         private bool _titania2Resolved;
         private readonly List<ScaledTimer> _titania2MissionTimers = new List<ScaledTimer>();
 
-        /// <summary>
-        /// Titania mission 2: defend Titania while A.M.I. and the base personnel evacuate.
-        /// Bee tactical target selection remains server/Hive Mind driven; this method owns
-        /// only the authored battle cadence, objective lifecycle, dialogue and completion.
-        /// </summary>
         public void Titania2BeenocularsCampaign()
         {
             const float survivalDuration = 450f;
@@ -27,9 +22,6 @@ namespace Assets.Scripts.Levels
             Stage.Menus.SetMissionStatus("Survive and defend Titania!");
             Stage.CutsceneManager.Setup(Titania2CampaignEnding);
 
-            // Index 0 is the pre-mission briefing shown by LevelIntro. The authored in-level
-            // opening is indices 1-10. Index 11 is conditional dialogue for a failed
-            // Minesweeper outcome; there is not yet a reliable persisted outcome flag for it.
             Stage.Menus.TogglePausePanel();
             Stage.CutsceneManager.PlayDialogueSection(
                 Stage.CutsceneManager.Titania_Beenoculars.GetRange(1, 10));
@@ -65,40 +57,33 @@ namespace Assets.Scripts.Levels
                     if (!playedTenPercent && uploadProgress >= 0.10f)
                     {
                         playedTenPercent = true;
-                        Stage.CutsceneManager.PlayDialogueSection(
-                            Stage.CutsceneManager.Titania_Beenoculars.GetRange(12, 3));
+                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Titania_Beenoculars.GetRange(12, 3));
                     }
                     if (!playedTwentyFourPercent && uploadProgress >= 0.24f)
                     {
                         playedTwentyFourPercent = true;
-                        Stage.CutsceneManager.PlayDialogueSection(
-                            Stage.CutsceneManager.Titania_Beenoculars.GetRange(15, 3));
+                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Titania_Beenoculars.GetRange(15, 3));
                     }
                     if (!playedFiftyPercent && uploadProgress >= 0.50f)
                     {
                         playedFiftyPercent = true;
-                        Stage.CutsceneManager.PlayDialogueSection(
-                            Stage.CutsceneManager.Titania_Beenoculars.GetRange(18, 3));
+                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Titania_Beenoculars.GetRange(18, 3));
                     }
                     if (!playedSeventyFivePercent && uploadProgress >= 0.75f)
                     {
                         playedSeventyFivePercent = true;
-                        Stage.CutsceneManager.PlayDialogueSection(
-                            Stage.CutsceneManager.Titania_Beenoculars.GetRange(21, 3));
+                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Titania_Beenoculars.GetRange(21, 3));
                     }
                     if (!playedNinetyPercent && uploadProgress >= 0.90f)
                     {
                         playedNinetyPercent = true;
-                        Stage.CutsceneManager.PlayDialogueSection(
-                            Stage.CutsceneManager.Titania_Beenoculars.GetRange(24, 2));
+                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Titania_Beenoculars.GetRange(24, 2));
                     }
 
                     int minutesLeft = Mathf.FloorToInt(timeLeft / 60f);
                     int secondsLeft = Mathf.FloorToInt(timeLeft % 60f);
                     clockText.text = $"{minutesLeft}:{secondsLeft:D2}";
 
-                    // This is a survival objective. Clearing the current Bee force does not
-                    // end the mission because later waves are part of the evacuation pressure.
                     if (timeLeft <= 0f)
                     {
                         ResolveTitania2(titania, true);
@@ -106,22 +91,15 @@ namespace Assets.Scripts.Levels
                 }, true);
                 AddTitania2Timer(survivalClock);
 
-                // Initial pressure establishes that Titania can be approached from every side.
-                // These are map-relative entry lanes rather than world coordinates; the old
-                // draft used +/-340 to +/-420 on a 512-unit map and reinforcement placement
-                // intentionally bypasses PositionSquads' normal bounds correction.
                 AddTitania2BeeWave(new List<SavedSquad>() {
                     ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4, true, true),
                 }, 0.85f, 0.55f);
-
                 AddTitania2BeeWave(new List<SavedSquad>() {
                     ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true),
                 }, -0.85f, 0.65f);
-
                 AddTitania2BeeWave(new List<SavedSquad>() {
                     ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
                 }, 0.45f, -0.9f);
-
                 AddTitania2BeeWave(new List<SavedSquad>() {
                     ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 2, true, true),
                 }, -0.45f, -0.9f);
@@ -162,7 +140,6 @@ namespace Assets.Scripts.Levels
                 });
                 AddTitania2Timer(wave3);
 
-                // Continue pressure through the second half instead of leaving a four-minute lull.
                 ScaledTimer wave4 = new ScaledTimer(300f, () =>
                 {
                     if (_titania2Resolved) return;
@@ -199,21 +176,33 @@ namespace Assets.Scripts.Levels
 
         private void AddTitania2BeeWave(List<SavedSquad> squads, float normalizedX, float normalizedY)
         {
-            Vector2 spawnPoint = FindTitania2SpawnPoint(normalizedX, normalizedY);
-            // Hive Mind/server behavior owns the destination. Passing Vector2.zero prevents
-            // the client from issuing an unnecessary pre-Hive-Mind move command.
-            AddReinforcementSquads(squads, spawnPoint, Vector2.zero);
+            if (squads == null || squads.Count == 0)
+            {
+                return;
+            }
+
+            const float laneSpread = 0.18f;
+            bool horizontalEntry = Mathf.Abs(normalizedX) >= Mathf.Abs(normalizedY);
+
+            for (int i = 0; i < squads.Count; i++)
+            {
+                float centeredIndex = i - ((squads.Count - 1) * 0.5f);
+                float laneOffset = centeredIndex * laneSpread;
+                float squadX = horizontalEntry ? normalizedX : normalizedX + laneOffset;
+                float squadY = horizontalEntry ? normalizedY + laneOffset : normalizedY;
+                Vector2 spawnPoint = FindTitania2SpawnPoint(squadX, squadY);
+
+                // Spawn each SavedSquad independently. LevelConstructor.PositionSquads deliberately
+                // skips its normal bounds correction for reinforcements, and passing multiple
+                // squads at an edge can otherwise spread later squads back outside the map.
+                AddReinforcementSquads(new List<SavedSquad> { squads[i] }, spawnPoint, Vector2.zero);
+            }
         }
 
-        /// <summary>
-        /// Resolves a desired edge lane to a point that is inside the current map and not
-        /// immediately inside authored obstacle geometry. normalizedX/Y are -1..1 where
-        /// +/-1 represent the corresponding map edge.
-        /// </summary>
         private Vector2 FindTitania2SpawnPoint(float normalizedX, float normalizedY)
         {
-            const float boundaryInset = 32f;
-            const float obstacleClearance = 32f;
+            const float boundaryInset = 64f;
+            const float obstacleClearance = 56f;
             const float scanStep = 24f;
             const int maxScanSteps = 8;
 
@@ -239,8 +228,6 @@ namespace Assets.Scripts.Levels
                 candidate.y = Mathf.Clamp(candidate.y, min.y, max.y);
             }
 
-            // The authored Map starting position is the safest fallback because it is intended
-            // to receive a fleet. Prefer it to knowingly spawning a reinforcement in a wall.
             Vector2 fallback = StartingPositions[ConfigData.Configuration.AISide - 1];
             if (Physics2D.OverlapCircle(fallback, obstacleClearance, ConfigData.ObstaclesLayerMask) == null)
             {
@@ -280,9 +267,7 @@ namespace Assets.Scripts.Levels
             _titania2Resolved = true;
             CancelTitania2Timers();
             Stage.Menus.Clock.SetActive(false);
-            WinningSide = success
-                ? ConfigData.Configuration.UserSide
-                : ConfigData.Configuration.AISide;
+            WinningSide = success ? ConfigData.Configuration.UserSide : ConfigData.Configuration.AISide;
 
             CloseLevel();
             Stage.CutsceneManager.PlayDialogueSection(
@@ -292,11 +277,6 @@ namespace Assets.Scripts.Levels
                 true);
         }
 
-        /// <summary>
-        /// Persist Titania 2 just like the completed campaign missions. Both success and
-        /// retreat/failure continue the campaign; the mission outcome remains available on
-        /// the Level through WinningSide/DidUserWin for result presentation and follow-up.
-        /// </summary>
         public void Titania2CampaignEnding()
         {
             ConfigData.UserProgressData.CampaignScore += State.PlayerScore;
