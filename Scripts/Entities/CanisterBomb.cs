@@ -141,6 +141,10 @@ namespace Assets.Scripts.Entities
                 Explosion = (RocketExplosion)Level.Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.FireTankExplosion);
                 Explosion.transform.parent = Level.Map.Transform;
                 Explosion.Setup(Level, LastHitProjectile.Weapon, LastHitProjectile.Shooter, null, transform.localPosition, 0, 0, Power);
+                if (Explosion.Shooter != null)
+                {
+                    Explosion.Shooter.ProjectilesInFlight.Add(Explosion);
+                }
 
                 AudioSource explosionAudio = Explosion != null ? Explosion.GetComponent<AudioSource>() : null;
                 if (explosionAudio != null && explosionAudio.clip != null)
