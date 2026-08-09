@@ -34,18 +34,22 @@ namespace Assets.Scripts.Entities.Projectiles
 
         public override void ContactTarget(Ship target)
         {
-            if (!_shipsHit.Contains(target))
+            if (_shipsHit.Contains(target))
             {
-                _shipsHit.Add(target);
-                _halfHealth = target.Health / 2;
-                _powerLoss = Mathf.Clamp(_halfHealth, 0, Power);
-                if (Power <= _halfHealth)
-                {
-                    Kill();
-                }
-                Power -= _powerLoss;
-                _powerLoss = 0;
+                return;
             }
+
+            _shipsHit.Add(target);
+            _halfHealth = target.Health / 2;
+            _powerLoss = Mathf.Clamp(_halfHealth, 0, Power);
+            if (Power <= _halfHealth)
+            {
+                Kill();
+                return;
+            }
+
+            Power -= _powerLoss;
+            _powerLoss = 0;
         }
         public override void Kill()
         {
