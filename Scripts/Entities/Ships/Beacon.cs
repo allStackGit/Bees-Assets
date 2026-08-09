@@ -16,19 +16,18 @@ namespace Assets.Scripts.Entities.Ships
             {
                 _beaconStatusTimer.Reuse(ConfigData.BeaconUpdateFrequency, SetBeaconStatus, true);
                 Level.AddTimer(_beaconStatusTimer);
-                //InvokeRepeating(nameof(SetBeaconStatus), ConfigData.BeaconUpdateFrequency, ConfigData.BeaconUpdateFrequency);
             }
         }
+
         public void SetBeaconStatus()
         {
-            if (ProximityCollider.NearbyEnemyShips.Count > 0)
-            {
-                SpriteRenderer.sprite = EnemySprite;
-            }
-            else
-            {
-                SpriteRenderer.sprite = StandardSprite;
-            }
+            // Trigger exits normally maintain this set, but collider teardown can leave a
+            // stale wrapper for a frame/lifecycle. Presentation should reflect live enemies,
+            // not historical contact membership.
+            ProximityCollider.NearbyEnemyShips.RemoveWhere(ship => ship == null || ship.IsDead);
+            SpriteRenderer.sprite = ProximityCollider.NearbyEnemyShips.Count > 0
+                ? EnemySprite
+                : StandardSprite;
         }
 
         public override void SetColor()
