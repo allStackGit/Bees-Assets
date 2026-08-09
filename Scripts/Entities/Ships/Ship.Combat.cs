@@ -41,6 +41,7 @@ namespace Assets.Scripts.Entities.Ships
             InCombat = true;
             _combatTimer = true;
             _combatTimerScaledTimer.Reuse(_repeatRate, CombatTimer, true);
+            Level.AddTimer(_combatTimerScaledTimer);
         }
 
         public void LogDamage(int damage)
