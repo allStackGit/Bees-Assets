@@ -23,10 +23,13 @@ namespace Assets.Scripts.Levels
             Carrier = carrier;
             CarrierSquadType = squadType;
             IsCarrierSquad = true;
+            // SetupShips uses IsDroneSquad to choose the configured ship count. Set it
+            // before spawning so a pooled CarrierSquad cannot inherit the previous
+            // lifecycle's Drone/Striker count.
+            IsDroneSquad = CarrierSquadType == ConfigData.ShipTypes.Drone;
             SetupShips();
             SetShootingStrategy(carrier.Squad.GetShootingStrategy());
             SetSquadTab();
-            IsDroneSquad = CarrierSquadType == ConfigData.ShipTypes.Drone;
         }
         private int _shipCount, _shipIndex;
         private long _id;
@@ -35,14 +38,9 @@ namespace Assets.Scripts.Levels
         {
             _shipCount = IsDroneSquad ? ConfigData.Configuration.CarrierCarryDroneMax : ConfigData.Configuration.CarrierCarryStrikerMax;
 
-            //Debug.Log($"Setting up {SquadType} ships in {formation} formation");
-
-
             for (_shipIndex = 0; _shipIndex < _shipCount; _shipIndex++)
             {
                 _id = Utilities.GetNegativeFleetshipId();
-
-                //Debug.Log($"Offset: {offset}");
                 _ship = (CarrierShip)Level.LevelConstructor.InstantiateShip(CarrierSquadType);
 
                 _ship.Setup(
@@ -55,8 +53,6 @@ namespace Assets.Scripts.Levels
                 AddShip(_ship);
                 _ship.SetColor();
             }
-
         }
     }
-
 }
