@@ -1,6 +1,7 @@
 using Assets.Scripts.Data;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Levels.Commands;
+using Assets.Scripts.Server;
 using Assets.Scripts.UI_Components;
 using System;
 using System.Collections.Generic;
@@ -95,8 +96,6 @@ namespace Assets.Scripts.Levels
         public bool HasDestination => GetShips().Any(s => s.HasTargetCoordinates);
         public bool InCombat => GetShips().Any(s => s.InCombat);
 
-        // Shared scratch references used by focused partials. Runtime remains single-threaded
-        // for Squad behavior; async pathfinding does not execute Squad methods.
         private List<Ship> _tempShips;
         private Ship _tempShip;
         private Squad _tempSquad;
@@ -105,10 +104,7 @@ namespace Assets.Scripts.Levels
 
         public virtual void ClearData()
         {
-            // Release prepared-but-not-running scripted commands instead of simply
-            // forgetting them when this pooled Squad starts another lifecycle.
             CancelScriptedCommandQueue();
-
             CanAcceptUserInput = false;
             SetCommandNull();
             PastCommands.Clear();
@@ -119,8 +115,6 @@ namespace Assets.Scripts.Levels
             HasAddedShips = false;
             IsShowingRanges = false;
             HasSquadTab = false;
-            // SquadBox is a reusable child owned by this pooled Squad. Do not reset
-            // HasSquadBox or every Setup will instantiate another box.
             IsGrowingSquad = false;
             HasCustomColor = false;
             _ships.Clear();
@@ -148,19 +142,9 @@ namespace Assets.Scripts.Levels
 
         private readonly ScaledTimer _checkChaseTimer = new ScaledTimer();
 
-        public void Setup(
-            Level level,
-            SavedSquad savedSquad,
-            ConfigData.ShootingStrategyTypes shootingStrategy,
-            bool ceaseFire,
-            bool isMatchingSpeed,
-            bool shouldChase,
-            bool isImobile,
-            long id,
-            int side,
-            int squadNumber,
-            string name,
-            Color color)
+        public void Setup(Level level, SavedSquad savedSquad, ConfigData.ShootingStrategyTypes shootingStrategy,
+            bool ceaseFire, bool isMatchingSpeed, bool shouldChase, bool isImobile, long id, int side,
+            int squadNumber, string name, Color color)
         {
             ClearData();
             IsImmobile = isImobile;
@@ -186,10 +170,7 @@ namespace Assets.Scripts.Levels
             if (Color != ConfigData.UnsetColor && IsUserControlled)
             {
                 HasCustomColor = true;
-                SquadBoxColor = new Color(
-                    Color.r,
-                    Color.g,
-                    Color.b,
+                SquadBoxColor = new Color(Color.r, Color.g, Color.b,
                     ConfigData.GetUIColor("squadbox-default-color").a);
             }
             else
@@ -198,14 +179,12 @@ namespace Assets.Scripts.Levels
             }
 
             transform.parent = Level.Map.Transform;
-
             if (IsUserControlled)
             {
                 _checkChaseTimer.Reuse(1, CheckChase, true);
                 Level.AddTimer(_checkChaseTimer);
             }
-            if (Stage.FullCeaseFire ||
-                (Side == ConfigData.Configuration.AISide && Stage.MakeEnemyCeaseFire))
+            if (Stage.FullCeaseFire || (Side == ConfigData.Configuration.AISide && Stage.MakeEnemyCeaseFire))
             {
                 SetSquadCeaseFire(true);
             }
@@ -219,11 +198,7 @@ namespace Assets.Scripts.Levels
 
         private void SetSquadBox()
         {
-            if (Stage.IsTraining)
-            {
-                return;
-            }
-
+            if (Stage.IsTraining) return;
             if (!HasSquadBox)
             {
                 SquadBox = Instantiate(Stage.Prefabs.SquadBoxPrefab, Vector2.zero, Quaternion.identity);
@@ -237,13 +212,9 @@ namespace Assets.Scripts.Levels
         private void SetOpponent()
         {
             if (Side == ConfigData.Configuration.AISide)
-            {
                 OpponentId = Stage.IsTraining ? 1UL : ConfigData.GetUserId();
-            }
             else if (Side == ConfigData.Configuration.UserSide)
-            {
                 OpponentId = 0;
-            }
         }
 
         private Vector2 _adjustment;
@@ -252,15 +223,12 @@ namespace Assets.Scripts.Levels
         private readonly Vector2 _ultraWideMultiplier = new Vector2(2.5f, 1f);
         private readonly ConfigData.ShipTypes[] _wideShips =
         {
-            ConfigData.ShipTypes.Barge,
-            ConfigData.ShipTypes.FireBarge,
-            ConfigData.ShipTypes.Flagship,
-            ConfigData.ShipTypes.CarpenterBee
+            ConfigData.ShipTypes.Barge, ConfigData.ShipTypes.FireBarge,
+            ConfigData.ShipTypes.Flagship, ConfigData.ShipTypes.CarpenterBee
         };
         private readonly ConfigData.ShipTypes[] _ultraWideShips =
         {
-            ConfigData.ShipTypes.Beehive,
-            ConfigData.ShipTypes.WarpGate
+            ConfigData.ShipTypes.Beehive, ConfigData.ShipTypes.WarpGate
         };
 
         public void SetStartingPosition(Vector2 position)
@@ -270,68 +238,36 @@ namespace Assets.Scripts.Levels
                 GetShips()[0].transform.localPosition = position;
                 return;
             }
-
             GetShips().ForEach(ship =>
             {
                 _adjustment = ship.OffsetFromCenter;
-                if (ship.ShipType == ConfigData.ShipTypes.Queen && GetShips().Count > 1)
-                {
-                    _adjustment *= _queenMultiplier;
-                }
-                else if (ship.ShipType == ConfigData.ShipTypes.Bumblebee)
-                {
-                    _adjustment *= 1.2f;
-                }
-                else if (_wideShips.Contains(ship.ShipType))
-                {
-                    _adjustment *= _wideMultiplier;
-                }
-                else if (_ultraWideShips.Contains(ship.ShipType))
-                {
-                    _adjustment *= _ultraWideMultiplier;
-                }
-
-                ship.transform.localPosition = new Vector2(
-                    position.x + _adjustment.x,
-                    position.y + _adjustment.y);
+                if (ship.ShipType == ConfigData.ShipTypes.Queen && GetShips().Count > 1) _adjustment *= _queenMultiplier;
+                else if (ship.ShipType == ConfigData.ShipTypes.Bumblebee) _adjustment *= 1.2f;
+                else if (_wideShips.Contains(ship.ShipType)) _adjustment *= _wideMultiplier;
+                else if (_ultraWideShips.Contains(ship.ShipType)) _adjustment *= _ultraWideMultiplier;
+                ship.transform.localPosition = new Vector2(position.x + _adjustment.x, position.y + _adjustment.y);
             });
         }
 
         public void SetSquadTab()
         {
-            if (!IsUserControlled || SquadNumber <= 0 || SquadNumber > 10)
-            {
-                return;
-            }
-
+            if (!IsUserControlled || SquadNumber <= 0 || SquadNumber > 10) return;
             SquadTab = Stage.SquadTabs[SquadNumber - 1];
             HasSquadTab = true;
-            if (HasCustomColor)
-            {
-                SquadTab.SetColor(Color);
-            }
+            if (HasCustomColor) SquadTab.SetColor(Color);
             SquadTab.ShowTab();
         }
 
-        public bool CanBeSelected()
-        {
-            return IsUserControlled && CanAcceptUserInput && !Level.State.SelectedSquads.Contains(this);
-        }
+        public bool CanBeSelected() => IsUserControlled && CanAcceptUserInput && !Level.State.SelectedSquads.Contains(this);
 
         public void NameSquadShips()
         {
-            foreach (Ship ship in GetShips())
-            {
-                ship.SetSquadName();
-            }
+            foreach (Ship ship in GetShips()) ship.SetSquadName();
         }
 
         public void FixedUpdate()
         {
-            if (IsUserControlled)
-            {
-                HasMovedBox = false;
-            }
+            if (IsUserControlled) HasMovedBox = false;
         }
 
         public List<Ship> GetShips() => _ships;
@@ -372,48 +308,26 @@ namespace Assets.Scripts.Levels
         public void RemoveShip(Ship ship)
         {
             _ships.Remove(ship);
-            if (IsSelected && !Stage.IsTraining)
-            {
-                Stage.Menus.ActionBox.SetSquadsText();
-            }
+            if (IsSelected && !Stage.IsTraining) Stage.Menus.ActionBox.SetSquadsText();
         }
 
-        public override string ToString()
-        {
-            return $"Squad {Name} (#{ItemId}) with {_ships.Count} ships ({(IsDead ? "D" : "A")})";
-        }
+        public override string ToString() => $"Squad {Name} (#{ItemId}) with {_ships.Count} ships ({(IsDead ? "D" : "A")})";
 
         public override bool Equals(object obj)
         {
             Squad other = obj as Squad;
-            if (ReferenceEquals(other, null) || (UnityEngine.Object)other == null)
-            {
-                return false;
-            }
+            if (ReferenceEquals(other, null) || (UnityEngine.Object)other == null) return false;
             return ItemId == other.ItemId;
         }
 
-        public bool Equals(Squad other)
-        {
-            return !ReferenceEquals(other, null) && (UnityEngine.Object)other != null && ItemId == other.ItemId;
-        }
-
+        public bool Equals(Squad other) => !ReferenceEquals(other, null) && (UnityEngine.Object)other != null && ItemId == other.ItemId;
         public override int GetHashCode() => ItemId.GetHashCode();
 
         public static bool operator ==(Squad a, Squad b)
         {
-            if (ReferenceEquals(a, b))
-            {
-                return true;
-            }
-            if (ReferenceEquals(a, null) || ReferenceEquals(b, null))
-            {
-                return false;
-            }
-            if ((UnityEngine.Object)a == null || (UnityEngine.Object)b == null)
-            {
-                return false;
-            }
+            if (ReferenceEquals(a, b)) return true;
+            if (ReferenceEquals(a, null) || ReferenceEquals(b, null)) return false;
+            if ((UnityEngine.Object)a == null || (UnityEngine.Object)b == null) return false;
             return a.ItemId == b.ItemId;
         }
 
