@@ -58,7 +58,9 @@ namespace Assets.Scripts.Levels.Commands
             switch (MatchupType)
             {
                 case ConfigData.MatchupStrategyTypes.Random:
-                    return _queue.OrderBy(s => Utilities.RandomInt(2)).First();
+                    // Ordering by a two-value random key is biased because OrderBy is stable:
+                    // earlier entries win ties disproportionately. Choose an index uniformly.
+                    return _queue[Utilities.RandomInt(_queue.Count)];
 
                 case ConfigData.MatchupStrategyTypes.Revenge:
                     return _queue.OrderByDescending(s => s.LastKilled).First();
@@ -80,12 +82,12 @@ namespace Assets.Scripts.Levels.Commands
 
                 case ConfigData.MatchupStrategyTypes.Closest:
                     _location = Squad.GetPosition();
-                    _queue.Sort((a, b) => (int)(a.DistanceToPoint(_location) - b.DistanceToPoint(_location)));
+                    _queue.Sort((a, b) => a.DistanceToPoint(_location).CompareTo(b.DistanceToPoint(_location)));
                     return _queue.First();
 
                 case ConfigData.MatchupStrategyTypes.Furthest:
                     _location = Squad.GetPosition();
-                    _queue.Sort((a, b) => (int)(b.DistanceToPoint(_location) - a.DistanceToPoint(_location)));
+                    _queue.Sort((a, b) => b.DistanceToPoint(_location).CompareTo(a.DistanceToPoint(_location)));
                     return _queue.First();
 
                 case ConfigData.MatchupStrategyTypes.MostRange:
