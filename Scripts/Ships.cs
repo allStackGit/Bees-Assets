@@ -2,12 +2,9 @@
 
 using Assets.Scripts.Data;
 using Assets.Scripts.Levels;
-using Assets.Scripts.Settings;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
-using UnityEngine.Scripting.APIUpdating;
 using static Assets.Scripts.ConfigData;
 
 namespace Assets.Scripts
@@ -135,7 +132,7 @@ namespace Assets.Scripts
                         {
                             shipAbove = rankings.ElementAt(ranking - 2);
                             shipAboveValue = shipAbove.BattlesFought > 0 ? (double)shipAbove.BattlesWon / (double) shipAbove.BattlesFought : 0;
-                            shipValue = shipValue = ship.BattlesFought > 0 ? (double)ship.BattlesWon / (double) ship.BattlesFought : 0;
+                            shipValue = ship.BattlesFought > 0 ? (double)ship.BattlesWon / (double) ship.BattlesFought : 0;
                             //Debug.Log($"Ranking for {ship.Name}: {ranking}, {shipValue}, {shipAbove.Name}: {shipAboveValue}");
                             moved = true;
                             ranking--;
@@ -347,7 +344,8 @@ namespace Assets.Scripts
             Vector2[] offsets = ConfigData.GeneratedSquadFormationOffsets4x4;
             if (shipCount == 1)
             {
-                offsets[0] = Vector2.zero;
+                // ConfigData formation arrays are shared templates and must remain immutable.
+                offsets = new Vector2[] { Vector2.zero };
             }
             else
             {
