@@ -26,7 +26,6 @@ namespace Assets.Scripts.Levels.Commands
                 if (_distance < _idealDistance)
                 {
                     _angle = GetSquad().AngleToPoint(_enemyPosition);
-                    //Squad.IsRetreating = true;
                     GetSquad().Status = $"Retreating away from {EnemySquad.Name}";
                     _position = GetSquad().GetPosition();
                     _retreatPoint = new Vector2((Mathf.Sin(_angle) * (_idealDistance - _distance) + _position.x), (Mathf.Cos(_angle) * (_idealDistance - _distance) + _position.y));
@@ -34,14 +33,14 @@ namespace Assets.Scripts.Levels.Commands
 
                     CommandTimer.Reuse(CommandFrequency, Timer, true, true);
                     Level.AddTimer(CommandTimer);
-
-                    //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
                 }
                 else
                 {
-                    _delayedSetFinalizeTimer.Reuse(50, DelaySetFinalize);
+                    // This replaces the original Invoke(nameof(DelaySetFinalize), 3f).
+                    // ScaledTimer lengths are seconds, so 50 here left an already-complete
+                    // retreat command occupying the squad for almost a minute.
+                    _delayedSetFinalizeTimer.Reuse(3f, DelaySetFinalize);
                     Level.AddTimer(_delayedSetFinalizeTimer);
-                    //Invoke(nameof(DelaySetFinalize), 3f);
                 }
             }
             else
@@ -58,14 +57,12 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (GetSquad().HasReachedDestination)
             {
-                //CancelInvoke(nameof(Timer));
                 SetFinalize($"Retreating and got far enough away.");
             }
             else
             {
                 SetAndMove(_retreatPoint);
             }
-
         }
         private void DelaySetFinalize()
         {
@@ -79,4 +76,3 @@ namespace Assets.Scripts.Levels.Commands
         }
     }
 }
-
