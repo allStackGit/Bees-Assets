@@ -69,7 +69,9 @@ namespace Assets.Scripts.Entities.Projectiles
                     }
 
                     _projectile = Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.BeeSmall);
-                    _projectile.Setup(Level, Weapon, Shooter, Target, GetPosition(), _localAngle * Mathf.Deg2Rad, Weapon.Range, (int)(Weapon.Power / 1.5f));
+                    // Split children are untargeted ballistic fragments. They bypass
+                    // Weapon.SendProjectile(), so they do not own a target damage reservation.
+                    _projectile.Setup(Level, Weapon, Shooter, null, GetPosition(), _localAngle * Mathf.Deg2Rad, Weapon.Range, (int)(Weapon.Power / 1.5f));
                     _projectile.ShipsToIgnore.Add(target);
 
                     // Child shots retain the shooter reference even after its death. Always
