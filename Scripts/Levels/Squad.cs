@@ -154,7 +154,8 @@ namespace Assets.Scripts.Levels
             HasAddedShips = false;
             IsShowingRanges = false;
             HasSquadTab = false;
-            HasSquadBox = false;
+            // SquadBox is a reusable child owned by this pooled Squad. Do not reset
+            // HasSquadBox here or every Setup will instantiate and abandon another box.
             IsGrowingSquad = false;
             HasCustomColor = false;
             _ships.Clear();
@@ -373,31 +374,7 @@ namespace Assets.Scripts.Levels
         }
         //protected void Update() // [testing]
         //{
-        //    //if (!IsDead && GetShips().Count == 0)
-        //    //{
-        //    //    Debug.LogError($"{Name} has no ships and isn't dead at frame #{Stage.__Updates}");
-        //    //}
-        //    //else
-        //    //{
-        //    //    Debug.Log($"{Name} has {GetShips().Count} ships and isDead? {IsDead} at frame #{Stage.__Updates}");
-        //    //}
-
-
-        //    //if (!Level.State.IsPaused)
-        //    //{
-        //    //    Age++;
-        //    //    if (HasCommand)
-        //    //    {
-        //    //        GetCommand().Age++;
-        //    //    }
-        //    //}
-
-        //    //if (!IsDead && HasCommand && OriginalCommandId > 0 && OriginalCommandId != GetCommand().ItemId || (HasCommand && PastCommands.Any((pc) => pc.OutcomeId != GetCommand().OutcomeId && !pc.IsFinalized)))
-        //    //{
-        //    //    Debug.LogError($"{this} no longer has the original command id! #{GetCommand().ItemId}");
-        //    //}
-
-        //    // Debug.Log($"{name} ship has lived for {tickLife} ticks and {ShowLifeTime()} seconds with {GetHealth()} health");
+            // Existing debug-only Update body intentionally remains commented out.
         //}
         public void FixedUpdate()
         {
@@ -426,8 +403,6 @@ namespace Assets.Scripts.Levels
             _tempShips = GetShips();
             foreach (Ship ship in _tempShips)
             {
-                //float x = Mathf.Clamp((destination.x + ship.OffsetFromCenter.x), Level.MinX, Level.MaxX);
-                //float y = Mathf.Clamp((destination.y + ship.OffsetFromCenter.y), Level.MinY, Level.MaxY);
                 if (ship.IsMobile)
                 {
                     ship.StopMoving("Squad ordered to stop");
@@ -436,33 +411,10 @@ namespace Assets.Scripts.Levels
         }
         public void Move(Vector2 destination)
         {
-            //Debug.Log($"{this} is moving to {destination}");
-            //if (IsAttacking)
-            //{
-            //    GetShips().ForEach((Ship ship) =>
-            //    {
-            //        Vector2 offset = ship.OffsetFromCenter;
-            //        offset.x = Mathf.Clamp(offset.x, 2, ship.Range);
-            //        offset.y = Mathf.Clamp(offset.y, 2, ship.Range);
-            //        float x = Mathf.Clamp((destination.x + offset.x), Level.MinX, Level.MaxX);
-            //        float y = Mathf.Clamp((destination.y + offset.y), Level.MinY, Level.MaxY);
-            //        ship.TargetCoordinates = new Vector2(x, y);
-            //    });
-            //}
-            //else
-            //{
-            //    GetShips().ForEach((Ship ship) =>
-            //    {
-            //        float x = Mathf.Clamp((destination.x + ship.OffsetFromCenter.x), Level.MinX, Level.MaxX);
-            //        float y = Mathf.Clamp((destination.y + ship.OffsetFromCenter.y), Level.MinY, Level.MaxY);
-            //        ship.TargetCoordinates = new Vector2(x, y);
-            //    });
-            //}
             if (IsSelected && Level.Stage.Menus.HasSquadActionBox)
             {
                 Level.Stage.Menus.ActionBox.HighlightSelectedButtons();
             }
-            //float start = Time.realtimeSinceStartup; 
             _tempShips = GetShips().Where(ship => ship.IsMobile).ToList();
             Vector2 formationCenter = Level.ForceBounds(destination);
             float formationCompression = 1f;
@@ -483,9 +435,6 @@ namespace Assets.Scripts.Levels
                 ship.MoveToPoint(shipDestination);
             }
             Destination = formationCenter;
-            //float end = (Time.realtimeSinceStartup - start) * 1000; // seconds to milliseconds
-            //Debug.Log($"It took {Math.Round(end, 2)} ms to set {Name} moving. The average was {Math.Round(end / ships.Count, 2)}ms");
-
         }
         private bool TryGetFormationCompression(Vector2 formationCenter, List<Ship> ships, out float compression)
         {
@@ -520,7 +469,6 @@ namespace Assets.Scripts.Levels
             if (speed > 0)
             {
                 SetSquadSpeed(speed);
-
             }
             else
             {
@@ -532,7 +480,6 @@ namespace Assets.Scripts.Levels
             _tempShips = GetShips();
             foreach (Ship ship in _tempShips)
             {
-                //Debug.Log($"Unmatching speed for {ship.Name} and setting speed to {ship.Speed}");
                 ship.SetCurrentSpeed(ship.Speed);
             }
             IsMatchingSpeed = false;
@@ -543,7 +490,6 @@ namespace Assets.Scripts.Levels
             _tempShips = GetShips();
             foreach (Ship ship in _tempShips)
             {
-                //Debug.Log($"Matching speed for {ship.Name} and setting speed to {speed}");
                 ship.SetCurrentSpeed(speed);
             }
         }
@@ -568,38 +514,26 @@ namespace Assets.Scripts.Levels
             return _shouldChase;
         }
 
-
-
         // Combat methods
         private void CheckChase()
         {
-            //Debug.Log($"Checking if {Name} should chase.");
             if (_shouldChase && GetCommand()?.CommandType != ConfigData.CommandTypes.Aggressive && !Level.State.GameOver)
             {
                 _tempSquad = GetClosestEnemySquad();
-                //Debug.Log($"The closest Enemy to {Name} is {closestSquad.Name}");
                 if (_tempSquad != null && CanSeeSquad(_tempSquad))
                 {
-                    //Debug.Log($"Initiating chase by {Name} against {closestSquad.Name}.");
                     UserAggressive(_tempSquad);
                 }
             }
         }
         public void Kill(bool endKill = false)
         {
-            //Debug.Log($"Killing squad {Name}");
             if (!IsDead)
             {
                 IsDead = true;
 
-
                 if (!endKill)
                 {
-                    //if (HasCommand)
-                    //{
-                    //    Command.SquadKilled();
-                    //}
-
                     if (IsUserControlled)
                     {
                         DeactivateSquadBox();
@@ -607,14 +541,12 @@ namespace Assets.Scripts.Levels
 
                     if (Level.State.IsSideKilled(Side) && (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign || ConfigData.IsTestingLevel))
                     {
-
                         Level.State.GameOver = true;
                     }
                 }
 
                 if (HasCommand)
                 {
-                    //Debug.Log($"Squad got killed {this}");
                     GetCommand().SquadKilled();
                 }
 
@@ -630,19 +562,10 @@ namespace Assets.Scripts.Levels
                 Level.CancelTimer(_checkChaseTimer);
                 Level.State.RemoveSquad(this);
                 enabled = false;
-                //Stage.Pool.ReturnSquadToPool(this);
             }
-            
-
         }
-        /// <summary>
-        /// Returns the closest enemy squad visible to the hivemind or simply the closest squad if this is the user
-        /// </summary>
-        /// <returns></returns>
         public Squad GetClosestEnemySquad()
         {
-            // Debug.Log($"Number of enemy squads {squads.Count}, {_Level.State.GetSquads()}");
-            //Debug.Log($"Getting closest enemy squad for {Name}");
             return Level.State.GetSquadsVisibleToHiveMind(Side).OrderBy(squad => squad.DistanceToPoint(GetPosition())).FirstOrDefault();
         }
         public Squad GetClosestValidFriendlySquad()
@@ -650,25 +573,6 @@ namespace Assets.Scripts.Levels
             _tempSquads = Level.State.GetSquadsBySide(Side).Where(squad => squad != this && (!squad.HasCommand || squad.GetCommand().CommandType != ConfigData.CommandTypes.ClosestFriendly)).ToList();
             return _tempSquads.OrderBy(squad => squad.DistanceToPoint(GetPosition())).FirstOrDefault();
         }
-        //public Squad GetEnemy()
-        //{
-        //    if (HasCommand)
-        //    {
-        //        return GetCommand().EnemySquad;
-        //    }
-        //    else
-        //    {
-        //        if (IsUserControlled)
-        //        {
-        //            return GetClosestEnemySquad();
-        //        }
-        //        return null;
-        //    }
-        //}
-        /// <summary>
-        /// Gets all ships in the level that are on the opposing side and visible to the hive mind
-        /// </summary>
-        /// <returns></returns>
         public List<Ship> GetEnemyShips()
         {
             return Level.State.GetShipsVisibleToHiveMind(Side).ToList();
@@ -678,22 +582,16 @@ namespace Assets.Scripts.Levels
             return Level.State.GetShips(Side);
         }
         private List<Ship> _enemies;
-        /// <summary>
-        /// Returns all visible ships in the enemy squad plus all enemy ships that have those previous ship in their range plus all enemy ships that have our squad within range
-        /// </summary>
-        /// <param name="target"></param>
-        /// <returns></returns>
         public List<Ship> GetPotentialEnemies(Squad target)
         {
-
             _tempShips = GetEnemyShips();
             _enemies = _tempShips.Where((s) => s.Squad == target).Take(64).ToList();
 
             foreach (Ship potentialEnemy in _tempShips)
             {
-                if (!potentialEnemy.Squad == target && _enemies.Count <= 64)
+                if (potentialEnemy.Squad != target && _enemies.Count < 64)
                 {
-                    if (potentialEnemy.IsAnySquadShipWithinRange(this)) // if the squad is within the range of the potential enemy
+                    if (potentialEnemy.IsAnySquadShipWithinRange(this))
                     {
                         _enemies.Add(potentialEnemy);
                         Debug.LogWarning($"We added a potential enemy of type {potentialEnemy.ShipType} against target {target}");
@@ -707,16 +605,15 @@ namespace Assets.Scripts.Levels
         private int _limit;
         public List<Ship> GetPotentialAllies(Squad target)
         {
-            //_tempShips = GetShipsForMatchup(); // don't need this anymore since we get the ships in this squad beforehand
             _tempShips.Clear();
             _allies = GetFriendlyShips();
-            _limit = 64 - GetShips().Count;
+            _limit = Math.Max(0, 64 - GetShipsForMatchup().Count);
 
             foreach (Ship potentialAlly in _allies)
             {
-                if (this != potentialAlly.Squad && _tempShips.Count <= _limit)
+                if (this != potentialAlly.Squad && _tempShips.Count < _limit)
                 {
-                    if (potentialAlly.IsAnySquadShipWithinRange(target)) // if any ship in the target squad is within the range of another of its allies
+                    if (potentialAlly.IsAnySquadShipWithinRange(target))
                     {
                         _tempShips.Add(potentialAlly);
                     }
@@ -726,14 +623,10 @@ namespace Assets.Scripts.Levels
             return _tempShips;
         }
 
-
         // Command and control methods
         public HashSet<ConfigData.CommandTypes> MovementAttackTypes = new HashSet<ConfigData.CommandTypes>{ ConfigData.CommandTypes.CircleSquad, ConfigData.CommandTypes.RightSwipe, ConfigData.CommandTypes.LeftSwipe,
         ConfigData.CommandTypes.InAndOut,  ConfigData.CommandTypes.BombingRun };
         public bool HasMovementAttackType;
-        /// <summary>
-        /// Clears cached variables that relate to the command
-        /// </summary>
         public void ResetCommandCache()
         {
             HasMovementAttackType = MovementAttackTypes.Contains(GetCommand().CommandType);
@@ -752,23 +645,15 @@ namespace Assets.Scripts.Levels
         {
             _command = null;
         }
-        /// <summary>
-        /// Puts this squad on the list of squads waiting for new hive mind commands
-        /// </summary>
         public void AddToCommandList()
         {
             Debug.Log($"Adding {this} to squads awaiting hive mind commands");
             Level.State.AddToSquadsAwaitingHiveMindCommands(this);
         }
-        /// <summary>
-        /// Whether or not the squad is in the bounds of the map. It's the sum of the IsInBounds() of the squad ships. Caches the result if it is in bounds
-        /// </summary>
-        /// <returns></returns>
         public bool IsInBounds()
         {
             if (!_isInBounds)
             {
-                //Debug.Log($"{Name} is not in bounds yet but might be? {GetPosition() == Level.ForceBounds(GetPosition())}, {GetPosition()}, {Level.ForceBounds(GetPosition())}");
                 _isInBounds = GetShips().All((s) => s.IsInBounds());
             }
             return _isInBounds;
@@ -779,9 +664,7 @@ namespace Assets.Scripts.Levels
             {
                 if (CommandQueue.Count > 0)
                 {
-                    //Debug.Log($"{this} has {CommandQueue.Count} commands in the queue and is starting the first one");
                     Command nextCommand = CommandQueue.Dequeue();
-                    //Debug.Log($"Dequeued command {nextCommand} for {Name}");
                     SetCommand(nextCommand);
                     if (GetCommand().CommandType == ConfigData.CommandTypes.MoveToPoint)
                     {
@@ -807,114 +690,86 @@ namespace Assets.Scripts.Levels
                     AddToCommandList();
                 }
             }
-            
         }
         private HashSet<ConfigData.ShipTypes> _banned, _enemyShips;
         private string[] _bannedTypes;
         public List<Ship> GetShipsForMatchup()
         {
-            return GetShips().Take(64).ToList(); // the ToList() is very important to prevent this list from modifying the main squad list
+            return GetShips().Take(64).ToList();
         }
         public void MakeMatchupStrat()
         {
-            // Can't get any invisible ship types and start by blocking the visible ship types too
             _banned = ConfigData.UserProgressData.AllShipTypes;
 
             if (Side == ConfigData.Configuration.BeeSide)
             {
-                // if you're the bees you can only get available human ship types that are on this level because all bee ships are banned as matchup strategies as well
-                // as all human ship types that are not on this level
                 _enemyShips = Level.State.GetHumanShipTypes();
                 _banned = _banned.Where((type) => !_enemyShips.Contains(type)).ToHashSet();
             }
             else
             {
-                // if you're the humans you can only get available bee ship types because all human ships are banned as matchup strategies
                 _enemyShips = Level.State.GetBeeShipTypes();
                 _banned = _banned.Where((type) => !_enemyShips.Contains(type)).ToHashSet();
             }
 
             _bannedTypes = _banned.Select((ship) => $"Type {(Utilities.ConvertShipTypeToCharacter[ship])}").ToArray();
-            //Debug.Log($"Making matchup strategy for {Name} and the following ships are banned: {Utilities.ListToString(_banned.ToList())}");
-
-            //if (GetShips().Any((s) => s.ShipType == ConfigData.ShipTypes.Beacon))
-            //{
-            //    Debug.LogError($"{this} has beacons and is trying to make a matchup strategy");
-            //}
             ConfigData.Socket.SendRequest(new MatchupStrategyRequest(new GetMatchupStrategy(AddToMatchup(GetShipsForMatchup()), OpponentId, _bannedTypes),
                 this, Level, ConfigData.StandardMaxTimeOnQueue));
         }
         private static char[] _letters;
         public static string AddToMatchup(List<Ship> ships)
         {
-            //string unsorted = "";
-            //StringBuilder stringBuilder = new StringBuilder();
             _letters = ships.Select(s => Utilities.ConvertShipTypeLetterToCharacter[s.ShipTypeLetter]).ToArray();
-            //ships.ForEach((ship) =>
-            //{
-            //    //unsorted += ship.ShipTypeLetter;
-            //    //stringBuilder.Append(ship.ShipTypeLetter);
-            //    letters.Add(ship.ShipTypeLetter.First());
-            //});
-
-
-            
             Array.Sort(_letters);
-            //Debug.Log($"matchup: {new string(_letters)}");
             return new string(_letters);
         }
         private string _matchup;
         private StringBuilder _sb = new StringBuilder();
         private HashSet<ConfigData.CommandTypes> _bannedStrats;
         private int _comparativeHealth, _friendlySquadCount, _closestFriendlySquadCount;
-        //private int _atTheWalls;
-        //private int _distance = 15;
         private List<Ship> _matchupAllies;
         private List<Ship> _matchupEnemies;
+        private List<Ship> _matchupFriendlyHealthShips = new List<Ship>();
+
+        private static double GetAverageHealthPercentForMatchup(List<Ship> ships)
+        {
+            if (ships == null || ships.Count == 0)
+            {
+                return 0d;
+            }
+
+            return ships.Average(ship => ship.OriginalHealth > 0
+                ? ((double)ship.Health / ship.OriginalHealth) * 100d
+                : 0d);
+        }
 
         public void MakeMatchupAndGetCommand(Squad enemy = null)
         {
-            //if (Level.Stage.OverrideStrats.Count > 0) // [debug]
-            //{
-            //    BannedStrats.UnionWith(ConfigData.TypesOfCommands);
-            //    BannedStrats = BannedStrats.Except(Level.Stage.OverrideStrats).ToHashSet();
-
-            //    if (Level.Stage.OverrideStrats.Contains(ConfigData.CommandTypes.Scouting) && Level.State.GetShipsVisibleToHiveMind(Side).Count > 0 && Level.Stage.OverrideStrats.Count > 1 && !IsDefenseless)
-            //    {
-            //        BannedStrats.Add(ConfigData.CommandTypes.Scouting);
-            //    }
-            //}
-            _bannedStrats = BannedStrats.ToHashSet(); // the ToHashSet is important to prevent modification of the original set
+            _bannedStrats = BannedStrats.ToHashSet();
 
             _sb = _sb.Clear();
             _sb.Append(AddToMatchup(GetShipsForMatchup()));
-            //Debug.Log($"Just added {AddToMatchup(GetShipsForMatchup())} to matchup: {_sb.ToString()}");
 
             if (enemy != null)
             {
                 _matchupEnemies = GetPotentialEnemies(enemy);
                 if (_matchupEnemies.Count == 0)
                 {
-                    //Debug.LogWarning($"{this} has a matchup against {enemy} but there are no enemy ships visible to the hive mind so we are putting it back on the command queue: {Utilities.ListToString(Level.State.GetShipsVisibleToHiveMind(Side).ToList())}");
                     AddToCommandList();
                     return;
                 }
                 _matchupAllies = GetPotentialAllies(enemy);
 
-                /*
-                This is the calculation for the enemy's current average percentage of health for each ship and then the same for the allies, and then compares the allies to the enemies
-                 */
-
-                _comparativeHealth = (int)Math.Round((Ship.GetAverageHealthPercent(_matchupAllies) / Ship.GetAverageHealthPercent(_matchupEnemies)) * 100);
-
-                /*
-                 comparativeHealth
-                 < 50 0
-                 50 - 85 1
-                 85 - 115 2
-                 115 - 165 3
-                 165+ 4
-                 */
+                // Comparative health represents this squad plus the nearby allied ships
+                // encoded in the same matchup side, not only the optional extra allies.
+                _matchupFriendlyHealthShips.Clear();
+                _matchupFriendlyHealthShips.AddRange(GetShipsForMatchup());
+                _matchupFriendlyHealthShips.AddRange(_matchupAllies.Take(Math.Max(0, 64 - _matchupFriendlyHealthShips.Count)));
+                double friendlyHealth = GetAverageHealthPercentForMatchup(_matchupFriendlyHealthShips);
+                double enemyHealth = GetAverageHealthPercentForMatchup(_matchupEnemies);
+                _comparativeHealth = enemyHealth <= 0d
+                    ? 165
+                    : (int)Math.Round((friendlyHealth / enemyHealth) * 100d);
 
                 if (_comparativeHealth < 50)
                 {
@@ -937,19 +792,12 @@ namespace Assets.Scripts.Levels
                     _comparativeHealth = 4;
                 }
                 _sb.Append(AddToMatchup(_matchupAllies));
-                //Debug.Log($"Just added {AddToMatchup(_matchupAllies)} to matchup: {_sb.ToString()}");
                 _sb.Append("|");
                 _sb.Append(AddToMatchup(_matchupEnemies));
-                //Debug.Log($"Just added {AddToMatchup(_matchupEnemies)} to matchup: {_sb.ToString()}");
                 _sb.Append("|");
                 _sb.Append((enemy.IsAnySquadShipWithinRangeOfAnyOfOurSquadShips(this) ? 1 : 0));
                 _sb.Append("|");
                 _sb.Append(_comparativeHealth);
-
-                //if (_matchupAllies.Any((s) => s.Side != Side) || _matchupEnemies.Any((s) => s.Side != enemy.Side)) // if there are any ships that are not on the same side as the squad or enemy squad
-                //{
-                //    Debug.LogError($"Squad {Name} has a ship that is not on the same side as the squad or enemy squad! {Utilities.ListToString(_matchupAllies)} vs {Utilities.ListToString(_matchupEnemies)}");
-                //}
             }
             else
             {
@@ -962,32 +810,10 @@ namespace Assets.Scripts.Levels
                 _bannedStrats.Add(ConfigData.CommandTypes.FullRetreat);
                 _bannedStrats.Add(ConfigData.CommandTypes.Hold);
 
-                _sb.Append("||0|0"); // fills in the matchup string for seeing no enemies and having no allies
-
+                _sb.Append("||0|0");
             }
 
-            // Determines whether or not the squad is at the "walls" -- Deciding to skip this
-            //_atTheWalls = 0;
-            //_tempPosition = GetPosition();
-            //if (_tempPosition.x < (Level.MinX + _distance) || _tempPosition.x > (Level.MaxX - _distance)) // check if it's at the sides
-            //{
-            //    _atTheWalls = 1;
-            //    if (_tempPosition.y < (Level.MinY + _distance) || _tempPosition.y > (Level.MaxY - _distance))
-            //    {
-            //        _atTheWalls = 2;
-            //    }
-            //}
-            //else if (_tempPosition.y < (Level.MinY + _distance) || _tempPosition.y > (Level.MaxY - _distance))
-            //{
-            //    _atTheWalls = 1;
-            //}
-
-            //_sb.Append("|");
-            //_sb.Append(_atTheWalls);
-
-
             _matchup = _sb.ToString();
-
 
             _closestFriendlySquadCount = Level.State.GetSquadsBySide(Side).Where((squad) => squad?.GetCommand()?.CommandType == ConfigData.CommandTypes.ClosestFriendly).Count();
             _friendlySquadCount = Level.State.GetSquadsBySide(Side).Count;
@@ -1010,25 +836,13 @@ namespace Assets.Scripts.Levels
                 BannedStrats.Add(ConfigData.CommandTypes.Heal);
                 _bannedStrats.Add(ConfigData.CommandTypes.Heal);
             }
-            else if (Level.State.GetBeeShips().Where((s) => s.IsBeehive && ((Beehive)s).ShipsHealingHere.Count < 4).Count() == 0) // If there are beehives but they are all full, temporarily ban the heal strategy
+            else if (Level.State.GetBeeShips().Where((s) => s.IsBeehive && ((Beehive)s).ShipsHealingHere.Count < 4).Count() == 0)
             {
                 _bannedStrats.Add(ConfigData.CommandTypes.Heal);
             }
 
-            //if (HasOnlyYellowJackets)
-            //{
-            //    Debug.Log($"Trying to get a command for {Name} against {enemy?.Name}");
-            //    for (int i = 0; i < banned.Count; i++)
-            //    {
-            //        Debug.Log($"banned #{i} is {banned.ElementAt(i)}");
-            //    }
-            //}
-
-            //Debug.Log($"{this} has {_bannedStrats.Count} banned strats again enemy: {enemy} with matchup: {_matchup} and {BannedStrats.Count} permabanned strats");
             ConfigData.Socket.SendRequest(new CommandRequest(new GetStrategy(_matchup, OpponentId, _bannedStrats.Select(b => Utilities.ConvertCommandTypeToName[b]).ToArray()),
                 this, enemy, Level, _matchup, ConfigData.StandardMaxTimeOnQueue));
-
-
         }
         public void ClearTargets()
         {
@@ -1073,7 +887,6 @@ namespace Assets.Scripts.Levels
                     Level.Stage.Menus.ActionBox.HighlightSelectedButtons();
                 }
             }
-
         }
         public void UserPatrol(Vector2 topLeft, Vector2 bottomRight)
         {
@@ -1086,9 +899,6 @@ namespace Assets.Scripts.Levels
                     Level.Stage.Menus.ActionBox.HighlightSelectedButtons();
                 }
             }
-
-
-
         }
         public void UserMining(MiningAsteroid miningAsteroid)
         {
@@ -1105,8 +915,6 @@ namespace Assets.Scripts.Levels
                     Move(miningAsteroid.GetPosition());
                 }
             }
-
-
         }
         public void UserFullRetreat(WarpGate warpGate)
         {
@@ -1115,18 +923,14 @@ namespace Assets.Scripts.Levels
                 MakeUserCommand(ConfigData.CommandTypes.FullRetreat, null);
                 ((FullRetreat)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, warpGate);
             }
-
-
         }
         public void UserHeal(List<Beehive> beehives)
         {
             if (CanAcceptUserInput)
             {
-                //Debug.Log($"Starting new heal command for {Name}");
                 MakeUserCommand(ConfigData.CommandTypes.Heal, null);
                 ((Heal)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0, beehives);
             }
-
         }
         public void UserAggressive(Squad enemy)
         {
@@ -1139,12 +943,8 @@ namespace Assets.Scripts.Levels
                 }
                 MakeUserCommand(ConfigData.CommandTypes.Aggressive, enemy);
                 ((Aggressive)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0);
-
                 MarkTargets(enemy);
-
             }
-
-
         }
         public void MarkTargets(Squad enemy)
         {
@@ -1155,21 +955,17 @@ namespace Assets.Scripts.Levels
                     GameObject targetingMarker = Instantiate(Stage.Prefabs.TargetingSquadPrefab, enemyShip.transform);
                     targetingMarker.transform.localPosition = Vector2.zero;
                     targetingMarker.GetComponent<TargetingSquadMarker>().Setup(enemyShip);
-
                 });
             }
         }
         public void UserBombingRun(Squad enemy)
         {
-            //Debug.Log($"Creating \"Bombing Run\" command for {Name} against {enemy.Name}");
             MakeUserCommand(ConfigData.CommandTypes.BombingRun, enemy);
             ((BombingRun)GetCommand()).Execute(GetShootingStrategy(), Level.State.AddUserCommand(), 0);
             MarkTargets(enemy);
-
         }
         public void MakeUserCommand(ConfigData.CommandTypes command, Squad enemy)
         {
-            //Debug.Log($"{Name} now has command against {enemy.Name}");
             Level.RecordSimulationInput(
                 "user-command",
                 $"{ItemId}|{command}|{(enemy == null ? -1 : enemy.ItemId)}");
@@ -1183,9 +979,6 @@ namespace Assets.Scripts.Levels
                 case ConfigData.CommandTypes.BombingRun:
                     SetCommand(Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.BombingRun));
                     break;
-                //case ConfigData.CommandTypes.Charge:
-                //    Command = gameObject.AddComponent<Charge>();
-                //    break;
                 case ConfigData.CommandTypes.Guard:
                     SetCommand(Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.Guard));
                     break;
@@ -1206,32 +999,12 @@ namespace Assets.Scripts.Levels
                     break;
             }
 
-
             GetCommand().Setup(this, false, enemy, null);
-
         }
         public void FinalizeUserCommand()
         {
             if (HasCommand || HasCommandQueue)
             {
-                //Debug.Log($"Finalizing command for {Name}");
-                //if (Command.Type != "Charge" || !((Charge)Command).IsCharging)
-                //{
-                //    if (Command.Type == "Guard")
-                //    {
-                //        UnmatchSpeed();
-                //        ((Guard)Command).GetGuardingSquads().ForEach((squad) =>
-                //        {
-                //            ((Guard)squad.Command).OtherGuardSquads.Remove(this);
-                //        });
-                //    }
-                //    Command.SetFinalize("New command given");
-                //    return true;
-                //}
-                //else
-                //{
-                //    Debug.Log($"Can't finalize command for {Name}, the squad is charging");
-                //}
                 if (GetCommand().CommandType == ConfigData.CommandTypes.Guard)
                 {
                     UnmatchSpeed();
@@ -1241,14 +1014,12 @@ namespace Assets.Scripts.Levels
                     });
                 }
                 GetCommand().SetFinalize("New command given");
-
             }
         }
         public MiningAsteroid GetNearestMiningAsteroid()
         {
             return Level.State.MiningAsteroids.OrderBy((o) => DistanceToPoint(o.GetPosition())).FirstOrDefault();
         }
-
 
         // ship list methods
         public List<Ship> GetShips()
@@ -1257,7 +1028,6 @@ namespace Assets.Scripts.Levels
         }
         public void AddShip(Ship ship)
         {
-            //Debug.Log($"Adding {ship.Name} to Squad {Name}");
             _ships.Add(ship);
             if (IsDefenseless)
             {
@@ -1271,8 +1041,6 @@ namespace Assets.Scripts.Levels
             else if (HasOnlyBombers)
             {
                 BannedStrats.Remove(ConfigData.CommandTypes.Aggressive);
-
-
                 BannedStrats.Add(ConfigData.CommandTypes.CircleSquad);
                 BannedStrats.Add(ConfigData.CommandTypes.RightSwipe);
                 BannedStrats.Add(ConfigData.CommandTypes.LeftSwipe);
@@ -1297,65 +1065,50 @@ namespace Assets.Scripts.Levels
             {
                 Stage.Menus.ActionBox.SetSquadsText();
             }
-        }       
-
-
+        }
 
         // Utility methods
         public override string ToString()
         {
             return $"Squad {Name} (#{ItemId}) with {_ships.Count} ships ({(IsDead ? "D" : "A")})";
         }
-
         public override bool Equals(System.Object obj)
         {
             if (obj == null)
             {
                 return false;
             }
-
-            // If parameter cannot be cast to class return false.
             _tempSquad = obj as Squad;
             if (_tempSquad == null)
             {
                 return false;
             }
-
             return ItemId == _tempSquad.ItemId;
         }
-
         public bool Equals(Squad other)
         {
             return ItemId == other.ItemId;
         }
-
         public override int GetHashCode()
         {
             return ItemId.GetHashCode();
         }
-
         public static bool operator ==(Squad a, Squad b)
         {
-            // If both are null, or both are same instance, return true.
             if (System.Object.ReferenceEquals(a, b))
             {
                 return true;
             }
-
-            // If one is null, but not both, return false.
             if (((object)a == null) || ((object)b == null))
             {
                 return false;
             }
-
             return a.ItemId == b.ItemId;
         }
-
         public static bool operator !=(Squad a, Squad b)
         {
             return !(a == b);
         }
-
 
         /* Range and distance methods */
         private List<Ship> _squadShips;
@@ -1375,11 +1128,6 @@ namespace Assets.Scripts.Levels
             }
             return false;
         }
-        /// <summary>
-        /// Loops through every ship in our squad and checks if any ship in the enemy squad is within range
-        /// </summary>
-        /// <param name="squad"></param>
-        /// <returns></returns>
         public bool IsAnySquadShipWithinRangeOfAnyOfOurSquadShips(Squad enemy)
         {
             return GetShips().Any((ship) => ship.IsAnySquadShipWithinRange(enemy));
@@ -1392,33 +1140,14 @@ namespace Assets.Scripts.Levels
         {
             return GetShips().All((s) => s.AreAllSquadShipsWithinRange(squad));
         }
-        /// <summary>
-        /// Checks if every ship is this squad has at least one ship of the other squad within range
-        /// </summary>
-        /// <param name="squad"></param>
-        /// <returns></returns>
         public bool AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(Squad squad)
         {
             return GetShips().All((s) => s.IsAnySquadShipWithinRange(squad));
         }
-
-        //public bool IsWithinRangeOfAnyShipInEnemySquad()
-        //{
-        //    _tempSquad = GetEnemy();
-        //    if (_tempSquad != null)
-        //    {
-        //        return _tempSquad.IsAnySquadShipWithinRangeOfAnyOfOurSquadShips(this);
-        //    }
-        //    return false;
-        //}
         public float DistanceToPoint(Vector2 point)
         {
             return Vector2.Distance(GetPosition(), point);
         }
-        /// <summary>
-        /// The calculated center point of the squad
-        /// </summary>
-        /// <returns></returns>
         public Vector2 GetPosition()
         {
             return GetCenterPoint();
@@ -1427,15 +1156,6 @@ namespace Assets.Scripts.Levels
         {
             _tempShip = GetShips().OrderBy((ship) => ship.GetLeftMostPoint().x).ToList().First();
             return new Vector2(_tempShip.GetLeftMostPoint().x, _tempShip.GetY());
-            //try
-            //{
-            //    Ship ship = GetShips().OrderBy((ship) => ship.GetLeftMostPoint().x).ToList().First();
-            //    return new Vector2(ship.GetLeftMostPoint().x, ship.GetY());
-            //}catch (Exception e)
-            //{
-            //    Debug.Log($"Squad: {Name}, ShipCount: {GetShips().Count} Ships: {Utilities.ListToString(GetShips())}, IsDead? {IsDead} at frame #{Stage.__Updates}");
-            //    throw e;
-            //}
         }
         public Vector2 GetRightMostPoint()
         {
@@ -1463,28 +1183,16 @@ namespace Assets.Scripts.Levels
         float _width, _height, _midX, _midY;
         public Vector2 GetCenterPoint()
         {
-
-            // calculate width and height of box
             _width = GetWidth();
             _height = GetHeight();
-
-            // calculate center point of box
-
             _midX = GetRightMostPoint().x - (_width / 2);
             _midY = GetBottomMostPoint().y + (_height / 2);
-
             return new Vector2(_midX, _midY);
         }
         public float AngleToPoint(Vector2 point)
         {
             return Utilities.AngleBetweenPoints(GetPosition(), point);
         }
-        /// <summary>
-        /// Finds the point on a circle between the squad's current position, the angle, and the radius (distance) given
-        /// </summary>
-        /// <param name="angle"></param>
-        /// <param name="distance"></param>
-        /// <returns></returns>
         public Vector2 CirclePoint(float angle, float distance)
         {
             angle *= -1;
@@ -1493,13 +1201,9 @@ namespace Assets.Scripts.Levels
             return new Vector2((_tempPosition.x + (Mathf.Cos(angle) * distance)), (_tempPosition.y + (Mathf.Sin(angle) * distance)));
         }
 
-
-
         // UI Methods
         public void MoveSquadBox()
         {
-            //Debug.Log($"Squad #{squadNumber} is moving and the squad box will have width {GetWidth()}, height {GetHeight()}, and center point {GetCenterPoint()}");
-            //Debug.Log($"Right most point {GetRightMostPoint()}, Left most point {GetLeftMostPoint()}, Top most point {GetTopMostPoint()}, Bottom most point {GetBottomMostPoint()}");
             if (IsSelected && !Stage.IsTraining && !HasMovedBox)
             {
                 SquadBox.SetActive(true);
@@ -1508,7 +1212,6 @@ namespace Assets.Scripts.Levels
                 if (HasCustomColor)
                 {
                     Utilities.SetUIColor(SquadBox, SquadBoxColor);
-
                 }
                 if (GetShips().Count == 1)
                 {
@@ -1539,8 +1242,5 @@ namespace Assets.Scripts.Levels
             GetShips().ForEach((ship) => ship.HideWeaponRanges());
             IsShowingRanges = false;
         }
-
     }
-
 }
-
