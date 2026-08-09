@@ -24,17 +24,8 @@ namespace Assets.Scripts.Entities.Ships
         public int OriginalPower;
         public Weapon Charge;
         public ChargingBar ChargingBar;
-        /// <summary>
-        /// The animation that runs while the barge is charging forward
-        /// </summary>
         public GameObject BargeChargeAnimation;
-        /// <summary>
-        /// The animation that runs while the barge is loading up to charge... but currently staying put
-        /// </summary>
         public GameObject BargeLoadingChargeAnimation;
-        /// <summary>
-        /// The "after image" of the barge as it's charging
-        /// </summary>
         public GameObject BargeChargeImageAnimation;
         public BargeChargeImageAnimation BargeChargeImageAnimator;
         public List<GameObject> ChargeRocketFlares;
@@ -77,8 +68,6 @@ namespace Assets.Scripts.Entities.Ships
         public override void ClearData()
         {
             base.ClearData();
-            // Any coroutine from a previous pooled/use lifecycle must not be able to
-            // resume after a yield and alter the newly configured Barge.
             _chargeLifecycleId++;
             ShipsHit.Clear();
             IsCharging = false;
@@ -142,7 +131,6 @@ namespace Assets.Scripts.Entities.Ships
             else if (_collidingThing.CompareTag("Ship") && Collider.IsTouching(collider))
             {
                 _collidingShip = _collidingThing.GetComponent<Ship>();
-
                 if (_collidingShip.Side != Side && IsCharging)
                 {
                     HitShip(_collidingShip);
@@ -158,7 +146,6 @@ namespace Assets.Scripts.Entities.Ships
             if (_collidingThing.CompareTag("Ship") && Collider.IsTouching(collider))
             {
                 _collidingShip = _collidingThing.GetComponent<Ship>();
-
                 if (_collidingShip.Side != Side && IsCharging)
                 {
                     HitShip(_collidingShip);
@@ -197,7 +184,6 @@ namespace Assets.Scripts.Entities.Ships
                 }
 
                 Debug.Log($"{Name} is about to charge");
-
                 yield return new WaitForSeconds(2);
 
                 if (IsDead || lifecycleId != _chargeLifecycleId)
@@ -236,10 +222,15 @@ namespace Assets.Scripts.Entities.Ships
         }
 
         /// <summary>
-        /// Immediately stops the movement of the barge and initiates the cooldown after a ten second delay.
+        /// Immediately stops the current charge and initiates the cooldown.
+        /// A negative lifecycle id means "the current charge" for external callers such as MapBorder.
         /// </summary>
-        public IEnumerator StopCharge(int lifecycleId)
+        public IEnumerator StopCharge(int lifecycleId = -1)
         {
+            if (lifecycleId < 0)
+            {
+                lifecycleId = _chargeLifecycleId;
+            }
             if (lifecycleId != _chargeLifecycleId)
             {
                 yield break;
@@ -254,16 +245,11 @@ namespace Assets.Scripts.Entities.Ships
                 {
                     BargeChargeAnimation.SetActive(false);
                     BargeChargeImageAnimator.Kill();
-
-                    ChargeRocketFlares.ForEach((flare) =>
-                    {
-                        flare.SetActive(false);
-                    });
+                    ChargeRocketFlares.ForEach((flare) => flare.SetActive(false));
                 }
 
                 StopMoving($"Finished charging");
                 Charge.Power = OriginalPower;
-
                 LogDamage(200);
 
                 if (IsUserControlled)
@@ -279,13 +265,8 @@ namespace Assets.Scripts.Entities.Ships
             }
         }
 
-        /// <summary>
-        /// Resets charge variables if the charge command has been interrupted.
-        /// </summary>
         public void ResetCharge()
         {
-            // Invalidate any ChargeForward/StopCharge coroutine that is currently
-            // suspended at a yield. It may wake later, but it can no longer mutate state.
             _chargeLifecycleId++;
             IsCharging = false;
             HasStartedCharging = false;
@@ -299,11 +280,7 @@ namespace Assets.Scripts.Entities.Ships
                 BargeLoadingChargeAnimation.SetActive(false);
                 BargeChargeAnimation.SetActive(false);
                 BargeChargeImageAnimator.Kill();
-
-                ChargeRocketFlares.ForEach((flare) =>
-                {
-                    flare.SetActive(false);
-                });
+                ChargeRocketFlares.ForEach((flare) => flare.SetActive(false));
             }
 
             StopMoving($"Charge command ended");
