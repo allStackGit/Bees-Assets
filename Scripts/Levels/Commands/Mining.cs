@@ -1,6 +1,5 @@
 ﻿using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using Unity.Mathematics;
@@ -9,62 +8,56 @@ using UnityEngine;
 namespace Assets.Scripts.Levels.Commands
 {
     /// <summary>
-    /// Sends the ships to the selected asteroid to start mining 
+    /// Sends the ships to the selected asteroid to start mining.
     /// </summary>
     public class Mining : Command
     {
         public MiningAsteroid TargetAstroid;
-        /// <summary>
-        /// Ships in the squad that can mine asteroids
-        /// </summary>
         public List<Ship> MiningShips = new List<Ship>();
-        /// <summary>
-        /// Ships in squad that are currently mining asteroids
-        /// </summary>
         public List<Ship> ShipsCurrentlyMining = new List<Ship>();
 
         public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, MiningAsteroid asteroid)
         {
-            if (asteroid != null) // Needs to be null check in case there were no asteroids
-            {
-                MiningShips = GetSquad().GetShips().Where((ship) => ship.IsMiningShip && !ship.IsDead).ToList();
-                TargetAstroid = asteroid;
-                if (MiningShips.Count == 0)
-                {
-                    GetSquad().BannedStrats.Add(ConfigData.CommandTypes.Mining);
-                    SetFinalize("This squad has no live mining ships");
-                    return;
-                }
-
-                base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
-                PrepareDamageToSendEntries(1);
-
-                // Check if any mining ships are already on the asteroid.
-                MiningShips.ToList().ForEach((ship) =>
-                {
-                    if (!ship.IsDead && ship.Collider.IsTouching(TargetAstroid.Collider))
-                    {
-                        if (!TargetAstroid.SquadsMining.Contains(ship.Squad))
-                        {
-                            TargetAstroid.SquadsMining.Add(ship.Squad);
-                        }
-                        FoundAsteroid(ship);
-                    }
-                });
-                CommandTimer.Reuse(CommandFrequency, Timer, true, true);
-                Level.AddTimer(CommandTimer);
-                if (IsHiveMindCommand)
-                {
-                    TimeoutTimer.Reuse(600, Timeout); // 10 minutes
-                    Level.AddTimer(TimeoutTimer);
-                }
-            }
-            else
+            if (asteroid == null)
             {
                 GetSquad().BannedStrats.Add(ConfigData.CommandTypes.Mining);
                 SetFinalize("The asteroid doesn't exist anymore, or there were no asteroids around");
+                return;
+            }
+
+            MiningShips = GetSquad().GetShips().Where(ship => ship.IsMiningShip && !ship.IsDead).ToList();
+            TargetAstroid = asteroid;
+            if (MiningShips.Count == 0)
+            {
+                GetSquad().BannedStrats.Add(ConfigData.CommandTypes.Mining);
+                SetFinalize("This squad has no live mining ships");
+                return;
+            }
+
+            base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
+            PrepareDamageToSendEntries(1);
+
+            MiningShips.ToList().ForEach(ship =>
+            {
+                if (!ship.IsDead && ship.Collider.IsTouching(TargetAstroid.Collider))
+                {
+                    if (!TargetAstroid.SquadsMining.Contains(ship.Squad))
+                    {
+                        TargetAstroid.SquadsMining.Add(ship.Squad);
+                    }
+                    FoundAsteroid(ship);
+                }
+            });
+
+            CommandTimer.Reuse(CommandFrequency, Timer, true, true);
+            Level.AddTimer(CommandTimer);
+            if (IsHiveMindCommand)
+            {
+                TimeoutTimer.Reuse(600, Timeout);
+                Level.AddTimer(TimeoutTimer);
             }
         }
+
         public override void ClearData()
         {
             base.ClearData();
@@ -88,9 +81,11 @@ namespace Assets.Scripts.Levels.Commands
                 SetFinalize("Mining asteroid was destroyed");
             }
         }
-        private ScaledTimer _miningTimer = new ScaledTimer();
-        private ScaledTimer _stopMovingTowardsAsteroidTimer = new ScaledTimer();
-        public bool HasFoundAsteroid = false;
+
+        private readonly ScaledTimer _miningTimer = new ScaledTimer();
+        private readonly ScaledTimer _stopMovingTowardsAsteroidTimer = new ScaledTimer();
+        public bool HasFoundAsteroid;
+
         public void FoundAsteroid(Ship ship)
         {
             if (HasFoundAsteroid || ship == null || ship.IsDead || !ship.IsMiningShip || !MiningShips.Contains(ship) || ShipsCurrentlyMining.Contains(ship))
@@ -110,12 +105,13 @@ namespace Assets.Scripts.Levels.Commands
                     ship.ShipAnimation.SetActive(true);
                 }
             }
+
             if (ShipsCurrentlyMining.Count == 1)
             {
                 _miningTimer.Reuse(5, Mine, true);
                 Level.AddTimer(_miningTimer);
             }
-            if (MiningShips.All((s) => s.IsDead || ShipsCurrentlyMining.Contains(s)))
+            if (MiningShips.All(shipInSquad => shipInSquad.IsDead || ShipsCurrentlyMining.Contains(shipInSquad)))
             {
                 HasFoundAsteroid = true;
                 _stopMovingTowardsAsteroidTimer.Reuse(5, StopMovingTowardsAsteroid);
@@ -127,44 +123,53 @@ namespace Assets.Scripts.Levels.Commands
         {
             Level.CancelTimer(CommandTimer);
         }
-        private int _miningRate, _amountMined, _amountPerShip;
-        public void Mine() // [stats-method]
+
+        private int _miningRate, _amountMined, _baseAmountPerShip, _miningRemainder;
+        public void Mine()
         {
-            if (!TargetAstroid.IsDead)
+            if (TargetAstroid.IsDead)
             {
-                ShipsCurrentlyMining = ShipsCurrentlyMining.Where((s) => s != null && !s.IsDead && s.IsMiningShip).ToList();
-                if (ShipsCurrentlyMining.Count > 0)
-                {
-                    _miningRate = ConfigData.MiningRate * ShipsCurrentlyMining.Count;
-                    _amountMined = math.min(_miningRate, TargetAstroid.Health);
+                return;
+            }
 
-                    Tsv += _amountMined;
-                    TargetAstroid.Health -= _amountMined;
+            ShipsCurrentlyMining = ShipsCurrentlyMining
+                .Where(ship => ship != null && !ship.IsDead && ship.IsMiningShip)
+                .ToList();
+            if (ShipsCurrentlyMining.Count == 0)
+            {
+                SetFinalize("No mining ships remain at the asteroid");
+                return;
+            }
 
-                    if (GetSquad().IsUserControlled && ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
-                    {
-                        Level.State.PlayerMineralsMined += _amountMined;
-                        Stage.Menus.UpdateMineralsMined(Level.State.PlayerMineralsMined, Level.MaxMinerals);
-                    }
+            _miningRate = ConfigData.MiningRate * ShipsCurrentlyMining.Count;
+            _amountMined = math.min(_miningRate, TargetAstroid.Health);
+            Tsv += _amountMined;
+            TargetAstroid.Health -= _amountMined;
 
-                    _amountPerShip = _amountMined / ShipsCurrentlyMining.Count;
-                    ShipsCurrentlyMining.ForEach((ship) =>
-                    {
-                        ship.FleetShip.MineralsMinedThisLevel += _amountPerShip;
-                        ship.Tsv = Utilities.CalculateTsv(ship);
-                    });
+            if (GetSquad().IsUserControlled && ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
+            {
+                Level.State.PlayerMineralsMined += _amountMined;
+                Stage.Menus.UpdateMineralsMined(Level.State.PlayerMineralsMined, Level.MaxMinerals);
+            }
 
-                    if (TargetAstroid.Health == 0)
-                    {
-                        TargetAstroid.Kill(false);
-                    }
-                }
-                else
-                {
-                    SetFinalize("No mining ships remain at the asteroid");
-                }
+            // Preserve the complete mined amount in persistent FleetShip accounting. Integer
+            // division alone loses the remainder and makes fleet totals disagree with the
+            // asteroid/command/player counters.
+            _baseAmountPerShip = _amountMined / ShipsCurrentlyMining.Count;
+            _miningRemainder = _amountMined % ShipsCurrentlyMining.Count;
+            for (int i = 0; i < ShipsCurrentlyMining.Count; i++)
+            {
+                Ship ship = ShipsCurrentlyMining[i];
+                ship.FleetShip.MineralsMinedThisLevel += _baseAmountPerShip + (i < _miningRemainder ? 1 : 0);
+                ship.Tsv = Utilities.CalculateTsv(ship);
+            }
+
+            if (TargetAstroid.Health == 0)
+            {
+                TargetAstroid.Kill(false);
             }
         }
+
         public void CleanupAsteroid()
         {
             if (TargetAstroid != null && !TargetAstroid.IsDead)
@@ -172,23 +177,25 @@ namespace Assets.Scripts.Levels.Commands
                 TargetAstroid.SquadsMining.Remove(GetSquad());
             }
         }
+
         public override void SetFinalize(string cause)
         {
             Level.CancelTimer(_miningTimer);
             Level.CancelTimer(_stopMovingTowardsAsteroidTimer);
             CleanupAsteroid();
-            GetSquad().GetShips().ForEach((ship) =>
+            GetSquad().GetShips().ForEach(ship =>
             {
-                if (ship.HasShipAnimation)
+                if (!ship.HasShipAnimation)
                 {
-                    if (ship.ShipType == ConfigData.ShipTypes.Factory)
-                    {
-                        ship.ShipAnimationController.Deactivate();
-                    }
-                    else
-                    {
-                        ship.ShipAnimation.SetActive(false);
-                    }
+                    return;
+                }
+                if (ship.ShipType == ConfigData.ShipTypes.Factory)
+                {
+                    ship.ShipAnimationController.Deactivate();
+                }
+                else
+                {
+                    ship.ShipAnimation.SetActive(false);
                 }
             });
             base.SetFinalize(cause);
