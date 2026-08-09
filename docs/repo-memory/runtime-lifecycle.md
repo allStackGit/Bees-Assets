@@ -21,6 +21,7 @@
 - Derived command `Execute()` implementations must stop immediately if `base.Execute()` finalized the command; otherwise they can schedule timers or mutate state on an already-dead pooled command.
 - Ship-owned timers must be cancelled before the Ship wrapper can enter the pool. This includes combat, asteroid recheck, failed-path retry, and hover/info timers across separate Ship partials.
 - An explicit `StopMoving()` must cancel pending path-retry work so an old failed-path callback cannot restart movement after a new order/cancel.
+- A Striker-only `BombingRun` must remain active after its enemy squad dies until the Strikers have returned to a live Carrier, or no Carrier remains. A single return-to-carrier movement update is insufficient because finalizing the command cancels the timer that continues the trip.
 
 ## Targeting and Hive Mind
 
@@ -39,7 +40,7 @@
 - Barge charge/cooldown coroutines carry a lifecycle generation. Reset/cancel must invalidate suspended wind-up/cooldown callbacks rather than relying on `StopAllCoroutines`, which could cancel unrelated behavior.
 - `ChargingBar` owns a Level timer. Reuse cancels the previous timer and charge values are clamped to 0-100; equality-only completion checks are unsafe if values can overshoot.
 - Striker collision exit must clear cached contact directly; `OnTriggerExit2D` should not require `Collider.IsTouching` to prove contact ended.
-- Destroying a Carrier must detach or reassign every `CarrierShip` reference before the Carrier wrapper can return to its pool. Consumers must represent “no surviving Carrier” as `Carrier == null`, never a stale pooled reference.
+- Destroying a Carrier must detach or reassign every same-side `CarrierShip` reference before the Carrier wrapper can return to its pool. Replacement Carriers and dependent craft must be searched with `GameState.GetShips(Carrier.Side)`, not human-only queries. Consumers must represent “no surviving Carrier” as `Carrier == null`, never a stale pooled reference.
 - `StrikerBomb` delayed damage must complete before the bomb wrapper returns to the projectile pool.
 - A projectile owns its shooter-registration lifecycle: `Projectile.Kill()` removes itself from `Shooter.ProjectilesInFlight` even when the shooter is dead. GameState release cleanup remains a defensive backstop, not the normal owner.
 - Lingering explosions must drain queued contacts with `while (queue.Count > 0)` or a snapshot; never use a shrinking `queue.Count` as the bound of a dequeue loop.
