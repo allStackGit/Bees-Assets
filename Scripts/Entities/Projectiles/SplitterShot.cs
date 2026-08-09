@@ -14,7 +14,6 @@ namespace Assets.Scripts.Entities.Projectiles
         public GameObject SplitLaserPrefab;
         public override void ContactTarget(Ship target)
         {
-            //Debug.Log($"Split shot hit {target.name}");
             KillSequence(target);
         }
 
@@ -42,13 +41,11 @@ namespace Assets.Scripts.Entities.Projectiles
             Kill();
         }
 
-
         private float _localAngle;
         private int _shotNumber;
         private Projectile _projectile;
-        public void Split(Ship target) // [projectile-method] [note]
+        public void Split(Ship target)
         {
-            //Debug.Log($"Splitting into {SplitCount} more shots");
             if (DistanceToPoint(StartingPosition) <= (Range - 5))
             {
                 for (_shotNumber = 0; _shotNumber < SplitCount; _shotNumber++)
@@ -70,37 +67,21 @@ namespace Assets.Scripts.Entities.Projectiles
                     {
                         _localAngle -= 45;
                     }
-                    //Debug.Log($"Split shot #{shotNumber} is at localAngle: {localAngle}, coming from eulerAngle: {transform.localEulerAngles.z}, and now at world" +
-                    //    $"angle: {worldAngle} (rad) : {radians}");a
-
 
                     _projectile = Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.BeeSmall);
                     _projectile.Setup(Level, Weapon, Shooter, Target, GetPosition(), _localAngle * Mathf.Deg2Rad, Weapon.Range, (int)(Weapon.Power / 1.5f));
                     _projectile.ShipsToIgnore.Add(target);
-                    if (!Shooter.IsDead)
-                    {
-                        Shooter.ProjectilesInFlight.Add(_projectile);
-                    }
-                    else
+
+                    // Child shots retain the shooter reference even after its death. Always
+                    // register that dependency so GameState cannot recycle the shooter wrapper
+                    // until every split child has finished.
+                    Shooter.ProjectilesInFlight.Add(_projectile);
+                    if (Shooter.IsDead)
                     {
                         _projectile.ShipIsDead = true;
                     }
-
-
-
-
-                    //GameObject shot =  Instantiate(SplitLaserPrefab, startingPosition, Quaternion.identity);
-                    //shot.transform.parent = Level.Map.Transform;
-                    //LaserShot projectile = (LaserShot)shot.GetComponent(typeof(LaserShot));
-                    //projectile.Setup(Level, Level.State.GetId(), Weapon, Shooter, Target, startingPosition, radians, Weapon.Range, (int) (Weapon.Power / 1.5f));
-                    //projectile.ShipsToIgnore.Add(target);
-                    //Shooter.ProjectilesInFlight.Add(projectile);
-
                 }
             }
-            
-
-
         }
     }
 }
