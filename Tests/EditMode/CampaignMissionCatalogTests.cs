@@ -37,7 +37,7 @@ namespace Bees.Tests.EditMode
         {
             "Pluto1Ending", "Pluto2Ending", "Pluto3Ending", "Pluto4Ending",
             "Neptune1Ending", "Neptune2Ending", "Neptune3Ending",
-            "Titania1MinesweeperEnding", "Titania2Ending", "Uranus1Ending",
+            "Titania1MinesweeperEnding", "Titania2CampaignEnding", "Uranus1Ending",
             "Uranus2Ending", "Uranus3Ending"
         };
 
@@ -45,7 +45,7 @@ namespace Bees.Tests.EditMode
         {
             "Pluto1Ending", "Pluto2Ending", "Pluto3Ending", "Pluto4EndingDialogue",
             "Neptune1Ending", "Neptune2Ending", "Neptune3Ending",
-            "Titania1MinesweeperEnding", "Titania2Ending", "Uranus1Ending",
+            "Titania1MinesweeperEnding", "Titania2CampaignEnding", "Uranus1Ending",
             "Uranus2Ending", "Uranus3Ending"
         };
 
