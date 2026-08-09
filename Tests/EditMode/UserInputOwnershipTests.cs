@@ -16,5 +16,14 @@ namespace Bees.Tests.EditMode
 
             StringAssert.Contains("Where(s => !s.IsLockedOn && s.CanAcceptUserInput)", source);
         }
+
+        [Test]
+        public void SelectedSquadInputAccessorExcludesLockedOrDeadSquads()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Levels", "GameState.Selection.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("squad != null && !squad.IsDead && squad.CanAcceptUserInput", source);
+        }
     }
 }
