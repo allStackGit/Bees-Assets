@@ -17,12 +17,17 @@ namespace Assets.Scripts.UI_Components
         private float _buttonPrefabHeight;
         private TMP_Text _explanationText, _titleText;
         private readonly bool _playErrorSoundOnShow;
+        private readonly bool _playSaveSoundOnShow;
 
         public bool IsOpen => _dialogue != null && _dialogue.activeSelf;
 
         public Dialogue(GameObject prefab, string title, string explanation, List<string> buttonLabels, List<UnityAction> buttonActions, bool playErrorSoundOnShow = false)
         {
             _playErrorSoundOnShow = playErrorSoundOnShow;
+            // SquadSavingStatus is currently the only status-only Dialogue. Treat a Dialogue
+            // with no actions/buttons as completion feedback rather than a clickable prompt.
+            _playSaveSoundOnShow = buttonLabels.Count == 0 && buttonActions.Count == 0;
+
             _dialogue = GameObject.Instantiate(prefab);
             _titleBox = _dialogue.transform.Find($"Main Panel/Text/Title").gameObject;
             _explanationBox = _dialogue.transform.Find($"Main Panel/Text/Explanation").gameObject;
@@ -61,7 +66,15 @@ namespace Assets.Scripts.UI_Components
             buttonObject.transform.GetChild(0).gameObject.GetComponent<TMP_Text>().text = label;
             buttonObject.GetComponent<Button>().onClick.AddListener(delegate ()
             {
-                UIAudioController.Instance?.PlayButtonSound();
+                if (action != null && action.Method.Name == "DeleteCurrentSquad")
+                {
+                    UIAudioController.Instance?.PlayDeleteSquadSound();
+                }
+                else
+                {
+                    UIAudioController.Instance?.PlayButtonSound();
+                }
+
                 action();
                 Hide();
             });
@@ -74,6 +87,10 @@ namespace Assets.Scripts.UI_Components
             if (_playErrorSoundOnShow)
             {
                 UIAudioController.Instance?.PlayErrorSound();
+            }
+            else if (_playSaveSoundOnShow)
+            {
+                UIAudioController.Instance?.PlaySaveSound();
             }
             _dialogue.SetActive(true);
         }
