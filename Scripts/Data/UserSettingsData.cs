@@ -100,13 +100,32 @@ namespace Assets.Scripts.Data
                 //Debug.Log($"JSON from DataFile: {json}");
                 Dictionary<string, int[]> hotKeys = Utilities.JArrayToDictionary<string, int[]>(json.HotKeys);
                 hotKeys.Keys.ToList().ForEach((hotKeyName) => {
-                    HotKey hotKey = new HotKey(hotKeyName, hotKeys[hotKeyName].Select((k) => (KeyCode)k).ToList(), ContinuousInputActions.Contains(hotKeyName), HeldDownInputActions.Contains(hotKeyName));
-                    HotKeys.Add(hotKey);
-                    HotKeysByName.Add(hotKeyName, hotKey);
+                    AddHotKey(new HotKey(hotKeyName, hotKeys[hotKeyName].Select((k) => (KeyCode)k).ToList(), ContinuousInputActions.Contains(hotKeyName), HeldDownInputActions.Contains(hotKeyName)));
                 });
+
+                // Saved settings are user overrides, not the complete schema. When a newer
+                // build adds an action, older save files must inherit its default binding.
+                foreach (HotKey defaultHotKey in DefaultHotKeys)
+                {
+                    if (!HotKeysByName.ContainsKey(defaultHotKey.Name))
+                    {
+                        AddHotKey(new HotKey(
+                            defaultHotKey.Name,
+                            defaultHotKey.Keys.ToList(),
+                            ContinuousInputActions.Contains(defaultHotKey.Name),
+                            HeldDownInputActions.Contains(defaultHotKey.Name)));
+                    }
+                }
             });
 
         }
+
+        private void AddHotKey(HotKey hotKey)
+        {
+            HotKeys.Add(hotKey);
+            HotKeysByName.Add(hotKey.Name, hotKey);
+        }
+
         public void SetKey(string keyName, List<KeyCode> keys)
         {
             //HotKey key = FindKey(keyName);
