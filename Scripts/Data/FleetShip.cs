@@ -68,7 +68,7 @@ namespace Assets.Scripts.Data
             catch (Exception e)
             {
                 Debug.LogError($"Error while trying to load cached sprites: {e}");
-                throw e;
+                throw;
                 //return null;
             }
         }
@@ -83,7 +83,13 @@ namespace Assets.Scripts.Data
                 export.filterMode = FilterMode.Point;
                 export.SetPixels(pixels);
                 export.Apply();
-                File.WriteAllBytesAsync(path, export.EncodeToPNG());
+                byte[] png = export.EncodeToPNG();
+                UnityEngine.Object.Destroy(export);
+
+                // HasCachedSprite is a readiness contract used by later load paths. Complete
+                // the small cache-file write before setting it rather than fire-and-forgetting
+                // an async write that may still be creating the file.
+                File.WriteAllBytes(path, png);
             }
             HasCachedSprite = true;
 
