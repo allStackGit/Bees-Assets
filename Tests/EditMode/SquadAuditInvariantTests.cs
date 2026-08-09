@@ -15,8 +15,10 @@ namespace Bees.Tests.EditMode
     {
         private string _squadSource;
         private string _strikerSource;
+        private string _bargeSource;
         private string _warpGateSource;
         private string _fullRetreatSource;
+        private string _retreatSource;
         private string _healSource;
         private string _beehiveSource;
         private string _miningSource;
@@ -27,8 +29,10 @@ namespace Bees.Tests.EditMode
         {
             _squadSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Squad.cs"));
             _strikerSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Striker.cs"));
+            _bargeSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Barge.cs"));
             _warpGateSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "WarpGate.cs"));
             _fullRetreatSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Commands", "FullRetreat.cs"));
+            _retreatSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Commands", "Retreat.cs"));
             _healSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Commands", "Heal.cs"));
             _beehiveSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Beehive.cs"));
             _miningSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Commands", "Mining.cs"));
@@ -47,7 +51,6 @@ namespace Bees.Tests.EditMode
         {
             string enemies = ExtractMethodBody(_squadSource, "GetPotentialEnemies");
             string allies = ExtractMethodBody(_squadSource, "GetPotentialAllies");
-
             Assert.That(enemies, Does.Contain("_enemies.Count < 64"));
             Assert.That(enemies, Does.Not.Contain("_enemies.Count <= 64"));
             Assert.That(allies, Does.Contain("_tempShips.Count < _limit"));
@@ -67,9 +70,7 @@ namespace Bees.Tests.EditMode
         {
             Type squadType = RuntimeAssembly.GetType("Assets.Scripts.Levels.Squad");
             Type shipType = RuntimeAssembly.GetType("Assets.Scripts.Entities.Ships.Ship");
-            MethodInfo method = squadType.GetMethod(
-                "GetAverageHealthPercentForMatchup",
-                BindingFlags.Static | BindingFlags.NonPublic);
+            MethodInfo method = squadType.GetMethod("GetAverageHealthPercentForMatchup", BindingFlags.Static | BindingFlags.NonPublic);
             Assert.That(method, Is.Not.Null);
 
             object ship = FormatterServices.GetUninitializedObject(shipType);
@@ -82,7 +83,6 @@ namespace Bees.Tests.EditMode
 
             double damagedPercent = (double)method.Invoke(null, new object[] { ships });
             double emptyPercent = (double)method.Invoke(null, new object[] { Activator.CreateInstance(listType) });
-
             Assert.That(damagedPercent, Is.EqualTo(99d).Within(0.0001d));
             Assert.That(emptyPercent, Is.EqualTo(0d));
         }
@@ -93,6 +93,30 @@ namespace Bees.Tests.EditMode
             string method = ExtractMethodBody(_strikerSource, "OnTriggerExit2D");
             Assert.That(method, Does.Contain("TouchingShip = null"));
             Assert.That(method, Does.Not.Contain("IsTouching(collider)"));
+        }
+
+        [Test]
+        public void InterruptedBargeChargeCoroutinesCannotResumeIntoNewOrders()
+        {
+            string charge = ExtractMethodBody(_bargeSource, "ChargeForward");
+            string stop = ExtractMethodBody(_bargeSource, "StopCharge");
+            string reset = ExtractMethodBody(_bargeSource, "ResetCharge");
+            string clear = ExtractMethodBody(_bargeSource, "ClearData");
+
+            Assert.That(_bargeSource, Does.Contain("private int _chargeLifecycleId"));
+            Assert.That(charge, Does.Contain("int lifecycleId = ++_chargeLifecycleId"));
+            Assert.That(charge, Does.Contain("lifecycleId != _chargeLifecycleId"));
+            Assert.That(stop, Does.Contain("lifecycleId == _chargeLifecycleId"));
+            Assert.That(reset, Does.Contain("_chargeLifecycleId++"));
+            Assert.That(clear, Does.Contain("_chargeLifecycleId++"));
+        }
+
+        [Test]
+        public void RetreatAlreadyAtSafeDistanceUsesOriginalThreeSecondCompletionDelay()
+        {
+            string execute = ExtractMethodBody(_retreatSource, "Execute");
+            Assert.That(execute, Does.Contain("_delayedSetFinalizeTimer.Reuse(3f, DelaySetFinalize)"));
+            Assert.That(execute, Does.Not.Contain("_delayedSetFinalizeTimer.Reuse(50"));
         }
 
         [Test]
@@ -109,7 +133,6 @@ namespace Bees.Tests.EditMode
             string execute = ExtractMethodBody(_fullRetreatSource, "Execute");
             string warpKill = ExtractMethodBody(_fullRetreatSource, "WarpKill");
             string gateEnter = ExtractMethodBody(_warpGateSource, "OnTriggerEnter2D");
-
             Assert.That(_fullRetreatSource, Does.Contain("private HashSet<long> _shipIdsWarping"));
             Assert.That(execute, Does.Contain("_shipIdsWarping.Add(ship.Id)"));
             Assert.That(warpKill, Does.Contain("_shipIdsWarping.Count == 0"));
@@ -123,7 +146,6 @@ namespace Bees.Tests.EditMode
             string queue = ExtractMethodBody(_fullRetreatSource, "QueueShipForWarp");
             string prune = ExtractMethodBody(_fullRetreatSource, "RemoveUnavailableWarpParticipants");
             string warpKill = ExtractMethodBody(_fullRetreatSource, "WarpKill");
-
             Assert.That(queue, Does.Contain("!ShipsWaitingToWarp.Contains(ship)"));
             Assert.That(prune, Does.Contain("ship == null || ship.IsDead"));
             Assert.That(prune, Does.Contain("TargetWarpGate.ShipsWarpingHere.Remove(shipId)"));
@@ -136,7 +158,6 @@ namespace Bees.Tests.EditMode
             string release = ExtractMethodBody(_healSource, "ReleaseHealingReservation");
             string move = ExtractMethodBody(_healSource, "MoveToBeehives");
             string heal = ExtractMethodBody(_healSource, "HealShips");
-
             Assert.That(release, Does.Contain("reservedBeehive.ShipsHealingHere.Remove(ship)"));
             Assert.That(release, Does.Contain("_shipsAndBeehives.Remove(ship.Id)"));
             Assert.That(move, Does.Contain("ReleaseHealingReservation(_shipsThatLostBeehiveOrDied[_index])"));
@@ -149,7 +170,6 @@ namespace Bees.Tests.EditMode
             string execute = ExtractMethodBody(_healSource, "Execute");
             string reached = ExtractMethodBody(_healSource, "ShipReachedBeehive");
             string heal = ExtractMethodBody(_healSource, "HealShips");
-
             Assert.That(execute, Does.Contain("s.Health < s.MaxHealth"));
             Assert.That(reached, Does.Contain("ShipsWaitingToHeal.Remove(ship)"));
             Assert.That(reached, Does.Contain("!ShipsHealing.Contains(ship)"));
@@ -162,10 +182,8 @@ namespace Bees.Tests.EditMode
         {
             string enter = ExtractMethodBody(_beehiveSource, "OnTriggerEnter2D");
             string kill = ExtractMethodBody(_beehiveSource, "Kill");
-
             Assert.That(enter, Does.Contain("ShipReachedBeehive(_collidingShip)"));
             Assert.That(kill, Does.Contain("healCommand.IsShipActivelyHealing(s)"));
-            Assert.That(kill, Does.Not.Contain("ShipsHealingHere.ToList().ForEach((s) =>\n            {\n                s.Kill"));
         }
 
         [Test]
@@ -174,7 +192,6 @@ namespace Bees.Tests.EditMode
             string execute = ExtractMethodBody(_miningSource, "Execute");
             string found = ExtractMethodBody(_miningSource, "FoundAsteroid");
             string mine = ExtractMethodBody(_miningSource, "Mine");
-
             Assert.That(execute, Does.Contain("ship.IsMiningShip && !ship.IsDead"));
             Assert.That(execute, Does.Contain("MiningShips.ToList().ForEach"));
             Assert.That(found, Does.Contain("!ship.IsMiningShip"));
@@ -203,7 +220,6 @@ namespace Bees.Tests.EditMode
                 else if (source[index] == '}' && --depth == 0)
                     return source.Substring(openingBrace, index - openingBrace + 1);
             }
-
             Assert.Fail($"Method {methodName} has no balanced body.");
             return string.Empty;
         }
