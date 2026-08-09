@@ -29,10 +29,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public ConfigData.WeaponSoundTypes WeaponSoundType; 
         public bool IsUsingCachedTargetingQueue, HasCachedChanged, HasSoundEffect;
         public AudioSource SoundEffect;
-        /// <summary>
-        /// Ships that this weapon can't fire at because an obstacle is in the way
-        /// </summary>
-        //public Dictionary<Ship, string> __TargetingRejectReasons = new Dictionary<Ship, string>();
         public bool HasTargetShip => TargetShip != null;
         public int Id, Side;
         public Level Level;
@@ -42,12 +38,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public SpriteRenderer SpriteRenderer;
         public Transform PieceTransform;
 
-        //public string __NotShootingReason;
-        //public List<Ship> __ShipsWithinRange;
-
-        /// <summary>
-        /// Whether a weapon has a target ship and is not cease fire and therefore *should* fire at a target. It may still not be *able* to fire at a target, if for instance it's a turret and not aimed at the target.
-        /// </summary>
         public virtual bool ShouldFire => TargetShip != null && !TargetShip.IsDead && !Ship.IsCeaseFire;
 
         public virtual void Create(Ship ship, ConfigData.WeaponTypes type, ConfigData.WeaponSoundTypes weaponSound, int range, int power, float specialFirePower, float rateOfFire, float projectileValue, GameObject piece,
@@ -91,9 +81,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
         }
 
-        /// <summary>
-        /// Sets the weapon up for the level, clears out any old data
-        /// </summary>
         public virtual void Setup()
         {
             Level = Ship.Level;
@@ -182,7 +169,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         private Ship _potentialTargetShip;
         private ShipDamageStatus _shipDamageStatus;
 
-        /// <summary>Goes through the list of ships in the sorted targeting list and sets the weapon to attack whichever ship is first valid</summary>
         public bool DetermineTargetShip(List<Ship> ships, bool useShipDamageStatus)
         {
             _foundTarget = false;
@@ -197,7 +183,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                         _shipDamageStatus = Level.State.GetShipDamageStatus(Side, _potentialTargetShip);
                         if (useShipDamageStatus)
                         {
-                            if (_shipDamageStatus.TotalDamageSentToShip <= _shipDamageStatus.Health)
+                            if (_shipDamageStatus.TotalDamageSentToShip < _shipDamageStatus.Health)
                             {
                                 SetTargetShip(_potentialTargetShip);
                                 _foundTarget = true;
@@ -221,9 +207,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             return _foundTarget;
         }
 
-        /// <summary>
-        /// Checks if the ship is within range
-        /// </summary>
         public virtual bool IsShipValidTarget(Ship potentialTargetShip)
         {
             return !potentialTargetShip.IsDead && IsShipWithinRange(potentialTargetShip);
@@ -231,7 +214,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         private List<Ship> _queue;
 
-        /// <summary> Called every 1/3 Rate of Fire. Makes and sends the sorted targeting list to DetermineTargetShip. Every time this method is called, a target ship should be selected if there is one available </summary>
         public void Targeting()
         {
             TargetShip = null;
@@ -258,9 +240,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         List<Ship> _enemies;
 
-        /// <summary>
-        /// Grabs all ships in the enemy squad within range. If there is no enemy squad, grabs all enemy ships within range
-        /// </summary>
         public List<Ship> GetEnemyShipsWithinRange()
         {
             if (Ship.Squad.HasEnemy && Ship.Squad.IsAttacking)
@@ -280,15 +259,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         private List<Ship> _shipQueue;
 
-        /// <summary>
-        /// Gets all the ships that this weapon could potentially target. Either the ships within range or the ships in the enemy squad regardless of range
-        /// </summary>
         protected virtual List<Ship> GetPotentialEnemyTargetShips(bool disregardRange)
         {
             if (disregardRange)
             {
-                // GetShips() exposes the squad's authoritative list. Targeting strategies may
-                // sort or shuffle their input, so never hand that shared list to the sorter.
                 _shipQueue = Ship.Squad.GetCommand().EnemySquad.GetShips().ToList();
             }
             else
@@ -304,9 +278,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             return _shipQueue;
         }
 
-        /// <summary>
-        /// Clears the targeting cache and the target ship. Marks the cache as changed
-        /// </summary>
         public void ClearTargets()
         {
             TargetShip = null;
@@ -316,7 +287,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         private List<Ship> _sortedQueue;
 
-        /// <summary>Sorts the potential target ships according to the shooting strategy. Uses a cached queue </summary>
         public List<Ship> MakeSortedTargetingList(bool disregardRange)
         {
             _sortedQueue = GetPotentialEnemyTargetShips(disregardRange);
