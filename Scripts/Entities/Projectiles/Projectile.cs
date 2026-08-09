@@ -183,6 +183,17 @@ namespace Assets.Scripts.Entities.Projectiles
             }
         }
 
+        public void TransferDamageReservationTo(Projectile recipient)
+        {
+            if (recipient == null || ReferenceEquals(recipient, this))
+            {
+                return;
+            }
+
+            recipient._damageReservation = _damageReservation;
+            _damageReservation = null;
+        }
+
         public virtual void RemoveDamageSentEntry()
         {
             if (_damageReservation == null)
