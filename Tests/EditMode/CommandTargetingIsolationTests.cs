@@ -76,6 +76,14 @@ namespace Bees.Tests.EditMode
             Assert.That(method, Does.Not.Contain("(int)(a.DistanceToPoint(_location) - b.DistanceToPoint(_location))"));
         }
 
+        [Test]
+        public void MatchupTypeStrategiesPreferSquadsContainingMoreOfRequestedType()
+        {
+            string method = ExtractMethodBody(_matchupSource, "SortSquads");
+            Assert.That(method, Does.Contain("bShipsOfType.CompareTo(aShipsOfType)"));
+            Assert.That(method, Does.Not.Contain("return a.GetShips().Where(s => s.ShipType == _type).ToList().Count - b.GetShips().Where(s => s.ShipType == _type).ToList().Count"));
+        }
+
         private static string ExtractMethodBody(string source, string methodName)
         {
             int signature = source.IndexOf(" " + methodName + "(", StringComparison.Ordinal);
