@@ -61,8 +61,12 @@ namespace Bees.Tests.EditMode
                         $"Fire Tank {fireTank.gameObject.name} targets something other than an Obstacle.");
                 }
 
+                // The prefab instance has not run MapObject.Setup, so every target still has
+                // runtime Id 0. Compare Unity object instance IDs rather than MapObject's
+                // game-ID equality when verifying authored/runtime prefab linkage.
                 int distinctTargets = fireTanks
-                    .Select(tank => RuntimeAssembly.GetField(tank, "TargetObstacle"))
+                    .Select(tank => (UnityEngine.Object)RuntimeAssembly.GetField(tank, "TargetObstacle"))
+                    .Select(target => target.GetInstanceID())
                     .Distinct()
                     .Count();
                 Assert.That(distinctTargets, Is.EqualTo(30),
