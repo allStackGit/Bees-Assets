@@ -75,7 +75,11 @@ namespace Assets.Scripts.Entities.Projectiles
             //Debug.Log($"{Name} is dying and dropping an explosion");
             RocketExplosion = (RocketExplosion)Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.RocketExplosion);
             RocketExplosion.transform.parent = Level.Map.Transform;
-            RocketExplosion.Setup(Level, Weapon, Shooter, Target, GetPosition(), 0, 0, Power);
+            // The rocket already owns the target reservation created when it was fired.
+            // The explosion is its damage-delivery continuation, so transfer that exact
+            // reservation instead of creating a second owner for the same damage.
+            RocketExplosion.Setup(Level, Weapon, Shooter, null, GetPosition(), 0, 0, Power);
+            TransferDamageReservationTo(RocketExplosion);
             Shooter.ProjectilesInFlight.Add(RocketExplosion);
         }
 
