@@ -66,7 +66,7 @@ namespace Assets.Scripts.Entities.Ships
             _targetOldTSV = target.Tsv;
             target.Health -= math.min(power, target.Health);
             target.Tsv = Utilities.CalculateTsv(target);
-            _targetTSVChange = target.Tsv - _targetOldTsv;
+            _targetTSVChange = target.Tsv - _targetOldTSV;
             LogHitStats(attacker, attackerFleetShip, attackerSavedSquad, target, target.Squad, -_targetTSVChange);
 
             if (target.Health == 0)
