@@ -152,9 +152,10 @@ namespace Assets.Scripts.Entities
                 // Destructible static obstacles are also registered in ObstacleMap.Obstacles.
                 // Remove the live component before destroying it so level teardown does not
                 // later dereference Unity's destroyed-object wrapper in SaveAndEnd().
-                if (Level.ObstacleMap != null && Level.ObstacleMap.Obstacles != null)
+                if (this is StaticObstacle staticObstacle &&
+                    Level.ObstacleMap != null && Level.ObstacleMap.Obstacles != null)
                 {
-                    Level.ObstacleMap.Obstacles.Remove(this as StaticObstacle);
+                    Level.ObstacleMap.Obstacles.Remove(staticObstacle);
                 }
 
                 Destroy(gameObject);
