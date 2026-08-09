@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Assets.Scripts.Levels;
 using UnityEngine;
 
 namespace Assets.Scripts.Entities.Ships
@@ -149,59 +150,17 @@ namespace Assets.Scripts.Entities.Ships
                 {
                     for (_y = (int)-_halfHeight; _y < _halfHeight; _y++)
                     {
-                        _randomPoint = _basePosition + new Vector2(_x, _y);
+                        _randomPoint = new Vector2(_x, _y) + _basePosition;
                         if (Collider.OverlapPoint(_randomPoint))
                         {
                             return _randomPoint;
                         }
                     }
                 }
-                Debug.Log($"Could not find a random point on {Name}");
             }
             return _randomPoint;
         }
 
-        public int GetClearance()
-        {
-            _clearance = Clearance;
-            if (_clearance == 0)
-            {
-                Level.CalculateShipClearances();
-                _clearance = Stage.ShipClearances.GetValueOrDefault(ShipType);
-            }
-            return _clearance;
-        }
-
-        public bool IsInBounds()
-        {
-            if (!_isInBounds)
-            {
-                _isInBounds = GetPosition() == Level.ForceBounds(GetPosition());
-            }
-            return _isInBounds;
-        }
-
-        public override string ToString()
-        {
-            return $"{Name} IsDead? {IsDead}";
-        }
-
-        public static double GetAverageHealthPercent(List<Ship> ships)
-        {
-            if (ships == null || ships.Count == 0)
-            {
-                return 0;
-            }
-
-            double total = 0;
-            foreach (Ship ship in ships)
-            {
-                if (ship.OriginalHealth > 0)
-                {
-                    total += (double)ship.Health / ship.OriginalHealth;
-                }
-            }
-            return Math.Round((total / ships.Count) * 100);
-        }
+        public int GetClearance() => _clearance;
     }
 }
