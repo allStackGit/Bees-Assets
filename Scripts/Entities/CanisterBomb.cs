@@ -142,9 +142,10 @@ namespace Assets.Scripts.Entities
                 Explosion.transform.parent = Level.Map.Transform;
                 Explosion.Setup(Level, LastHitProjectile.Weapon, LastHitProjectile.Shooter, null, transform.localPosition, 0, 0, Power);
 
-                AudioSource explosionAudio = Explosion.GetComponent<AudioSource>();
+                AudioSource explosionAudio = Explosion != null ? Explosion.GetComponent<AudioSource>() : null;
                 if (explosionAudio != null && explosionAudio.clip != null)
                 {
+                    explosionAudio.Stop();
                     explosionAudio.Play();
                 }
 
