@@ -27,12 +27,20 @@ namespace Assets.Scripts.Levels.Commands
         {
             //Debug.Log($"Executing the Heal command #{commandOutcomeId} for {GetSquad().Name}. There are {Stage.Pool.HealCommandPool.CountAll} heal commands in the pool " +
             //    $"and {Stage.DebugLogger.__HivemindCommands} hivemind commands since startup");
-            if (beehives.Count > 0)
+            TargetBeehives = beehives.Where((b) => b != null && !b.IsDead).ToList();
+            if (TargetBeehives.Count > 0)
             {
-                TargetBeehives = beehives;
-                base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
+                _shipsThatNeedBeehive = new Queue<Ship>(GetSquad().GetShips()
+                    .Where((s) => !s.IsDead && s.Health < s.MaxHealth)
+                    .OrderBy((s) => s.Health - s.OriginalHealth));
 
-                _shipsThatNeedBeehive = new Queue<Ship>(GetSquad().GetShips().OrderBy((s) => s.Health - s.OriginalHealth));
+                if (_shipsThatNeedBeehive.Count == 0)
+                {
+                    SetFinalize("There are no damaged ships to heal");
+                    return;
+                }
+
+                base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
 
                 for (_index = 0; _index < TargetBeehives.Count && _shipsThatNeedBeehive.Count > 0; _index++)
                 {
@@ -48,6 +56,12 @@ namespace Assets.Scripts.Levels.Commands
                         _beehive.ShipsHealingHere.Add(_ship);
                         _shipsAndBeehives.Add(_ship.Id, _beehive);
                     }
+                }
+
+                if (ShipsWaitingToHeal.Count == 0)
+                {
+                    SetFinalize("There are no available beehive healing slots");
+                    return;
                 }
 
                 GetSquad().Status = $"Moving to {TargetBeehives.Count} beehives to heal";
@@ -88,7 +102,7 @@ namespace Assets.Scripts.Levels.Commands
             if (!GetSquad().IsDead)
             {
                
-                TargetBeehives = TargetBeehives.Where((b) => !b.IsDead).ToList();
+                TargetBeehives = TargetBeehives.Where((b) => b != null && !b.IsDead).ToList();
                 if (TargetBeehives.Count > 0)
                 {
                     MoveToBeehives();
@@ -107,6 +121,30 @@ namespace Assets.Scripts.Levels.Commands
             IsHealing = true;
             _healingTimer.Reuse(1, HealShips, true);
             Level.AddTimer(_healingTimer);
+        }
+
+        public void ShipReachedBeehive(Ship ship)
+        {
+            if (ship == null || !_shipsAndBeehives.ContainsKey(ship.Id))
+            {
+                return;
+            }
+
+            ShipsWaitingToHeal.Remove(ship);
+            if (!ShipsHealing.Contains(ship))
+            {
+                ShipsHealing.Add(ship);
+            }
+
+            if (!IsHealing)
+            {
+                StartHealingTimer();
+            }
+        }
+
+        public bool IsShipActivelyHealing(Ship ship)
+        {
+            return ship != null && ShipsHealing.Contains(ship);
         }
 
         private void ReleaseHealingReservation(Ship ship)
@@ -129,22 +167,27 @@ namespace Assets.Scripts.Levels.Commands
             ShipsHealing.Remove(ship);
         }
 
+        private void FinalizeIfAssignedShipsAreDone()
+        {
+            if (!IsDead && ShipsWaitingToHeal.Count == 0 && ShipsHealing.Count == 0)
+            {
+                SetFinalize("All assigned ships finished healing or became unavailable");
+            }
+        }
+
         public void MoveToBeehives()
         {
             for (_index = 0; _index < ShipsWaitingToHeal.Count; _index++)
             {
                 _ship = ShipsWaitingToHeal[_index];
-                _beehive = _shipsAndBeehives[_ship.Id];
-
-                if (!_beehive.IsDead && !_ship.IsDead)
-                {
-                    //Debug.Log($"Moving {_ship.Name} to {_beehive.Name} to heal");
-                    _ship.MoveToPoint(_beehive.GetPosition());
-                }
-                else
+                if (!_shipsAndBeehives.TryGetValue(_ship.Id, out _beehive) || _beehive == null || _beehive.IsDead || _ship.IsDead || _ship.Health >= _ship.MaxHealth)
                 {
                     _shipsThatLostBeehiveOrDied.Add(_ship);
+                    continue;
                 }
+
+                //Debug.Log($"Moving {_ship.Name} to {_beehive.Name} to heal");
+                _ship.MoveToPoint(_beehive.GetPosition());
             }
 
             for (_index = 0; _index < _shipsThatLostBeehiveOrDied.Count; _index++)
@@ -152,6 +195,7 @@ namespace Assets.Scripts.Levels.Commands
                 ReleaseHealingReservation(_shipsThatLostBeehiveOrDied[_index]);
             }
             _shipsThatLostBeehiveOrDied.Clear();
+            FinalizeIfAssignedShipsAreDone();
         }
 
         int _oldTsv;
@@ -160,29 +204,33 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (Level.HasPlayer)
             {
-                TargetBeehives.ForEach((b) =>
-                {
-                    b.SpawnHealingCross();
-                });
+                ShipsHealing
+                    .Where((s) => s != null && _shipsAndBeehives.ContainsKey(s.Id))
+                    .Select((s) => _shipsAndBeehives[s.Id])
+                    .Where((b) => b != null && !b.IsDead)
+                    .Distinct()
+                    .ToList()
+                    .ForEach((b) => b.SpawnHealingCross());
             }
             _healingTimerCount++;
             for (_index = 0; _index < ShipsHealing.Count; _index++)
             {
                 _ship = ShipsHealing[_index];
-                _beehive = _shipsAndBeehives[_ship.Id];
-
-                if (!_beehive.IsDead && !_ship.IsDead)
+                if (_ship == null || !_shipsAndBeehives.TryGetValue(_ship.Id, out _beehive) || _beehive == null || _beehive.IsDead || _ship.IsDead)
                 {
-                    _oldTsv = _ship.Tsv;
-                    _ship.Health += math.min(_ship.MaxHealth - _ship.Health, 50);
-                    _ship.Tsv = Utilities.CalculateTsv(_ship);
-                    _tsvDifference = _ship.Tsv - _oldTsv;
-
-                    Tsv += _tsvDifference;
-
-                    _ship.UpdateHealthBar();
+                    _shipsThatLostBeehiveOrDied.Add(_ship);
+                    continue;
                 }
-                else
+
+                _oldTsv = _ship.Tsv;
+                _ship.Health += math.min(_ship.MaxHealth - _ship.Health, 50);
+                _ship.Tsv = Utilities.CalculateTsv(_ship);
+                _tsvDifference = _ship.Tsv - _oldTsv;
+
+                Tsv += _tsvDifference;
+
+                _ship.UpdateHealthBar();
+                if (_ship.Health >= _ship.MaxHealth)
                 {
                     _shipsThatLostBeehiveOrDied.Add(_ship);
                 }
@@ -192,6 +240,7 @@ namespace Assets.Scripts.Levels.Commands
                 ReleaseHealingReservation(_shipsThatLostBeehiveOrDied[_index]);
             }
             _shipsThatLostBeehiveOrDied.Clear();
+            FinalizeIfAssignedShipsAreDone();
         }
 
         public override void SetFinalize(string cause)
