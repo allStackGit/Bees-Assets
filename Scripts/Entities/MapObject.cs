@@ -99,6 +99,16 @@ public class MapObject : MonoBehaviour
             return false;
         }
 
+        // Id 0 means the object has not been registered with a Level yet. Distinct
+        // prefab/runtime instances all begin with Id 0, so comparing those by Id
+        // incorrectly collapses them into one logical object before Setup assigns
+        // production IDs. Until both objects are initialized, only reference
+        // equality (handled above) can establish identity.
+        if (Id == 0 || _mapObject.Id == 0)
+        {
+            return false;
+        }
+
         return Id == _mapObject.Id;
     }
 
@@ -112,12 +122,19 @@ public class MapObject : MonoBehaviour
         {
             return false;
         }
+        if (Id == 0 || other.Id == 0)
+        {
+            return false;
+        }
         return Id == other.Id;
     }
 
     public override int GetHashCode()
     {
-        return Id.GetHashCode();
+        // Before Setup, use Unity's per-instance hash so separate prefab/runtime
+        // objects with the default Id do not collapse in HashSet/Distinct. After
+        // registration, retain the existing stable game-identity hash behavior.
+        return Id == 0 ? base.GetHashCode() : Id.GetHashCode();
     }
 
     public static bool operator ==(MapObject a, MapObject b)
@@ -133,6 +150,11 @@ public class MapObject : MonoBehaviour
         if (System.Object.ReferenceEquals(a, b))
         {
             return true;
+        }
+
+        if (a.Id == 0 || b.Id == 0)
+        {
+            return false;
         }
 
         return a.Id == b.Id;
