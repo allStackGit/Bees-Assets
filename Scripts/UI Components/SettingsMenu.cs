@@ -1,7 +1,6 @@
 using Assets.Scripts;
 using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
-using NUnit.Framework;
 using System;
 using System.Collections;
 using System.Collections.Generic;
