@@ -34,7 +34,7 @@ namespace Bees.Tests.PlayMode
         }
 
         [UnityTest]
-        public IEnumerator CompletedMissionLoadsRealSpaceSceneWithoutSocketOrPersistentBootstrap()
+        public IEnumerator ScriptedMissionLoadsRealSpaceSceneWithoutSocketOrPersistentBootstrap()
         {
             _host = new CampaignScenarioSceneHost(2);
             yield return _host.Load();
@@ -72,14 +72,17 @@ namespace Bees.Tests.PlayMode
 
         [TestCase(7)]
         [TestCase(8)]
-        public void TitaniaIsRejectedBeforeAnySpaceSceneLoadRequest(int missionId)
+        [TestCase(9)]
+        [TestCase(10)]
+        [TestCase(11)]
+        public void LateScriptedMissionCanCreateHostWithoutStartingSceneOrServices(int missionId)
         {
             Assert.That(SceneManager.GetSceneByName("Space").isLoaded, Is.False);
-            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
-                new CampaignScenarioSceneHost(missionId));
-            Assert.That(exception.Message, Does.Contain("not enabled for isolated scenes"));
+            _host = new CampaignScenarioSceneHost(missionId);
+            Assert.That(_host.SceneLoadRequested, Is.False);
             Assert.That(SceneManager.GetSceneByName("Space").isLoaded, Is.False);
             Assert.That(RuntimeAssembly.GetStaticField(_configDataType, "_socket"), Is.Null);
+            _host = null;
         }
     }
 }

@@ -89,18 +89,19 @@ namespace Bees.Tests.EditMode
 
         [TestCase(7)]
         [TestCase(8)]
-        public void InDevelopmentTitaniaMissionsCannotBeConstructedByScenarioDriver(int missionId)
+        public void InDevelopmentTitaniaMissionsCanBeDrivenWithoutBeingConfigured(int missionId)
         {
             RuntimeAssembly.SetField(_level, "CurrentLevelOptions", Activator.CreateInstance(
                 RuntimeAssembly.GetType("Assets.Scripts.Data.LevelOptions"),
                 new object[] { missionId, 1, "In-development mission" }));
 
-            TargetInvocationException exception = Assert.Throws<TargetInvocationException>(() =>
-                Activator.CreateInstance(_driverType, new[] { _level, (object)missionId }));
-            Assert.That(exception.InnerException, Is.TypeOf<InvalidOperationException>());
-            Assert.That(exception.InnerException.Message, Does.Contain("not enabled for automated scenarios"));
+            object driver = Activator.CreateInstance(_driverType, new[] { _level, (object)missionId });
+            Assert.That(driver, Is.Not.Null);
+            PropertyInfo missionIdProperty = driver.GetType().GetProperty("MissionId");
+            Assert.That(missionIdProperty, Is.Not.Null);
+            Assert.That((int)missionIdProperty.GetValue(driver), Is.EqualTo(missionId));
             Assert.That(RuntimeAssembly.GetCount(RuntimeAssembly.GetField(_level, "Triggers")), Is.Zero,
-                "Rejecting an in-development mission must not configure or execute it.");
+                "Constructing a scenario driver must not configure or execute an in-development mission.");
         }
 
         [Test]

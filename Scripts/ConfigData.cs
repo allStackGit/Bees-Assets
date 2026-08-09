@@ -296,7 +296,8 @@ namespace Assets.Scripts
         {
             Pluto,
             Neptune,
-            Uranus
+            Uranus,
+            Titania
         }
 
         public enum GameModes
@@ -431,14 +432,14 @@ namespace Assets.Scripts
             { ShipTypes.WarpGate,      new Vector2Int(382, 238)},
 
             { ShipTypes.Beehive,       new Vector2Int(0, 0)},
-            { ShipTypes.Bumblebee,     new Vector2Int(0, 0)},
-            { ShipTypes.CarpenterBee,  new Vector2Int(0, 0)},
-            { ShipTypes.Honeybee,      new Vector2Int(0, 0)},
-            { ShipTypes.Hornet,        new Vector2Int(0, 0)},
-            { ShipTypes.Leafcutter,    new Vector2Int(0, 0)},
+            { ShipTypes.Bumblebee,      new Vector2Int(0, 0)},
+            { ShipTypes.CarpenterBee,   new Vector2Int(0, 0)},
+            { ShipTypes.Honeybee,       new Vector2Int(0, 0)},
+            { ShipTypes.Hornet,         new Vector2Int(0, 0)},
+            { ShipTypes.Leafcutter,     new Vector2Int(0, 0)},
             { ShipTypes.Queen,         new Vector2Int(0, 0)},
             { ShipTypes.Wasp,          new Vector2Int(0, 0)},
-            { ShipTypes.YellowJacket,  new Vector2Int(0, 0)},
+            { ShipTypes.YellowJacket,   new Vector2Int(0, 0)},
         };
         public static readonly Dictionary<ShipTypes, float> ShipSizeFactor = new Dictionary<ShipTypes, float>() {
             { ShipTypes.Barge,         Huge},
@@ -457,14 +458,14 @@ namespace Assets.Scripts
             { ShipTypes.WarpGate,      Huge},
 
             { ShipTypes.Beehive,       Enormous},
-            { ShipTypes.Bumblebee,     Large},
-            { ShipTypes.CarpenterBee,  Huge},
-            { ShipTypes.Honeybee,      Tiny},
-            { ShipTypes.Hornet,        Tiny},
-            { ShipTypes.Leafcutter,    Medium},
+            { ShipTypes.Bumblebee,      Large},
+            { ShipTypes.CarpenterBee,   Huge},
+            { ShipTypes.Honeybee,       Tiny},
+            { ShipTypes.Hornet,         Tiny},
+            { ShipTypes.Leafcutter,     Medium},
             { ShipTypes.Queen,         Unfathomable},
             { ShipTypes.Wasp,          Small},
-            { ShipTypes.YellowJacket,  Tiny},
+            { ShipTypes.YellowJacket,   Tiny},
         };
         public static readonly Dictionary<ShipTypes, Color[]> ChangeableShipColors = new Dictionary<ShipTypes, Color[]>() {
             { ShipTypes.Barge, new Color[] {
@@ -557,8 +558,8 @@ namespace Assets.Scripts
             { ShipTypes.Honeybee,       new Color[] {UnsetColor } },
             { ShipTypes.Hornet,         new Color[] {UnsetColor } },
             { ShipTypes.Leafcutter,     new Color[] {UnsetColor } },
-            { ShipTypes.Queen,          new Color[] {UnsetColor } },
-            { ShipTypes.Wasp,           new Color[] {UnsetColor } },
+            { ShipTypes.Queen,         new Color[] {UnsetColor } },
+            { ShipTypes.Wasp,          new Color[] {UnsetColor } },
             { ShipTypes.YellowJacket,   new Color[] {UnsetColor } },
         };
 
@@ -669,7 +670,8 @@ namespace Assets.Scripts
         public static readonly List<Data.Map> Maps = new List<Data.Map> { 
             new Data.Map(0, new Vector2(0, -230), new Vector2(0, 230), Locations.Pluto),
             new Data.Map(1, new Vector2(0, -430), new Vector2(0, 430), Locations.Neptune),
-            new Data.Map(2, new Vector2(0, -430), new Vector2(0, 430), Locations.Uranus),
+            new Data.Map(2, new Vector2(0, -215), new Vector2(0, 215), Locations.Titania),
+            new Data.Map(3, new Vector2(0, -430), new Vector2(0, 430), Locations.Uranus),
             
         };
         public static readonly List<Data.ObstacleMap> ObstacleMaps = new List<Data.ObstacleMap> { 

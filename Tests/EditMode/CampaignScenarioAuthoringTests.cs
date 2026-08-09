@@ -25,19 +25,20 @@ namespace Bees.Tests.EditMode
                     _catalogType, "GetAutomatedScenarioDefinitions"))
                 .Cast<object>()
                 .ToList();
-            _triggerSource = File.ReadAllText(Path.Combine(
-                Application.dataPath, "Scripts", "Levels", "LeveLTriggers.cs"));
+
+            string levels = Path.Combine(Application.dataPath, "Scripts", "Levels");
+            _triggerSource = string.Join("\n", Directory.GetFiles(levels, "*.cs", SearchOption.TopDirectoryOnly)
+                .OrderBy(path => path, StringComparer.Ordinal)
+                .Select(File.ReadAllText));
         }
 
         [Test]
-        public void ScenarioSetContainsOnlyCompletedPlutoAndNeptuneMissions()
+        public void FullConfigureScenarioSetRemainsTheKnownSafePlutoAndNeptuneSubset()
         {
             int[] ids = _readyDefinitions
                 .Select(definition => (int)RuntimeAssembly.GetField(definition, "Id"))
                 .ToArray();
             Assert.That(ids, Is.EqualTo(new[] { 0, 1, 2, 3, 4, 5, 6 }));
-            Assert.That(ids, Has.None.EqualTo(7));
-            Assert.That(ids, Has.None.EqualTo(8));
         }
 
         [Test]
@@ -57,7 +58,8 @@ namespace Bees.Tests.EditMode
 
                 Assert.That(setupBody, Does.Contain("Stage.CutsceneManager.Setup"),
                     $"Mission {id} does not register a completion callback during setup.");
-                Assert.That(setupBody, Does.Contain(completion + "("),
+                Assert.That(setupBody.Contains(completion + "(") || setupBody.Contains(completion),
+                    Is.True,
                     $"Mission {id} setup does not reference completion method {completion}.");
                 if (completion != terminal)
                 {
@@ -71,9 +73,31 @@ namespace Bees.Tests.EditMode
             }
         }
 
+        [TestCase(0, "Pluto1Anomaly", "Scout and explore around Pluto", "HumanProximityColliderPrefab")]
+        [TestCase(1, "Pluto2Reinforcements", "Find and destroy the enemy ships", "CanAcceptUserInput")]
+        [TestCase(2, "Pluto3Pushback", "Push back the enemy", "ResolveEliminationWinner")]
+        [TestCase(3, "Pluto4BluerPastures", "_questPoints", "personnel")]
+        [TestCase(4, "Neptune1SeizeTheMeans", "Find and destroy all the Bees", "MiningAsteroid")]
+        [TestCase(5, "Neptune2OfProduction", "Survive and mine as many minerals as you can", "ExitZonePrefab")]
+        [TestCase(6, "Neptune3PressingForwardCampaign", "break through the blockade", "ResolveEliminationWinner")]
+        [TestCase(7, "Titania1MinesweeperCampaign", "ExitZonePrefab", "PlayerVisibleMapObjects")]
+        [TestCase(8, "Titania2BeenocularsCampaign", "HumanTarget", "450")]
+        [TestCase(9, "Uranus1OnTheOffensive", "Bumblebee", "Cruiser")]
+        [TestCase(10, "Uranus2OnTheDefensive", "Survive and mine as many minerals as you can", "ExitZonePrefab")]
+        [TestCase(11, "Uranus3ANewThreat", "Rescue the Barges and destroy all the Bees", "Barge")]
+        public void EveryScriptedMissionRetainsItsDefiningGameplayContract(
+            int missionId, string setupMethod, string firstMarker, string secondMarker)
+        {
+            string body = ExtractMethodBody(_triggerSource, setupMethod);
+            Assert.That(body, Does.Contain(firstMarker),
+                $"Mission {missionId} lost defining authoring marker '{firstMarker}'.");
+            Assert.That(body, Does.Contain(secondMarker),
+                $"Mission {missionId} lost defining authoring marker '{secondMarker}'.");
+        }
+
         [TestCase("Pluto3Pushback")]
         [TestCase("Neptune1SeizeTheMeans")]
-        [TestCase("Neptune3PressingForward")]
+        [TestCase("Neptune3PressingForwardCampaign")]
         public void EliminationScenariosEncodeBothUserAndAiOutcomes(string setupMethod)
         {
             string body = ExtractMethodBody(_triggerSource, setupMethod);

@@ -1,4 +1,4 @@
-using Assets.Scripts;
+﻿using Assets.Scripts;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships;
@@ -47,6 +47,7 @@ public class Pool : MonoBehaviour
 
     public ObjectPool<Assets.Scripts.UI_Components.Map> PlutoMapPool;
     public ObjectPool<Assets.Scripts.UI_Components.Map> NeptuneMapPool;
+    public ObjectPool<Assets.Scripts.UI_Components.Map> TitaniaMapPool;
     public ObjectPool<Assets.Scripts.UI_Components.Map> UranusMapPool;
 
     public ObjectPool<Projectile> BeeSmallProjectilePool;
@@ -139,6 +140,7 @@ public class Pool : MonoBehaviour
 
         PlutoMapPool = new ObjectPool<Assets.Scripts.UI_Components.Map>(CreatePooledPlutoMap, null, null, null, true);
         NeptuneMapPool = new ObjectPool<Assets.Scripts.UI_Components.Map>(CreatePooledNeptuneMap, null, null, null, true);
+        TitaniaMapPool = new ObjectPool<Assets.Scripts.UI_Components.Map>(CreatePooledTitaniaMap, null, null, null, true);
         UranusMapPool = new ObjectPool<Assets.Scripts.UI_Components.Map>(CreatePooledUranusMap, null, null, null, true);
 
         BeeSmallProjectilePool = new ObjectPool<Projectile>(CreatePooledBeeSmallProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
@@ -649,9 +651,13 @@ public class Pool : MonoBehaviour
     {
         return CreatePooledMap(1);
     }
-    public Assets.Scripts.UI_Components.Map CreatePooledUranusMap()
+    public Assets.Scripts.UI_Components.Map CreatePooledTitaniaMap()
     {
         return CreatePooledMap(2);
+    }
+    public Assets.Scripts.UI_Components.Map CreatePooledUranusMap()
+    {
+        return CreatePooledMap(3);
     }
 
     public Assets.Scripts.UI_Components.Map CreatePooledMap(int index)
@@ -1059,6 +1065,8 @@ public class Pool : MonoBehaviour
             case 1:
                 return NeptuneMapPool.Get();
             case 2:
+                return TitaniaMapPool.Get();
+            case 3:
                 return UranusMapPool.Get();
             default:
                 Debug.LogError($"Map index is invalid: {index}");
@@ -1081,6 +1089,9 @@ public class Pool : MonoBehaviour
                 NeptuneMapPool.Release(map);
                 break;
             case 2:
+                TitaniaMapPool.Release(map);
+                break;
+            case 3:
                 UranusMapPool.Release(map);
                 break;
 

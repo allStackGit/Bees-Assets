@@ -7,6 +7,8 @@ namespace Assets.Scripts.Levels
     /// <summary>
     /// Process-wide guard used only while an isolated campaign scene is loaded.
     /// Scene components consult it before creating persistent or network services.
+    /// Owning an isolated scene does not execute mission setup, so every registered
+    /// scripted campaign mission may use this guard regardless of setup maturity.
     /// </summary>
     public static class CampaignScenarioIsolation
     {
@@ -17,14 +19,7 @@ namespace Assets.Scripts.Levels
 
         public static IDisposable Begin(int missionId)
         {
-            CampaignMissionCatalog.MissionDefinition definition =
-                CampaignMissionCatalog.Get(missionId);
-            if (definition.ScenarioStatus !=
-                CampaignMissionCatalog.AutomatedScenarioStatus.Ready)
-            {
-                throw new InvalidOperationException(
-                    $"Campaign mission {missionId} is not enabled for isolated scenes ({definition.ScenarioStatus}).");
-            }
+            CampaignMissionCatalog.Get(missionId);
             if (IsActive)
             {
                 throw new InvalidOperationException(
@@ -75,14 +70,7 @@ namespace Assets.Scripts.Levels
         public CampaignScenarioDriver(Level level, int missionId)
         {
             _level = level ?? throw new ArgumentNullException(nameof(level));
-            CampaignMissionCatalog.MissionDefinition definition =
-                CampaignMissionCatalog.Get(missionId);
-            if (definition.ScenarioStatus !=
-                CampaignMissionCatalog.AutomatedScenarioStatus.Ready)
-            {
-                throw new InvalidOperationException(
-                    $"Campaign mission {missionId} is not enabled for automated scenarios ({definition.ScenarioStatus}).");
-            }
+            CampaignMissionCatalog.Get(missionId);
             if (_level.CurrentLevelOptions != null &&
                 _level.CurrentLevelOptions.Id != missionId)
             {

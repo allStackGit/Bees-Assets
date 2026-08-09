@@ -28,7 +28,9 @@ namespace Assets.Scripts.Data
         /// The index of the map that the level has
         /// -1 = Random
         /// 0 = Pluto
-        /// 1 = Uranus
+        /// 1 = Neptune
+        /// 2 = Titania
+        /// 3 = Uranus
         /// </summary>
         public int MapIndex;
         /// <summary>

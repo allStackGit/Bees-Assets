@@ -11,10 +11,12 @@ namespace Assets.Scripts
         public AudioSource PlutoIntro;
         public AudioSource NeptuneIntro;
         public AudioSource UranusIntro;
+        public AudioSource TitaniaIntro;
 
         public AudioSource PlutoLoop;
         public AudioSource NeptuneLoop;
         public AudioSource UranusLoop;
+        public AudioSource TitaniaLoop;
 
         public AudioSource PlutoHumanLoop;
         public AudioSource NeptuneHumanLoop;
@@ -27,6 +29,7 @@ namespace Assets.Scripts
         public float PlutoIntroLength;
         public float NeptuneIntroLength;
         public float UranusIntroLength;
+        public float TitaniaIntroLength = 26.565216f;
 
         public AudioSource LocationIntro;
         //public AudioSource CarpenterBeeIntro;
@@ -150,6 +153,16 @@ namespace Assets.Scripts
                     BeesLoop = UranusBeesLoop;
                     IntroLength = UranusIntroLength;
                     break;
+                case ConfigData.Locations.Titania:
+                    EnsureTitaniaMusicSources();
+                    LocationIntro = TitaniaIntro;
+                    LocationLoop = TitaniaLoop;
+                    // Titania currently has only a base location composition. Do not
+                    // accidentally carry faction stems over from the previous location.
+                    HumanLoop = null;
+                    BeesLoop = null;
+                    IntroLength = TitaniaIntro != null ? TitaniaIntro.clip.length : TitaniaIntroLength;
+                    break;
             }
 
             // Setup audio [make audio controller]
@@ -163,20 +176,20 @@ namespace Assets.Scripts
             //BeesIntros.Add("Hornet", HornetIntro);
             //BeesIntros.Add("Wasp", WaspIntro);
 
-            Intros.Add(LocationIntro);
+            AddIfPresent(Intros, LocationIntro);
 
             //Intros.Add(CarpenterBeeIntro);
             //Intros.Add(HoneybeeIntro);
             //Intros.Add(HornetIntro);
             //Intros.Add(WaspIntro);
 
-            Loops.Add(LocationLoop);
+            AddIfPresent(Loops, LocationLoop);
             //Loops.Add(CarpenterBeeLoop);
             //Loops.Add(HoneybeeLoop);
             //Loops.Add(HornetLoop);
             //Loops.Add(WaspLoop);
-            Loops.Add(HumanLoop);
-            Loops.Add(BeesLoop);
+            AddIfPresent(Loops, HumanLoop);
+            AddIfPresent(Loops, BeesLoop);
 
             // play intros
             PlayIntro(LocationIntro);
@@ -197,6 +210,52 @@ namespace Assets.Scripts
             //StartCoroutine(nameof(EndIntro), IntroLength);
             //Invoke(nameof(EndIntro), IntroLength);
             Level.AddTimer(new ScaledTimer(IntroLength, EndIntro));
+        }
+
+        private void EnsureTitaniaMusicSources()
+        {
+            if (!TitaniaMusicBuilder.TryGetClips(out AudioClip introClip, out AudioClip loopClip))
+            {
+                TitaniaIntro = null;
+                TitaniaLoop = null;
+                return;
+            }
+
+            AudioSource template = PlutoLoop != null ? PlutoLoop : PlutoIntro;
+            TitaniaIntro = EnsureMusicSource(TitaniaIntro, "Titania Intro", template);
+            TitaniaLoop = EnsureMusicSource(TitaniaLoop, "Titania Loop", template);
+            TitaniaIntro.clip = introClip;
+            TitaniaIntro.loop = false;
+            TitaniaLoop.clip = loopClip;
+            TitaniaLoop.loop = true;
+            TitaniaIntroLength = introClip.length;
+        }
+
+        private AudioSource EnsureMusicSource(AudioSource source, string sourceName, AudioSource template)
+        {
+            if (source == null)
+            {
+                GameObject sourceObject = new GameObject(sourceName);
+                sourceObject.transform.SetParent(transform, false);
+                source = sourceObject.AddComponent<AudioSource>();
+            }
+            source.playOnAwake = false;
+            source.spatialBlend = 0f;
+            if (template != null)
+            {
+                source.outputAudioMixerGroup = template.outputAudioMixerGroup;
+                source.volume = template.volume;
+                source.priority = template.priority;
+            }
+            return source;
+        }
+
+        private static void AddIfPresent(List<AudioSource> sources, AudioSource source)
+        {
+            if (source != null)
+            {
+                sources.Add(source);
+            }
         }
 
         private void EndIntro()

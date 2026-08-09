@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -37,9 +38,11 @@ namespace Bees.Tests.PlayMode
         }
 
         [UnityTest]
-        public IEnumerator EveryCompletedMissionCanOwnAndReleaseTheRealSpaceSceneInSequence()
+        public IEnumerator EveryScriptedMissionCanOwnAndReleaseTheRealSpaceSceneInSequence()
         {
-            for (int missionId = 0; missionId <= 6; missionId++)
+            string[] expectedMapNames = { "Pluto", "Neptune", "Titania", "Uranus" };
+
+            for (int missionId = 0; missionId <= 11; missionId++)
             {
                 _host = new CampaignScenarioSceneHost(missionId);
                 yield return _host.Load();
@@ -47,8 +50,22 @@ namespace Bees.Tests.PlayMode
                 Assert.That(_host.LoadedScene.name, Is.EqualTo("Space"), $"mission {missionId}");
                 Assert.That(_host.LoadedScene.isLoaded, Is.True, $"mission {missionId}");
                 Assert.That(_host.Stage, Is.Not.Null, $"mission {missionId}");
-                Assert.That(RuntimeAssembly.GetField(_host.Stage, "Prefabs"), Is.Not.Null, $"mission {missionId}");
+
+                object prefabs = RuntimeAssembly.GetField(_host.Stage, "Prefabs");
+                Assert.That(prefabs, Is.Not.Null, $"mission {missionId}");
                 Assert.That(RuntimeAssembly.GetField(_host.Stage, "Pool"), Is.Not.Null, $"mission {missionId}");
+
+                // Use the same production normalization that Stage runs before Pool.Setup.
+                RuntimeAssembly.Invoke(prefabs, "LoadConversions");
+                IList mapPrefabs = (IList)RuntimeAssembly.GetField(prefabs, "Maps");
+                Assert.That(mapPrefabs.Count, Is.GreaterThanOrEqualTo(4), $"mission {missionId}");
+                for (int mapIndex = 0; mapIndex < expectedMapNames.Length; mapIndex++)
+                {
+                    GameObject mapPrefab = (GameObject)mapPrefabs[mapIndex];
+                    Assert.That(mapPrefab.name, Is.EqualTo(expectedMapNames[mapIndex]),
+                        $"MapIndex {mapIndex} drifted while loading mission {missionId}.");
+                }
+
                 Assert.That(RuntimeAssembly.GetField(
                     RuntimeAssembly.GetField(_host.Level, "CurrentLevelOptions"), "Id"),
                     Is.EqualTo(missionId));

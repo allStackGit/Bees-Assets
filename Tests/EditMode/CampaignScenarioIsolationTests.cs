@@ -24,16 +24,28 @@ namespace Bees.Tests.EditMode
                 "Campaign isolation leaked beyond its owning test.");
         }
 
-        [Test]
-        public void ScopeOwnsOneReadyMissionAndDisposeIsIdempotent()
+        [TestCase(0)]
+        [TestCase(2)]
+        [TestCase(7)]
+        [TestCase(8)]
+        [TestCase(9)]
+        [TestCase(10)]
+        [TestCase(11)]
+        public void AnyRegisteredMissionCanOwnIsolationWithoutConfiguringIt(int missionId)
         {
-            IDisposable scope = (IDisposable)RuntimeAssembly.InvokeStatic(_isolationType, "Begin", 2);
-            Assert.That((bool)_isolationType.GetProperty("IsActive").GetValue(null), Is.True);
-            Assert.That((int)_isolationType.GetProperty("MissionId").GetValue(null), Is.EqualTo(2));
+            IDisposable scope = (IDisposable)RuntimeAssembly.InvokeStatic(_isolationType, "Begin", missionId);
+            try
+            {
+                Assert.That((bool)_isolationType.GetProperty("IsActive").GetValue(null), Is.True);
+                Assert.That((int)_isolationType.GetProperty("MissionId").GetValue(null), Is.EqualTo(missionId));
+            }
+            finally
+            {
+                scope.Dispose();
+            }
 
+            // Dispose remains idempotent because test teardown paths may call it defensively.
             scope.Dispose();
-            scope.Dispose();
-
             Assert.That((bool)_isolationType.GetProperty("IsActive").GetValue(null), Is.False);
             Assert.That((int)_isolationType.GetProperty("MissionId").GetValue(null), Is.EqualTo(-1));
         }
@@ -45,7 +57,7 @@ namespace Bees.Tests.EditMode
             try
             {
                 TargetInvocationException exception = Assert.Throws<TargetInvocationException>(() =>
-                    RuntimeAssembly.InvokeStatic(_isolationType, "Begin", 2));
+                    RuntimeAssembly.InvokeStatic(_isolationType, "Begin", 11));
                 Assert.That(exception.InnerException, Is.TypeOf<InvalidOperationException>());
                 Assert.That((int)_isolationType.GetProperty("MissionId").GetValue(null), Is.EqualTo(1));
             }
@@ -55,16 +67,12 @@ namespace Bees.Tests.EditMode
             }
         }
 
-        [TestCase(7)]
-        [TestCase(8)]
-        [TestCase(9)]
-        [TestCase(10)]
-        [TestCase(11)]
-        public void NonReadyMissionCannotAcquireIsolation(int missionId)
+        [Test]
+        public void UnknownMissionStillCannotAcquireIsolation()
         {
             TargetInvocationException exception = Assert.Throws<TargetInvocationException>(() =>
-                RuntimeAssembly.InvokeStatic(_isolationType, "Begin", missionId));
-            Assert.That(exception.InnerException, Is.TypeOf<InvalidOperationException>());
+                RuntimeAssembly.InvokeStatic(_isolationType, "Begin", 99));
+            Assert.That(exception.InnerException, Is.TypeOf<ArgumentOutOfRangeException>());
             Assert.That((bool)_isolationType.GetProperty("IsActive").GetValue(null), Is.False);
         }
     }

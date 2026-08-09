@@ -1,5 +1,3 @@
-
-
 using Assets.Scripts;
 using System;
 using System.Collections;
@@ -20,15 +18,13 @@ namespace UIComponents
         protected override void FinalizeSceneWithUserData()
         {
             base.FinalizeSceneWithUserData();
-            //ConfigData.CurrentGameMode = ConfigData.GameModes.Campaign; // [debug] Temporary, for testing purposes only
             LevelNumber = ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide);
 
             CutsceneManager.Setup(() =>
             {
                 ShowContinueButton();
             });
-
-            //LevelNumber = 6; // [debug]
+            CampaignDialogueOverrides.Apply(CutsceneManager);
 
             if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge && LevelNumber == 0)
             {
@@ -53,16 +49,16 @@ namespace UIComponents
 
             ContinueButtonAction.onClick.AddListener(Continue);
 
-
             switch (LevelNumber)
             {
                 case 1:
                     ConfigData.HasSeenIntermission = true;
                     StartCoroutine(DelayStart(StandardDelay, () =>
                     {
-                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.PlutoLines_Reinforcements[0], true);
+                        // Both lines belong to the pre-mission briefing. Previously only the
+                        // first was shown, leaving the actual mission order unreachable.
+                        CutsceneManager.PlayDialogueSection(CutsceneManager.PlutoLines_Reinforcements.GetRange(0, 2), true);
                     }));
-                    
                     break;
                 case 2:
                     ConfigData.HasSeenIntermission = true;
@@ -70,7 +66,6 @@ namespace UIComponents
                     {
                         CutsceneManager.PlaySingleDialogueLine(CutsceneManager.PlutoLines_Pushback[0], true);
                     }));
-                    
                     break;
                 case 3:
                     ConfigData.HasSeenIntermission = true;
@@ -78,17 +73,14 @@ namespace UIComponents
                     {
                         CutsceneManager.PlaySingleDialogueLine(CutsceneManager.PlutoLines_BluerPastures[0], true);
                     }));
-
                     break;
                 case 4:
-
                     if (ConfigData.HasSeenIntermission)
                     {
                         StartCoroutine(DelayStart(StandardDelay, () =>
                         {
                             CutsceneManager.PlayDialogueSection(CutsceneManager.Neptune_SeizeTheMeans.GetRange(0, 2), true);
                         }));
-                        
                     }
                     else
                     {
@@ -97,7 +89,6 @@ namespace UIComponents
                         {
                             CutsceneManager.PlayDialogueSection(CutsceneManager.PlutoToNeptune, true);
                         }));
-                        
                     }
                     break;
                 case 5:
@@ -106,7 +97,6 @@ namespace UIComponents
                     {
                         CutsceneManager.PlayDialogueSection(CutsceneManager.Neptune_OfProduction.GetRange(0, 2), true);
                     }));
-                    
                     break;
                 case 6:
                     ConfigData.HasSeenIntermission = true;
@@ -114,17 +104,14 @@ namespace UIComponents
                     {
                         CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Neptune_PressingForward[0], true);
                     }));
-                    
                     break;
                 case 7:
-
                     if (ConfigData.HasSeenIntermission)
                     {
                         StartCoroutine(DelayStart(StandardDelay, () =>
                         {
                             CutsceneManager.PlayDialogueSection(CutsceneManager.Titania_Minesweeper.GetRange(0, 1), true);
                         }));
-
                     }
                     else
                     {
@@ -133,54 +120,50 @@ namespace UIComponents
                         {
                             CutsceneManager.PlayDialogueSection(CutsceneManager.NeptuneToTitania, true);
                         }));
-
                     }
                     break;
                 case 8:
-
                     ConfigData.HasSeenIntermission = true;
                     StartCoroutine(DelayStart(StandardDelay, () =>
                     {
                         CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Titania_Beenoculars[0], true);
                     }));
-
                     break;
-                    //case 7:
-
-                    //    if (ConfigData.HasSeenIntermission)
-                    //    {
-                    //        StartCoroutine(DelayStart(StandardDelay, () =>
-                    //        {
-                    //            CutsceneManager.PlayDialogueSection(CutsceneManager.Uranus_OnTheOffensive.GetRange(0, 2), true);
-                    //        }));
-
-                    //    }
-                    //    else
-                    //    {
-                    //        SkipButton.SetActive(true);
-                    //        StartCoroutine(DelayStart(StandardDelay, () =>
-                    //        {
-                    //            CutsceneManager.PlayDialogueSection(CutsceneManager.NeptuneToUranus, true);
-                    //        }));
-
-                    //    }
-                    //    break;
-                    //case 8:
-                    //    ConfigData.HasSeenIntermission = true;
-                    //    StartCoroutine(DelayStart(StandardDelay, () =>
-                    //    {
-                    //        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Uranus_OnTheDefensive[0], true);
-                    //    }));
-
-                    //    break;
-                    //case 9:
-                    //    ConfigData.HasSeenIntermission = true;
-                    //    StartCoroutine(DelayStart(StandardDelay, () =>
-                    //    {
-                    //        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Uranus_ANewThreat[0], true);
-                    //    }));
-
-                    //    break;
+                case 9:
+                    if (ConfigData.HasSeenIntermission)
+                    {
+                        StartCoroutine(DelayStart(StandardDelay, () =>
+                        {
+                            CutsceneManager.PlayDialogueSection(CutsceneManager.Uranus_OnTheOffensive.GetRange(0, 2), true);
+                        }));
+                    }
+                    else
+                    {
+                        SkipButton.SetActive(true);
+                        StartCoroutine(DelayStart(StandardDelay, () =>
+                        {
+                            // The design script contains a real Titania -> Uranus intermission.
+                            // A.M.I.'s conditional subsection stays disabled until Titania 2
+                            // persists whether the upload/evacuation succeeded.
+                            CutsceneManager.PlayDialogueSection(
+                                CampaignDialogueOverrides.BuildTitaniaToUranus(false), true);
+                        }));
+                    }
+                    break;
+                case 10:
+                    ConfigData.HasSeenIntermission = true;
+                    StartCoroutine(DelayStart(StandardDelay, () =>
+                    {
+                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Uranus_OnTheDefensive[0], true);
+                    }));
+                    break;
+                case 11:
+                    ConfigData.HasSeenIntermission = true;
+                    StartCoroutine(DelayStart(StandardDelay, () =>
+                    {
+                        CutsceneManager.PlaySingleDialogueLine(CutsceneManager.Uranus_ANewThreat[0], true);
+                    }));
+                    break;
             }
         }
 
@@ -202,6 +185,7 @@ namespace UIComponents
             }
             ConfigData.LoadLevel();
         }
+
         public void Skip()
         {
             CutsceneManager.HideDialogue();
@@ -218,8 +202,5 @@ namespace UIComponents
         {
             SceneManager.LoadSceneAsync("Main Menu", LoadSceneMode.Single);
         }
-
     }
-
-
 }

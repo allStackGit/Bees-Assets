@@ -56,6 +56,8 @@ namespace Assets.Scripts.Levels
 
         public void LoadConversions()
         {
+            NormalizeMapPrefabs();
+
             ConvertProjectileTypeToExplosionAnimation = new Dictionary<ConfigData.ProjectileTypes, GameObject>
             {
                 { ConfigData.ProjectileTypes.BeeSmall, BeeSmallProjectileExplosionAnimationPrefab },
@@ -129,6 +131,32 @@ namespace Assets.Scripts.Levels
                 { ConfigData.ShipTypes.Queen, QueenShipExplosionPrefab },
 
             };
+        }
+
+        private void NormalizeMapPrefabs()
+        {
+            // Stripped test fixtures can intentionally omit rendering/map assets.
+            if (Maps.Count == 0)
+            {
+                return;
+            }
+
+            Dictionary<string, GameObject> mapsByName = new Dictionary<string, GameObject>();
+            foreach (GameObject mapPrefab in Maps)
+            {
+                mapsByName[mapPrefab.name] = mapPrefab;
+            }
+
+            List<GameObject> orderedMaps = new List<GameObject>(ConfigData.Maps.Count);
+            foreach (Data.Map mapData in ConfigData.Maps)
+            {
+                if (!mapsByName.TryGetValue(mapData.Name, out GameObject mapPrefab))
+                {
+                    throw new System.InvalidOperationException($"Missing map prefab for {mapData.Name}. Map prefab names must match ConfigData.Maps locations.");
+                }
+                orderedMaps.Add(mapPrefab);
+            }
+            Maps = orderedMaps;
         }
 
     }
