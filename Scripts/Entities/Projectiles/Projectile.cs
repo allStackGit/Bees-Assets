@@ -1,13 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
+﻿using System.Collections.Generic;
 using Assets.Scripts.Data;
-using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
-
 using UnityEngine;
 
 namespace Assets.Scripts.Entities.Projectiles
@@ -29,24 +25,15 @@ namespace Assets.Scripts.Entities.Projectiles
         public string Name;
         public ConfigData.ProjectileTypes Type;
         public bool HasExplosion, ShipIsDead, HasBody, HasCollider;
-        /// <summary>
-        /// This projectile has an animation sequence that must execute for non-visual reasons (e.g. rocket and fire ship explosions)
-        /// </summary>
         public bool HasNecessaryAnimation;
         public Animator Animator;
-
-        /// <summary>
-        /// If a projectile is dead that means it has been created in the object pool but either has never been spawned into the game or has died and gone back to the pool
-        /// </summary>
         public bool IsDead;
-        
+
         public override void Create(Stage stage)
         {
             base.Create(stage);
             if (!Stage.IsTraining && HasExplosion)
             {
-                //Debug.Log($"{Stage}, {Stage?.Prefabs}, {Type}, {Stage?.Prefabs?.ConvertProjectileTypeToExplosionAnimation[Type]}");
-
                 Explosion = Instantiate(Stage.Prefabs.ConvertProjectileTypeToExplosionAnimation[Type], Vector2.zero, Quaternion.identity);
                 Explosion.gameObject.SetActive(false);
             }
@@ -59,14 +46,11 @@ namespace Assets.Scripts.Entities.Projectiles
             {
                 Destroy(Animator);
             }
-
             Deactivate();
         }
+
         public virtual void Setup(Level level, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power)
         {
-            // Clear state from the previous pooled use before assigning values for
-            // this shot. Derived ClearData implementations may reset fields such
-            // as Angle, hit history, scale, and harmless state.
             ClearData();
             Level = level;
             Id = Level.State.GetId();
@@ -84,8 +68,6 @@ namespace Assets.Scripts.Entities.Projectiles
             IsDead = false;
             Level.State.AddProjectile(this);
             Rotation = -(Angle * Mathf.Rad2Deg);
-
-
             FleetShip = shooter.FleetShip;
             SavedSquad = shooter.Squad.SavedSquad;
             Activate();
@@ -101,33 +83,32 @@ namespace Assets.Scripts.Entities.Projectiles
             CollidingQueue.Clear();
             CollidingObstacleQueue.Clear();
             ShipIsDead = false;
-
         }
 
         public virtual void Kill()
         {
-            //Debug.Log($"killed projectile {Name}");
-            if (!IsDead)
+            if (IsDead)
             {
-                RemoveDamageSentEntry();
-                if (!ShipIsDead)
-                {
-                    Shooter.ProjectilesInFlight.Remove(this);
-                }
-                IsDead = true;
-                //Debug.Log($"{Name} has been killed and will be returned");
-                Level.State.RemoveProjectile(this);
-                Stage.Pool.ReturnProjectileToPool(this);
-                Deactivate();
+                return;
             }
+
+            RemoveDamageSentEntry();
+            // A dead shooter wrapper is deliberately retained until its projectiles finish.
+            // Release this ownership at the actual projectile lifecycle boundary rather than
+            // leaving a stale entry for GameState.Release to discover later.
+            Shooter?.ProjectilesInFlight.Remove(this);
+            IsDead = true;
+            Level.State.RemoveProjectile(this);
+            Stage.Pool.ReturnProjectileToPool(this);
+            Deactivate();
         }
 
         public virtual void ContactTarget(Ship target)
         {
-            //Debug.Log($"{Name} contacted {target.Name}");
             KillSequence();
         }
-        private Vector3 _reverse = new Vector3(0, 0, 180);
+
+        private readonly Vector3 _reverse = new Vector3(0, 0, 180);
         public virtual void KillSequence()
         {
             if (HasExplosion)
@@ -142,22 +123,22 @@ namespace Assets.Scripts.Entities.Projectiles
 
         public virtual void ContactObstacle(Obstacle obstacle)
         {
-            if (!obstacle.IsDead)
+            if (obstacle.IsDead)
             {
-                if (obstacle.ObstacleType != ConfigData.ObstacleTypes.MapBorder)
-                {
-                    if (obstacle.ObstacleType == ConfigData.ObstacleTypes.CollisionAsteroid)
-                    {
-                        DamageObstacle((CollisionAsteroid)obstacle);
-                    }
-                    KillSequence();
-                }
-                else
-                {
-                    Kill();
-                }
-
+                return;
             }
+
+            if (obstacle.ObstacleType == ConfigData.ObstacleTypes.MapBorder)
+            {
+                Kill();
+                return;
+            }
+
+            if (obstacle.ObstacleType == ConfigData.ObstacleTypes.CollisionAsteroid)
+            {
+                DamageObstacle((CollisionAsteroid)obstacle);
+            }
+            KillSequence();
         }
 
         public void DamageObstacle(CollisionAsteroid asteroid)
@@ -171,14 +152,12 @@ namespace Assets.Scripts.Entities.Projectiles
             {
                 asteroid.SwitchToCrackedSprite();
             }
-
         }
-        
+
         protected virtual void FixedUpdate()
         {
             if (CollidingQueue.Count > 0)
             {
-                //Debug.Log("Pulled collision off of queue");
                 ShipCollision(CollidingQueue.Dequeue());
             }
             if (CollidingObstacleQueue.Count > 0)
@@ -187,61 +166,42 @@ namespace Assets.Scripts.Entities.Projectiles
             }
             if (ShipIsDead && DistanceToPoint(StartingPosition) > Range)
             {
-                //Debug.Log($"Projectile ({Name}) killed because it went past its range ({Range}), and it's shooter ({FleetShip.Name}) is dead");
                 Kill();
             }
-            //else if (FleetShip.Type != ConfigData.ShipTypes.Queen && DistanceToPoint(StartingPosition) > Range + 20) // [debug]
-            //{
-            //    Debug.LogWarning($"Projectile ({Name}) went past its range+20 ({Range})");
-            //}
-            //else if (Level.State.GameOver)
-            //{
-            //    Debug.Log($"Level ended, killing projectile {Name}");
-            //    Kill();d
-            //}
-
         }
 
-        ShipDamageStatus _status;
+        private ShipDamageStatus _status;
         public virtual void RemoveDamageSentEntry()
         {
-            if (Target != null)
+            if (Target == null || Shooter == null)
             {
-                _status = Level.State.GetShipDamageStatus(Shooter.Side, Target);
-
-                if (_status.TotalDamageSentToShip >= Power)
-                {
-                    _status.TotalDamageSentToShip -= Power;
-                }
-                else
-                {
-                    _status.TotalDamageSentToShip = 0;
-                }
+                return;
             }
 
-
+            _status = Level.State.GetShipDamageStatus(Shooter.Side, Target);
+            if (_status.TotalDamageSentToShip >= Power)
+            {
+                _status.TotalDamageSentToShip -= Power;
+            }
+            else
+            {
+                _status.TotalDamageSentToShip = 0;
+            }
         }
 
-        /// <summary>
-        /// Sets the initial movement of the projectile and only needs to be set once unless it's a tracking projectile, in which case this won't work
-        /// </summary>
         protected void SetMovement()
         {
             Transform.eulerAngles = Vector3.forward * Rotation;
-
             Body.linearVelocity = new Vector2((float)(-Speed * Mathf.Sin(Angle)), (float)(-Speed * Mathf.Cos(Angle)));
-            //Debug.Log($"Setting {Name} to an initial velocity of {Body.velocity}");
         }
 
         private GameObject _collidingThing;
-        protected virtual void OnTriggerEnter2D(Collider2D collider) // projectile collision
+        protected virtual void OnTriggerEnter2D(Collider2D collider)
         {
             _collidingThing = collider.gameObject;
-            //Debug.Log($"Projectile {Name} collided with {_collidingThing.name}");
             if (_collidingThing.CompareTag("Ship"))
             {
                 CollidingQueue.Enqueue(_collidingThing.GetComponent<Ship>());
-
             }
             else if (_collidingThing.CompareTag("Obstacle"))
             {
@@ -252,10 +212,6 @@ namespace Assets.Scripts.Entities.Projectiles
         private int _originalPower;
         protected virtual void ShipCollision(Ship ship)
         {
-            //Debug.Log("Basic ship collision");
-            //Debug.Log($"{Name} hit {ship.Name}. Contact? {(!IsFriendly(ship) || (Shooter.ShipType == ConfigData.ShipTypes.FireBarge && this != Shooter)) && !ShipsToIgnore.Contains(ship)}," +
-            //    $"IsFriendly? {IsFriendly(ship)}");
-            // if hit enemy projectile or Fire Barge explosion. the ships to ignore is for leafcutter split shots
             if (ProjectileDamagePolicy.CanBasicProjectileDamage(
                 Shooter.Side,
                 Shooter.ShipType,
@@ -266,49 +222,34 @@ namespace Assets.Scripts.Entities.Projectiles
                 ContactTarget(ship);
                 Ship.LogAttackingDamage(_originalPower, Shooter, FleetShip, SavedSquad, ship);
             }
-
         }
+
         public override void Activate()
         {
-            //gameObject.SetActive(true);
-            //Debug.Log($"Activating {Name}");
-
             if (HasBody)
             {
                 Body.simulated = true;
             }
-            //if (HasCollider)
-            //{
-            //    Collider.enabled = true;
-            //}
             if (Stage.IsRendering)
             {
                 SpriteRenderer.enabled = true;
                 Animator.enabled = true;
                 Animator.Rebind();
-                Animator.Update(0f); // force the animator to update to the first frame
-                //Debug.Log($"Enabling animator for {Name}");
+                Animator.Update(0f);
             }
             else if (HasNecessaryAnimation)
             {
                 Animator.enabled = true;
             }
             enabled = true;
-
         }
+
         public override void Deactivate()
         {
-            //gameObject.SetActive(false);
-            //Debug.Log($"Deactivating {Name}");
-
             if (HasBody)
             {
                 Body.simulated = false;
             }
-            //if (HasCollider)
-            //{
-            //    Collider.enabled = false;
-            //}
             if (Stage.IsRendering)
             {
                 SpriteRenderer.enabled = false;
@@ -321,7 +262,4 @@ namespace Assets.Scripts.Entities.Projectiles
             enabled = false;
         }
     }
-    
-    
 }
-
