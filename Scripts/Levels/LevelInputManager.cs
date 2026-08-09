@@ -371,6 +371,11 @@ namespace Assets.Scripts.Levels
             // Instead of a locally declared variable, use class-level fields.
             //Debug.Log($"Config UserSide: {ConfigData.Configuration.UserSide}, squads: {Level.State.OriginalSquadCounts[ConfigData.Configuration.UserSide - 1]}");
             _selectSquad_friendlySquads = Level.State.OriginalSquadCounts[ConfigData.Configuration.UserSide - 1];
+            if (_selectSquad_friendlySquads <= 0)
+            {
+                return;
+            }
+
             squadNumber %= _selectSquad_friendlySquads;
             if (squadNumber == 0)
             {
@@ -395,8 +400,8 @@ namespace Assets.Scripts.Levels
             CheckInputs();
             CheckActions();
             ResetInputs();
-            // Declare the loop variable as a class-level field (_update_i) instead of a local variable.
-            for (_update_i = 0; _update_i < Timers.Count; _update_i++)
+            // Iterate backwards because completed timers remove themselves from this list.
+            for (_update_i = Timers.Count - 1; _update_i >= 0; _update_i--)
             {
                 if (Timers[_update_i].Update())
                 {
@@ -1071,21 +1076,17 @@ namespace Assets.Scripts.Levels
         {
             if (!Stage.Menus.HoveringOverMiniMapButton)
             {
-                //Debug.Log("Mouse is over the mini map camera collider.");
                 _checkForMiniMapNavigation_eventData = new PointerEventData(EventSystem.current);
                 _checkForMiniMapNavigation_eventData.position = new Vector2(Input.mousePosition.x, Input.mousePosition.y);
 
                 _minimapNavigationResults = new List<RaycastResult>();
                 EventSystem.RaycastAll(_checkForMiniMapNavigation_eventData, _minimapNavigationResults);
 
-                //Debug.Log($"_minimapNavigationResults.Count: {_minimapNavigationResults.Count}");
-
                 for (_checkForMiniMapNavigation_j = 0; _checkForMiniMapNavigation_j < _minimapNavigationResults.Count; _checkForMiniMapNavigation_j++)
                 {
                     _checkForMiniMapNavigation_hit = _minimapNavigationResults[_checkForMiniMapNavigation_j];
                     if (_checkForMiniMapNavigation_hit.gameObject.name == "Camera Collider")
                     {
-                        //Debug.Log("Mouse hit the mini map camera collider.");
                         _minimapPoint = _checkForMiniMapNavigation_hit.gameObject.transform.InverseTransformPoint(_checkForMiniMapNavigation_hit.screenPosition);
                         _viewportPoint = _minimapPoint + _checkForMiniMapNavigation_half;
                         _viewportWorldPoint = Stage.MiniMapCamera.ViewportToWorldPoint(_viewportPoint);
@@ -1093,22 +1094,16 @@ namespace Assets.Scripts.Levels
 
                         if (mouseButton == RightClick)
                         {
-                            //Debug.Log($"Moving squads, right click");
                             MoveSquads(_viewportWorldPoint);
                         }
                         else
                         {
-                            //Debug.Log($"Moving camera, left click");
                             Stage.Camera.transform.localPosition = new Vector3(_localizedPoint.x, _localizedPoint.y, -10);
                             MaintainScrollBoundary();
                         }
                     }
                 }
             }
-            //else
-            //{
-            //    Debug.Log("Mouse is over the mini map close button.");
-            //}
         }
 
         // ===========================================================
