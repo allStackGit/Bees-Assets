@@ -341,6 +341,14 @@ namespace Assets.Scripts.Levels.Commands
                     _endBombingRun_striker.HasCompletedRun = true;
                     _endBombingRun_striker.ReturnToCarrierIfNecessary();
                 }
+
+                // A dead target ends the attack phase, but Strikers still need the active
+                // command timer to fly back and reload. Finalizing here stranded them after
+                // a single return-to-carrier movement update.
+                if (!HaveAllShipsFinished(_endBombingRun_ships))
+                {
+                    return;
+                }
             }
 
             if (!IsDead)
