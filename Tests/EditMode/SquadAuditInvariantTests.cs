@@ -19,6 +19,8 @@ namespace Bees.Tests.EditMode
         private string _fullRetreatSource;
         private string _healSource;
         private string _beehiveSource;
+        private string _miningSource;
+        private string _miningAsteroidSource;
 
         [SetUp]
         public void SetUp()
@@ -29,6 +31,8 @@ namespace Bees.Tests.EditMode
             _fullRetreatSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Commands", "FullRetreat.cs"));
             _healSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Commands", "Heal.cs"));
             _beehiveSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Beehive.cs"));
+            _miningSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Commands", "Mining.cs"));
+            _miningAsteroidSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "MiningAsteroid.cs"));
         }
 
         [Test]
@@ -162,6 +166,29 @@ namespace Bees.Tests.EditMode
             Assert.That(enter, Does.Contain("ShipReachedBeehive(_collidingShip)"));
             Assert.That(kill, Does.Contain("healCommand.IsShipActivelyHealing(s)"));
             Assert.That(kill, Does.Not.Contain("ShipsHealingHere.ToList().ForEach((s) =>\n            {\n                s.Kill"));
+        }
+
+        [Test]
+        public void MiningCountsOnlyLiveMiningCapableShips()
+        {
+            string execute = ExtractMethodBody(_miningSource, "Execute");
+            string found = ExtractMethodBody(_miningSource, "FoundAsteroid");
+            string mine = ExtractMethodBody(_miningSource, "Mine");
+
+            Assert.That(execute, Does.Contain("ship.IsMiningShip && !ship.IsDead"));
+            Assert.That(execute, Does.Contain("MiningShips.ToList().ForEach"));
+            Assert.That(found, Does.Contain("!ship.IsMiningShip"));
+            Assert.That(found, Does.Contain("!MiningShips.Contains(ship)"));
+            Assert.That(mine, Does.Contain("s.IsMiningShip"));
+        }
+
+        [Test]
+        public void MiningAsteroidFinalizesCommandsFromSnapshot()
+        {
+            string kill = ExtractMethodBody(_miningAsteroidSource, "Kill");
+            Assert.That(kill, Does.Contain("SquadsMining.ToList().ForEach"));
+            Assert.That(kill, Does.Contain("CommandTypes.Mining"));
+            Assert.That(kill, Does.Not.Contain("SquadsMining.ForEach"));
         }
 
         private static string ExtractMethodBody(string source, string methodName)
