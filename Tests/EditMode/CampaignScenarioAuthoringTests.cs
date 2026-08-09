@@ -107,10 +107,14 @@ namespace Bees.Tests.EditMode
             Assert.That(setup, Does.Not.Contain("timeLeft <= 0 || State.IsSideKilled(ConfigData.Configuration.AISide)"),
                 "Beenoculars is a timed evacuation defense, not an elimination shortcut.");
 
-            Assert.That(setup, Does.Contain("AlignTitania2HumanFleetToAuthoredStart"),
-                "Beenoculars must correct stale/custom persisted fleet anchors before presentation.");
-            Assert.That(_triggerSource, Does.Contain("Map.UserStartingPosition"));
-            Assert.That(_triggerSource, Does.Contain("CurrentLevelOptions.UserStartingPosition = authoredAnchor"));
+            Assert.That(setup, Does.Contain("StageTitania2HumanFleetAtCenter"),
+                "Beenoculars must stage the player's fleet in Titania's central defensive pocket.");
+            Assert.That(_triggerSource, Does.Contain("FindTitania2HumanShipPlacement"));
+            Assert.That(_triggerSource, Does.Contain("ship.GetHalfWidth()"));
+            Assert.That(_triggerSource, Does.Contain("Physics2D.OverlapCircle(candidate, clearance, ConfigData.ObstaclesLayerMask)"),
+                "Central staging must reject obstacle-overlapping ship positions.");
+            Assert.That(_triggerSource, Does.Contain("CurrentLevelOptions.UserStartingPosition = Titania2Center"));
+            Assert.That(_triggerSource, Does.Contain("Stage.DefaultCameraPosition = Titania2Center"));
 
             Assert.That(setup, Does.Contain("GetRange(12, 3)"));
             Assert.That(setup, Does.Contain("GetRange(15, 3)"));
@@ -131,6 +135,10 @@ namespace Bees.Tests.EditMode
             Assert.That(_triggerSource, Does.Contain("MinX - outsideDistance"));
             Assert.That(_triggerSource, Does.Contain("MaxY + outsideDistance"));
             Assert.That(_triggerSource, Does.Contain("MinY - outsideDistance"));
+            Assert.That(_triggerSource, Does.Contain("Physics2D.OverlapCircle(entryPoint, laneClearance, ConfigData.ObstaclesLayerMask)"),
+                "Bee entry lanes must be checked against the authored walls.");
+            Assert.That(_triggerSource, Does.Contain("Physics2D.Linecast(spawnPoint, entryPoint, ConfigData.ObstaclesLayerMask)"),
+                "The off-map arrival segment must actually pass through a clear opening.");
             Assert.That(_triggerSource, Does.Contain("AddReinforcementSquads(new List<SavedSquad> { squads[i] }, spawnPoint, entryPoint)"));
 
             Assert.That(_triggerSource, Does.Contain("GetRange(26, 5)"));
