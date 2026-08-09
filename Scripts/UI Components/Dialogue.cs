@@ -16,13 +16,13 @@ namespace Assets.Scripts.UI_Components
         private List<GameObject> _buttons = new List<GameObject>();
         private float _buttonPrefabHeight;
         private TMP_Text _explanationText, _titleText;
-
+        private readonly bool _playErrorSoundOnShow;
 
         public bool IsOpen => _dialogue != null && _dialogue.activeSelf;
 
-        public Dialogue(GameObject prefab, string title, string explanation, List<string> buttonLabels, List<UnityAction> buttonActions)
+        public Dialogue(GameObject prefab, string title, string explanation, List<string> buttonLabels, List<UnityAction> buttonActions, bool playErrorSoundOnShow = false)
         {
-            //Debug.Log("Making dialogue");
+            _playErrorSoundOnShow = playErrorSoundOnShow;
             _dialogue = GameObject.Instantiate(prefab);
             _titleBox = _dialogue.transform.Find($"Main Panel/Text/Title").gameObject;
             _explanationBox = _dialogue.transform.Find($"Main Panel/Text/Explanation").gameObject;
@@ -40,16 +40,7 @@ namespace Assets.Scripts.UI_Components
             {
                 for (int i = 0; i < buttonLabels.Count; i++)
                 {
-                    UnityAction action = null;
-                    if (i < buttonActions.Count)
-                    {
-                        action = buttonActions[i];
-                    }
-                    else
-                    {
-                        action = Hide;
-                    }
-                    //Debug.Log($"Adding button #{i}");
+                    UnityAction action = i < buttonActions.Count ? buttonActions[i] : Hide;
                     _buttons.Add(MakeButton(buttonLabels[i], action));
                 }
             }
@@ -57,13 +48,12 @@ namespace Assets.Scripts.UI_Components
             {
                 Debug.LogError($"{buttonLabels.Count} button labels given and {buttonActions.Count} button actions were given while making a new dialogue box");
             }
-            //GameObject.Destroy(_buttonPrefab);
             _buttonPrefab.SetActive(false);
             Hide();
         }
+
         private GameObject MakeButton(string label, UnityAction action)
         {
-            //Debug.Log($"Making button {label}");
             GameObject buttonObject = GameObject.Instantiate(_buttonPrefab);
             buttonObject.transform.SetParent(_buttonsContainer.transform, false);
             buttonObject.transform.localScale = Vector3.one;
@@ -71,18 +61,23 @@ namespace Assets.Scripts.UI_Components
             buttonObject.transform.GetChild(0).gameObject.GetComponent<TMP_Text>().text = label;
             buttonObject.GetComponent<Button>().onClick.AddListener(delegate ()
             {
-                UIAudioController.Instance.PlayButtonSound();
+                UIAudioController.Instance?.PlayButtonSound();
                 action();
                 Hide();
             });
             buttonObject.SetActive(true);
             return buttonObject;
-
         }
+
         public void Show()
         {
-            _dialogue.SetActive(true); 
-        }  
+            if (_playErrorSoundOnShow)
+            {
+                UIAudioController.Instance?.PlayErrorSound();
+            }
+            _dialogue.SetActive(true);
+        }
+
         public void Hide()
         {
             _dialogue.SetActive(false);
@@ -110,7 +105,6 @@ namespace Assets.Scripts.UI_Components
         {
             GameObject.Destroy(_buttons[index]);
             _buttons[index] = MakeButton(label, action);
-
         }
     }
 }
