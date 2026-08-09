@@ -145,9 +145,18 @@ namespace Assets.Scripts.Entities
 
         public virtual void Kill()
         {
-            if (Level.HasObstacles)
+            if (Level != null && Level.HasObstacles)
             {
-                Level.Pathfinder.MarkObstacleLayerDirty();
+                Level.Pathfinder?.MarkObstacleLayerDirty();
+
+                // Destructible static obstacles are also registered in ObstacleMap.Obstacles.
+                // Remove the live component before destroying it so level teardown does not
+                // later dereference Unity's destroyed-object wrapper in SaveAndEnd().
+                if (Level.ObstacleMap != null && Level.ObstacleMap.Obstacles != null)
+                {
+                    Level.ObstacleMap.Obstacles.Remove(this as StaticObstacle);
+                }
+
                 Destroy(gameObject);
             }
             
