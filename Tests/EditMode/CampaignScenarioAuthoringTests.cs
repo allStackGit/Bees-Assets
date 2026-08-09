@@ -95,6 +95,43 @@ namespace Bees.Tests.EditMode
                 $"Mission {missionId} lost defining authoring marker '{secondMarker}'.");
         }
 
+        [Test]
+        public void BeenocularsEncodesFullEvacuationDefenseContract()
+        {
+            string setup = ExtractMethodBody(_triggerSource, "Titania2BeenocularsCampaign");
+            string ending = ExtractMethodBody(_triggerSource, "Titania2CampaignEnding");
+
+            Assert.That(setup, Does.Contain("const float survivalDuration = 450f"));
+            Assert.That(setup, Does.Contain("ResolveTitania2(titania, true)"));
+            Assert.That(setup, Does.Contain("ResolveTitania2(titania, false)"));
+            Assert.That(setup, Does.Not.Contain("timeLeft <= 0 || State.IsSideKilled(ConfigData.Configuration.AISide)"),
+                "Beenoculars is a timed evacuation defense, not an elimination shortcut.");
+
+            Assert.That(setup, Does.Contain("GetRange(12, 3)"));
+            Assert.That(setup, Does.Contain("GetRange(15, 3)"));
+            Assert.That(setup, Does.Contain("GetRange(18, 3)"));
+            Assert.That(setup, Does.Contain("GetRange(21, 3)"));
+            Assert.That(setup, Does.Contain("GetRange(24, 2)"));
+
+            foreach (string delay in new[] { "60f", "120f", "210f", "300f", "375f" })
+            {
+                Assert.That(setup, Does.Contain("new ScaledTimer(" + delay),
+                    $"Beenoculars is missing its authored/escalating wave at {delay} seconds.");
+            }
+
+            Assert.That(_triggerSource, Does.Contain("GetRange(26, 5)"));
+            Assert.That(_triggerSource, Does.Contain("GetRange(31, 2)"));
+            Assert.That(_triggerSource, Does.Contain("if (_titania2Resolved)"));
+            Assert.That(_triggerSource, Does.Contain("Stage.Menus.Clock.SetActive(false)"));
+
+            Assert.That(ending, Does.Contain("CampaignScore += State.PlayerScore"));
+            Assert.That(ending, Does.Contain("AdvanceToNextLevel"));
+            Assert.That(ending, Does.Contain("SaveSquadData"));
+            Assert.That(ending, Does.Contain("SaveFleetData"));
+            Assert.That(ending, Does.Contain("State.GameOver = true"));
+            Assert.That(ending, Does.Contain("ShowLevelSummary"));
+        }
+
         [TestCase("Pluto3Pushback")]
         [TestCase("Neptune1SeizeTheMeans")]
         [TestCase("Neptune3PressingForwardCampaign")]
