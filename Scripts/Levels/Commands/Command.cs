@@ -59,7 +59,6 @@ namespace Assets.Scripts.Levels.Commands
 
         private List<Vector2> _destinations = new List<Vector2>();
 
-
         public bool IsFinalized;
         public bool IsHiveMindCommand;
         public bool HasStoredOutcomeRecord;
@@ -207,46 +206,46 @@ namespace Assets.Scripts.Levels.Commands
                     _tempShips.Shuffle();
                     break;
                 case ConfigData.ShootingStrategyTypes.Revenge:
-                    _tempShips.Sort((a, b) => b.LastKilled - a.LastKilled);
+                    _tempShips.Sort((a, b) => b.LastKilled.CompareTo(a.LastKilled));
                     break;
                 case ConfigData.ShootingStrategyTypes.MostDangerous:
-                    _tempShips.Sort((a, b) => b.FleetShip.DamageDone - a.FleetShip.DamageDone);
+                    _tempShips.Sort((a, b) => b.FleetShip.DamageDone.CompareTo(a.FleetShip.DamageDone));
                     break;
                 case ConfigData.ShootingStrategyTypes.LeastHealth:
-                    _tempShips.Sort((a, b) => (a.Health - a.OriginalHealth) - (b.Health - b.OriginalHealth));
+                    _tempShips.Sort((a, b) => (a.Health - a.OriginalHealth).CompareTo(b.Health - b.OriginalHealth));
                     break;
                 case ConfigData.ShootingStrategyTypes.MostHealth:
-                    _tempShips.Sort((a, b) => b.Health - a.Health);
+                    _tempShips.Sort((a, b) => b.Health.CompareTo(a.Health));
                     break;
                 case ConfigData.ShootingStrategyTypes.MostPowerful:
-                    _tempShips.Sort((a, b) => (int)(b.Firepower - a.Firepower));
+                    _tempShips.Sort((a, b) => b.Firepower.CompareTo(a.Firepower));
                     break;
                 case ConfigData.ShootingStrategyTypes.LeastPowerful:
-                    _tempShips.Sort((a, b) => (int)(a.Firepower - b.Firepower));
+                    _tempShips.Sort((a, b) => a.Firepower.CompareTo(b.Firepower));
                     break;
                 case ConfigData.ShootingStrategyTypes.Closest:
-                    _tempShips.Sort((a, b) => (int)(GetSquad().DistanceToPoint(a.GetPosition()) - GetSquad().DistanceToPoint(b.GetPosition())));
+                    _tempShips.Sort((a, b) => GetSquad().DistanceToPoint(a.GetPosition()).CompareTo(GetSquad().DistanceToPoint(b.GetPosition())));
                     break;
                 case ConfigData.ShootingStrategyTypes.Furthest:
-                    _tempShips.Sort((a, b) => (int)(GetSquad().DistanceToPoint(b.GetPosition()) - GetSquad().DistanceToPoint(a.GetPosition())));
+                    _tempShips.Sort((a, b) => GetSquad().DistanceToPoint(b.GetPosition()).CompareTo(GetSquad().DistanceToPoint(a.GetPosition())));
                     break;
                 case ConfigData.ShootingStrategyTypes.MostRange:
-                    _tempShips.Sort((a, b) => b.MaxRange - a.MaxRange);
+                    _tempShips.Sort((a, b) => b.MaxRange.CompareTo(a.MaxRange));
                     break;
                 case ConfigData.ShootingStrategyTypes.LeastRange:
-                    _tempShips.Sort((a, b) => a.MaxRange - b.MaxRange);
+                    _tempShips.Sort((a, b) => a.MaxRange.CompareTo(b.MaxRange));
                     break;
                 case ConfigData.ShootingStrategyTypes.Fastest:
-                    _tempShips.Sort((a, b) => (int)(b.Speed - a.Speed));
+                    _tempShips.Sort((a, b) => b.Speed.CompareTo(a.Speed));
                     break;
                 case ConfigData.ShootingStrategyTypes.Slowest:
-                    _tempShips.Sort((a, b) => (int)(a.Speed - b.Speed));
+                    _tempShips.Sort((a, b) => a.Speed.CompareTo(b.Speed));
                     break;
                 case ConfigData.ShootingStrategyTypes.MostValuable:
-                    _tempShips.Sort((a, b) => b.Tsv - a.Tsv);
+                    _tempShips.Sort((a, b) => b.Tsv.CompareTo(a.Tsv));
                     break;
                 case ConfigData.ShootingStrategyTypes.LeastValuable:
-                    _tempShips.Sort((a, b) => a.Tsv - b.Tsv);
+                    _tempShips.Sort((a, b) => a.Tsv.CompareTo(b.Tsv));
                     break;
                 default:
                     if ((int)strategy > 15)
