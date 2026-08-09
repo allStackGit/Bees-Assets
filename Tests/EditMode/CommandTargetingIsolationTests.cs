@@ -9,31 +9,52 @@ namespace Bees.Tests.EditMode
     [Category("BeesFoundation")]
     public class CommandTargetingIsolationTests
     {
-        private string _source;
+        private string _commandSource;
+        private string _weaponSource;
 
         [SetUp]
         public void SetUp()
         {
-            _source = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Commands", "Command.cs"));
+            _commandSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Commands", "Command.cs"));
+            _weaponSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Weapons", "Weapon.cs"));
         }
 
         [Test]
-        public void TargetingQueueSortsSnapshotInsteadOfEnemySquadList()
+        public void CommandTargetingQueueSortsSnapshotInsteadOfEnemySquadList()
         {
-            string method = ExtractMethodBody(_source, "MakeTargetingQueue");
+            string method = ExtractMethodBody(_commandSource, "MakeTargetingQueue");
             Assert.That(method, Does.Contain("EnemySquad.GetShips().ToList()"));
             Assert.That(method, Does.Not.Contain("_tempShips = EnemySquad.GetShips();"));
         }
 
         [Test]
-        public void FloatTargetingStrategiesDoNotTruncateComparatorDifferences()
+        public void CommandFloatTargetingStrategiesDoNotTruncateComparatorDifferences()
         {
-            string method = ExtractMethodBody(_source, "MakeTargetingQueue");
+            string method = ExtractMethodBody(_commandSource, "MakeTargetingQueue");
             Assert.That(method, Does.Contain("b.Firepower.CompareTo(a.Firepower)"));
             Assert.That(method, Does.Contain("a.Speed.CompareTo(b.Speed)"));
             Assert.That(method, Does.Contain("DistanceToPoint(a.GetPosition()).CompareTo"));
             Assert.That(method, Does.Not.Contain("(int)(b.Firepower - a.Firepower)"));
             Assert.That(method, Does.Not.Contain("(int)(b.Speed - a.Speed)"));
+        }
+
+        [Test]
+        public void WeaponDisregardRangeTargetingCopiesEnemySquadList()
+        {
+            string method = ExtractMethodBody(_weaponSource, "GetPotentialEnemyTargetShips");
+            Assert.That(method, Does.Contain("EnemySquad.GetShips().ToList()"));
+            Assert.That(method, Does.Not.Contain("_shipQueue = Ship.Squad.GetCommand().EnemySquad.GetShips();"));
+        }
+
+        [Test]
+        public void WeaponFloatTargetingStrategiesDoNotTruncateComparatorDifferences()
+        {
+            string method = ExtractMethodBody(_weaponSource, "MakeSortedTargetingList");
+            Assert.That(method, Does.Contain("b.Firepower.CompareTo(a.Firepower)"));
+            Assert.That(method, Does.Contain("a.Speed.CompareTo(b.Speed)"));
+            Assert.That(method, Does.Contain("DistanceTo(a).CompareTo(DistanceTo(b))"));
+            Assert.That(method, Does.Not.Contain("(int) (b.Firepower - a.Firepower)"));
+            Assert.That(method, Does.Not.Contain("(int)(a.Speed - b.Speed)"));
         }
 
         private static string ExtractMethodBody(string source, string methodName)
