@@ -1,5 +1,4 @@
-﻿using Assets.Scripts.Data;
-using Assets.Scripts.Entities;
+using Assets.Scripts.Data;
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Levels;
@@ -11,10 +10,12 @@ namespace Assets.Scripts.Entities.Ships
 {
     public class FireBarge : Ship
     {
-        RocketExplosion Explosion;
-        AudioSource ExplosionSound;
+        private RocketExplosion Explosion;
+        private AudioSource ExplosionSound;
         public Weapon Bomb;
         private ScaledTimer _delayedKillTimer = new ScaledTimer();
+        private bool _waitingForDelayedRelease;
+
         public override void Create(Stage stage)
         {
             base.Create(stage);
@@ -22,143 +23,142 @@ namespace Assets.Scripts.Entities.Ships
             IsBomber = true;
             Destroy(Bomb.Piece);
         }
+
         public override void ClearData()
         {
+            if (Level != null)
+            {
+                Level.CancelTimer(_delayedKillTimer);
+            }
+            _waitingForDelayedRelease = false;
             base.ClearData();
-            //Debug.Log($"{Name} cleared data");
         }
+
         public void Detonate()
         {
-            //Debug.Log("Detonating Fire Barge");
-
             Kill(null, null, null);
         }
-        public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false) // [kill-method] [damage-method] [note] [stats-method]
+
+        public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false)
         {
-            if (!IsDead)
+            if (IsDead)
             {
-                //Debug.Log($"{Name} is being killed. endkill? {endKill}");
-                StopMoving();
-                CannotChangeMovementOrders = true;
-                IsDead = true;
-                //Debug.Log("FireBarge exploding");
+                return;
+            }
+
+            StopMoving();
+            CannotChangeMovementOrders = true;
+            IsDead = true;
+
+            if (!endKill)
+            {
+                Explosion = (RocketExplosion)Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.FireBargeExplosion);
+                ExplosionSound = Explosion.GetComponent<AudioSource>();
+                ShipExplosion = Explosion.gameObject;
+                DropExplosionAnimation();
+                if (Level.Stage.ActivateAudio)
+                {
+                    ExplosionSound.Play();
+                }
+                Explosion.Setup(Level, Bomb, this, null, GetPosition(), 0, 0, Bomb.Power);
+                Level.State.FireBargeExplosions.Add(Explosion);
+                ProjectilesInFlight.Add(Explosion);
+
+                // The Fire Barge is killing itself so it takes full damage, but there is
+                // no external shooter for this part of the damage accounting.
+                LogDamage(Health);
+
+                if (killer != null)
+                {
+                    killer.LastKilled = Time.frameCount;
+                    Killer = killer;
+                    KillerFleetShip = killer.FleetShip;
+                    KillerSavedSquad = killer.Squad.SavedSquad;
+                    LogKillerStats(KillerFleetShip, KillerSavedSquad);
+                }
+                if (Level.Stage.ReplaceDeadShips && Squad.SavedSquad.HasBeenSavedToStorage)
+                {
+                    FleetShip.IsDead = true;
+                }
+                Squad.SavedSquad.Stats.ShipsLost++;
+
+                if (HasUserFogOfWarVision)
+                {
+                    FogOfWarVision.Kill(3, false);
+                }
+
+                if (WeaponsThatHaveUsWithinRange.Count > 0)
+                {
+                    List<Weapon> weapons = WeaponsThatHaveUsWithinRange.ToList();
+                    for (int i = 0; i < weapons.Count; i++)
+                    {
+                        weapons[i].ShipsWithinRange.Remove(Id);
+                    }
+                    WeaponsThatHaveUsWithinRange.Clear();
+                }
+
+                LogKilledStats();
+            }
+
+            Level.State.RemoveShip(this);
+            Squad.RemoveShip(this);
+
+            if (Squad.GetShips().Count == 0)
+            {
+                Squad.Kill(endKill);
+            }
+            else
+            {
+                Squad.SetOffsets();
+            }
+
+            if (Stage.IsRendering)
+            {
+                SpriteRenderer.enabled = false;
+            }
+            if (!Stage.IsTraining)
+            {
+                if (HasRocketFlares)
+                {
+                    RightRocketFlares.ForEach(flare => flare.SetActive(false));
+                    LeftRocketFlares.ForEach(flare => flare.SetActive(false));
+                }
+                HealthBar.SetActive(false);
+
                 if (!endKill)
                 {
-                    Explosion = (RocketExplosion)Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.FireBargeExplosion);
-                    ExplosionSound = Explosion.GetComponent<AudioSource>();
-                    ShipExplosion = Explosion.gameObject;
-                    DropExplosionAnimation();
-                    if (Level.Stage.ActivateAudio)
-                    {
-                        ExplosionSound.Play();
-                    }
-                    Explosion.Setup(Level, Bomb, this, null, GetPosition(), 0, 0, Bomb.Power);
-                    Level.State.FireBargeExplosions.Add(Explosion);
-                    ProjectilesInFlight.Add(Explosion);
-
-
-                    // The Fire Barge is killing itself so it takes full damage but there's no shooter so it's just logging damage
-                    LogDamage(Health);
-
-                  
-                    if (killer != null)
-                    {
-                        killer.LastKilled = Time.frameCount;
-                        Killer = killer;
-                        KillerFleetShip = killer.FleetShip;
-                        KillerSavedSquad = killer.Squad.SavedSquad;
-                        LogKillerStats(KillerFleetShip, KillerSavedSquad);
-                    }
-                    if (Level.Stage.ReplaceDeadShips && Squad.SavedSquad.HasBeenSavedToStorage)
-                    {
-                        FleetShip.IsDead = true;
-                    }
-                    Squad.SavedSquad.Stats.ShipsLost++;
-
-                    if (HasUserFogOfWarVision)
-                    {
-                        FogOfWarVision.Kill(3, false);
-                    }
-
-                    if (WeaponsThatHaveUsWithinRange.Count > 0)
-                    {
-                        List<Weapon> weapons = WeaponsThatHaveUsWithinRange.ToList();
-                        for (int i = 0; i < WeaponsThatHaveUsWithinRange.Count; i++)
-                        {
-                            weapons[i].ShipsWithinRange.Remove(this.Id);
-                        }
-                    }
-
-                    LogKilledStats();
-                }
-
-                Level.State.RemoveShip(this);
-                Squad.RemoveShip(this);
-
-                if (Squad.GetShips().Count == 0)
-                {
-                    //Squad.SavedSquad.Stats.BattlesFought++;
-                    Squad.Kill(endKill);
-                }
-                else
-                {
-                    Squad.SetOffsets();
-                }
-                if (Stage.IsRendering)
-                {
-                    SpriteRenderer.enabled = false;
-                }
-                if (!Stage.IsTraining)
-                {
-                    if (HasRocketFlares)
-                    {
-                        //Debug.Log($"Deactivating Rocket Flares on {Name}");
-                        RightRocketFlares.ForEach((flare) =>
-                        {
-                            flare.SetActive(false);
-                        });
-
-                        LeftRocketFlares.ForEach((flare) =>
-                        {
-                            flare.SetActive(false);
-                        });
-
-                    }
-                    HealthBar.SetActive(false);
-
-                    if (!endKill) // if the level isn't training and this fire barge got killed, delay the deactivation until after the explosion is done
-                    {
-                        //Debug.Log($"{Name} has been killed and will be delayed killed");
-                        _delayedKillTimer.Reuse(5f, DelayedKill);
-                        Level.AddTimer(_delayedKillTimer);
-                    }
-                    else // if it is the endkill then the explosion doesn't go off, deactivate immediately 
-                    {
-                        Deactivate();
-                    }
-
-                    //Invoke(nameof(DelayedKill), 5);
+                    // RemoveShip normally makes the wrapper immediately poolable. Keep
+                    // this dead Fire Barge reserved until the explosion's five-second
+                    // lifetime has completed so delayed callbacks/projectiles cannot see
+                    // a newly configured occupant of the same pooled Ship object.
+                    Level.State.ShipsToRelease.Remove(this);
+                    _waitingForDelayedRelease = true;
+                    _delayedKillTimer.Reuse(5f, DelayedKill);
+                    Level.AddTimer(_delayedKillTimer);
                 }
                 else
                 {
                     Deactivate();
                 }
-
             }
-           
-
+            else
+            {
+                Deactivate();
+            }
         }
 
-        /// <summary>
-        /// Actually destroys the ship in the game
-        /// </summary>
         protected void DelayedKill()
         {
-            //Debug.Log($"{Name} delay killed and is now deactivated");
-            //Debug.Log($"{Name} has been killed and will be returned");
+            Level.CancelTimer(_delayedKillTimer);
             Deactivate();
+            if (_waitingForDelayedRelease)
+            {
+                _waitingForDelayedRelease = false;
+                if (!Level.State.ShipsToRelease.Contains(this))
+                {
+                    Level.State.ShipsToRelease.Add(this);
+                }
+            }
         }
     }
-
-
 }
