@@ -4,7 +4,6 @@ using Assets.Scripts.Scenes;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Xml.Linq;
 using UnityEngine;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -148,7 +147,9 @@ namespace Assets.Scripts.Data
             Vector2[] offsets = ConfigData.GeneratedSquadFormationOffsets4x4;
             if (shipCount == 1)
             {
-                offsets[0] = Vector2.zero;
+                // Formation arrays in ConfigData are shared templates. Never write into them:
+                // doing so changes the starting offset used by every squad created afterward.
+                offsets = new Vector2[] { Vector2.zero };
             }
             else
             {
