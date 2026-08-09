@@ -98,8 +98,7 @@ namespace Assets.Scripts.Levels
             PlayerVisibleMapObjects.Clear();
             Obstacles.Clear();
             FogOfWarVisions.Clear();
-            SpottedShips[0].Clear();
-            SpottedShips[1].Clear();
+            SpottedShips = new[] { new List<SpottedShip>(), new List<SpottedShip>() };
             InitialTsv = new[] { 0, 0 };
             OriginalSquadCounts = new[] { 0, 0 };
             HivemindShips = new[]
