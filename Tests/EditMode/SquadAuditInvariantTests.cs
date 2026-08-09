@@ -16,6 +16,7 @@ namespace Bees.Tests.EditMode
         private string _squadSource;
         private string _strikerSource;
         private string _bargeSource;
+        private string _chargingBarSource;
         private string _carrierSource;
         private string _warpGateSource;
         private string _fullRetreatSource;
@@ -33,6 +34,7 @@ namespace Bees.Tests.EditMode
             _squadSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Squad.cs"));
             _strikerSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Striker.cs"));
             _bargeSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Barge.cs"));
+            _chargingBarSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "ChargingBar.cs"));
             _carrierSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Carrier.cs"));
             _warpGateSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "WarpGate.cs"));
             _fullRetreatSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Commands", "FullRetreat.cs"));
@@ -115,6 +117,20 @@ namespace Bees.Tests.EditMode
             Assert.That(stop, Does.Contain("lifecycleId == _chargeLifecycleId"));
             Assert.That(reset, Does.Contain("_chargeLifecycleId++"));
             Assert.That(clear, Does.Contain("_chargeLifecycleId++"));
+        }
+
+        [Test]
+        public void PooledChargingBarCancelsOldRechargeAndSaturatesAtOneHundredPercent()
+        {
+            string setup = ExtractMethodBody(_chargingBarSource, "Setup");
+            string charge = ExtractMethodBody(_chargingBarSource, "ChargeBar");
+            string drain = ExtractMethodBody(_chargingBarSource, "DrainBar");
+
+            Assert.That(setup, Does.Contain("Ship.Level.CancelTimer(_chargeBarTimer)"));
+            Assert.That(setup, Does.Contain("IsCharging = false"));
+            Assert.That(charge, Does.Contain("math.min(100, PercentCharged + ChargingIncrement)"));
+            Assert.That(charge, Does.Contain("PercentCharged >= 100"));
+            Assert.That(drain, Does.Contain("math.max(0, PercentCharged - percent)"));
         }
 
         [Test]
