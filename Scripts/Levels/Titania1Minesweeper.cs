@@ -156,8 +156,8 @@ namespace Assets.Scripts.Levels
             ConfigData.UserProgressData.AdvanceToNextLevel();
 
             ConfigData.UserProgressData.Save();
-            CurrentShips.SaveSquadData();
-            CurrentShips.SaveFleetData();
+            ConfigData.CurrentShips.SaveSquadData();
+            ConfigData.CurrentShips.SaveFleetData();
 
             State.GameOver = true;
             Stage.Menus.ShowLevelSummary();
