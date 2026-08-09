@@ -166,9 +166,12 @@ namespace Assets.Scripts.Levels
                 return;
             }
 
+            // These prefab components have not run MapObject.Setup yet, so their game IDs
+            // are still zero. Use Unity instance identity here rather than MapObject's
+            // runtime ID-based equality.
             int distinctAuthoredTargets = fireTanks
                 .Where(tank => tank.TargetObstacle != null)
-                .Select(tank => tank.TargetObstacle)
+                .Select(tank => tank.TargetObstacle.GetInstanceID())
                 .Distinct()
                 .Count();
             if (distinctAuthoredTargets == fireTanks.Length)
@@ -179,12 +182,12 @@ namespace Assets.Scripts.Levels
             List<Obstacle> obstacles = root.GetComponentsInChildren<Obstacle>(true)
                 .Where(obstacle => obstacle != null)
                 .ToList();
-            HashSet<Obstacle> usedTargets = new HashSet<Obstacle>();
+            HashSet<int> usedTargetInstanceIds = new HashSet<int>();
 
             foreach (CanisterBomb fireTank in fireTanks)
             {
                 Obstacle nearestUnused = obstacles
-                    .Where(obstacle => !usedTargets.Contains(obstacle))
+                    .Where(obstacle => !usedTargetInstanceIds.Contains(obstacle.GetInstanceID()))
                     .OrderBy(obstacle =>
                         ((Vector2)obstacle.transform.position - (Vector2)fireTank.transform.position).sqrMagnitude)
                     .FirstOrDefault();
@@ -196,7 +199,7 @@ namespace Assets.Scripts.Levels
                 }
 
                 fireTank.TargetObstacle = nearestUnused;
-                usedTargets.Add(nearestUnused);
+                usedTargetInstanceIds.Add(nearestUnused.GetInstanceID());
             }
         }
 
