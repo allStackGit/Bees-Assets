@@ -1,5 +1,6 @@
 using Assets.Scripts;
 using Assets.Scripts.Levels;
+using Assets.Scripts.UI_Components;
 using System.Collections;
 using System.Collections.Generic;
 using TMPro;
@@ -43,7 +44,6 @@ public class DialogueManager : MonoBehaviour
     public void StartDialogue(List<DialogueLine> lines, bool isLastDialogue)
     {
         _isLastDialogue = isLastDialogue;
-        //Debug.Log("Starting dialogue in dialogue manager.");
         dialogueLines.Clear();
 
         foreach (DialogueLine line in lines)
@@ -51,6 +51,10 @@ public class DialogueManager : MonoBehaviour
             dialogueLines.Enqueue(line);
         }
 
+        if (dialogueLines.Count > 0)
+        {
+            UIAudioController.Instance?.PlayIntercomSound();
+        }
 
         DialogueBox.SetActive(true);
         ContinueButton.SetActive(true);
@@ -60,7 +64,6 @@ public class DialogueManager : MonoBehaviour
 
     public void DisplayNextLine()
     {
-        //Debug.Log("Displaying next line in dialogue manager.");A
         if (dialogueLines.Count == 0)
         {
             if (_isLastDialogue)
@@ -119,8 +122,6 @@ public class DialogueManager : MonoBehaviour
         int characterIndex = 0;
         bool aOrB = false;
         ToggleContinuePrompt(false);
-
-        //Debug.Log($"Typing line: {line.Text}, Type: {line.Type}");
 
         foreach (char c in line.Text)
         {
@@ -191,7 +192,7 @@ public class DialogueManager : MonoBehaviour
             if (Input.GetKey(KeyCode.Space))
             {
                 line.IsSkipped = true;
-                yield return new WaitForSeconds(0.02f); // .02f
+                yield return new WaitForSeconds(0.02f);
                 DisplayNextLine();
             }
             else
@@ -201,20 +202,16 @@ public class DialogueManager : MonoBehaviour
             }
         }
 
-
         if (!line.IsSkipped)
         {
             ToggleContinuePrompt(line.Type != DialogueLine.DialogueType.Pause);
         }
-
     }
 
     public void ToggleContinuePrompt(bool showOrHide)
     {
-
         if (showOrHide && Input.GetKey(KeyCode.Space))
         {
-            //Debug.Log($"Space held, going to next line"); 
             DisplayNextLine();
         }
         else if (showOrHide && _currentLine.Type == DialogueLine.DialogueType.Disappearing)
@@ -225,7 +222,6 @@ public class DialogueManager : MonoBehaviour
         {
             ContinueButton.SetActive(showOrHide);
         }
-
     }
 
     void EndDialogue()
@@ -239,7 +235,5 @@ public class DialogueManager : MonoBehaviour
         Debug.Log($"Go to next line");
         EventSystem.GetComponent<UnityEngine.EventSystems.EventSystem>().SetSelectedGameObject(null);
         DisplayNextLineWithDelay(.5f);
-
     }
-
 }
