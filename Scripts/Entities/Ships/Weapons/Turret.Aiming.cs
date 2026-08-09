@@ -1,0 +1,83 @@
+using UnityEngine;
+
+namespace Assets.Scripts.Entities.Ships.Weapons
+{
+    public partial class Turret
+    {
+        private Vector2 _targetPoint, _frontOfShip, _colliderPoint, _globalTargetPosition, _globalTurretPosition;
+
+        protected void MoveTargetingMarker()
+        {
+            if (HasTargetingMarker && Ship.Squad.IsSelected && IsAimedAtTarget && !IsFiringManually)
+            {
+                TargetingMarker.transform.position = TargetPoint;
+                TargetingMarker.SetActive(true);
+            }
+            else if (HasTargetingMarker)
+            {
+                TargetingMarker.SetActive(false);
+            }
+        }
+
+        protected virtual void Aim()
+        {
+            if (IsFiringManually)
+            {
+                TargetPoint = Stage.InputManager.GetMousePosition();
+                IsAimedAtTarget = Utilities.TimedRotation(this, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+            }
+            else if (ShouldFire)
+            {
+                TargetPoint = GetTargetPoint(TargetShip);
+                IsAimedAtTarget = Utilities.TimedRotation(this, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                IsFiringAtAsteroid = false;
+            }
+            else if (ShouldFireAtAsteroid)
+            {
+                TargetPoint = TargetAsteroid.GetPosition();
+                IsAimedAtTarget = Utilities.TimedRotation(this, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                IsFiringAtAsteroid = true;
+            }
+            else
+            {
+                IsAimedAtTarget = false;
+                if ((Ship.IsCeaseFire || !HasValidTarget()) && Rotation != Ship.Rotation)
+                {
+                    Utilities.TimedRotation(this, Ship.Rotation, RotationRate);
+                }
+                IsFiringAtAsteroid = false;
+            }
+
+            MoveTargetingMarker();
+        }
+
+        protected Vector2 GetTargetPoint(Ship ship)
+        {
+            _targetPoint = ship.GetPosition();
+            if (ShouldFireAtFrontOfShip)
+            {
+                _frontOfShip = _targetPoint + new Vector2(0, ship.GetHalfHeight() - ConfigData.OffsetFromFrontOfShip.GetValueOrDefault(ship.ShipType));
+                _targetPoint = Utilities.RotatePointAroundPoint(_targetPoint, _frontOfShip, ship.Rotation * Mathf.Deg2Rad);
+            }
+
+            _globalTargetPosition = _targetPoint + Level.GetPosition();
+            if (!RangeCollider.Collider.OverlapPoint(_globalTargetPosition))
+            {
+                _globalTurretPosition = GetPosition() + Level.GetPosition();
+                _colliderPoint = ship.Collider.ClosestPoint(_globalTurretPosition);
+                _targetPoint = _colliderPoint != _globalTurretPosition
+                    ? _colliderPoint - Level.GetPosition()
+                    : ship.GetPosition();
+            }
+
+            return _targetPoint;
+        }
+
+        protected override void SendProjectile()
+        {
+            base.SendProjectile();
+            Level.AddProjectile(ProjectileType, this, GetPosition(), AngleToPoint(TargetPoint));
+            Ship.FleetShip.ShotsFired++;
+        }
+    }
+}
