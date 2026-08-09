@@ -7,29 +7,12 @@ namespace Assets.Scripts.Levels.Commands
 {
     public class Aggressive : Command
     {
-        /// <summary>
-        /// Are the ships comfortably within range of all of the enemy squad ships?
-        /// </summary>
         public bool IsComfortablyWithinRange;
-        /// <summary>
-        /// Has the squad taken up a "standing" position comfortably within range?
-        /// </summary>
         public bool HasTakenPosition;
         public int ConsecutiveTimesWithinRange = 0;
 
         public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId)
         {
-            // Command.Setup marks the squad as having this command before Execute runs.
-            // A queued Aggressive command without a valid enemy must not finalize
-            // synchronously here, because Squad.RunCommandQueue historically reasserts
-            // HasCommand after Execute returns. Finalize on the next timer update instead.
-            if (!HasEnemy)
-            {
-                CommandTimer.Reuse(0f, () => SetFinalize("Could not find the enemy squad for command"));
-                Level.AddTimer(CommandTimer);
-                return;
-            }
-
             base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, false);
             if (IsDead)
             {
@@ -50,13 +33,16 @@ namespace Assets.Scripts.Levels.Commands
                 }
             }
         }
+
         public override void ClearData()
         {
             base.ClearData();
+            CommandFrequency = 3f;
             IsComfortablyWithinRange = false;
             ConsecutiveTimesWithinRange = 0;
             HasTakenPosition = false;
         }
+
         private void Timer()
         {
             if (!GetSquad().IsDead)
@@ -90,7 +76,8 @@ namespace Assets.Scripts.Levels.Commands
                             Level.AddTimer(CommandTimer);
                         }
                     }
-                    else if ((GetSquad().MaxRange >= 45 && GetSquad().AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad)) || (GetSquad().AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad) && EnemySquad.IsDefenseless))
+                    else if ((GetSquad().MaxRange >= 45 && GetSquad().AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad)) ||
+                             (GetSquad().AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad) && EnemySquad.IsDefenseless))
                     {
                         if (!HasTakenPosition)
                         {
