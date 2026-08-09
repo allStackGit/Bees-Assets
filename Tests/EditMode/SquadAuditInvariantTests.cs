@@ -17,6 +17,7 @@ namespace Bees.Tests.EditMode
         private string _strikerSource;
         private string _warpGateSource;
         private string _healSource;
+        private string _beehiveSource;
 
         [SetUp]
         public void SetUp()
@@ -25,6 +26,7 @@ namespace Bees.Tests.EditMode
             _strikerSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Striker.cs"));
             _warpGateSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "WarpGate.cs"));
             _healSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Commands", "Heal.cs"));
+            _beehiveSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Beehive.cs"));
         }
 
         [Test]
@@ -106,6 +108,31 @@ namespace Bees.Tests.EditMode
             Assert.That(release, Does.Contain("_shipsAndBeehives.Remove(ship.Id)"));
             Assert.That(move, Does.Contain("ReleaseHealingReservation(_shipsThatLostBeehiveOrDied[_index])"));
             Assert.That(heal, Does.Contain("ReleaseHealingReservation(_shipsThatLostBeehiveOrDied[_index])"));
+        }
+
+        [Test]
+        public void HealOnlyReservesDamagedShipsAndReleasesCompletedShips()
+        {
+            string execute = ExtractMethodBody(_healSource, "Execute");
+            string reached = ExtractMethodBody(_healSource, "ShipReachedBeehive");
+            string heal = ExtractMethodBody(_healSource, "HealShips");
+
+            Assert.That(execute, Does.Contain("s.Health < s.MaxHealth"));
+            Assert.That(reached, Does.Contain("ShipsWaitingToHeal.Remove(ship)"));
+            Assert.That(reached, Does.Contain("!ShipsHealing.Contains(ship)"));
+            Assert.That(heal, Does.Contain("_ship.Health >= _ship.MaxHealth"));
+            Assert.That(heal, Does.Contain("FinalizeIfAssignedShipsAreDone()"));
+        }
+
+        [Test]
+        public void BeehiveDestructionKillsOnlyShipsThatActuallyReachedHealingCollider()
+        {
+            string enter = ExtractMethodBody(_beehiveSource, "OnTriggerEnter2D");
+            string kill = ExtractMethodBody(_beehiveSource, "Kill");
+
+            Assert.That(enter, Does.Contain("ShipReachedBeehive(_collidingShip)"));
+            Assert.That(kill, Does.Contain("healCommand.IsShipActivelyHealing(s)"));
+            Assert.That(kill, Does.Not.Contain("ShipsHealingHere.ToList().ForEach((s) =>\n            {\n                s.Kill"));
         }
 
         private static string ExtractMethodBody(string source, string methodName)
