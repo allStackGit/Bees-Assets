@@ -38,6 +38,8 @@ namespace Assets.Scripts.Entities.Ships
         public GameObject BargeChargeImageAnimation;
         public BargeChargeImageAnimation BargeChargeImageAnimator;
         public List<GameObject> ChargeRocketFlares;
+        private int _chargeLifecycleId;
+
         public override void Create(Stage stage)
         {
             base.Create(stage);
@@ -49,9 +51,8 @@ namespace Assets.Scripts.Entities.Ships
             {
                 Destroy(ChargingBar.gameObject);
             }
-            Charge = Weapons.First();            //IsBomber = true;
+            Charge = Weapons.First();
             OriginalPower = Charge.Power;
-            //Destroy(Charge.Piece);
         }
 
         public override void Setup(Level level, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
@@ -71,13 +72,14 @@ namespace Assets.Scripts.Entities.Ships
                 Destroy(BargeChargeAnimation);
                 Destroy(BargeLoadingChargeAnimation);
                 Destroy(BargeChargeImageAnimation);
-
             }
-
         }
         public override void ClearData()
         {
             base.ClearData();
+            // Any coroutine from a previous pooled/use lifecycle must not be able to
+            // resume after a yield and alter the newly configured Barge.
+            _chargeLifecycleId++;
             ShipsHit.Clear();
             IsCharging = false;
             HasStartedCharging = false;
@@ -101,8 +103,6 @@ namespace Assets.Scripts.Entities.Ships
                 BargeLoadingChargeAnimation.SetActive(false);
                 BargeChargeImageAnimation.SetActive(false);
             }
-
-
         }
 
         public override void Activate()
@@ -129,12 +129,11 @@ namespace Assets.Scripts.Entities.Ships
             }
         }
 
-        protected override void OnTriggerEnter2D(Collider2D collider) // ship collision
+        protected override void OnTriggerEnter2D(Collider2D collider)
         {
             _collidingThing = collider.gameObject;
             if (_collidingThing.name == "Selection Box")
             {
-                //Debug.Log("Striker hit selection box");
                 if (IsUserControlled)
                 {
                     Stage.Selector.SelectShip(this);
@@ -149,7 +148,6 @@ namespace Assets.Scripts.Entities.Ships
                     HitShip(_collidingShip);
                 }
             }
-
         }
 
         private GameObject _collidingThing;
@@ -168,7 +166,6 @@ namespace Assets.Scripts.Entities.Ships
             }
         }
 
-
         public void HitShip(Ship ship)
         {
             if (!ShipsHit.Contains(ship))
@@ -176,22 +173,21 @@ namespace Assets.Scripts.Entities.Ships
                 ShipsHit.Add(ship);
                 int damage = math.min(Charge.Power, ship.Health);
                 LogAttackingDamage(damage, this, FleetShip, Squad.SavedSquad, ship);
-                LogAttackingDamage((int)(damage * .75f), ship, ship.FleetShip, ship.Squad.SavedSquad, this); // Barge takes 75% of the damage it inflicts
-                //Charge.Power -= damage;
+                LogAttackingDamage((int)(damage * .75f), ship, ship.FleetShip, ship.Squad.SavedSquad, this);
                 Debug.Log($"{Name} hit {ship.Name} and did {damage} damage");
 
-                if ((ship.Health > 0 || Level.State.GameOver) && gameObject.activeSelf) // if ran out of power or we killed the last ship stop the charge immediately
+                if ((ship.Health > 0 || Level.State.GameOver) && gameObject.activeSelf)
                 {
-                    StartCoroutine(StopCharge());
+                    StartCoroutine(StopCharge(_chargeLifecycleId));
                 }
             }
-
         }
 
         public IEnumerator ChargeForward(Ship target = null)
         {
             if (!IsCharging)
             {
+                int lifecycleId = ++_chargeLifecycleId;
                 StopMoving("Pausing to build up steam before charging");
                 CannotChangeMovementOrders = true;
 
@@ -204,60 +200,55 @@ namespace Assets.Scripts.Entities.Ships
 
                 yield return new WaitForSeconds(2);
 
-                if (!IsDead)
+                if (IsDead || lifecycleId != _chargeLifecycleId)
                 {
-                    Debug.Log($"{Name} is charging");
-                    if (!Stage.IsTraining)
-                    {
-                        BargeLoadingChargeAnimation.SetActive(false);
-                        BargeChargeAnimation.SetActive(true);
-                        BargeChargeImageAnimation.SetActive(true);
-                        BargeChargeImageAnimator.StartCharge();
-                    }
-                    IsCharging = true;
-                    HasStartedCharging = true;
-                    CannotChangeMovementOrders = false;
-                    SetCurrentSpeed(80, 80);
-                    if (target != null && !target.IsDead)
-                    {
-                        MoveToDirectionOfPoint(target.GetPosition());
-                    }
-                    else
-                    {
-                        MoveInDirection(Rotation);
-
-                    }
-                    CannotChangeMovementOrders = true;
+                    yield break;
                 }
 
+                Debug.Log($"{Name} is charging");
+                if (!Stage.IsTraining)
+                {
+                    BargeLoadingChargeAnimation.SetActive(false);
+                    BargeChargeAnimation.SetActive(true);
+                    BargeChargeImageAnimation.SetActive(true);
+                    BargeChargeImageAnimator.StartCharge();
+                }
+                IsCharging = true;
+                HasStartedCharging = true;
+                CannotChangeMovementOrders = false;
+                SetCurrentSpeed(80, 80);
+                if (target != null && !target.IsDead)
+                {
+                    MoveToDirectionOfPoint(target.GetPosition());
+                }
+                else
+                {
+                    MoveInDirection(Rotation);
+                }
+                CannotChangeMovementOrders = true;
 
                 yield return new WaitForSeconds(1);
-                if (!IsDead)
+                if (!IsDead && lifecycleId == _chargeLifecycleId)
                 {
-                    StartCoroutine(StopCharge());
+                    StartCoroutine(StopCharge(lifecycleId));
                 }
-                //else
-                //{
-                //    Debug.Log($"Could not stop charge for {this} because it's dead");
-                //}
             }
-
-
         }
 
-
         /// <summary>
-        /// Immediately stops the movement of the barge and initiates the cooldown after a five second delay
+        /// Immediately stops the movement of the barge and initiates the cooldown after a ten second delay.
         /// </summary>
-        /// <returns></returns>
-        public IEnumerator StopCharge() // [stats-method]
+        public IEnumerator StopCharge(int lifecycleId)
         {
+            if (lifecycleId != _chargeLifecycleId)
+            {
+                yield break;
+            }
+
             if (IsCharging)
             {
                 IsCharging = false;
                 SetCurrentSpeed(0, 0);
-
-
 
                 if (!Stage.IsTraining)
                 {
@@ -270,37 +261,38 @@ namespace Assets.Scripts.Entities.Ships
                     });
                 }
 
-
                 StopMoving($"Finished charging");
                 Charge.Power = OriginalPower;
 
                 LogDamage(200);
 
-                //Debug.Log($"Stopped charging for {Name}");
                 if (IsUserControlled)
                 {
                     ChargingBar.DrainBar();
                 }
                 yield return new WaitForSeconds(10);
 
-                FinishCoolDown();
+                if (!IsDead && lifecycleId == _chargeLifecycleId)
+                {
+                    FinishCoolDown();
+                }
             }
-
         }
 
         /// <summary>
-        /// Resets charge variables if the charge command has been interrupted 
+        /// Resets charge variables if the charge command has been interrupted.
         /// </summary>
         public void ResetCharge()
         {
+            // Invalidate any ChargeForward/StopCharge coroutine that is currently
+            // suspended at a yield. It may wake later, but it can no longer mutate state.
+            _chargeLifecycleId++;
             IsCharging = false;
             HasStartedCharging = false;
             CannotChangeMovementOrders = false;
             HasCompletedRun = true;
             SetCurrentSpeed(Speed);
             ShipsHit.Clear();
-
-
 
             if (!Stage.IsTraining)
             {
@@ -314,7 +306,6 @@ namespace Assets.Scripts.Entities.Ships
                 });
             }
 
-
             StopMoving($"Charge command ended");
             Charge.Power = OriginalPower;
         }
@@ -323,7 +314,6 @@ namespace Assets.Scripts.Entities.Ships
         {
             if (!IsDead)
             {
-                //Debug.Log($"Finished cool down for {Name}");
                 HasStartedCharging = false;
                 SetCurrentSpeed(Speed);
                 HasCompletedRun = true;
@@ -342,49 +332,9 @@ namespace Assets.Scripts.Entities.Ships
                     StartCoroutine(ChargeForward());
                 }
             }
-
         }
 
-        //float _timeSinceLastStartedCharging;
-        //private void FixedUpdate() // [testing] [debug]
-        //{
-        //    base.FixedUpdate();
-        //    if (!Stage.IsTraining)
-        //    {
-        //        if (IsCharging)
-        //        {
-
-        //            if (BargeLoadingChargeAnimation.activeSelf)
-        //            {
-        //                Debug.LogError($"{this} is doing the loading animation when it shouldn't be");
-        //            }
-
-        //            if (_timeSinceLastStartedCharging == 0)
-        //            {
-        //                _timeSinceLastStartedCharging += Time.deltaTime;
-        //            }
-        //            else
-        //            {
-        //                if (_timeSinceLastStartedCharging > 1)
-        //                {
-        //                    Debug.LogError($"{this} is charging for {_timeSinceLastStartedCharging} and that's longer than it should be");
-        //                }
-        //            }
-        //        }
-        //        else
-        //        {
-        //            _timeSinceLastStartedCharging = 0;
-        //            if (BargeChargeAnimation.activeSelf || BargeChargeImageAnimation.activeSelf)
-        //            {
-        //                Debug.LogError($"{this} is doing an animation when it shouldn't be");
-        //            }
-
-        //        }
-        //    }
-
-
-        //}
-        public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false) // [kill-method] 
+        public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false)
         {
             ResetCharge();
             base.Kill(killer, killerFleetShip, killerSavedSquad, endKill);
