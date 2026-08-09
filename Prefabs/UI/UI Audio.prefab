@@ -177,6 +177,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   ButtonClick: {fileID: 5695010259148089892}
   MenuMusic: {fileID: 2567005442644196323}
+  DeleteSquadSound: {fileID: 8300000, guid: 4a696d357b522cb4a8a4e7dfb81abd82, type: 3}
+  ErrorSound: {fileID: 8300000, guid: 1baa83f633ccaf54b841f4bf307a34af, type: 3}
+  EngineHumSound: {fileID: 8300000, guid: 8022db085626e7344ad8edc5312032c4, type: 3}
+  IntercomNotificationSound: {fileID: 8300000, guid: d0107bbafc4b7cf4c95ce20cc4c4e70f, type: 3}
+  SaveSound: {fileID: 8300000, guid: 317f4b54581184b4e9d4065aa619a764, type: 3}
 --- !u!1 &9042039081025905382
 GameObject:
   m_ObjectHideFlags: 0
