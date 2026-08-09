@@ -15,12 +15,14 @@ namespace Assets.Scripts.Entities.Projectiles
         public AudioSource BombReleaseSound;
         public AudioSource BombExplosionSound;
         private long _shooterFleetShipId;
+        private long _contactedShipRuntimeId;
 
         public void Setup(Level level, Weapon weapon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power, Ship contactedShip)
         {
             base.Setup(level, weapon, shooter, target, startingPosition, angle, range, power);
             ContactedShip = contactedShip;
             _shooterFleetShipId = FleetShip.Id;
+            _contactedShipRuntimeId = contactedShip.Id;
             transform.parent = ContactedShip.transform;
             _killSequenceTimer.Reuse(1.5f, KillSequence);
             Level.AddTimer(_killSequenceTimer);
@@ -35,12 +37,18 @@ namespace Assets.Scripts.Entities.Projectiles
             base.ClearData();
             ContactedShip = null;
             _shooterFleetShipId = 0;
+            _contactedShipRuntimeId = 0;
+        }
+
+        private bool HasOriginalContactedShip()
+        {
+            return ContactedShip != null && !ContactedShip.IsDead && ContactedShip.Id == _contactedShipRuntimeId;
         }
 
         public override void KillSequence()
         {
             Level.CancelTimer(_killSequenceTimer);
-            if (ContactedShip != null && !ContactedShip.IsDead)
+            if (HasOriginalContactedShip())
             {
                 if (!Level.Stage.IsTraining)
                 {
@@ -81,7 +89,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
         public void Damage()
         {
-            if (ContactedShip == null || ContactedShip.IsDead)
+            if (!HasOriginalContactedShip())
             {
                 return;
             }
@@ -100,6 +108,10 @@ namespace Assets.Scripts.Entities.Projectiles
         }
         protected override void FixedUpdate()
         {
+            if (!HasOriginalContactedShip())
+            {
+                Kill();
+            }
         }
     }
 }
