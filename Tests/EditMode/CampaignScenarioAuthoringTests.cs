@@ -107,6 +107,11 @@ namespace Bees.Tests.EditMode
             Assert.That(setup, Does.Not.Contain("timeLeft <= 0 || State.IsSideKilled(ConfigData.Configuration.AISide)"),
                 "Beenoculars is a timed evacuation defense, not an elimination shortcut.");
 
+            Assert.That(setup, Does.Contain("AlignTitania2HumanFleetToAuthoredStart"),
+                "Beenoculars must correct stale/custom persisted fleet anchors before presentation.");
+            Assert.That(_triggerSource, Does.Contain("Map.UserStartingPosition"));
+            Assert.That(_triggerSource, Does.Contain("CurrentLevelOptions.UserStartingPosition = authoredAnchor"));
+
             Assert.That(setup, Does.Contain("GetRange(12, 3)"));
             Assert.That(setup, Does.Contain("GetRange(15, 3)"));
             Assert.That(setup, Does.Contain("GetRange(18, 3)"));
@@ -120,13 +125,13 @@ namespace Bees.Tests.EditMode
             }
 
             Assert.That(setup, Does.Contain("AddTitania2BeeWave"));
-            Assert.That(_triggerSource, Does.Contain("FindTitania2SpawnPoint"));
-            Assert.That(_triggerSource, Does.Contain("Mathf.Lerp(min.x, max.x, xT)"));
-            Assert.That(_triggerSource, Does.Contain("Physics2D.OverlapCircle(candidate, obstacleClearance, ConfigData.ObstaclesLayerMask)"));
-            Assert.That(setup, Does.Not.Contain("new Vector2(400"));
-            Assert.That(setup, Does.Not.Contain("new Vector2(-400"));
-            Assert.That(setup, Does.Not.Contain("new Vector2(0, 420"));
-            Assert.That(setup, Does.Not.Contain("new Vector2(340, -380"));
+            Assert.That(_triggerSource, Does.Contain("GetTitania2OffMapEntry"));
+            Assert.That(_triggerSource, Does.Contain("const float outsideDistance = 80f"));
+            Assert.That(_triggerSource, Does.Contain("MaxX + outsideDistance"));
+            Assert.That(_triggerSource, Does.Contain("MinX - outsideDistance"));
+            Assert.That(_triggerSource, Does.Contain("MaxY + outsideDistance"));
+            Assert.That(_triggerSource, Does.Contain("MinY - outsideDistance"));
+            Assert.That(_triggerSource, Does.Contain("AddReinforcementSquads(new List<SavedSquad> { squads[i] }, spawnPoint, entryPoint)"));
 
             Assert.That(_triggerSource, Does.Contain("GetRange(26, 5)"));
             Assert.That(_triggerSource, Does.Contain("GetRange(31, 2)"));
