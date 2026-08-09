@@ -62,8 +62,6 @@ namespace Assets.Scripts.Levels
 
         public void RemoveShip(Ship ship)
         {
-            // Healing reservations use the ship's current runtime identity. Release them
-            // before this wrapper can enter the pool and receive a different Id.
             if (ship.Squad != null && ship.Squad.GetCommand() is Heal healCommand)
             {
                 healCommand.ShipBecameUnavailable(ship);
@@ -84,10 +82,44 @@ namespace Assets.Scripts.Levels
             Deadbodies.Add(body);
         }
 
+        public void CleanupRuntimeObjectsForReset()
+        {
+            // Neural-network ResetLevel bypasses SaveAndEnd. Tear down active transient
+            // objects here before ResetState clears the registries that own them.
+            foreach (Projectile projectile in Projectiles.ToList())
+            {
+                if (projectile != null && !projectile.IsDead)
+                {
+                    projectile.Kill();
+                }
+            }
+
+            foreach (Obstacle obstacle in Obstacles.ToList())
+            {
+                if (obstacle == null || obstacle.IsDead)
+                {
+                    continue;
+                }
+
+                switch (obstacle.ObstacleType)
+                {
+                    case ConfigData.ObstacleTypes.CollisionAsteroid:
+                        ((CollisionAsteroid)obstacle).Kill(true);
+                        break;
+                    case ConfigData.ObstacleTypes.MiningAsteroid:
+                        ((MiningAsteroid)obstacle).Kill(true);
+                        break;
+                    case ConfigData.ObstacleTypes.AsteroidPiece:
+                        ((AsteroidPiece)obstacle).Kill();
+                        break;
+                }
+            }
+
+            Release();
+        }
+
         public void Release()
         {
-            // A dead Ship wrapper remains authoritative for its in-flight projectiles.
-            // Keep it out of the pool until every active projectile has stopped using it.
             Ship[] ships = DrainReadyShips();
             Command[] commands = DrainReleaseQueue(CommandsToRelease);
             Squad[] squads = DrainReleaseQueue(SquadsToRelease);
@@ -125,9 +157,6 @@ namespace Assets.Scripts.Levels
         {
             foreach (Ship ship in ShipsToRelease)
             {
-                // Projectile.Kill historically leaves an entry behind when ShipIsDead is
-                // true. Once a projectile is dead or has been pooled/reused by another
-                // shooter, that reference no longer keeps this dead shooter alive.
                 ship.ProjectilesInFlight.RemoveWhere(projectile =>
                     projectile == null || projectile.IsDead || projectile.Shooter != ship);
             }
