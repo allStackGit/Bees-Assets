@@ -56,5 +56,30 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("ReleaseHealingReservation(ship);", hook);
             StringAssert.Contains("FinalizeIfAssignedShipsAreDone();", hook);
         }
+
+        [Test]
+        public void HealReusesFreedBeehiveSlotsBeforeFinalizing()
+        {
+            string healPath = Path.Combine(Application.dataPath, "Scripts", "Levels", "Commands", "Heal.cs");
+            string source = File.ReadAllText(healPath);
+
+            int assignMethod = source.IndexOf("private void AssignAvailableHealingSlots()");
+            int finalizeMethod = source.IndexOf("private void FinalizeIfAssignedShipsAreDone()");
+            int moveMethod = source.IndexOf("public void MoveToBeehives()");
+            Assert.That(assignMethod, Is.GreaterThanOrEqualTo(0));
+            Assert.That(finalizeMethod, Is.GreaterThan(assignMethod));
+            Assert.That(moveMethod, Is.GreaterThan(finalizeMethod));
+
+            string assign = source.Substring(assignMethod, finalizeMethod - assignMethod);
+            string finalize = source.Substring(finalizeMethod, moveMethod - finalizeMethod);
+
+            StringAssert.Contains("_shipsThatNeedBeehive.Dequeue()", assign);
+            StringAssert.Contains("_shipsAndBeehives[_ship.Id] = _beehive;", assign);
+            int reassign = finalize.IndexOf("AssignAvailableHealingSlots();");
+            int completionCheck = finalize.IndexOf("ShipsWaitingToHeal.Count == 0");
+            Assert.That(reassign, Is.GreaterThanOrEqualTo(0));
+            Assert.That(completionCheck, Is.GreaterThan(reassign));
+            StringAssert.Contains("_shipsThatNeedBeehive == null || _shipsThatNeedBeehive.Count == 0", finalize);
+        }
     }
 }
