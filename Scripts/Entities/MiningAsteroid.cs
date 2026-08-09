@@ -3,6 +3,7 @@ using Assets.Scripts.Levels;
 using Assets.Scripts.Levels.Commands;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Entities
@@ -32,7 +33,6 @@ namespace Assets.Scripts.Entities
         private Mining _command;
         public void MiningCollision(Collider2D collider)
         {
-            //Debug.Log($"{Name} collided");
             _collidingThing = collider.gameObject;
             if (_collidingThing.CompareTag("Ship"))
             {
@@ -43,16 +43,12 @@ namespace Assets.Scripts.Entities
 
                     if (!_command.ShipsCurrentlyMining.Contains(_miningShip) && _command.TargetAstroid == this)
                     {
-                        //Debug.Log($"{_miningShip.Name} is mining {Name}");
                         if (!SquadsMining.Contains(_miningShip.Squad))
                         {
                             SquadsMining.Add(_miningShip.Squad);
-
                         }
                         _command.FoundAsteroid(_miningShip);
-
                     }
-
                 }
             }
         }
@@ -64,27 +60,25 @@ namespace Assets.Scripts.Entities
                 IsDead = true;
                 if (!endKill)
                 {
-                    SquadsMining.ForEach((squad) =>
+                    // Command finalization removes squads from SquadsMining, so iterate
+                    // a snapshot rather than mutating the list currently being enumerated.
+                    SquadsMining.ToList().ForEach((squad) =>
                     {
-                        if (!squad.IsDead && squad.HasCommand)
+                        if (!squad.IsDead && squad.HasCommand && squad.GetCommand().CommandType == ConfigData.CommandTypes.Mining)
                         {
                             squad.GetCommand().SetFinalize("Mining asteroid was destroyed");
-
                         }
                     });
                 }
-                //Debug.Log($"Killing mining asteroid {Name} and returning to pool. endkill: {endKill}");
                 Level.State.RemoveObstacle(this);
                 Level.State.MiningAsteroids.Remove(this);
                 Level.State.MiningAsteroidsToRelease.Add(this);
-                //Stage.Pool.ReturnMiningAsteroidToPool(this);
                 gameObject.SetActive(false);
             }
             else
             {
                 Debug.LogError($"Tried to kill already dead mining asteroid {Name}");
             }
-
         }
     }
 }
