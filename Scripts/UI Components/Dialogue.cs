@@ -26,6 +26,8 @@ namespace Assets.Scripts.UI_Components
             _playErrorSoundOnShow = playErrorSoundOnShow;
             // SquadSavingStatus is currently the only status-only Dialogue. Treat a Dialogue
             // with no actions/buttons as completion feedback rather than a clickable prompt.
+            // Keep this at the UI-success boundary instead of SaveSquadData/SaveFleetData:
+            // those persistence methods are also used by automatic campaign saves.
             _playSaveSoundOnShow = buttonLabels.Count == 0 && buttonActions.Count == 0;
 
             _dialogue = GameObject.Instantiate(prefab);
