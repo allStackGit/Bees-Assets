@@ -25,8 +25,6 @@ namespace Assets.Scripts.Levels.Commands
         private int _healingTimerCount;
         public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, List<Beehive> beehives)
         {
-            //Debug.Log($"Executing the Heal command #{commandOutcomeId} for {GetSquad().Name}. There are {Stage.Pool.HealCommandPool.CountAll} heal commands in the pool " +
-            //    $"and {Stage.DebugLogger.__HivemindCommands} hivemind commands since startup");
             TargetBeehives = beehives.Where((b) => b != null && !b.IsDead).ToList();
             if (TargetBeehives.Count > 0)
             {
@@ -46,7 +44,6 @@ namespace Assets.Scripts.Levels.Commands
                 {
                     _beehive = TargetBeehives[_index];
                     _spotsAvailable = 4 - _beehive.ShipsHealingHere.Count;
-
 
                     for (_indexJ = 0; _indexJ < _spotsAvailable && _shipsThatNeedBeehive.Count > 0; _indexJ++)
                     {
@@ -73,16 +70,11 @@ namespace Assets.Scripts.Levels.Commands
                     TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
                     Level.AddTimer(TimeoutTimer);
                 }
-
-
-
             }
             else
             {
-                //Debug.Log($"Finalizing the Heal command #{commandOutcomeId} for {GetSquad().Name} because there are no beehives.");
                 SetFinalize("The beehives don't exist anymore, or there were no beehives around");
             }
-
         }
 
         public override void ClearData()
@@ -101,7 +93,6 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (!GetSquad().IsDead)
             {
-               
                 TargetBeehives = TargetBeehives.Where((b) => b != null && !b.IsDead).ToList();
                 if (TargetBeehives.Count > 0)
                 {
@@ -117,7 +108,6 @@ namespace Assets.Scripts.Levels.Commands
         private ScaledTimer _healingTimer = new ScaledTimer();
         public void StartHealingTimer()
         {
-            //Debug.Log($"Starting healing timer for {GetSquad().Name}");
             IsHealing = true;
             _healingTimer.Reuse(1, HealShips, true);
             Level.AddTimer(_healingTimer);
@@ -145,6 +135,17 @@ namespace Assets.Scripts.Levels.Commands
         public bool IsShipActivelyHealing(Ship ship)
         {
             return ship != null && ShipsHealing.Contains(ship);
+        }
+
+        public void ShipBecameUnavailable(Ship ship)
+        {
+            if (ship == null || IsDead)
+            {
+                return;
+            }
+
+            ReleaseHealingReservation(ship);
+            FinalizeIfAssignedShipsAreDone();
         }
 
         private void ReleaseHealingReservation(Ship ship)
@@ -186,7 +187,6 @@ namespace Assets.Scripts.Levels.Commands
                     continue;
                 }
 
-                //Debug.Log($"Moving {_ship.Name} to {_beehive.Name} to heal");
                 _ship.MoveToPoint(_beehive.GetPosition());
             }
 
