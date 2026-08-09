@@ -5,6 +5,8 @@
 - Current intended sequence is 0 Anomaly, 1 Reinforcements, 2 Pushback, 3 Bluer Pastures, 4 Seize the Means, 5 Of Production, 6 Pressing Forward, 7 Minesweeper, 8 Beenoculars, then the currently scripted Uranus arc 9-11.
 - `SaveData/` is a local/testing snapshot, not authoritative campaign design. `Scripts/Data/campaign_levels.json` is also stale relative to the current catalog. Before end-to-end campaign qualification, verify the actual server-backed `campaign_levels_data` against `CampaignMissionCatalog`/`LevelIntro`.
 - The campaign is persistent attrition/resource warfare: human losses persist, Bee losses/veterans persist, resource extraction changes later strength, and retreat can preserve strategic value. Do not test/refactor missions as independent RTS scenarios.
+- Some failure branches intentionally advance twice because the first advance skips a conditional mission: Seize the Means failure skips Of Production, and On the Offensive failure/no Factory skips On the Defensive. Do not "fix" these as duplicate progression without checking `CAMPAIGN_DESIGN_GUIDE.md`.
+- Player campaign mineral rewards must be collected only from `Configuration.UserSide` squads. AI mining is strategic enemy state and must not be added to `UserProgressData.MinedTSV` or `State.PlayerMineralsReceived`.
 
 ## Minesweeper
 
@@ -26,5 +28,8 @@
 
 ## Mission-source organization
 
-- New/actively developed mission code should live in mission- or planet-specific `Level` partial files rather than expanding `LeveLTriggers.cs` further.
-- Legacy trigger methods in the monolith should be migrated one mission/planet at a time, with catalog routing switched to the focused implementation before legacy deletion.
+- `LeveLTriggers.cs` is a compatibility stub. Do not put active mission logic back into it.
+- Shared campaign behavior/endings live in focused `Level.Campaign.*` partial files; Titania missions keep their dedicated source files.
+- New/actively developed mission code should live in mission- or planet-specific `Level` partial files. If a planet file becomes large enough that narrow edits are unsafe, split again by mission rather than recreating a monolith.
+- Legacy trigger methods should be migrated only after catalog/external references are checked; obsolete duplicate implementations should be deleted rather than copied into new partials.
+- Tooltip-disabled branches must bypass tutorial UI and any pause/unpause callbacks owned by that tutorial. Setting a "tutorial seen" flag is not sufficient if the UI objects are still instantiated or the mission remains paused.
