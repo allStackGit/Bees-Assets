@@ -14,19 +14,39 @@ namespace Assets.Scripts.Entities.Ships
         private int[] _changablePixels;
         private float _healthPercent;
         private readonly ScaledTimer _showShipStatsTimer = new ScaledTimer();
+        private readonly List<Sprite> _baseColorSprites = new List<Sprite>();
+
+        private void EnsureBaseColorSprites()
+        {
+            if (_baseColorSprites.Count == OriginalColoredPrefabs.Count)
+            {
+                return;
+            }
+
+            _baseColorSprites.Clear();
+            foreach (GameObject prefab in OriginalColoredPrefabs)
+            {
+                _baseColorSprites.Add(prefab.GetComponent<SpriteRenderer>().sprite);
+            }
+        }
 
         public virtual void SetColor()
         {
+            EnsureBaseColorSprites();
+            ColoredPrefabs = OriginalColoredPrefabs.ToList();
+            OriginalSprites.Clear();
+            OriginalSprites.AddRange(_baseColorSprites);
+
             if (Squad.HasCustomColor)
             {
-                OriginalSprites.Clear();
-                ColoredPrefabs = OriginalColoredPrefabs.ToList();
                 _colors = ConfigData.ChangeableShipColors.GetValueOrDefault(ShipType);
                 _tempIndex = 0;
                 ColoredPrefabs.ForEach(prefab =>
                 {
-                    _prefabSprite = prefab.GetComponent<SpriteRenderer>().sprite;
-                    OriginalSprites.Add(_prefabSprite);
+                    // Always recolor from the immutable prefab-era baseline. Pooled ships can
+                    // move between squads/colors, so the currently displayed sprite may already
+                    // be recolored from an earlier lifecycle.
+                    _prefabSprite = _baseColorSprites[_tempIndex];
                     _setColorSize = new Vector2Int(_prefabSprite.texture.width, _prefabSprite.texture.height);
                     _hasLoadedSprite = false;
                     if (FleetShip.HasCachedSprite)
@@ -47,12 +67,12 @@ namespace Assets.Scripts.Entities.Ships
                     _tempIndex++;
                 });
             }
-            else if (OriginalSprites.Count > 0)
+            else
             {
                 _tempIndex = 0;
                 ColoredPrefabs.ForEach(prefab =>
                 {
-                    prefab.GetComponent<SpriteRenderer>().sprite = OriginalSprites[_tempIndex];
+                    prefab.GetComponent<SpriteRenderer>().sprite = _baseColorSprites[_tempIndex];
                     _tempIndex++;
                 });
             }
