@@ -123,7 +123,9 @@ namespace Assets.Scripts.Entities.Ships
         protected override void OnTriggerExit2D(Collider2D collider)
         {
             _collidingThing = collider.gameObject;
-            if (TouchingShip != null  && _collidingThing.CompareTag("Ship") && Collider.IsTouching(collider))
+            // OnTriggerExit2D is itself the evidence that contact ended. Requiring
+            // Collider.IsTouching here prevents stale TouchingShip state from clearing.
+            if (TouchingShip != null && _collidingThing.CompareTag("Ship"))
             {
                 _collidingShip = _collidingThing.GetComponent<Ship>();
                 if (_collidingShip == TouchingShip)
