@@ -66,7 +66,7 @@ namespace Assets.Scripts.Entities.Ships
             _targetOldTSV = target.Tsv;
             target.Health -= math.min(power, target.Health);
             target.Tsv = Utilities.CalculateTsv(target);
-            _targetTSVChange = target.Tsv - _targetOldTSV;
+            _targetTSVChange = target.Tsv - _targetOldTsv;
             LogHitStats(attacker, attackerFleetShip, attackerSavedSquad, target, target.Squad, -_targetTSVChange);
 
             if (target.Health == 0)
@@ -222,22 +222,35 @@ namespace Assets.Scripts.Entities.Ships
 
         public Ship SetAndGetTargetEnemy()
         {
+            Command command = Squad?.GetCommand();
+            if (command == null || command.EnemySquad == null || command.EnemySquad.IsDead)
+            {
+                TargetEnemyShipToFollow = null;
+                return null;
+            }
+
             _tempIndex = 0;
-            _maxLoops = math.max(Squad.GetCommand().EnemySquad.GetShips().Count, 10);
+            _maxLoops = math.max(command.EnemySquad.GetShips().Count, 10);
             while (!HasTargetEnemyShipToFollow && _tempIndex < _maxLoops)
             {
                 _tempIndex++;
-                if (Squad.GetCommand().TargetingQueue.Count == 0)
+                if (command.TargetingQueue.Count == 0)
                 {
-                    if (Squad.GetCommand().EnemySquad.IsGrowingSquad)
-                        Squad.GetCommand().OriginalQueue = new Queue<Ship>(Squad.GetCommand().MakeTargetingQueue());
-                    Squad.GetCommand().TargetingQueue = new Queue<Ship>(Squad.GetCommand().OriginalQueue);
+                    command.OriginalQueue = new Queue<Ship>(command.MakeTargetingQueue());
+                    command.TargetingQueue = new Queue<Ship>(command.OriginalQueue);
+                    if (command.TargetingQueue.Count == 0)
+                    {
+                        return null;
+                    }
                 }
-                TargetEnemyShipToFollow = Squad.GetCommand().TargetingQueue.Dequeue();
-                if (TargetEnemyShipToFollow.IsDead)
-                    Squad.GetCommand().OriginalQueue = new Queue<Ship>(Squad.GetCommand().MakeTargetingQueue());
+
+                TargetEnemyShipToFollow = command.TargetingQueue.Dequeue();
+                if (TargetEnemyShipToFollow == null || TargetEnemyShipToFollow.IsDead)
+                {
+                    TargetEnemyShipToFollow = null;
+                    command.OriginalQueue = new Queue<Ship>(command.MakeTargetingQueue());
+                }
             }
-            if (_tempIndex == _maxLoops) Debug.LogException(new Exception("Hit loop limit for SetAndGetTargetEnemy"));
             return TargetEnemyShipToFollow;
         }
     }
