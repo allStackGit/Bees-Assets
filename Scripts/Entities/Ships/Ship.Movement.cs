@@ -114,6 +114,7 @@ namespace Assets.Scripts.Entities.Ships
 
         public void NearbyAsteroidDoubleCheck()
         {
+            NearbyAsteroids.RemoveAll(asteroid => asteroid == null || asteroid.IsDead);
             if (NearbyAsteroids.Count > 0)
             {
                 MoveToPoint(FinalDestination);
