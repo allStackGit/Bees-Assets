@@ -8,6 +8,7 @@ namespace Assets.Scripts.Levels
 {
     public partial class Level
     {
+        private static readonly Vector2 Titania2Center = new Vector2(-32f, 55f);
         private bool _titania2Resolved;
         private readonly List<ScaledTimer> _titania2MissionTimers = new List<ScaledTimer>();
 
@@ -19,7 +20,6 @@ namespace Assets.Scripts.Levels
         public void Titania2BeenocularsCampaign()
         {
             const float survivalDuration = 450f;
-            Vector2 centerOfTitania = new Vector2(-32, 55);
 
             _titania2Resolved = false;
             _titania2MissionTimers.Clear();
@@ -39,7 +39,7 @@ namespace Assets.Scripts.Levels
                 Stage.Menus.TogglePausePanel();
                 Stage.EnablePlayerControl();
 
-                HumanTarget titania = CreateHumanTarget(centerOfTitania);
+                HumanTarget titania = CreateHumanTarget(Titania2Center);
 
                 TMP_Text clockText = Stage.Menus.Clock.transform.GetChild(0).GetComponent<TMP_Text>();
                 Stage.Menus.Clock.SetActive(true);
@@ -107,21 +107,24 @@ namespace Assets.Scripts.Levels
                 AddTitania2Timer(survivalClock);
 
                 // Initial pressure establishes that Titania can be approached from every side.
-                AddReinforcementSquads(new List<SavedSquad>() {
+                // These are map-relative entry lanes rather than world coordinates; the old
+                // draft used +/-340 to +/-420 on a 512-unit map and reinforcement placement
+                // intentionally bypasses PositionSquads' normal bounds correction.
+                AddTitania2BeeWave(new List<SavedSquad>() {
                     ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4, true, true),
-                }, new Vector2(340, 200), new Vector2(300, 160));
+                }, 0.85f, 0.55f);
 
-                AddReinforcementSquads(new List<SavedSquad>() {
+                AddTitania2BeeWave(new List<SavedSquad>() {
                     ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true),
-                }, new Vector2(-340, 220), new Vector2(-300, 180));
+                }, -0.85f, 0.65f);
 
-                AddReinforcementSquads(new List<SavedSquad>() {
+                AddTitania2BeeWave(new List<SavedSquad>() {
                     ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
-                }, new Vector2(120, -340), new Vector2(80, -300));
+                }, 0.45f, -0.9f);
 
-                AddReinforcementSquads(new List<SavedSquad>() {
+                AddTitania2BeeWave(new List<SavedSquad>() {
                     ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 2, true, true),
-                }, new Vector2(-120, -360), new Vector2(-80, -320));
+                }, -0.45f, -0.9f);
 
                 Stage.ActivateHiveMind = true;
                 SetupHivemind();
@@ -129,10 +132,10 @@ namespace Assets.Scripts.Levels
                 ScaledTimer wave1 = new ScaledTimer(60f, () =>
                 {
                     if (_titania2Resolved) return;
-                    AddReinforcementSquads(new List<SavedSquad>() {
+                    AddTitania2BeeWave(new List<SavedSquad>() {
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6, true, true),
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true)
-                    }, new Vector2(400, 0), new Vector2(340, 20));
+                    }, 0.95f, 0f);
                     AddReinforcementsToHivemindCommandQueue();
                 });
                 AddTitania2Timer(wave1);
@@ -140,10 +143,10 @@ namespace Assets.Scripts.Levels
                 ScaledTimer wave2 = new ScaledTimer(120f, () =>
                 {
                     if (_titania2Resolved) return;
-                    AddReinforcementSquads(new List<SavedSquad>() {
+                    AddTitania2BeeWave(new List<SavedSquad>() {
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4, true, true)
-                    }, new Vector2(-400, 0), new Vector2(-340, 20));
+                    }, -0.95f, 0f);
                     AddReinforcementsToHivemindCommandQueue();
                 });
                 AddTitania2Timer(wave2);
@@ -151,23 +154,22 @@ namespace Assets.Scripts.Levels
                 ScaledTimer wave3 = new ScaledTimer(210f, () =>
                 {
                     if (_titania2Resolved) return;
-                    AddReinforcementSquads(new List<SavedSquad>() {
+                    AddTitania2BeeWave(new List<SavedSquad>() {
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 4, true, true),
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 8, true, true)
-                    }, new Vector2(0, 420), new Vector2(0, 360));
+                    }, 0f, 0.95f);
                     AddReinforcementsToHivemindCommandQueue();
                 });
                 AddTitania2Timer(wave3);
 
-                // The original draft stopped escalating at 3:30 despite a 7:30 objective.
                 // Continue pressure through the second half instead of leaving a four-minute lull.
                 ScaledTimer wave4 = new ScaledTimer(300f, () =>
                 {
                     if (_titania2Resolved) return;
-                    AddReinforcementSquads(new List<SavedSquad>() {
+                    AddTitania2BeeWave(new List<SavedSquad>() {
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 6, true, true),
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 6, true, true)
-                    }, new Vector2(340, -380), new Vector2(280, -320));
+                    }, 0.75f, -0.95f);
                     AddReinforcementsToHivemindCommandQueue();
                 });
                 AddTitania2Timer(wave4);
@@ -175,14 +177,14 @@ namespace Assets.Scripts.Levels
                 ScaledTimer wave5 = new ScaledTimer(375f, () =>
                 {
                     if (_titania2Resolved) return;
-                    AddReinforcementSquads(new List<SavedSquad>() {
+                    AddTitania2BeeWave(new List<SavedSquad>() {
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 4, true, true),
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 8, true, true)
-                    }, new Vector2(360, 360), new Vector2(300, 300));
-                    AddReinforcementSquads(new List<SavedSquad>() {
+                    }, 0.8f, 0.85f);
+                    AddTitania2BeeWave(new List<SavedSquad>() {
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 3, true, true),
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 6, true, true)
-                    }, new Vector2(-360, -360), new Vector2(-300, -300));
+                    }, -0.8f, -0.85f);
                     AddReinforcementsToHivemindCommandQueue();
                 });
                 AddTitania2Timer(wave5);
@@ -193,6 +195,61 @@ namespace Assets.Scripts.Levels
                     "Titania 2 Losing condition"));
 
             }, "Titania 2 Start Level"));
+        }
+
+        private void AddTitania2BeeWave(List<SavedSquad> squads, float normalizedX, float normalizedY)
+        {
+            Vector2 spawnPoint = FindTitania2SpawnPoint(normalizedX, normalizedY);
+            // Hive Mind/server behavior owns the destination. Passing Vector2.zero prevents
+            // the client from issuing an unnecessary pre-Hive-Mind move command.
+            AddReinforcementSquads(squads, spawnPoint, Vector2.zero);
+        }
+
+        /// <summary>
+        /// Resolves a desired edge lane to a point that is inside the current map and not
+        /// immediately inside authored obstacle geometry. normalizedX/Y are -1..1 where
+        /// +/-1 represent the corresponding map edge.
+        /// </summary>
+        private Vector2 FindTitania2SpawnPoint(float normalizedX, float normalizedY)
+        {
+            const float boundaryInset = 32f;
+            const float obstacleClearance = 32f;
+            const float scanStep = 24f;
+            const int maxScanSteps = 8;
+
+            float xT = (Mathf.Clamp(normalizedX, -1f, 1f) + 1f) * 0.5f;
+            float yT = (Mathf.Clamp(normalizedY, -1f, 1f) + 1f) * 0.5f;
+            Vector2 min = new Vector2(MinX + boundaryInset, MinY + boundaryInset);
+            Vector2 max = new Vector2(MaxX - boundaryInset, MaxY - boundaryInset);
+            Vector2 desired = new Vector2(
+                Mathf.Lerp(min.x, max.x, xT),
+                Mathf.Lerp(min.y, max.y, yT));
+
+            Physics2D.SyncTransforms();
+            Vector2 candidate = desired;
+            for (int step = 0; step <= maxScanSteps; step++)
+            {
+                if (Physics2D.OverlapCircle(candidate, obstacleClearance, ConfigData.ObstaclesLayerMask) == null)
+                {
+                    return candidate;
+                }
+
+                candidate = Vector2.MoveTowards(candidate, Titania2Center, scanStep);
+                candidate.x = Mathf.Clamp(candidate.x, min.x, max.x);
+                candidate.y = Mathf.Clamp(candidate.y, min.y, max.y);
+            }
+
+            // The authored Map starting position is the safest fallback because it is intended
+            // to receive a fleet. Prefer it to knowingly spawning a reinforcement in a wall.
+            Vector2 fallback = StartingPositions[ConfigData.Configuration.AISide - 1];
+            if (Physics2D.OverlapCircle(fallback, obstacleClearance, ConfigData.ObstaclesLayerMask) == null)
+            {
+                Debug.LogWarning($"Beenoculars entry lane {normalizedX},{normalizedY} was blocked; using AI starting position {fallback}.");
+                return fallback;
+            }
+
+            Debug.LogWarning($"Beenoculars could not find a fully clear reinforcement entry near {desired}; using the in-bounds candidate {candidate}.");
+            return candidate;
         }
 
         private void AddTitania2Timer(ScaledTimer timer)
