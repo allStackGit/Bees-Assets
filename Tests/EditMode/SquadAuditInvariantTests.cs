@@ -45,6 +45,14 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void NearbyEnemyInclusionUsesSquadIdentityInsteadOfUnityTruthiness()
+        {
+            string method = ExtractMethodBody(_squadSource, "GetPotentialEnemies");
+            Assert.That(method, Does.Contain("potentialEnemy.Squad != target"));
+            Assert.That(method, Does.Not.Contain("!potentialEnemy.Squad == target"));
+        }
+
+        [Test]
         public void ComparativeHealthUsesFractionalShipHealthAndHandlesEmptyLists()
         {
             Type squadType = RuntimeAssembly.GetType("Assets.Scripts.Levels.Squad");
