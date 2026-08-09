@@ -29,5 +29,15 @@ namespace Bees.Tests.EditMode
             Assert.That(deadCheck, Is.GreaterThan(add));
             StringAssert.Contains("_projectile.ShipIsDead = true;", source.Substring(deadCheck));
         }
+
+        [Test]
+        public void SplitChildrenDoNotReleaseAReservationTheyNeverCreated()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Entities", "Projectiles", "SplitterShot.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("_projectile.Setup(Level, Weapon, Shooter, null,", source);
+            StringAssert.DoesNotContain("_projectile.Setup(Level, Weapon, Shooter, Target,", source);
+        }
     }
 }
