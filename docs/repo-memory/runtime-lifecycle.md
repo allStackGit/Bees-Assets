@@ -61,7 +61,7 @@
 
 ## Healing, mining, retreat
 
-- Beehive reservation state is distinct from physically healing/docked state. Only damaged ships reserve slots; arrival transitions waiting -> healing exactly once; death/full-heal/hive loss releases the reservation immediately.
+- Beehive reservation state is distinct from physically healing/docked state. Only damaged ships reserve slots; arrival transitions waiting -> healing exactly once; death/full-heal/hive loss releases the reservation immediately. Damaged ships that could not get an initial slot remain pending, and newly freed slots must be reassigned before a `Heal` command is allowed to finalize.
 - Destroying a Beehive may affect ships actually inside the healing state, not ships merely travelling toward a reserved slot.
 - Mining accepts only live mining-capable ships. A non-mining escort touching the asteroid must never inflate extraction.
 - Mining resource allocation must conserve the exact amount removed from the asteroid; integer division remainders must be distributed rather than silently lost.
