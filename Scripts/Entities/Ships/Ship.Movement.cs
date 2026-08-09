@@ -181,8 +181,8 @@ namespace Assets.Scripts.Entities.Ships
 
         public void TryToFindPathAgain()
         {
-            MoveToPoint(PathfindingDestination);
             _tryingToFindPathAgain = false;
+            MoveToPoint(PathfindingDestination);
         }
 
         private void CheckForDirectPath()
@@ -381,6 +381,8 @@ namespace Assets.Scripts.Entities.Ships
         public void StopMoving(string reason = null)
         {
             if (!IsMobile) return;
+            Level.CancelTimer(_tryToFindPathAgainTimer);
+            _tryingToFindPathAgain = false;
             if (IsPathfinding)
             {
                 _hasPendingPathfindingDestination = false;
