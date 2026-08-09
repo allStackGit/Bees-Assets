@@ -79,8 +79,17 @@ namespace Bees.Tests.EditMode
                 Assert.That(loop.clip, Is.Not.Null);
                 Assert.That(intro.loop, Is.False);
                 Assert.That(loop.loop, Is.True);
-                Assert.That(intro.clip.length, Is.EqualTo(introEnd).Within(2f / 44100f));
-                Assert.That(loop.clip.length, Is.EqualTo(loopEnd - introEnd).Within(2f / 44100f));
+
+                int expectedIntroSamples = Mathf.RoundToInt(introEnd * 44100f);
+                int expectedLoopEndSamples = Mathf.RoundToInt(loopEnd * 44100f);
+                Assert.That(intro.clip.samples, Is.EqualTo(expectedIntroSamples));
+                Assert.That(loop.clip.samples, Is.EqualTo(expectedLoopEndSamples - expectedIntroSamples));
+
+                // AudioClip.length is an approximate floating-point presentation of the
+                // sample count, so keep the musical contract sample-exact and only use a
+                // millisecond-level sanity check for the reported duration.
+                Assert.That(intro.clip.length, Is.EqualTo(introEnd).Within(0.001f));
+                Assert.That(loop.clip.length, Is.EqualTo(loopEnd - introEnd).Within(0.001f));
                 Assert.That(intro.transform.parent, Is.EqualTo(gameObject.transform));
                 Assert.That(loop.transform.parent, Is.EqualTo(gameObject.transform));
             }
