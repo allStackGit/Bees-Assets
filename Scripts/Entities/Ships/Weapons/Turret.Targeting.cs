@@ -36,15 +36,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         public void TryToFindAsteroidTarget()
         {
-            if (Ship.NearbyAsteroids.Count > 0)
-            {
-                TargetAsteroid = Ship.NearbyAsteroids[0];
-                HasTargetAsteroid = true;
-            }
-            else
-            {
-                HasTargetAsteroid = false;
-            }
+            TargetAsteroid = Ship.NearbyAsteroids.FirstOrDefault(asteroid => asteroid != null && !asteroid.IsDead);
+            HasTargetAsteroid = TargetAsteroid != null;
         }
 
         protected void SetTargetShipNull()
