@@ -93,9 +93,6 @@ namespace Assets.Scripts.Entities.Projectiles
             }
 
             RemoveDamageSentEntry();
-            // A dead shooter wrapper is deliberately retained until its projectiles finish.
-            // Release this ownership at the actual projectile lifecycle boundary rather than
-            // leaving a stale entry for GameState.Release to discover later.
             Shooter?.ProjectilesInFlight.Remove(this);
             IsDead = true;
             Level.State.RemoveProjectile(this);
@@ -156,13 +153,26 @@ namespace Assets.Scripts.Entities.Projectiles
 
         protected virtual void FixedUpdate()
         {
+            if (IsDead)
+            {
+                return;
+            }
+
             if (CollidingQueue.Count > 0)
             {
                 ShipCollision(CollidingQueue.Dequeue());
+                if (IsDead)
+                {
+                    return;
+                }
             }
             if (CollidingObstacleQueue.Count > 0)
             {
                 ContactObstacle(CollidingObstacleQueue.Dequeue());
+                if (IsDead)
+                {
+                    return;
+                }
             }
             if (ShipIsDead && DistanceToPoint(StartingPosition) > Range)
             {
