@@ -31,7 +31,8 @@ namespace Bees.Tests.EditMode
         [SetUp]
         public void SetUp()
         {
-            _squadSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Squad.cs"));
+            _squadSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Squad.cs")) +
+                File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Squad.Combat.cs"));
             _strikerSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Striker.cs"));
             _bargeSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Barge.cs"));
             _chargingBarSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "ChargingBar.cs"));
