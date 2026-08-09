@@ -30,5 +30,17 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("status.Ship == ship", method);
             StringAssert.Contains("entry.Ship == ship", method);
         }
+
+        [Test]
+        public void CarrierDeathCleansReferencesForItsOwnSide()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Carrier.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("Level.State.GetShips(Side)", source);
+            StringAssert.DoesNotContain("Level.State.GetHumanShips()", source);
+            StringAssert.Contains(".Where(ship => ship.Carrier == this)", source);
+            StringAssert.Contains("carrierShip.Carrier = null;", source);
+        }
     }
 }
