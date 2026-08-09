@@ -32,6 +32,7 @@ namespace Assets.Scripts.Levels.Commands
         public override void ClearData()
         {
             base.ClearData();
+            CommandFrequency = 3f;
             _gotToEnemy = false;
             _hasSetIdealDistance = false;
             _idealDistance = 0;
