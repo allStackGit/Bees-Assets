@@ -89,9 +89,16 @@ namespace Assets.Scripts.Levels.Commands
             }
         }
 
-        private void SendShipToTarget(Ship ship)
+        private bool SendShipToTarget(Ship ship)
         {
-            ship.MoveToPoint(ship.SetAndGetTargetEnemy().GetPosition());
+            Ship target = ship.SetAndGetTargetEnemy();
+            if (target == null)
+            {
+                SetFinalize("No more enemy ships to target");
+                return false;
+            }
+            ship.MoveToPoint(target.GetPosition());
+            return true;
         }
         private bool HaveAnyShipsFinished(List<Barge> ships)
         {
@@ -109,48 +116,51 @@ namespace Assets.Scripts.Levels.Commands
         }
 
         private List<Barge> _timer_barges;
+        private int _timer_index;
 
         private void Timer()
         {
-            if (!GetSquad().IsDead)
+            if (IsDead || GetSquad().IsDead)
             {
-                if (!EnemySquad.IsDead)
-                {
-                    _timer_barges = GetSquad().GetShips().Select((ship) => (Barge)ship).ToList();
-                    _timer_barges.ForEach((barge) =>
-                    {
-                        if (ShouldShipPursueTarget(barge))
-                        {
-                            if (HasTargetsWithinChargingRange(barge))
-                            {
-                                if (!ChargingShips.Contains(barge))
-                                {
-                                    Debug.Log($"Barge is charging after {barge.Charge.TargetShip} which is within range");
-                                    ChargingShips.Add(barge);
-                                    IsCharging = true;
-                                    StartCoroutine(barge.ChargeForward(barge.Charge.TargetShip));
-                                }
-                            }
-                            else
-                            {
-                                SendShipToTarget(barge);
-                            }
-                        }
-                        else if (!barge.Charge.HasTargetShip)
-                        {
-                            GetTargetShip(barge);
-                        }
-                    });
+                return;
+            }
 
-                    if (HaveAnyShipsFinished(_timer_barges))
+            if (EnemySquad.IsDead)
+            {
+                SetFinalize("The enemy squad is gone or dead");
+                return;
+            }
+
+            _timer_barges = GetSquad().GetShips().Select((ship) => (Barge)ship).ToList();
+            for (_timer_index = 0; _timer_index < _timer_barges.Count && !IsDead; _timer_index++)
+            {
+                Barge barge = _timer_barges[_timer_index];
+                if (ShouldShipPursueTarget(barge))
+                {
+                    if (HasTargetsWithinChargingRange(barge))
                     {
-                        SetFinalize("Completed charging run");
+                        if (!ChargingShips.Contains(barge))
+                        {
+                            Debug.Log($"Barge is charging after {barge.Charge.TargetShip} which is within range");
+                            ChargingShips.Add(barge);
+                            IsCharging = true;
+                            StartCoroutine(barge.ChargeForward(barge.Charge.TargetShip));
+                        }
+                    }
+                    else if (!SendShipToTarget(barge))
+                    {
+                        break;
                     }
                 }
-                else
+                else if (!barge.Charge.HasTargetShip)
                 {
-                    SetFinalize("The enemy squad is gone or dead");
+                    GetTargetShip(barge);
                 }
+            }
+
+            if (!IsDead && HaveAnyShipsFinished(_timer_barges))
+            {
+                SetFinalize("Completed charging run");
             }
         }
 
