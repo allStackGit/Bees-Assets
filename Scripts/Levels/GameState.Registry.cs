@@ -80,7 +80,7 @@ namespace Assets.Scripts.Levels
         public void Release()
         {
             // A dead Ship wrapper remains authoritative for its in-flight projectiles.
-            // Keep it out of the pool until every projectile has released that reference.
+            // Keep it out of the pool until every active projectile has stopped using it.
             Ship[] ships = DrainReadyShips();
             Command[] commands = DrainReleaseQueue(CommandsToRelease);
             Squad[] squads = DrainReleaseQueue(SquadsToRelease);
@@ -116,6 +116,15 @@ namespace Assets.Scripts.Levels
 
         private Ship[] DrainReadyShips()
         {
+            foreach (Ship ship in ShipsToRelease)
+            {
+                // Projectile.Kill historically leaves an entry behind when ShipIsDead is
+                // true. Once a projectile is dead or has been pooled/reused by another
+                // shooter, that reference no longer keeps this dead shooter alive.
+                ship.ProjectilesInFlight.RemoveWhere(projectile =>
+                    projectile == null || projectile.IsDead || projectile.Shooter != ship);
+            }
+
             Ship[] ready = ShipsToRelease.Where(ship => ship.ProjectilesInFlight.Count == 0).ToArray();
             if (ready.Length > 0)
             {
