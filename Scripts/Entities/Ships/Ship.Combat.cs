@@ -213,7 +213,9 @@ namespace Assets.Scripts.Entities.Ships
             if (Squad.GetShips().Count == 0) Squad.Kill(endKill);
             else Squad.SetOffsets();
             Level.CancelTimer(_asteroidDoubleCheckTimer);
+            Level.CancelTimer(_tryToFindPathAgainTimer);
             Level.CancelTimer(_combatTimerScaledTimer);
+            Level.CancelTimer(_showShipStatsTimer);
             if (HasWeapons) Weapons.ForEach(weapon => weapon.CancelTimer());
             Deactivate();
         }
