@@ -20,7 +20,9 @@ namespace Assets.Scripts.Entities.Ships
             base.ClearData();
             ShipsWarpingHere.Clear();
 
-            if (Stage.ActivateAudio)
+            // ClearData runs on every pooled Setup. These AudioSources are children of
+            // the pooled Warp Gate and survive deactivation, so create them only once.
+            if (Stage.ActivateAudio && !IsAudioLoaded)
             {
                 EnteringWarpGateSound = Instantiate(Stage.Audio.EnteringWarpGateSound);
                 EnteringWarpGateSound.transform.parent = transform;
