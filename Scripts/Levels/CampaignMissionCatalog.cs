@@ -54,7 +54,7 @@ namespace Assets.Scripts.Levels
                 new MissionDefinition(0, "Anomaly", nameof(Level.Pluto1Anomaly), nameof(Level.Pluto1Ending), nameof(Level.Pluto1Ending), level => level.Pluto1Anomaly()),
                 new MissionDefinition(1, "Reinforcements", nameof(Level.Pluto2Reinforcements), nameof(Level.Pluto2Ending), nameof(Level.Pluto2Ending), level => level.Pluto2Reinforcements()),
                 new MissionDefinition(2, "Pushback", nameof(Level.Pluto3Pushback), nameof(Level.Pluto3Ending), nameof(Level.Pluto3Ending), level => level.Pluto3Pushback()),
-                new MissionDefinition(3, "Bluer Pastures", nameof(Level.Pluto4BluerPastures), nameof(Level.Pluto4Ending), nameof(Level.Pluto4EndingDialogue), level => level.Pluto4BluerPastures()),
+                new MissionDefinition(3, "Bluer Pastures", nameof(Level.Pluto4BluerPasturesCampaign), nameof(Level.Pluto4Ending), nameof(Level.Pluto4EndingDialogue), level => level.Pluto4BluerPasturesCampaign()),
                 new MissionDefinition(4, "Seize the Means", nameof(Level.Neptune1SeizeTheMeans), nameof(Level.Neptune1Ending), nameof(Level.Neptune1Ending), level => level.Neptune1SeizeTheMeans()),
                 new MissionDefinition(5, "Of Production", nameof(Level.Neptune2OfProduction), nameof(Level.Neptune2Ending), nameof(Level.Neptune2Ending), level => level.Neptune2OfProduction()),
                 new MissionDefinition(6, "Pressing Forward", nameof(Level.Neptune3PressingForwardCampaign), nameof(Level.Neptune3Ending), nameof(Level.Neptune3Ending), level => level.Neptune3PressingForwardCampaign()),
