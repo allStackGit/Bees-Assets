@@ -25,6 +25,20 @@ namespace Assets.Scripts.Data
             ShipType = shipType;
             Offset = offset;
         }
+
+        public SquadShip(FleetShip fleetShip, Vector2 offset)
+        {
+            if (fleetShip == null)
+            {
+                throw new ArgumentNullException(nameof(fleetShip));
+            }
+
+            FleetId = fleetShip.Id;
+            ShipType = fleetShip.Type;
+            Offset = offset;
+            CachedFleetShip = fleetShip;
+            _hasCachedFleetShip = true;
+        }
         /// <summary>
         /// Grabs and caches the fleet ship. The first time it's called it will minimally need to parse through all the fleet ships to find a matching Id and possibility initialize the fleet data too.
         /// </summary>
@@ -134,7 +148,7 @@ namespace Assets.Scripts.Data
         }
         public bool Equals (SquadShip other)
         {
-            return FleetId == other.FleetId;
+            return other != null && FleetId == other.FleetId;
         }
         public override string ToString()
         {
