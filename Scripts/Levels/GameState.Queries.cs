@@ -100,7 +100,15 @@ namespace Assets.Scripts.Levels
             {
                 return GetEnemySquads(side);
             }
-            return GetShipsVisibleToHiveMind(side).Select(ship => ship.Squad).ToList();
+
+            // Visibility is accumulated per ship, but matchup selection is per squad.
+            // Without Distinct(), larger visible squads are duplicated in the matchup queue
+            // and receive disproportionate weight, especially for Random strategy selection.
+            return GetShipsVisibleToHiveMind(side)
+                .Select(ship => ship.Squad)
+                .Where(squad => squad != null && !squad.IsDead)
+                .Distinct()
+                .ToList();
         }
 
         public Squad GetSquadByNumber(int side, int squadNumber)
