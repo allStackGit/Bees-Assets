@@ -97,7 +97,9 @@ namespace Bees.Tests.EditMode
 
             object driver = Activator.CreateInstance(_driverType, new[] { _level, (object)missionId });
             Assert.That(driver, Is.Not.Null);
-            Assert.That((int)RuntimeAssembly.GetProperty(driver, "MissionId"), Is.EqualTo(missionId));
+            PropertyInfo missionIdProperty = driver.GetType().GetProperty("MissionId");
+            Assert.That(missionIdProperty, Is.Not.Null);
+            Assert.That((int)missionIdProperty.GetValue(driver), Is.EqualTo(missionId));
             Assert.That(RuntimeAssembly.GetCount(RuntimeAssembly.GetField(_level, "Triggers")), Is.Zero,
                 "Constructing a scenario driver must not configure or execute an in-development mission.");
         }
