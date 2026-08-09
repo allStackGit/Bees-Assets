@@ -109,6 +109,26 @@ namespace Assets.Scripts.Levels.Commands
             Level.AddTimer(_healingTimer);
         }
 
+        private void ReleaseHealingReservation(Ship ship)
+        {
+            if (ship == null)
+            {
+                return;
+            }
+
+            if (_shipsAndBeehives.TryGetValue(ship.Id, out Beehive reservedBeehive))
+            {
+                if (reservedBeehive != null)
+                {
+                    reservedBeehive.ShipsHealingHere.Remove(ship);
+                }
+                _shipsAndBeehives.Remove(ship.Id);
+            }
+
+            ShipsWaitingToHeal.Remove(ship);
+            ShipsHealing.Remove(ship);
+        }
+
         public void MoveToBeehives()
         {
             for (_index = 0; _index < ShipsWaitingToHeal.Count; _index++)
@@ -129,7 +149,7 @@ namespace Assets.Scripts.Levels.Commands
 
             for (_index = 0; _index < _shipsThatLostBeehiveOrDied.Count; _index++)
             {
-                ShipsWaitingToHeal.Remove(_shipsThatLostBeehiveOrDied[_index]);
+                ReleaseHealingReservation(_shipsThatLostBeehiveOrDied[_index]);
             }
             _shipsThatLostBeehiveOrDied.Clear();
         }
@@ -169,22 +189,16 @@ namespace Assets.Scripts.Levels.Commands
             }
             for (_index = 0; _index < _shipsThatLostBeehiveOrDied.Count; _index++)
             {
-                ShipsHealing.Remove(_shipsThatLostBeehiveOrDied[_index]);
+                ReleaseHealingReservation(_shipsThatLostBeehiveOrDied[_index]);
             }
             _shipsThatLostBeehiveOrDied.Clear();
         }
 
         public override void SetFinalize(string cause)
         {
-            for (_index = 0; _index < ShipsHealing.Count; _index++)
+            foreach (Ship reservedShip in ShipsWaitingToHeal.Concat(ShipsHealing).Distinct().ToList())
             {
-                _ship = ShipsHealing[_index];
-                _shipsAndBeehives[_ship.Id].ShipsHealingHere.Remove(_ship);
-            }
-            for (_index = 0; _index < ShipsWaitingToHeal.Count; _index++)
-            {
-                _ship = ShipsWaitingToHeal[_index];
-                _shipsAndBeehives[_ship.Id].ShipsHealingHere.Remove(_ship);
+                ReleaseHealingReservation(reservedShip);
             }
             Level.CancelTimer(_healingTimer);
             base.SetFinalize(cause);
