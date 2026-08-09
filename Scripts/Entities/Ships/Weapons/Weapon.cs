@@ -59,11 +59,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             Range = range;
             Power = power;
             SpecialFirepower = specialFirePower;
-            //Power = 10;
             ProjectileValue = projectileValue;
             RateOfFire = rateOfFire;
-            //Piece =  Instantiate(piece, Vector2.zero, Quaternion.identity);
-            //Piece.transform.localScale = Ship.RelativeSizeScale();
             Piece = piece;
             PieceTransform = Piece.transform;
             WeaponsData weaponsData = Piece.GetComponent<WeaponsData>();
@@ -83,7 +80,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 SoundEffect = Instantiate(Stage.Audio.WeaponSounds[WeaponSoundType][Utilities.RandomInt(Stage.Audio.WeaponSounds[WeaponSoundType].Length)]);
                 SoundEffect.transform.parent = PieceTransform;
                 SoundEffect.transform.localPosition = Vector2.zero;
-
             }
             Firepower = Utilities.CalculateFirepower(Power, Range, RateOfFire, RotationRate, ProjectileValue, SpecialFirepower);
 
@@ -93,8 +89,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 Destroy(SpriteRenderer);
             }
-
         }
+
         /// <summary>
         /// Sets the weapon up for the level, clears out any old data
         /// </summary>
@@ -102,14 +98,11 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             Level = Ship.Level;
             Id = Level.State.GetId();
-            
             Name = $"{Ship.Name}: {Type}";
             ClearData();
             Activate();
-            //Piece.transform.parent = ship.transform;
-            //Piece.transform.localPosition = (Vector2)piece.transform.position;
-
         }
+
         public virtual void ClearData()
         {
             TargetShip = null;
@@ -118,9 +111,11 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             IsUsingCachedTargetingQueue = false;
             HasCachedChanged = false;
         }
+
         public virtual void CancelTimer()
         {
         }
+
         public virtual void Activate()
         {
             if (HasRangeCollider)
@@ -130,13 +125,12 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             if (HasSpriteRenderer)
             {
                 SpriteRenderer.enabled = true;
-                
             }
             enabled = true;
         }
+
         public virtual void Deactivate()
         {
-            //CancelInvoke();
             if (HasRangeCollider)
             {
                 RangeCollider.Deactivate();
@@ -146,8 +140,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 SpriteRenderer.enabled = false;
             }
             enabled = false;
-
         }
+
         public void SetupRangeCircleAndCollider()
         {
             Transform rangeCircle = PieceTransform.Find("Range Circle");
@@ -167,26 +161,19 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 RangeCollider rangeCollider = rangeColliderTransform.GetComponent<RangeCollider>();
                 RangeCollider = rangeCollider;
 
-                // This is because the circle collider of the frigate rocket allows it to travel a little further outside of the range of the circle so it needs to be reduced
                 if (Ship.ShipType == ConfigData.ShipTypes.Frigate)
                 {
                     RangeCollider.Create(this, Range - 7);
-
                 }
                 else
                 {
                     RangeCollider.Create(this, Range);
                 }
-
             }
         }
 
-
-
-        // Targeting methods
         protected virtual void SetTargetShip(Ship targetShip)
         {
-            //Debug.Log("Setting target ship");
             TargetShip = targetShip;
         }
 
@@ -194,24 +181,19 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         private int _index;
         private Ship _potentialTargetShip;
         private ShipDamageStatus _shipDamageStatus;
+
         /// <summary>Goes through the list of ships in the sorted targeting list and sets the weapon to attack whichever ship is first valid</summary>
         public bool DetermineTargetShip(List<Ship> ships, bool useShipDamageStatus)
         {
-            //Debug.Log($"Determining Target ship with {FleetShip.Name}!");
             _foundTarget = false;
 
             for (_index = 0; _index < ships.Count; _index++)
             {
                 _potentialTargetShip = ships[_index];
-                //Debug.Log($"{name} is firing at {ship.name} which is priority #{i} in because the Shooting strategy is {Squad.GetShootingStrategy()}.");
                 if (!_foundTarget)
                 {
-                    if (IsShipValidTarget(_potentialTargetShip)) // if the target ship is within range of this weapon and otherwise valid
+                    if (IsShipValidTarget(_potentialTargetShip))
                     {
-                        /*
-                        Check to make sure that the damage already sent towards the ship is less than the health of the ship previously
-                        calculated.
-                         */
                         _shipDamageStatus = Level.State.GetShipDamageStatus(Side, _potentialTargetShip);
                         if (useShipDamageStatus)
                         {
@@ -221,48 +203,19 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                                 _foundTarget = true;
                                 return _foundTarget;
                             }
-                            //else
-                            //{
-                            //    Debug.Log($"{Ship.Name} cannot fire at {potentialTargetShip.Name} because {shipDamageStatus.TotalDamageSentToShip} >= {shipDamageStatus.Health}");
-                            //}
                         }
                         else
                         {
                             SetTargetShip(_potentialTargetShip);
                             _foundTarget = true;
                             return _foundTarget;
-
                         }
-
                     }
-                    //else
-                    //{
-                    //    //Debug.Log($"{Ship.Name} is not find a target for {Piece.name} because the potential target ship {potentialTargetShip.Name} is out of range");
-                    //    //__NotShootingReason = $"{Ship.Name} is not find a target for {Name} because the potential target ship {potentialTargetShip.Name} is out of range";
-                    //    //ShipsWithinRange.Remove(potentialTargetShip);
-                    //}
                 }
-                //else
-                //{
-                //    //if (potentialTargetShip == null)
-                //    //{
-                //    //    //Debug.Log($"{Ship.Name} is not find a target for {Piece.name} because the potential target ship is null");
-                //    //    //__NotShootingReason = $"{Ship.Name} is not find a target for {Name} because the potential target ship is null";
-                //    //    // Empty the cached queue of bad results
-                //    //    CachedTargetingQueue.Remove(potentialTargetShip);
-                //    //}
-
-                //    //else  if (_foundTarget && TargetShip != null)
-                //    //{
-                //    //    __TargetingRejectReasons[_potentialTargetShip] = $"{_potentialTargetShip.Name} rejected: Already found targetship: {TargetShip.Name}";
-                //    //}
-                //}
             }
 
             if (ships.Count == 0)
             {
-                //Debug.Log($"{Ship.Name} is not find a target for {Piece.name} because the ship queue is empty");
-                //__NotShootingReason = $"{Ship.Name} is not find a target for {Name} because the ship queue is empty";
                 CachedTargetingQueue.Clear();
             }
             return _foundTarget;
@@ -271,24 +224,20 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// <summary>
         /// Checks if the ship is within range
         /// </summary>
-        /// <param name="potentialTargetShip"></param>
-        /// <returns></returns>
         public virtual bool IsShipValidTarget(Ship potentialTargetShip)
         {
             return !potentialTargetShip.IsDead && IsShipWithinRange(potentialTargetShip);
         }
+
         private List<Ship> _queue;
-        /// <summary> Called every 1/3 Rate of Fire. Makes and sends the sorted targeting list to DetermineTargetShip. 
-        /// Every time this method is called, a target ship should be selected if there is one available </summary>
+
+        /// <summary> Called every 1/3 Rate of Fire. Makes and sends the sorted targeting list to DetermineTargetShip. Every time this method is called, a target ship should be selected if there is one available </summary>
         public void Targeting()
         {
-            //Debug.Log($"Targeting! with {Ship.FleetShip.Name}");
-
             TargetShip = null;
-            if (Ship.IsUserControlled) // user controlled fire sequence
+            if (Ship.IsUserControlled)
             {
                 _queue = MakeSortedTargetingList(false);
-                //Ship.__SortedTargetingQueue = queue;
                 if (!DetermineTargetShip(_queue, true))
                 {
                     DetermineTargetShip(_queue, false);
@@ -296,32 +245,19 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
             else
             {
-                if ((Ship.Squad.HasCommand || Ship.HasBrain)) // if you've got a command, and you're not retreating
+                if ((Ship.Squad.HasCommand || Ship.HasBrain))
                 {
                     _queue = MakeSortedTargetingList(false);
-                    //Ship.__SortedTargetingQueue = queue;
                     if (!DetermineTargetShip(_queue, true))
                     {
                         DetermineTargetShip(_queue, false);
                     }
                 }
-                //else
-                //{
-                //    if (!Ship.Squad.HasCommand)
-                //    {
-                //        //Debug.Log($"{Ship.Name} is not firing {Piece.name} because it is AI controlled and it doesn't have a command");
-                //        __NotShootingReason = $"{Ship.Name} is not firing {Name} because it is AI controlled and it doesn't have a command";
-                //    }
-                //    //else if (Squad.IsRetreating)
-                //    //{
-                //    //    //Debug.Log($"{Ship.Name} is not firing {Piece.name} because it is AI controlled and it's retreating");
-                //    //    __NotShootingReason = $"{Ship.Name} is not firing {Piece.name} because it is AI controlled and it's retreating";
-                //    //}
-                //}
             }
-
         }
+
         List<Ship> _enemies;
+
         /// <summary>
         /// Grabs all ships in the enemy squad within range. If there is no enemy squad, grabs all enemy ships within range
         /// </summary>
@@ -335,7 +271,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     return _enemies;
                 }
                 return ShipsWithinRange.Select((s) => s.Value).ToList();
-                //return Ship.Squad.GetCommand().Enemy.GetShips().Where((s) => IsShipWithinRange(s)).ToList();
             }
             else
             {
@@ -344,22 +279,22 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         }
 
         private List<Ship> _shipQueue;
+
         /// <summary>
         /// Gets all the ships that this weapon could potentially target. Either the ships within range or the ships in the enemy squad regardless of range
         /// </summary>
-        /// <param name="disregardRange"></param>
-        /// <returns></returns>
         protected virtual List<Ship> GetPotentialEnemyTargetShips(bool disregardRange)
         {
             if (disregardRange)
             {
-                _shipQueue = Ship.Squad.GetCommand().EnemySquad.GetShips();
+                // GetShips() exposes the squad's authoritative list. Targeting strategies may
+                // sort or shuffle their input, so never hand that shared list to the sorter.
+                _shipQueue = Ship.Squad.GetCommand().EnemySquad.GetShips().ToList();
             }
             else
             {
                 _shipQueue = GetEnemyShipsWithinRange();
             }
-            //__ShipsWithinRange = queue.ToList(); // [debug]
             if (!HasCachedChanged && CachedShootingStrategy == Ship.ShootingStrategy)
             {
                 IsUsingCachedTargetingQueue = true;
@@ -367,8 +302,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
             IsUsingCachedTargetingQueue = false;
             return _shipQueue;
-            //return queue.Where((s) => s != null && !s.IsDead).ToList();
         }
+
         /// <summary>
         /// Clears the targeting cache and the target ship. Marks the cache as changed
         /// </summary>
@@ -380,10 +315,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         }
 
         private List<Ship> _sortedQueue;
+
         /// <summary>Sorts the potential target ships according to the shooting strategy. Uses a cached queue </summary>
         public List<Ship> MakeSortedTargetingList(bool disregardRange)
         {
-
             _sortedQueue = GetPotentialEnemyTargetShips(disregardRange);
             ConfigData.ShootingStrategyTypes strategy = Ship.ShootingStrategy;
             CachedShootingStrategy = strategy;
@@ -391,7 +326,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             HasCachedChanged = false;
             if (!IsUsingCachedTargetingQueue)
             {
-                //Debug.Log($"Making targeting queue for {Ship.Name}. The squad is using {Squad.GetShootingStrategy()}");
                 switch (strategy)
                 {
                     case ConfigData.ShootingStrategyTypes.FirstSeen:
@@ -400,46 +334,46 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                         _sortedQueue.Shuffle();
                         break;
                     case ConfigData.ShootingStrategyTypes.Revenge:
-                        _sortedQueue.Sort((a, b) => b.LastKilled - a.LastKilled);
+                        _sortedQueue.Sort((a, b) => b.LastKilled.CompareTo(a.LastKilled));
                         break;
                     case ConfigData.ShootingStrategyTypes.MostDangerous:
-                        _sortedQueue.Sort((a, b) => b.FleetShip.DamageDone - a.FleetShip.DamageDone);
+                        _sortedQueue.Sort((a, b) => b.FleetShip.DamageDone.CompareTo(a.FleetShip.DamageDone));
                         break;
                     case ConfigData.ShootingStrategyTypes.LeastHealth:
-                        _sortedQueue.Sort((a, b) => (a.Health - a.OriginalHealth) - (b.Health - b.OriginalHealth));
+                        _sortedQueue.Sort((a, b) => (a.Health - a.OriginalHealth).CompareTo(b.Health - b.OriginalHealth));
                         break;
                     case ConfigData.ShootingStrategyTypes.MostHealth:
-                        _sortedQueue.Sort((a, b) => b.Health - a.Health);
+                        _sortedQueue.Sort((a, b) => b.Health.CompareTo(a.Health));
                         break;
                     case ConfigData.ShootingStrategyTypes.MostPowerful:
-                        _sortedQueue.Sort((a, b) => (int) (b.Firepower - a.Firepower));
+                        _sortedQueue.Sort((a, b) => b.Firepower.CompareTo(a.Firepower));
                         break;
                     case ConfigData.ShootingStrategyTypes.LeastPowerful:
-                        _sortedQueue.Sort((a, b) => (int) (a.Firepower - b.Firepower));
+                        _sortedQueue.Sort((a, b) => a.Firepower.CompareTo(b.Firepower));
                         break;
                     case ConfigData.ShootingStrategyTypes.Closest:
-                        _sortedQueue.Sort((a, b) => (int)(DistanceTo(a) - DistanceTo(b)));
+                        _sortedQueue.Sort((a, b) => DistanceTo(a).CompareTo(DistanceTo(b)));
                         break;
                     case ConfigData.ShootingStrategyTypes.Furthest:
-                        _sortedQueue.Sort((a, b) => (int)(DistanceTo(b) - DistanceTo(a)));
+                        _sortedQueue.Sort((a, b) => DistanceTo(b).CompareTo(DistanceTo(a)));
                         break;
                     case ConfigData.ShootingStrategyTypes.MostRange:
-                        _sortedQueue.Sort((a, b) => b.MaxRange - a.MaxRange);
+                        _sortedQueue.Sort((a, b) => b.MaxRange.CompareTo(a.MaxRange));
                         break;
                     case ConfigData.ShootingStrategyTypes.LeastRange:
-                        _sortedQueue.Sort((a, b) => a.MaxRange - b.MaxRange);
+                        _sortedQueue.Sort((a, b) => a.MaxRange.CompareTo(b.MaxRange));
                         break;
                     case ConfigData.ShootingStrategyTypes.Fastest:
-                        _sortedQueue.Sort((a, b) => (int) (b.Speed - a.Speed));
+                        _sortedQueue.Sort((a, b) => b.Speed.CompareTo(a.Speed));
                         break;
                     case ConfigData.ShootingStrategyTypes.Slowest:
-                        _sortedQueue.Sort((a, b) => (int)(a.Speed - b.Speed));
+                        _sortedQueue.Sort((a, b) => a.Speed.CompareTo(b.Speed));
                         break;
                     case ConfigData.ShootingStrategyTypes.MostValuable:
-                        _sortedQueue.Sort((a, b) => b.Tsv - a.Tsv);
+                        _sortedQueue.Sort((a, b) => b.Tsv.CompareTo(a.Tsv));
                         break;
                     case ConfigData.ShootingStrategyTypes.LeastValuable:
-                        _sortedQueue.Sort((a, b) => a.Tsv - b.Tsv);
+                        _sortedQueue.Sort((a, b) => a.Tsv.CompareTo(b.Tsv));
                         break;
                     default:
                         if ((int) strategy > 15)
@@ -447,7 +381,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                             ConfigData.ShipTypeLetters type = Utilities.ConvertShipTypeToShipTypeLetter[Utilities.ConvertShootingStrategyToShipType[strategy]];
                             _sortedQueue.Sort((a, b) =>
                             {
-                                //Debug.Log($"Strategy: {strategy}, Type: {type}, A ShipTypeLetter: {a.ShipTypeLetter}, B ShipTypeLetter: {b.ShipTypeLetter}");
                                 if (a.ShipTypeLetter == type && b.ShipTypeLetter != type)
                                 {
                                     return -1;
@@ -461,10 +394,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                                     return 0;
                                 }
                             });
-                            //if (_sortedQueue.Count > 0)
-                            //{
-                            //    Debug.Log($"The first entry in the sorted _sortedQueue is {_sortedQueue.First().Name}");
-                            //}
                             return _sortedQueue;
                         }
                         else
@@ -476,17 +405,15 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             return _sortedQueue;
         }
 
-        protected virtual void SendProjectile() // [projectile-method] [note]
+        protected virtual void SendProjectile()
         {
-            //Debug.Log("Sending basic projectile");
             if (HasTargetShip)
             {
                 Level.State.GetShipDamageStatus(Side, TargetShip).TotalDamageSentToShip += Power;
             }
             PlaySoundEffect();
-
-
         }
+
         protected void PlaySoundEffect()
         {
             if (HasSoundEffect)
@@ -494,6 +421,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 SoundEffect.Play();
             }
         }
+
         public void StopSoundEffect()
         {
             if (HasSoundEffect)
@@ -502,76 +430,54 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
         }
 
-        // distance and position methods
         public bool IsShipWithinRange(Ship ship)
         {
             return ShipsWithinRange.ContainsKey(ship.Id);
         }
+
         public virtual bool IsPointWithinRange(Vector2 point)
         {
             return DistanceToPoint(point) <= Range;
         }
+
         public float DistanceToPoint(Vector2 point)
         {
             return Vector2.Distance(GetPosition(), point);
         }
+
         public float DistanceTo(Entity entity)
         {
             return DistanceToPoint(entity.Collider.ClosestPoint(GetPosition()));
-            //try
-            //{
-            //    return DistanceToPoint(entity.Collider.ClosestPoint(GetPosition()));
-            //}
-            //catch (Exception e)
-            //{
-            //    Debug.Log($"Entity: {entity}, entity name: {entity.name}, Collider: {entity.Collider}");
-            //    Debug.Log($"GetPosition: {GetPosition()}");
-            //    Debug.Log($"Closest point: {entity?.Collider?.ClosestPoint(GetPosition())}");
-            //    Debug.Log($"Distance to point: {DistanceToPoint(entity.Collider.ClosestPoint(GetPosition()))}");
-            //    throw e;
-            //}
         }
+
         public virtual Vector2 GetPosition()
         {
             return Ship.GetPosition();
         }
+
         public float AngleToPoint(Vector2 point)
         {
             return Utilities.AngleBetweenPoints(GetPosition(), point);
         }
-        //private float _degrees;
+
         private Vector2 _direction;
+
         public float GetDegreesTowardsPoint(Vector2 point)
         {
-            //_degrees = AngleToPoint(point) * Mathf.Rad2Deg;
-            ////Debug.Log($"Angle towards movement point before adjustment {degrees}");
-            //if (_degrees > 0) // if the angle is greater than PI, subtract 2 PI to get the equivilent negative angle
-            //{
-            //    _degrees = Mathf.Abs(_degrees - 180);
-
-            //}
-            //else if (_degrees < 0) // if the angle is less than negative PI, add 2 PI to get the equivilent negative angle
-            //{
-            //    _degrees = Mathf.Abs(_degrees) + 180;
-            //}
-            ////Debug.Log($"Angle towards movement point after adjustment {degrees}");
-            //return _degrees;
-
             _direction = point - GetPosition();
             return Mathf.Repeat(-Mathf.Atan2(_direction.x, _direction.y) * Mathf.Rad2Deg, 360f);
         }
-
 
         public bool Equals(Weapon weapon)
         {
             return weapon.Id == Id;
         }
+
         public override int GetHashCode()
         {
             return Id;
         }
 
-        // UI Methods
         public virtual void ShowRange()
         {
             if (HasRangeCircle)
