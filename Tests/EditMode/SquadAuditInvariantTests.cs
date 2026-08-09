@@ -16,6 +16,7 @@ namespace Bees.Tests.EditMode
         private string _squadSource;
         private string _strikerSource;
         private string _warpGateSource;
+        private string _healSource;
 
         [SetUp]
         public void SetUp()
@@ -23,6 +24,7 @@ namespace Bees.Tests.EditMode
             _squadSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Squad.cs"));
             _strikerSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Striker.cs"));
             _warpGateSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "WarpGate.cs"));
+            _healSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Commands", "Heal.cs"));
         }
 
         [Test]
@@ -91,6 +93,19 @@ namespace Bees.Tests.EditMode
             string method = ExtractMethodBody(_warpGateSource, "ClearData");
             Assert.That(method, Does.Contain("Stage.ActivateAudio && !IsAudioLoaded"));
             Assert.That(method, Does.Contain("IsAudioLoaded = true"));
+        }
+
+        [Test]
+        public void HealReleasesBeehiveCapacityWhenReservedShipBecomesInvalid()
+        {
+            string release = ExtractMethodBody(_healSource, "ReleaseHealingReservation");
+            string move = ExtractMethodBody(_healSource, "MoveToBeehives");
+            string heal = ExtractMethodBody(_healSource, "HealShips");
+
+            Assert.That(release, Does.Contain("reservedBeehive.ShipsHealingHere.Remove(ship)"));
+            Assert.That(release, Does.Contain("_shipsAndBeehives.Remove(ship.Id)"));
+            Assert.That(move, Does.Contain("ReleaseHealingReservation(_shipsThatLostBeehiveOrDied[_index])"));
+            Assert.That(heal, Does.Contain("ReleaseHealingReservation(_shipsThatLostBeehiveOrDied[_index])"));
         }
 
         private static string ExtractMethodBody(string source, string methodName)
