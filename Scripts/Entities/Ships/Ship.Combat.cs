@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Assets.Scripts.Data;
+using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Levels;
 using Unity.Mathematics;
@@ -60,7 +61,6 @@ namespace Assets.Scripts.Entities.Ships
         {
             if (target.Health <= 0) return;
             if (target.Level.Stage.MakeShotsHarmless) power = 0;
-
             attacker.ShipsHit.Add(target);
             _targetOldTSV = target.Tsv;
             target.Health -= math.min(power, target.Health);
@@ -94,7 +94,6 @@ namespace Assets.Scripts.Entities.Ships
         protected static void LogHitStats(Ship attacker, FleetShip attackerFleetShip, SavedSquad attackerSavedSquad, Ship target, Squad targetSquad, int tsvLoss)
         {
             if (tsvLoss < 0) Debug.LogError($"The tsv loss for target {target.Name} is negative when it should be positive: {tsvLoss}");
-
             _isFriendlyFire = false;
             if (attackerFleetShip.Side != target.Side)
             {
@@ -195,7 +194,6 @@ namespace Assets.Scripts.Entities.Ships
 
             Level.State.RemoveShip(this);
             Squad.RemoveShip(this);
-
             if (ShipType == ConfigData.ShipTypes.Carrier)
             {
                 _nextCarrier = (Carrier)Level.State.GetHumanShips().FirstOrDefault(ship => ship.ShipType == ConfigData.ShipTypes.Carrier);
@@ -213,7 +211,6 @@ namespace Assets.Scripts.Entities.Ships
             foreach (Projectile projectile in ProjectilesInFlight) projectile.ShipIsDead = true;
             if (Squad.GetShips().Count == 0) Squad.Kill(endKill);
             else Squad.SetOffsets();
-
             Level.CancelTimer(_asteroidDoubleCheckTimer);
             Level.CancelTimer(_combatTimerScaledTimer);
             if (HasWeapons) Weapons.ForEach(weapon => weapon.CancelTimer());
