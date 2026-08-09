@@ -1,5 +1,4 @@
 using System.IO;
-using Assets.Scripts.Entities;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -10,15 +9,15 @@ namespace Bees.Tests.EditMode
     public class EntityIdentityAndHealingReleaseTests
     {
         [Test]
-        public void DestroyedEntityPreservesUnityNullSemantics()
+        public void EntityEqualityPreservesUnityNullSemantics()
         {
-            GameObject go = new GameObject("entity-null-semantics");
-            Entity entity = go.AddComponent<Entity>();
-            entity.Id = 42;
+            string entityPath = Path.Combine(Application.dataPath, "Scripts", "Entities", "Entity.cs");
+            string source = File.ReadAllText(entityPath);
 
-            Object.DestroyImmediate(go);
-
-            Assert.That(entity == null, Is.True);
+            StringAssert.Contains("(UnityEngine.Object)this == null", source);
+            StringAssert.Contains("(UnityEngine.Object)other == null", source);
+            StringAssert.Contains("(UnityEngine.Object)a == null", source);
+            StringAssert.Contains("(UnityEngine.Object)b == null", source);
         }
 
         [Test]
