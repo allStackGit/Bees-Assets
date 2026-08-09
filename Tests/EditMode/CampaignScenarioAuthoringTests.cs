@@ -119,6 +119,15 @@ namespace Bees.Tests.EditMode
                     $"Beenoculars is missing its authored/escalating wave at {delay} seconds.");
             }
 
+            Assert.That(setup, Does.Contain("AddTitania2BeeWave"));
+            Assert.That(_triggerSource, Does.Contain("FindTitania2SpawnPoint"));
+            Assert.That(_triggerSource, Does.Contain("Mathf.Lerp(min.x, max.x, xT)"));
+            Assert.That(_triggerSource, Does.Contain("Physics2D.OverlapCircle(candidate, obstacleClearance, ConfigData.ObstaclesLayerMask)"));
+            Assert.That(setup, Does.Not.Contain("new Vector2(400"));
+            Assert.That(setup, Does.Not.Contain("new Vector2(-400"));
+            Assert.That(setup, Does.Not.Contain("new Vector2(0, 420"));
+            Assert.That(setup, Does.Not.Contain("new Vector2(340, -380"));
+
             Assert.That(_triggerSource, Does.Contain("GetRange(26, 5)"));
             Assert.That(_triggerSource, Does.Contain("GetRange(31, 2)"));
             Assert.That(_triggerSource, Does.Contain("if (_titania2Resolved)"));
