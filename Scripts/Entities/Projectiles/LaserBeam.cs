@@ -65,7 +65,10 @@ namespace Assets.Scripts.Entities.Projectiles
         protected override void FixedUpdate()
         {
             base.FixedUpdate();
-            ExtendBeam();
+            if (!IsDead)
+            {
+                ExtendBeam();
+            }
         }
 
         private float _worldAngle, _localAngle;
