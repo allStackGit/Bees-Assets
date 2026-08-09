@@ -141,22 +141,9 @@ namespace Assets.Scripts.Levels.Commands
                     _type = Utilities.ConvertMatchupStrategyToShipType[MatchupType];
                     _queue.Sort((a, b) =>
                     {
-                        return a.GetShips().Where(s => s.ShipType == _type).ToList().Count - b.GetShips().Where(s => s.ShipType == _type).ToList().Count;
-
-                        //_aShipsOfType = a.GetShips().Where(s => s.ShipType == type).ToList().Count;
-                        //_bShipsOfType = b.GetShips().Where(s => s.ShipType == type).ToList().Count;
-                        //if (_aShipsOfType > _bShipsOfType)
-                        //{
-                        //    return -1;
-                        //}
-                        //else if (_bShipsOfType > _aShipsOfType)
-                        //{
-                        //    return 1;
-                        //}
-                        //else
-                        //{
-                        //    return 0;
-                        //}
+                        int aShipsOfType = a.GetShips().Count(s => s.ShipType == _type);
+                        int bShipsOfType = b.GetShips().Count(s => s.ShipType == _type);
+                        return bShipsOfType.CompareTo(aShipsOfType);
                     });
                     return _queue.First();
                 default:
