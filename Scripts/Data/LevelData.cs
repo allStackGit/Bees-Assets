@@ -19,22 +19,13 @@ namespace Assets.Scripts.Data
             dynamic json = SetupFile(shouldFileExist, ConfigData.LevelsDataFilenames[type], (json) =>
             {
                 ConfigData.IsLevelsDataLoaded[type] = true;
-                //Debug.Log($"Setting up LevelData file for {ConfigData.LevelsDataFilenames[type]}");
-                //Debug.Log($"JSON from DataFile: {json}");
                 List<dynamic> levels = Utilities.JArrayToList<dynamic>(json.Levels);
                 levels.ForEach(level =>
                 {
                     List<SavedSquad> enemyReinforcements = Utilities.LoadSquadsFromJson(Utilities.JArrayToList<dynamic>(level.EnemyReinforcements));
                     List<SavedSquad> enemySquads = Utilities.LoadSquadsFromJson(Utilities.JArrayToList<dynamic>(level.EnemySquads));
                     List<(Vector2, Vector2)> obstacles = Utilities.LoadObstaclesFromJson(Utilities.JArrayToList<dynamic>(level.ObstacleList));
-                    //Debug.Log(level);
-                    //Debug.Log(level.EnemyExistingSquads);
                     List<int> enemyExistingSquads = Utilities.JArrayToList<int>(level.EnemyExistingSquads);
-                    //Debug.Log(level.Name);
-                    //Debug.Log(level.HasPrelevelIntro);
-                    //Debug.Log((bool)level.HasPrelevelIntro);
-                    //Debug.Log(level.HasSquadActionBox);
-                    //Debug.Log((bool)level.HasSquadActionBox);
                     _levels.Add(new LevelOptions((int)level.Id, (int)level.Side, (string)level.Name, (int)level.MapIndex, (string)level.Obstacles, obstacles, (int)level.AsteroidOption, (int)level.FogOfWar, (int)level.Mining, (bool) level.HasPreLevelIntro, (bool) level.HasSquadActionBox, (int)level.SupplyCapacity, (int) level.EnemyReinforcementsOption, (int)level.EnemyReinforcementDelay, 0, 0, enemyReinforcements, enemySquads, enemyExistingSquads, (string) level.EnemyReport, new List<SavedSquad>(), new Vector2((float)level.UserStartingPosition.x, (float)level.UserStartingPosition.y), new Vector2((float)level.AIStartingPosition.x, (float)level.AIStartingPosition.y)));
                 });
             });
@@ -78,13 +69,11 @@ namespace Assets.Scripts.Data
         }
         public int GetCurrentId()
         {
-            return GetNewId() - 1;
+            return _levels.Any() ? _levels.Max(level => level.Id) : -1;
         }
         public int GetNewId()
         {
-            return _levels.Count;
+            return GetCurrentId() + 1;
         }
-
-        
     }
 }
