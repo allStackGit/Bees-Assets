@@ -182,10 +182,16 @@ namespace Assets.Scripts.Levels.Commands
         }
         public void MoveTowardsEnemies()
         {
-            GetSquad().GetShips().ForEach((ship) =>
+            foreach (Ship ship in GetSquad().GetShips())
             {
-                ship.MoveToPoint(ship.SetAndGetTargetEnemy().GetPosition());
-            });
+                Ship target = ship.SetAndGetTargetEnemy();
+                if (target == null)
+                {
+                    SetFinalize("No more enemy ships to target");
+                    return;
+                }
+                ship.MoveToPoint(target.GetPosition());
+            }
         }
         protected void Timeout()
         {
