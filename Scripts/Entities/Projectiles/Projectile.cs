@@ -28,6 +28,7 @@ namespace Assets.Scripts.Entities.Projectiles
         public bool HasNecessaryAnimation;
         public Animator Animator;
         public bool IsDead;
+        private ShipDamageStatus _damageReservation;
 
         public override void Create(Stage stage)
         {
@@ -70,6 +71,7 @@ namespace Assets.Scripts.Entities.Projectiles
             Rotation = -(Angle * Mathf.Rad2Deg);
             FleetShip = shooter.FleetShip;
             SavedSquad = shooter.Squad.SavedSquad;
+            _damageReservation = target != null ? Level.State.GetShipDamageStatus(shooter.Side, target) : null;
             Activate();
             if (HasBody)
             {
@@ -83,6 +85,7 @@ namespace Assets.Scripts.Entities.Projectiles
             CollidingQueue.Clear();
             CollidingObstacleQueue.Clear();
             ShipIsDead = false;
+            _damageReservation = null;
         }
 
         public virtual void Kill()
@@ -180,23 +183,22 @@ namespace Assets.Scripts.Entities.Projectiles
             }
         }
 
-        private ShipDamageStatus _status;
         public virtual void RemoveDamageSentEntry()
         {
-            if (Target == null || Shooter == null)
+            if (_damageReservation == null)
             {
                 return;
             }
 
-            _status = Level.State.GetShipDamageStatus(Shooter.Side, Target);
-            if (_status.TotalDamageSentToShip >= Power)
+            if (_damageReservation.TotalDamageSentToShip >= Power)
             {
-                _status.TotalDamageSentToShip -= Power;
+                _damageReservation.TotalDamageSentToShip -= Power;
             }
             else
             {
-                _status.TotalDamageSentToShip = 0;
+                _damageReservation.TotalDamageSentToShip = 0;
             }
+            _damageReservation = null;
         }
 
         protected void SetMovement()
