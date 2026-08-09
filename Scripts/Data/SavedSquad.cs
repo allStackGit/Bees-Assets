@@ -43,6 +43,7 @@ namespace Assets.Scripts.Data
             this.Side = side;
             this.Name = name;
             this.StartingPosition = startingPosition;
+            //Debug.Log($"Starting position for startup {this} is {StartingPosition}");
             this.CeaseFire = ceaseFire;
             this.IsMatchingSpeed = isMatchingSpeed;
             this.ChosenShootingStrategy = chosenShootingStrategy;
@@ -107,8 +108,10 @@ namespace Assets.Scripts.Data
             for (int shipIndex = 0; shipIndex < shipCount; shipIndex++)
             {
                 long id = Utilities.GetNegativeFleetshipId();
+
                 FleetShip fleetShip = new FleetShip(id, squadType, false, false, 0, 0, 0, 0, 0, 0, 0);
-                AddShipToSquad(new SquadShip(fleetShip, offsets[shipIndex]));
+                AddShipToSquad(new SquadShip(fleetShip.Id, fleetShip.Type, offsets[shipIndex]));
+
             }
         }
         public List<SquadShip> GetSquadShips()
@@ -132,9 +135,11 @@ namespace Assets.Scripts.Data
             FleetShip fleetShip = ship.GetFleetShip();
             if (!HasShip(fleetShip))
             {
+                //Debug.Log($"Adding {ship} to {Name}");                        
                 _ships.Add(ship);
                 fleetShip.DoesBelongToSavedSquad = true;
             }
+            
         }
         public void AutoRepositionSquad()
         {
@@ -142,13 +147,15 @@ namespace Assets.Scripts.Data
             Vector2[] offsets = ConfigData.GeneratedSquadFormationOffsets4x4;
             if (shipCount == 1)
             {
+                // Formation arrays in ConfigData are shared templates. Never write into them:
+                // doing so changes the starting offset used by every squad created afterward.
                 offsets = new Vector2[] { Vector2.zero };
             }
             else
             {
                 if (shipCount <= 4)
                 {
-                    if (GetSquadShips().Any((s) => ConfigData.LargeShips.Contains(s.ShipType)))
+                    if (GetSquadShips().Any((s) =>  ConfigData.LargeShips.Contains(s.ShipType)))
                     {
                         offsets = ConfigData.GeneratedSquadFormationOffsets2x2Large;
                     }
@@ -178,7 +185,9 @@ namespace Assets.Scripts.Data
             _ships.Remove(ship);
             if (reorientSquad && _ships.Any())
             {
-                StartingPosition = GetCenterPoint();
+                //Debug.Log($"Before removing ship from squad {this}, center point: {StartingPosition}");
+                StartingPosition = GetCenterPoint() /*+ ConfigData.StartingPositionOffset*/;
+                //Debug.Log($"After removing ship from squad {this}, center point: {StartingPosition}");
             }
             SetChanged(true);
         }
@@ -188,7 +197,8 @@ namespace Assets.Scripts.Data
         }
         public bool HasShip(FleetShip ship)
         {
-            return ship != null && GetShip(ship.Id) != null;
+            //Debug.Log($"Fleetship: {ship}");
+            return GetShip(ship.Id) != null;
         }
         public Vector2 GetLeftMostPoint()
         {
@@ -224,28 +234,46 @@ namespace Assets.Scripts.Data
         }
         public Vector2 GetCenterPoint()
         {
+
+            // calculate width and height of box
             float width = GetWidth();
             float height = GetHeight();
+
+            // calculate center point of box
+
             float midX = GetRightMostPoint().x - (width / 2);
             float midY = GetBottomMostPoint().y + (height / 2);
+
             return new Vector2(midX, midY);
         }
 
+        // the ships need to orient around the center so that when they are loaded onto a map they have a reference position to the center of the squad
         public void OrientSquad()
         {
             Debug.Log($"Before Orienting squad {this}, center point: {StartingPosition}");
-            StartingPosition = GetCenterPoint();
+
+            StartingPosition = GetCenterPoint() /*+ ConfigData.StartingPositionOffset*/;
             Debug.Log($"After Orienting squad {this}, center point: {StartingPosition}");
             GetSquadShips().ForEach((ship) =>
             {
+                //Debug.Log($"Squad ship offset before orienting around center: {ship.Offset}");
                 ship.Offset.x = ship.Offset.x - StartingPosition.x;
                 ship.Offset.y = ship.Offset.y - StartingPosition.y;
+                //Debug.Log($"Squad ship offset after orienting around center: {ship.Offset}");
             });
         }
+        /// <summary>
+        /// The capacity of the squad as it stands now, potentially less than full capacity if the squad isn't filled
+        /// </summary>
+        /// <returns></returns>
         public int GetCapacity()
         {
             return GetAliveSquadShips().Sum((s) => s.GetFleetShip().GetCapacity());
         }
+        /// <summary>
+        /// The capacity of the squad if all the ships were alive and the squad was filled
+        /// </summary>
+        /// <returns></returns>
         public int GetMaxCapacity()
         {
             return GetSquadShips().Sum((s) => s.GetFleetShip().GetCapacity());
@@ -257,11 +285,14 @@ namespace Assets.Scripts.Data
             {
                 return false;
             }
+
+            // If parameter cannot be cast to class return false.
             _savedSquad = obj as SavedSquad;
             if (_savedSquad == null)
             {
                 return false;
             }
+
             return Id == _savedSquad.Id;
         }
 
@@ -277,14 +308,18 @@ namespace Assets.Scripts.Data
 
         public static bool operator ==(SavedSquad a, SavedSquad b)
         {
+            // If both are null, or both are same instance, return true.
             if (System.Object.ReferenceEquals(a, b))
             {
                 return true;
             }
+
+            // If one is null, but not both, return false.
             if (((object)a == null) || ((object)b == null))
             {
                 return false;
             }
+
             return a.Id == b.Id;
         }
 
@@ -295,21 +330,23 @@ namespace Assets.Scripts.Data
         public object Clone()
         {
             SavedSquad clone = (SavedSquad)this.MemberwiseClone();
-            clone.Stats = (SquadStatBlock)this.Stats.Clone();
+            clone.Stats = (SquadStatBlock) this.Stats.Clone();
             clone._ships = new List<SquadShip>();
             _ships.ForEach((ship) =>
             {
-                clone.AddShipToSquad((SquadShip)ship.Clone());
+                clone.AddShipToSquad((SquadShip) ship.Clone());
             });
             if (clone.Id > -1)
             {
                 clone.HasBeenSavedToStorage = true;
             }
+            //clone.StartingPosition = new Vector2(StartingPosition.x, StartingPosition.y);
             return clone;
         }
         /// <summary>
         /// Converts a saved squad to an unlinked unsaved squad that has the exact same ships and features
         /// </summary>
+        /// <returns></returns>
         public SavedSquad ConvertToUnsavedSquad()
         {
             SavedSquad convert = new SavedSquad(Utilities.GetNegativeSavedSquadId(), Side, Name, StartingPosition, CeaseFire, IsMatchingSpeed, ChosenShootingStrategy, Color);
