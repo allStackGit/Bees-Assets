@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -61,7 +62,10 @@ namespace Bees.Tests.EditMode
                 "Intentional socket shutdowns must not start automatic reconnect attempts.");
             Assert.That(source, Does.Contain("_automaticReconnectAttempts++"),
                 "Unexpected disconnects should continue retrying rather than making one attempt.");
-            Assert.That(source, Does.Contain("if (ConfigData.Socket.IsOpen)\n            {\n                ResendTimer.Update();"),
+            Assert.That(Regex.IsMatch(
+                    source,
+                    @"if\s*\(ConfigData\.Socket\.IsOpen\)\s*\{\s*ResendTimer\.Update\(\);"),
+                Is.True,
                 "Standing requests must not be resent into a closed WebSocket.");
         }
     }
