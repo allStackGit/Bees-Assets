@@ -68,13 +68,10 @@ namespace Assets.Scripts.Levels.Commands
         /// </summary>
         public int OriginalEnemyId;
 
-        //public int OriginalSquadId, CreationId; // [debug]
         public ScaledTimer CommandTimer = new ScaledTimer();
         public ScaledTimer TimeoutTimer = new ScaledTimer();
 
-
         private List<Ship> _tempShips;
-
 
         public virtual void Create(Stage stage, ConfigData.CommandTypes commandType)
         {
@@ -83,7 +80,6 @@ namespace Assets.Scripts.Levels.Commands
             ShootingStrategy = new ShootingStrategy();
             CommandType = commandType;
             IsDead = true;
-            //CreationId = Utilities.Hash();
         }
         public virtual void ClearData()
         {
@@ -103,15 +99,8 @@ namespace Assets.Scripts.Levels.Commands
         }
         public virtual void Setup(Squad squad, bool isHiveMindCommand, Squad enemy, string matchup)
         {
-            //if (!IsDead)
-            //{
-            //    Debug.LogError($"Trying to setup a command that's already active! {this}");
-            //}
-            
             IsDead = false;
             Level = squad.Level;
-            //Debug.Log((int)CommandType);
-            //Debug.Log(Stage.__CommandCounts.Length);
             Stage.DebugLogger.__CommandCounts[(int)CommandType]++;
             Side = squad.Side;
             SetSquad(squad);
@@ -128,32 +117,18 @@ namespace Assets.Scripts.Levels.Commands
                 OriginalEnemyId = EnemySquad.ItemId;
             }
             enabled = true;
-            //Debug.Log($"Just set up command {this}");
         }
-        //public void Update()
-        //{
-        //    if (!IsDead && OutcomeId > 0 && GetSquad().Id != OriginalSquadId)
-        //    {
-        //        Debug.LogError($"{this} no longer has the original squad id! {GetSquad().Id}");
-        //    }
-        //}
         public Squad GetSquad()
         {
             return _squad;
         }
         public void SetSquad(Squad squad)
         {
-            //Debug.Log($"Setting squad to {squad} for {this}");
             _squad = squad;
-            //OriginalSquadId = GetSquad().Id;
             GetSquad().HasCommand = true;
         }
         public virtual void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
         {
-            //if (GetSquad().GetShips().Any((s) => s.ShipType == ConfigData.ShipTypes.Beacon))
-            //{
-            //    Debug.Log($"{this} has a squad with beacons and it just started");
-            //}
             if (noEnemy || HasEnemy)
             {
                 OutcomeId = commandOutcomeId;
@@ -161,31 +136,21 @@ namespace Assets.Scripts.Levels.Commands
                 HasShootingStrategy = true;
                 MatchupStrategy.Setup(GetSquad().MatchupStrategy.MatchupType, GetSquad().MatchupStrategy.OutcomeId, GetSquad());
                 GetSquad().SetShootingStrategy(ShootingStrategy.ShootingStrategyType);
-                GetSquad().ClearTargets(); // Clear all old targets before starting the new command
+                GetSquad().ClearTargets();
 
                 if (Stage.DebugLogger.IsDebugging)
                 {
                     GetSquad().PastCommands.Add(new StoredCommand(this));
                 }
                 HasStoredOutcomeRecord = Level.State.AddCommand(this);
-
                 GetSquad().Status = $"Executing Command #{OutcomeId}";
-                //Debug.Log("Set status for command");
-                //Debug.Log($"Executing command {this}");
-
             }
             else
             {
-                //Debug.Log($"Could not find the enemy for command #{commandOutcomeId}");
                 SetFinalize("Could not find the enemy squad for command");
                 return;
             }
-
         }
-        /// <summary>
-        /// Sets the destination for the squad to move to. This clears all previous destinations and sets the new one.
-        /// </summary>
-        /// <param name="destination"></param>
         public void SetDestination(Vector2 destination)
         {
             ClearDestinations();
@@ -195,17 +160,8 @@ namespace Assets.Scripts.Levels.Commands
         {
             return _destinations;
         }
-        /// <summary>
-        /// Adds a destination to the list of destinations for the squad to move to. This does not clear previous destinations.
-        /// </summary>
-        /// <param name="destination"></param>
         public void AddDestination(Vector2 destination)
         {
-            //float x = Mathf.Clamp(destination.x, Level.MinX, Level.MaxX);
-            //float y = Mathf.Clamp(destination.y, Level.MinY, Level.MaxY);
-
-            //destination = new Vector2(x, y);
-
             _destinations.Add(destination); 
         }
         public void ClearDestinations()
@@ -220,55 +176,29 @@ namespace Assets.Scripts.Levels.Commands
         {
             return GetDestinations().FirstOrDefault();
         }
-        /// <summary>
-        /// Sets the destination and moves the squad to it.
-        /// </summary>
-        /// <param name="destination"></param>
         public void SetAndMove(Vector2 destination)
         {
             SetDestination(destination);
             GetSquad().Move(GetDestination());
         }
-        /// <summary>
-        /// Moves the squad towards the enemy squad's current position.
-        /// </summary>
         public void MoveTowardsEnemies()
         {
             GetSquad().GetShips().ForEach((ship) =>
             {
-                //Debug.Log($"Ship: {ship?.Name}");
                 ship.MoveToPoint(ship.SetAndGetTargetEnemy().GetPosition());
-
             });
-            //Debug.Log("----");
-            //try
-            //{
-            //    Squad.GetShips().ForEach((ship) =>
-            //    {
-            //        Debug.Log($"Ship: {ship?.Name}");
-            //        ship.MoveToPoint(ship.SetAndGetTargetEnemy().GetPosition());
-
-            //    });
-            //}
-            //catch (Exception e)
-            //{
-            //    Debug.Log($"Command: {this}, Ships: {Utilities.ListToString(Squad.GetShips())}");
-            //    throw e;
-            //}
-
         }
         protected void Timeout()
         {
             SetFinalize("The command ran out of time");
         }
 
-
         public List<Ship> MakeTargetingQueue()
         {
-
-            _tempShips = EnemySquad.GetShips();
+            // Shooting strategies reorder their working list. GetShips() returns the
+            // squad's authoritative internal list, so always sort/shuffle a snapshot.
+            _tempShips = EnemySquad.GetShips().ToList();
             ConfigData.ShootingStrategyTypes strategy = GetSquad().GetShootingStrategy();
-            //Debug.Log($"Making targeting queue for {Ship.Name}. The squad is using {Squad.GetShootingStrategy()}");
             switch (strategy)
             {
                 case ConfigData.ShootingStrategyTypes.FirstSeen:
@@ -324,7 +254,6 @@ namespace Assets.Scripts.Levels.Commands
                         ConfigData.ShipTypeLetters type = Utilities.ConvertShipTypeToShipTypeLetter[Utilities.ConvertShootingStrategyToShipType[strategy]];
                         _tempShips.Sort((a, b) =>
                         {
-                            //Debug.Log($"Strategy: {strategy}, Type: {type}, A ShipTypeLetter: {a.ShipTypeLetter}, B ShipTypeLetter: {b.ShipTypeLetter}");
                             if (a.ShipTypeLetter == type && b.ShipTypeLetter != type)
                             {
                                 return -1;
@@ -333,42 +262,23 @@ namespace Assets.Scripts.Levels.Commands
                             {
                                 return 1;
                             }
-                            else
-                            {
-                                return 0;
-                            }
+                            return 0;
                         });
-                        //if (_f_queue.Count > 0)
-                        //{
-                        //    Debug.Log($"The first entry in the sorted _f_queue is {_f_queue.First().Name}");
-                        //}
                         return _tempShips;
                     }
-                    else
-                    {
-                        return _tempShips;
-                    }
+                    return _tempShips;
             }
             return _tempShips;
         }
 
-        //////////////////////////////////////////////////////////////////////////////
-        // Class-level variables for PrepareDamageToSendEntries() method:
-        //////////////////////////////////////////////////////////////////////////////
-
         private Squad _prepareDamage_closestEnemy;
-        /// <summary>
-        /// This method finds the enemies of the command's squad and makes sure there's a ship damage status entry for each enemy ship.
-        /// If there's not an enemy squad it returns the closest visible squad
-        /// </summary>
-        /// <param name="which"></param>
         public void PrepareDamageToSendEntries(int which = 0)
         {
             if (!GetSquad().IsDefenseless)
             {
                 _tempShips = new List<Ship>();
 
-                if (which == 1) // closest
+                if (which == 1)
                 {
                     _prepareDamage_closestEnemy = GetSquad().GetClosestEnemySquad();
                     if (_prepareDamage_closestEnemy != null)
@@ -388,43 +298,31 @@ namespace Assets.Scripts.Levels.Commands
             }
         }
 
-        // Finalizes the command and stops the squad so long as the command hasn't already been finalized
         public virtual void SetFinalize(string cause)
         {
-            //if (!Squad.IsDead)
-            //{
-            //    //StandStill();
-            //    //Squad.StopMoving("Command ended");
-            //}
             Finalize(cause);
-
-
         }
         public void SquadKilled()
         {
             if (CommandType == ConfigData.CommandTypes.Mining)
             {
                 ((Mining)this).CleanupAsteroid();
-            }else if (CommandType == ConfigData.CommandTypes.FullRetreat)
+            }
+            else if (CommandType == ConfigData.CommandTypes.FullRetreat)
             {
                 ((FullRetreat)this).CleanupWarpGate();
             }
             SetFinalize("This squad got killed");
         }
-        //////////////////////////////////////////////////////////////////////////////
-        // Class-level variables for Finalize() method:
-        //////////////////////////////////////////////////////////////////////////////
 
         private StoredCommand _finalize_storedCommand;
         private StoredCommand _finalize_squadCommand;
-
         private string _finalize_enemyName;
 
         private void Finalize(string cause)
         {
             if (!IsDead)
             {
-
                 Debug.Log($"Finalizing Command {this} because of {cause}");
                 if (cause == "")
                 {
@@ -432,25 +330,14 @@ namespace Assets.Scripts.Levels.Commands
                 }
                 Level.CancelTimer(CommandTimer);
                 Level.CancelTimer(TimeoutTimer);
-                //CancelInvoke();
                 StopAllCoroutines();
 
                 FinalizationCause = cause;
                 IsFinalized = true;
                 IsDead = true;
 
-                // It seems like none of these are needed
-                //MatchupStrategy.Kill(); // Only needed if we are storing the Matchup strategy which we are currently not
-                //ShootingStrategy.Kill();
-
                 _tempShips = GetSquad().GetShips();
                 _tempShips.ForEach(ship => ship.TargetEnemyShipToFollow = null);
-
-
-
-                //Debug.Log($"Finalizing and setting Squad Command #{OutcomeId}:{Strategy?.CommandType} to null for {Squad.Name} because of {FinalizationCause}");
-
-
                 Level.State.CommandsToRelease.Add(this);
 
                 if (!GetSquad().IsDead)
@@ -469,10 +356,6 @@ namespace Assets.Scripts.Levels.Commands
 
                     if (IsHiveMindCommand && Stage.ActivateHiveMind)
                     {
-                        //if (GetSquad().GetShips().Any((s) => s.ShipType == ConfigData.ShipTypes.Beacon))
-                        //{
-                        //    Debug.Log($"{this} has a squad with beacons and it just finalized");
-                        //}
                         GetSquad().AddToCommandList();
                     }
                     else
@@ -482,11 +365,9 @@ namespace Assets.Scripts.Levels.Commands
                     if (GetSquad().IsUserControlled && GetSquad().IsLockedOn)
                     {
                         GetSquad().IsLockedOn = false;
-                        //GetSquad().GetShips().ForEach((s) => s.CannotChangeMovementOrders = false);
                     }
                 }
 
-                // If this is a hivemind command with an outcomeId then find the past command in the state, update the TSV, and finalize it
                 if (IsHiveMindCommand && OutcomeId > 0 && HasStoredOutcomeRecord)
                 {
                     if (Level.State.OutcomeIdToPastCommandIndex.TryGetValue(OutcomeId, out int storedCommandIndex) &&
@@ -501,21 +382,6 @@ namespace Assets.Scripts.Levels.Commands
                         _finalize_storedCommand = null;
                         Debug.LogError($"Could not finalize command outcome #{OutcomeId}: its stored-command mapping is missing or stale.");
                     }
-                    //try
-                    //{
-                    //    _finalize_storedCommand = Level.State.PastCommands[Level.State.OutcomeIdToPastCommandIndex[OutcomeId]];
-
-                    //}
-                    //catch (Exception e)
-                    //{
-                    //    Debug.Log($"OutcomeId: {OutcomeId}, Past Commands Count: {Level.State.PastCommands.Count}");
-                    //    throw e;
-                    //}
-                    //if (_finalize_storedCommand.IsStored)
-                    //{
-                    //    Debug.LogError($"Trying to finalize a command #${OutcomeId} with cause [{cause}] that has already been stored");
-                    //    return;
-                    //}
 
                     if (_finalize_storedCommand != null)
                     {
@@ -543,20 +409,17 @@ namespace Assets.Scripts.Levels.Commands
 
                 ClearData();
                 enabled = false;
-                //Stage.Pool.ReturnCommandToPool(this);
             }
             else
             {
                 Debug.LogError($"Trying to finalize a command ({this}) that's already been finalized with {FinalizationCause}");
             }
-            
         }
 
         public override string ToString()
         {
             return $"Command #{(OutcomeId != 0 ? OutcomeId : "N/A")} #[{ItemId}] with Strategy {CommandType} attached to " +
                 $"Squad {GetSquad()} with Enemy Squad: {EnemySquad?.Name}"; 
-                // +$"#{OriginalSquadId} ItemId: #{ItemId} and CreationId: #{CreationId}";
         }
 
         public override bool Equals(System.Object obj)
@@ -566,7 +429,6 @@ namespace Assets.Scripts.Levels.Commands
                 return false;
             }
 
-            // If parameter cannot be cast to class return false.
             Command x = obj as Command;
             if (x == null)
             {
@@ -588,13 +450,11 @@ namespace Assets.Scripts.Levels.Commands
 
         public static bool operator ==(Command a, Command b)
         {
-            // If both are null, or both are same instance, return true.
             if (System.Object.ReferenceEquals(a, b))
             {
                 return true;
             }
 
-            // If one is null, but not both, return false.
             if (((object)a == null) || ((object)b == null))
             {
                 return false;
@@ -607,6 +467,5 @@ namespace Assets.Scripts.Levels.Commands
         {
             return !(a == b);
         }
-
     }
 }
