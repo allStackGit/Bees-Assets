@@ -27,10 +27,6 @@ namespace Assets.Scripts.Levels.Commands
 
             TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
             Level.AddTimer(TimeoutTimer);
-
-            //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
-
-
         }
         private void Timer()
         {
@@ -38,8 +34,8 @@ namespace Assets.Scripts.Levels.Commands
             {
                 if (GetSquad().HasReachedDestination)
                 {
-                    //CancelInvoke(nameof(Timer));
                     SetFinalize("Reached the random destination on the map");
+                    return;
                 }
                 _destination = GetDestination();
                 SetAndMove(_destination);
