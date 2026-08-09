@@ -1,0 +1,59 @@
+using System;
+using System.IO;
+using NUnit.Framework;
+using UnityEngine;
+
+namespace Bees.Tests.EditMode
+{
+    [TestFixture]
+    [Category("BeesFoundation")]
+    public class TrainingResetTransitionTests
+    {
+        private string _levelSource;
+        private string _registrySource;
+
+        [SetUp]
+        public void SetUp()
+        {
+            _levelSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Level.cs"));
+            _registrySource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "GameState.Registry.cs"));
+        }
+
+        [Test]
+        public void ShipRemovalToleratesNullSpottedListsDuringEpisodeTeardown()
+        {
+            string resetLevel = ExtractMethodBody(_levelSource, "ResetLevel");
+            string removeShip = ExtractMethodBody(_registrySource, "RemoveShip");
+
+            Assert.That(resetLevel, Does.Contain("Array.Clear(_reset_spottedShips"),
+                "This regression is relevant while ResetLevel temporarily nulls the per-side spotted lists before EndKill.");
+            Assert.That(removeShip, Does.Contain("if (spotted != null)"));
+            Assert.That(removeShip, Does.Contain("spotted.RemoveAll"));
+        }
+
+        private static string ExtractMethodBody(string source, string methodName)
+        {
+            int signature = source.IndexOf(" " + methodName + "(", StringComparison.Ordinal);
+            Assert.That(signature, Is.GreaterThanOrEqualTo(0), $"Could not find method {methodName}.");
+            int openingBrace = source.IndexOf('{', signature);
+            Assert.That(openingBrace, Is.GreaterThanOrEqualTo(0));
+
+            int depth = 0;
+            for (int index = openingBrace; index < source.Length; index++)
+            {
+                if (source[index] == '{') depth++;
+                else if (source[index] == '}')
+                {
+                    depth--;
+                    if (depth == 0)
+                    {
+                        return source.Substring(openingBrace, index - openingBrace + 1);
+                    }
+                }
+            }
+
+            Assert.Fail($"Could not extract method {methodName}.");
+            return string.Empty;
+        }
+    }
+}
