@@ -167,11 +167,11 @@ namespace Assets.Scripts.Levels
             }
 
             // These prefab components have not run MapObject.Setup yet, so their game IDs
-            // are still zero. Use Unity instance identity here rather than MapObject's
-            // runtime ID-based equality.
+            // are still zero. Use each target's Transform as stable per-instance identity
+            // rather than MapObject's runtime ID-based equality.
             int distinctAuthoredTargets = fireTanks
                 .Where(tank => tank.TargetObstacle != null)
-                .Select(tank => tank.TargetObstacle.GetInstanceID())
+                .Select(tank => tank.TargetObstacle.transform)
                 .Distinct()
                 .Count();
             if (distinctAuthoredTargets == fireTanks.Length)
@@ -182,12 +182,12 @@ namespace Assets.Scripts.Levels
             List<Obstacle> obstacles = root.GetComponentsInChildren<Obstacle>(true)
                 .Where(obstacle => obstacle != null)
                 .ToList();
-            HashSet<int> usedTargetInstanceIds = new HashSet<int>();
+            HashSet<Transform> usedTargetTransforms = new HashSet<Transform>();
 
             foreach (CanisterBomb fireTank in fireTanks)
             {
                 Obstacle nearestUnused = obstacles
-                    .Where(obstacle => !usedTargetInstanceIds.Contains(obstacle.GetInstanceID()))
+                    .Where(obstacle => !usedTargetTransforms.Contains(obstacle.transform))
                     .OrderBy(obstacle =>
                         ((Vector2)obstacle.transform.position - (Vector2)fireTank.transform.position).sqrMagnitude)
                     .FirstOrDefault();
@@ -199,7 +199,7 @@ namespace Assets.Scripts.Levels
                 }
 
                 fireTank.TargetObstacle = nearestUnused;
-                usedTargetInstanceIds.Add(nearestUnused.GetInstanceID());
+                usedTargetTransforms.Add(nearestUnused.transform);
             }
         }
 
