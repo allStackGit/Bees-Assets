@@ -33,6 +33,7 @@ namespace Assets.Scripts.Scenes
         public ConfigData.SceneTypes Type;
 
         public int __Updates = 0;
+        private int _automaticReconnectAttempts;
 
 
         // Start is called before the first frame update
@@ -114,11 +115,20 @@ namespace Assets.Scripts.Scenes
             IsFinalized = true;
         }
         /// <summary>
-        /// Tries to reconnect to the server, called on a timer if there's a disconnection
+        /// Tries to reconnect to the server, called on a timer if there's a disconnection.
+        /// Reconnect attempts are intentionally repeated because BeesServer can temporarily
+        /// reject new sockets while it finishes a consolidation pass after the last client drops.
         /// </summary>
         private void AutomaticConnectionRetry()
         {
-            Debug.Log($"Trying to automatically reconnect to the server with {Name}");
+            if (!IsSocketManager || ConfigData.Socket == null || ConfigData.Socket.KeepClosed ||
+                ConfigData.Socket.IsOpen || !ConfigData.Socket.HasClosed)
+            {
+                return;
+            }
+
+            _automaticReconnectAttempts++;
+            Debug.LogWarning($"Trying to automatically reconnect to the server with {Name} (attempt {_automaticReconnectAttempts})");
             ConfigData.RetryConnection();
         } 
         // Update is called once per frame
@@ -126,7 +136,14 @@ namespace Assets.Scripts.Scenes
         {
             __Updates++;
             SocketTimer.Update();
-            ResendTimer.Update();
+
+            // Do not feed standing requests into a dead WebSocket. They remain in
+            // Socket.StandingRequests and the normal resend timer resumes once a connection
+            // is open again. Socket.Open first submits ReconnectLevel requests for active levels.
+            if (ConfigData.Socket.IsOpen)
+            {
+                ResendTimer.Update();
+            }
               
 
             if (ConfigData.Socket.HasClosed && IsSocketManager)
@@ -147,6 +164,7 @@ namespace Assets.Scripts.Scenes
             
             else if (ConfigData.Socket.IsOpen && IsSocketManager && NetworkDisconnection.IsOpen)
             {
+                _automaticReconnectAttempts = 0;
                 NetworkDisconnection.Hide();
                 if (Type == ConfigData.SceneTypes.Stage)
                 {
