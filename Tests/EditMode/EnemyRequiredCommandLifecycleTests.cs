@@ -13,6 +13,7 @@ namespace Bees.Tests.EditMode
         [TestCase("Charge.cs")]
         [TestCase("CircleSquad.cs")]
         [TestCase("InAndOut.cs")]
+        [TestCase("Retreat.cs")]
         [TestCase("SwipeSquad.cs")]
         public void EnemyRequiredCommandStopsIfBaseExecutionFinalizes(string fileName)
         {
