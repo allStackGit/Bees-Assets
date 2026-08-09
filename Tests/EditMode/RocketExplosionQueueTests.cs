@@ -30,5 +30,22 @@ namespace Bees.Tests.EditMode
             Assert.That(record, Is.GreaterThanOrEqualTo(0));
             Assert.That(damage, Is.GreaterThan(record));
         }
+
+        [Test]
+        public void RocketTransfersItsSingleDamageReservationToExplosion()
+        {
+            string rocketPath = Path.Combine(Application.dataPath, "Scripts", "Entities", "Projectiles", "Rocket.cs");
+            string projectilePath = Path.Combine(Application.dataPath, "Scripts", "Entities", "Projectiles", "Projectile.cs");
+            string explosionPath = Path.Combine(Application.dataPath, "Scripts", "Entities", "Projectiles", "RocketExplosion.cs");
+            string rocketSource = File.ReadAllText(rocketPath);
+            string projectileSource = File.ReadAllText(projectilePath);
+            string explosionSource = File.ReadAllText(explosionPath);
+
+            StringAssert.Contains("RocketExplosion.Setup(Level, Weapon, Shooter, null,", rocketSource);
+            StringAssert.Contains("TransferDamageReservationTo(RocketExplosion);", rocketSource);
+            StringAssert.Contains("recipient._damageReservation = _damageReservation", projectileSource);
+            StringAssert.Contains("_damageReservation = null", projectileSource);
+            StringAssert.DoesNotContain("if (Target != null)", explosionSource);
+        }
     }
 }
