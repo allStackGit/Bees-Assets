@@ -49,10 +49,11 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             Level.AddProjectile(ConfigData.ProjectileTypes.HumanSmall, this, _rotatedRightCannonPosition, _angle);
             Ship.FleetShip.ShotsFired += 2;
 
-            // Set the damage status
+            // Level.AddProjectile halves DualCannon projectile power and this method
+            // fires two shots, so their aggregate reserved damage is exactly Power.
             if (!IsFiringManually && !IsFiringAtAsteroid)
             {
-                Level.State.GetShipDamageStatus(Side, TargetShip).TotalDamageSentToShip += Power * 2;
+                Level.State.GetShipDamageStatus(Side, TargetShip).TotalDamageSentToShip += Power;
             }
             PlaySoundEffect();
 
