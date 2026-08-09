@@ -28,5 +28,21 @@ namespace Bees.Tests.EditMode
             Assert.That(deadGuard, Is.GreaterThan(baseExecute));
             Assert.That(timerReuse, Is.GreaterThan(deadGuard));
         }
+
+        [Test]
+        public void PooledAggressiveCommandRestoresDefaultCadence()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Levels", "Commands", "Aggressive.cs");
+            string source = File.ReadAllText(path);
+
+            int clearStart = source.IndexOf("public override void ClearData()");
+            int timerStart = source.IndexOf("private void Timer()", clearStart);
+            Assert.That(clearStart, Is.GreaterThanOrEqualTo(0));
+            Assert.That(timerStart, Is.GreaterThan(clearStart));
+
+            string clear = source.Substring(clearStart, timerStart - clearStart);
+            StringAssert.Contains("CommandFrequency = 3f;", clear);
+            StringAssert.Contains("CommandFrequency = .25f;", source);
+        }
     }
 }
