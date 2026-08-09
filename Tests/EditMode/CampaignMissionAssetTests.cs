@@ -62,11 +62,11 @@ namespace Bees.Tests.EditMode
                 }
 
                 // The prefab instance has not run MapObject.Setup, so every target still has
-                // runtime Id 0. Compare Unity object instance IDs rather than MapObject's
+                // runtime Id 0. Compare each target's Transform rather than MapObject's
                 // game-ID equality when verifying authored/runtime prefab linkage.
                 int distinctTargets = fireTanks
-                    .Select(tank => (UnityEngine.Object)RuntimeAssembly.GetField(tank, "TargetObstacle"))
-                    .Select(target => target.GetInstanceID())
+                    .Select(tank => (Component)RuntimeAssembly.GetField(tank, "TargetObstacle"))
+                    .Select(target => target.transform)
                     .Distinct()
                     .Count();
                 Assert.That(distinctTargets, Is.EqualTo(30),
