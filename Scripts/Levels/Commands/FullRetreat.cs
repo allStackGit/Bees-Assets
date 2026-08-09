@@ -10,27 +10,28 @@ public class FullRetreat : Command
 {
     public WarpGate TargetWarpGate;
     public List<Ship> ShipsWaitingToWarp = new List<Ship>();
+    private HashSet<long> _shipIdsWarping = new HashSet<long>();
+
     public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, WarpGate warpgate)
     {
         if (warpgate != null)
         {
             TargetWarpGate = warpgate;
 
-            
-            // The ToList() is necessary to prevent errors from warp killing while looping through the list of ships
+            // The ToList() is necessary to prevent errors from warp killing while looping through the list of ships.
             GetSquad().GetShips().ToList().ForEach((ship) =>
             {
                 if (ship.ShipType != ConfigData.ShipTypes.WarpGate)
                 {
+                    _shipIdsWarping.Add(ship.Id);
                     TargetWarpGate.ShipsWarpingHere.Add(ship.Id);
                     if (ship.Collider.IsTouching(TargetWarpGate.WarpCollider))
                     {
-                        ShipsWaitingToWarp.Add(ship);
+                        QueueShipForWarp(ship);
                     }
                 }
-
             });
-            if (TargetWarpGate.ShipsWarpingHere.Count > 0)
+            if (_shipIdsWarping.Count > 0)
             {
                 base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
                 TargetWarpGate.ShipAnimationController.Activate();
@@ -44,30 +45,53 @@ public class FullRetreat : Command
                         CommandTimer.Reuse(CommandFrequency, MoveToWarpGate, true);
                         Level.AddTimer(CommandTimer);
                     }
-
-                    //InvokeRepeating(nameof(MoveToWarpGate), 0, CommandFrequency);
                 }
-
             }
             else
             {
                 SetFinalize("The only ships in this squad are Warp Gates");
             }
-
-
         }
         else
         {
             SetFinalize("The warp gate doesn't exist anymore, or there were no warp gates around");
         }
-
     }
+
     public override void ClearData()
     {
         base.ClearData();
         TargetWarpGate = null;
         ShipsWaitingToWarp.Clear();
+        _shipIdsWarping.Clear();
         _isWaitingToWarp = false;
+    }
+
+    public void QueueShipForWarp(Ship ship)
+    {
+        if (ship != null && !ship.IsDead && _shipIdsWarping.Contains(ship.Id) && !ShipsWaitingToWarp.Contains(ship))
+        {
+            ShipsWaitingToWarp.Add(ship);
+        }
+        WaitToWarp();
+    }
+
+    private void RemoveUnavailableWarpParticipants()
+    {
+        foreach (long shipId in _shipIdsWarping.ToList())
+        {
+            Ship ship = Level.State.GetShipById(shipId);
+            if (ship == null || ship.IsDead)
+            {
+                _shipIdsWarping.Remove(shipId);
+                if (TargetWarpGate != null)
+                {
+                    TargetWarpGate.ShipsWarpingHere.Remove(shipId);
+                }
+            }
+        }
+
+        ShipsWaitingToWarp.RemoveAll((ship) => ship == null || ship.IsDead || !_shipIdsWarping.Contains(ship.Id));
     }
 
     Vector2 _f_targetPosition;
@@ -77,10 +101,17 @@ public class FullRetreat : Command
         {
             if (!TargetWarpGate.IsDead)
             {
+                RemoveUnavailableWarpParticipants();
+                if (_shipIdsWarping.Count == 0)
+                {
+                    SetFinalize("No ships remain to warp");
+                    return;
+                }
+
                 _f_targetPosition = TargetWarpGate.GetPosition() + Utilities.RandomInt(6) * Vector2.one;
                 GetSquad().GetShips().ForEach((ship) =>
                 {
-                    if (ship.ShipType != ConfigData.ShipTypes.WarpGate)
+                    if (_shipIdsWarping.Contains(ship.Id))
                     {
                         ship.MoveToPoint(_f_targetPosition);
                     }
@@ -92,7 +123,6 @@ public class FullRetreat : Command
                 SetFinalize("Warp gate was destroyed");
             }
         }
-        
     }
 
     private List<Ship> _tempShips;
@@ -100,68 +130,76 @@ public class FullRetreat : Command
     private bool _isWaitingToWarp = false;
     public void WaitToWarp()
     {
-        if (TargetWarpGate.ShipAnimationController.IsReadyToWarp && TargetWarpGate.ShipsWarpingHere.Count > 0)
+        RemoveUnavailableWarpParticipants();
+        if (_shipIdsWarping.Count == 0)
+        {
+            if (!IsDead)
+            {
+                SetFinalize("No ships remain to warp");
+            }
+            return;
+        }
+
+        if (TargetWarpGate.ShipAnimationController.IsReadyToWarp && ShipsWaitingToWarp.Count > 0)
         {
             _isWaitingToWarp = false;
             Level.CancelTimer(_waitToWarpTimer);
             _tempShips = ShipsWaitingToWarp.ToList();
+            ShipsWaitingToWarp.Clear();
             _tempShips.ForEach((ship) =>
             {
                 WarpKill(ship);
             });
-            ShipsWaitingToWarp.Clear();
         }
         else if (!_isWaitingToWarp)
         {
             _isWaitingToWarp = true;
             _waitToWarpTimer.Reuse(2, WaitToWarp, true);
             Level.AddTimer(_waitToWarpTimer);
-            //Invoke(nameof(WaitToWarp), 2);
         }
     }
 
     public void WarpKill(Ship ship)
     {
-        if (!IsDead)
+        if (IsDead || ship == null || !_shipIdsWarping.Contains(ship.Id))
         {
-            // Strikers and drones count as a loss of TSV since nothing is saved by killing them and its not better than killing them in combat, and almost certainly worse
+            return;
+        }
+
+        _shipIdsWarping.Remove(ship.Id);
+        TargetWarpGate.ShipsWarpingHere.Remove(ship.Id);
+        ShipsWaitingToWarp.Remove(ship);
+
+        if (!ship.IsDead)
+        {
+            // Strikers and drones count as a loss of TSV since nothing is saved by killing them and its not better than killing them in combat, and almost certainly worse.
             if (ship.ShipType == ConfigData.ShipTypes.Striker || ship.ShipType == ConfigData.ShipTypes.Drone)
             {
                 Tsv -= ship.Tsv;
             }
-            TargetWarpGate.ShipsWarpingHere.Remove(ship.Id);
             if (TargetWarpGate.IsUserControlled)
             {
                 TargetWarpGate.EnteringWarpGateSound.Play();
             }
             ship.EndKill(); // if this is the last ship, this call could kill the command as well
-            if (!IsDead && TargetWarpGate.ShipsWarpingHere.Count == 0)
-            {
-                SetFinalize("All ships have warped");
-            }
         }
 
+        if (!IsDead && _shipIdsWarping.Count == 0)
+        {
+            SetFinalize("All ships have warped or become unavailable");
+        }
     }
 
     public void CleanupWarpGate()
     {
-        //Debug.Log($"Clenaing up warp gate: {TargetWarpGate}");
         if (TargetWarpGate != null && !TargetWarpGate.IsDead)
         {
-            if (!GetSquad().IsDead)
+            foreach (long shipId in _shipIdsWarping.ToList())
             {
-                GetSquad().GetShips().ForEach((ship) =>
-                {
-                    TargetWarpGate.ShipsWarpingHere.Remove(ship.Id);
-                });
+                TargetWarpGate.ShipsWarpingHere.Remove(shipId);
             }
-            else
-            {
-                TargetWarpGate.ShipsWarpingHere.RemoveWhere((s) =>
-                {
-                    return Level.State.GetShipById(s) == null;
-                });
-            }
+            _shipIdsWarping.Clear();
+            ShipsWaitingToWarp.Clear();
 
             if (TargetWarpGate.ShipsWarpingHere.Count == 0)
             {
@@ -171,11 +209,10 @@ public class FullRetreat : Command
                 TargetWarpGate.ShipAnimationController.SpriteIndex = 0;
             }
         }
-        
     }
+
     public override void SetFinalize(string cause)
     {
-        //Debug.Log($"Finalizing full retreat command for {Squad.Name}");
         Level.CancelTimer(_waitToWarpTimer);
         CleanupWarpGate();
         base.SetFinalize(cause);
