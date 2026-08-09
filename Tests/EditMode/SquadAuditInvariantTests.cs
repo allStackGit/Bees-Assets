@@ -16,6 +16,7 @@ namespace Bees.Tests.EditMode
         private string _squadSource;
         private string _strikerSource;
         private string _bargeSource;
+        private string _carrierSource;
         private string _warpGateSource;
         private string _fullRetreatSource;
         private string _retreatSource;
@@ -24,6 +25,7 @@ namespace Bees.Tests.EditMode
         private string _miningSource;
         private string _miningAsteroidSource;
         private string _strikerBombSource;
+        private string _bombingRunSource;
 
         [SetUp]
         public void SetUp()
@@ -31,6 +33,7 @@ namespace Bees.Tests.EditMode
             _squadSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Squad.cs"));
             _strikerSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Striker.cs"));
             _bargeSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Barge.cs"));
+            _carrierSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Carrier.cs"));
             _warpGateSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "WarpGate.cs"));
             _fullRetreatSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Commands", "FullRetreat.cs"));
             _retreatSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Commands", "Retreat.cs"));
@@ -39,6 +42,7 @@ namespace Bees.Tests.EditMode
             _miningSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Commands", "Mining.cs"));
             _miningAsteroidSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "MiningAsteroid.cs"));
             _strikerBombSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Projectiles", "StrikerBomb.cs"));
+            _bombingRunSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Commands", "BombingRun.cs"));
         }
 
         [Test]
@@ -111,6 +115,22 @@ namespace Bees.Tests.EditMode
             Assert.That(stop, Does.Contain("lifecycleId == _chargeLifecycleId"));
             Assert.That(reset, Does.Contain("_chargeLifecycleId++"));
             Assert.That(clear, Does.Contain("_chargeLifecycleId++"));
+        }
+
+        [Test]
+        public void CarrierDeathDetachesCarrierShipsBeforeCarrierCanBePooled()
+        {
+            string kill = ExtractMethodBody(_carrierSource, "Kill");
+            string reload = ExtractMethodBody(_strikerSource, "CheckCarrierReload");
+            string returnToCarrier = ExtractMethodBody(_strikerSource, "ReturnToCarrierIfNecessary");
+
+            Assert.That(kill, Does.Contain(".OfType<CarrierShip>()"));
+            Assert.That(kill, Does.Contain(".Where(ship => ship.Carrier == this)"));
+            Assert.That(kill, Does.Contain("carrierShip.Carrier = replacementCarrier"));
+            Assert.That(kill, Does.Contain("carrierShip.Carrier = null"));
+            Assert.That(kill, Does.Contain("carrierSquad.Carrier = replacementCarrier"));
+            Assert.That(reload, Does.Contain("Carrier != null && !Carrier.IsDead"));
+            Assert.That(returnToCarrier, Does.Contain("Carrier != null && !Carrier.IsDead"));
         }
 
         [Test]
@@ -225,6 +245,19 @@ namespace Bees.Tests.EditMode
             Assert.That(delayed, Does.Contain("Kill()"));
             Assert.That(kill, Does.Contain("Level.CancelTimer(_damageTimer)"));
             Assert.That(clear, Does.Contain("ContactedShip = null"));
+        }
+
+        [Test]
+        public void BombingRunHandlesLostCarriersAndChainedFireBargeDeaths()
+        {
+            string finished = ExtractMethodBody(_bombingRunSource, "HaveAllShipsFinished");
+            string timer = ExtractMethodBody(_bombingRunSource, "Timer");
+            string clear = ExtractMethodBody(_bombingRunSource, "ClearData");
+
+            Assert.That(finished, Does.Contain("_finishingStriker.Carrier == null"));
+            Assert.That(timer, Does.Contain("is FireBarge fireBarge && !fireBarge.IsDead"));
+            Assert.That(timer, Does.Contain("if (IsDead)"));
+            Assert.That(clear, Does.Contain("_timerLoops = 0"));
         }
 
         private static string ExtractMethodBody(string source, string methodName)
