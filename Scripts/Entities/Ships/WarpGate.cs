@@ -63,9 +63,9 @@ namespace Assets.Scripts.Entities.Ships
                     _command = (FullRetreat)_collidingShip.Squad.GetCommand();
                     if (_command.TargetWarpGate == this)
                     {
-                        //Debug.Log($"{ship.Name} hit {Name} and so we're warping it");
-                        _command.ShipsWaitingToWarp.Add(_collidingShip);
-                        _command.WaitToWarp();
+                        // FullRetreat owns per-command participant identity and deduplicates
+                        // repeated collider entries before the gate is ready to warp.
+                        _command.QueueShipForWarp(_collidingShip);
                     }
                 }
             }
