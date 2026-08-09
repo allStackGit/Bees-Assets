@@ -19,6 +19,8 @@
 - Finalizers that mutate the collection being enumerated must be invoked from a snapshot (e.g. mining commands during asteroid teardown).
 - `Command.Setup()` establishes `Squad.HasCommand`; queue runners should not blindly reassert that flag after `Execute()`, because an execution path can synchronously finalize and clear the command.
 - Derived command `Execute()` implementations must stop immediately if `base.Execute()` finalized the command; otherwise they can schedule timers or mutate state on an already-dead pooled command.
+- Ship-owned timers must be cancelled before the Ship wrapper can enter the pool. This includes combat, asteroid recheck, failed-path retry, and hover/info timers across separate Ship partials.
+- An explicit `StopMoving()` must cancel pending path-retry work so an old failed-path callback cannot restart movement after a new order/cancel.
 
 ## Targeting and Hive Mind
 
@@ -27,6 +29,10 @@
 - Type-specific strategies (`Type A`, etc.) mean prefer the requested ship type. Matchup selection should therefore prefer the squad with the greatest matching count, consistent with weapon/command targeting.
 - Random matchup selection should sample a uniform index; sorting by a random 0/1 key biases stable order toward earlier squads.
 - Hive Mind matchup payloads are capped at 64 ships; health comparisons require fractional arithmetic.
+- Visible-squad queries must deduplicate by squad. Returning one squad entry per visible ship biases random matchup selection toward larger squads.
+- The Hive Mind awaiting-command queue is idempotent: null/dead squads are ignored and a squad already waiting must not be enqueued again.
+- Target-queue exhaustion is normal terminal state. Ship/command helpers must return/finalize cleanly when the enemy squad has no remaining valid ships instead of dequeuing/dereferencing an empty target queue.
+- Pending damage equal to a target's remaining health is already lethal coverage; target selection must use strict `<` rather than `<=` when deciding whether more damage should be reserved.
 
 ## Pooling and combat lifecycles
 
@@ -43,6 +49,14 @@
 - Fog-of-war death fades freeze at the death position. Reusing a ship cancels old fade timers so an old vision hole cannot follow the new occupant.
 - Warp Gate audio/UI children and squad boxes are reusable owned children; create them once and reactivate/reset rather than instantiating another child every pool lifecycle.
 - `Turret` is split into lifecycle, aiming, and targeting partials. `Turret.ClearData()` must reset `TargetingPasses = 0` so a pooled turret cannot resume halfway through its three-pass firing cadence.
+- `ShipDamageStatus` and `SpottedShip` hold direct Ship wrappers; `GameState.RemoveShip()` must remove those records before the wrapper can be pooled/reidentified.
+- Nearby asteroid lists may temporarily retain destroyed wrappers; consumers must prune/filter dead/null asteroids before avoidance or targeting decisions.
+
+## Pathfinding ownership
+
+- Ship path requests are protected by both `PathfindingRequestId` and `PathfindingLifecycleId`. A completed background path may modify a Ship only when both still match.
+- Reinitializing a `Pathfinder` while one of its `Task.Run` searches still owns the instance's scratch arrays is unsafe even if Ship lifecycle IDs reject the eventual stale result. A reset must retire that Pathfinder instance (or otherwise wait/cancel workers) rather than mutate its arrays under active workers.
+- Queue membership is not authoritative identity for pooled Ships; queued requests carry explicit request/lifecycle IDs and stale membership must not suppress a new lifecycle's request.
 
 ## Healing, mining, retreat
 
