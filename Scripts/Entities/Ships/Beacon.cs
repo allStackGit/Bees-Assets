@@ -8,6 +8,7 @@ namespace Assets.Scripts.Entities.Ships
     public class Beacon : Ship
     {
         public Sprite StandardSprite, EnemySprite;
+        private Sprite _originalStandardSprite, _originalEnemySprite;
         private ScaledTimer _beaconStatusTimer = new ScaledTimer();
 
         public void LookForShips()
@@ -32,6 +33,17 @@ namespace Assets.Scripts.Entities.Ships
 
         public override void SetColor()
         {
+            // Beacon switches between two sprite fields at runtime, so resetting only the
+            // renderer is insufficient when the pooled Beacon changes squads/colors.
+            if (_originalStandardSprite == null)
+            {
+                _originalStandardSprite = StandardSprite;
+                _originalEnemySprite = EnemySprite;
+            }
+
+            StandardSprite = _originalStandardSprite;
+            EnemySprite = _originalEnemySprite;
+
             if (Squad.HasCustomColor)
             {
                 Color[] colors = ConfigData.ChangeableShipColors.GetValueOrDefault(ShipType);
