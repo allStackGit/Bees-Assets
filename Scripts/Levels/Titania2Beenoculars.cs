@@ -20,10 +20,10 @@ namespace Assets.Scripts.Levels
             _titania2MissionTimers.Clear();
             HasContinuousTriggers = true;
 
-            // Campaign LevelOptions can carry an old/custom starting position. SetupMapAndCamera
-            // applies that position before SetupShips, so translate the already-created human
-            // formation back to Titania's authored fleet start before the first frame is shown.
-            AlignTitania2HumanFleetToAuthoredStart();
+            // Bee-noculars is a walled defensive arena. Stage the player's ships individually
+            // in the central Titania pocket rather than preserving a wide persisted formation
+            // that can straddle the authored walls.
+            StageTitania2HumanFleetAtCenter();
 
             Stage.Menus.SetMissionStatus("Survive and defend Titania!");
             Stage.CutsceneManager.Setup(Titania2CampaignEnding);
@@ -97,21 +97,22 @@ namespace Assets.Scripts.Levels
                 }, true);
                 AddTitania2Timer(survivalClock);
 
-                // Bee forces deliberately spawn beyond the visible battlefield and fly through
-                // an entry point just inside the corresponding edge. This avoids reinforcement
-                // groups visibly popping into existence on the playable map.
+                // Prefab review: the left edge is largely sealed by a long wall, the upper/right
+                // edges are segmented, and the most reliable openings are in the lower corners
+                // plus gaps on the north/east sides. Each requested lane is checked against the
+                // live obstacle colliders and shifted along its edge to the nearest clear opening.
                 AddTitania2BeeWave(new List<SavedSquad>() {
                     ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4, true, true),
-                }, 0.85f, 0.55f);
+                }, 1f, -0.65f);
                 AddTitania2BeeWave(new List<SavedSquad>() {
                     ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true),
-                }, -0.85f, 0.65f);
+                }, -1f, -0.85f);
                 AddTitania2BeeWave(new List<SavedSquad>() {
                     ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
-                }, 0.45f, -0.9f);
+                }, 0.65f, -1f);
                 AddTitania2BeeWave(new List<SavedSquad>() {
                     ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 2, true, true),
-                }, -0.45f, -0.9f);
+                }, 0.65f, 1f);
 
                 Stage.ActivateHiveMind = true;
                 SetupHivemind();
@@ -122,7 +123,7 @@ namespace Assets.Scripts.Levels
                     AddTitania2BeeWave(new List<SavedSquad>() {
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6, true, true),
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true)
-                    }, 0.95f, 0f);
+                    }, 1f, -0.7f);
                     AddReinforcementsToHivemindCommandQueue();
                 });
                 AddTitania2Timer(wave1);
@@ -133,7 +134,7 @@ namespace Assets.Scripts.Levels
                     AddTitania2BeeWave(new List<SavedSquad>() {
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4, true, true)
-                    }, -0.95f, 0f);
+                    }, -1f, -0.85f);
                     AddReinforcementsToHivemindCommandQueue();
                 });
                 AddTitania2Timer(wave2);
@@ -144,7 +145,7 @@ namespace Assets.Scripts.Levels
                     AddTitania2BeeWave(new List<SavedSquad>() {
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 4, true, true),
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 8, true, true)
-                    }, 0f, 0.95f);
+                    }, 0.65f, 1f);
                     AddReinforcementsToHivemindCommandQueue();
                 });
                 AddTitania2Timer(wave3);
@@ -155,7 +156,7 @@ namespace Assets.Scripts.Levels
                     AddTitania2BeeWave(new List<SavedSquad>() {
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 6, true, true),
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 6, true, true)
-                    }, 0.75f, -0.95f);
+                    }, 0.55f, -1f);
                     AddReinforcementsToHivemindCommandQueue();
                 });
                 AddTitania2Timer(wave4);
@@ -166,11 +167,11 @@ namespace Assets.Scripts.Levels
                     AddTitania2BeeWave(new List<SavedSquad>() {
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 4, true, true),
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 8, true, true)
-                    }, 0.8f, 0.85f);
+                    }, 0.7f, 1f);
                     AddTitania2BeeWave(new List<SavedSquad>() {
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 3, true, true),
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 6, true, true)
-                    }, -0.8f, -0.85f);
+                    }, -0.55f, -1f);
                     AddReinforcementsToHivemindCommandQueue();
                 });
                 AddTitania2Timer(wave5);
@@ -183,30 +184,99 @@ namespace Assets.Scripts.Levels
             }, "Titania 2 Start Level"));
         }
 
-        private void AlignTitania2HumanFleetToAuthoredStart()
+        private void StageTitania2HumanFleetAtCenter()
         {
-            int userIndex = ConfigData.Configuration.UserSide - 1;
-            Vector2 previousAnchor = StartingPositions[userIndex];
-            Vector2 authoredAnchor = Map != null ? Map.UserStartingPosition : previousAnchor;
-            Vector2 translation = authoredAnchor - previousAnchor;
+            const float placementStep = 20f;
+            const int maxRing = 6;
+            const float titaniasReservedRadius = 18f;
+            const float shipPadding = 4f;
 
-            if (translation.sqrMagnitude > 0.01f)
+            List<Vector2> occupiedCenters = new List<Vector2>();
+            List<float> occupiedRadii = new List<float>();
+            List<Squad> userSquads = State.GetSquadsBySide(ConfigData.Configuration.UserSide);
+
+            Physics2D.SyncTransforms();
+            foreach (Squad squad in userSquads)
             {
-                foreach (Squad squad in State.GetSquadsBySide(ConfigData.Configuration.UserSide))
+                foreach (Ship ship in squad.GetShips())
                 {
-                    foreach (Ship ship in squad.GetShips())
-                    {
-                        ship.transform.localPosition += (Vector3)translation;
-                    }
-                    squad.SetOffsets();
+                    float clearance = Mathf.Max(ship.GetHalfWidth(), ship.GetHalfHeight()) + shipPadding;
+                    Vector2 placement = FindTitania2HumanShipPlacement(
+                        clearance,
+                        placementStep,
+                        maxRing,
+                        titaniasReservedRadius,
+                        occupiedCenters,
+                        occupiedRadii);
+
+                    ship.transform.localPosition = placement;
+                    occupiedCenters.Add(placement);
+                    occupiedRadii.Add(clearance);
                 }
-                Physics2D.SyncTransforms();
-                Debug.Log($"Moved Beenoculars human fleet from persisted anchor {previousAnchor} to Titania start {authoredAnchor}.");
+                squad.SetOffsets();
             }
 
-            CurrentLevelOptions.UserStartingPosition = authoredAnchor;
-            StartingPositions[userIndex] = authoredAnchor;
-            Stage.DefaultCameraPosition = authoredAnchor;
+            Physics2D.SyncTransforms();
+            int userIndex = ConfigData.Configuration.UserSide - 1;
+            CurrentLevelOptions.UserStartingPosition = Titania2Center;
+            StartingPositions[userIndex] = Titania2Center;
+            Stage.DefaultCameraPosition = Titania2Center;
+            Debug.Log($"Staged {occupiedCenters.Count} Beenoculars human ships around Titania at {Titania2Center}.");
+        }
+
+        private Vector2 FindTitania2HumanShipPlacement(
+            float clearance,
+            float placementStep,
+            int maxRing,
+            float titaniasReservedRadius,
+            List<Vector2> occupiedCenters,
+            List<float> occupiedRadii)
+        {
+            for (int ring = 1; ring <= maxRing; ring++)
+            {
+                for (int x = -ring; x <= ring; x++)
+                {
+                    for (int y = -ring; y <= ring; y++)
+                    {
+                        if (Mathf.Max(Mathf.Abs(x), Mathf.Abs(y)) != ring)
+                        {
+                            continue;
+                        }
+
+                        Vector2 candidate = Titania2Center + new Vector2(x * placementStep, y * placementStep);
+                        if (candidate.x - clearance < MinX || candidate.x + clearance > MaxX ||
+                            candidate.y - clearance < MinY || candidate.y + clearance > MaxY)
+                        {
+                            continue;
+                        }
+                        if (Vector2.Distance(candidate, Titania2Center) < titaniasReservedRadius + clearance)
+                        {
+                            continue;
+                        }
+                        if (Physics2D.OverlapCircle(candidate, clearance, ConfigData.ObstaclesLayerMask) != null)
+                        {
+                            continue;
+                        }
+
+                        bool overlapsFleet = false;
+                        for (int i = 0; i < occupiedCenters.Count; i++)
+                        {
+                            if (Vector2.Distance(candidate, occupiedCenters[i]) < clearance + occupiedRadii[i])
+                            {
+                                overlapsFleet = true;
+                                break;
+                            }
+                        }
+                        if (!overlapsFleet)
+                        {
+                            return candidate;
+                        }
+                    }
+                }
+            }
+
+            Debug.LogWarning($"Beenoculars could not find a fully clear central placement for a ship with {clearance:0.0} clearance.");
+            return Titania2Center + new Vector2(0f, -(titaniasReservedRadius + clearance));
         }
 
         private void AddTitania2BeeWave(List<SavedSquad> squads, float normalizedX, float normalizedY)
@@ -216,7 +286,7 @@ namespace Assets.Scripts.Levels
                 return;
             }
 
-            const float laneSpread = 0.18f;
+            const float laneSpread = 0.16f;
             bool horizontalEntry = Mathf.Abs(normalizedX) >= Mathf.Abs(normalizedY);
 
             for (int i = 0; i < squads.Count; i++)
@@ -239,25 +309,56 @@ namespace Assets.Scripts.Levels
         {
             const float outsideDistance = 80f;
             const float insideDistance = 28f;
-            const float tangentMargin = 48f;
+            const float tangentMargin = 24f;
+            const float laneClearance = 18f;
+            const float scanStep = 28f;
+            const int scanSteps = 12;
 
-            float xT = (Mathf.Clamp(normalizedX, -1f, 1f) + 1f) * 0.5f;
-            float yT = (Mathf.Clamp(normalizedY, -1f, 1f) + 1f) * 0.5f;
-            float tangentX = Mathf.Lerp(MinX + tangentMargin, MaxX - tangentMargin, xT);
-            float tangentY = Mathf.Lerp(MinY + tangentMargin, MaxY - tangentMargin, yT);
+            bool horizontalEntry = Mathf.Abs(normalizedX) >= Mathf.Abs(normalizedY);
+            bool positiveEdge = horizontalEntry ? normalizedX >= 0f : normalizedY >= 0f;
+            float normalizedTangent = horizontalEntry ? normalizedY : normalizedX;
+            float tangentMin = horizontalEntry ? MinY + tangentMargin : MinX + tangentMargin;
+            float tangentMax = horizontalEntry ? MaxY - tangentMargin : MaxX - tangentMargin;
+            float preferredTangent = Mathf.Lerp(
+                tangentMin,
+                tangentMax,
+                (Mathf.Clamp(normalizedTangent, -1f, 1f) + 1f) * 0.5f);
 
-            if (Mathf.Abs(normalizedX) >= Mathf.Abs(normalizedY))
+            Physics2D.SyncTransforms();
+            for (int step = 0; step <= scanSteps; step++)
             {
-                bool fromRight = normalizedX >= 0f;
-                spawnPoint = new Vector2(fromRight ? MaxX + outsideDistance : MinX - outsideDistance, tangentY);
-                entryPoint = new Vector2(fromRight ? MaxX - insideDistance : MinX + insideDistance, tangentY);
+                int signedStep = step == 0 ? 0 : ((step + 1) / 2) * (step % 2 == 1 ? 1 : -1);
+                float tangent = Mathf.Clamp(preferredTangent + signedStep * scanStep, tangentMin, tangentMax);
+
+                if (horizontalEntry)
+                {
+                    spawnPoint = new Vector2(positiveEdge ? MaxX + outsideDistance : MinX - outsideDistance, tangent);
+                    entryPoint = new Vector2(positiveEdge ? MaxX - insideDistance : MinX + insideDistance, tangent);
+                }
+                else
+                {
+                    spawnPoint = new Vector2(tangent, positiveEdge ? MaxY + outsideDistance : MinY - outsideDistance);
+                    entryPoint = new Vector2(tangent, positiveEdge ? MaxY - insideDistance : MinY + insideDistance);
+                }
+
+                if (Physics2D.OverlapCircle(entryPoint, laneClearance, ConfigData.ObstaclesLayerMask) == null &&
+                    Physics2D.Linecast(spawnPoint, entryPoint, ConfigData.ObstaclesLayerMask).collider == null)
+                {
+                    return;
+                }
+            }
+
+            if (horizontalEntry)
+            {
+                spawnPoint = new Vector2(positiveEdge ? MaxX + outsideDistance : MinX - outsideDistance, preferredTangent);
+                entryPoint = new Vector2(positiveEdge ? MaxX - insideDistance : MinX + insideDistance, preferredTangent);
             }
             else
             {
-                bool fromTop = normalizedY >= 0f;
-                spawnPoint = new Vector2(tangentX, fromTop ? MaxY + outsideDistance : MinY - outsideDistance);
-                entryPoint = new Vector2(tangentX, fromTop ? MaxY - insideDistance : MinY + insideDistance);
+                spawnPoint = new Vector2(preferredTangent, positiveEdge ? MaxY + outsideDistance : MinY - outsideDistance);
+                entryPoint = new Vector2(preferredTangent, positiveEdge ? MaxY - insideDistance : MinY + insideDistance);
             }
+            Debug.LogWarning($"Beenoculars could not find a clear obstacle opening near requested lane {normalizedX},{normalizedY}; using {entryPoint}.");
         }
 
         private void AddTitania2Timer(ScaledTimer timer)
