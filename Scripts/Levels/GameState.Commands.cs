@@ -40,6 +40,10 @@ namespace Assets.Scripts.Levels
 
         public void AddToSquadsAwaitingHiveMindCommands(Squad squad)
         {
+            if (squad == null || squad.IsDead || SquadsAwaitingCommands.Contains(squad))
+            {
+                return;
+            }
             SquadsAwaitingCommands.Enqueue(squad);
         }
 
