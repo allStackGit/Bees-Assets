@@ -326,6 +326,11 @@ namespace Assets.Scripts.Levels
             for (_save_i = 0; _save_i < AllSquads.Count; _save_i++)
             {
                 _save_savedSquad = AllSquads[_save_i];
+                if (_save_savedSquad.Side != ConfigData.Configuration.UserSide)
+                {
+                    continue;
+                }
+
                 _save_savedSquad.GetSquadShips().ForEach(ship =>
                 {
                     _save_fleetship = ship.GetFleetShip();
