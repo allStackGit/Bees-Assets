@@ -10,11 +10,11 @@ namespace Assets.Scripts.Entities.Ships
         {
             if (!IsDead)
             {
-                Carrier replacementCarrier = Level.State.GetHumanShips()
+                Carrier replacementCarrier = Level.State.GetShips(Side)
                     .OfType<Carrier>()
                     .FirstOrDefault(carrier => carrier != this && !carrier.IsDead);
 
-                foreach (CarrierShip carrierShip in Level.State.GetHumanShips()
+                foreach (CarrierShip carrierShip in Level.State.GetShips(Side)
                     .OfType<CarrierShip>()
                     .Where(ship => ship.Carrier == this)
                     .ToList())
