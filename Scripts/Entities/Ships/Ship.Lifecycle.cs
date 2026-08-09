@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Assets.Scripts.Data;
 using Assets.Scripts.Entities.Ships.Weapons;
+using Assets.Scripts.Levels;
 using UnityEngine;
 
 namespace Assets.Scripts.Entities.Ships
@@ -33,24 +34,19 @@ namespace Assets.Scripts.Entities.Ships
                     HasRightRocketFlares = RightRocketFlares.Count > 0;
                     HasRocketFlares = HasLeftRocketFlares || HasCenterRocketFlares || HasRightRocketFlares;
                 }
-                else
-                {
-                    HasRocketFlares = false;
-                }
+                else HasRocketFlares = false;
 
                 if (ShipAnimation != null)
                 {
                     HasShipAnimation = true;
                     ShipAnimationController?.Setup();
                 }
-
                 if (HasRemainsShip)
                 {
                     ShipRemains = Instantiate(Stage.Prefabs.ConvertShipTypeToRemainsPrefab[ShipType], Vector2.zero, Quaternion.identity)
                         .AddComponent<ShipRemains>();
                     ShipRemains.Create(this);
                 }
-
                 if (ShipType != ConfigData.ShipTypes.FireBarge)
                 {
                     ShipExplosion = Instantiate(Stage.Prefabs.ConvertShipTypeToExplosionPrefab[ShipType], Vector2.zero, Quaternion.identity);
@@ -67,9 +63,9 @@ namespace Assets.Scripts.Entities.Ships
             {
                 Destroy(SortingGroup);
                 Destroy(MiniMapIcon);
-                LeftRocketFlares.ForEach(Destroy);
-                CenterRocketFlares.ForEach(Destroy);
-                RightRocketFlares.ForEach(Destroy);
+                LeftRocketFlares.ForEach(flare => Destroy(flare));
+                CenterRocketFlares.ForEach(flare => Destroy(flare));
+                RightRocketFlares.ForEach(flare => Destroy(flare));
                 LeftRocketFlares.Clear();
                 CenterRocketFlares.Clear();
                 RightRocketFlares.Clear();
@@ -77,11 +73,7 @@ namespace Assets.Scripts.Entities.Ships
                 HasRemainsShip = false;
             }
 
-            if (!Stage.IsRendering)
-            {
-                Destroy(HealthBar);
-            }
-
+            if (!Stage.IsRendering) Destroy(HealthBar);
             ConfigureSpecialRole(shipStats);
             CreateWeapons(shipStats);
 
@@ -116,11 +108,7 @@ namespace Assets.Scripts.Entities.Ships
                 HiveMindVision.Create(this);
                 Destroy(FogOfWarVision.gameObject);
             }
-
-            if (HasProximityCollider)
-            {
-                ProximityCollider.Create(this);
-            }
+            if (HasProximityCollider) ProximityCollider.Create(this);
             LongestSide = Mathf.Max(GetWidth(), GetHeight());
             Deactivate();
         }
@@ -159,13 +147,11 @@ namespace Assets.Scripts.Entities.Ships
                     ConfigData.WeaponTypes.FullShipTurret => gameObject.AddComponent<FullShipTurret>(),
                     _ => null
                 };
-
                 if (weapon == null)
                 {
                     Debug.LogError($"{Name}'s weapon #{i} doesn't have a proper weapon type: {shipStats.WeaponTypes[i]}");
                     continue;
                 }
-
                 if (weapon is Turret turret)
                 {
                     turret.Create(this, shipStats.WeaponTypes[i], shipStats.WeaponSoundTypes[i], shipStats.Ranges[i], shipStats.Powers[i],
@@ -192,11 +178,7 @@ namespace Assets.Scripts.Entities.Ships
             Name = $"{FleetShip.Type} #{FleetShip.Id}";
             gameObject.name = Name;
             ClearData();
-
-            if (IsHiveMindControlled)
-            {
-                Level.State.HivemindShips[Side - 1].Add(Id, new HashSet<Ship>());
-            }
+            if (IsHiveMindControlled) Level.State.HivemindShips[Side - 1].Add(Id, new HashSet<Ship>());
             IsSpawnedShip = FleetShip.Id < 0;
 
             if (!Level.Stage.IsTraining)
@@ -204,11 +186,7 @@ namespace Assets.Scripts.Entities.Ships
                 if (squad.HasCustomColor) Utilities.SetUIColor(MiniMapIcon, squad.Color);
                 else if (Side == ConfigData.Configuration.HumanSide) Utilities.SetUIColor(MiniMapIcon, ConfigData.GetUIColor("human"));
                 else if (Side == ConfigData.Configuration.BeeSide) Utilities.SetUIColor(MiniMapIcon, ConfigData.GetUIColor("bee"));
-
-                if (squad.HasCustomColor && HasShipAnimation)
-                {
-                    ShipAnimationController.RecolorAnimationSprites();
-                }
+                if (squad.HasCustomColor && HasShipAnimation) ShipAnimationController.RecolorAnimationSprites();
                 MiniMapIcon.transform.localScale = _originalMiniMapIconScale * Level.Map.SizeMultiplier *
                     (ShipType == ConfigData.ShipTypes.Queen ? .75f : 1.5f);
             }
@@ -225,14 +203,11 @@ namespace Assets.Scripts.Entities.Ships
                     ? Squad.Color
                     : ConfigData.GetUIColor(Side == ConfigData.Configuration.HumanSide ? "human" : "bee");
             }
-
             Weapons.ForEach(weapon => weapon.Setup());
             if (HasRemainsShip) ShipRemains.Setup();
             if ((ConfigData.Configuration.UserSide == Side || !Level.HasPlayer) &&
                 (ShipType == ConfigData.ShipTypes.Factory || ShipType == ConfigData.ShipTypes.CarpenterBee))
-            {
                 Level.State.MiningShips.Add(this);
-            }
             UpdateHealthBar();
             Activate();
         }
@@ -291,10 +266,7 @@ namespace Assets.Scripts.Entities.Ships
                 }
             }
             Move();
-            if (Stage.DebugLogger.IsDebugging || ShowDebug)
-            {
-                UpdateDebugProperties();
-            }
+            if (Stage.DebugLogger.IsDebugging || ShowDebug) UpdateDebugProperties();
         }
 
         public override void Deactivate()
@@ -312,7 +284,6 @@ namespace Assets.Scripts.Entities.Ships
             }
             if (!IsUserControlled) HiveMindVision.Deactivate();
             if (HasProximityCollider) ProximityCollider.Deactivate();
-
             if (!Stage.IsTraining)
             {
                 SortingGroup.enabled = false;
@@ -326,10 +297,7 @@ namespace Assets.Scripts.Entities.Ships
                 if (HasMovementMarker) MovementMarker.SetActive(false);
                 HealthBar.SetActive(false);
             }
-            else if (Stage.IsRendering)
-            {
-                HealthBar.SetActive(false);
-            }
+            else if (Stage.IsRendering) HealthBar.SetActive(false);
         }
 
         public override void Activate()
@@ -339,10 +307,7 @@ namespace Assets.Scripts.Entities.Ships
             {
                 if (Level.ActivateFogOfWar) FogOfWarVision.Activate();
             }
-            else
-            {
-                HiveMindVision.Activate();
-            }
+            else HiveMindVision.Activate();
             if (HasProximityCollider) ProximityCollider.Activate();
             if (HasWeapons) Weapons.ForEach(weapon => weapon.Activate());
             if (Stage.IsRendering) HealthBar.SetActive(true);
