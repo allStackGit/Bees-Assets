@@ -19,6 +19,12 @@ namespace Assets.Scripts.Levels
             _titania2Resolved = false;
             _titania2MissionTimers.Clear();
             HasContinuousTriggers = true;
+
+            // Campaign LevelOptions can carry an old/custom starting position. SetupMapAndCamera
+            // applies that position before SetupShips, so translate the already-created human
+            // formation back to Titania's authored fleet start before the first frame is shown.
+            AlignTitania2HumanFleetToAuthoredStart();
+
             Stage.Menus.SetMissionStatus("Survive and defend Titania!");
             Stage.CutsceneManager.Setup(Titania2CampaignEnding);
 
@@ -91,6 +97,9 @@ namespace Assets.Scripts.Levels
                 }, true);
                 AddTitania2Timer(survivalClock);
 
+                // Bee forces deliberately spawn beyond the visible battlefield and fly through
+                // an entry point just inside the corresponding edge. This avoids reinforcement
+                // groups visibly popping into existence on the playable map.
                 AddTitania2BeeWave(new List<SavedSquad>() {
                     ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4, true, true),
                 }, 0.85f, 0.55f);
@@ -174,6 +183,32 @@ namespace Assets.Scripts.Levels
             }, "Titania 2 Start Level"));
         }
 
+        private void AlignTitania2HumanFleetToAuthoredStart()
+        {
+            int userIndex = ConfigData.Configuration.UserSide - 1;
+            Vector2 previousAnchor = StartingPositions[userIndex];
+            Vector2 authoredAnchor = Map != null ? Map.UserStartingPosition : previousAnchor;
+            Vector2 translation = authoredAnchor - previousAnchor;
+
+            if (translation.sqrMagnitude > 0.01f)
+            {
+                foreach (Squad squad in State.GetSquadsBySide(ConfigData.Configuration.UserSide))
+                {
+                    foreach (Ship ship in squad.GetShips())
+                    {
+                        ship.transform.localPosition += (Vector3)translation;
+                    }
+                    squad.SetOffsets();
+                }
+                Physics2D.SyncTransforms();
+                Debug.Log($"Moved Beenoculars human fleet from persisted anchor {previousAnchor} to Titania start {authoredAnchor}.");
+            }
+
+            CurrentLevelOptions.UserStartingPosition = authoredAnchor;
+            StartingPositions[userIndex] = authoredAnchor;
+            Stage.DefaultCameraPosition = authoredAnchor;
+        }
+
         private void AddTitania2BeeWave(List<SavedSquad> squads, float normalizedX, float normalizedY)
         {
             if (squads == null || squads.Count == 0)
@@ -190,53 +225,39 @@ namespace Assets.Scripts.Levels
                 float laneOffset = centeredIndex * laneSpread;
                 float squadX = horizontalEntry ? normalizedX : normalizedX + laneOffset;
                 float squadY = horizontalEntry ? normalizedY + laneOffset : normalizedY;
-                Vector2 spawnPoint = FindTitania2SpawnPoint(squadX, squadY);
 
-                // Spawn each SavedSquad independently. LevelConstructor.PositionSquads deliberately
-                // skips its normal bounds correction for reinforcements, and passing multiple
-                // squads at an edge can otherwise spread later squads back outside the map.
-                AddReinforcementSquads(new List<SavedSquad> { squads[i] }, spawnPoint, Vector2.zero);
+                GetTitania2OffMapEntry(squadX, squadY, out Vector2 spawnPoint, out Vector2 entryPoint);
+                AddReinforcementSquads(new List<SavedSquad> { squads[i] }, spawnPoint, entryPoint);
             }
         }
 
-        private Vector2 FindTitania2SpawnPoint(float normalizedX, float normalizedY)
+        private void GetTitania2OffMapEntry(
+            float normalizedX,
+            float normalizedY,
+            out Vector2 spawnPoint,
+            out Vector2 entryPoint)
         {
-            const float boundaryInset = 64f;
-            const float obstacleClearance = 56f;
-            const float scanStep = 24f;
-            const int maxScanSteps = 8;
+            const float outsideDistance = 80f;
+            const float insideDistance = 28f;
+            const float tangentMargin = 48f;
 
             float xT = (Mathf.Clamp(normalizedX, -1f, 1f) + 1f) * 0.5f;
             float yT = (Mathf.Clamp(normalizedY, -1f, 1f) + 1f) * 0.5f;
-            Vector2 min = new Vector2(MinX + boundaryInset, MinY + boundaryInset);
-            Vector2 max = new Vector2(MaxX - boundaryInset, MaxY - boundaryInset);
-            Vector2 desired = new Vector2(
-                Mathf.Lerp(min.x, max.x, xT),
-                Mathf.Lerp(min.y, max.y, yT));
+            float tangentX = Mathf.Lerp(MinX + tangentMargin, MaxX - tangentMargin, xT);
+            float tangentY = Mathf.Lerp(MinY + tangentMargin, MaxY - tangentMargin, yT);
 
-            Physics2D.SyncTransforms();
-            Vector2 candidate = desired;
-            for (int step = 0; step <= maxScanSteps; step++)
+            if (Mathf.Abs(normalizedX) >= Mathf.Abs(normalizedY))
             {
-                if (Physics2D.OverlapCircle(candidate, obstacleClearance, ConfigData.ObstaclesLayerMask) == null)
-                {
-                    return candidate;
-                }
-
-                candidate = Vector2.MoveTowards(candidate, Titania2Center, scanStep);
-                candidate.x = Mathf.Clamp(candidate.x, min.x, max.x);
-                candidate.y = Mathf.Clamp(candidate.y, min.y, max.y);
+                bool fromRight = normalizedX >= 0f;
+                spawnPoint = new Vector2(fromRight ? MaxX + outsideDistance : MinX - outsideDistance, tangentY);
+                entryPoint = new Vector2(fromRight ? MaxX - insideDistance : MinX + insideDistance, tangentY);
             }
-
-            Vector2 fallback = StartingPositions[ConfigData.Configuration.AISide - 1];
-            if (Physics2D.OverlapCircle(fallback, obstacleClearance, ConfigData.ObstaclesLayerMask) == null)
+            else
             {
-                Debug.LogWarning($"Beenoculars entry lane {normalizedX},{normalizedY} was blocked; using AI starting position {fallback}.");
-                return fallback;
+                bool fromTop = normalizedY >= 0f;
+                spawnPoint = new Vector2(tangentX, fromTop ? MaxY + outsideDistance : MinY - outsideDistance);
+                entryPoint = new Vector2(tangentX, fromTop ? MaxY - insideDistance : MinY + insideDistance);
             }
-
-            Debug.LogWarning($"Beenoculars could not find a fully clear reinforcement entry near {desired}; using the in-bounds candidate {candidate}.");
-            return candidate;
         }
 
         private void AddTitania2Timer(ScaledTimer timer)
