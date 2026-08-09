@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Assets.Scripts.Data;
 using Assets.Scripts.Entities.Ships.Weapons;
+using Assets.Scripts.Levels;
 using Unity.Mathematics;
 using UnityEngine;
 
@@ -23,10 +24,7 @@ namespace Assets.Scripts.Entities.Ships
         private CarrierShip _carrierShip;
         private int _maxLoops;
 
-        public void ClearTargets()
-        {
-            Weapons.ForEach(weapon => weapon.ClearTargets());
-        }
+        public void ClearTargets() => Weapons.ForEach(weapon => weapon.ClearTargets());
 
         private void CombatTimer()
         {
@@ -37,14 +35,8 @@ namespace Assets.Scripts.Entities.Ships
 
         public void SetCombatTimer()
         {
-            if (!IsUserControlled || !Level.Stage.ActivateHiveMind)
-            {
-                return;
-            }
-            if (_combatTimer)
-            {
-                Level.CancelTimer(_combatTimerScaledTimer);
-            }
+            if (!IsUserControlled || !Level.Stage.ActivateHiveMind) return;
+            if (_combatTimer) Level.CancelTimer(_combatTimerScaledTimer);
             InCombat = true;
             _combatTimer = true;
             _combatTimerScaledTimer.Reuse(_repeatRate, CombatTimer, true);
@@ -52,35 +44,22 @@ namespace Assets.Scripts.Entities.Ships
 
         public void LogDamage(int damage)
         {
-            if (Health <= 0)
-            {
-                return;
-            }
-
+            if (Health <= 0) return;
             _oldTsv = Tsv;
             Health -= math.min(damage, Health);
             Tsv = Utilities.CalculateTsv(this);
             _tsvChange = Tsv - _oldTsv;
             FleetShip.DamageReceived += -_tsvChange;
             Squad.SavedSquad.Stats.DamageReceived += -_tsvChange;
-            if (Squad.HasCommand)
-            {
-                Squad.GetCommand().Tsv += _tsvChange;
-            }
+            if (Squad.HasCommand) Squad.GetCommand().Tsv += _tsvChange;
             if (Health == 0) Kill(null, null, null);
             else UpdateHealthBar();
         }
 
         public static void LogAttackingDamage(int power, Ship attacker, FleetShip attackerFleetShip, SavedSquad attackerSavedSquad, Ship target)
         {
-            if (target.Health <= 0)
-            {
-                return;
-            }
-            if (target.Level.Stage.MakeShotsHarmless)
-            {
-                power = 0;
-            }
+            if (target.Health <= 0) return;
+            if (target.Level.Stage.MakeShotsHarmless) power = 0;
 
             attacker.ShipsHit.Add(target);
             _targetOldTSV = target.Tsv;
@@ -114,10 +93,7 @@ namespace Assets.Scripts.Entities.Ships
 
         protected static void LogHitStats(Ship attacker, FleetShip attackerFleetShip, SavedSquad attackerSavedSquad, Ship target, Squad targetSquad, int tsvLoss)
         {
-            if (tsvLoss < 0)
-            {
-                Debug.LogError($"The tsv loss for target {target.Name} is negative when it should be positive: {tsvLoss}");
-            }
+            if (tsvLoss < 0) Debug.LogError($"The tsv loss for target {target.Name} is negative when it should be positive: {tsvLoss}");
 
             _isFriendlyFire = false;
             if (attackerFleetShip.Side != target.Side)
@@ -131,24 +107,17 @@ namespace Assets.Scripts.Entities.Ships
                 attacker.KillerFleetShip.DamageDone += tsvLoss;
                 attacker.KillerSavedSquad.Stats.DamageDone += tsvLoss;
                 if (attacker.Killer != null && attacker.Killer.Squad.HasCommand)
-                {
                     attacker.Killer.Squad.GetCommand().Tsv += tsvLoss;
-                }
             }
 
             if (attacker != null && attacker.Squad.HasCommand)
-            {
                 attacker.Squad.GetCommand().Tsv += tsvLoss * (_isFriendlyFire ? -1 : 1);
-            }
 
             if (target != null)
             {
                 target.FleetShip.DamageReceived += tsvLoss;
                 target.Squad.SavedSquad.Stats.DamageReceived += tsvLoss;
-                if (targetSquad.HasCommand)
-                {
-                    targetSquad.GetCommand().Tsv -= tsvLoss;
-                }
+                if (targetSquad.HasCommand) targetSquad.GetCommand().Tsv -= tsvLoss;
                 if (target.Stage.IsTrainingNueralNetwork)
                 {
                     _initialTsv = target.Level.State.InitialTsv;
@@ -172,9 +141,7 @@ namespace Assets.Scripts.Entities.Ships
         protected void LogKilledStats()
         {
             if (Level.Stage.ReplaceDeadShips && !IsCarrierShip && !IsMinionShip && Squad.SavedSquad.HasBeenSavedToStorage)
-            {
                 FleetShip.IsDead = true;
-            }
             Squad.SavedSquad.Stats.ShipsLost++;
             FleetShip.MineralsMinedThisLevel = 0;
             if (Side == ConfigData.Configuration.UserSide)
@@ -182,16 +149,10 @@ namespace Assets.Scripts.Entities.Ships
                 Level.State.PlayerScore -= FleetShip.GetTsv();
                 Level.State.PlayerShipsLost++;
             }
-            else
-            {
-                Level.State.PlayerScore += FleetShip.GetTsv();
-            }
+            else Level.State.PlayerScore += FleetShip.GetTsv();
         }
 
-        public void EndKill()
-        {
-            Kill(null, null, null, true);
-        }
+        public void EndKill() => Kill(null, null, null, true);
 
         public void KilledShip(Ship victim)
         {
@@ -205,10 +166,7 @@ namespace Assets.Scripts.Entities.Ships
 
         public virtual void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false)
         {
-            if (IsDead)
-            {
-                return;
-            }
+            if (IsDead) return;
             IsDead = true;
             if (!endKill)
             {
@@ -218,37 +176,22 @@ namespace Assets.Scripts.Entities.Ships
                     if (killer != null)
                     {
                         killer.KilledShip(this);
-                        if (killer.Side == ConfigData.Configuration.UserSide)
-                        {
-                            Level.State.EnemyShipsDestroyedByPlayer++;
-                        }
+                        if (killer.Side == ConfigData.Configuration.UserSide) Level.State.EnemyShipsDestroyedByPlayer++;
                     }
                     LogKillerStats(killerFleetShip, killerSavedSquad);
                 }
-                if (ShipType != ConfigData.ShipTypes.Beacon)
-                {
-                    LogKilledStats();
-                }
-                if (HasUserFogOfWarVision)
-                {
-                    FogOfWarVision.Kill(0, false);
-                }
+                if (ShipType != ConfigData.ShipTypes.Beacon) LogKilledStats();
+                if (HasUserFogOfWarVision) FogOfWarVision.Kill(0, false);
                 if (WeaponsThatHaveUsWithinRange.Count > 0)
                 {
                     _weapons = WeaponsThatHaveUsWithinRange.ToList();
-                    foreach (Weapon weapon in _weapons)
-                    {
-                        weapon.ShipsWithinRange.Remove(Id);
-                    }
+                    foreach (Weapon weapon in _weapons) weapon.ShipsWithinRange.Remove(Id);
                     WeaponsThatHaveUsWithinRange.Clear();
                 }
                 Squad.HasMovedBox = false;
                 Squad.MoveSquadBox();
             }
-            else if (Side == ConfigData.Configuration.UserSide)
-            {
-                Level.State.PlayerShipsReturned++;
-            }
+            else if (Side == ConfigData.Configuration.UserSide) Level.State.PlayerShipsReturned++;
 
             Level.State.RemoveShip(this);
             Squad.RemoveShip(this);
@@ -267,11 +210,7 @@ namespace Assets.Scripts.Entities.Ships
                 }
             }
 
-            foreach (var projectile in ProjectilesInFlight)
-            {
-                projectile.ShipIsDead = true;
-            }
-
+            foreach (Projectile projectile in ProjectilesInFlight) projectile.ShipIsDead = true;
             if (Squad.GetShips().Count == 0) Squad.Kill(endKill);
             else Squad.SetOffsets();
 
@@ -291,21 +230,14 @@ namespace Assets.Scripts.Entities.Ships
                 if (Squad.GetCommand().TargetingQueue.Count == 0)
                 {
                     if (Squad.GetCommand().EnemySquad.IsGrowingSquad)
-                    {
                         Squad.GetCommand().OriginalQueue = new Queue<Ship>(Squad.GetCommand().MakeTargetingQueue());
-                    }
                     Squad.GetCommand().TargetingQueue = new Queue<Ship>(Squad.GetCommand().OriginalQueue);
                 }
                 TargetEnemyShipToFollow = Squad.GetCommand().TargetingQueue.Dequeue();
                 if (TargetEnemyShipToFollow.IsDead)
-                {
                     Squad.GetCommand().OriginalQueue = new Queue<Ship>(Squad.GetCommand().MakeTargetingQueue());
-                }
             }
-            if (_tempIndex == _maxLoops)
-            {
-                Debug.LogException(new Exception("Hit loop limit for SetAndGetTargetEnemy"));
-            }
+            if (_tempIndex == _maxLoops) Debug.LogException(new Exception("Hit loop limit for SetAndGetTargetEnemy"));
             return TargetEnemyShipToFollow;
         }
     }
