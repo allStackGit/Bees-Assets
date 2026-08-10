@@ -28,6 +28,11 @@ namespace Assets.Scripts.Levels
             }
             Ships.Add(ship);
             ShipsById.Add(ship.Id, ship);
+            if (ship.IsHiveMindControlled)
+            {
+                HivemindShips[ship.Side - 1][ship.Id] =
+                    new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance);
+            }
         }
 
         public void AddSquad(Squad squad)
@@ -115,6 +120,25 @@ namespace Assets.Scripts.Levels
                 {
                     spotted.RemoveAll(entry => entry == null || entry.Ship == null || entry.Ship == ship);
                 }
+            }
+
+            // Hivemind visibility is live runtime state. Remove this lifecycle both as an
+            // observer and as a seen target before the pooled wrapper receives a new Id.
+            foreach (Dictionary<long, HashSet<Ship>> observerMap in HivemindShips)
+            {
+                if (observerMap == null)
+                {
+                    continue;
+                }
+                observerMap.Remove(ship.Id);
+                foreach (HashSet<Ship> visibleShips in observerMap.Values)
+                {
+                    visibleShips?.Remove(ship);
+                }
+            }
+            foreach (HashSet<Ship> visibleCache in VisionCache)
+            {
+                visibleCache?.Remove(ship);
             }
 
             // Queen/Scout minions and Carrier children intentionally replace their
