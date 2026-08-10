@@ -9,16 +9,7 @@ namespace Assets.Scripts.Entities.Ships
         /// </summary>
         public virtual bool CanReturnToPool()
         {
-            if (ProjectilesInFlight.Count > 0)
-            {
-                return false;
-            }
-
-            // Pathfinder workers capture the Ship reference and lifecycle ID while they run.
-            // Reusing this wrapper before that request has left the worker/queue lets stale
-            // asynchronous work race the next ship lifecycle using the same pooled object.
-            return Level?.Pathfinder == null ||
-                !Level.Pathfinder.HasOutstandingWorkForShip(this, PathfindingLifecycleId);
+            return ProjectilesInFlight.Count == 0;
         }
 
         /// <summary>
