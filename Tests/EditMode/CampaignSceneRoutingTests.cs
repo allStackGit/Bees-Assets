@@ -13,10 +13,12 @@ namespace Bees.Tests.EditMode
         private Type _configDataType;
         private Type _routerType;
         private MethodInfo _shouldRedirect;
+        private MethodInfo _resetNarrativeState;
         private object _originalGameMode;
         private object _originalLevelOptions;
         private object _originalTestingLevel;
         private object _originalSeenIntro;
+        private object _originalSeenIntermission;
 
         [SetUp]
         public void SetUp()
@@ -26,11 +28,15 @@ namespace Bees.Tests.EditMode
             _shouldRedirect = _routerType.GetMethod(
                 "ShouldRedirectToLevelIntro",
                 BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
+            _resetNarrativeState = _routerType.GetMethod(
+                "ResetNarrativeStateAtCampaignStart",
+                BindingFlags.Static | BindingFlags.NonPublic);
 
             _originalGameMode = RuntimeAssembly.GetStaticField(_configDataType, "CurrentGameMode");
             _originalLevelOptions = RuntimeAssembly.GetStaticField(_configDataType, "LevelOptions");
             _originalTestingLevel = RuntimeAssembly.GetStaticField(_configDataType, "IsTestingLevel");
             _originalSeenIntro = RuntimeAssembly.GetStaticField(_configDataType, "HasSeenPreLevelIntro");
+            _originalSeenIntermission = RuntimeAssembly.GetStaticField(_configDataType, "HasSeenIntermission");
         }
 
         [TearDown]
@@ -40,6 +46,7 @@ namespace Bees.Tests.EditMode
             RuntimeAssembly.SetStaticField(_configDataType, "LevelOptions", _originalLevelOptions);
             RuntimeAssembly.SetStaticField(_configDataType, "IsTestingLevel", _originalTestingLevel);
             RuntimeAssembly.SetStaticField(_configDataType, "HasSeenPreLevelIntro", _originalSeenIntro);
+            RuntimeAssembly.SetStaticField(_configDataType, "HasSeenIntermission", _originalSeenIntermission);
         }
 
         [Test]
@@ -82,6 +89,24 @@ namespace Bees.Tests.EditMode
             Assert.That(seenIntroBranch, Is.GreaterThanOrEqualTo(0));
             Assert.That(consume, Is.GreaterThan(seenIntroBranch));
             Assert.That(returnStatement, Is.GreaterThan(consume));
+        }
+
+        [Test]
+        public void CampaignMissionZeroClearsPriorNarrativeTransitionState()
+        {
+            object campaignMode = Enum.Parse(RuntimeAssembly.GetType("Assets.Scripts.ConfigData+GameModes"), "Campaign");
+            object levelOptions = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Data.LevelOptions");
+            RuntimeAssembly.SetField(levelOptions, "Id", 0);
+
+            RuntimeAssembly.SetStaticField(_configDataType, "CurrentGameMode", campaignMode);
+            RuntimeAssembly.SetStaticField(_configDataType, "LevelOptions", levelOptions);
+            RuntimeAssembly.SetStaticField(_configDataType, "HasSeenPreLevelIntro", true);
+            RuntimeAssembly.SetStaticField(_configDataType, "HasSeenIntermission", true);
+
+            _resetNarrativeState.Invoke(null, new object[] { "Space" });
+
+            Assert.That(RuntimeAssembly.GetStaticField(_configDataType, "HasSeenPreLevelIntro"), Is.False);
+            Assert.That(RuntimeAssembly.GetStaticField(_configDataType, "HasSeenIntermission"), Is.False);
         }
 
         [Test]
