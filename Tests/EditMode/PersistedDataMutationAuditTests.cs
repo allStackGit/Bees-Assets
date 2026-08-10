@@ -23,7 +23,7 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void CountedCompositionSelectionUsesAliveShipsForAllBounds()
+        public void CountedCompositionSelectionUsesAliveShipsForExactAndFallbackBounds()
         {
             string source = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Ships.cs"));
             int start = source.IndexOf("public SavedSquad GetSquadByComposition(Level level", StringComparison.Ordinal);
@@ -32,8 +32,10 @@ namespace Bees.Tests.EditMode
 
             Assert.That(method, Does.Not.Contain("GetSquadShips().Count"));
             Assert.That(method, Does.Contain("GetAliveSquadShips().Count == shipCount"));
-            Assert.That(method, Does.Contain("GetAliveSquadShips().Count <= shipCount"));
-            Assert.That(method, Does.Contain("GetAliveSquadShips().Count >= shipCount"));
+            Assert.That(method, Does.Contain("GetAliveSquadShips().Count < shipCount"));
+            Assert.That(method, Does.Contain("GetAliveSquadShips().Count > shipCount"));
+            Assert.That(method, Does.Contain("OrderByDescending((squad) => squad.GetAliveSquadShips().Count)"));
+            Assert.That(method, Does.Contain("OrderBy((squad) => squad.GetAliveSquadShips().Count)"));
         }
     }
 }
