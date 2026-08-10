@@ -66,15 +66,26 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void RuntimeOnlyCampaignMissionCannotBeLoadedAsPersistedData()
+        public void MatchingPersistedDataCanLoadEvenIfCatalogAvailabilityFlagIsStale()
         {
             object levelData = CreateCampaignData(CreateLevel(9, "On the Offensive"));
+            object level = RuntimeAssembly.Invoke(levelData, "GetLevel", 9);
+
+            Assert.That(RuntimeAssembly.GetField(level, "Id"), Is.EqualTo(9));
+            Assert.That(RuntimeAssembly.GetField(level, "Name"), Is.EqualTo("On the Offensive"));
+        }
+
+        [Test]
+        public void MissingRuntimeOnlyCampaignMissionStillFailsExplicitly()
+        {
+            object levelData = CreateCampaignData();
 
             TargetInvocationException exception = Assert.Throws<TargetInvocationException>(() =>
                 RuntimeAssembly.Invoke(levelData, "GetLevel", 9));
 
             Assert.That(exception.InnerException, Is.TypeOf<InvalidOperationException>());
-            StringAssert.Contains("no persisted campaign level data", exception.InnerException.Message);
+            StringAssert.Contains("On the Offensive", exception.InnerException.Message);
+            StringAssert.Contains("missing persisted level data", exception.InnerException.Message);
         }
 
         private object CreateCampaignData(params object[] levels)
