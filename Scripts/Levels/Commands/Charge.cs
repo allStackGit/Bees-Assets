@@ -10,7 +10,7 @@ namespace Assets.Scripts.Levels.Commands
 {
     public class Charge : Command
     {
-        public HashSet<Ship> ChargingShips = new HashSet<Ship>();
+        public HashSet<Ship> ChargingShips = new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance);
         public bool IsCharging;
 
         private ConfigData.ShootingStrategyTypes _execute_shootingStrategy;
