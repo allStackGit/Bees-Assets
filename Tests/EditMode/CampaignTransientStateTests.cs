@@ -61,8 +61,7 @@ namespace Bees.Tests.EditMode
         [Test]
         public void CampaignConfigurationClearsActiveAndDeferredTriggersBeforeNewMission()
         {
-            string path = Path.Combine(Application.dataPath, "Scripts", "Levels", "Level.Campaign.Shared.cs");
-            string source = File.ReadAllText(path);
+            string source = ReadSharedCampaignSource();
             int start = source.IndexOf("private void SetTriggers()");
             int end = source.IndexOf("public void EasterEggTriggers()", start);
 
@@ -74,6 +73,27 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("NextTriggers.Clear();", method);
             StringAssert.Contains("HasContinuousTriggers = false;", method);
             StringAssert.Contains("CampaignMissionCatalog.Configure(this, CurrentLevelOptions.Id);", method);
+        }
+
+        [Test]
+        public void CampaignHumanTargetDoesNotAssumeSquadTabExists()
+        {
+            string source = ReadSharedCampaignSource();
+            int start = source.IndexOf("public HumanTarget CreateHumanTarget");
+            int end = source.IndexOf("public void AddReinforcementSquads", start);
+
+            Assert.That(start, Is.GreaterThanOrEqualTo(0));
+            Assert.That(end, Is.GreaterThan(start));
+            string method = source.Substring(start, end - start);
+
+            StringAssert.Contains("humanTarget.Squad.HasSquadTab && humanTarget.Squad.SquadTab != null", method);
+            StringAssert.Contains("Destroy(humanTarget.Squad.SquadTab.gameObject)", method);
+        }
+
+        private static string ReadSharedCampaignSource()
+        {
+            return File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Levels", "Level.Campaign.Shared.cs"));
         }
     }
 }
