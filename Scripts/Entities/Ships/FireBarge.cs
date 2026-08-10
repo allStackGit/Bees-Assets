@@ -147,7 +147,7 @@ namespace Assets.Scripts.Entities.Ships
             return !_waitingForDelayedRelease && base.CanReturnToPool();
         }
 
-        public void PrepareForLevelTeardown()
+        public override void PrepareForLevelTeardown()
         {
             if (!_waitingForDelayedRelease)
             {
