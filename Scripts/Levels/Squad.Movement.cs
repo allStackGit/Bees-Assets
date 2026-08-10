@@ -12,11 +12,48 @@ namespace Assets.Scripts.Levels
 
         public void SetOffsets()
         {
+            RefreshCompositionCommandBans();
             _center = GetCenterPoint();
             _tempShips = GetShips();
             foreach (Ship ship in _tempShips)
             {
                 ship.OffsetFromCenter = new Vector2(ship.GetX() - _center.x, ship.GetY() - _center.y);
+            }
+        }
+
+        private void RefreshCompositionCommandBans()
+        {
+            if (GetShips().Count == 0)
+            {
+                return;
+            }
+
+            if (IsDefenseless)
+            {
+                BannedStrats.Add(ConfigData.CommandTypes.Aggressive);
+                BannedStrats.Add(ConfigData.CommandTypes.CircleSquad);
+                BannedStrats.Add(ConfigData.CommandTypes.RightSwipe);
+                BannedStrats.Add(ConfigData.CommandTypes.LeftSwipe);
+                BannedStrats.Add(ConfigData.CommandTypes.InAndOut);
+                BannedStrats.Add(ConfigData.CommandTypes.Hold);
+            }
+            else if (HasOnlyBombers)
+            {
+                BannedStrats.Remove(ConfigData.CommandTypes.Aggressive);
+                BannedStrats.Add(ConfigData.CommandTypes.CircleSquad);
+                BannedStrats.Add(ConfigData.CommandTypes.RightSwipe);
+                BannedStrats.Add(ConfigData.CommandTypes.LeftSwipe);
+                BannedStrats.Add(ConfigData.CommandTypes.InAndOut);
+                BannedStrats.Add(ConfigData.CommandTypes.Hold);
+            }
+            else
+            {
+                BannedStrats.Remove(ConfigData.CommandTypes.Aggressive);
+                BannedStrats.Remove(ConfigData.CommandTypes.CircleSquad);
+                BannedStrats.Remove(ConfigData.CommandTypes.RightSwipe);
+                BannedStrats.Remove(ConfigData.CommandTypes.LeftSwipe);
+                BannedStrats.Remove(ConfigData.CommandTypes.InAndOut);
+                BannedStrats.Remove(ConfigData.CommandTypes.Hold);
             }
         }
 
