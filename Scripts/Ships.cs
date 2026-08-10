@@ -396,14 +396,14 @@ namespace Assets.Scripts
 
         public SavedSquad GetSquadByComposition(Level level, ConfigData.ShipTypes shipType, int shipCount, bool canHaveFewerShips = false, bool canHaveMoreShips = false)
         {
-            SavedSquad savedSquad = GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetSquadShips().Count == shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType) && squad.GetAliveSquadShips().Count > 0);
+            SavedSquad savedSquad = GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetAliveSquadShips().Count == shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType) && squad.GetAliveSquadShips().Count > 0);
             if (savedSquad == null)
             {
                 if (!canHaveFewerShips && !canHaveMoreShips)
                 {
-                    Debug.Log($"Squads: {GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetSquadShips().Count == shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType))}");
+                    Debug.Log($"Squads: {GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetAliveSquadShips().Count == shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType))}");
 
-                    Debug.Log($"Squads: {GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetSquadShips().Count == shipCount)}");
+                    Debug.Log($"Squads: {GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetAliveSquadShips().Count == shipCount)}");
 
                     Debug.Log($"Squads: {GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel)}");
 
@@ -412,22 +412,22 @@ namespace Assets.Scripts
                 }
                 else if (canHaveFewerShips)
                 {
-                    savedSquad = GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetSquadShips().Count <= shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType) && squad.GetAliveSquadShips().Count > 0);
+                    savedSquad = GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetAliveSquadShips().Count <= shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType) && squad.GetAliveSquadShips().Count > 0);
                     if (savedSquad == null && canHaveMoreShips)
                     {
-                        savedSquad = GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetSquadShips().Count >= shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType) && squad.GetAliveSquadShips().Count > 0);
+                        savedSquad = GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetAliveSquadShips().Count >= shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType) && squad.GetAliveSquadShips().Count > 0);
                     }
                 }
                 else if (canHaveMoreShips)
                 {
-                    savedSquad = GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetSquadShips().Count >= shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType) && squad.GetAliveSquadShips().Count > 0);
+                    savedSquad = GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetAliveSquadShips().Count >= shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType) && squad.GetAliveSquadShips().Count > 0);
 
                 }
                 if (savedSquad == null)
                 {
-                    Debug.Log($"Squads: {GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetSquadShips().Count == shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType))}");
+                    Debug.Log($"Squads: {GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetAliveSquadShips().Count == shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType))}");
 
-                    Debug.Log($"Squads: {GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetSquadShips().Count == shipCount)}");
+                    Debug.Log($"Squads: {GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetAliveSquadShips().Count == shipCount)}");
 
                     Debug.Log($"Squads: {GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel)}");
 
