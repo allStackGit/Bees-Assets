@@ -85,7 +85,11 @@ namespace Assets.Scripts.Entities.Ships
 
         public void Kill()
         {
-            RetirePreviousPlacement();
+            // Level teardown owns removal from GameState.Deadbodies after calling Kill(). Keep
+            // the owner reference so a later pooled Ship Setup can remove an expired corpse from
+            // its previous Level before this remains object is reused elsewhere.
+            _ownerLevel?.CancelTimer(_killTimer);
+            gameObject.SetActive(false);
         }
 
         private void RetirePreviousPlacement()
