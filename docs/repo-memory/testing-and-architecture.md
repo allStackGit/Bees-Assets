@@ -8,6 +8,13 @@
 - The release gate is `Tools/Run-BeesReleaseGate.ps1`; slow qualification categories should stay opt-in so the normal correctness loop remains practical.
 - Leave new Unity `.meta` generation to Unity during remote repository work.
 
+## GitHub development workflow
+
+- Treat recurring GitHub/connector friction as an engineering problem to eliminate, not a permanent limitation to work around manually. When repository structure or tooling makes a development operation risky, slow, or repetitive, first create a durable safer workflow, record it here, and use it for subsequent applicable work.
+- In particular, do not repeatedly accept risky whole-file replacement of oversized source files. Split large components along cohesive ownership boundaries (usually partial classes for Unity components that share private state, or focused helpers for independent behavior) so future changes can be made through small files with reviewable diffs.
+- When a new friction pattern is discovered, record both the cause and the adopted solution in repo memory before continuing. Prefer solutions that reduce future context, token use, connector payload size, and regression surface rather than one-off procedural workarounds.
+- Existing examples of this rule are the `Ship`, `GameState`, `Turret`, and campaign partial decompositions. Apply the same pattern proactively to remaining oversized files such as `Level`, `Stage`, `Utilities`, or `Ships` when their size materially interferes with safe GitHub development.
+
 ## Source organization
 
 - Large Unity components should be split along ownership boundaries before they become unsafe to edit through whole-file tooling. Partial classes are appropriate when the behavior still belongs to one Unity component and must share private state.
