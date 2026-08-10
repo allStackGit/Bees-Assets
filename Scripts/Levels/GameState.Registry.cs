@@ -349,7 +349,7 @@ namespace Assets.Scripts.Levels
             {
                 Stage.Pool.ReturnAsteroidPieceToPool(piece);
             }
-            foreach (MiningAsteroid miningAsteroid in MiningAsteroidsToRelease)
+            foreach (MiningAsteroid miningAsteroid in miningAsteroids)
             {
                 Stage.Pool.ReturnMiningAsteroidToPool(miningAsteroid);
             }
