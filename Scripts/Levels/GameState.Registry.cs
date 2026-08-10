@@ -98,12 +98,9 @@ namespace Assets.Scripts.Levels
                 healCommand.ShipBecameUnavailable(ship);
             }
 
-            // These records retain the live Ship wrapper, whose runtime Id changes when
-            // the object is reused from the pool. Remove them while the old identity is
-            // still authoritative so stale combat/spotting state cannot attach to the
-            // next ship that occupies this wrapper. ResetLevel temporarily clears the
-            // per-side spotted-list slots before killing the old ships, so tolerate that
-            // teardown state; ResetState recreates both lists for the next episode.
+            // These records are queried during the live level and should stop referring to
+            // a dead target immediately. They are small per-side registries, so prune the
+            // departing ship synchronously before deregistering it.
             foreach (List<ShipDamageStatus> statuses in ShipDamageStatuses)
             {
                 if (statuses != null)
@@ -119,19 +116,16 @@ namespace Assets.Scripts.Levels
                 }
             }
 
-            // Hivemind visibility is live runtime state. Remove this lifecycle both as an
-            // observer and as a seen target before the pooled wrapper receives a new Id.
-            foreach (Dictionary<long, HashSet<Ship>> observerMap in HivemindShips)
+            // A dead Hivemind observer must stop contributing visibility immediately. Do not
+            // scan every other observer's HashSet to remove this ship as a seen target: live
+            // visibility aggregation already filters dead ships, and ordinary ship wrappers
+            // are not returned to the pool until ResetState clears these registries. Keeping
+            // casualty cleanup bounded avoids an O(observer-count) sweep on every ship death.
+            if (ship.IsHiveMindControlled &&
+                ship.Side >= 1 && ship.Side <= HivemindShips.Length &&
+                HivemindShips[ship.Side - 1] != null)
             {
-                if (observerMap == null)
-                {
-                    continue;
-                }
-                observerMap.Remove(ship.Id);
-                foreach (HashSet<Ship> visibleShips in observerMap.Values)
-                {
-                    visibleShips?.Remove(ship);
-                }
+                HivemindShips[ship.Side - 1].Remove(ship.Id);
             }
             foreach (HashSet<Ship> visibleCache in VisionCache)
             {
