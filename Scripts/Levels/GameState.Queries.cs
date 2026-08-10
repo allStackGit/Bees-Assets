@@ -51,11 +51,13 @@ namespace Assets.Scripts.Levels
 
         public HashSet<Ship> GetShipsVisibleToHiveMind(int side)
         {
-            VisionCache[side - 1] = HivemindShips[side - 1].Aggregate(new HashSet<Ship>(), (sum, dictionary) =>
-            {
-                sum.UnionWith(dictionary.Value.Where(ship => !ship.IsDead));
-                return sum;
-            });
+            VisionCache[side - 1] = HivemindShips[side - 1].Aggregate(
+                new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance),
+                (sum, dictionary) =>
+                {
+                    sum.UnionWith(dictionary.Value.Where(ship => !ship.IsDead));
+                    return sum;
+                });
             return VisionCache[side - 1];
         }
 
