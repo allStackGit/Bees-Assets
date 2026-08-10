@@ -38,14 +38,23 @@ namespace Assets.Scripts.Levels
         public void AddSquad(Squad squad)
         {
             // Minion/Carrier squads share their parent's SavedSquad identity. They are
-            // transient children and must not claim or release the persisted squad's
-            // loaded-state ownership independently of the parent squad.
-            if (!squad.IsMinionSquad)
+            // transient children and must not claim persisted ownership or change the
+            // player's normal squad-count/hotkey range. Give them a unique runtime number
+            // without treating them as normal selectable squads.
+            if (squad.IsMinionSquad)
+            {
+                squad.SquadNumber = Squads
+                    .Where(existing => existing.Side == squad.Side)
+                    .Select(existing => existing.SquadNumber)
+                    .DefaultIfEmpty(0)
+                    .Max() + 1;
+            }
+            else
             {
                 squad.SavedSquad.IsLoadedIntoLevel = true;
+                OriginalSquadCounts[squad.Side - 1]++;
             }
             Squads.Add(squad);
-            OriginalSquadCounts[squad.Side - 1]++;
         }
 
         public void RemoveSquad(Squad squad)
