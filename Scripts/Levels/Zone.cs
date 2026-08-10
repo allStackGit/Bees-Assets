@@ -24,15 +24,6 @@ namespace Assets.Scripts.Levels
             {
                 //Debug.Log($"Ship {ship.Name} entered exit zone.");
                 OnShipEnter?.Invoke(ship);
-
-                // Extraction/retreat callbacks commonly EndKill the entering ship. Unity
-                // does not guarantee a matching trigger-exit callback when a collider is
-                // disabled during this physics callback, so do not retain a consumed pooled
-                // wrapper in the zone until a future lifecycle reuses it.
-                if (ship == null || ship.IsDead || !ship.gameObject.activeInHierarchy)
-                {
-                    Ships.Remove(ship);
-                }
             }
         }
 
