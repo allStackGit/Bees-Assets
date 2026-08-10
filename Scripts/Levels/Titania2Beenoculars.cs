@@ -20,10 +20,9 @@ namespace Assets.Scripts.Levels
             _titania2MissionTimers.Clear();
             HasContinuousTriggers = true;
 
-            // Bee-noculars is a walled defensive arena. Stage the player's ships individually
-            // in the central Titania pocket rather than preserving a wide persisted formation
-            // that can straddle the authored walls.
-            StageTitania2HumanFleetAtCenter();
+            // The fleet has already been positioned from the formation selected in Squad Maker.
+            // Do not restage individual ships here; doing so destroys the player's saved offsets.
+            Stage.DefaultCameraPosition = Titania2Center;
 
             Stage.Menus.SetMissionStatus("Survive and defend Titania!");
             Stage.CutsceneManager.Setup(Titania2CampaignEnding);
@@ -40,6 +39,9 @@ namespace Assets.Scripts.Levels
                 HumanTarget titania = CreateHumanTarget(Titania2Center);
 
                 TMP_Text clockText = Stage.Menus.Clock.transform.GetChild(0).GetComponent<TMP_Text>();
+                // Match the established timed-mission layout used by Pluto 4 so the speed
+                // control does not cover the countdown clock.
+                Stage.Menus.GameSpeedButton.GetComponent<RectTransform>().anchoredPosition = new Vector2(-290, -15);
                 Stage.Menus.Clock.SetActive(true);
                 float endTime = Time.time + survivalDuration;
 
@@ -182,101 +184,6 @@ namespace Assets.Scripts.Levels
                     "Titania 2 Losing condition"));
 
             }, "Titania 2 Start Level"));
-        }
-
-        private void StageTitania2HumanFleetAtCenter()
-        {
-            const float placementStep = 20f;
-            const int maxRing = 6;
-            const float titaniasReservedRadius = 18f;
-            const float shipPadding = 4f;
-
-            List<Vector2> occupiedCenters = new List<Vector2>();
-            List<float> occupiedRadii = new List<float>();
-            List<Squad> userSquads = State.GetSquadsBySide(ConfigData.Configuration.UserSide);
-
-            Physics2D.SyncTransforms();
-            foreach (Squad squad in userSquads)
-            {
-                foreach (Ship ship in squad.GetShips())
-                {
-                    float clearance = Mathf.Max(ship.GetHalfWidth(), ship.GetHalfHeight()) + shipPadding;
-                    Vector2 placement = FindTitania2HumanShipPlacement(
-                        clearance,
-                        placementStep,
-                        maxRing,
-                        titaniasReservedRadius,
-                        occupiedCenters,
-                        occupiedRadii);
-
-                    ship.transform.localPosition = placement;
-                    occupiedCenters.Add(placement);
-                    occupiedRadii.Add(clearance);
-                }
-                squad.SetOffsets();
-            }
-
-            Physics2D.SyncTransforms();
-            int userIndex = ConfigData.Configuration.UserSide - 1;
-            CurrentLevelOptions.UserStartingPosition = Titania2Center;
-            StartingPositions[userIndex] = Titania2Center;
-            Stage.DefaultCameraPosition = Titania2Center;
-            Debug.Log($"Staged {occupiedCenters.Count} Beenoculars human ships around Titania at {Titania2Center}.");
-        }
-
-        private Vector2 FindTitania2HumanShipPlacement(
-            float clearance,
-            float placementStep,
-            int maxRing,
-            float titaniasReservedRadius,
-            List<Vector2> occupiedCenters,
-            List<float> occupiedRadii)
-        {
-            for (int ring = 1; ring <= maxRing; ring++)
-            {
-                for (int x = -ring; x <= ring; x++)
-                {
-                    for (int y = -ring; y <= ring; y++)
-                    {
-                        if (Mathf.Max(Mathf.Abs(x), Mathf.Abs(y)) != ring)
-                        {
-                            continue;
-                        }
-
-                        Vector2 candidate = Titania2Center + new Vector2(x * placementStep, y * placementStep);
-                        if (candidate.x - clearance < MinX || candidate.x + clearance > MaxX ||
-                            candidate.y - clearance < MinY || candidate.y + clearance > MaxY)
-                        {
-                            continue;
-                        }
-                        if (Vector2.Distance(candidate, Titania2Center) < titaniasReservedRadius + clearance)
-                        {
-                            continue;
-                        }
-                        if (Physics2D.OverlapCircle(candidate, clearance, ConfigData.ObstaclesLayerMask) != null)
-                        {
-                            continue;
-                        }
-
-                        bool overlapsFleet = false;
-                        for (int i = 0; i < occupiedCenters.Count; i++)
-                        {
-                            if (Vector2.Distance(candidate, occupiedCenters[i]) < clearance + occupiedRadii[i])
-                            {
-                                overlapsFleet = true;
-                                break;
-                            }
-                        }
-                        if (!overlapsFleet)
-                        {
-                            return candidate;
-                        }
-                    }
-                }
-            }
-
-            Debug.LogWarning($"Beenoculars could not find a fully clear central placement for a ship with {clearance:0.0} clearance.");
-            return Titania2Center + new Vector2(0f, -(titaniasReservedRadius + clearance));
         }
 
         private void AddTitania2BeeWave(List<SavedSquad> squads, float normalizedX, float normalizedY)
