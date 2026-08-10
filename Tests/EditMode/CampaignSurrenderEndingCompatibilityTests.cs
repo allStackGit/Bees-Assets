@@ -1,6 +1,8 @@
 using System;
+using System.IO;
 using System.Reflection;
 using NUnit.Framework;
+using UnityEngine;
 
 namespace Bees.Tests.EditMode
 {
@@ -23,6 +25,23 @@ namespace Bees.Tests.EditMode
                     BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
                 Assert.That(method, Is.Not.Null, $"Campaign level {id} has no legacy surrender ending entry point.");
+            }
+        }
+
+        [Test]
+        public void LegacySurrenderEntryPointsEstablishAiVictoryBeforeMissionCompletion()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "Level.Campaign.EndingCompatibility.cs"));
+
+            Assert.That(source, Does.Contain("WinningSide = ConfigData.Configuration.AISide;"));
+            Assert.That(source, Does.Contain("DidUserWin = false;"));
+            for (int id = 0; id <= 11; id++)
+            {
+                Assert.That(source, Does.Contain($"public void Level{id}Ending() {{ PrepareCampaignSurrenderEnding();"));
             }
         }
     }
