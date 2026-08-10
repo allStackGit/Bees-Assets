@@ -28,5 +28,25 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("commandRequest.SquadId == removedSquadItemId"));
             Assert.That(source, Does.Contain("matchupRequest.SquadId == removedSquadItemId"));
         }
+
+        [Test]
+        public void StrategicRequestsAlwaysBanMoveToPointWithoutDestinationPayload()
+        {
+            string source = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Server", "GetStrategy.cs"));
+
+            Assert.That(source, Does.Contain(".Concat(new[] { \"Move To Point\" })"));
+            Assert.That(source, Does.Contain(".Distinct()"));
+        }
+
+        [Test]
+        public void SettingsRequestRecoversFromHandledButIncompleteResponseWithFreshRequest()
+        {
+            string source = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Settings", "ServerSettings.cs"));
+
+            Assert.That(source, Does.Contain("if (standingRequest == null)"));
+            Assert.That(source, Does.Contain("ConfigData.Socket.HandledRequests.Contains(_request.Hash)"));
+            Assert.That(source, Does.Contain("ConfigData.Socket.StandingRequests.Remove(standingRequest);"));
+            Assert.That(source, Does.Contain("Fetch();"));
+        }
     }
 }
