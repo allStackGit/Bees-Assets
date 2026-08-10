@@ -12,7 +12,7 @@ namespace Assets.Scripts.Levels
 {
     public partial class GameState : MonoBehaviour
     {
-        public HashSet<Projectile> Projectiles = new HashSet<Projectile>();
+        public HashSet<Projectile> Projectiles = new HashSet<Projectile>(ReferenceIdentityComparer<Projectile>.Instance);
         public List<Ship> Ships = new List<Ship>();
         public List<Ship> ShipsToRelease = new List<Ship>();
         public Dictionary<long, Ship> ShipsById = new Dictionary<long, Ship>();
@@ -28,7 +28,7 @@ namespace Assets.Scripts.Levels
         public List<MiningAsteroid> MiningAsteroidsToRelease = new List<MiningAsteroid>();
         public List<FogOfWarVision> FogOfWarVisions = new List<FogOfWarVision>();
         public List<TargetingSquadMarker> TargetingSquadMarkers = new List<TargetingSquadMarker>();
-        public HashSet<MapObject> PlayerVisibleMapObjects = new HashSet<MapObject>();
+        public HashSet<MapObject> PlayerVisibleMapObjects = new HashSet<MapObject>(ReferenceIdentityComparer<MapObject>.Instance);
 
         public int UserCommands, AICommands;
         public bool IsPaused;
@@ -39,16 +39,20 @@ namespace Assets.Scripts.Levels
         public int[] OriginalSquadCounts = { 0, 0 };
         public Level Level;
         public Stage Stage;
-        public HashSet<Ship>[] VisionCache = { new HashSet<Ship>(), new HashSet<Ship>() };
+        public HashSet<Ship>[] VisionCache =
+        {
+            new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance),
+            new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance)
+        };
         public Dictionary<long, HashSet<Ship>>[] HivemindShips =
         {
             new Dictionary<long, HashSet<Ship>>(),
             new Dictionary<long, HashSet<Ship>>()
         };
         public List<ShipRemains> Deadbodies = new List<ShipRemains>();
-        public HashSet<RocketExplosion> FireBargeExplosions = new HashSet<RocketExplosion>();
-        public HashSet<MiningAsteroid> MiningAsteroids = new HashSet<MiningAsteroid>();
-        public HashSet<Ship> MiningShips = new HashSet<Ship>();
+        public HashSet<RocketExplosion> FireBargeExplosions = new HashSet<RocketExplosion>(ReferenceIdentityComparer<RocketExplosion>.Instance);
+        public HashSet<MiningAsteroid> MiningAsteroids = new HashSet<MiningAsteroid>(ReferenceIdentityComparer<MiningAsteroid>.Instance);
+        public HashSet<Ship> MiningShips = new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance);
         public bool HasWarpGates, HasSelectedSquads, HasBeehives;
         public List<ShipDamageStatus>[] ShipDamageStatuses =
         {
@@ -106,7 +110,11 @@ namespace Assets.Scripts.Levels
                 new Dictionary<long, HashSet<Ship>>(),
                 new Dictionary<long, HashSet<Ship>>()
             };
-            VisionCache = new[] { new HashSet<Ship>(), new HashSet<Ship>() };
+            VisionCache = new[]
+            {
+                new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance),
+                new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance)
+            };
             Deadbodies.Clear();
             FireBargeExplosions.Clear();
             MiningAsteroids.Clear();
