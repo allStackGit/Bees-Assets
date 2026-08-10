@@ -40,7 +40,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 _shipEnter = collider.GetComponent<Ship>();
                 //Debug.Log($"{Ship.Name} from {Ship.Level.gameObject.name} just saw {ship.Name} and added them to hivemind vision");
-                if (Ship.IsHiveMindControlled && !Ship.IsDead)
+                if (_shipEnter != null && Ship.IsHiveMindControlled && !Ship.IsDead &&
+                    Ship.Level.State.HivemindShips[Ship.Side - 1].TryGetValue(Ship.Id, out HashSet<Ship> visibleShips))
                 {
                     if (!Ship.Level.State.VisionCache[Ship.Side - 1].Contains(_shipEnter))
                     {
@@ -49,7 +50,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
                         //Debug.Log($"{Ship} has seen {_shipEnter} and is receiving {(int)Mathf.Clamp(_shipEnter.Tsv * ConfigData.TsvMultiplierForVision, ConfigData.MinimumTsvValueForSeeingAShip, ConfigData.MaximumTsvValueForSeeingAShip)} TSV for spotting it");
 
-                        Ship.Level.State.HivemindShips[Ship.Side - 1][Ship.Id].Add(_shipEnter); // Add the newly seen ship to the hivemind
+                        visibleShips.Add(_shipEnter); // Add the newly seen ship to the hivemind
                         if (Ship.Squad.GetCommand().CommandType == ConfigData.CommandTypes.Scouting)
                         {
                             ((Scouting)Ship.Squad.GetCommand()).FoundNewShips(); // If the ship is scouting, note that it's found ships and can end the command
@@ -59,17 +60,20 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
 
             }
-            else if (Ship.ShipType == ConfigData.ShipTypes.Beacon && Ship.MotherSquad.HasCommand){
+            else if (Ship.ShipType == ConfigData.ShipTypes.Beacon && !Ship.IsDead &&
+                     Ship.MotherSquad != null && Ship.MotherSquad.HasCommand)
+            {
                 _shipEnter = collider.GetComponent<Ship>();
                 
-                if (Ship.IsHiveMindControlled)
+                if (_shipEnter != null && Ship.IsHiveMindControlled &&
+                    Ship.Level.State.HivemindShips[Ship.Side - 1].TryGetValue(Ship.Id, out HashSet<Ship> visibleShips))
                 {
                     if (!Ship.Level.State.VisionCache[Ship.Side - 1].Contains(_shipEnter))
                     {
                         //Debug.Log($"{Ship.Name} from {Ship.Level.gameObject.name} just saw {_shipEnter.Name} and added them to hivemind vision");
                         // Clamp the value of seeing the ship between 1 & 20 TSV and add it to the Scout's command regardless of what the command is
                         Ship.MotherSquad.GetCommand().Tsv += (int)Mathf.Clamp(_shipEnter.Tsv * ConfigData.TsvMultiplierForVision, ConfigData.MinimumTsvValueForSeeingAShip, ConfigData.MaximumTsvValueForSeeingAShip);
-                        Ship.Level.State.HivemindShips[Ship.Side - 1][Ship.Id].Add(_shipEnter);
+                        visibleShips.Add(_shipEnter);
 
                         if (!Ship.MotherSquad.IsDead && Ship.MotherSquad.GetCommand().CommandType == ConfigData.CommandTypes.Scouting)
                         {
