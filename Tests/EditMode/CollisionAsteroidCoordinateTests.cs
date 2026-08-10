@@ -15,5 +15,13 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("Utilities.RandomCoordinate(Level, Vector2.zero"));
             Assert.That(source, Does.Not.Contain("Utilities.RandomCoordinate(Level, Level.GetPosition()"));
         }
+
+        [Test]
+        public void AsteroidDebrisDestinationUsesLevelLocalCoordinates()
+        {
+            string source = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "AsteroidPiece.cs"));
+            Assert.That(source, Does.Contain("Utilities.RandomCoordinate(Level, Vector2.zero"));
+            Assert.That(source, Does.Not.Contain("Utilities.RandomCoordinate(Level, Level.GetPosition()"));
+        }
     }
 }
