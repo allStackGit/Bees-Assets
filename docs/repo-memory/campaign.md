@@ -7,6 +7,8 @@
 - The campaign is persistent attrition/resource warfare: human losses persist, Bee losses/veterans persist, resource extraction changes later strength, and retreat can preserve strategic value. Do not test/refactor missions as independent RTS scenarios.
 - Some failure branches intentionally advance twice because the first advance skips a conditional mission: Seize the Means failure skips Of Production, and On the Offensive failure/no Factory skips On the Defensive. Do not "fix" these as duplicate progression without checking `CAMPAIGN_DESIGN_GUIDE.md`.
 - Player campaign mineral rewards must be collected only from `Configuration.UserSide` squads. AI mining is strategic enemy state and must not be added to `UserProgressData.MinedTSV` or `State.PlayerMineralsReceived`.
+- `Level` is reused across campaign missions and retries. Mission-only booleans/counters must therefore be reset explicitly or scoped to the current `LevelOptions` instance. In particular, retreat completion and carrier-intro completion must not leak into a later mission/retry.
+- `NextTriggers` is deferred executable state, not harmless bookkeeping. Clear both `Triggers` and `NextTriggers` before configuring a new campaign mission, and reset `HasContinuousTriggers` so the new mission establishes its own trigger policy. A stale trigger can retain references to prior mission UI/entities and fire after reset.
 
 ## Minesweeper
 
