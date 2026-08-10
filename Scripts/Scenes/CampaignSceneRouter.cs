@@ -13,6 +13,7 @@ namespace Assets.Scripts.Scenes
     /// </summary>
     internal static class CampaignSceneRouter
     {
+        private const string SpaceScene = "Space";
         private const string SquadMakerScene = "Squad Maker";
         private const string LevelIntroScene = "Level Intro";
 
@@ -25,6 +26,8 @@ namespace Assets.Scripts.Scenes
 
         private static void HandleSceneLoaded(Scene scene, LoadSceneMode mode)
         {
+            ResetNarrativeStateAtCampaignStart(scene.name);
+
             if (!IsPendingCampaignSquadMaker(scene.name))
             {
                 return;
@@ -37,6 +40,18 @@ namespace Assets.Scripts.Scenes
             }
 
             SceneManager.LoadSceneAsync(LevelIntroScene, LoadSceneMode.Single);
+        }
+
+        private static void ResetNarrativeStateAtCampaignStart(string sceneName)
+        {
+            if (sceneName == SpaceScene &&
+                ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign &&
+                ConfigData.LevelOptions != null &&
+                ConfigData.LevelOptions.Id == 0)
+            {
+                ConfigData.HasSeenPreLevelIntro = false;
+                ConfigData.HasSeenIntermission = false;
+            }
         }
 
         internal static bool ShouldRedirectToLevelIntro(string sceneName)
