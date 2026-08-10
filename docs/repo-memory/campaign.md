@@ -9,6 +9,7 @@
 - Player campaign mineral rewards must be collected only from `Configuration.UserSide` squads. AI mining is strategic enemy state and must not be added to `UserProgressData.MinedTSV` or `State.PlayerMineralsReceived`.
 - `Level` is reused across campaign missions and retries. Mission-only booleans/counters must therefore be reset explicitly or scoped to the current `LevelOptions` instance. In particular, retreat completion and carrier-intro completion must not leak into a later mission/retry.
 - `NextTriggers` is deferred executable state, not harmless bookkeeping. Clear both `Triggers` and `NextTriggers` before configuring a new campaign mission, and reset `HasContinuousTriggers` so the new mission establishes its own trigger policy. A stale trigger can retain references to prior mission UI/entities and fire after reset.
+- `SquadShip.Offset`/runtime `Ship.OffsetFromCenter` is the authored saved formation. Runtime level placement must translate those offsets exactly and must not rescale them by ship type. Large/medium spacing belongs in Squad Maker or generated formation templates when offsets are created; applying another size multiplier during `Squad.SetStartingPosition()` distorts custom and mixed formations.
 
 ## Minesweeper
 
