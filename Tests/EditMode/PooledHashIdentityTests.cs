@@ -63,5 +63,16 @@ namespace Bees.Tests.EditMode
             Assert.That(registry, Does.Contain("visibleShips?.Remove(ship)"));
             Assert.That(queries, Does.Contain("new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance)"));
         }
+
+        [Test]
+        public void DepartingShipIsRemovedFromObserverTargetAndContactCachesBeforePoolReuse()
+        {
+            string registry = Read("Scripts", "Levels", "GameState.Registry.cs");
+
+            Assert.That(registry, Does.Contain("ReferenceEquals(observer.TargetEnemyShipToFollow, ship)"));
+            Assert.That(registry, Does.Contain("observer.ProximityCollider.NearbyEnemyShips.Remove(ship)"));
+            Assert.That(registry, Does.Contain("ReferenceEquals(striker.TouchingShip, ship)"));
+            Assert.That(registry, Does.Contain("ReferenceEquals(yellowJacket.TouchingShip, ship)"));
+        }
     }
 }
