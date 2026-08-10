@@ -199,8 +199,10 @@ namespace Bees.Tests.EditMode
             string heal = ExtractMethodBody(_healSource, "HealShips");
             Assert.That(release, Does.Contain("reservedBeehive.ShipsHealingHere.Remove(ship)"));
             Assert.That(release, Does.Contain("_shipsAndBeehives.Remove(ship.Id)"));
-            Assert.That(move, Does.Contain("ReleaseHealingReservation(_shipsThatLostBeehiveOrDied[_index])"));
-            Assert.That(heal, Does.Contain("ReleaseHealingReservation(_shipsThatLostBeehiveOrDied[_index])"));
+            Assert.That(move, Does.Contain("ReleaseHealingReservation(_ship"));
+            Assert.That(heal, Does.Contain("ReleaseHealingReservation(_ship"));
+            Assert.That(move, Does.Contain("_ship.Health < _ship.MaxHealth"));
+            Assert.That(heal, Does.Contain("_ship.Health < _ship.MaxHealth"));
         }
 
         [Test]
@@ -279,7 +281,7 @@ namespace Bees.Tests.EditMode
 
         private static string ExtractMethodBody(string source, string methodName)
         {
-            int signature = source.IndexOf(" " + methodName + "(", StringComparison.Ordinal);
+            int signature = FindMethodDeclaration(source, methodName);
             Assert.That(signature, Is.GreaterThanOrEqualTo(0), $"Could not find method {methodName}.");
             int openingBrace = source.IndexOf('{', signature);
             int depth = 0;
@@ -291,6 +293,29 @@ namespace Bees.Tests.EditMode
             }
             Assert.Fail($"Method {methodName} has no balanced body.");
             return string.Empty;
+        }
+
+        private static int FindMethodDeclaration(string source, string methodName)
+        {
+            string token = methodName + "(";
+            int searchFrom = 0;
+            while (searchFrom < source.Length)
+            {
+                int occurrence = source.IndexOf(token, searchFrom, StringComparison.Ordinal);
+                if (occurrence < 0) return -1;
+
+                int lineStart = source.LastIndexOf('\n', occurrence);
+                lineStart = lineStart < 0 ? 0 : lineStart + 1;
+                string prefix = source.Substring(lineStart, occurrence - lineStart);
+                if (prefix.Contains("public ") || prefix.Contains("private ") ||
+                    prefix.Contains("protected ") || prefix.Contains("internal "))
+                {
+                    return occurrence;
+                }
+
+                searchFrom = occurrence + token.Length;
+            }
+            return -1;
         }
     }
 }
