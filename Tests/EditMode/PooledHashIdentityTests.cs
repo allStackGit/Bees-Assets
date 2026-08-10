@@ -74,5 +74,15 @@ namespace Bees.Tests.EditMode
             Assert.That(registry, Does.Contain("ReferenceEquals(striker.TouchingShip, ship)"));
             Assert.That(registry, Does.Contain("ReferenceEquals(yellowJacket.TouchingShip, ship)"));
         }
+
+        [Test]
+        public void ZoneDropsShipsConsumedByEnterCallbackWithoutWaitingForTriggerExit()
+        {
+            string zone = Read("Scripts", "Levels", "Zone.cs");
+
+            Assert.That(zone, Does.Contain("OnShipEnter?.Invoke(ship)"));
+            Assert.That(zone, Does.Contain("ship.IsDead || !ship.gameObject.activeInHierarchy"));
+            Assert.That(zone, Does.Contain("Ships.Remove(ship)"));
+        }
     }
 }
