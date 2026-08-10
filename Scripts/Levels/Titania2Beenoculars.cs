@@ -227,11 +227,12 @@ namespace Assets.Scripts.Levels
                                 Ship ship = ships[shipIndex];
                                 float clearance = Mathf.Max(ship.GetHalfWidth(), ship.GetHalfHeight()) + shipPadding;
                                 Vector2 candidateShipPosition = ship.GetPosition() + delta;
+                                Vector2 candidateShipWorldPosition = Map.Transform.TransformPoint(candidateShipPosition);
 
                                 if (candidateShipPosition.x - clearance < MinX || candidateShipPosition.x + clearance > MaxX ||
                                     candidateShipPosition.y - clearance < MinY || candidateShipPosition.y + clearance > MaxY ||
                                     Vector2.Distance(candidateShipPosition, Titania2Center) < titaniasReservedRadius + clearance ||
-                                    Physics2D.OverlapCircle(candidateShipPosition, clearance, ConfigData.ObstaclesLayerMask) != null)
+                                    Physics2D.OverlapCircle(candidateShipWorldPosition, clearance, ConfigData.ObstaclesLayerMask) != null)
                                 {
                                     valid = false;
                                     break;
@@ -346,8 +347,10 @@ namespace Assets.Scripts.Levels
                     entryPoint = new Vector2(tangent, positiveEdge ? MaxY - insideDistance : MinY + insideDistance);
                 }
 
-                if (Physics2D.OverlapCircle(entryPoint, laneClearance, ConfigData.ObstaclesLayerMask) == null &&
-                    Physics2D.Linecast(spawnPoint, entryPoint, ConfigData.ObstaclesLayerMask).collider == null)
+                Vector2 worldSpawnPoint = Map.Transform.TransformPoint(spawnPoint);
+                Vector2 worldEntryPoint = Map.Transform.TransformPoint(entryPoint);
+                if (Physics2D.OverlapCircle(worldEntryPoint, laneClearance, ConfigData.ObstaclesLayerMask) == null &&
+                    Physics2D.Linecast(worldSpawnPoint, worldEntryPoint, ConfigData.ObstaclesLayerMask).collider == null)
                 {
                     return;
                 }
