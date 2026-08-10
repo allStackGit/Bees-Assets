@@ -40,6 +40,7 @@ namespace Assets.Scripts.Levels.Commands
                 }
                 else
                 {
+                    GetSquad().StopMoving();
                     _delayedSetFinalizeTimer.Reuse(3f, DelaySetFinalize);
                     Level.AddTimer(_delayedSetFinalizeTimer);
                 }
