@@ -85,7 +85,7 @@ namespace Assets.Scripts.Levels.Commands
                 {
                     _distance = GetSquad().MaxRange - 2;
                 }
-                _swipeDestination = GetSquad().CirclePoint(_angle, _distance);
+                _swipeDestination = EnemySquad.CirclePoint(_angle, _distance);
                 SetAndMove(_swipeDestination);
             }
             else if (GetSquad().HasReachedDestination)
