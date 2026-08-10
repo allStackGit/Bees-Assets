@@ -117,6 +117,7 @@ namespace Assets.Scripts.Levels
                             WinningSide = State.IsSideKilled(ConfigData.Configuration.UserSide)
                                 ? ConfigData.Configuration.AISide
                                 : ConfigData.Configuration.UserSide;
+                            CancelTimer(cruiserTimer);
                             CloseLevel();
                             if (WinningSide == ConfigData.Configuration.UserSide)
                             {
