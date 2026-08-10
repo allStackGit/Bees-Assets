@@ -101,6 +101,8 @@ namespace Bees.Tests.EditMode
             string setup = ExtractMethodBody(_triggerSource, "Titania2BeenocularsCampaign");
             string staging = ExtractMethodBodyBySignature(
                 _triggerSource, "private void StageTitania2HumanFleetPreservingFormations(");
+            string entry = ExtractMethodBodyBySignature(
+                _triggerSource, "private void GetTitania2OffMapEntry(");
             string ending = ExtractMethodBody(_triggerSource, "Titania2CampaignEnding");
 
             Assert.That(setup, Does.Contain("const float survivalDuration = 450f"));
@@ -117,7 +119,9 @@ namespace Bees.Tests.EditMode
                 "Beenoculars should translate each accepted squad rigidly rather than rebuild its formation.");
             Assert.That(staging, Does.Not.Contain("squad.SetOffsets()"),
                 "Rigid Titania staging must not overwrite the formation offsets chosen in Squad Maker.");
-            Assert.That(staging, Does.Contain("Physics2D.OverlapCircle(candidateShipPosition, clearance, ConfigData.ObstaclesLayerMask)"),
+            Assert.That(staging, Does.Contain("Map.Transform.TransformPoint(candidateShipPosition)"),
+                "Local formation points must be converted before world-space Physics2D checks.");
+            Assert.That(staging, Does.Contain("Physics2D.OverlapCircle(candidateShipWorldPosition, clearance, ConfigData.ObstaclesLayerMask)"),
                 "Every preserved formation must be checked against the authored walls before placement.");
             Assert.That(staging, Does.Contain("Stage.DefaultCameraPosition = Titania2Center"));
             Assert.That(setup, Does.Contain("GameSpeedButton.GetComponent<RectTransform>().anchoredPosition = new Vector2(-290, -15)"),
@@ -143,10 +147,12 @@ namespace Bees.Tests.EditMode
             Assert.That(_triggerSource, Does.Contain("MinX - outsideDistance"));
             Assert.That(_triggerSource, Does.Contain("MaxY + outsideDistance"));
             Assert.That(_triggerSource, Does.Contain("MinY - outsideDistance"));
-            Assert.That(_triggerSource, Does.Contain("Physics2D.OverlapCircle(entryPoint, laneClearance, ConfigData.ObstaclesLayerMask)"),
-                "Bee entry lanes must be checked against the authored walls.");
-            Assert.That(_triggerSource, Does.Contain("Physics2D.Linecast(spawnPoint, entryPoint, ConfigData.ObstaclesLayerMask)"),
-                "The off-map arrival segment must actually pass through a clear opening.");
+            Assert.That(entry, Does.Contain("Map.Transform.TransformPoint(spawnPoint)"));
+            Assert.That(entry, Does.Contain("Map.Transform.TransformPoint(entryPoint)"));
+            Assert.That(entry, Does.Contain("Physics2D.OverlapCircle(worldEntryPoint, laneClearance, ConfigData.ObstaclesLayerMask)"),
+                "Bee entry lanes must be checked against the authored walls in world coordinates.");
+            Assert.That(entry, Does.Contain("Physics2D.Linecast(worldSpawnPoint, worldEntryPoint, ConfigData.ObstaclesLayerMask)"),
+                "The off-map arrival segment must actually pass through a clear opening in world coordinates.");
             Assert.That(_triggerSource, Does.Contain("AddReinforcementSquads(new List<SavedSquad> { squads[i] }, spawnPoint, entryPoint)"));
 
             Assert.That(_triggerSource, Does.Contain("GetRange(26, 5)"));
