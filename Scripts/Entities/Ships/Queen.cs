@@ -47,6 +47,10 @@ namespace Assets.Scripts.Entities.Ships
         public override void Setup(Level level, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
         {
             base.Setup(level, fleetShip, squad, offsetFromCenter);
+            if (!Stage.IsTraining)
+            {
+                QueenExplosionAnimation.Remains.Setup();
+            }
             _spawnMinionsTimer.Reuse(SpawnFrequency, SpawnMinions, true);
             Level.AddTimer(_spawnMinionsTimer);
             //InvokeRepeating(nameof(SpawnMinions), SpawnFrequency, SpawnFrequency);
