@@ -52,13 +52,13 @@ namespace Assets.Scripts.Entities.Ships
         }
         public void ActuallyShoot() // [projectile-method] [note] this actually sends the projectile once the animation is finished
         {
-            //if (IsReadyForFiring && (HasTargetShip || IsFiringManually || HasTargetAsteroid) && IsAimedAtTarget)
-            //{
-            //    //Debug.Log($"{Name} animation finished, sending projectile, deactivating animation");
-            //    base.SendProjectile();
-            //    LaserBuilderAnimation.SetActive(false);
-            //}
-            base.SendProjectile();
+            bool canShoot = !Ship.IsDead && !Ship.IsCeaseFire && IsAimedAtTarget &&
+                (IsFiringManually || (IsFiringAtAsteroid ? ShouldFireAtAsteroid : ShouldFire));
+
+            if (canShoot)
+            {
+                base.SendProjectile();
+            }
             LaserBuilderAnimation.SetActive(false);
 
         }
