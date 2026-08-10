@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using NUnit.Framework;
 using UnityEngine;
@@ -33,6 +34,22 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("_damageReservation = null", source);
             StringAssert.Contains("_reservedDamageAmount = 0", source);
             StringAssert.DoesNotContain("Level.State.GetShipDamageStatus(Shooter.Side, Target)", source);
+        }
+
+        [Test]
+        public void LethalDamageDoesNotRecreatePurgedTargetDamageStatus()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Ship.Combat.cs");
+            string source = File.ReadAllText(path);
+            int start = source.IndexOf("public static void LogAttackingDamage", StringComparison.Ordinal);
+            int end = source.IndexOf("protected static void LogHitStats", start, StringComparison.Ordinal);
+            string method = source.Substring(start, end - start);
+            int lethalBranch = method.IndexOf("if (target.Health == 0)", StringComparison.Ordinal);
+            int returnAfterKill = method.IndexOf("return;", lethalBranch, StringComparison.Ordinal);
+            string lethalPath = method.Substring(lethalBranch, returnAfterKill - lethalBranch);
+
+            StringAssert.Contains("target.Kill(attacker, attackerFleetShip, attackerSavedSquad)", lethalPath);
+            StringAssert.DoesNotContain("GetShipDamageStatus", lethalPath);
         }
     }
 }
