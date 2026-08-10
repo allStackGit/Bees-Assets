@@ -9,7 +9,7 @@ namespace Assets.Scripts.Entities.Ships
 {
     public class Beehive : Ship
     {
-        public HashSet<Ship> ShipsHealingHere = new HashSet<Ship>();
+        public HashSet<Ship> ShipsHealingHere = new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance);
         public Collider2D HealCollider;
         /// <summary>
         /// The Beehive has the shrinking and warping animation as it's "explosion" animation and the end of that animation triggers an actual explosion animation
