@@ -91,6 +91,19 @@ namespace Assets.Scripts.Data
         }
         public void RemoveSquadFromList(SavedSquad squad)
         {
+            if (squad == null)
+            {
+                return;
+            }
+
+            foreach (SquadShip squadShip in squad.GetSquadShips())
+            {
+                FleetShip fleetShip = squadShip.GetFleetShip();
+                if (fleetShip != null)
+                {
+                    fleetShip.DoesBelongToSavedSquad = false;
+                }
+            }
             _savedSquadsList.Remove(squad);
         }
         public bool HasSquad(SavedSquad squad)
