@@ -237,7 +237,7 @@ namespace Bees.Tests.EditMode
             Assert.That(execute, Does.Contain("MiningShips.ToList().ForEach"));
             Assert.That(found, Does.Contain("!ship.IsMiningShip"));
             Assert.That(found, Does.Contain("!MiningShips.Contains(ship)"));
-            Assert.That(mine, Does.Contain("s.IsMiningShip"));
+            Assert.That(mine, Does.Contain("ship != null && !ship.IsDead && ship.IsMiningShip"));
         }
 
         [Test]
