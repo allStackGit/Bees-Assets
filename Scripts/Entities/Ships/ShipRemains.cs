@@ -1,6 +1,4 @@
-﻿using System.Collections;
-using System.Collections.Generic;
-using System.Xml.Linq;
+﻿using Assets.Scripts.Levels;
 using UnityEngine;
 
 namespace Assets.Scripts.Entities.Ships
@@ -14,7 +12,12 @@ namespace Assets.Scripts.Entities.Ships
         /// </summary>
         public RemainsAnimationController AnimationController;
         public bool HasAnimationController;
-        private ScaledTimer _killTimer = new ScaledTimer();
+
+        private readonly ScaledTimer _killTimer = new ScaledTimer();
+        private Level _ownerLevel;
+        private SpriteRenderer _spriteRenderer;
+        private Sprite _baseSprite;
+
         public void Create(Ship ship)
         {
             Ship = ship;
@@ -26,49 +29,74 @@ namespace Assets.Scripts.Entities.Ships
                 AnimationController.Ship = Ship;
                 HasAnimationController = true;
             }
+            else
+            {
+                _spriteRenderer = GetComponent<SpriteRenderer>();
+                _baseSprite = _spriteRenderer != null ? _spriteRenderer.sprite : null;
+            }
         }
+
         public void Setup()
         {
-            //name = $"Remains - {Ship.Name}"; // [debug] not necessary for anything else
-            Transform.parent = Ship.Level.Map.Transform;
+            // The remains object is permanently paired with a pooled Ship wrapper. Retire any
+            // corpse still owned by the wrapper's previous lifecycle before adopting a new Level;
+            // otherwise the same ScaledTimer can be registered with two Levels at once.
+            RetirePreviousPlacement();
+            _ownerLevel = Ship.Level;
+            Transform.parent = _ownerLevel.Map.Transform;
 
             if (HasAnimationController && Ship.Squad.HasCustomColor)
             {
                 AnimationController.RecolorAnimationSprites();
             }
-
+            else if (!HasAnimationController && _spriteRenderer != null)
+            {
+                _spriteRenderer.sprite = _baseSprite;
+            }
         }
+
         public void Place()
         {
-
+            if (_ownerLevel == null)
+            {
+                _ownerLevel = Ship.Level;
+            }
 
             Transform.localPosition = Ship.GetPosition();
             Transform.eulerAngles = Vector3.forward * Ship.Rotation;
             gameObject.SetActive(true);
-            Ship.Level.State.AddDeadBody(this);
+            if (!_ownerLevel.State.Deadbodies.Contains(this))
+            {
+                _ownerLevel.State.AddDeadBody(this);
+            }
 
-            // If the squad has a custom color and doesn't have an animation controller, color the singular sprite of the ship remains
-            if (Ship.Squad.HasCustomColor && !HasAnimationController)
+            // Recolor from the immutable prefab-era sprite. The remains object is reused with
+            // its pooled Ship and may belong to a differently colored squad next lifecycle.
+            if (Ship.Squad.HasCustomColor && !HasAnimationController && _spriteRenderer != null && _baseSprite != null)
             {
                 Color[] colors = ConfigData.ChangeableShipColors.GetValueOrDefault(Ship.ShipType);
-                Sprite prefabSprite = GetComponent<SpriteRenderer>().sprite;
-                Sprite shipIcon = prefabSprite;
-                int[] changeablePixels = Utilities.GetChangablePixelsForImage(colors, shipIcon);
-                Sprite recolored = Utilities.SetImageColor(Ship.Squad.Color, shipIcon, changeablePixels);
-                GetComponent<SpriteRenderer>().sprite = recolored;
+                int[] changeablePixels = Utilities.GetChangablePixelsForImage(colors, _baseSprite);
+                _spriteRenderer.sprite = Utilities.SetImageColor(Ship.Squad.Color, _baseSprite, changeablePixels);
             }
 
             _killTimer.Reuse(5, Kill);
-            Ship.Level.AddTimer(_killTimer);
-
-
-            //Invoke(nameof(Kill), 5);
+            _ownerLevel.AddTimer(_killTimer);
         }
 
         public void Kill()
         {
-            Ship.Level.CancelTimer(_killTimer);
+            RetirePreviousPlacement();
+        }
+
+        private void RetirePreviousPlacement()
+        {
+            if (_ownerLevel != null)
+            {
+                _ownerLevel.CancelTimer(_killTimer);
+                _ownerLevel.State.Deadbodies.Remove(this);
+            }
             gameObject.SetActive(false);
+            _ownerLevel = null;
         }
     }
 }
