@@ -9,15 +9,26 @@ namespace Bees.Tests.EditMode
     public class SquadMinionRoleLifecycleTests
     {
         [Test]
-        public void GeneralSquadClearsMinionRoleBeforePoolRelease()
+        public void GeneralSquadClearsMinionRoleAfterDeregistrationBeforePoolReuse()
         {
             string path = Path.Combine(Application.dataPath, "Scripts", "Levels", "Squad.Combat.cs");
             string source = File.ReadAllText(path);
 
-            int clearIndex = source.IndexOf("IsMinionSquad = false;");
             int releaseIndex = source.IndexOf("Level.State.RemoveSquad(this);");
-            Assert.That(clearIndex, Is.GreaterThanOrEqualTo(0));
-            Assert.That(releaseIndex, Is.GreaterThan(clearIndex));
+            int clearIndex = source.IndexOf("IsMinionSquad = false;", releaseIndex);
+            Assert.That(releaseIndex, Is.GreaterThanOrEqualTo(0));
+            Assert.That(clearIndex, Is.GreaterThan(releaseIndex));
+        }
+
+        [Test]
+        public void MinionSquadsDoNotOwnPersistedLoadedState()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Levels", "GameState.Registry.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("if (!squad.IsMinionSquad)", source);
+            StringAssert.Contains("squad.SavedSquad.IsLoadedIntoLevel = true;", source);
+            StringAssert.Contains("squad.SavedSquad.IsLoadedIntoLevel = false;", source);
         }
 
         [Test]
