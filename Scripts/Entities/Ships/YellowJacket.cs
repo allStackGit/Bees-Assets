@@ -1,4 +1,5 @@
-﻿using Assets.Scripts.Entities;
+﻿using Assets.Scripts.Data;
+using Assets.Scripts.Entities;
 using Assets.Scripts.Levels;
 using System.Linq;
 using Assets.Scripts.Entities.Ships.Weapons;
@@ -49,14 +50,9 @@ namespace Assets.Scripts.Entities.Ships
             else if (_collidingThing.CompareTag("Ship") && Collider.IsTouching(collider))
             {
                 TouchingShip = _collidingThing.GetComponent<Ship>();
-                //Debug.Log($"Striker collided with a ship!" +
-                //    $"{ship}, " +
-                //    $"{Squad}, " +
-                //    $"{TargetShip}");
 
                 if (TouchingShip.Side != Side && Squad.HasCommand && Bomb.TargetShip == TouchingShip)
                 {
-                    //Debug.Log("Collided with our target ship!");
                     ContactedShip = TouchingShip;
                     Detonate();
 
@@ -82,34 +78,38 @@ namespace Assets.Scripts.Entities.Ships
         }
         public void TryToDetonate()
         {
-            //Debug.Log($"Trying to detonate with {Name}");
             if (TouchingShip != null && TouchingShip.Side != Side)
             {
                 ContactedShip = TouchingShip;
                 Detonate();
                 return;
             }
-            //Debug.Log($"Failed trying to detonate with {Name}: TouchingShip: [{TouchingShip}]");
 
         }
         private void Detonate()
         {
-            //Debug.Log($"Yellow Jacket #{Id} is detonating against {ContactedShip.Name}");
             HasCompletedRun = true;
 
+            // The selected bombing-run target is being resolved synchronously rather than
+            // by a projectile, so release the inbound-damage reservation before applying it.
+            Bomb.ReleaseTargetReservation();
 
-            // do damage and stats
             LogDetonationDamage(Bomb.Power, this, ContactedShip);
             LogDetonationDamage(Bomb.Power, ContactedShip, this);
 
             if (ContactedShip.Health <= 0)
             {
-                ContactedShip.Kill(this, FleetShip, Squad.SavedSquad); // kill the target ship if needed, yellow jacket gets credit
+                ContactedShip.Kill(this, FleetShip, Squad.SavedSquad);
             }
 
+            Kill(ContactedShip, ContactedShip.FleetShip, ContactedShip.Squad.SavedSquad);
 
-            Kill(ContactedShip, ContactedShip.FleetShip, ContactedShip.Squad.SavedSquad); // kill the Yellow Jacket either way, giving credit to the contacted ship 
+        }
 
+        public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false)
+        {
+            Bomb.ReleaseTargetReservation();
+            base.Kill(killer, killerFleetShip, killerSavedSquad, endKill);
         }
 
         private int _targetOldTSV, _targetTSVLoss;
@@ -120,19 +120,16 @@ namespace Assets.Scripts.Entities.Ships
             target.Tsv = Utilities.CalculateTsv(target);
 
 
-            _targetTSVLoss = target.Tsv - _targetOldTSV; // this is a negative number since being hit by a projectile should induce a loss of TSV
-            //Debug.Log($"Yellow Jacket #{Id} Detonation: {targetTSVChange} tsv inflicted on {target.Name}");
+            _targetTSVLoss = target.Tsv - _targetOldTSV;
             LogHitStats(attacker, attacker.FleetShip, attacker.Squad.SavedSquad, target, target.Squad, -_targetTSVLoss);
-
-            // each hit, add the negative TSV to the target's command and subtract the negative TSV from the shooter's command
 
             if (attacker.Squad.HasCommand)
             {
-                attacker.Squad.GetCommand().Tsv += -_targetTSVLoss; // add the TSV to the shooter
+                attacker.Squad.GetCommand().Tsv += -_targetTSVLoss;
             }
             if (target.Squad.HasCommand)
             {
-                target.Squad.GetCommand().Tsv += _targetTSVLoss; // subtract the TSV from the target
+                target.Squad.GetCommand().Tsv += _targetTSVLoss;
             }
             target.UpdateHealthBar();
 
