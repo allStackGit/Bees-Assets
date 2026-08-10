@@ -128,15 +128,14 @@ namespace Bees.Tests.EditMode
             Assert.That(RuntimeAssembly.GetField(_targetCommand, "Tsv"), Is.EqualTo(-100L));
             Assert.That(RuntimeAssembly.GetCount(RuntimeAssembly.GetField(_state, "Ships")), Is.EqualTo(2));
             Assert.That(RuntimeAssembly.GetCount(RuntimeAssembly.GetField(_state, "ShipsToRelease")), Is.EqualTo(1));
-            Assert.That(RuntimeAssembly.GetCount(RuntimeAssembly.GetField(_state, "ShipDamageStatuses") is Array statuses
-                ? statuses.GetValue(0)
-                : null), Is.Zero);
+            AssertDamageStatus(80, expectedCount: 1);
             Assert.That(((IDictionary)RuntimeAssembly.GetField(_weapon, "ShipsWithinRange")).Contains(202L), Is.False);
             Assert.That(RuntimeAssembly.GetCount(RuntimeAssembly.GetField(_target, "WeaponsThatHaveUsWithinRange")), Is.Zero);
 
             InvokeDamage(1000);
             Assert.That(RuntimeAssembly.GetField(_attackerFleetShip, "Kills"), Is.EqualTo(1));
             Assert.That(RuntimeAssembly.GetCount(RuntimeAssembly.GetField(_state, "ShipsToRelease")), Is.EqualTo(1));
+            AssertDamageStatus(80, expectedCount: 1);
         }
 
         [Test]
