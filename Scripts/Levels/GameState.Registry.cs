@@ -98,6 +98,38 @@ namespace Assets.Scripts.Levels
                 healCommand.ShipBecameUnavailable(ship);
             }
 
+            // Other live ships can retain this pooled wrapper in follow/proximity/contact
+            // state. Unity does not guarantee a trigger-exit callback when the target is
+            // disabled during the same physics step, and IsDead becomes false again when
+            // the wrapper is reused. Invalidate those references before pool ownership can
+            // change so a new lifecycle cannot silently become the old target.
+            foreach (Ship observer in Ships)
+            {
+                if (observer == null || ReferenceEquals(observer, ship))
+                {
+                    continue;
+                }
+
+                if (ReferenceEquals(observer.TargetEnemyShipToFollow, ship))
+                {
+                    observer.TargetEnemyShipToFollow = null;
+                }
+                if (observer.HasProximityCollider && observer.ProximityCollider != null)
+                {
+                    observer.ProximityCollider.NearbyEnemyShips.Remove(ship);
+                }
+                if (observer is Striker striker)
+                {
+                    if (ReferenceEquals(striker.TouchingShip, ship)) striker.TouchingShip = null;
+                    if (ReferenceEquals(striker.ContactedShip, ship)) striker.ContactedShip = null;
+                }
+                else if (observer is YellowJacket yellowJacket)
+                {
+                    if (ReferenceEquals(yellowJacket.TouchingShip, ship)) yellowJacket.TouchingShip = null;
+                    if (ReferenceEquals(yellowJacket.ContactedShip, ship)) yellowJacket.ContactedShip = null;
+                }
+            }
+
             // These records retain the live Ship wrapper, whose runtime Id changes when
             // the object is reused from the pool. Remove them while the old identity is
             // still authoritative so stale combat/spotting state cannot attach to the
