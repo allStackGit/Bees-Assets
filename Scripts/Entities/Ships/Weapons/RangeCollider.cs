@@ -52,7 +52,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 }
 
             }
-            else if (_colliderEnter.CompareTag("Object") && Weapon.Ship.IsUserControlled)
+            else if (_colliderEnter.CompareTag("Object") &&
+                     Weapon != null && Weapon.Ship != null && Weapon.Ship.IsUserControlled)
             {
                 MapObject mapObject = _colliderEnter.GetComponent<MapObject>();
                 if (mapObject != null)
@@ -98,7 +99,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     _projectileExit.Kill();
                 }
             }
-            else if (_colliderExit.CompareTag("Object") && Weapon.Ship.IsUserControlled)
+            else if (_colliderExit.CompareTag("Object") &&
+                     Weapon != null && Weapon.Ship != null && Weapon.Ship.IsUserControlled)
             {
                 MapObject mapObject = _colliderExit.GetComponent<MapObject>();
                 if (mapObject != null && _visibleMapObjectContacts.TryGetValue(mapObject, out int contacts))
