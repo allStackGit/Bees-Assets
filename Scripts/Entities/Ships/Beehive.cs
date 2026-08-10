@@ -79,6 +79,20 @@ namespace Assets.Scripts.Entities.Ships
             return !_isDeathAnimationPending && base.CanReturnToPool();
         }
 
+        public override void PrepareForLevelTeardown()
+        {
+            if (!_isDeathAnimationPending)
+            {
+                return;
+            }
+
+            _isDeathAnimationPending = false;
+            if (ShrinkingAnimation != null)
+            {
+                ShrinkingAnimation.SetActive(false);
+            }
+        }
+
         public void FinalExplosion()
         {
             ShipExplosion.transform.parent = Level.Map.Transform;
