@@ -97,10 +97,22 @@ namespace Assets.Scripts.Levels
                 return;
             }
 
-            for (int side = 1; side <= _eliminationSnapshot.Length; side++)
+            if (Level != null &&
+                (Level.WinningSide == ConfigData.Configuration.HumanSide ||
+                 Level.WinningSide == ConfigData.Configuration.BeeSide))
             {
-                List<Ship> sideShips = GetShips(side);
-                _eliminationSnapshot[side - 1] = sideShips.Count == 0 || !sideShips.Any(ship => ship.IsMobile);
+                for (int side = 1; side <= _eliminationSnapshot.Length; side++)
+                {
+                    _eliminationSnapshot[side - 1] = side != Level.WinningSide;
+                }
+            }
+            else
+            {
+                for (int side = 1; side <= _eliminationSnapshot.Length; side++)
+                {
+                    List<Ship> sideShips = GetShips(side);
+                    _eliminationSnapshot[side - 1] = sideShips.Count == 0 || !sideShips.Any(ship => ship.IsMobile);
+                }
             }
             _hasEliminationSnapshot = true;
         }
