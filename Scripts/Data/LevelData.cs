@@ -12,7 +12,7 @@ namespace Assets.Scripts.Data
     public class LevelData : UserData
     {
         private List<LevelOptions> _levels = new List<LevelOptions>();
-        private readonly int _type;
+        private int _type;
 
         public LevelData(bool shouldFileExist, int type) : base()
         {
