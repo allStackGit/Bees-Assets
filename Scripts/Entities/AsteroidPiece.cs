@@ -14,8 +14,10 @@ namespace Assets.Scripts.Entities
         public int Speed;
         public int HalfSeconds;
         private ScaledTimer _deathTimer = new ScaledTimer();
+        private Color _originalColor;
         public override void Create(Stage stage)
         {
+            _originalColor = SpriteRenderer.color;
             base.Create(stage);
             Speed = Utilities.RandomInt(Stage.AsteroidMaxSpeed) + ConfigData.MinimumAsteroidSpeed;
 
@@ -24,6 +26,10 @@ namespace Assets.Scripts.Entities
         {
             base.ClearData();
             HalfSeconds = 0;
+            if (Stage.IsRendering)
+            {
+                SpriteRenderer.color = _originalColor;
+            }
         }
         Vector2 _randomPoint;
         public void Setup(Level level, CollisionAsteroid parent)
