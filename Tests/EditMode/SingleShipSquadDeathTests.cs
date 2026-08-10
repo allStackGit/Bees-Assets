@@ -11,10 +11,24 @@ namespace Bees.Tests.EditMode
     public class SingleShipSquadDeathTests
     {
         private readonly List<GameObject> _objects = new List<GameObject>();
+        private Type _configDataType;
+        private object _originalConfiguration;
+        private object _originalShipInfo;
+
+        [SetUp]
+        public void SetUp()
+        {
+            _configDataType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData");
+            _originalConfiguration = RuntimeAssembly.GetStaticField(_configDataType, "Configuration");
+            _originalShipInfo = RuntimeAssembly.GetStaticField(_configDataType, "ShipInfo");
+            InstallConfigurationAndShipStats();
+        }
 
         [TearDown]
         public void TearDown()
         {
+            RuntimeAssembly.SetStaticField(_configDataType, "Configuration", _originalConfiguration);
+            RuntimeAssembly.SetStaticField(_configDataType, "ShipInfo", _originalShipInfo);
             foreach (GameObject gameObject in _objects)
             {
                 if (gameObject != null)
@@ -26,17 +40,13 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void KillingOnlyShipTearsDownShipSquadCommandAndHivemindObserver()
+        public void KillingOnlyBeeInCombatTearsDownShipSquadCommandAndHivemindObserverExactlyOnce()
         {
-            Type configDataType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData");
-            object originalConfiguration = RuntimeAssembly.GetStaticField(configDataType, "Configuration");
-            object testConfiguration = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Settings.Configuration");
-            RuntimeAssembly.SetField(testConfiguration, "UserSide", 1);
-
             GameObject stageObject = CreateObject("Single ship death Stage");
             object stage = stageObject.AddComponent(RuntimeAssembly.GetType("Stage"));
             RuntimeAssembly.SetField(stage, "IsTraining", true);
             RuntimeAssembly.SetField(stage, "IsRendering", false);
+            RuntimeAssembly.SetField(stage, "ReplaceDeadShips", false);
 
             GameObject levelObject = CreateObject("Single ship death Level");
             object level = levelObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Levels.Level"));
@@ -49,6 +59,9 @@ namespace Bees.Tests.EditMode
 
             object savedSquad = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Data.SavedSquad");
             RuntimeAssembly.SetField(savedSquad, "Name", "Single Bee squad");
+            RuntimeAssembly.SetField(savedSquad, "Stats", Activator.CreateInstance(
+                RuntimeAssembly.GetType("Assets.Scripts.Data.SquadStatBlock"),
+                new object[] { "Tester", 0, 0, 0, 0, 0, 0 }));
 
             GameObject squadObject = CreateObject("Single Bee squad");
             object squad = squadObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Levels.Squad"));
@@ -62,10 +75,15 @@ namespace Bees.Tests.EditMode
             RuntimeAssembly.SetField(squad, "IsHiveMindControlled", true);
             RuntimeAssembly.Invoke(state, "AddSquad", squad);
 
+            object honeybeeType = Enum.Parse(
+                RuntimeAssembly.GetType("Assets.Scripts.ConfigData+ShipTypes"), "Honeybee");
             object fleetShip = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Data.FleetShip");
             RuntimeAssembly.SetField(fleetShip, "Id", 9001L);
             RuntimeAssembly.SetField(fleetShip, "Side", 2);
             RuntimeAssembly.SetField(fleetShip, "Name", "Single Bee");
+            RuntimeAssembly.SetField(fleetShip, "Type", honeybeeType);
+            RuntimeAssembly.SetField(fleetShip, "Health", 100);
+            RuntimeAssembly.SetField(fleetShip, "MaxHealth", 100);
 
             GameObject shipObject = CreateObject("Single Bee");
             object ship = shipObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Entities.Ships.Ship"));
@@ -78,6 +96,11 @@ namespace Bees.Tests.EditMode
             RuntimeAssembly.SetField(ship, "Name", "Single Bee");
             RuntimeAssembly.SetField(ship, "Id", 9001L);
             RuntimeAssembly.SetField(ship, "Side", 2);
+            RuntimeAssembly.SetField(ship, "ShipType", honeybeeType);
+            RuntimeAssembly.SetField(ship, "Health", 100);
+            RuntimeAssembly.SetField(ship, "MaxHealth", 100);
+            RuntimeAssembly.SetField(ship, "OriginalHealth", 100);
+            RuntimeAssembly.SetField(ship, "Tsv", 100);
             RuntimeAssembly.SetField(ship, "Level", level);
             RuntimeAssembly.SetField(ship, "Stage", stage);
             RuntimeAssembly.SetField(ship, "Squad", squad);
@@ -103,19 +126,13 @@ namespace Bees.Tests.EditMode
             RuntimeAssembly.Invoke(command, "SetSquad", squad);
             RuntimeAssembly.Invoke(squad, "SetCommand", command);
 
-            try
-            {
-                RuntimeAssembly.SetStaticField(configDataType, "Configuration", testConfiguration);
-                Assert.DoesNotThrow(() => RuntimeAssembly.Invoke(ship, "Kill", null, null, null, true));
-            }
-            finally
-            {
-                RuntimeAssembly.SetStaticField(configDataType, "Configuration", originalConfiguration);
-            }
+            Assert.DoesNotThrow(() => RuntimeAssembly.Invoke(ship, "Kill", null, null, null, false));
 
             Assert.That(RuntimeAssembly.GetField(ship, "IsDead"), Is.True);
             Assert.That(RuntimeAssembly.GetField(squad, "IsDead"), Is.True);
             Assert.That(RuntimeAssembly.GetField(command, "IsDead"), Is.True);
+            Assert.That(RuntimeAssembly.GetField(state, "PlayerScore"), Is.EqualTo(100));
+            Assert.That(RuntimeAssembly.GetField(RuntimeAssembly.GetField(savedSquad, "Stats"), "ShipsLost"), Is.EqualTo(1));
             Assert.That(RuntimeAssembly.GetCount(RuntimeAssembly.GetField(state, "Ships")), Is.Zero);
             Assert.That(RuntimeAssembly.GetCount(RuntimeAssembly.GetField(state, "Squads")), Is.Zero);
             Assert.That(RuntimeAssembly.GetCount(RuntimeAssembly.GetField(state, "ShipsToRelease")), Is.EqualTo(1));
@@ -126,6 +143,11 @@ namespace Bees.Tests.EditMode
             IDictionary beeObservers = (IDictionary)hivemindBySide.GetValue(1);
             Assert.That(beeObservers.Contains(9001L), Is.False,
                 "A dead one-ship Bee squad must stop contributing Hivemind vision immediately.");
+
+            Assert.DoesNotThrow(() => RuntimeAssembly.Invoke(ship, "Kill", null, null, null, false));
+            Assert.That(RuntimeAssembly.GetField(state, "PlayerScore"), Is.EqualTo(100),
+                "Repeated kill attempts must not score the same Bee twice.");
+            Assert.That(RuntimeAssembly.GetField(RuntimeAssembly.GetField(savedSquad, "Stats"), "ShipsLost"), Is.EqualTo(1));
         }
 
         private GameObject CreateObject(string name)
@@ -133,6 +155,31 @@ namespace Bees.Tests.EditMode
             GameObject gameObject = new GameObject(name);
             _objects.Add(gameObject);
             return gameObject;
+        }
+
+        private void InstallConfigurationAndShipStats()
+        {
+            object configuration = RuntimeAssembly.CreateUninitialized(
+                "Assets.Scripts.Settings.Configuration");
+            RuntimeAssembly.SetField(configuration, "UserSide", 1);
+            RuntimeAssembly.SetField(configuration, "AISide", 2);
+            RuntimeAssembly.SetStaticField(_configDataType, "Configuration", configuration);
+
+            Type shipTypes = RuntimeAssembly.GetType("Assets.Scripts.ConfigData+ShipTypes");
+            object honeybee = Enum.Parse(shipTypes, "Honeybee");
+            object stats = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Settings.ShipStats");
+            Type dictionaryType = typeof(Dictionary<,>).MakeGenericType(
+                shipTypes,
+                RuntimeAssembly.GetType("Assets.Scripts.Settings.ShipStatBlock"));
+            IDictionary dictionary = (IDictionary)Activator.CreateInstance(dictionaryType);
+            object statBlock = RuntimeAssembly.CreateUninitialized(
+                "Assets.Scripts.Settings.ShipStatBlock");
+            RuntimeAssembly.SetField(statBlock, "Type", honeybee);
+            RuntimeAssembly.SetField(statBlock, "Health", 100);
+            RuntimeAssembly.SetField(statBlock, "Tsv", 100);
+            dictionary.Add(honeybee, statBlock);
+            RuntimeAssembly.SetField(stats, "ShipStatsList", dictionary);
+            RuntimeAssembly.SetStaticField(_configDataType, "ShipInfo", stats);
         }
     }
 }
