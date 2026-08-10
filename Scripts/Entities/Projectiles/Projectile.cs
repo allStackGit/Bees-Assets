@@ -1,5 +1,4 @@
 ﻿using System.Collections.Generic;
-using System.Linq;
 using Assets.Scripts.Data;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Entities.Ships.Weapons;
@@ -90,32 +89,6 @@ namespace Assets.Scripts.Entities.Projectiles
             ShipIsDead = false;
             _damageReservation = null;
             _reservedDamageAmount = 0;
-        }
-
-        /// <summary>
-        /// Invalidates references to a ship lifecycle that is leaving GameState before its
-        /// pooled wrapper can be reused for another ship.
-        /// </summary>
-        public virtual void ForgetShip(Ship ship)
-        {
-            if (ship == null)
-            {
-                return;
-            }
-
-            if (_damageReservation != null && ReferenceEquals(_damageReservation.Ship, ship))
-            {
-                RemoveDamageSentEntry();
-            }
-            if (ReferenceEquals(Target, ship))
-            {
-                Target = null;
-            }
-            ShipsToIgnore.Remove(ship);
-            if (CollidingQueue.Count > 0)
-            {
-                CollidingQueue = new Queue<Ship>(CollidingQueue.Where(candidate => !ReferenceEquals(candidate, ship)));
-            }
         }
 
         public virtual void Kill()
