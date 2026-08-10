@@ -74,6 +74,7 @@ namespace Bees.Tests.EditMode
             Assert.That(registry, Does.Contain("weapon.ShipsWithinRange.Remove(ship.Id)"));
             Assert.That(registry, Does.Contain("weapon.CachedTargetingQueue.RemoveAll(candidate => ReferenceEquals(candidate, ship))"));
             Assert.That(registry, Does.Contain("ReferenceEquals(weapon.TargetShip, ship)"));
+            Assert.That(registry, Does.Contain("ReferenceEquals(beamCannon.LaserBeamTarget, ship)"));
             Assert.That(registry, Does.Contain("bomb.ReleaseTargetReservation()"));
             Assert.That(registry, Does.Contain("ReferenceEquals(striker.TouchingShip, ship)"));
             Assert.That(registry, Does.Contain("ReferenceEquals(yellowJacket.TouchingShip, ship)"));
@@ -84,11 +85,34 @@ namespace Bees.Tests.EditMode
         {
             string registry = Read("Scripts", "Levels", "GameState.Registry.cs");
 
-            Assert.That(registry, Does.Contain("ForgetShipFromCommandQueues(squad?.GetCommand(), ship)"));
+            Assert.That(registry, Does.Contain("ForgetShipFromCommandQueues(activeCommand, ship)"));
             Assert.That(registry, Does.Contain("foreach (Command queuedCommand in squad.CommandQueue)"));
             Assert.That(registry, Does.Contain("command.OriginalQueue = new Queue<Ship>"));
             Assert.That(registry, Does.Contain("command.TargetingQueue = new Queue<Ship>"));
             Assert.That(registry, Does.Contain("!ReferenceEquals(candidate, ship)"));
+        }
+
+        [Test]
+        public void DepartingBeehiveInvalidatesHealTargetsAndReservationsImmediately()
+        {
+            string registry = Read("Scripts", "Levels", "GameState.Registry.cs");
+            string heal = Read("Scripts", "Levels", "Commands", "Heal.cs");
+
+            Assert.That(registry, Does.Contain("activeHeal.BeehiveBecameUnavailable(departingBeehive)"));
+            Assert.That(heal, Does.Contain("public void BeehiveBecameUnavailable(Beehive beehive)"));
+            Assert.That(heal, Does.Contain("TargetBeehives.RemoveAll(candidate => ReferenceEquals(candidate, beehive))"));
+            Assert.That(heal, Does.Contain("ReferenceEquals(reservedBeehive, beehive)"));
+            Assert.That(heal, Does.Contain("ReleaseHealingReservation(affectedShip"));
+            Assert.That(heal, Does.Contain("if (TargetBeehives.Count == 0)"));
+        }
+
+        [Test]
+        public void ReleaseUsesDrainedMiningAsteroidArray()
+        {
+            string registry = Read("Scripts", "Levels", "GameState.Registry.cs");
+
+            Assert.That(registry, Does.Contain("MiningAsteroid[] miningAsteroids = DrainReleaseQueue(MiningAsteroidsToRelease)"));
+            Assert.That(registry, Does.Contain("foreach (MiningAsteroid miningAsteroid in miningAsteroids)"));
         }
 
         [Test]
