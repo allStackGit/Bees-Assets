@@ -107,14 +107,15 @@ namespace Bees.Tests.EditMode
             Assert.That(setup, Does.Not.Contain("timeLeft <= 0 || State.IsSideKilled(ConfigData.Configuration.AISide)"),
                 "Beenoculars is a timed evacuation defense, not an elimination shortcut.");
 
-            Assert.That(setup, Does.Contain("StageTitania2HumanFleetAtCenter"),
-                "Beenoculars must stage the player's fleet in Titania's central defensive pocket.");
-            Assert.That(_triggerSource, Does.Contain("FindTitania2HumanShipPlacement"));
-            Assert.That(_triggerSource, Does.Contain("ship.GetHalfWidth()"));
-            Assert.That(_triggerSource, Does.Contain("Physics2D.OverlapCircle(candidate, clearance, ConfigData.ObstaclesLayerMask)"),
-                "Central staging must reject obstacle-overlapping ship positions.");
-            Assert.That(_triggerSource, Does.Contain("CurrentLevelOptions.UserStartingPosition = Titania2Center"));
-            Assert.That(_triggerSource, Does.Contain("Stage.DefaultCameraPosition = Titania2Center"));
+            Assert.That(setup, Does.Not.Contain("StageTitania2HumanFleetAtCenter"),
+                "Beenoculars must preserve the ship offsets/formation chosen in Squad Maker.");
+            Assert.That(_triggerSource, Does.Not.Contain("FindTitania2HumanShipPlacement"),
+                "Beenoculars must not individually restage ships and rebuild the player's formation.");
+            Assert.That(setup, Does.Contain("Stage.DefaultCameraPosition = Titania2Center"),
+                "The camera may still focus on Titania without changing ship positions.");
+            Assert.That(setup, Does.Contain("GameSpeedButton.GetComponent<RectTransform>().anchoredPosition = new Vector2(-290, -15)"),
+                "Beenoculars must keep the speed control clear of the countdown clock.");
+            Assert.That(setup, Does.Contain("Stage.Menus.Clock.SetActive(true)"));
 
             Assert.That(setup, Does.Contain("GetRange(12, 3)"));
             Assert.That(setup, Does.Contain("GetRange(15, 3)"));
