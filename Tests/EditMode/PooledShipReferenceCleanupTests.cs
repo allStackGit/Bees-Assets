@@ -83,5 +83,36 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("Utilities.GetChangablePixelsForImage(colors, _baseSprite)", source);
             StringAssert.Contains("Utilities.SetImageColor(Ship.Squad.Color, _baseSprite, changeablePixels)", source);
         }
+
+        [Test]
+        public void ShipAnimationActivationResetsWarpAndFrameSessionState()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "ShipAnimationController.cs");
+            string source = File.ReadAllText(path);
+            int activate = source.IndexOf("public void Activate()");
+            int deactivate = source.IndexOf("public void Deactivate()", activate);
+            string body = source.Substring(activate, deactivate - activate);
+
+            StringAssert.Contains("ShouldSwapSprite = false;", body);
+            StringAssert.Contains("UseSecondaryLoop = false;", body);
+            StringAssert.Contains("IsReadyToWarp = false;", body);
+            StringAssert.Contains("SpriteIndex = 0;", body);
+            StringAssert.Contains("CurrentSprite = SpriteRenderer.sprite;", body);
+        }
+
+        [Test]
+        public void AnimatedShipRemainsResetFrameStateBeforeRecoloring()
+        {
+            string remainsPath = Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "ShipRemains.cs");
+            string remainsSource = File.ReadAllText(remainsPath);
+            StringAssert.Contains("AnimationController.ResetForReuse();", remainsSource);
+
+            string controllerPath = Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "RemainsAnimationController.cs");
+            string controllerSource = File.ReadAllText(controllerPath);
+            StringAssert.Contains("public void ResetForReuse()", controllerSource);
+            StringAssert.Contains("SpriteIndex = 0;", controllerSource);
+            StringAssert.Contains("CurrentSprite = null;", controllerSource);
+            StringAssert.Contains("Ship.Squad.HasCustomColor && CurrentSprite != null", controllerSource);
+        }
     }
 }
