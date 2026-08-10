@@ -20,9 +20,7 @@ namespace Assets.Scripts.Levels
             _titania2MissionTimers.Clear();
             HasContinuousTriggers = true;
 
-            // The fleet has already been positioned from the formation selected in Squad Maker.
-            // Do not restage individual ships here; doing so destroys the player's saved offsets.
-            Stage.DefaultCameraPosition = Titania2Center;
+            StageTitania2HumanFleetPreservingFormations();
 
             Stage.Menus.SetMissionStatus("Survive and defend Titania!");
             Stage.CutsceneManager.Setup(Titania2CampaignEnding);
@@ -184,6 +182,106 @@ namespace Assets.Scripts.Levels
                     "Titania 2 Losing condition"));
 
             }, "Titania 2 Start Level"));
+        }
+
+        private void StageTitania2HumanFleetPreservingFormations()
+        {
+            const float placementStep = 28f;
+            const int maxRing = 8;
+            const float titaniasReservedRadius = 22f;
+            const float shipPadding = 4f;
+
+            List<Vector2> occupiedCenters = new List<Vector2>();
+            List<float> occupiedRadii = new List<float>();
+            List<Squad> userSquads = State.GetSquadsBySide(ConfigData.Configuration.UserSide);
+
+            Physics2D.SyncTransforms();
+            foreach (Squad squad in userSquads)
+            {
+                List<Ship> ships = squad.GetShips();
+                if (ships.Count == 0)
+                {
+                    continue;
+                }
+
+                Vector2 originalCenter = squad.GetPosition();
+                bool placed = false;
+
+                for (int ring = 1; ring <= maxRing && !placed; ring++)
+                {
+                    for (int x = -ring; x <= ring && !placed; x++)
+                    {
+                        for (int y = -ring; y <= ring; y++)
+                        {
+                            if (Mathf.Max(Mathf.Abs(x), Mathf.Abs(y)) != ring)
+                            {
+                                continue;
+                            }
+
+                            Vector2 candidateCenter = Titania2Center + new Vector2(x * placementStep, y * placementStep);
+                            Vector2 delta = candidateCenter - originalCenter;
+                            bool valid = true;
+
+                            for (int shipIndex = 0; shipIndex < ships.Count; shipIndex++)
+                            {
+                                Ship ship = ships[shipIndex];
+                                float clearance = Mathf.Max(ship.GetHalfWidth(), ship.GetHalfHeight()) + shipPadding;
+                                Vector2 candidateShipPosition = ship.GetPosition() + delta;
+
+                                if (candidateShipPosition.x - clearance < MinX || candidateShipPosition.x + clearance > MaxX ||
+                                    candidateShipPosition.y - clearance < MinY || candidateShipPosition.y + clearance > MaxY ||
+                                    Vector2.Distance(candidateShipPosition, Titania2Center) < titaniasReservedRadius + clearance ||
+                                    Physics2D.OverlapCircle(candidateShipPosition, clearance, ConfigData.ObstaclesLayerMask) != null)
+                                {
+                                    valid = false;
+                                    break;
+                                }
+
+                                for (int occupiedIndex = 0; occupiedIndex < occupiedCenters.Count; occupiedIndex++)
+                                {
+                                    if (Vector2.Distance(candidateShipPosition, occupiedCenters[occupiedIndex]) <
+                                        clearance + occupiedRadii[occupiedIndex])
+                                    {
+                                        valid = false;
+                                        break;
+                                    }
+                                }
+
+                                if (!valid)
+                                {
+                                    break;
+                                }
+                            }
+
+                            if (!valid)
+                            {
+                                continue;
+                            }
+
+                            // Translate the whole squad by one delta. Never call SetOffsets here:
+                            // the relative formation chosen in Squad Maker must remain unchanged.
+                            foreach (Ship ship in ships)
+                            {
+                                ship.transform.localPosition += (Vector3)delta;
+                                occupiedCenters.Add(ship.GetPosition());
+                                occupiedRadii.Add(Mathf.Max(ship.GetHalfWidth(), ship.GetHalfHeight()) + shipPadding);
+                            }
+                            placed = true;
+                        }
+                    }
+                }
+
+                if (!placed)
+                {
+                    Debug.LogWarning($"Beenoculars could not find a clear Titania staging position for {squad}; preserving its existing formation and position.");
+                }
+            }
+
+            Physics2D.SyncTransforms();
+            int userIndex = ConfigData.Configuration.UserSide - 1;
+            CurrentLevelOptions.UserStartingPosition = Titania2Center;
+            StartingPositions[userIndex] = Titania2Center;
+            Stage.DefaultCameraPosition = Titania2Center;
         }
 
         private void AddTitania2BeeWave(List<SavedSquad> squads, float normalizedX, float normalizedY)
