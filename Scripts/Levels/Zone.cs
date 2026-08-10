@@ -8,7 +8,7 @@ namespace Assets.Scripts.Levels
 {
     public class Zone : MonoBehaviour
     {
-        public HashSet<Ship> Ships = new HashSet<Ship>();
+        public HashSet<Ship> Ships = new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance);
         public Action<Ship> OnShipEnter;
 
 
