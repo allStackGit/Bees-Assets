@@ -28,6 +28,11 @@ namespace Bees.Tests.EditMode
         [Test]
         public void KillingOnlyShipTearsDownShipSquadCommandAndHivemindObserver()
         {
+            Type configDataType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData");
+            object originalConfiguration = RuntimeAssembly.GetStaticField(configDataType, "Configuration");
+            object testConfiguration = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Settings.Configuration");
+            RuntimeAssembly.SetField(testConfiguration, "UserSide", 1);
+
             GameObject stageObject = CreateObject("Single ship death Stage");
             object stage = stageObject.AddComponent(RuntimeAssembly.GetType("Stage"));
             RuntimeAssembly.SetField(stage, "IsTraining", true);
@@ -98,7 +103,15 @@ namespace Bees.Tests.EditMode
             RuntimeAssembly.Invoke(command, "SetSquad", squad);
             RuntimeAssembly.Invoke(squad, "SetCommand", command);
 
-            Assert.DoesNotThrow(() => RuntimeAssembly.Invoke(ship, "Kill", null, null, null, true));
+            try
+            {
+                RuntimeAssembly.SetStaticField(configDataType, "Configuration", testConfiguration);
+                Assert.DoesNotThrow(() => RuntimeAssembly.Invoke(ship, "Kill", null, null, null, true));
+            }
+            finally
+            {
+                RuntimeAssembly.SetStaticField(configDataType, "Configuration", originalConfiguration);
+            }
 
             Assert.That(RuntimeAssembly.GetField(ship, "IsDead"), Is.True);
             Assert.That(RuntimeAssembly.GetField(squad, "IsDead"), Is.True);
