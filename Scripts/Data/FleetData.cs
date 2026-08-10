@@ -62,7 +62,9 @@ namespace Assets.Scripts.Data
             //Debug.Log($"About to load {jsonShips.Count} ships for {Type}");
             jsonShips.ForEach((ship) =>
             {
-                AddShipToFleet(new FleetShip((int) ship.i, (ConfigData.ShipTypes) ship.t, ((int)ship.s == 1 ? true : false), ((int)ship.d == 1 ? true : false), (int) ship.f, (int) ship.dd, (int) ship.r, (int) ship.k, (int) ship.b, (int) ship.w, (int)ship.m, (string)ship.n));
+                int mineralsMined = ship.m != null ? (int)ship.m : 0;
+                string name = ship.n != null ? (string)ship.n : "";
+                AddShipToFleet(new FleetShip((int) ship.i, (ConfigData.ShipTypes) ship.t, ((int)ship.s == 1 ? true : false), ((int)ship.d == 1 ? true : false), (int) ship.f, (int) ship.dd, (int) ship.r, (int) ship.k, (int) ship.b, (int) ship.w, mineralsMined, name));
             });
         }
         public List<FleetShip> GetShips()
