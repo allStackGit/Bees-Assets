@@ -25,7 +25,12 @@ namespace Assets.Scripts.Server
 
         public ServerRequest(int maxTimeOnQueue)
         {
-            MaxTimeOnQueue = maxTimeOnQueue;
+            // ConfigData.StandardMaxTimeOnQueue is the bootstrap default used before the
+            // server configuration arrives. Requests that opt into that default should use
+            // the server-owned value once Configuration has loaded.
+            MaxTimeOnQueue = maxTimeOnQueue == ConfigData.StandardMaxTimeOnQueue
+                ? Assets.Scripts.Settings.Configuration.GetStandardMaxTimeOnQueue()
+                : maxTimeOnQueue;
             Type = ConfigData.RequestTypes.Request;
         }
 
